@@ -10,6 +10,7 @@ import asyncio
 from collections import deque
 from concurrent.futures import Future, InvalidStateError
 from contextlib import suppress
+from dataclasses import dataclass
 import subprocess
 import sys
 import threading
@@ -24,6 +25,9 @@ from acp.schema import (
 
 # How long the adapter may take to answer one steering request.
 _STEER_TIMEOUT_S = 60.0
+_MAX_HISTORY_CHUNKS = 50_000
+_MAX_HISTORY_RAW_CHARS = 8_000_000
+_MAX_HISTORY_MEDIA_CHARS = 56 * 1024 * 1024
 # Updates that only a turn in progress produces.
 _TURN_ACTIVITY = {"agent_message_chunk", "agent_thought_chunk", "tool_call", "tool_call_update", "plan"}
 
@@ -34,6 +38,16 @@ class AcpSessionError(RuntimeError):
 
 class AcpCancelled(AcpSessionError):
     """The user cancelled this turn."""
+
+
+@dataclass(frozen=True)
+class NativeSessionMetadata:
+    """Provider-reported identity and execution directory, not a Hub binding."""
+
+    session_id: str
+    cwd: str
+    can_restore: bool
+    title: str | None = None
 
 
 class CodexAcpSession:
@@ -68,6 +82,20 @@ class CodexAcpSession:
         self._config_options: list[dict] = []
         self._default_model = default_model
         self._replaying = False
+        self._history_updates: list[dict] | None = None
+        self._history_size = 0
+        self._history_media_size = 0
+        self._include_history_media = False
+        self._history_failed = False
+        self._history_error: str | None = None
+        self._history_expected_id: str | None = None
+        self._history_roles: dict[str, str] = {}
+        self._history_verified = False
+        self._history_confirmable_session: str | None = None
+        self._ownership_uncertain = False
+        self._operation: str | None = None
+        self._pending_steers = 0
+        self._pending_controls = 0
         self._permissions: set[Future] = set()
         self._cleanup_lock = asyncio.Lock()
         self._turn_task = None
@@ -76,6 +104,8 @@ class CodexAcpSession:
         self._cancel_requested = threading.Event()
         self._prompt_lock = threading.Lock()
         self._lifecycle_lock = threading.Lock()
+        self._close_lock = threading.Lock()
+        self._close_error: AcpSessionError | None = None
         self._closed = False
         self._ready = threading.Event()
         self._thread = threading.Thread(target=self._run_loop, name="hub-codex-acp", daemon=True)
@@ -85,6 +115,60 @@ class CodexAcpSession:
     @property
     def default_model(self) -> str | None:
         return self._default_model
+
+    @property
+    def history_verified(self) -> bool:
+        with self._lifecycle_lock:
+            return self._history_verified
+
+    @property
+    def ownership_uncertain(self) -> bool:
+        with self._lifecycle_lock:
+            return self._ownership_uncertain
+
+    @property
+    def pending_steers(self) -> int:
+        with self._lifecycle_lock:
+            return self._pending_steers
+
+    @property
+    def pending_controls(self) -> int:
+        with self._lifecycle_lock:
+            return self._pending_controls
+
+    def _begin_operation(self, operation: str) -> None:
+        # Admission and controls share this lifecycle lock. A steering/cancel
+        # RPC may outlive its prompt; an unlocked prompt lock is not idle proof.
+        if self._closed:
+            raise AcpSessionError("This ACP connection has been closed.")
+        if self._ownership_uncertain:
+            raise AcpSessionError("Native session ownership is uncertain. Close this connection before continuing.")
+        if self._pending_controls or not self._prompt_lock.acquire(blocking=False):
+            raise AcpSessionError("An ACP turn, handoff or provider control is already running.")
+        self._operation = operation
+
+    def _finish_operation(self) -> None:
+        with self._lifecycle_lock:
+            self._operation = None
+            self._prompt_lock.release()
+
+    def _mark_ownership_uncertain(self) -> None:
+        with self._lifecycle_lock:
+            self._ownership_uncertain = True
+            self._history_verified = False
+            self._history_confirmable_session = None
+
+    def confirm_history(self, session_id: str) -> None:
+        """Confirm the public history returned by restore after store validation.
+
+        Merely reconstructing an existing session to prompt it cannot grant
+        this trust: that path deliberately discards its provider replay.
+        """
+        with self._lifecycle_lock:
+            if (self._closed or self._ownership_uncertain or self._session_id != session_id
+                    or not (self._history_verified or self._history_confirmable_session == session_id)):
+                raise AcpSessionError("This native session has no restored public history to confirm.")
+            self._history_verified = True
 
     def _run_loop(self) -> None:
         # Windows subprocess pipes need Proactor even if the web host uses a
@@ -114,21 +198,218 @@ class CodexAcpSession:
     ) -> None:
         if timeout_s <= 0:
             raise ValueError("ACP inactivity timeout must be positive.")
-        if not self._prompt_lock.acquire(blocking=False):
-            raise AcpSessionError("An ACP turn is already running in this chat.")
-        try:
-            with self._lifecycle_lock:
-                if self._closed:
-                    raise AcpSessionError("This ACP connection has been closed.")
-                self._cancel_requested.clear()
+        with self._lifecycle_lock:
+            self._begin_operation("prompt")
+            self._cancel_requested.clear()
+            try:
                 future = asyncio.run_coroutine_threadsafe(
                     self._prompt(text, session_id, model, on_session, timeout_s, images), self._loop,
                 )
+            except BaseException:
+                self._operation = None
+                self._prompt_lock.release()
+                raise
+        try:
             future.result()
         finally:
-            self._prompt_lock.release()
+            self._finish_operation()
+
+    def inspect_native(self, session_id: str, timeout_s: float) -> NativeSessionMetadata:
+        """Read session/list on a fresh adapter, then dispose it without loading.
+
+        This is the import preview boundary. It never resumes a native writer,
+        creates a conversation, reads private session files or sends a prompt.
+        """
+        if timeout_s <= 0:
+            raise ValueError("ACP metadata timeout must be positive.")
+        with self._lifecycle_lock:
+            self._begin_operation("inspect")
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    self._inspect_native(session_id, timeout_s), self._loop)
+            except BaseException:
+                self._operation = None
+                self._prompt_lock.release()
+                raise
+        try:
+            return future.result()
+        finally:
+            self._finish_operation()
+
+    async def _inspect_native(self, session_id, timeout_s):
+        if self._session_id is not None:
+            raise AcpSessionError("Metadata inspection requires a fresh ACP connection.")
+        try:
+            async with asyncio.timeout(timeout_s):
+                await self._start()
+                return await self._native_metadata(session_id)
+        except Exception as exc:
+            raise self._history_failure(exc) from exc
+        finally:
+            await self._stop_process()
+
+    async def _native_metadata(self, session_id) -> NativeSessionMetadata:
+        from pathlib import Path
+
+        if (not isinstance(session_id, str) or not session_id or len(session_id) > 200
+                or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in session_id)):
+            raise AcpSessionError("The native session identity is invalid.")
+        cursor, seen = None, set()
+        for _ in range(1000):
+            page = await self._connection.list_sessions(cursor=cursor)
+            metadata = next((row for row in page.sessions if row.session_id == session_id), None)
+            if metadata is not None:
+                cwd = metadata.cwd
+                if not cwd or not Path(cwd).is_absolute() or not Path(cwd).is_dir():
+                    raise AcpSessionError("The provider's original working directory is unavailable on this machine.")
+                title = getattr(metadata, "title", None)
+                return NativeSessionMetadata(session_id, cwd, self._can_load,
+                                             title[:200] if isinstance(title, str) else None)
+            cursor = page.next_cursor
+            if not cursor or cursor in seen:
+                break
+            seen.add(cursor)
+        raise AcpSessionError("The installed Codex provider cannot find this native session. No new conversation was created.")
+
+    def restore(self, session_id: str, expected_cwd: str | None, timeout_s: float,
+                *, include_media: bool = False) -> list[dict]:
+        """Resolve a fresh connection's native identity and public history.
+
+        A known Hub binding may have a source/scratch cwd distinct from its project.
+        The store must validate the returned history and call confirm_history.
+        Native Codex owns writer admission; a busy refusal is never bypassed.
+        """
+        if timeout_s <= 0:
+            raise ValueError("ACP history timeout must be positive.")
+        with self._lifecycle_lock:
+            self._begin_operation("restore")
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    self._restore(session_id, expected_cwd, timeout_s, include_media), self._loop)
+            except BaseException:
+                self._operation = None
+                self._prompt_lock.release()
+                raise
+        try:
+            return future.result()
+        finally:
+            self._finish_operation()
+
+    def snapshot(self, session_id: str, timeout_s: float) -> list[dict]:
+        """Load public history on this same continuously owned idle connection.
+
+        No new adapter, session listing, prompt or ownership retry is performed.
+        Admission also refuses provider-control tails after their prompt ended.
+        """
+        if timeout_s <= 0:
+            raise ValueError("ACP history timeout must be positive.")
+        with self._lifecycle_lock:
+            self._begin_operation("snapshot")
+            try:
+                if (self._session_id != session_id or not self._history_verified
+                        or self._connection is None or self._process is None
+                        or self._process.returncode is not None):
+                    raise AcpSessionError("Snapshot requires the same continuously owned, history-verified native session.")
+                future = asyncio.run_coroutine_threadsafe(self._snapshot(session_id, timeout_s), self._loop)
+            except BaseException:
+                self._operation = None
+                self._prompt_lock.release()
+                raise
+        try:
+            return future.result()
+        finally:
+            self._finish_operation()
+
+    @staticmethod
+    def _history_failure(exc: Exception) -> AcpSessionError:
+        if isinstance(exc, AcpSessionError):
+            return exc
+        detail = "The provider did not finish loading the session in time." if isinstance(exc, TimeoutError) else str(exc)
+        if isinstance(exc, RequestError):
+            reason = exc.data.get("details") if isinstance(exc.data, dict) else exc.data
+            if isinstance(reason, str) and reason:
+                detail += f": {reason}"
+        return AcpSessionError(f"Native session restoration failed: {detail}")
+
+    async def _restore(self, session_id, expected_cwd, timeout_s, include_media=False):
+        import os
+        from pathlib import Path
+
+        if self._session_id is not None:
+            raise AcpSessionError("Restore requires a fresh ACP connection.")
+        try:
+            async with asyncio.timeout(timeout_s):
+                await self._start()
+                if not self._can_load:
+                    raise AcpSessionError("This ACP adapter does not support restoring sessions.")
+                metadata = await self._native_metadata(session_id)
+                cwd = metadata.cwd
+                if expected_cwd is not None and os.path.normcase(str(Path(cwd).resolve())) != os.path.normcase(str(Path(expected_cwd).resolve())):
+                    raise AcpSessionError("This native session is not bound to this project's directory. Open its original Hub conversation instead.")
+                return await self._load_history(session_id, cwd, include_media=include_media)
+        except Exception as exc:
+            # No load was admitted yet: dispose the unused fresh adapter. Once
+            # a load succeeds, a local collector failure cannot undo ownership.
+            if self._session_id is None and not self.ownership_uncertain:
+                await self._stop_process()
+            if isinstance(exc, AcpSessionError):
+                raise
+            raise self._history_failure(exc) from exc
+
+    async def _snapshot(self, session_id, timeout_s):
+        try:
+            async with asyncio.timeout(timeout_s):
+                if not self._can_load:
+                    raise AcpSessionError("This ACP adapter does not support restoring sessions.")
+                return await self._load_history(session_id, self._cwd, include_media=self._include_history_media)
+        except Exception as exc:
+            if isinstance(exc, AcpSessionError):
+                raise
+            raise self._history_failure(exc) from exc
+
+    async def _load_history(self, session_id, cwd, *, include_media=False):
+        self._history_updates = []
+        self._history_size, self._history_failed = 0, False
+        self._history_media_size = 0
+        self._include_history_media = include_media
+        self._history_error, self._history_expected_id = None, session_id
+        self._history_roles = {}
+        with self._lifecycle_lock:
+            self._history_confirmable_session = None
+        self._replaying = True
+        try:
+            try:
+                session = await self._connection.load_session(
+                    session_id=session_id, cwd=cwd, mcp_servers=self._mcp_servers)
+            except BaseException:
+                # A failed load may have unsubscribed the adapter from its old
+                # native thread even while the adapter process remains alive.
+                self._mark_ownership_uncertain()
+                raise
+            with self._lifecycle_lock:
+                if self._closed or self._ownership_uncertain:
+                    raise AcpSessionError("This ACP connection closed or lost ownership while loading native history.")
+                self._cwd, self._session_id = cwd, session_id
+            self._set_config_options(session.config_options)
+            option = self._model_option()
+            if self._default_model is None and option:
+                self._default_model = option["currentValue"]
+            if self._history_failed:
+                raise AcpSessionError(self._history_error or "This session's public history cannot be restored safely.")
+            with self._lifecycle_lock:
+                if self._closed or self._ownership_uncertain:
+                    raise AcpSessionError("This ACP connection closed or lost ownership while loading native history.")
+                self._history_confirmable_session = session_id
+            return self._history_updates
+        finally:
+            self._replaying = False
+            self._history_updates = None
+            self._history_expected_id = None
+            self._history_roles = {}
 
     async def _start(self) -> None:
+        if self.ownership_uncertain:
+            raise AcpSessionError("Native session ownership is uncertain. Close this connection before continuing.")
         if self._process is not None:
             if self._process.returncode is not None:
                 raise AcpSessionError("The ACP adapter exited. This turn was not sent.")
@@ -194,12 +475,20 @@ class CodexAcpSession:
                             session = await self._connection.load_session(
                                 session_id=session_id, cwd=self._cwd, mcp_servers=self._mcp_servers,
                             )
+                        except BaseException:
+                            self._mark_ownership_uncertain()
+                            raise
                         finally:
                             self._replaying = False
-                        self._session_id = session_id
+                        with self._lifecycle_lock:
+                            self._session_id = session_id
+                            self._history_verified = False
+                            self._history_confirmable_session = None
                     else:
                         session = await self._connection.new_session(cwd=self._cwd, mcp_servers=self._mcp_servers)
-                        self._session_id = session.session_id
+                        with self._lifecycle_lock:
+                            self._session_id = session.session_id
+                            self._history_verified = True
                     self._set_config_options(session.config_options)
                     option = self._model_option()
                     if self._default_model is None and option:
@@ -273,6 +562,8 @@ class CodexAcpSession:
             self._set_config_options(result.config_options)
 
     async def session_update(self, session_id: str, update: Any, **kwargs: Any) -> None:
+        if self.ownership_uncertain:
+            return
         self._touch_activity(session_id)
         live = self._turn_live
         if (live is not None and self._turn_task is not None and not self._replaying and session_id == self._session_id
@@ -282,6 +573,36 @@ class CodexAcpSession:
             live.set()
         if update.session_update == "config_option_update":
             self._set_config_options(update.config_options)
+        if self._replaying and self._history_updates is not None and update.session_update in {"user_message_chunk", "agent_message_chunk"}:
+            # Public messages only. Import may collect media payloads; URI-only
+            # references remain references and never grant filesystem reads.
+            if self._history_failed:
+                return
+            failure = None
+            identifier = getattr(update, "message_id", None)
+            if session_id != self._history_expected_id:
+                failure = "The provider returned public history for a different native session."
+            elif update.content.type != "text" and not self._include_history_media:
+                return
+            elif not isinstance(identifier, str) or not identifier or len(identifier) > 500:
+                failure = "This adapter does not provide stable public message identities."
+            elif identifier in self._history_roles and self._history_roles[identifier] != update.session_update:
+                failure = "The provider reused a public message identity for different roles."
+            else:
+                if update.content.type == "text":
+                    self._history_size += len(update.content.text)
+                else:
+                    self._history_media_size += len(update.content.model_dump_json(exclude_none=True))
+                if (len(self._history_updates) >= _MAX_HISTORY_CHUNKS
+                        or self._history_size > _MAX_HISTORY_RAW_CHARS
+                        or self._history_media_size > _MAX_HISTORY_MEDIA_CHARS):
+                    failure = "This session's public history is too large to restore safely."
+            if failure is not None:
+                self._history_failed, self._history_error = True, failure
+                return
+            self._history_roles[identifier] = update.session_update
+            notification = SessionNotification(session_id=session_id, update=update)
+            self._history_updates.append(notification.model_dump(by_alias=True, exclude_none=True))
         if not self._replaying:
             notification = SessionNotification(session_id=session_id, update=update)
             self._on_update(notification.model_dump(by_alias=True, exclude_none=True))
@@ -321,15 +642,26 @@ class CodexAcpSession:
         request from leaving ("idle").
         """
         with self._lifecycle_lock:
-            if self._closed or not self._prompt_lock.locked():
+            if self._closed or self._ownership_uncertain or self._operation != "prompt":
                 return "idle"
-            future = asyncio.run_coroutine_threadsafe(self._steer(text, on_sending), self._loop)
+            self._pending_steers += 1
+            self._pending_controls += 1
+            try:
+                future = asyncio.run_coroutine_threadsafe(self._steer(text, on_sending), self._loop)
+            except BaseException:
+                self._pending_steers -= 1
+                self._pending_controls -= 1
+                raise
         try:
             # Bounded by the turn itself: waiting ends with it, and the request
             # has its own limit below.
             return future.result()
         except Exception:  # noqa: BLE001 - any failure leaves the caller's fallback
             return "failed"
+        finally:
+            with self._lifecycle_lock:
+                self._pending_steers -= 1
+                self._pending_controls -= 1
 
     async def _steer(self, text: str, on_sending: Callable[[], bool] | None) -> str:
         turn, live = self._turn_task, self._turn_live
@@ -362,12 +694,22 @@ class CodexAcpSession:
         outcome = response.get("outcome") if isinstance(response, dict) else None
         return outcome if outcome in {"injected", "startedNewTurn"} else "failed"
 
-    def cancel_turn(self) -> None:
-        """Cancel whatever turn the adapter runs now, including one it began itself."""
+    def _control_finished(self, future: Future) -> None:
         with self._lifecycle_lock:
-            if self._closed:
+            self._pending_controls -= 1
+
+    def cancel_turn(self) -> None:
+        """Cancel an owned turn, including one steering began after its prompt."""
+        with self._lifecycle_lock:
+            if self._closed or self._ownership_uncertain or self._operation in {"restore", "snapshot"}:
                 return
-            future = asyncio.run_coroutine_threadsafe(self._send_cancel(), self._loop)
+            self._pending_controls += 1
+            try:
+                future = asyncio.run_coroutine_threadsafe(self._send_cancel(), self._loop)
+            except BaseException:
+                self._pending_controls -= 1
+                raise
+        future.add_done_callback(self._control_finished)
         with suppress(Exception):
             future.result(5)
 
@@ -384,10 +726,16 @@ class CodexAcpSession:
 
     def cancel(self) -> None:
         with self._lifecycle_lock:
-            if self._closed or not self._prompt_lock.locked():
+            if self._closed or self._ownership_uncertain or self._operation != "prompt":
                 return
             self._cancel_requested.set()
-            asyncio.run_coroutine_threadsafe(self._cancel(), self._loop)
+            self._pending_controls += 1
+            try:
+                future = asyncio.run_coroutine_threadsafe(self._cancel(), self._loop)
+            except BaseException:
+                self._pending_controls -= 1
+                raise
+        future.add_done_callback(self._control_finished)
 
     async def _cancel(self) -> None:
         turn = self._turn_task
@@ -405,11 +753,18 @@ class CodexAcpSession:
         # await the ongoing cleanup before it stops the loop, even after the
         # process has been detached from the session fields.
         async with self._cleanup_lock:
-            await self._dispose_process()
+            try:
+                await self._dispose_process()
+            except BaseException:
+                self._mark_ownership_uncertain()
+                raise
 
     async def _dispose_process(self) -> None:
         connection, process = self._connection, self._process
-        self._connection, self._process, self._session_id = None, None, None
+        with self._lifecycle_lock:
+            self._connection, self._process, self._session_id = None, None, None
+            self._history_verified = False
+            self._history_confirmable_session = None
         self._cancel_permissions()
         if connection is not None:
             with suppress(Exception):
@@ -452,14 +807,42 @@ class CodexAcpSession:
         await self._stop_process()
 
     def close(self) -> None:
-        with self._lifecycle_lock:
-            if self._closed:
-                return
-            self._closed = True
-            self._cancel_requested.set()
-            future = asyncio.run_coroutine_threadsafe(self._close(), self._loop)
-        try:
-            future.result(timeout=15)
-        finally:
-            self._loop.call_soon_threadsafe(self._loop.stop)
-            self._thread.join(timeout=5)
+        # Every caller observes the same completed shutdown or its failure.
+        # A previous close setting _closed is not itself proof of process exit.
+        with self._close_lock:
+            with self._lifecycle_lock:
+                if self._closed:
+                    if self._close_error is not None:
+                        raise self._close_error
+                    return
+                self._closed = True
+                self._history_verified = False
+                self._history_confirmable_session = None
+                self._cancel_requested.set()
+                closing = self._close()
+                try:
+                    future = asyncio.run_coroutine_threadsafe(closing, self._loop)
+                except Exception as exc:
+                    closing.close()
+                    failure = AcpSessionError(f"ACP connection shutdown failed: {exc}")
+                    self._ownership_uncertain = True
+                    self._close_error = failure
+                    raise failure from exc
+            failure = None
+            try:
+                future.result(timeout=15)
+            except Exception as exc:
+                failure = AcpSessionError(f"ACP connection shutdown failed: {exc}")
+            finally:
+                try:
+                    self._loop.call_soon_threadsafe(self._loop.stop)
+                    self._thread.join(timeout=5)
+                except Exception as exc:
+                    failure = failure or AcpSessionError(f"ACP connection shutdown failed: {exc}")
+                if self._thread.is_alive():
+                    failure = failure or AcpSessionError("ACP connection shutdown failed: its event loop did not stop.")
+            if failure is not None:
+                with self._lifecycle_lock:
+                    self._ownership_uncertain = True
+                    self._close_error = failure
+                raise failure

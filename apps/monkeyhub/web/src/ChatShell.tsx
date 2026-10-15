@@ -4,7 +4,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useM
 import { applicationUrl, type AppearancePreferences } from "../../../../packages/web-shared/src/appearance.js";
 import type { WorktreeGraphDto } from "./api/project-runtime/generated";
 import { projectStatus } from "./worktreeGraph";
-import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, OperationRecord, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus, UserSettingsDto } from "./api/generated";
+import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatImportPreview, ChatImportRequest, ChatImportResult, ChatMessage,ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, OperationRecord, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus, UserSettingsDto } from "./api/generated";
 import { ProjectRuntimeProvider, useProjectRevision, useStudio } from "./api/project-runtime/ProjectRuntimeContext";
 import { projectStores, relayHubStream } from "./api/project-runtime/projectStore";
 import type { ModelSourceDto, ProjectRefreshDto, RenderPageRefDto, SourceDocumentDto } from "./api/project-runtime/generated";
@@ -348,6 +348,69 @@ const asFailure = (cause: unknown): HubError => {
   if (carried && typeof carried.code === "string") return carried;
   return { code: "HUB_REQUEST_FAILED", detail: cause instanceof Error ? cause.message : String(cause) };
 };
+// First import chooses a Hub association; execution stays in the source cwd.
+function NativeImportDialog({ projects, initialSource, initialProject, t, onClose, onImported }: {
+  projects: readonly ChatProject[]; initialSource: string; initialProject: string | null;
+  t: ChatWords; onClose: () => void; onImported: (chat: ChatDetail) => Promise<void>;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [source, setSource] = useState(initialSource);
+  const [directory, setDirectory] = useState(initialProject ?? "");
+  const [preview, setPreview] = useState<ChatImportPreview | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<HubError | null>(null);
+  const locked = useRef(false);
+  const target = projects.find((row) => row.projectDir === directory);
+  useEffect(() => { dialog.current?.showModal(); }, []);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (locked.current || !target || !source.trim()) return;
+    locked.current = true; setBusy(true); setError(null);
+    try {
+      const body = { sourceSessionId: source.trim(), projectId: target.projectId, projectDir: target.projectDir };
+      if (!preview) {
+        setPreview(await request<ChatImportPreview>("/api/chat/imports/preview", body));
+        setConfirmed(false);
+      } else if (confirmed && preview.canContinue) {
+        const result = await request<ChatImportResult>("/api/chat/imports", {
+          ...body, previewToken: preview.previewToken, confirmed: true,
+        } satisfies ChatImportRequest);
+        await onImported(result.chat);
+        onClose();
+      }
+    } catch (cause) { setError(asFailure(cause)); setPreview(null); setConfirmed(false); }
+    finally { locked.current = false; setBusy(false); }
+  };
+  return <dialog ref={dialog} className="chat-dialog chat-dialog--native-import" aria-labelledby="native-import-title" onCancel={(event) => {
+    event.preventDefault(); if (!locked.current) onClose();
+  }}>
+    <form onSubmit={(event) => void submit(event)}>
+      <h2 id="native-import-title">{t.nativeImport}</h2>
+      <label>{t.nativeImportSource}<input autoFocus required maxLength={200} value={source} disabled={busy}
+        onChange={(event) => { setSource(event.target.value); setPreview(null); setConfirmed(false); }} /></label>
+      <p className="chat-muted">{t.nativeImportSourceHint}</p>
+      <label>{t.nativeImportTarget}<select aria-label={t.nativeImportTarget} required value={directory} disabled={busy}
+        onChange={(event) => { setDirectory(event.target.value); setPreview(null); setConfirmed(false); }}>
+        <option value="">{t.nativeImportChooseProject}</option>
+        {projects.map((row) => <option key={row.projectDir} value={row.projectDir}>{row.name} — {row.projectDir}</option>)}
+      </select></label>
+      {preview && <div className="chat-native-preview">
+        <dl><dt>{t.nativeImportSource}</dt><dd><code>{preview.sourceSessionId}</code></dd>
+          <dt>{t.nativeImportTarget}</dt><dd><code>{preview.projectDir}</code></dd>
+          <dt>{t.nativeImportCwd}</dt><dd><code>{preview.providerCwd}</code></dd></dl>
+        <p>{t.nativeImportExplanation}</p><p>{t.nativeImportMedia}</p>
+        {preview.canContinue ? <label className="chat-native-consent"><input type="checkbox" checked={confirmed} disabled={busy}
+          onChange={(event) => setConfirmed(event.target.checked)} /><span>{t.nativeImportConsent}</span></label>
+          : <p role="status">{t.nativeImportUnavailable} {preview.limitation}</p>}
+      </div>}
+      {error && <p role="alert">{error.detail}</p>}
+      <div className="chat-dialog__actions"><button type="button" className="btn" disabled={busy} onClick={onClose}>{t.cancel}</button>
+        <button type="submit" className="btn btn--primary" disabled={busy || !target || !source.trim() || Boolean(preview && (!confirmed || !preview.canContinue))}>
+          {busy ? t.nativeImportWorking : preview ? t.nativeImportConfirm : t.nativeImportPreview}</button></div>
+    </form>
+  </dialog>;
+}
 const wait = () => new Promise((resolve) => window.setTimeout(resolve, 400));
 const fileSize = (size: number) => size < 1024 ? `${size} B` : size < 1024 * 1024 ? `${(size / 1024).toFixed(1)} KiB` : `${(size / (1024 * 1024)).toFixed(1)} MiB`;
 const fileData = (file: File, failure: string) => new Promise<string>((resolve, reject) => {
@@ -582,6 +645,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const [runtime, setRuntime] = useState<HubRuntimeDto | null>(null);
   const [eventsConnected, setEventsConnected] = useState(true);
   const [recovering, setRecovering] = useState(false);
+  const [handoffBusy, setHandoffBusy] = useState(false);
+  const [nativeImportSource, setNativeImportSource] = useState<string | null>(null);
+  const nativeImportTrigger = useRef<HTMLElement | null>(null);
+  const openNativeImport = (source: string) => {
+    nativeImportTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setNativeImportSource(source);
+  };
+  const closeNativeImport = () => { setNativeImportSource(null); requestAnimationFrame(() => nativeImportTrigger.current?.focus()); };
   // ADR-012: reading the project again (File menu), and the folder whose read found it changed outside MonkeyHub.
   const [reloading, setReloading] = useState(false);
   const [changedOutside, setChangedOutside] = useState<string | null>(null);
@@ -804,7 +875,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // ("unsynced") are restored after the restart; only edits it does not hold yet block it.
   const restartBlocker: RestartBlocker = !draftsKept || Object.values(draftAttachments).some((files) => files.length)
     ? "drafts" : Object.values(designContexts).some((context) => context?.unavailableReason === "unsaved") ? "model"
-      : settingsDirty ? "settings" : busy || toolBusy || modelBusy || archiveBusy || permissionBusy || recovering || loading || running || !eventsConnected ||
+      : settingsDirty ? "settings" : busy || handoffBusy || nativeImportSource !== null || toolBusy || modelBusy || archiveBusy || permissionBusy || recovering || loading || running || !eventsConnected ||
         sessions.some((session) => session.status === "running") ||
         Object.values(designContexts).some((context) => context?.unavailableReason === "loading") ||
         runtime?.projects.some((item) => item.workers?.some((worker) => ["starting", "busy", "stopping", "recovering"].includes(worker.state)) ||
@@ -1173,6 +1244,22 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (item.projectDir !== projectDir) { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); }
     setArchivedView(Boolean(item.archived)); setProjectDir(item.projectDir); setChatId(item.id); setFocus(false);
   };
+  const handoffNative = async (direction: "continue" | "release") => {
+    if (!chat || chat.id !== chatId || actionLock.current || handoffBusy || running || archived) return;
+    const target = chat;
+    actionLock.current = true; setHandoffBusy(true); setError(null);
+    try {
+      const updated = await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(target.id)}/${direction}-native`, {});
+      // A late handoff must never navigate away from a newer user selection.
+      if (selection.current.chatId === target.id && selection.current.projectDir === target.projectDir) {
+        selectChat(updated); setChat(updated);
+      }
+      await refresh();
+    } catch (cause) {
+      if (selection.current.chatId === target.id) setError(asFailure(cause));
+    } finally { actionLock.current = false; setHandoffBusy(false); }
+  };
+
   // GH-300: a notice's 查看 opens its chat here, in place (src/notifications/openChat.ts).
   const openFromNotice = useRef<(chatId: string, projectDir: string) => void>(() => undefined);
   openFromNotice.current = (chatId, projectDir) =>
@@ -1955,6 +2042,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       { kind: "command", id: "new-chat", label: mw.newChat, onSelect: startChat },
       { kind: "command", id: "new-project", label: mw.newProject, onSelect: () => { setDialogError(null); newDialog.current?.showModal(); } },
       { kind: "command", id: "add-project", label: mw.addProject, onSelect: () => { setDialogError(null); addDialog.current?.showModal(); } },
+      { kind: "command", id: "import-codex", label: t.nativeImportMenu, disabled: busy || handoffBusy || running || !projects.length,
+        onSelect: () => openNativeImport("") },
       { kind: "command", id: "reload-project", label: t.reloadProject, disabled: !projectRuntime || reloading, onSelect: () => void reloadProject() },
       { kind: "separator", id: "archive" },
       { kind: "command", id: "export", label: mw.exportArchive, disabled: !project,
@@ -2074,8 +2163,19 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             project surface, whose bar has the chip, is on screen, so exactly one chip shows. */}
         {headerChip && <button type="button" className="chat-header__chip" aria-description={t.openInTree} title={t.openInTree}
           onClick={() => void openTool("tree")}><Icon name="tree" /><span>{headerChip}</span></button>}
+        {shownChat?.provider === "codex" && shownChat.continuationSessionId && !external && !archived &&
+          <button type="button" className="chat-activity__open" disabled={running || busy || handoffBusy || Boolean(draft.trim()) || attachments.length > 0}
+            title={t.continuationReleaseHint} onClick={() => void handoffNative("release")}>{t.continuationRelease}</button>}
         {workspaceShown && <button type="button" ref={focusToggle} className="chat-focus" aria-description={t.focusHint} title={t.focusHint}
           onClick={toggleFocus}><Icon name="focus" /><span>{t.focus}</span></button>}</header>
+      {nativeImportSource !== null && <NativeImportDialog projects={projects} initialSource={nativeImportSource}
+        initialProject={projectDir} t={t} onClose={closeNativeImport}
+        onImported={async (imported) => { selectChat(imported); setChat(imported); await refresh(); }} />}
+      {shownChat?.nativeImport && <div className="chat-external-notice chat-native-directory" role="status">
+        <span>{t.nativeImportDirectory}</span>
+        <code>{shownChat.nativeImport.providerCwd}</code>
+        {(shownChat.nativeImport.sourceReferences?.length ?? 0) > 0 && <span>{t.nativeImportSourceLinks}</span>}
+      </div>}
       {(!eventsConnected || crashed || recovering || workCopyRefusal || folderChanged) && <div className="chat-runtime" role="status" aria-live="polite">
         <div>{!eventsConnected && <p>{t.reconnecting}</p>}
           {(crashed || recovering) && <><p>{recovering ? t.recovering : t.workerCrashed}</p><small>{t.recoveryHint}</small></>}
@@ -2109,6 +2209,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       })()}
       <div className="chat-messages" ref={messages} role="log" aria-live="polite" aria-relevant="additions text" onScroll={readPosition}
         onWheel={() => { jumping.current = false; }} onTouchStart={() => { jumping.current = false; }}>
+        {chat?.id === chatId && Boolean(chat.priorMessages?.length) && <details className="chat-card-details">
+          <summary>{t.continuationPrior}</summary>
+          <p className="chat-muted">{t.continuationPriorHint}</p>
+          {chat.priorMessages!.map((message) => <article className={`chat-message chat-message--${message.role}`} key={message.id}>
+            <ChatMarkdown text={message.content} />
+            <ChatMessageFiles sessionId={chat.id} messageId={message.id} attachments={message.attachments} documents={message.documents} labels={t} />
+          </article>)}
+        </details>}
         {!shownMessages?.length ? <div className="chat-welcome"><div className="chat-welcome__mark"><Icon name="chat" /></div><h2>{project ? t.empty : t.noProject}</h2><p>{t.emptyHint}</p>{!project && <div className="chat-welcome__actions"><button className="btn btn--primary" onClick={() => { setDialogError(null); newDialog.current?.showModal(); }}>{t.newProject}</button><button className="btn" onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}>{t.addExisting}</button></div>}</div>
           : <div className="chat-message-list">{turns.map((turn, index) => <Fragment key={turn.key}>
             {turn.user && messageEntry(turn.user)}
@@ -2174,7 +2282,17 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         {archived ? <div className="chat-archived-notice">
           <p>{t.archivedNotice}</p>
           <button className="chat-activity__open" disabled={archiveBusy !== null} onClick={() => void setArchived(chat!, false)}><Icon name="restore" /><span>{t.restoreChat}</span></button>
-        </div> : external ? <p className="chat-external-notice" role="status"><strong>{t.externalChat}</strong><span>{t.externalNotice}</span></p> : <form className="chat-composer" data-dragging={draggingFiles} onSubmit={(event) => void send(event)}
+        </div> : external ? <div className="chat-external-notice" role="status"><strong>{t.externalChat}</strong><span>{t.externalNotice}</span>
+          {shownChat?.provider === "codex" && <>
+            <span>{t.continuationHint}</span>
+            {shownChat.continuationSessionId && <code>{`codex resume ${shownChat.continuationSessionId}`}</code>}
+            {/* An unbound external session may run outside the project: it is imported, not returned. */}
+            {shownChat.continuationSessionId ? <button type="button" className="chat-activity__open" disabled={handoffBusy || running || busy}
+              onClick={() => void handoffNative("continue")}>{handoffBusy ? t.continuationLoading : t.continuationReturn}</button>
+              : <button type="button" className="chat-activity__open" disabled={handoffBusy || running || busy}
+                onClick={() => openNativeImport(shownChat.sourceSessionId ?? "")}>{t.nativeImportChoose}</button>}
+          </>}
+        </div> : <form className="chat-composer" data-dragging={draggingFiles} onSubmit={(event) => void send(event)}
           data-context={designContext ? "ready" : workspaceContext?.projectId === project?.projectId ? workspaceContext?.unavailableReason ?? "none" : "none"}
           onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = !project || busy ? "none" : "copy"; setDraggingFiles(Boolean(project) && !busy); } }}
           onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingFiles(false); }}

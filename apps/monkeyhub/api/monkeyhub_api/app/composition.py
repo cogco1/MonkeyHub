@@ -134,6 +134,11 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
 
     @app.exception_handler(HubFailure)
     async def handle_hub_error(request: Request, exc: HubFailure):
+        if exc.status == 409 or exc.status >= 500:
+            # The access log names only the status; a conflict or failure is
+            # diagnosed by its code and the reason shown with it.
+            logging.getLogger(__name__).warning("%s %s refused %d %s: %s", request.method, request.url.path,
+                                                exc.status, exc.error.code, exc.error.detail[:300])
         return JSONResponse(exc.error.model_dump(), status_code=exc.status)
 
     @app.exception_handler(RequestValidationError)

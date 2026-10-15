@@ -342,6 +342,11 @@ export type ChatDetail = {
      */
     sourceSessionId?: string | null;
     /**
+     * Continuationsessionid
+     */
+    continuationSessionId?: string | null;
+    nativeImport?: ChatNativeImportSource | null;
+    /**
      * Attention
      */
     attention?: 'permission' | null;
@@ -349,6 +354,10 @@ export type ChatDetail = {
      * Messages
      */
     messages?: Array<ChatMessage>;
+    /**
+     * Priormessages
+     */
+    priorMessages?: Array<ChatMessage>;
 };
 
 /**
@@ -405,6 +414,115 @@ export type ChatDocumentRef = {
      * Pageindex
      */
     pageIndex?: number;
+};
+
+/**
+ * ChatImportPreview
+ */
+export type ChatImportPreview = {
+    /**
+     * Previewtoken
+     */
+    previewToken: string;
+    /**
+     * Sourcesessionid
+     */
+    sourceSessionId: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+    /**
+     * Providercwd
+     */
+    providerCwd: string;
+    /**
+     * Samedirectory
+     */
+    sameDirectory: boolean;
+    /**
+     * Cancontinue
+     */
+    canContinue: boolean;
+    /**
+     * Limitation
+     */
+    limitation: string | null;
+    /**
+     * Existingchatid
+     */
+    existingChatId: string | null;
+};
+
+/**
+ * ChatImportPreviewRequest
+ */
+export type ChatImportPreviewRequest = {
+    /**
+     * Sourcesessionid
+     */
+    sourceSessionId: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+};
+
+/**
+ * ChatImportRequest
+ */
+export type ChatImportRequest = {
+    /**
+     * Sourcesessionid
+     */
+    sourceSessionId: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+    /**
+     * Previewtoken
+     */
+    previewToken: string;
+    /**
+     * Confirmed
+     */
+    confirmed: boolean;
+};
+
+/**
+ * ChatImportResult
+ */
+export type ChatImportResult = {
+    chat: ChatDetail;
+    /**
+     * Providercwd
+     */
+    providerCwd: string;
+    /**
+     * Executionmode
+     */
+    executionMode: 'original-directory';
+    /**
+     * State
+     */
+    state: 'native-ready' | 'native-bound' | 'continue-in-codex';
+    /**
+     * Sourcereferences
+     */
+    sourceReferences: Array<ChatNativeSourceReference>;
 };
 
 /**
@@ -482,6 +600,50 @@ export type ChatModelRequest = {
      * Model
      */
     model?: string | null;
+};
+
+/**
+ * ChatNativeImportSource
+ */
+export type ChatNativeImportSource = {
+    /**
+     * Sourcesessionid
+     */
+    sourceSessionId: string;
+    /**
+     * Providercwd
+     */
+    providerCwd: string;
+    /**
+     * Importedat
+     */
+    importedAt: string;
+    /**
+     * Sourcereferences
+     */
+    sourceReferences?: Array<ChatNativeSourceReference>;
+};
+
+/**
+ * ChatNativeSourceReference
+ */
+export type ChatNativeSourceReference = {
+    /**
+     * Messageid
+     */
+    messageId: string;
+    /**
+     * Uri
+     */
+    uri: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Availability
+     */
+    availability?: 'source-only';
 };
 
 /**
@@ -893,6 +1055,11 @@ export type ChatSummary = {
      * Sourcesessionid
      */
     sourceSessionId?: string | null;
+    /**
+     * Continuationsessionid
+     */
+    continuationSessionId?: string | null;
+    nativeImport?: ChatNativeImportSource | null;
     /**
      * Attention
      */
@@ -3162,6 +3329,56 @@ export type ChatUsageSourcesApiChatUsageSourcesGetResponses = {
 
 export type ChatUsageSourcesApiChatUsageSourcesGetResponse = ChatUsageSourcesApiChatUsageSourcesGetResponses[keyof ChatUsageSourcesApiChatUsageSourcesGetResponses];
 
+export type PreviewNativeImportApiChatImportsPreviewPostData = {
+    body: ChatImportPreviewRequest;
+    path?: never;
+    query?: never;
+    url: '/api/chat/imports/preview';
+};
+
+export type PreviewNativeImportApiChatImportsPreviewPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PreviewNativeImportApiChatImportsPreviewPostError = PreviewNativeImportApiChatImportsPreviewPostErrors[keyof PreviewNativeImportApiChatImportsPreviewPostErrors];
+
+export type PreviewNativeImportApiChatImportsPreviewPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatImportPreview;
+};
+
+export type PreviewNativeImportApiChatImportsPreviewPostResponse = PreviewNativeImportApiChatImportsPreviewPostResponses[keyof PreviewNativeImportApiChatImportsPreviewPostResponses];
+
+export type ImportNativeChatApiChatImportsPostData = {
+    body: ChatImportRequest;
+    path?: never;
+    query?: never;
+    url: '/api/chat/imports';
+};
+
+export type ImportNativeChatApiChatImportsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ImportNativeChatApiChatImportsPostError = ImportNativeChatApiChatImportsPostErrors[keyof ImportNativeChatApiChatImportsPostErrors];
+
+export type ImportNativeChatApiChatImportsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ChatImportResult;
+};
+
+export type ImportNativeChatApiChatImportsPostResponse = ImportNativeChatApiChatImportsPostResponses[keyof ImportNativeChatApiChatImportsPostResponses];
+
 export type BindChatPresentationApiChatPresentationBindPostData = {
     body: ChatPresentationBindRequest;
     path?: never;
@@ -3287,6 +3504,66 @@ export type ReadChatApiChatSessionsSessionIdGetResponses = {
 };
 
 export type ReadChatApiChatSessionsSessionIdGetResponse = ReadChatApiChatSessionsSessionIdGetResponses[keyof ReadChatApiChatSessionsSessionIdGetResponses];
+
+export type ContinueNativeChatApiChatSessionsSessionIdContinueNativePostData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/continue-native';
+};
+
+export type ContinueNativeChatApiChatSessionsSessionIdContinueNativePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ContinueNativeChatApiChatSessionsSessionIdContinueNativePostError = ContinueNativeChatApiChatSessionsSessionIdContinueNativePostErrors[keyof ContinueNativeChatApiChatSessionsSessionIdContinueNativePostErrors];
+
+export type ContinueNativeChatApiChatSessionsSessionIdContinueNativePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatDetail;
+};
+
+export type ContinueNativeChatApiChatSessionsSessionIdContinueNativePostResponse = ContinueNativeChatApiChatSessionsSessionIdContinueNativePostResponses[keyof ContinueNativeChatApiChatSessionsSessionIdContinueNativePostResponses];
+
+export type ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/release-native';
+};
+
+export type ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostError = ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostErrors[keyof ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostErrors];
+
+export type ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatDetail;
+};
+
+export type ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostResponse = ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostResponses[keyof ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostResponses];
 
 export type PostChatApiChatSessionsSessionIdMessagesPostData = {
     body: ChatPostRequest;

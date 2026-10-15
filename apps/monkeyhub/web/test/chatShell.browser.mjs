@@ -79,7 +79,8 @@ const server = createServer(async (req, res) => {
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 const { chromium } = await import((process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright"));
-const browser = await chromium.launch({ headless: true, channel: "chrome" });
+const browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
+  ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : { channel: "chrome" }) });
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 page.setDefaultTimeout(12000);
 // Keep chooser interception installed across keyboard passes. Repeatedly
@@ -121,6 +122,7 @@ let modelingFailure = null;
 let chatCreationFailureFor = null;
 let chatMessageFailureFor = null;
 let chatMessageResponseGate = Promise.resolve();
+const nativeImportSources = new Map(), nativeImportPreviews = new Map(), nativeImportProviderCalls = [];
 const uploadedAttachments = new Map();
 const externalImage = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jB8sAAAAASUVORK5CYII=";
 /** A plain RGB PNG of one colour, large enough to be seen and clicked on a Board. */
@@ -306,6 +308,43 @@ const hubApi = async (route) => {
     return json(updateStatus);
   }
   if (method !== "GET") writes.push([method, url.pathname, data(), url.searchParams.get("projectDir")]);
+  // The Hub's own matching: an earlier import of this source, else its unbound external presentation.
+  const importedRow = (sourceSessionId) => sessions.find((row) => row.nativeImport?.sourceSessionId === sourceSessionId)
+    ?? sessions.find((row) => row.sourceSessionId === sourceSessionId && !row.continuationSessionId);
+  if (url.pathname === "/api/chat/imports/preview") {
+    assert.equal(method, "POST");
+    const body = data(), source = nativeImportSources.get(body.sourceSessionId);
+    assert.ok(source, "only the requested synthetic public session is read");
+    const project = projects.find((item) => item.projectId === body.projectId && item.projectDir === body.projectDir);
+    assert.ok(project, "preview targets an explicit registered project");
+    const preview = { previewToken: randomUUID(), ...body, providerCwd: source.providerCwd,
+      sameDirectory: source.providerCwd === body.projectDir, canContinue: source.canContinue !== false,
+      limitation: source.canContinue === false ? "Source session cannot be loaded on this machine." : null,
+      existingChatId: importedRow(body.sourceSessionId)?.id ?? null };
+    nativeImportPreviews.set(preview.previewToken, preview);
+    return json(preview);
+  }
+  if (url.pathname === "/api/chat/imports") {
+    assert.equal(method, "POST");
+    const body = data(), preview = nativeImportPreviews.get(body.previewToken);
+    assert.ok(preview?.canContinue && body.confirmed === true, "only an explicit confirmation imports");
+    assert.deepEqual([body.sourceSessionId, body.projectId, body.projectDir], [preview.sourceSessionId, preview.projectId, preview.projectDir]);
+    const source = nativeImportSources.get(body.sourceSessionId);
+    let imported = importedRow(body.sourceSessionId);
+    if (!imported?.nativeImport) {
+      nativeImportProviderCalls.push({ method: "load", sessionId: body.sourceSessionId, cwd: source.providerCwd });
+      const origin = { continuationSessionId: body.sourceSessionId, sourceSessionId: null,
+        nativeImport: { sourceSessionId: body.sourceSessionId, providerCwd: source.providerCwd, importedAt: "2026-10-05", sourceReferences: source.sourceReferences ?? [] } };
+      if (imported) Object.assign(imported, origin, { messages: [...(imported.messages ?? []), ...structuredClone(source.messages ?? [])] });
+      else {
+        imported = { id: `native-import-${sessions.length + 1}`, projectId: body.projectId, projectDir: body.projectDir,
+          provider: "codex", model: null, ...origin,
+          title: source.title, status: "idle", archived: false, createdAt: "2026-10-05", updatedAt: "2026-10-05", messages: structuredClone(source.messages ?? []) };
+        sessions.unshift(imported);
+      }
+    }
+    return json({ chat: imported, providerCwd: source.providerCwd, executionMode: "original-directory", state: "native-ready", sourceReferences: source.sourceReferences ?? [] }, 201);
+  }
   if (["/api/events", "/api/traces", "/api/rates", "/api/sources"].includes(url.pathname) || url.pathname.startsWith("/api/sources/")) {
     monitorReads.push(url.pathname);
     if (url.pathname === "/api/events" && monitorFailure) return json({ detail: "Monitor fixture is temporarily unavailable." }, 500);
@@ -1961,8 +2000,243 @@ async function externalConversation() {
   await page.locator(".chat-external-notice").waitFor();
   assert.equal(writes.filter(([, name]) => /\/(messages|stop|model)$/.test(name)).length, beforeExternalTurns);
 }
+/** Same native identity is restored explicitly; a late response never changes newer navigation. */
+async function nativeContinuation() {
+  const originalMessageWrites = writes.filter(([, name]) => name.endsWith("/messages")).length;
+  preferences = { ...preferences, language: "en" };
+  const native = { id: "native-613", projectId: "B", projectDir: "D:\\fixture\\B", title: "Original Hub conversation",
+    provider: "codex", continuationSessionId: "thread-613", status: "idle", archived: false,
+    createdAt: "2026-10-03", updatedAt: "2026-10-03", messages: [
+      { id: "old", role: "assistant", content: "Retained Hub-only presentation", status: "complete", createdAt: "2026-10-03" }] };
+  const external = { ...native, id: "external-613", title: "External Codex presentation", sourceSessionId: "thread-613" };
+  const other = { ...native, id: "other-613", title: "Another conversation", continuationSessionId: "other-thread-613", projectId: "A", projectDir: "D:\\fixture\\A", messages: [] };
+  sessions.unshift(native, external, other);
+  let fail = true, gate = null, restores = 0, releases = 0;
+  await page.route(/\/api\/chat\/sessions\/[^/]+\/(continue|release)-native$/, async (route) => {
+    assert.equal(route.request().method(), "POST");
+    const releasing = new URL(route.request().url()).pathname.endsWith("/release-native");
+    if (releasing) { releases++; native.sourceSessionId = "thread-613"; }
+    else {
+      restores++;
+      if (gate) await gate;
+      if (fail) return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ code: "CHAT_CONTINUATION_FAILED", detail: "already has an active writer" }) });
+      native.sourceSessionId = null;
+      const retained = native.messages.find((message) => message.id === "old");
+      native.priorMessages = [];
+      native.messages = [...(retained ? [retained] : []), { id: "native:thread-613:u", role: "user", content: "Asked in Codex", createdAt: "2026-10-03", status: "complete" },
+        { id: "native:thread-613:a", role: "assistant", content: "Latest native answer", createdAt: "2026-10-03", status: "complete" }];
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(native) });
+  });
+  await page.goto(`${origin}/?chatId=${external.id}`);
+  await page.getByRole("button", { name: "Continue here from Codex", exact: true }).waitFor();
+  assert.equal(await page.locator("#chat-input").count(), 0);
+  await page.getByRole("button", { name: "Continue here from Codex", exact: true }).click();
+  await page.locator(".chat-error").filter({ hasText: "already has an active writer" }).waitFor();
+  assert.equal(await page.locator("#chat-input").count(), 0, "provider refusal leaves external composer guard intact");
+  fail = false;
+  let unblock;
+  gate = new Promise((resolve) => { unblock = resolve; });
+  await page.getByRole("button", { name: "Continue here from Codex", exact: true }).click();
+  await page.getByRole("button", { name: "Loading native conversation…", exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Loading native conversation…", exact: true }).isDisabled(), true);
+  await page.getByRole("button", { name: "Loading native conversation…", exact: true }).evaluate((button) => button.click());
+  await page.getByRole("button", { name: "Another conversation", exact: true }).click();
+  await page.locator(".chat-header h1").filter({ hasText: "Another conversation" }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Continue in Codex", exact: true }).isDisabled(), true);
+  const delayedRestore = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/chat/sessions/${external.id}/continue-native`
+    && response.request().method() === "POST");
+  unblock(); gate = null;
+  await (await delayedRestore).finished();
+  // Enabled again only after handoffNative's response, refresh and finally.
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Continue in Codex" && !button.disabled));
+  assert.match(await page.locator(".chat-header h1").innerText(), /Another conversation/);
+  assert.equal(restores, 2, "repeated disabled click sent no second transfer");
+  await page.locator(".chat-thread").filter({ hasText: external.title }).click();
+  await page.getByRole("button", { name: "Continue here from Codex", exact: true }).click();
+  await page.locator(".chat-header h1").filter({ hasText: "Original Hub conversation" }).waitFor();
+  await page.locator("#chat-input").waitFor();
+  await page.getByText("Latest native answer", { exact: true }).waitFor();
+  assert.equal(await page.getByText("Latest native answer", { exact: true }).count(), 1);
+  await page.getByText("Retained Hub-only presentation", { exact: true }).waitFor();
+  assert.equal(await page.getByText("Retained Hub-only presentation", { exact: true }).count(), 1);
+  assert.equal(await page.getByText("Earlier Hub presentation and attachments", { exact: true }).count(), 0, "original Hub rows stay in the active timeline");
+  await page.locator("#chat-input").fill("Unsent draft");
+  assert.equal(await page.getByRole("button", { name: "Continue in Codex", exact: true }).isDisabled(), true);
+  await page.locator("#chat-input").fill("");
+  await page.getByRole("button", { name: "Continue in Codex", exact: true }).click();
+  await page.getByRole("button", { name: "Continue here from Codex", exact: true }).waitFor();
+  assert.equal(await page.locator("#chat-input").count(), 0);
+  assert.equal(releases, 1);
+  await page.getByText("codex resume thread-613", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Continue here from Codex", exact: true }).click();
+  await page.locator("#chat-input").waitFor();
+  let releaseHistory, historyRequested;
+  const historyGate = new Promise((resolve) => { releaseHistory = resolve; });
+  const historyRead = new Promise((resolve) => { historyRequested = resolve; });
+  const detailUrl = `${origin}/api/chat/sessions/${native.id}`;
+  const delayedDetail = async (route) => {
+    historyRequested();
+    await historyGate;
+    await route.fallback();
+  };
+  await page.route(detailUrl, delayedDetail);
+  try {
+    await page.reload();
+    await historyRead;
+    // A summary can render the composer while its full history is still loading.
+    await page.locator("#chat-input").waitFor();
+    assert.equal(await page.getByText("Latest native answer", { exact: true }).count(), 0, "delayed detail has not rendered history yet");
+    releaseHistory();
+    await page.getByText("Latest native answer", { exact: true }).waitFor();
+    assert.equal(await page.getByText("Latest native answer", { exact: true }).count(), 1);
+  } finally {
+    releaseHistory();
+    await page.unroute(detailUrl, delayedDetail);
+  }
+  assert.equal(writes.filter(([, name]) => name.endsWith("/messages")).length, originalMessageWrites, "handoff/history reads never send a prompt");
+  await page.screenshot({ path: path.join(temporary, "native-continuation.png") });
+  console.log(JSON.stringify({ nativeContinuation: "passed", restores, releases }));
+}
+/** A Codex session outside the project is imported once, explicitly, and keeps running in its own directory. */
+async function nativeImport() {
+  const imports = () => writes.filter(([, pathname]) => pathname === "/api/chat/imports");
+  const previews = () => writes.filter(([, pathname]) => pathname === "/api/chat/imports/preview");
+  const messages = () => writes.filter(([, pathname]) => pathname.endsWith("/messages"));
+  const previousMessages = messages().length;
+  for (const language of ["en", "zh-CN"]) {
+    const zh = language === "zh-CN";
+    preferences = { ...preferences, language, theme: zh ? "dark" : "light", sidebarPinned: true };
+    await page.setViewportSize({ width: zh ? 600 : 1440, height: zh ? 800 : 960 });
+    const words = zh ? { title: "导入 Codex 会话", source: "Codex 会话 ID", project: "归入项目", preview: "查看来源", confirm: "导入并在此接续",
+      consent: "我确认来源和目标项目，并已在 Codex 中结束、关闭此会话。", cancel: "取消", unavailable: "暂不能导入，请继续在 Codex 中使用。",
+      choose: "选择项目并导入", returnHere: "从 Codex 接回这里继续", release: "转到 Codex 继续", file: "文件", menu: "导入 Codex 会话…" }
+      : { title: "Import Codex conversation", source: "Codex session ID", project: "Associate with project", preview: "Read source", confirm: "Import and continue here",
+        consent: "I confirm this source and target project, and have finished and closed this session in Codex.", cancel: "Cancel", unavailable: "Import is unavailable; continue in Codex.",
+        choose: "Choose project and import", returnHere: "Continue here from Codex", release: "Continue in Codex", file: "File", menu: "Import Codex conversation…" };
+    const sourceId = `first-import-${language}`;
+    const source = { title: `Imported original ${language}`, providerCwd: `D:\\native-source\\${language}\\original-folder`,
+      sourceReferences: [{ messageId: "native-answer", uri: "file:///D:/native-source/source-only.png", name: "source-only.png", availability: "source-only" }],
+      messages: [{ id: "native-user", role: "user", content: "Original native request", status: "complete", createdAt: "2026-10-05" },
+        { id: "native-answer", role: "assistant", content: "Original native answer", status: "complete", createdAt: "2026-10-05" }] };
+    nativeImportSources.set(sourceId, source);
+    nativeImportSources.set(`${sourceId}-unsupported`, { ...source, canContinue: false });
+    assert.equal(sessions.some((row) => row.continuationSessionId === sourceId || row.sourceSessionId === sourceId), false, "first import has no Hub chat row");
+    await page.goto(origin);
+    // A session Hub has not seen is imported from the File menu; the conversation header keeps its room.
+    const fileMenu = page.getByRole("menuitem", { name: words.file, exact: true });
+    const entry = { click: async () => { await fileMenu.click(); await page.getByRole("menuitem", { name: words.menu, exact: true }).click(); } };
+    assert.equal(await page.locator(".chat-header").getByRole("button", { name: words.title, exact: true }).count(), 0);
+    await entry.click();
+    const dialog = page.getByRole("dialog", { name: words.title, exact: true });
+    const read = dialog.getByRole("button", { name: words.preview, exact: true });
+    const choose = dialog.getByLabel(words.project, { exact: true });
+    await dialog.getByLabel(words.source, { exact: true }).fill(sourceId);
+    await choose.selectOption("");
+    assert.equal(await read.isDisabled(), true, "a first import needs an explicit target project");
+    await choose.selectOption("D:\\fixture\\A");
+    const beforePreviews = previews().length, beforeImports = imports().length, beforeProvider = nativeImportProviderCalls.length;
+    await read.click();
+    const confirm = dialog.getByRole("button", { name: words.confirm, exact: true });
+    await confirm.waitFor();
+    assert.equal(await confirm.isDisabled(), true, "a metadata preview grants no writer takeover");
+    await dialog.locator(".chat-native-preview code").filter({ hasText: source.providerCwd }).waitFor();
+    await dialog.locator(".chat-native-preview code").filter({ hasText: "D:\\fixture\\A" }).waitFor();
+    assert.equal(nativeImportProviderCalls.length, beforeProvider, "preview performs no provider load, new or prompt");
+    assert.equal(imports().length, beforeImports);
+    await dialog.getByLabel(words.consent, { exact: true }).check();
+    await choose.selectOption("D:\\fixture\\B");
+    assert.equal(await dialog.getByRole("checkbox").count(), 0, "changing the target discards the old preview and confirmation");
+    await read.click();
+    await confirm.waitFor();
+    assert.equal(await confirm.isDisabled(), true);
+    await dialog.locator(".chat-native-preview code").filter({ hasText: "D:\\fixture\\B" }).waitFor();
+    await dialog.locator(".chat-native-preview code").filter({ hasText: source.providerCwd }).waitFor();
+    assert.equal(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true, "both directory strings fit the import dialog");
+    await page.screenshot({ path: path.join(temporary, `native-import-preview-${language}.png`) });
+    await dialog.getByLabel(words.consent, { exact: true }).check();
+    await confirm.click();
+    await dialog.waitFor({ state: "detached" });
+    const imported = sessions.find((row) => row.nativeImport?.sourceSessionId === sourceId);
+    assert.ok(imported);
+    await urlParamIs("chatId", imported.id);
+    await page.getByText("Original native answer", { exact: true }).waitFor();
+    assert.equal(await page.locator(".chat-header__project").innerText(), "Project B");
+    assert.equal(previews().length, beforePreviews + 2);
+    assert.equal(imports().length, beforeImports + 1);
+    assert.equal(imports().at(-1)[2].confirmed, true);
+    assert.deepEqual(nativeImportProviderCalls.slice(beforeProvider), [{ method: "load", sessionId: sourceId, cwd: source.providerCwd }]);
+    assert.equal(messages().length, previousMessages, "import restores history without sending a model prompt");
+    await page.locator(".chat-native-directory code").filter({ hasText: source.providerCwd }).waitFor();
+    assert.match(await page.locator(".chat-native-directory").innerText(), zh ? /部分附件仅保留来源链接/ : /Some attachments retain source links only/);
+    await page.getByRole("button", { name: words.release, exact: true }).waitFor();
+
+    // Repeating first-import confirmation reopens the same retained chat and native writer.
+    await entry.click();
+    await dialog.getByLabel(words.source, { exact: true }).fill(sourceId);
+    await choose.selectOption("D:\\fixture\\B");
+    await read.click(); await confirm.waitFor();
+    await dialog.getByLabel(words.consent, { exact: true }).check(); await confirm.click();
+    await dialog.waitFor({ state: "detached" });
+    await urlParamIs("chatId", imported.id);
+    assert.equal(sessions.filter((row) => row.nativeImport?.sourceSessionId === sourceId).length, 1);
+    assert.equal(nativeImportProviderCalls.length, beforeProvider + 1, "repeated import does not load a second writer");
+
+    await entry.click();
+    await dialog.getByLabel(words.source, { exact: true }).fill(`${sourceId}-unsupported`);
+    await read.click();
+    await dialog.getByRole("status").filter({ hasText: words.unavailable }).waitFor();
+    assert.equal(await confirm.isDisabled(), true);
+    assert.equal(await dialog.getByRole("checkbox").count(), 0);
+    await dialog.getByRole("button", { name: words.cancel, exact: true }).click();
+    await dialog.waitFor({ state: "detached" });
+    // Focus returns on the frame after the dialog unmounts.
+    await page.waitForFunction((label) => document.activeElement?.textContent === label, words.file, { timeout: 2000 })
+      .catch(async () => assert.fail(`closing restores keyboard focus; focused: ${await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 200))}`));
+
+    // Codex already presents this conversation in the Hub, but it runs outside the project:
+    // its notice offers the import, prefilled, instead of a return that would be refused.
+    const outsideId = `outside-project-${language}`;
+    const outside = { id: `external-outside-${language}`, projectId: "B", projectDir: "D:\\fixture\\B", title: `Codex outside the project ${language}`,
+      provider: "codex", sourceSessionId: outsideId, continuationSessionId: null, status: "idle", archived: false,
+      createdAt: "2026-10-05", updatedAt: "2026-10-05", messages: [
+        { id: "presented", role: "assistant", content: "Presented from Codex", status: "complete", createdAt: "2026-10-05" }] };
+    sessions.unshift(outside);
+    nativeImportSources.set(outsideId, { ...source, title: outside.title, sourceReferences: [], providerCwd: `D:\\elsewhere\\${language}\\codex-folder`,
+      messages: [{ id: "outside-answer", role: "assistant", content: "Answer loaded from the Codex thread", status: "complete", createdAt: "2026-10-05" }] });
+    // At 600 px the pinned project list covers the conversation; this notice is read beside it.
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.goto(`${origin}/?chatId=${outside.id}`);
+    const offered = page.getByRole("button", { name: words.choose, exact: true });
+    await offered.waitFor();
+    assert.equal(await page.getByRole("button", { name: words.returnHere, exact: true }).count(), 0, "an unbound source is not returned into the project directory");
+    assert.equal(await page.locator("#chat-input").count(), 0);
+    await offered.click();
+    assert.equal(await dialog.getByLabel(words.source, { exact: true }).inputValue(), outsideId, "the import starts from the presented source");
+    assert.equal(await choose.inputValue(), "D:\\fixture\\B");
+    await read.click(); await confirm.waitFor();
+    await dialog.locator(".chat-native-preview code").filter({ hasText: `D:\\elsewhere\\${language}\\codex-folder` }).waitFor();
+    await dialog.getByLabel(words.consent, { exact: true }).check(); await confirm.click();
+    await dialog.waitFor({ state: "detached" });
+    await urlParamIs("chatId", outside.id);
+    await page.locator("#chat-input").waitFor();
+    await page.getByText("Answer loaded from the Codex thread", { exact: true }).waitFor();
+    assert.equal(await page.getByText("Presented from Codex", { exact: true }).count(), 1, "the presented rows stay in the same conversation");
+    await page.locator(".chat-native-directory code").filter({ hasText: `D:\\elsewhere\\${language}\\codex-folder` }).waitFor();
+    await page.getByRole("button", { name: words.release, exact: true }).waitFor();
+    assert.equal(sessions.filter((row) => row.id === outside.id).length, 1);
+  }
+  await page.setViewportSize({ width: 1440, height: 960 });
+  assert.equal(messages().length, previousMessages);
+  console.log(JSON.stringify({ nativeImport: "passed", languages: ["en", "zh-CN"], firstImport: "no Hub row", preview: "no provider load or prompt",
+    execution: "original cwd", repeat: "same chat", presentedOutsideProject: "imported into the same chat" }));
+}
+
 try {
-  if (process.env.MONKEYHUB_UI_FOCUS === "suggestions") {
+  if (process.env.MONKEYHUB_UI_FOCUS === "continuation") {
+    await nativeContinuation();
+    await nativeImport();
+  } else if (process.env.MONKEYHUB_UI_FOCUS === "suggestions") {
     await suggestionCards();
   } else if (process.env.MONKEYHUB_UI_FOCUS === "cards") {
     await conversationCards();
@@ -3037,7 +3311,7 @@ try {
   await page.keyboard.press("ArrowDown");
   const fileMenu = page.getByRole("menu", { name: "File", exact: true });
   assert.deepEqual((await fileMenu.getByRole("menuitem").allInnerTexts()).map((text) => text.trim()),
-    ["New chat", "New project…", "Add existing project…", "Reload project from disk", "Export project archive…",
+    ["New chat", "New project…", "Add existing project…", "Import Codex conversation…", "Reload project from disk", "Export project archive…",
       "Restore project archive…", "Settings…"]);
   await page.keyboard.press("Escape");
   await fileMenu.waitFor({ state: "detached" });
@@ -4799,6 +5073,7 @@ try {
   await idleMinute();
   if (!process.env.MONKEYHUB_UI_FOCUS) await requestedChangeLands();
   }
+  if (!process.env.MONKEYHUB_UI_FOCUS) { await nativeContinuation(); await nativeImport(); }
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, sessions: sessions.length, writes: writes.length, screenshots: temporary }));
 } catch (error) { console.error(JSON.stringify({ screenshots: temporary, errors, workspaceRequests: workspaceFixture.requests.slice(-15),

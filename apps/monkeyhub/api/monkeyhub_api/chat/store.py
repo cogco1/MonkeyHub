@@ -42,6 +42,8 @@ from ..models import (
     ChatPermission, ChatPermissionOption, ChatPermissionRequest, ChatSuggestion,
     ChatProjectRequest, ChatProvider, ChatSummary, ChatUsageSource, ChatWorkspace, HubError, HubFailure,
 )
+from .continuation import NativeHistoryBoundary
+from .external_import import ExternalImports, import_history
 from .turn_trace import HubTurnObserver
 from monkeymonitor.store import UsageLog
 
@@ -103,6 +105,12 @@ class _SavedChat(ChatDetail):
     transport: Literal["cli", "acp"] = "cli"
     acpSessionId: str | None = None
     acpDefaultModel: str | None = None
+    originalSourceSessionId: str | None = None
+    nativeHistory: list[ChatMessage] | None = None
+    nativeHistoryOffset: int = Field(default=0, ge=0)
+    nativeReleaseBoundary: NativeHistoryBoundary | None = None
+    nativeReleasePending: bool = False
+    nativePublicTimeline: bool = False
     # Read from the transcript on every summary (#300); a record never stores it.
     attention: ChatAttention | None = Field(default=None, exclude=True)
 
@@ -181,6 +189,11 @@ class ChatStore:
         self._use_acp = acp_command is not None or commands is None
         self._acp_command = tuple(acp_command) if acp_command is not None else (providers._codex_acp_command() if commands is None else None)
         self._acp_sessions = {}
+        self._handoffs: set[str] = set()
+        self._fenced_handoffs: set[str] = set()
+        self._native_workers: dict[str, int] = {}
+        self._handoff_clients = {}
+        self._cancelled_handoffs: set[str] = set()
         self._acp_tools: dict[str, dict[str, dict]] = {}
         self._permissions: dict[tuple[str, str], Future] = {}
         self.timeout_s = timeout_s
@@ -202,6 +215,7 @@ class ChatStore:
         self._checked_at: float | None = None
         self._checking = False
         self._check_thread: threading.Thread | None = None
+        self._external_imports = ExternalImports(self, _SavedChat)
 
     def _load(self) -> None:
         if self._loaded:
@@ -319,7 +333,12 @@ class ChatStore:
             os.replace(temporary, path)
             saved = True
             if self.on_change is not None:
-                self.on_change(session)
+                # A notification failure cannot undo the already committed row.
+                try:
+                    self.on_change(session)
+                except Exception:
+                    import logging
+                    logging.getLogger(__name__).exception("Chat notification failed after saving %s", session.id)
         finally:
             temporary.unlink(missing_ok=True)
             if not saved:
@@ -425,8 +444,9 @@ class ChatStore:
         """
         with self._lock:
             session = self._session(session_id)
-            if session_id in self._running:
-                raise HubFailure(409, "CHAT_RUNNING", "Wait for this reply to finish before changing its model.")
+            if (session_id in self._running or session_id in self._handoffs or session_id in self._fenced_handoffs
+                    or session.nativeReleasePending or self._native_workers.get(session_id)):
+                raise HubFailure(409, "CHAT_RUNNING", "Wait for this reply or handoff to finish before changing its model.")
             chosen = model.strip() if isinstance(model, str) else None
             if chosen == session.model or (not chosen and session.model is None):
                 return self.get(session_id)
@@ -503,7 +523,8 @@ class ChatStore:
         # copied, never a whole transcript.
         with self._lock:
             self._load()
-            return [ChatSummary.model_validate({**row.model_dump(include=_SUMMARY_FIELDS), "attention": _attention(row)})
+            return [ChatSummary.model_validate({**row.model_dump(include=_SUMMARY_FIELDS), "attention": _attention(row),
+                    "continuationSessionId": row.acpSessionId if row.transport == "acp" else row.nativeSessionId})
                     for row in sorted(self._sessions.values(), key=lambda item: item.updatedAt, reverse=True)
                     if row.archived == archived and (project_id is None or row.projectId == project_id)]
 
@@ -531,15 +552,217 @@ class ChatStore:
     def get(self, session_id: str) -> ChatDetail:
         with self._lock:
             session = self._session(session_id)
-            detail = ChatDetail.model_validate({**session.model_dump(), "attention": _attention(session)})
+            detail = ChatDetail.model_validate({**session.model_dump(), "attention": _attention(session),
+                "continuationSessionId": session.acpSessionId if session.transport == "acp" else session.nativeSessionId})
             extra = [row.model_copy(deep=True) for row in self._progress_rows.get(session_id, {}).values()]
             if detail.status != "running":
                 ending = "interrupted" if detail.status == "interrupted" else "failed" if detail.status == "failed" else "complete"
                 for row in extra:
                     if row.status == "streaming":
                         row.status = ending
-            detail.messages = sorted([*detail.messages, *extra], key=lambda row: (row.createdAt, row.id))
+            if session.nativeHistory is not None:
+                # Legacy history projections have no trusted release boundary.
+                # Keep original Hub rows active without replaying their wrappers.
+                detail.error = HubError(code="CHAT_CONTINUATION_HISTORY",
+                    detail="This older native projection has no verified release boundary. Original Hub messages and files are retained; continue in Codex.")
+                detail.messages = [*detail.messages, *extra]
+            elif session.nativePublicTimeline or session.nativeReleaseBoundary is not None:
+                detail.messages = [*detail.messages, *extra]
+            else:
+                detail.messages = sorted([*detail.messages, *extra], key=lambda row: (row.createdAt, row.id))
+            if session.nativeReleasePending or session_id in self._fenced_handoffs:
+                detail.error = HubError(code="CHAT_CONTINUATION_INCOMPLETE",
+                    detail="Hub could not confirm this native handoff completed. Original messages and files are retained; automatic continuation is blocked.")
             return detail
+
+    def _handoff_blocked(self, session_id: str) -> bool:
+        session = self._sessions[session_id]
+        return (self._closing or session.archived or bool(session.sourceSessionId)
+                or session.nativeReleasePending or session_id in self._handoffs
+                or session_id in self._fenced_handoffs)
+
+    def preview_native_import(self, request):
+        return self._external_imports.preview(request.sourceSessionId, request.projectId, request.projectDir)
+
+    def import_native(self, request):
+        return self._external_imports.confirm(request.sourceSessionId, request.projectId, request.projectDir,
+                                             request.previewToken, confirmed=request.confirmed)
+
+    def continue_native(self, session_id: str) -> ChatDetail:
+        """Return by verifying the exact saved public prefix, never guessing origin."""
+        from .continuation import check_native_version, public_history
+
+        with self._lock:
+            source = self._session(session_id)
+            if projects._project(source.projectDir) != (source.projectId, source.projectDir):
+                raise HubFailure(409, "CHAT_CONTINUATION_MISMATCH", "The original project binding is no longer available at this directory.")
+            native_id = source.acpSessionId if source.transport == "acp" else source.nativeSessionId
+            native_id = native_id or source.sourceSessionId
+            if source.provider != "codex" or not native_id or not self._acp_command:
+                raise HubFailure(409, "CHAT_CONTINUATION_UNSUPPORTED", "This conversation has no available native Codex restoration path.")
+            # A rotated old thread is still Hub-bound; it is not a new external row.
+            if any(native_id in row.priorProviderSessionIds for row in self._sessions.values() if row.provider == "codex"):
+                raise HubFailure(409, "CHAT_CONTINUATION_HISTORY", "This thread belongs to an earlier Hub context. Open the current Hub conversation; its records and files are retained.")
+            matches = [row for row in self._sessions.values() if row.provider == "codex"
+                       and native_id in {row.acpSessionId, row.nativeSessionId}]
+            if any((row.projectId, row.projectDir) != (source.projectId, source.projectDir) for row in matches) or len(matches) > 1:
+                raise HubFailure(409, "CHAT_CONTINUATION_MISMATCH", "This native session has a conflicting Hub project binding.")
+            target = matches[0] if matches else source
+            ids = {source.id, target.id}
+            for row in (source, target):
+                if (self._closing or row.archived or row.status == "running" or row.id in self._running
+                        or row.id in self._handoffs or self._native_workers.get(row.id)):
+                    raise HubFailure(409, "CHAT_CONTINUATION_BUSY", "Finish the current turn and its pending controls before handing it over.")
+                if row.nativeReleasePending or row.id in self._fenced_handoffs:
+                    raise HubFailure(409, "CHAT_CONTINUATION_INCOMPLETE", "The previous handoff could not confirm that Hub released its writer. Records and files are retained; finish closing the connection before continuing.")
+            if matches and not target.sourceSessionId and (target.nativeReleaseBoundary is not None or target.nativePublicTimeline):
+                if projects._project(target.projectDir) != (target.projectId, target.projectDir):
+                    raise HubFailure(409, "CHAT_CONTINUATION_MISMATCH", "The original project binding changed before returning this Hub conversation.")
+                return self.get(target.id)
+            if not source.sourceSessionId:
+                if target.nativeReleaseBoundary is not None or target.nativePublicTimeline:
+                    return self.get(target.id)
+                raise HubFailure(409, "CHAT_CONTINUATION_HISTORY", "This Hub conversation has no verified external handoff. Its original messages and files are retained.")
+            if matches and target.nativeReleaseBoundary is None:
+                raise HubFailure(409, "CHAT_CONTINUATION_HISTORY", "This older Hub handoff has no verified history boundary. Continue in Codex; original Hub messages and files are retained.")
+            self._handoffs.update(ids)
+            snapshot = target.model_copy(deep=True)
+        client = None
+        try:
+            commands = self.commands if self.commands is not None else providers._cli_commands()
+            check_native_version(commands.get("codex", ()))
+            environment = dict(os.environ)
+            environment["MONKEYHUB_PRESENTATION_TOKEN"] = secrets.token_urlsafe(32)
+            client = self._new_acp_client(target.id, snapshot, environment)
+            with self._lock:
+                if self._closing or ids & self._cancelled_handoffs:
+                    raise HubFailure(409, "CHAT_CONTINUATION_CANCELLED", "The project closed while its native session was being restored.")
+                self._handoff_clients[target.id] = client
+            imported = None
+            if snapshot.nativeImport is not None:
+                # An imported session runs in its original directory, never the project's.
+                events = client.restore(native_id, snapshot.nativeImport.providerCwd, min(self.timeout_s, 60), include_media=True)
+                imported = import_history(events, native_id, _now(), environment, boundary=snapshot.nativeReleaseBoundary)
+                history = list(imported.messages)
+            else:
+                events = client.restore(native_id, None if matches else source.projectDir, min(self.timeout_s, 60))
+                history = public_history(events, native_id, _now(), environment, boundary=snapshot.nativeReleaseBoundary)
+            with self._lock:
+                if self._closing or ids & self._cancelled_handoffs:
+                    raise HubFailure(409, "CHAT_CONTINUATION_CANCELLED", "The project closed while its native session was being restored.")
+                if projects._project(target.projectDir) != (target.projectId, target.projectDir):
+                    raise HubFailure(409, "CHAT_CONTINUATION_MISMATCH", "The project changed while its native session was being restored.")
+                if self._sessions.get(target.id) is not target:
+                    raise HubFailure(409, "CHAT_CONTINUATION_MISMATCH", "The source binding changed while its history was loading.")
+                if (snapshot.nativeImport is not None
+                        and self._external_imports._matching(native_id, target.projectId, target.projectDir) is not target):
+                    raise HubFailure(409, "CHAT_CONTINUATION_MISMATCH", "The native import has a conflicting source binding.")
+                updated = target.model_copy(deep=True)
+                if imported is not None:
+                    origin = updated.nativeImport.model_dump()
+                    origin["sourceReferences"].extend(imported.source_references)
+                    updated = _SavedChat.model_validate({**updated.model_dump(), "nativeImport": origin})
+                updated.originalSourceSessionId = updated.originalSourceSessionId or source.sourceSessionId
+                updated.sourceSessionId = None
+                updated.transport, updated.acpSessionId, updated.nativeSessionId = "acp", native_id, None
+                updated.acpDefaultModel = client.default_model
+                known = {row.id for row in updated.messages}
+                if any(row.id in known for row in history):
+                    raise HubFailure(409, "CHAT_CONTINUATION_HISTORY", "The provider returned a suffix identity already present in this Hub conversation.")
+                updated.messages.extend(history)
+                updated.nativeHistory, updated.nativeHistoryOffset = None, 0
+                updated.nativePublicTimeline = True
+                updated.status, updated.error, updated.updatedAt = "idle", None, _now()
+                client.confirm_history(native_id)
+                self._save(updated, imported.attachments if imported is not None else ())
+                self._sessions[target.id] = updated
+                for identifier in ids:
+                    self._presentation_tokens.pop(identifier, None)
+                    self._progress_rows.pop(identifier, None)
+                self._presentation_tokens[target.id] = environment["MONKEYHUB_PRESENTATION_TOKEN"]
+                self._acp_sessions[target.id] = client
+                client = None
+                return self.get(target.id)
+        except HubFailure:
+            raise
+        except Exception as exc:
+            raise HubFailure(409, "CHAT_CONTINUATION_FAILED", providers._redact(str(exc))[:1000]) from exc
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    with self._lock:
+                        self._fenced_handoffs.add(target.id)
+            with self._lock:
+                self._handoff_clients.pop(target.id, None)
+                self._handoffs.difference_update(ids)
+                self._cancelled_handoffs.difference_update(ids)
+
+    def release_native(self, session_id: str) -> ChatDetail:
+        """Snapshot the continuously owned idle writer, commit, then close it."""
+        from .continuation import release_boundary
+
+        with self._lock:
+            session = self._session(session_id)
+            native_id = session.acpSessionId if session.transport == "acp" else session.nativeSessionId
+            if (self._closing or session.archived or session.status == "running" or session_id in self._running
+                    or session_id in self._handoffs or self._native_workers.get(session_id)):
+                raise HubFailure(409, "CHAT_CONTINUATION_BUSY", "Finish the current turn and its pending controls before handing it to Codex.")
+            if session.nativeReleasePending or session_id in self._fenced_handoffs:
+                raise HubFailure(409, "CHAT_CONTINUATION_INCOMPLETE", "Hub could not confirm release of this writer. Records and files are retained; finish closing the connection before continuing.")
+            if session.provider != "codex" or not native_id:
+                raise HubFailure(409, "CHAT_CONTINUATION_UNSUPPORTED", "This chat has no native Codex session to hand over.")
+            if session.sourceSessionId:
+                return self.get(session_id)
+            client = self._acp_sessions.get(session_id)
+            if session.transport != "acp" or client is None:
+                raise HubFailure(409, "CHAT_CONTINUATION_HISTORY", "Hub no longer continuously owns this native connection. Its messages and files are retained; automatic handoff is unavailable after reconnecting.")
+            self._handoffs.add(session_id)
+            self._handoff_clients[session_id] = client
+        committed = False
+        try:
+            events = client.snapshot(native_id, min(self.timeout_s, 60))
+            generation = session.nativeReleaseBoundary.generation + 1 if session.nativeReleaseBoundary else 1
+            boundary = release_boundary(events, native_id, generation, include_media=session.nativeImport is not None)
+            with self._lock:
+                if self._closing or session_id in self._cancelled_handoffs:
+                    raise HubFailure(409, "CHAT_CONTINUATION_CANCELLED", "The project closed during its native handoff.")
+                if self._acp_sessions.get(session_id) is not client:
+                    raise HubFailure(409, "CHAT_CONTINUATION_HISTORY", "The native connection changed during handoff. Original records are retained.")
+                if projects._project(session.projectDir) != (session.projectId, session.projectDir):
+                    raise HubFailure(409, "CHAT_CONTINUATION_MISMATCH", "The original project binding changed during handoff.")
+                updated = session.model_copy(deep=True)
+                if updated.nativeHistory is not None:
+                    raise HubFailure(409, "CHAT_CONTINUATION_HISTORY", "This older projection cannot be automatically converted. Original Hub messages and files are retained.")
+                updated.nativePublicTimeline = True
+                updated.nativeReleaseBoundary, updated.nativeReleasePending = boundary, True
+                updated.sourceSessionId, updated.updatedAt = native_id, _now()
+                self._save(updated)
+                self._sessions[session_id] = updated
+                committed = True
+            client.close()
+            with self._lock:
+                finished = updated.model_copy(deep=True)
+                finished.nativeReleasePending = False
+                self._save(finished)
+                self._sessions[session_id] = finished
+                self._acp_sessions.pop(session_id, None)
+                self._presentation_tokens.pop(session_id, None)
+                return self.get(session_id)
+        except Exception as exc:
+            with self._lock:
+                if committed or client.ownership_uncertain:
+                    self._fenced_handoffs.add(session_id)
+            if isinstance(exc, HubFailure):
+                raise
+            code = "CHAT_CONTINUATION_INCOMPLETE" if committed or client.ownership_uncertain else "CHAT_CONTINUATION_FAILED"
+            raise HubFailure(409, code, "Native handoff did not complete; original messages and files are retained. " + providers._redact(str(exc))[:700]) from exc
+        finally:
+            with self._lock:
+                self._handoff_clients.pop(session_id, None)
+                self._handoffs.discard(session_id)
+                self._cancelled_handoffs.discard(session_id)
 
     def _progress(self, session, key: str, text: str, *, append: bool = False,
                   status: str = "complete") -> None:
@@ -572,11 +795,19 @@ class ChatStore:
             if self._closing:
                 raise HubFailure(409, "CHAT_CLOSING", "Hub is closing.")
             project_id, project_dir = projects._project(request.projectDir)
+            mapped = next((row for row in self._sessions.values() if row.provider == request.provider
+                           and request.sourceSessionId in {row.acpSessionId, row.nativeSessionId}), None)
+            if mapped is not None and (mapped.sourceSessionId != request.sourceSessionId
+                                       or (request.chatId and request.chatId != mapped.id)):
+                raise HubFailure(409, "CHAT_CONTINUATION_BUSY", "Use the original Hub conversation and release it to Codex before binding external presentation.")
             if request.chatId:
                 session = self._session(request.chatId)
             else:
-                session = next((row for row in self._sessions.values()
-                                if row.projectDir == project_dir and row.sourceSessionId == request.sourceSessionId), None)
+                # A provider ID already mapped by Hub is not another presentation row.
+                session = mapped
+                if session is None:
+                    session = next((row for row in self._sessions.values()
+                                    if row.projectDir == project_dir and row.sourceSessionId == request.sourceSessionId), None)
             if session is None:
                 now = _now()
                 session = _SavedChat(id=str(uuid4()), projectId=project_id, projectDir=project_dir,
@@ -587,6 +818,8 @@ class ChatStore:
             if (session.projectId, session.projectDir, session.sourceSessionId, session.provider) != (
                     project_id, project_dir, request.sourceSessionId, request.provider):
                 raise HubFailure(409, "CHAT_PRESENTATION_MISMATCH", "Bind the original source session and project; a native chat cannot be adopted.")
+            if session.id in self._handoffs or session.id in self._fenced_handoffs or session.nativeReleasePending:
+                raise HubFailure(409, "CHAT_CONTINUATION_BUSY", "A native handoff is incomplete or in progress.")
             if session.archived:
                 raise HubFailure(409, "CHAT_ARCHIVED", "Restore this chat in Hub before binding it.")
             if session.status == "interrupted" and session.error and session.error.code == "CHAT_INTERRUPTED":
@@ -656,7 +889,7 @@ class ChatStore:
             expected = self._presentation_tokens.get(session_id)
             if not expected or not secrets.compare_digest(expected, token):
                 raise HubFailure(403, "CHAT_PRESENTATION_BIND_REQUIRED", "Reconnect the bound presentation tool to this Hub.")
-            if self._closing or session.archived:
+            if self._closing or session.archived or session_id in self._handoffs or session_id in self._fenced_handoffs or session.nativeReleasePending:
                 raise HubFailure(409, "CHAT_UNAVAILABLE", "Restore the conversation or reconnect after Hub restarts.")
             if (request.projectId != session.projectId or request.sourceSessionId != (session.sourceSessionId or f"hub:{session_id}")
                     or projects._project(session.projectDir) != (session.projectId, session.projectDir)):
@@ -784,8 +1017,9 @@ class ChatStore:
         """Hide or restore a conversation without changing its native session."""
         with self._lock:
             session = self._session(session_id)
-            if session_id in self._running or session.status == "running":
-                raise HubFailure(409, "CHAT_RUNNING", "Wait for this reply to finish or stop it before archiving the chat.")
+            if (session_id in self._running or session.status == "running" or session_id in self._handoffs
+                    or session_id in self._fenced_handoffs or session.nativeReleasePending or self._native_workers.get(session_id)):
+                raise HubFailure(409, "CHAT_RUNNING", "Wait for this reply or handoff to finish before archiving the chat.")
             if session.archived == archived:
                 return self.get(session_id)
             updated = session.model_copy(update={"archived": archived, "updatedAt": _now()}, deep=True)
@@ -836,6 +1070,12 @@ class ChatStore:
 
     def _takes_messages(self, session) -> None:
         """Refuse a message this chat takes from no one; the lock is held."""
+        client = self._acp_sessions.get(session.id)
+        pending = self._native_workers.get(session.id) or (client is not None and getattr(client, "pending_controls", 0))
+        if session.id in self._handoffs or (pending and session.id not in self._running):
+            raise HubFailure(409, "CHAT_CONTINUATION_BUSY", "A native handoff or pending control is in progress.")
+        if session.id in self._fenced_handoffs or session.nativeReleasePending:
+            raise HubFailure(409, "CHAT_CONTINUATION_INCOMPLETE", "The native connection could not be safely released. Original records are retained.")
         if session.sourceSessionId:
             raise HubFailure(409, "CHAT_EXTERNAL_SOURCE", "Continue this conversation in its external source; Hub only displays its results.")
         if self._closing:
@@ -927,6 +1167,8 @@ class ChatStore:
         and that only reports its end now keeps its own row.
         """
         session = self._sessions[session_id]
+        if self._handoff_blocked(session_id):
+            raise HubFailure(409, "CHAT_CONTINUATION_BUSY", "This conversation cannot start a turn during native handoff.")
         running.turns = [*earlier, *carried] or [_turn_id(session)]
         if session.transport == "cli" and session.provider != "codex":
             # Claude keeps reading stream-json user messages until its result.
@@ -986,8 +1228,7 @@ class ChatStore:
             elif session.transport == "acp" and running.prompting:
                 # Whether the adapter steers is known once its turn is under way;
                 # the delivery thread waits for that and then steers or cancels.
-                threading.Thread(target=self._steer, args=(session_id, running), daemon=True,
-                                 name=f"hub-steer-{session_id[:8]}").start()
+                self._queue_native_worker(session_id, lambda: self._steer(session_id, running), "steer")
             elif fixed:
                 cancel = self._redirect(session_id, running)
             # Otherwise the provider has not started yet, and its prompt takes
@@ -996,7 +1237,7 @@ class ChatStore:
         if cancel is not None:
             # Cancelling waits on the adapter's thread or on a process, which may
             # in turn wait for this store's lock, held here by the request.
-            threading.Thread(target=cancel, daemon=True, name=f"hub-redirect-{session_id[:8]}").start()
+            self._queue_native_worker(session_id, cancel, "redirect")
         return detail
 
     def _redirect(self, session_id: str, running: _Running):
@@ -1021,19 +1262,44 @@ class ChatStore:
             return lambda: providers._stop_process(process)
         return None
 
+    def _queue_native_worker(self, session_id: str, action, kind: str) -> None:
+        """Register before spawning, so an idle handoff cannot overtake a control."""
+        self._native_workers[session_id] = self._native_workers.get(session_id, 0) + 1
+        def work():
+            try:
+                action()
+            finally:
+                with self._lock:
+                    self._finish_native_worker(session_id)
+        try:
+            threading.Thread(target=work, daemon=True, name=f"hub-{kind}-{session_id[:8]}").start()
+        except Exception:
+            self._finish_native_worker(session_id)
+            raise
+
+    def _finish_native_worker(self, session_id: str) -> None:
+        remaining = self._native_workers.get(session_id, 1) - 1
+        if remaining:
+            self._native_workers[session_id] = remaining
+        else:
+            self._native_workers.pop(session_id, None)
+
     def _steer(self, session_id: str, running: _Running) -> None:
         """Offer this turn's waiting interjections to the adapter, one at a time and in order."""
         with running.steering:
             while True:
                 with self._lock:
-                    if (self._running.get(session_id) is not running or running.stop.is_set()
+                    if (self._handoff_blocked(session_id) or self._running.get(session_id) is not running or running.stop.is_set()
                             or running.redirected or not running.prompting or not running.waiting):
                         return
                     identifier, content = running.waiting[0]
                     client = self._acp_sessions.get(session_id)
                 if client is None:
                     return
-                outcome = client.steer(content, lambda identifier=identifier: self._handing(session_id, running, identifier))
+                outcome = client.steer(content, lambda identifier=identifier: self._handing(session_id, running, identifier, client))
+                with self._lock:
+                    if self._handoff_blocked(session_id) or self._acp_sessions.get(session_id) is not client:
+                        return
                 if outcome == "startedNewTurn":
                     # The turn ended as the message arrived and the adapter began
                     # a turn of its own for it, which no prompt of this Hub waits
@@ -1041,6 +1307,8 @@ class ChatStore:
                     client.cancel_turn()
                 cancel = None
                 with self._lock:
+                    if self._handoff_blocked(session_id) or self._acp_sessions.get(session_id) is not client:
+                        return
                     session = self._sessions[session_id]
                     queued = any(waiting == identifier for waiting, _ in running.waiting)
                     running.waiting = [row for row in running.waiting if row[0] != identifier]
@@ -1072,8 +1340,7 @@ class ChatStore:
                         # A later turn runs now; it takes the message as its own.
                         current.waiting.append((identifier, content))
                         if current.prompting:
-                            threading.Thread(target=self._steer, args=(session_id, current), daemon=True,
-                                             name=f"hub-steer-{session_id[:8]}").start()
+                            self._queue_native_worker(session_id, lambda: self._steer(session_id, current), "steer")
                         return
                     # Still this turn: the message waits for its next prompt, or,
                     # without steering, the current step stops for it now.
@@ -1084,7 +1351,7 @@ class ChatStore:
                     cancel()
                 return
 
-    def _handing(self, session_id: str, running: _Running, identifier: str) -> bool:
+    def _handing(self, session_id: str, running: _Running, identifier: str, client=None) -> bool:
         """Called on the adapter's thread as a steer is about to leave.
 
         From here what the Agent says answers the message. A turn that has
@@ -1092,7 +1359,8 @@ class ChatStore:
         keeps it from leaving at all, so it can never arrive twice.
         """
         with self._lock:
-            if (self._running.get(session_id) is not running or running.stop.is_set() or running.redirected
+            if (self._handoff_blocked(session_id) or (client is not None and self._acp_sessions.get(session_id) is not client)
+                    or self._running.get(session_id) is not running or running.stop.is_set() or running.redirected
                     or not any(waiting == identifier for waiting, _ in running.waiting)):
                 return False
             self._delivered(self._sessions[session_id], identifier)
@@ -1425,8 +1693,38 @@ class ChatStore:
                 self._save(session)
                 running.last_save = now
 
+    def _new_acp_client(self, session_id: str, session: _SavedChat, environment: dict):
+        from .acp_session import CodexAcpSession
+
+        commands = self.commands if self.commands is not None else providers._cli_commands()
+        environment["CODEX_PATH"] = providers._native_codex(commands["codex"])
+        # In this pinned adapter, read-only means workspace-write with
+        # user approvals. Its default agent mode uses auto-review.
+        # That sandbox writes the folder it starts in and the roots
+        # added to it. The Hub adds none (ADR-012); an installed Hub
+        # starts it in the project, which it can therefore still write.
+        environment["INITIAL_AGENT_MODE"] = "read-only"
+        environment["CODEX_CONFIG"] = json.dumps({
+            "mcp_servers": self._codex_mcp(session, commands["codex"], environment),
+        })
+        cwd = providers._source_checkout() or session.projectDir
+        if session.nativeImport is not None:
+            # A confirmed import keeps the provider's own directory and file access.
+            cwd = session.nativeImport.providerCwd
+            if not Path(cwd).is_absolute() or not Path(cwd).is_dir():
+                raise HubFailure(409, "CHAT_IMPORT_SOURCE", "The original Codex working directory is unavailable.")
+        return CodexAcpSession(
+            command=self._acp_command, cwd=str(cwd),
+            environment=environment,
+            # Nonempty ACP mcpServers would replace the disabled entries
+            # above. This per-chat adapter already has the exact binding.
+            mcp_servers=[], default_model=session.acpDefaultModel,
+            on_update=lambda event: self._acp_update(session_id, event, environment),
+            on_permission=lambda request: self._acp_permission(session_id, request),
+        )
+
     def _run_acp(self, session_id: str, prompt: str, running: _Running) -> HubError | None:
-        from .acp_session import AcpCancelled, CodexAcpSession
+        from .acp_session import AcpCancelled
 
         environment = dict(os.environ)
         environment["MONKEYHUB_PRESENTATION_TOKEN"] = self.presentation_token(session_id)
@@ -1437,26 +1735,7 @@ class ChatStore:
                 # A continuation keeps what the cancelled step's calls said so far.
                 self._acp_tools.setdefault(session_id, {})
             if client is None:
-                commands = self.commands if self.commands is not None else providers._cli_commands()
-                environment["CODEX_PATH"] = providers._native_codex(commands["codex"])
-                # In this pinned adapter, read-only means workspace-write with
-                # user approvals. Its default agent mode uses auto-review.
-                # That sandbox writes the folder it starts in and the roots
-                # added to it. The Hub adds none (ADR-012); an installed Hub
-                # starts it in the project, which it can therefore still write.
-                environment["INITIAL_AGENT_MODE"] = "read-only"
-                environment["CODEX_CONFIG"] = json.dumps({
-                    "mcp_servers": self._codex_mcp(session, commands["codex"], environment),
-                })
-                client = CodexAcpSession(
-                    command=self._acp_command, cwd=str(providers._source_checkout() or session.projectDir),
-                    environment=environment,
-                    # Nonempty ACP mcpServers would replace the disabled entries
-                    # above. This per-chat adapter already has the exact binding.
-                    mcp_servers=[], default_model=session.acpDefaultModel,
-                    on_update=lambda event: self._acp_update(session_id, event, environment),
-                    on_permission=lambda request: self._acp_permission(session_id, request),
-                )
+                client = self._new_acp_client(session_id, session, environment)
                 with self._lock:
                     self._acp_sessions[session_id] = client
             if running.stop.is_set():
@@ -1500,6 +1779,8 @@ class ChatStore:
                                 automatic: bool = False) -> _SavedChat:
         """Replace provider continuity only after this turn's source was verified."""
         with self._lock:
+            if session_id in self._handoffs or session_id in self._fenced_handoffs or self._native_workers.get(session_id):
+                raise HubFailure(409, "CHAT_CONTINUATION_BUSY", "Wait for native controls and handoff to finish before replacing context.")
             session = self._sessions[session_id].model_copy(deep=True)
             identifier = session.acpSessionId if session.transport == "acp" else session.nativeSessionId
             if identifier and identifier not in session.priorProviderSessionIds:
@@ -1532,7 +1813,9 @@ class ChatStore:
             "session": {"nativeSessionId": session.nativeSessionId, "acpSessionId": session.acpSessionId,
                         "cliStartId": session.cliStartId, "acpDefaultModel": session.acpDefaultModel,
                         "providerStageRef": session.providerStageRef,
-                        "priorProviderSessionIds": list(session.priorProviderSessionIds)},
+                        "priorProviderSessionIds": list(session.priorProviderSessionIds),
+                        "nativeReleaseBoundary": session.nativeReleaseBoundary.model_copy(deep=True) if session.nativeReleaseBoundary else None,
+                        "nativeReleasePending": session.nativeReleasePending},
             "message": None if boundary is None else (boundary.id, {
                 "contextMode": boundary.contextMode, "confirmedStageRef": boundary.confirmedStageRef,
                 "confirmedStageLabel": boundary.confirmedStageLabel}),
@@ -1951,6 +2234,8 @@ class ChatStore:
         same provider session.
         """
         session = self._sessions[session_id]
+        if self._handoff_blocked(session_id):
+            return
         content = "\n\n".join(text for _, text in follow)
         if redirected:
             content = ("The architect stopped your previous step to send the message below. "
@@ -2079,13 +2364,18 @@ class ChatStore:
             process, thread = running.process, running.thread
             client = self._acp_sessions.get(session_id)
             self._clear_permissions(session_id)
-        if client is not None:
-            client.cancel()
-        if process is not None:
-            providers._stop_process(process)
-        if thread is not None:
-            thread.join(timeout=10)
-        return self.get(session_id)
+            self._native_workers[session_id] = self._native_workers.get(session_id, 0) + 1
+        try:
+            if client is not None:
+                client.cancel()
+            if process is not None:
+                providers._stop_process(process)
+            if thread is not None:
+                thread.join(timeout=10)
+            return self.get(session_id)
+        finally:
+            with self._lock:
+                self._finish_native_worker(session_id)
 
     def close_project(self, project_dir: str) -> None:
         """Detach only this project's agents and cancel their pending permissions."""
@@ -2094,6 +2384,10 @@ class ChatStore:
             self._load()
             ids = [row.id for row in self._sessions.values()
                    if os.path.normcase(str(Path(row.projectDir).resolve())) == target]
+            self._cancelled_handoffs.update(set(ids) & self._handoffs)
+            pending = [self._handoff_clients.pop(identifier) for identifier in ids if identifier in self._handoff_clients]
+        for client in pending:
+            client.close()
         for session_id in ids:
             self.stop(session_id)
             with self._lock:
@@ -2109,6 +2403,10 @@ class ChatStore:
                 self._clear_permissions(session_id)
             threads = [item.thread for item in self._running.values() if item.thread]
             checking = self._check_thread
+            pending = list(self._handoff_clients.values())
+            self._cancelled_handoffs.update(self._handoffs)
+        for client in pending:
+            client.close()
         # A connection check is read-only and short; let it finish rather than
         # leaving a CLI probe behind.
         if checking is not None:
