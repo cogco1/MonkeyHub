@@ -63,7 +63,8 @@ MODEL = "claude-opus-5-5"
 RATES = {"input": "4", "cached_input": "0.4", "cache_write_input": "5", "cache_write_1h_input": "8", "output": "20"}
 # Batch 3d: $35 of X2 single's unspent cap moves to X3 (its reruns), and X3 GH rises from 105 to 180 (total 865).
 # Batch 3e: X3 rises to 640 and the total to 1070, so that X3's second wave runs to the end.
-CAPS = {"pilot": 45.0, "x2_single": 65.0, "x2_g": 75.0, "x3": 640.0, "x3_gh": 180.0, "x8_i3": 15.0, "x9_agent": 20.0}
+# Batch 3f: $20 of the G arm's unused cap moves to X3 (660), so that no SF rerun is cut by the cap; the total stays 1070.
+CAPS = {"pilot": 45.0, "x2_single": 65.0, "x2_g": 55.0, "x3": 660.0, "x3_gh": 180.0, "x8_i3": 15.0, "x9_agent": 20.0}
 TOTAL_CAP = 1070.0
 PER_CALL_USD = 1.0
 VERDICTS = ("held", "violated", "refuse", "unknown", "flag_rejected")
