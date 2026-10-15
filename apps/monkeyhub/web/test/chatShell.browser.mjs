@@ -345,7 +345,7 @@ const hubApi = async (route) => {
     }
     return json({ chat: imported, providerCwd: source.providerCwd, executionMode: "original-directory", state: "native-ready", sourceReferences: source.sourceReferences ?? [] }, 201);
   }
-  if (["/api/events", "/api/traces", "/api/rates", "/api/sources/codex"].includes(url.pathname)) {
+  if (["/api/events", "/api/traces", "/api/rates", "/api/sources"].includes(url.pathname) || url.pathname.startsWith("/api/sources/")) {
     monitorReads.push(url.pathname);
     if (url.pathname === "/api/events" && monitorFailure) return json({ detail: "Monitor fixture is temporarily unavailable." }, 500);
     if (["/api/events", "/api/traces"].includes(url.pathname)) {
@@ -362,7 +362,10 @@ const hubApi = async (route) => {
       } finally { monitorReadLocked = false; }
     }
     if (url.pathname === "/api/rates") return json({ rates: [] });
-    return json({ paths: ["D:\\fixture\\usage.jsonl"] });
+    if (url.pathname === "/api/sources") {
+      return json({ agents: { codex: { paths: ["D:\\fixture\\usage.jsonl"] }, "claude-code": { paths: [] }, "usage-file": { paths: [] } } });
+    }
+    return json({ paths: method === "PUT" ? data().paths : [] });
   }
   if (url.pathname === "/api/settings/apps") {
     if (method === "PUT") settings = data(); else if (settingsReadGate) await settingsReadGate;
@@ -2592,6 +2595,23 @@ try {
   assert.equal(settings.projectDir, beforeIndependentProject, "independent tools leave the shared Studio on its existing project");
   assert.ok(writes.slice(beforeIndependent).every(([, pathname]) => ["/api/apps/monkeyfab/start", "/api/apps/monkeymonitor/start"].includes(pathname)),
     "independent tools neither stop Studio nor rewrite its project configuration");
+  // #632: the sources form names every registered agent, and each keeps its own explicit files.
+  await usageView("Calls");
+  const sourceForm = page.locator(".monitor-source-form");
+  const sourceText = sourceForm.locator("textarea");
+  assert.equal(await sourceText.inputValue(), "D:\\fixture\\usage.jsonl");
+  assert.deepEqual(await sourceForm.locator("select option").allTextContents(), ["Codex", "Claude Code", "UsageEvent@1"]);
+  await sourceForm.locator("select").selectOption("claude-code");
+  assert.equal(await sourceText.inputValue(), "", "another agent's selection starts from its own files");
+  await sourceText.fill("D:\\fixture\\claude-session.jsonl");
+  await sourceForm.getByRole("button", { name: "Apply sources", exact: true }).click();
+  await sourceForm.getByText("Sources updated", { exact: true }).waitFor();
+  assert.ok(writes.some(([method, pathname, body]) => method === "PUT" && pathname === "/api/sources/claude-code"
+    && JSON.stringify(body) === JSON.stringify({ paths: ["D:\\fixture\\claude-session.jsonl"] })), "Apply writes only the chosen agent's files");
+  await sourceForm.locator("xpath=..").screenshot({ path: path.join(temporary, "monitor-sources.png") });
+  await sourceForm.locator("select").selectOption("codex");
+  assert.equal(await sourceText.inputValue(), "D:\\fixture\\usage.jsonl", "Codex's selection is untouched");
+  await usageView("Timeline");
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
   await page.locator("#language").selectOption("zh-CN");
   assert.equal(await missingEndSpan.locator("dd").first().textContent(), "结束时间未观测");
