@@ -1,22 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-613",
-      "status": "review",
-      "branch": "codex/613-codex-roundtrip",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-613-codex-roundtrip",
-      "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": "Merge origin/main (#654) into PR #627. Main also changed the browser fixture's route handler; the claim covers that merge and is released right after it.",
-      "modules": [
-        "hub.shell"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/web/test/chatShell.browser.mjs"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
