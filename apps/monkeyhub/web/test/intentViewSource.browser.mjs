@@ -687,6 +687,79 @@ try {
     await undo.click(); assert.deepEqual(await currentInk(), []);
     await redo.click(); assert.deepEqual(await currentInk(), [second], "Redo restores only the current file's full stroke snapshot");
     assert.equal((await currentInk()).some((ink) => ink.id === first.id), false);
+    // #145: one Escape owns the whole tracing mode, not the selected model.
+    const panel = page.locator("#annotation-tools");
+    const openPaper = async () => {
+      if (await panel.count()) return;
+      await page.locator('button[aria-controls="model-tools-more"]').click();
+      await page.locator('button[aria-controls="annotation-tools"]').click();
+    };
+    await page.evaluate(({ componentId, elementId }) => window.__intentViewSource.select(componentId, elementId), element);
+    const selected = (await snapshot()).selection;
+    assert.ok(selected);
+    const beforeExit = await currentInk();
+    const assertRetained = async () => {
+      assert.deepEqual(await currentInk(), beforeExit, "Exit must neither save an unfinished gesture nor erase saved marks");
+      assert.deepEqual((await snapshot()).selection, selected, "The first Escape must preserve the model selection");
+    };
+    // Text editing, modal dialogs and an inactive workspace retain their Escape.
+    for (const tag of ["input", "textarea", "select", "div"]) {
+      await page.evaluate((tag) => {
+        const input = document.createElement(tag); input.id = "escape-editor";
+        if (tag === "div") input.contentEditable = "true";
+        document.body.append(input); input.focus();
+      }, tag);
+      await page.keyboard.press("Escape");
+      assert.equal(await panel.count(), 1);
+      await assertRetained();
+      await page.locator("#escape-editor").evaluate(node => node.remove());
+    }
+    await page.evaluate(() => {
+      const dialog = document.createElement("dialog"); dialog.id = "escape-dialog";
+      dialog.innerHTML = '<button>Close</button>'; document.body.append(dialog); dialog.showModal();
+    });
+    await page.keyboard.press("Escape");
+    assert.equal(await panel.count(), 1);
+    await assertRetained();
+    await page.locator("#escape-dialog").evaluate(node => node.remove());
+    await page.evaluate(() => window.__workspaceFixture.setActive(false));
+    await page.locator('[data-testid="host-active"]').waitFor();
+    await until(() => page.locator('[data-testid="host-active"]').isChecked(), value => !value, "Workspace should become inactive");
+    await page.keyboard.press("Escape");
+    assert.equal(await panel.count(), 1);
+    await assertRetained();
+    await page.evaluate(() => window.__workspaceFixture.setActive(true));
+    await until(() => page.locator('[data-testid="host-active"]').isChecked(), Boolean, "Workspace should become active");
+    // Start real pointer gestures, including an arc awaiting its third point and an eraser preview.
+    for (const kind of ["line", "arc", "eraser", "idle"]) {
+      await openPaper();
+      if (kind !== "idle") {
+        const button = panel.getByRole("button", { name: kind === "line" ? "╱ Line" : kind === "arc" ? "⌒ Arc" : "Eraser", exact: true });
+        if (await button.getAttribute("aria-pressed") !== "true") await button.click();
+        const bounds = await page.locator('canvas.annotate[data-armed="true"]').boundingBox(); assert.ok(bounds);
+        await page.mouse.move(bounds.x + bounds.width * 0.4, bounds.y + bounds.height * 0.5);
+        await page.mouse.down();
+        await page.mouse.move(bounds.x + bounds.width * 0.6, bounds.y + bounds.height * 0.5, { steps: 4 });
+        if (kind === "arc") await page.mouse.up();
+      } else await page.locator('[data-testid="workspace-arch"]').focus();
+      await page.keyboard.press("Escape");
+      await panel.waitFor({ state: "detached" });
+      if (kind !== "idle" && kind !== "arc") await page.mouse.up();
+      assert.equal(await page.locator('canvas.annotate[data-armed="true"]').count(), 0, "One Escape disarms the overlay");
+      await assertRetained();
+    }
+    await openPaper();
+    assert.equal(await undo.isEnabled(), true);
+    assert.equal(await redo.isEnabled(), false);
+    await undo.click(); assert.deepEqual(await currentInk(), [], "Exit preserves Undo history");
+    await redo.click(); assert.deepEqual(await currentInk(), beforeExit, "Exit preserves Redo history");
+    await panel.getByRole("button", { name: "Cancel", exact: true }).click();
+    await panel.waitFor({ state: "detached" });
+    await assertRetained();
+    await page.locator('[data-testid="workspace-arch"]').focus();
+    await page.keyboard.press("Escape");
+    assert.equal((await snapshot()).selection, null, "A later Escape outside tracing still clears model selection");
+    await openPaper();
     // #577: 清空批注 takes every mark at once, and one Undo brings them all back.
     const clearAll = page.locator("#annotation-tools").getByRole("button", { name: "Clear annotations", exact: true });
     if (await page.locator('canvas.annotate[data-armed="true"]').count() === 0) {
