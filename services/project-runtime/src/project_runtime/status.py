@@ -35,9 +35,10 @@ from .application.representation_dependencies import (
     CURRENT, FROZEN, OUTDATED, UNAVAILABLE, ReplacementCycle, RepresentationReads, representation_status,
 )
 from .application.working_draft import (
-    DESIGN_CONTINUED, WorkingHead, WorkingSources, _parents, lineage_of, read_working_draft,
+    DESIGN_CONTINUED, WorkingHead, WorkingSources, _parents, lineage_of, read_working_draft, read_working_position,
 )
 from .errors import StudioError
+from .authentication import LOCAL_ACTOR_ID, actor_display_name, working_actor_id
 from .index import IndexedRuns, indexed_runs
 
 
@@ -290,6 +291,14 @@ class RepresentationState:
 
 
 @dataclass(frozen=True, slots=True)
+class ActorHead:
+    actor_id: str
+    display_name: str
+    run_id: str
+    label: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class WorktreeGraph:
     project_id: str
     head: WorkingHead | None
@@ -301,6 +310,7 @@ class WorktreeGraph:
     line: tuple[LineStep, ...] = ()
     # After a return to an earlier step, the line the head left: oldest first, from the step made from the head (#575).
     later: tuple[LineStep, ...] = ()
+    actor_heads: tuple[ActorHead, ...] = ()
 
 
 class _GraphReads:
@@ -415,7 +425,7 @@ def _relation(lineage: tuple[str, ...], head: WorkingHead | None) -> tuple[str, 
 # Retained records never change, so each run's request is read once per process.
 _REQUESTS: dict[tuple[str, str], str | None] = {}
 # Continue events are never removed: a run once continued stays continued.
-_CONTINUED: set[tuple[str, str]] = set()
+_CONTINUED: set[tuple[str, str, tuple[str, ...] | None]] = set()
 _MEMO_LIMIT = 4096
 
 
@@ -546,7 +556,23 @@ def _later_line(reads: _GraphReads, head: WorkingHead | None, value: dict, resul
             paths.append(path[::-1])
 
     def moved_onto(run_id: str) -> str:
-        return (value["runs"].get(run_id) or {}).get("updatedAt") or ""
+        binding = reads.binding
+        actors = _continued_actors(binding)
+        if actors is None:
+            return (value["runs"].get(run_id) or {}).get("updatedAt") or ""
+        # Shared result rows do not move when someone continues them. The
+        # caller's retained acts, not creation times or a colleague's acts,
+        # determine which fork their line most recently followed.
+        try:
+            refs = binding.repository.list_json(
+                run=binding.load_run(run_id), record_kind=AUDIT_EVENT,
+                destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=run_id))
+            return max((payload.get("occurredAt", "") for payload in map(binding.repository.load_json, refs)
+                        if payload.get("action") == DESIGN_CONTINUED and payload.get("targetRunId") == run_id
+                        and payload.get("actorId") in actors), default="")
+        except _UNREADABLE as exc:
+            warnings.append(f"Working result {run_id}'s Continue ordering could not be read: {getattr(exc, 'detail', exc)}")
+            return ""
 
     later: list[str] = []
     while True:
@@ -561,6 +587,21 @@ def _later_line(reads: _GraphReads, head: WorkingHead | None, value: dict, resul
     return tuple(_step(reads, run_id, base, value, words) for run_id, base in zip(later, (head.run_id, *later)))
 
 
+def _continued_actors(binding: ProjectBinding) -> tuple[str, ...] | None:
+    actor = working_actor_id()
+    value, _ = binding.repository.read_working_draft()
+    owner = value.get("ownerActorId", binding.settings.project_owner_actor_id)
+    if actor is not None:
+        # Legacy local acts belong only to the explicitly configured/persisted
+        # owner. Enabling authentication must not erase that person's history.
+        return tuple(sorted({actor, LOCAL_ACTOR_ID})) if actor == owner else (actor,)
+    if value["schema"] == "ProjectWorkingDraft@2":
+        # A migrated project opened locally follows its persisted owner's
+        # line; new local acts still truthfully name the local boundary.
+        return tuple(sorted({value["ownerActorId"], LOCAL_ACTOR_ID}))
+    return None
+
+
 def _was_continued(binding: ProjectBinding, run_id: str, warnings: list[str],
                    rows: IndexedRuns | None = None) -> bool:
     """Whether the Working Head ever stood on this run, as the Continue events beside it say.
@@ -571,7 +612,8 @@ def _was_continued(binding: ProjectBinding, run_id: str, warnings: list[str],
     keeps no audit event beside it is not read.
     """
 
-    key = (str(binding.repository.layout.root), run_id)
+    actors = _continued_actors(binding)
+    key = (str(binding.repository.layout.root), run_id, actors)
     if key in _CONTINUED:
         return True
     if rows is not None and not rows.holds(run_id, AUDIT_EVENT, "reviews"):
@@ -581,6 +623,7 @@ def _was_continued(binding: ProjectBinding, run_id: str, warnings: list[str],
             run=binding.load_run(run_id), record_kind=AUDIT_EVENT,
             destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=run_id))
         continued = any(payload.get("action") == DESIGN_CONTINUED and payload.get("targetRunId") == run_id
+                        and (actors is None or payload.get("actorId") in actors)
                         for payload in map(binding.repository.load_json, refs))
     except _UNREADABLE as exc:
         warnings.append(f"Working result {run_id}'s Continue events could not be read: {getattr(exc, 'detail', exc)}")
@@ -823,7 +866,7 @@ def _worktree_graph(binding: ProjectBinding, jobs: JobRegistry | None, render_jo
     working = WorkingSources(binding, changes=reads.changes)
     resolved = working()
     head, warnings = resolved.head, list(resolved.warnings)
-    value, _ = binding.repository.read_working_draft()
+    value, _ = read_working_position(binding)
     admissions = _admissions(binding, warnings, rows)
     words = None if head is None else _line_words(binding, warnings)
     line = _head_line(reads, head, value, words)
@@ -857,4 +900,16 @@ def _worktree_graph(binding: ProjectBinding, jobs: JobRegistry | None, render_jo
     representations = _representations(binding, render_jobs, warnings, working,
                                        None if rows is None else rows.documents)
     return WorktreeGraph(binding.project_id, head, resolved.revision_sha256, tuple(lines),
-                         tuple(representations), tuple(warnings), line, later)
+                         tuple(representations), tuple(warnings), line, later, _actor_heads(binding))
+
+
+def _actor_heads(binding: ProjectBinding) -> tuple[ActorHead, ...]:
+    value, _ = binding.repository.read_working_draft()
+    if value["schema"] == "ProjectWorkingDraft@1" and working_actor_id() is None:
+        # Preserve the exact legacy local projection. Team metadata appears
+        # only for authenticated callers or a project with personal positions.
+        return ()
+    positions = value.get("positions", {binding.settings.project_owner_actor_id: value})
+    return tuple(ActorHead(actor, actor_display_name(actor), position["current"],
+                           value["runs"][position["current"]].get("label"))
+                 for actor, position in sorted(positions.items()) if position["current"] is not None)

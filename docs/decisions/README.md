@@ -16,3 +16,4 @@ decision, ADR-001 keeps the 2026-09-03 consolidation record it came from.
 - [ADR-010](010-admission-is-the-agents-registration.md) — An admission is the Agent's registration of a finished loop, not the architect's endorsement
 - [ADR-011](011-interface-information-hierarchy.md) — One information hierarchy on every surface: text menus, focused instruments, status text
 - [ADR-012](012-the-open-runtime-is-the-only-writer.md) — The open project's runtime is its only writer; changes from elsewhere are found at open and on refresh
+- [ADR-013](013-actor-working-heads.md) — Authenticated actors own separate working heads and recovery

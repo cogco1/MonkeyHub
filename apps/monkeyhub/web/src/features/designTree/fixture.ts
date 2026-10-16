@@ -415,7 +415,8 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
         ...resultLines(steps),
       ];
       return { projectId: FIXTURE_PROJECT, head: current, revisionSha256: revision(), line: steps, later: later(), lines, representations: [],
-        warnings: [] };
+        actorHeads: [{ actorId: "alice", displayName: "Alice", runId: state.head, label: "Alice's study" },
+          { actorId: "bob", displayName: "Bob", runId: "run-massing-b", label: "Courtyard study" }], warnings: [] };
     },
     workingDraft(): WorkingDraftDto {
       const current = head();
