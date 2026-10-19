@@ -7251,7 +7251,8 @@
         "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement (monkeyhub_api/settings); the resolved values reach a Project Runtime only through its launch environment",
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
         "Component information in Modeling (#549): topic-agnostic MonkeyHubComponentInfo@1 datasets (docs/protocols/component-info.md), each kept on its own Board card under customData.componentInfo, checked and imported or replaced by dataset id on the Board through its save queue, read while Modeling shows a model once per Board revision, and shown in one closable card for a picked component only when the pick and the dataset's appliesTo (project, run, state digest) match the exact version on screen; datasets for another version are listed, never shown, and a click makes no request and writes nothing",
-        "the designLoop application setting (enforced | off) passed to each Project Runtime it starts; while enforced the chat offers POST /api/revisions with the user's message and words bound, and the guide that names it, and while off the chat's tools and guide are unchanged"
+        "the designLoop application setting (enforced | off) passed to each Project Runtime it starts; while enforced the chat offers POST /api/revisions with the user's message and words bound, and the guide that names it, and while off the chat's tools and guide are unchanged",
+        "the design-loop tools (design_read, design_submit, design_ask, design_report_limitation) over studio_request and POST /api/revisions: a repair limit per answered user message (MONKEYHUB_REPAIR_BUDGET, default 3), earlier attempts on the same base superseded, the turn's loop state at the launcher's MONKEYHUB_DESIGN_LOOP_STATE file, the Stop hook that holds a turn open until a change landed, the architect was asked or a limitation was reported (at most three times), the --design-loop connection that lists only those tools, and cli_profile for whoever starts such a turn"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -7368,7 +7369,12 @@
         "GET /api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source",
         "GET /api/integrations",
         "ChatSuggestion via chat_present / ChatPresentationRequest; ChatPostRequest.suggestionSelection resolves one retained card into the existing native user-turn admission",
-        "src/api/project-runtime/projectStore.ts: ProjectStore and projectStores, one ref-counted client store per open project fed by the Hub's one stream (#366), with each entity's last move (moved, movedAt) and each project's kept Studio events known by <stream>:<seq>; useProjectStore / useProjectRevision / useProjectMoved / useProjectStoreInstance / useRuntimeKey"
+        "src/api/project-runtime/projectStore.ts: ProjectStore and projectStores, one ref-counted client store per open project fed by the Hub's one stream (#366), with each entity's last move (moved, movedAt) and each project's kept Studio events known by <stream>:<seq>; useProjectStore / useProjectRevision / useProjectMoved / useProjectStoreInstance / useRuntimeKey",
+        "design_loop.TOOLS",
+        "design_loop.call",
+        "design_loop.cli_profile",
+        "design_loop.stop_decision",
+        "mcp_server --design-loop"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -7415,7 +7421,8 @@
         "A chat render request names a provider the Runtime reports available, or is refused before admission: with none configured the answer says image generation is not configured and nothing is submitted; one requestId is one Runtime dispatch",
         "saving preferences never changes a running Project Runtime, its compiler or its project, and null clears a saved override",
         "Hub application launch choices do not replace user appearance or provider preferences, and never write project state",
-        "Beside a project workspace the projects list folds to its icons unless pinned (#283): the pin is UserSettingsDto.sidebarPinned, written only while pinned so a version older than it still reads the file; the folding, Focus and the conversation's width are this window's view state and reach no Project Runtime or project"
+        "Beside a project workspace the projects list folds to its icons unless pinned (#283): the pin is UserSettingsDto.sidebarPinned, written only while pinned so a version older than it still reads the file; the folding, Focus and the conversation's width are this window's view state and reach no Project Runtime or project",
+        "the design-loop tools never call a Runtime of their own: each read and each change goes through studio_request and its bindings; a submission past the repair limit is refused before anything is sent"
       ],
       "files": [
         "apps/monkeyhub/api/monkeyhub_api/__init__.py",
@@ -7537,7 +7544,8 @@
         "apps/monkeyhub/web/src/ChatSuggestionCard.tsx",
         "apps/monkeyhub/web/src/ChatSuggestionCard.css",
         "apps/monkeyhub/web/src/features/componentInfo/",
-        "apps/monkeyhub/web/src/features/designTree/DesignTreeCleaned.tsx"
+        "apps/monkeyhub/web/src/features/designTree/DesignTreeCleaned.tsx",
+        "apps/monkeyhub/api/monkeyhub_api/chat/design_loop.py"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -7597,7 +7605,8 @@
         "apps/monkeyhub/api/tests/test_chat_progress.py",
         "apps/monkeyhub/web/test/componentInfo.test.ts",
         "apps/monkeyhub/web/test/workspaceWidth.test.ts",
-        "apps/monkeyhub/api/tests/test_design_loop_setting.py"
+        "apps/monkeyhub/api/tests/test_design_loop_setting.py",
+        "apps/monkeyhub/api/tests/test_design_loop.py"
       ],
       "depends_on": [
         "archflow.contracts.canonical",

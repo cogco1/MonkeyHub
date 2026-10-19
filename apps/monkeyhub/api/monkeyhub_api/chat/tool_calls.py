@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from uuid import UUID, uuid4
 
 from .. import projects
-from . import judgments, media, preparation, studio_tool, transport, visual_review
+from . import design_loop, judgments, media, preparation, studio_tool, transport, visual_review
 
 from ..models import ChatPresentationRequest, HubFailure
 
@@ -207,6 +207,9 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         # refusal code belong to the route, so the CLI reads what an HTTP
         # caller reads. This conversation's project is not involved.
         return computer_tools.call(hub, name, arguments)
+    if name in design_loop.TOOLS:
+        # The design loop's tools (#185) answer through studio_request below, one call at a time.
+        return design_loop.call(hub, chat_id, name, arguments)
     if name == "visual_review":
         # A tool of its own rather than a studio_request path: Hub holds the
         # allowance, so the route is on no request allow-list to go around it.
@@ -266,10 +269,11 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if parsed.scheme or parsed.netloc or parsed.fragment or method not in allowed:
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "This action is not exposed to the chat.")
     revising = method == "POST" and parsed.path == studio_tool.REVISIONS
-    if revising and not studio_tool.design_loop_enforced(hub):
-        raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "POST /api/revisions is offered to the chat only while this Hub's "
-                         "design loop is enforced, and it is off. Nothing was executed.")
-    permitted = (studio_tool._schema_allowed(method, parsed.path, enforced=revising) if name == "studio_schema"
+    looping = (method, parsed.path) in studio_tool.LOOP_ACTIONS
+    if looping and not studio_tool.design_loop_enforced(hub):
+        raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", f"{method} {parsed.path} is offered to the chat only while this "
+                         "Hub's design loop is enforced, and it is off. Nothing was executed.")
+    permitted = (studio_tool._schema_allowed(method, parsed.path, enforced=looping) if name == "studio_schema"
                  else allowed[method].fullmatch(parsed.path))
     if not permitted:
         replacement = studio_tool._REPLACED_ACTIONS.get((method, parsed.path))

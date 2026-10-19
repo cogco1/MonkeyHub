@@ -19,7 +19,7 @@ from . import guides, providers, transport
 from ..models import HubFailure
 
 
-_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|project|construction(?:/model)?|domains(?:/[a-z]+/readiness)?|state/(?:frame|volumes)|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|memory(?:/locate)?|drawings/(?:styles|model-view|plans/vector|plans/dimensions|corrections)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision|render/(?:capabilities|jobs(?:/[A-Za-z0-9_-]+)?))$")
+_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|revisions/context|project|construction(?:/model)?|domains(?:/[a-z]+/readiness)?|state/(?:frame|volumes)|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|memory(?:/locate)?|drawings/(?:styles|model-view|plans/vector|plans/dimensions|corrections)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision|render/(?:capabilities|jobs(?:/[A-Za-z0-9_-]+)?))$")
 _POST = re.compile(r"^/api/(exports|revisions|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|memory(?:/about|/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(?:construction|facets|hosted-opening|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets|section-perspectives|plans|plans/status)|admissions|render/jobs)$")
 _WRITE = re.compile(r"^/api/(board|document-annotations|working-draft)$")
 # The agent routes the construction contract replaced (#419). The Studio still
@@ -62,6 +62,8 @@ _POST_READS = {"/api/intents/context", "/api/drawings/plans/status", "/api/memor
 # no other way there from the Agent.
 REVISIONS = "/api/revisions"
 DESIGN_LOOP_ENFORCED = "enforced"
+# What the chat is offered only while the design loop is enforced: the call, and what a change is written from.
+LOOP_ACTIONS = frozenset({("POST", REVISIONS), ("GET", REVISIONS + "/context")})
 # What the conversation was started with: the Hub sets it for every CLI turn it
 # starts, and an external host sets it itself. It decides the guide and the action
 # list; whether the call is allowed is still asked of the Hub when it is made.
@@ -85,7 +87,7 @@ def design_loop_enforced(hub: str) -> bool:
 
 def _schema_allowed(method: str, path: str, *, enforced: bool = False) -> bool:
     """Apply the execution allow-list to a schema template, never to a write."""
-    if method == "POST" and path == REVISIONS and not enforced:
+    if (method, path) in LOOP_ACTIONS and not enforced:
         return False
     pattern = {"GET": _READ, "POST": _POST, "PUT": _WRITE}.get(method)
     return pattern is not None and any(

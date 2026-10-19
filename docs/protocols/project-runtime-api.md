@@ -1133,6 +1133,19 @@ and Continue, and the Agent's rejections and withdrawals, are not affected. The 
 /api/revisions` only while the setting is `enforced`, binds the user's message and words to it, and
 gives the guide that names it; while it is `off` the chat's tools and guide are as they were.
 
+**The design-loop tools.** While the design loop is enforced, the Hub's tool server also answers four tools
+over the chat's own bindings: `design_read` (`GET /api/revisions/context` and the construction model, or the
+construction vocabulary), `design_submit` (`POST /api/revisions` with the user's message and words bound),
+`design_ask` and `design_report_limitation`. The Hub counts, per answered user message, the changes that came
+back with `problems`; past the repair limit (`MONKEYHUB_REPAIR_BUDGET`, default 3) a submission is refused with
+`409 REPAIR_BUDGET_EXHAUSTED` before anything is sent, and earlier attempts on the same base are superseded by
+the result that lands. Started with `--design-loop`, the tool server lists only these four; for an external host
+it binds itself at the first call and publishes the request named by `MONKEYHUB_DESIGN_REQUEST_FILE` as the
+user's message. With `MONKEYHUB_DESIGN_LOOP_STATE` naming a file outside any project, each outcome is written
+there, and `design_loop.py stop-hook --state <file>`, run as the CLI's Stop hook, holds the turn open until a
+change landed, the architect was asked or a limitation was reported, at most three times.
+`design_loop.cli_profile` gives the system prompt, settings, environment and allowed tools of such a turn.
+
 ## 6. Pick and gesture resolution
 
 A pick sends what the object on screen claims about itself — its `archflow:*` user strings, the

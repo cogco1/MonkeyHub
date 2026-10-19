@@ -136,8 +136,9 @@ _MODELLING = chr(10).join([
 _REVISE = [
     "CHANGE THE DESIGN (the design loop is enforced): every change the user asks for goes through one call,",
     "POST /api/revisions {sourceRunId, stateDigest, kind, proposal, summary, keep?, confirmed?, supersedes?, land?}.",
-    "sourceRunId and stateDigest are the working design's, as GET /api/construction/model answers them, or the working",
-    "a landed change answered. kind names the route the change would take, and proposal is that route's body without",
+    "sourceRunId and stateDigest are the working design's, as GET /api/revisions/context answers them (working), or the",
+    "working a landed change answered; that read also lists what the user kept and rejected, in their words, every",
+    "condition and whether a check can verify it, and the last landed change. kind names the route the change would take, and proposal is that route's body without",
     "stateDigest, sourceRunId, keep and summary: construction {script, parameters?}, facets {targets}, hosted-opening",
     "{host, kind, along, width, ...}, elevation {action: 'set-datum', levelId, value}, or proposal {semanticEdit}.",
     "The chat fills projectId, messageSource and rawLanguage. The call protects every keep decision, stops on a rejected",

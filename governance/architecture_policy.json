@@ -1029,6 +1029,28 @@
       "kind": "projection_cache",
       "owner": "project_runtime.documents",
       "reason": "The projection cache (ADR-008, #367): PNG blobs named by their own sha256 under the project's Hub cache directory, never the project folder; written to a temp file then renamed, and removed by the reachability collector after a grace window. Derived, deletable and never cited as evidence."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/design_loop.py",
+      "function": "_write_state",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "replace"
+      ],
+      "kind": "turn_scratch",
+      "owner": "hub.shell",
+      "reason": "Atomically replaces one turn's design-loop state (each design_submit outcome, a question asked, a limitation reported) at the file the CLI's launcher names in MONKEYHUB_DESIGN_LOOP_STATE, outside any project, for the turn's Stop hook to read. Unset, nothing is written. It holds no project state; P036 alone proves outcomes."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/design_loop.py",
+      "function": "_stop_hook",
+      "operations": [
+        "write_text"
+      ],
+      "kind": "turn_scratch",
+      "owner": "hub.shell",
+      "reason": "The Stop hook keeps its own count of how often it held the turn open, beside the loop state the launcher named (<state>.stop.json); nothing else is written and no project is read."
     }
   ],
   "forbidden_layer_imports": [
