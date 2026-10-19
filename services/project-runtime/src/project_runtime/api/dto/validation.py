@@ -33,7 +33,7 @@ from ...application.validation import (
 )
 from archflow.validation.model import ValidationReceipt
 
-from .candidate import RelationChecksDto, relations_dto
+from .candidate import ObligationProblemDto, RelationChecksDto, obligation_problems_dto, relations_dto
 from .project import ProjectVersionDto
 
 
@@ -97,17 +97,25 @@ class ValidationDto(BaseModel):
         alias="relationChecks",
         description="the candidate's own three states, copied not recomputed",
     )
+    obligation_problems: list[ObligationProblemDto] = Field(
+        default_factory=list, alias="obligationProblems",
+        description="obligations violated (a new one blocks obligations.held) or unchecked on this candidate",
+    )
+    obligations_checked: int = Field(
+        default=0, alias="obligationsChecked",
+        description="how many of the record's live obligations an executable check reported held or violated",
+    )
     seat_execution_complete: bool = Field(alias="seatExecutionComplete")
     review_ready: bool = Field(
         alias="reviewReady",
-        description="whether all five server-owned review clauses hold; "
+        description="whether all six server-owned review clauses hold; "
         "this never issues a run or advances a stage",
     )
     blocked_by: list[str] = Field(
         alias="blockedBy",
         description="each clause that refused, by name: validation.receipt, "
         "runner.seat_execution_complete, relations.held, "
-        "relations.fully_checked, runner.exports_available",
+        "relations.fully_checked, runner.exports_available, obligations.held",
     )
     honesty: list[str] = Field(
         description="what the submission could not carry — a seat whose "
@@ -127,6 +135,8 @@ def to_dto(validation: CandidateValidation) -> ValidationDto:
         effective_checks=list(EFFECTIVE_CHECKS),
         validator_note=VALIDATOR_NOTE,
         relation_checks=relations_dto(validation.relation_checks),
+        obligation_problems=obligation_problems_dto(validation.obligations),
+        obligations_checked=sum(1 for row in validation.obligations.results if row.status != "unchecked"),
         seat_execution_complete=validation.seat_execution_complete,
         review_ready=validation.review_ready,
         blocked_by=list(validation.blocked_by),

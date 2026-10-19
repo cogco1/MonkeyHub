@@ -843,6 +843,18 @@ export type CandidateDto = {
     seatResults: Array<CandidateSeatResultDto>;
     relationChecks: RelationChecksDto;
     /**
+     * Relationproblems
+     *
+     * the violated relations, then the unchecked ones (at most 20), from the reports relationChecks counts
+     */
+    relationProblems?: Array<RelationProblemDto>;
+    /**
+     * Obligationproblems
+     *
+     * the record's obligations that are violated or unchecked on this candidate (at most 20); null when not read
+     */
+    obligationProblems?: Array<ObligationProblemDto> | null;
+    /**
      * Artifacts
      */
     artifacts: Array<ProjectArtifactDto>;
@@ -7315,6 +7327,38 @@ export type ObjectBindingDto = {
 };
 
 /**
+ * ObligationProblemDto
+ *
+ * One obligation the candidate does not show held: violated, or with no check that could run.
+ */
+export type ObligationProblemDto = {
+    /**
+     * Obligationid
+     */
+    obligationId: string;
+    /**
+     * Validatorref
+     */
+    validatorRef: string | null;
+    /**
+     * Status
+     *
+     * violated | unchecked
+     */
+    status: string;
+    /**
+     * New
+     *
+     * violated here and not on the run the candidate was made from; only a new violation blocks review readiness
+     */
+    new: boolean;
+    /**
+     * Detail
+     */
+    detail: string;
+};
+
+/**
  * ObservationUsageDto
  *
  * What one review cost, as the provider reported it.
@@ -9948,6 +9992,34 @@ export type RelationChecksDto = {
      * every declared relation was actually checked
      */
     fullyChecked: boolean;
+};
+
+/**
+ * RelationProblemDto
+ *
+ * One declared relation the run did not find held, in its report's own words.
+ */
+export type RelationProblemDto = {
+    /**
+     * Relationid
+     */
+    relationId: string;
+    /**
+     * Kind
+     *
+     * the check kind that measured it
+     */
+    kind: string;
+    /**
+     * Status
+     *
+     * violated | unchecked
+     */
+    status: string;
+    /**
+     * Detail
+     */
+    detail: string;
 };
 
 /**
@@ -12744,19 +12816,31 @@ export type ValidationDto = {
      */
     relationChecks: RelationChecksDto;
     /**
+     * Obligationproblems
+     *
+     * obligations violated (a new one blocks obligations.held) or unchecked on this candidate
+     */
+    obligationProblems?: Array<ObligationProblemDto>;
+    /**
+     * Obligationschecked
+     *
+     * how many of the record's live obligations an executable check reported held or violated
+     */
+    obligationsChecked?: number;
+    /**
      * Seatexecutioncomplete
      */
     seatExecutionComplete: boolean;
     /**
      * Reviewready
      *
-     * whether all five server-owned review clauses hold; this never issues a run or advances a stage
+     * whether all six server-owned review clauses hold; this never issues a run or advances a stage
      */
     reviewReady: boolean;
     /**
      * Blockedby
      *
-     * each clause that refused, by name: validation.receipt, runner.seat_execution_complete, relations.held, relations.fully_checked, runner.exports_available
+     * each clause that refused, by name: validation.receipt, runner.seat_execution_complete, relations.held, relations.fully_checked, runner.exports_available, obligations.held
      */
     blockedBy: Array<string>;
     /**

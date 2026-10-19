@@ -611,7 +611,7 @@ neighbouring element whose field shares a name is named there only to be refused
    The Worktree Graph names the run's line step by them.
 4. **Follow it.** `GET /api/jobs/{jobId}`, or the event stream.
 5. **Read review readiness.** `GET /api/candidates/{id}/validation` returns the kernel's
-   validation receipt unedited, and beside it the server's `reviewReady`, a fixed conjunction of five named
+   validation receipt unedited, and beside it the server's `reviewReady`, a fixed conjunction of six named
    clauses with `blockedBy[]` naming every clause that refused. Three-state law, verbatim:
    *held / violated / unchecked are distinct; unchecked is never green; the server reports
    candidate review readiness.* A client renders the server's boolean and computes no readiness
@@ -619,6 +619,18 @@ neighbouring element whose field shares a name is named there only to be refused
    or advance a stage.
 
 Review readiness is memoised per (candidate, published version): reading it twice is one result.
+
+**Conditions the design must keep are checked (#659).** A `DesignObligation` names its check in
+`validatorRef` as `validator:<kind>/<arguments>`; the kinds are `state_record.OBLIGATION_CHECKS`. Validation
+checks every live obligation on the candidate's exact record and its inspected object boxes, and again on the
+run it was made from. Each one is `held`, `violated` or `unchecked`; an obligation with no check, an unknown
+kind or a value nothing states is `unchecked`, never held. The sixth clause, `obligations.held`, refuses only
+a violation the source run did not have. `obligationProblems[]` (on the validation and on
+`GET /api/candidates/{id}`) lists the violated ones, new first, then the unchecked ones, at most 20, each with
+`obligationId`, `validatorRef`, `status`, `new` and `detail`; `obligationsChecked` counts those a check
+reported held or violated. `relationProblems[]` on the candidate names the violated relations, then the
+unchecked ones (a check that left a pair unmeasured is unchecked), at most 20, with `relationId`, `kind`,
+`status` and `detail`.
 
 **Declared materials reach the candidate's model.** `POST /api/proposals/facets` sets a
 component's `material.name` (the architect's words) and, when the design states it,

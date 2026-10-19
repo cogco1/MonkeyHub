@@ -666,6 +666,20 @@ class RelationTotals:
 
 
 @dataclass(frozen=True, slots=True)
+class RelationProblem:
+    """One declared relation the run's reports did not find held: violated, or not (completely) checked."""
+
+    relation_id: str
+    check_kind: str
+    status: str
+    detail: str
+
+
+# How many relation problems a readout names; the counts above it stay whole.
+RELATION_PROBLEMS_SHOWN = 20
+
+
+@dataclass(frozen=True, slots=True)
 class CandidateRun:
     """One finished run, read back off the records it retained; admission alone makes it a Candidate."""
 
@@ -689,6 +703,9 @@ class CandidateRun:
     wall_time_s: float | None
     # What this readout cannot tell you, in lines the UI shows verbatim.
     honesty: tuple[str, ...]
+    # The violated relations first, then the unchecked ones, from the same
+    # reports the counts add up; at most RELATION_PROBLEMS_SHOWN.
+    relation_problems: tuple[RelationProblem, ...] = ()
 
 
 def describe(
@@ -796,6 +813,7 @@ def describe(
             for row in seat_rows
         ),
         relation_checks=_relation_totals(binding, candidate_id),
+        relation_problems=relation_problems(binding, candidate_id),
         # Only this run's own receipts are read: a run never claims
         # another run's model. A run that did not export has none, so an
         # unexported run answers with an empty list by construction.
@@ -1023,6 +1041,29 @@ def _relation_totals(
         # flags say so rather than defaulting to a quiet green.
         return RelationTotals(0, 0, 0, False, False)
     return RelationTotals(held, violated, unchecked, all_held, all_checked)
+
+
+def relation_problems(binding: ProjectBinding, run_id: str) -> tuple[RelationProblem, ...]:
+    """The run's violated relations, then its unchecked ones, by relation id, from its retained reports.
+
+    A check that held on the pairs it measured but left some pair unmeasured
+    is not fully checked, and is listed as unchecked with its own detail.
+    """
+
+    rows: list[RelationProblem] = []
+    for ref in binding.record_refs(run_id):
+        if record_kind(ref) != SEAT_RELATION_CHECK:
+            continue
+        for check in _rows(binding.repository.load_json(ref).get("checks")):
+            measured = check.get("measured") if isinstance(check.get("measured"), Mapping) else {}
+            status = str(check.get("status"))
+            if status == "held" and measured.get("unchecked_pair_count"):
+                status = "unchecked"
+            if status in ("violated", "unchecked"):
+                rows.append(RelationProblem(str(check.get("relation_id")), str(check.get("check_kind")), status,
+                                            str(check.get("detail") or "")[:400]))
+    rows.sort(key=lambda row: (row.status != "violated", row.relation_id))
+    return tuple(rows[:RELATION_PROBLEMS_SHOWN])
 
 
 def _rows(value: object) -> tuple[Mapping[str, Any], ...]:

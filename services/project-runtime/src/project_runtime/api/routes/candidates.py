@@ -37,6 +37,7 @@ from archflow.project.repository import ProjectRepositoryError
 from ...binding import ProjectBinding, bound_project
 from ...application.candidate import CandidateRun, describe, execute_candidate, prepare_combined_candidate, run_operator
 from ...application.compare import compare_runs, shapes_of
+from ...application.validation import candidate_obligations
 from ...jobs import FAILED, QUEUED, RUNNING, SUCCEEDED, Job, JobRegistry
 from ...monitoring import projection_source_ref
 from ...application.projection import (
@@ -47,6 +48,7 @@ from ...application.projection import (
 from ...application.proposals import read_refs_of, sentences_of, write_refs_of, Proposal
 from ...settings import StudioSettings
 from ..dto.candidate import (
+    obligation_problems_dto,
     CandidateAcceptedDto,
     CombineCandidatesRequestDto,
     CandidateDto,
@@ -247,13 +249,17 @@ def _candidate_with_objects(binding: ProjectBinding, candidate: CandidateRun) ->
     try:
         shapes = shapes_of(binding, candidate.candidate_id)
     except StudioError as exc:
-        return candidate_dto(candidate, object_readback_error=f"{exc.code}: {exc.detail}")
+        obligations = obligation_problems_dto(candidate_obligations(binding, candidate))
+        return candidate_dto(candidate, object_readback_error=f"{exc.code}: {exc.detail}", obligation_problems=obligations)
     except ProjectRepositoryError as exc:
-        return candidate_dto(candidate, object_readback_error=str(exc))
+        obligations = obligation_problems_dto(candidate_obligations(binding, candidate))
+        return candidate_dto(candidate, object_readback_error=str(exc), obligation_problems=obligations)
+    obligations = obligation_problems_dto(candidate_obligations(binding, candidate, shapes=shapes))
     missing = [seat.seat_id for seat in candidate.seat_results if not (seat.cad or {}).get("inspection_ref")]
     return candidate_dto(
         candidate, shapes=shapes,
         object_readback_error=f"No retained object inspection for seats: {', '.join(missing)}." if missing else None,
+        obligation_problems=obligations,
     )
 
 

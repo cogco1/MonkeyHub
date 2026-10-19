@@ -1261,6 +1261,475 @@ def _resolve_element_bindings(record: StateRecord) -> dict[str, dict[str, Any]]:
     return out
 
 
+# ---------------------------------------------------------------- obligation checks
+# A DesignObligation names its check in ``validator_ref`` as ``validator:<kind>[/<argument>...]``.
+# Only the kinds below execute; any other ref, or none, leaves the obligation unchecked, which is
+# never a pass. Record kinds read the record alone; measured kinds also read the candidate's
+# inspected object boxes (the export's Z-up frame: x east, y north, z up; a record plan point
+# [a, b] is (x, y) there and an elevation is z).
+
+OBLIGATION_CHECKS: Mapping[str, str] = MappingProxyType({
+    "parameter-at-most": "subjects parameter:<a>, parameter:<b>: a evaluates to at most b",
+    "parameter-at-least": "subjects parameter:<a>, parameter:<b>: a evaluates to at least b",
+    "element-param-at-most": "/<param>[/<bound>]: each Element@1 subject's resolved params[<param>] is at most the bound, "
+                             "a parameter:<key> subject or the number in the ref",
+    "element-param-at-least": "/<param>[/<bound>]: as element-param-at-most, at least the bound",
+    "opening-piers-at-least": "/<m>: along each wall subject every opening leaves at least m of wall to the next opening or the wall's end",
+    "wall-above-at-least": "/<m> (measured): each subject's top lies at least m below the top of the wall that holds it in plan",
+    "headroom-at-least": "/<m> (measured): over every tread of each stair subject the nearest material above, outside the voids "
+                         "cut into it, is at least m higher",
+    "landing-depth-at-least": "/<m>[/<probe>] (measured): from each end of each stair subject, along its run at probe height "
+                              "(default 0.3) above that end, the nearest material is at least m away",
+    "doors-clear-of-flights": "[/<gap>] (measured): along each wall subject each door keeps at least gap (default 0) clear of a "
+                              "flight that stands beside the wall on its floor",
+    "centred-at": "/<axis>/<value> (measured): each subject's box centre on x, y or z lies at value within 1 mm",
+})
+"""The obligation checks that execute: kind -> one line of meaning, arguments after the kind in the ref."""
+
+_MEASURED_KINDS = frozenset({"wall-above-at-least", "headroom-at-least", "landing-depth-at-least", "doors-clear-of-flights", "centred-at"})
+_OBLIGATION_TOLERANCE = 1e-6
+_CENTRE_TOLERANCE = 1e-3
+_BESIDE_M = 0.5
+_REACH_M = 50.0
+Box = tuple[tuple[float, float, float], tuple[float, float, float]]
+
+
+@dataclass(frozen=True, slots=True)
+class ObligationResult:
+    """One obligation's check on one record: held, violated or unchecked, and what was measured, in words."""
+
+    obligation_id: str
+    validator_ref: str | None
+    status: str
+    detail: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {"obligation_id": self.obligation_id, "validator_ref": self.validator_ref, "status": self.status, "detail": self.detail}
+
+
+class _Unchecked(Exception):
+    """A check that cannot be run on what the record and the boxes supply."""
+
+
+def obligation_check(obligation: DesignObligation) -> tuple[str, tuple[str, ...]] | None:
+    """The check an obligation names, as (kind, arguments), or None when its ref names no kind in ``OBLIGATION_CHECKS``."""
+
+    ref = obligation.validator_ref
+    if not ref or not ref.startswith("validator:"):
+        return None
+    kind, *arguments = ref.removeprefix("validator:").split("/")
+    return (kind, tuple(arguments)) if kind in OBLIGATION_CHECKS else None
+
+
+def obligation_checkable(obligation: DesignObligation) -> bool:
+    """Whether the obligation names a check that executes; a measured check runs once the candidate is built."""
+
+    return obligation_check(obligation) is not None
+
+
+def obligation_measured(obligation: DesignObligation) -> bool:
+    check = obligation_check(obligation)
+    return check is not None and check[0] in _MEASURED_KINDS
+
+
+def obligations_in_scope(record: StateRecord, refs: Iterable[str]) -> tuple[DesignObligation, ...]:
+    """The live obligations whose subjects meet ``refs`` or their downstream closure, in record order."""
+
+    seeds = tuple(sorted(set(refs)))
+    reached = set(seeds) | (set(record.closure(seeds)) if seeds else set())
+    return tuple(o for o in record.obligations if o.status.value in ("open", "blocked") and reached.intersection(o.subject_refs))
+
+
+def check_obligations(record: StateRecord, *, boxes: Mapping[str, Box] | None = None) -> tuple[ObligationResult, ...]:
+    """Every live obligation of the record, checked by the kind it names, in record order.
+
+    ``boxes`` are the candidate's inspected object boxes by object name; without them a measured
+    check is unchecked. A check never repairs anything and never reads a value the record or the
+    boxes do not state.
+    """
+
+    results = []
+    for obligation in record.obligations:
+        if obligation.status.value not in ("open", "blocked"):
+            continue
+        check = obligation_check(obligation)
+        if check is None:
+            detail = ("no executable check is declared" if obligation.validator_ref is None
+                      else f"{obligation.validator_ref} names no executable check")
+            results.append(ObligationResult(obligation.obligation_id, obligation.validator_ref, "unchecked", detail))
+            continue
+        kind, arguments = check
+        try:
+            if kind in _MEASURED_KINDS and boxes is None:
+                raise _Unchecked("measured on the built model; no inspected boxes were supplied")
+            problems, measured = _OBLIGATION_CHECKERS[kind](record, obligation, arguments, boxes or {})
+        except _Unchecked as exc:
+            results.append(ObligationResult(obligation.obligation_id, obligation.validator_ref, "unchecked", str(exc)))
+            continue
+        except (StateRecordError, KeyError, TypeError, ValueError, ZeroDivisionError) as exc:
+            results.append(ObligationResult(obligation.obligation_id, obligation.validator_ref, "unchecked", f"cannot be evaluated: {exc}"))
+            continue
+        status = "violated" if problems else "held"
+        results.append(ObligationResult(obligation.obligation_id, obligation.validator_ref, status, "; ".join(problems or measured)))
+    return tuple(results)
+
+
+def _number_argument(arguments: tuple[str, ...], index: int, name: str, default: float | None = None) -> float:
+    if len(arguments) <= index or arguments[index] == "":
+        if default is None:
+            raise _Unchecked(f"the validator ref states no {name}")
+        return default
+    try:
+        value = float(arguments[index])
+    except ValueError as exc:
+        raise _Unchecked(f"the validator ref's {name} {arguments[index]!r} is not a number") from exc
+    if not math.isfinite(value):
+        raise _Unchecked(f"the validator ref's {name} is not finite")
+    return value
+
+
+def _subject_ids(obligation: DesignObligation, prefix: str) -> tuple[str, ...]:
+    return tuple(ref.removeprefix(prefix) for ref in obligation.subject_refs if ref.startswith(prefix))
+
+
+def _check_parameter_bound(record, obligation, arguments, boxes, *, at_most: bool):
+    keys = _subject_ids(obligation, "parameter:")
+    if len(keys) != 2 or len(obligation.subject_refs) != 2:
+        raise _Unchecked("a parameter bound needs exactly two parameter subjects")
+    values = evaluate_parameters(record)
+    left, right = values[keys[0]], values[keys[1]]
+    holds = left <= right + _OBLIGATION_TOLERANCE if at_most else left >= right - _OBLIGATION_TOLERANCE
+    sign = "<=" if at_most else ">="
+    line = f"{keys[0]} {_r(left)} {sign} {keys[1]} {_r(right)}"
+    return ([] if holds else [line.replace(sign, "violates " + sign, 1)]), [line]
+
+
+def _check_element_param(record, obligation, arguments, boxes, *, at_most: bool):
+    if not arguments or not arguments[0]:
+        raise _Unchecked("the validator ref names no element parameter")
+    name = arguments[0]
+    bounds = _subject_ids(obligation, "parameter:")
+    if bounds:
+        if len(bounds) != 1 or len(arguments) > 1:
+            raise _Unchecked("an element parameter bound is one parameter subject or one number in the ref, not both")
+        bound, bound_name = evaluate_parameters(record)[bounds[0]], bounds[0]
+    else:
+        bound, bound_name = _number_argument(arguments, 1, "bound"), None
+    elements = _subject_ids(obligation, "entity:")
+    if not elements:
+        raise _Unchecked("an element parameter bound needs an Element@1 subject")
+    fields = resolve_element_bindings(record)
+    problems, measured, missing = [], [], []
+    sign = "<=" if at_most else ">="
+    for element in elements:
+        value = (fields.get(element) or {}).get("params", {}).get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            missing.append(element)
+            continue
+        holds = value <= bound + _OBLIGATION_TOLERANCE if at_most else value >= bound - _OBLIGATION_TOLERANCE
+        line = f"{element} {name} {_r(value)} {sign} {bound_name or ''}{' ' if bound_name else ''}{_r(bound)}"
+        (measured if holds else problems).append(line)
+    if missing and not problems:
+        raise _Unchecked(f"{', '.join(missing)} state no numeric {name}")
+    return problems, measured or [f"{len(elements)} subject(s) within the bound"]
+
+
+def _plan_point(value: object) -> tuple[float, float]:
+    point = value.get("point") if isinstance(value, Mapping) else None
+    if not isinstance(point, (list, tuple)) or len(point) != 2 or not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in point):
+        raise _Unchecked(f"plan reference {value!r} is not a resolved point")
+    return float(point[0]), float(point[1])
+
+
+def _wall_line(fields: Mapping[str, Any], element: str) -> tuple[tuple[float, float], tuple[float, float], float]:
+    line = (fields.get("references") or {}).get("line")
+    if not isinstance(line, Mapping):
+        raise _Unchecked(f"{element} states no straight line")
+    start, end = _plan_point(line.get("from")), _plan_point(line.get("to"))
+    length = math.hypot(end[0] - start[0], end[1] - start[1])
+    if length <= 0.0:
+        raise _Unchecked(f"{element} has a zero-length line")
+    return start, end, length
+
+
+def _openings(fields: Mapping[str, Any], element: str) -> list[dict[str, Any]]:
+    openings = (fields.get("params") or {}).get("openings") or []
+    rows = []
+    for opening in openings:
+        along, width = opening.get("along"), opening.get("width")
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (along, width)):
+            raise _Unchecked(f"{element} opening {opening.get('opening_id')} has no resolved along and width")
+        rows.append({**opening, "_lo": float(along) - float(width) / 2, "_hi": float(along) + float(width) / 2})
+    return sorted(rows, key=lambda row: row["_lo"])
+
+
+def _check_opening_piers(record, obligation, arguments, boxes):
+    minimum = _number_argument(arguments, 0, "minimum")
+    fields = resolve_element_bindings(record)
+    problems, worst = [], (math.inf, "")
+    for element in _subject_ids(obligation, "entity:"):
+        row = fields.get(element)
+        if row is None or row.get("producer") != "wall":
+            raise _Unchecked(f"{element} is not a wall element")
+        openings = _openings(row, element)
+        if not openings:
+            continue
+        _, _, length = _wall_line(row, element)
+        edges = [0.0, *(x for o in openings for x in (o["_lo"], o["_hi"])), length]
+        for k, opening in enumerate(openings):
+            for side, pier in (("start side", opening["_lo"] - edges[2 * k]), ("end side", edges[2 * k + 3] - opening["_hi"])):
+                where = f"{element} opening {opening.get('opening_id')} {side}"
+                if pier < worst[0]:
+                    worst = (pier, where)
+                if pier < minimum - _OBLIGATION_TOLERANCE:
+                    problems.append(f"{where}: pier {_r(pier)} < {_r(minimum)}")
+    measured = [f"smallest pier {_r(worst[0])} at {worst[1]}"] if math.isfinite(worst[0]) else ["no opening on the subjects"]
+    return problems, measured
+
+
+# -- measured checks: object boxes by element
+
+def _void_targets(fields: Mapping[str, Mapping[str, Any]]) -> set[str]:
+    targets: set[str] = set()
+    for row in fields.values():
+        voids = (row.get("references") or {}).get("voids") or ()
+        targets.update(str(v).removeprefix("entity:") for v in voids if isinstance(v, str))
+    return targets
+
+
+class _Model:
+    """The candidate's boxes sorted onto the record's elements: material, and cavities (openings and voids)."""
+
+    def __init__(self, record: StateRecord, boxes: Mapping[str, Box]) -> None:
+        self.fields = resolve_element_bindings(record)
+        voids = _void_targets(self.fields)
+        self.material: dict[str, list[tuple[str, Box]]] = {}
+        self.cavities: dict[str, list[tuple[str, Box]]] = {}
+        for name, box in sorted(boxes.items()):
+            element = part_of_object(name, self.fields)
+            if element is None:
+                continue
+            cavity = element in voids or "-aperture-" in name
+            (self.cavities if cavity else self.material).setdefault(element, []).append((name, box))
+
+    def box_of(self, element: str) -> Box:
+        rows = self.material.get(element)
+        if not rows:
+            raise _Unchecked(f"{element} has no inspected object")
+        return (tuple(min(b[0][i] for _, b in rows) for i in range(3)), tuple(max(b[1][i] for _, b in rows) for i in range(3)))  # type: ignore[return-value]
+
+    def others(self, *skip: str) -> list[tuple[str, str, Box]]:
+        return [(element, name, box) for element, rows in self.material.items() if element not in skip for name, box in rows]
+
+    def plan_box(self, element: str) -> tuple[tuple[float, float], tuple[float, float]]:
+        """An element's plan extent: its inspected boxes (material or cavity), else a prism row's resolved profile."""
+
+        rows = self.material.get(element) or self.cavities.get(element)
+        if rows:
+            return ((min(b[0][0] for _, b in rows), min(b[0][1] for _, b in rows)),
+                    (max(b[1][0] for _, b in rows), max(b[1][1] for _, b in rows)))
+        profile = (self.fields.get(element, {}).get("params") or {}).get("profile")
+        try:
+            points = [_plan_point({"point": point}) for point in profile or ()]
+        except _Unchecked:
+            points = []
+        if not points:
+            raise _Unchecked(f"{element} has no inspected object and no resolved profile")
+        return (min(p[0] for p in points), min(p[1] for p in points)), (max(p[0] for p in points), max(p[1] for p in points))
+
+    def void_boxes(self, element: str) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+        voids = (self.fields.get(element, {}).get("references") or {}).get("voids") or ()
+        return [self.plan_box(str(void).removeprefix("entity:")) for void in voids]
+
+
+def _check_wall_above(record, obligation, arguments, boxes):
+    minimum = _number_argument(arguments, 0, "minimum")
+    model = _Model(record, boxes)
+    walls = [(element, name, box) for element, name, box in model.others() if model.fields[element].get("producer") == "wall"]
+    problems, orphans, worst = [], [], (math.inf, "")
+    for element in _subject_ids(obligation, "entity:"):
+        lo, hi = model.box_of(element)
+        hosts = [(whi[2] - hi[2], wall) for wall, _, (wlo, whi) in walls if wall != element
+                 and all(wlo[i] - _OBLIGATION_TOLERANCE <= lo[i] and hi[i] <= whi[i] + _OBLIGATION_TOLERANCE for i in (0, 1))
+                 and wlo[2] <= lo[2] <= whi[2]]
+        if not hosts:
+            orphans.append(element)
+            continue
+        above, wall = min(hosts)
+        if above < worst[0]:
+            worst = (above, f"{element} in {wall}")
+        if above < minimum - _OBLIGATION_TOLERANCE:
+            problems.append(f"{element}: {_r(above)} of {wall} above it < {_r(minimum)}")
+    if orphans and not problems:
+        raise _Unchecked(f"no wall holds {', '.join(orphans)} in plan")
+    return problems, [f"least wall above {_r(worst[0])} at {worst[1]}"]
+
+
+def _flight(model: _Model, element: str) -> dict[str, Any]:
+    row = model.fields.get(element)
+    if row is None or row.get("producer") != "stair":
+        raise _Unchecked(f"{element} is not a stair element")
+    references, params = row.get("references") or {}, row.get("params") or {}
+    start, end = _plan_point(references.get("from")), _plan_point(references.get("to"))
+    length = math.hypot(end[0] - start[0], end[1] - start[1])
+    count, rise, going = params.get("count"), params.get("rise"), params.get("going")
+    if length <= 0.0 or not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (count, rise, going)):
+        raise _Unchecked(f"{element} states no resolved run, count, rise and going")
+    lo, hi = model.box_of(element)
+    u = ((end[0] - start[0]) / length, (end[1] - start[1]) / length)
+    axis = 0 if abs(u[0]) >= abs(u[1]) else 1
+    return {"start": start, "end": end, "length": length, "count": int(count), "rise": float(rise), "going": float(going),
+            "base": lo[2], "lo": lo, "hi": hi, "axis": axis, "sense": 1.0 if u[axis] > 0 else -1.0}
+
+
+def _within(lo: tuple, hi: tuple, inner_lo: tuple, inner_hi: tuple) -> bool:
+    return all(lo[i] - _OBLIGATION_TOLERANCE <= inner_lo[i] and inner_hi[i] <= hi[i] + _OBLIGATION_TOLERANCE for i in (0, 1))
+
+
+def _check_headroom(record, obligation, arguments, boxes):
+    minimum = _number_argument(arguments, 0, "minimum")
+    model = _Model(record, boxes)
+    problems, worst = [], (math.inf, "")
+    for element in _subject_ids(obligation, "entity:"):
+        flight = _flight(model, element)
+        axis, across = flight["axis"], 1 - flight["axis"]
+        origin = flight["start"][axis]
+        for k in range(1, flight["count"] + 1):
+            a0 = origin + flight["sense"] * (k - 1) * flight["going"]
+            a1 = origin + flight["sense"] * min(k * flight["going"], flight["length"])
+            tread_lo, tread_hi = [0.0, 0.0], [0.0, 0.0]
+            tread_lo[axis], tread_hi[axis] = min(a0, a1), max(a0, a1)
+            tread_lo[across], tread_hi[across] = flight["lo"][across], flight["hi"][across]
+            top = flight["base"] + k * flight["rise"]
+            clear = math.inf
+            for other, _, (lo, hi) in model.others(element):
+                if lo[2] < top - _OBLIGATION_TOLERANCE:
+                    continue
+                overlap_lo = tuple(max(tread_lo[i], lo[i]) for i in (0, 1))
+                overlap_hi = tuple(min(tread_hi[i], hi[i]) for i in (0, 1))
+                if any(overlap_hi[i] - overlap_lo[i] <= _OBLIGATION_TOLERANCE for i in (0, 1)):
+                    continue
+                if any(_within(vlo, vhi, overlap_lo, overlap_hi) for vlo, vhi in model.void_boxes(other)):
+                    continue
+                clear = min(clear, lo[2] - top)
+            if clear < worst[0]:
+                worst = (clear, f"{element} tread {k}")
+            if clear < minimum - _OBLIGATION_TOLERANCE:
+                problems.append(f"{element} tread {k}: headroom {_r(clear)} < {_r(minimum)}")
+    measured = [f"least headroom {_r(worst[0])} at {worst[1]}"] if math.isfinite(worst[0]) else ["nothing stands above the treads"]
+    return problems, measured
+
+
+def _ray_hit(model: _Model, skip: str, point: tuple[float, float, float], axis: int, sense: float) -> tuple[float, str | None]:
+    """Distance along a horizontal, axis-aligned ray to the nearest material box it meets; an opening's cavity lets it through."""
+
+    best, owner = math.inf, None
+    across = 1 - axis
+    for element, name, (lo, hi) in model.others(skip):
+        if not (lo[2] <= point[2] <= hi[2] and lo[across] <= point[across] <= hi[across]):
+            continue
+        if (hi[axis] <= point[axis]) if sense > 0 else (lo[axis] >= point[axis]):
+            continue
+        distance = max(0.0, (lo[axis] - point[axis]) if sense > 0 else (point[axis] - hi[axis]))
+        entry = list(point)
+        entry[axis] = point[axis] + sense * (distance + 1e-4)
+        if any(all(clo[i] <= entry[i] <= chi[i] for i in range(3)) for _, (clo, chi) in model.cavities.get(element, ())):
+            continue
+        if distance <= _REACH_M and distance < best:
+            best, owner = distance, name
+    return best, owner
+
+
+def _check_landing_depth(record, obligation, arguments, boxes):
+    minimum = _number_argument(arguments, 0, "minimum")
+    probe = _number_argument(arguments, 1, "probe height", 0.3)
+    model = _Model(record, boxes)
+    problems, measured = [], []
+    for element in _subject_ids(obligation, "entity:"):
+        flight = _flight(model, element)
+        axis, across = flight["axis"], 1 - flight["axis"]
+        middle = (flight["lo"][across] + flight["hi"][across]) / 2
+        top = flight["base"] + flight["count"] * flight["rise"]
+        for label, plan, z, sense in (("foot", flight["start"], flight["base"], -flight["sense"]), ("head", flight["end"], top, flight["sense"])):
+            point = [0.0, 0.0, z + probe]
+            point[axis], point[across] = plan[axis], middle
+            depth, owner = _ray_hit(model, element, tuple(point), axis, sense)  # type: ignore[arg-type]
+            line = f"{element} {label}: {_r(depth) if math.isfinite(depth) else 'open'} to {owner or 'nothing'}"
+            measured.append(line)
+            if depth < minimum - _OBLIGATION_TOLERANCE:
+                problems.append(f"{line} < {_r(minimum)}")
+    return problems, measured
+
+
+def _check_doors_clear(record, obligation, arguments, boxes):
+    gap_minimum = _number_argument(arguments, 0, "gap", 0.0)
+    model = _Model(record, boxes)
+    flights = [element for element, row in model.fields.items() if row.get("producer") == "stair" and element in model.material]
+    problems, measured = [], []
+    for element in _subject_ids(obligation, "entity:"):
+        row = model.fields.get(element)
+        if row is None or row.get("producer") != "wall":
+            raise _Unchecked(f"{element} is not a wall element")
+        start, end, length = _wall_line(row, element)
+        u = ((end[0] - start[0]) / length, (end[1] - start[1]) / length)
+        axis = 0 if abs(u[0]) >= abs(u[1]) else 1
+        across = 1 - axis
+        wlo, whi = model.box_of(element)
+        doors = [o for o in _openings(row, element) if o.get("kind") == "door"]
+        for flight in flights:
+            flo, fhi = model.box_of(flight)
+            if abs(flo[2] - wlo[2]) > 0.05 or max(flo[across] - whi[across], wlo[across] - fhi[across]) > _BESIDE_M:
+                continue
+            for door in doors:
+                ends = sorted(start[axis] + u[axis] * value for value in (door["_lo"], door["_hi"]))
+                gap = max(flo[axis] - ends[1], ends[0] - fhi[axis])
+                line = f"{element} door {door.get('opening_id')} to {flight}: gap {_r(gap)}"
+                measured.append(line)
+                if gap < gap_minimum - _OBLIGATION_TOLERANCE:
+                    problems.append(f"{line} < {_r(gap_minimum)}")
+    return problems, measured or ["no door stands beside a flight on its floor"]
+
+
+def _check_centred(record, obligation, arguments, boxes):
+    if not arguments or arguments[0] not in ("x", "y", "z"):
+        raise _Unchecked("the validator ref names no axis x, y or z")
+    axis, value = "xyz".index(arguments[0]), _number_argument(arguments, 1, "value")
+    model = _Model(record, boxes)
+    problems, measured = [], []
+    for element in _subject_ids(obligation, "entity:"):
+        rows = model.material.get(element) or model.cavities.get(element)
+        if rows:
+            centre = (min(box[0][axis] for _, box in rows) + max(box[1][axis] for _, box in rows)) / 2
+        elif axis < 2:
+            lo, hi = model.plan_box(element)
+            centre = (lo[axis] + hi[axis]) / 2
+        else:
+            raise _Unchecked(f"{element} has no inspected object")
+        line = f"{element} centre {arguments[0]} {_r(centre)}"
+        (problems if abs(centre - value) > _CENTRE_TOLERANCE else measured).append(line + f" (stated {_r(value)})")
+    return problems, measured
+
+
+def _r(value: float) -> str:
+    return f"{value:.4f}" if math.isfinite(value) else str(value)
+
+
+_OBLIGATION_CHECKERS: Mapping[str, Callable[..., tuple[list[str], list[str]]]] = MappingProxyType({
+    "parameter-at-most": lambda r, o, a, b: _check_parameter_bound(r, o, a, b, at_most=True),
+    "parameter-at-least": lambda r, o, a, b: _check_parameter_bound(r, o, a, b, at_most=False),
+    "element-param-at-most": lambda r, o, a, b: _check_element_param(r, o, a, b, at_most=True),
+    "element-param-at-least": lambda r, o, a, b: _check_element_param(r, o, a, b, at_most=False),
+    "opening-piers-at-least": _check_opening_piers,
+    "wall-above-at-least": _check_wall_above,
+    "headroom-at-least": _check_headroom,
+    "landing-depth-at-least": _check_landing_depth,
+    "doors-clear-of-flights": _check_doors_clear,
+    "centred-at": _check_centred,
+})
+if set(_OBLIGATION_CHECKERS) != set(OBLIGATION_CHECKS):
+    raise RuntimeError("every obligation check kind needs exactly one checker")
+
+
 # ---------------------------------------------------------------- adapter to the legacy model (scheduled for retirement)
 # ---------------------------------------------------------------- schematic pack -> developed state
 @dataclass(frozen=True, slots=True)

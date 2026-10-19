@@ -18,6 +18,7 @@ from ...application.harness import HARNESS_STATEMENT
 from ...application.artifacts import _text, _whole
 from ...application.candidate import CandidateRun, RelationTotals, SeatOutcome
 from ...application.compare import Shape
+from ...application.validation import ObligationReadout
 from ...jobs import PERSISTENCE, Job
 from .artifacts import ProjectArtifactDto, artifact_dto
 from .compare import BoxDto
@@ -171,6 +172,29 @@ class RelationChecksDto(BaseModel):
     )
 
 
+class RelationProblemDto(BaseModel):
+    """One declared relation the run did not find held, in its report's own words."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    relation_id: str = Field(alias="relationId")
+    kind: str = Field(description="the check kind that measured it")
+    status: str = Field(description="violated | unchecked")
+    detail: str
+
+
+class ObligationProblemDto(BaseModel):
+    """One obligation the candidate does not show held: violated, or with no check that could run."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    obligation_id: str = Field(alias="obligationId")
+    validator_ref: str | None = Field(alias="validatorRef")
+    status: str = Field(description="violated | unchecked")
+    new: bool = Field(description="violated here and not on the run the candidate was made from; only a new violation blocks review readiness")
+    detail: str
+
+
 class CandidateObjectDto(BaseModel):
     """A retained export inspection, in its registered CAD coordinates."""
 
@@ -224,6 +248,14 @@ class CandidateDto(BaseModel):
     seat_execution_complete: bool = Field(alias="seatExecutionComplete")
     seat_results: list[CandidateSeatResultDto] = Field(alias="seatResults")
     relation_checks: RelationChecksDto = Field(alias="relationChecks")
+    relation_problems: list[RelationProblemDto] = Field(
+        default_factory=list, alias="relationProblems",
+        description="the violated relations, then the unchecked ones (at most 20), from the reports relationChecks counts",
+    )
+    obligation_problems: list[ObligationProblemDto] | None = Field(
+        default=None, alias="obligationProblems",
+        description="the record's obligations that are violated or unchecked on this candidate (at most 20); null when not read",
+    )
     artifacts: list[ProjectArtifactDto]
     objects: list[CandidateObjectDto] | None = Field(
         default=None, description="objects read from this run's retained inspections; null means unavailable, not an empty model",
@@ -318,6 +350,7 @@ def to_dto(
     *,
     shapes: tuple[Shape, ...] | None = None,
     object_readback_error: str | None = None,
+    obligation_problems: list[ObligationProblemDto] | None = None,
 ) -> CandidateDto:
     """Shape one candidate for the wire; every value came off its records."""
 
@@ -337,6 +370,11 @@ def to_dto(
         seat_execution_complete=candidate.seat_execution_complete,
         seat_results=[_seat_dto(seat) for seat in candidate.seat_results],
         relation_checks=relations_dto(candidate.relation_checks),
+        relation_problems=[
+            RelationProblemDto(relation_id=row.relation_id, kind=row.check_kind, status=row.status, detail=row.detail)
+            for row in candidate.relation_problems
+        ],
+        obligation_problems=obligation_problems,
         artifacts=[
             artifact_dto(record) for record in candidate.artifacts
         ],
@@ -375,6 +413,16 @@ def _seat_dto(seat: SeatOutcome) -> CandidateSeatResultDto:
         objects=seat.objects,
         relation_check_ref=seat.relation_check_ref,
     )
+
+
+def obligation_problems_dto(readout: ObligationReadout) -> list[ObligationProblemDto]:
+    """The violated obligations, new ones first, then the unchecked ones; at most 20."""
+
+    rows = [ObligationProblemDto(obligation_id=row.obligation_id, validator_ref=row.validator_ref, status=row.status,
+                                 new=row.obligation_id in readout.new_violations, detail=row.detail[:400])
+            for row in readout.results if row.status in ("violated", "unchecked")]
+    rows.sort(key=lambda row: (row.status != "violated", not row.new, row.obligation_id))
+    return rows[:20]
 
 
 def relations_dto(totals: RelationTotals) -> RelationChecksDto:

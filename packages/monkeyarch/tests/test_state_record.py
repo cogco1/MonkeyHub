@@ -14,11 +14,15 @@ from pathlib import Path
 
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.dependencies import DependencyEffect
-from archflow.state.operational_state import ObligationStatus
+from archflow.state.operational_state import DesignObligation, ObligationStatus
 from archflow.project.refs import ProjectVersionRef, RunRef
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.state_record import (
     CHECK_KINDS,
+    OBLIGATION_CHECKS,
+    check_obligations,
+    obligation_checkable,
+    obligations_in_scope,
     RECORD_BINDING_PHASE,
     Entity,
     Lineage,
@@ -1116,6 +1120,109 @@ class StateRecordTests(unittest.TestCase):
             self.assertEqual(bound_a.digest, record.digest)
             self.assertEqual(bound_b.digest, record.digest)
             self.assertNotEqual(bound_a.state_digest, bound_b.state_digest)
+
+
+def _obligation(obligation_id: str, validator_ref: str | None, *subjects: str) -> DesignObligation:
+    return DesignObligation(obligation_id, f"{obligation_id} as the architect said it", "decision:opening",
+                            subject_refs=subjects, validator_ref=validator_ref)
+
+
+def _house(*obligations: DesignObligation, rise: float = 0.17) -> StateRecord:
+    """A wall with a window and a door, a lintel, a flight under a slab with a stair hole, and a parameter pair."""
+
+    def element(element_id: str, producer: str, references: dict, params: dict) -> Entity:
+        return Entity(element_id, "Element@1", {"component_id": "house", "producer": producer, "references": references, "params": params},
+                      parent_id="house")
+
+    entities = (
+        Entity("house", "Component@1", {"semantic_kind": "whole-building", "intent": "house"}),
+        Entity("level-1", "Level@1", {"role": "ground", "elevation": 0.0}),
+        Entity("level-2", "Level@1", {"role": "upper", "elevation": 3.0}),
+        element("wall-a", "wall", {"line": {"from": {"point": [0.0, 0.0]}, "to": {"point": [6.0, 0.0]}}, "base": {"level": "level-1"}},
+                {"thickness": 0.2, "height": 3.0, "openings": [
+                    {"opening_id": "win", "kind": "window", "along": "@window_along", "width": 1.0, "sill": 0.9, "head": 2.1},
+                    {"opening_id": "door", "kind": "door", "along": 4.5, "width": 1.0, "sill": 0.0, "head": 2.1}]}),
+        element("lintel-win", "prism", {"base": {"level": "level-1"}}, {"profile": [[1.35, 0.0], [2.65, 0.0], [2.65, 0.2], [1.35, 0.2]], "height": 0.2}),
+        element("stair", "stair", {"from": {"point": [1.0, 1.0]}, "to": {"point": [1.0, 4.0]}, "base": {"level": "level-1"}},
+                {"count": 10, "rise": rise, "going": 0.3, "width": 1.0}),
+        element("slab", "prism", {"base": {"level": "level-2"}, "voids": ["hole"]},
+                {"profile": [[0.0, 0.0], [6.0, 0.0], [6.0, 6.0], [0.0, 6.0]], "height": 0.2}),
+        element("hole", "prism", {"base": {"level": "level-2"}}, {"profile": [[0.4, 2.2], [1.6, 2.2], [1.6, 4.0], [0.4, 4.0]], "height": 0.3}),
+    )
+    parameters = (Parameter("window_along", 2.0, "m", epistemic_status="declared"),
+                  Parameter("dome_top", 44.8, "m", epistemic_status="declared"),
+                  Parameter("dome_limit", 46.5, "m", epistemic_status="declared"))
+    return StateRecord("demo", "run-1", entities, parameters, (), obligations)
+
+
+# The house as built: boxes in the export's Z-up frame (x, y, z).
+_BOXES = {
+    "obj-wall-a": ((0.0, 0.0, 0.0), (6.0, 0.2, 3.0)),
+    "obj-wall-a-aperture-door": ((4.0, 0.0, 0.0), (5.0, 0.2, 2.1)),
+    "obj-lintel-win": ((1.35, 0.0, 2.1), (2.65, 0.2, 2.3)),
+    "obj-stair": ((0.5, 1.0, 0.0), (1.5, 4.0, 1.7)),
+    "obj-slab": ((0.0, 0.0, 3.0), (6.0, 6.0, 3.2)),
+    "obj-hole": ((0.4, 2.2, 2.95), (1.6, 4.0, 3.25)),
+}
+
+
+class ObligationCheckTests(unittest.TestCase):
+    def results(self, record: StateRecord, boxes=None) -> dict[str, tuple[str, str]]:
+        return {row.obligation_id: (row.status, row.detail) for row in check_obligations(record, boxes=boxes)}
+
+    def test_parameter_and_element_bounds_hold_or_are_violated(self) -> None:
+        record = _house(_obligation("k2", "validator:parameter-at-most", "parameter:dome_top", "parameter:dome_limit"),
+                        _obligation("rise", "validator:element-param-at-most/rise/0.18", "entity:stair"),
+                        _obligation("rise-low", "validator:element-param-at-least/rise/0.15", "entity:stair"))
+        self.assertEqual({k: v[0] for k, v in self.results(record).items()}, {"k2": "held", "rise": "held", "rise-low": "held"})
+        steep = self.results(_house(*record.obligations, rise=0.20))
+        self.assertEqual(steep["rise"][0], "violated")
+        self.assertIn("stair rise 0.2000", steep["rise"][1])
+
+    def test_an_obligation_without_an_executable_check_is_unchecked_never_held(self) -> None:
+        record = _house(_obligation("said", None, "entity:stair"), _obligation("unknown", "validator:feels-right", "entity:stair"),
+                        _obligation("measured", "validator:headroom-at-least/2.0", "entity:stair"))
+        found = self.results(record)
+        self.assertEqual({k: v[0] for k, v in found.items()}, {"said": "unchecked", "unknown": "unchecked", "measured": "unchecked"})
+        self.assertIn("no inspected boxes", found["measured"][1])
+        self.assertFalse(obligation_checkable(record.obligations[0]))
+        self.assertFalse(obligation_checkable(record.obligations[1]))
+        self.assertTrue(obligation_checkable(record.obligations[2]))
+
+    def test_opening_piers_read_the_wall_row(self) -> None:
+        record = _house(_obligation("k3", "validator:opening-piers-at-least/0.5", "entity:wall-a"))
+        self.assertEqual(self.results(record)["k3"][0], "held")
+        moved = replace(record, parameters=(replace(record.parameters[0], value=0.8), *record.parameters[1:]))
+        status, detail = self.results(moved)["k3"]
+        self.assertEqual(status, "violated")
+        self.assertIn("wall-a opening win start side: pier 0.3000 < 0.5000", detail)
+
+    def test_measured_checks_on_inspected_boxes(self) -> None:
+        record = _house(_obligation("k4", "validator:wall-above-at-least/0.15", "entity:lintel-win"),
+                        _obligation("k6", "validator:headroom-at-least/2.0", "entity:stair"),
+                        _obligation("r8", "validator:landing-depth-at-least/1.2", "entity:stair"),
+                        _obligation("r9", "validator:doors-clear-of-flights", "entity:wall-a"),
+                        _obligation("k5", "validator:centred-at/x/1.0", "entity:stair"))
+        found = self.results(record, _BOXES)
+        self.assertEqual({k: v[0] for k, v in found.items()}, {"k4": "held", "k6": "held", "r8": "violated", "r9": "held", "k5": "held"})
+        self.assertIn("least wall above 0.7000", found["k4"][1])
+        # Tread 4 ends at 1.2 under the slab (3.0 - 0.68 = 2.32); the treads under the hole see nothing above them.
+        self.assertIn("least headroom 2.3200 at stair tread 4", found["k6"][1])
+        # The foot meets the wall 0.8 m away; the head is open to the north.
+        self.assertIn("stair foot: 0.8000 to obj-wall-a", found["r8"][1])
+        low = {**_BOXES, "obj-slab": ((0.0, 0.0, 2.0), (6.0, 6.0, 2.2)), "obj-hole": ((0.4, 2.2, 1.95), (1.6, 4.0, 2.25))}
+        self.assertEqual(self.results(record, low)["k6"][0], "violated")
+
+    def test_scope_follows_subjects_and_their_downstream_closure(self) -> None:
+        record = _house(_obligation("k3", "validator:opening-piers-at-least/0.5", "entity:wall-a"),
+                        _obligation("k6", "validator:headroom-at-least/2.0", "entity:stair"))
+        self.assertEqual([o.obligation_id for o in obligations_in_scope(record, ("parameter:window_along",))], ["k3"])
+        self.assertEqual([o.obligation_id for o in obligations_in_scope(record, ("entity:stair",))], ["k6"])
+        self.assertEqual(obligations_in_scope(record, ("entity:slab",)), ())
+
+    def test_every_kind_has_one_line_of_meaning(self) -> None:
+        self.assertIn("parameter-at-most", OBLIGATION_CHECKS)
+        self.assertTrue(all(isinstance(text, str) and text for text in OBLIGATION_CHECKS.values()))
 
 
 if __name__ == "__main__":

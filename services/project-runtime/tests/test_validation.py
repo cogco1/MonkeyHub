@@ -3,7 +3,7 @@
 Nothing here rehearses validation. Every receipt these tests read came out of
 ``archflow.validation.engine.validate_submission`` over a submission built from
 a real candidate run's own records, and the one thing the studio adds — the
-review-readiness result — is asserted as what it is: a conjunction of five
+review-readiness result — is asserted as what it is: a conjunction of six
 named clauses, each of which is shown blocking on its own.
 
 The two negative cases are built the same way as the positive one. A stale base
@@ -558,6 +558,58 @@ class ConditionSourceCoverageTests(ValidationTestCase):
         self.assertEqual(self.app.state.validations.receipt_ids(accepted["candidateId"]), ())
         validation = self.validation_of(accepted["candidateId"])
         self.assertIn("Published version 1", validation["canonicalFacts"])
+
+
+class ObligationClauseTests(ValidationTestCase):
+    """obligations.held: a violation the candidate brings blocks; one its source already had, or an unchecked duty, does not."""
+
+    def _candidate_against(self, validator_ref: str | None) -> dict:
+        payload = json.loads(self.repository.layout.resolve_relative(RUNNER_RECORD_PATH).read_text(encoding="utf-8"))
+        payload["obligations"] = [DesignObligation(
+            obligation_id="base-height-limit", statement="The portico base stays low.", source_ref="test:declared-duty",
+            subject_refs=("entity:portico-base",), validator_ref=validator_ref).to_dict()]
+        run = self.repository.create_run("obligation-source")
+        retain_runner_receipt(self.repository, run, record_payload=payload,
+                              design_state_digest=runner_state_digest(self.repository, run.run_id, payload))
+        binding = bound_project(self.app.state)
+        binding.settings = replace(binding.settings, reference_run=run.run_id)
+        self.state_digest = self.client.get("/api/state").json()["stateDigest"]
+        accepted, _ = self.finished_candidate()
+        return accepted
+
+    def test_a_new_violation_blocks_review_readiness_and_is_named(self) -> None:
+        accepted = self._candidate_against("validator:element-param-at-most/height/2.0")
+
+        validation = self.validation_of(accepted["candidateId"])
+        candidate = self.client.get(f"/api/candidates/{accepted['candidateId']}").json()
+
+        self.assertIn("obligations.held", validation["blockedBy"])
+        self.assertIs(validation["reviewReady"], False)
+        [problem] = validation["obligationProblems"]
+        self.assertEqual((problem["obligationId"], problem["status"], problem["new"]), ("base-height-limit", "violated", True))
+        self.assertIn("2.2000", problem["detail"])
+        self.assertEqual(candidate["obligationProblems"], validation["obligationProblems"])
+        self.assertEqual(candidate["relationProblems"], [])
+
+    def test_a_violation_the_source_already_had_does_not_block(self) -> None:
+        accepted = self._candidate_against("validator:element-param-at-most/height/0.5")
+
+        validation = self.validation_of(accepted["candidateId"])
+
+        self.assertNotIn("obligations.held", validation["blockedBy"])
+        [problem] = validation["obligationProblems"]
+        self.assertEqual((problem["status"], problem["new"]), ("violated", False))
+
+    def test_an_obligation_without_a_check_is_listed_unchecked_and_does_not_block(self) -> None:
+        accepted = self._candidate_against(None)
+
+        validation = self.validation_of(accepted["candidateId"])
+
+        self.assertNotIn("obligations.held", validation["blockedBy"])
+        self.assertEqual(validation["obligationsChecked"], 0)
+        [problem] = validation["obligationProblems"]
+        self.assertEqual((problem["status"], problem["new"]), ("unchecked", False))
+        self.assertIn("no executable check", problem["detail"])
 
 
 class ReviewReadinessTests(ValidationTestCase):

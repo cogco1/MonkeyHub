@@ -3891,7 +3891,8 @@
         "normalizing independent materialized component edits into one exact-base typed operator; refusing changed objects or dependencies shared by the candidates",
         "lintel_minimum_bearing relation parameters: explicit opening and lintel object ids, x or z span axis, and finite nonnegative minimum_bearing_m",
         "Level@1 upserts through the existing EDIT_COMPONENTS operator with project-level validity, exact-base and protected-dependency checks; a Level remains a spatial reference, not a storey.",
-        "Explicit metadata-only parameter lock/unlock operators; ordinary edits preserve existing lock metadata and established parameter binding paths, including inherited Type defaults, without freezing unrelated consumer fields"
+        "Explicit metadata-only parameter lock/unlock operators; ordinary edits preserve existing lock metadata and established parameter binding paths, including inherited Type defaults, without freezing unrelated consumer fields",
+        "OBLIGATION_CHECKS: the closed table of executable checks a DesignObligation may name in validator_ref as validator:<kind>/<arguments>, one line of meaning each, and check_obligations(record, boxes=None), which reports every live obligation held, violated or unchecked; record kinds read the record alone, measured kinds also read the built model's inspected object boxes"
       ],
       "does_not_own": [
         "the relation kind vocabulary (semantics.relation_kinds.ArchitecturalRelationKind)",
@@ -3919,7 +3920,8 @@
         "RecordBinding",
         "DependencyEdge tuple",
         "StateRecordOperator",
-        "deterministic successor StateRecord"
+        "deterministic successor StateRecord",
+        "ObligationResult per live obligation: obligation_id, validator_ref, status held | violated | unchecked, and what was measured, in words"
       ],
       "public_api": [
         "CHECK_KINDS",
@@ -3962,7 +3964,14 @@
         "combine_component_changes",
         "StateRecord.closures",
         "compile_parameter_locks",
-        "changed_refs"
+        "changed_refs",
+        "OBLIGATION_CHECKS",
+        "ObligationResult",
+        "check_obligations",
+        "obligation_check",
+        "obligation_checkable",
+        "obligation_measured",
+        "obligations_in_scope"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -4000,7 +4009,8 @@
         "an element named in another element's references.voids is upstream of it: changing the void invalidates the host",
         "facets on a component are its only L3 meaning a capability may read; changing them changes no element, object, datum or dependency",
         "a part's own material lives under its component (part_facets: part id -> material.name and material.color only): the record refuses a part the component does not have and any other key, and declared_materials resolves every part of a component one of whose parts states its own by precedence (the part's, else the component's, else none); an exported object belongs to the part it is named after (part_of_object: obj-<element id>, or obj-<element id>-<suffix>, the longest such part winning), the one naming rule a pick also reads",
-        "a material.color is stated with the material.name it colours, on a component or on a part, and every component and part sharing a material.name carries the same material.color or none; anything else is refused naming the components and parts, while records without colours or facets stay valid"
+        "a material.color is stated with the material.name it colours, on a component or on a part, and every component and part sharing a material.name carries the same material.color or none; anything else is refused naming the components and parts, while records without colours or facets stay valid",
+        "an obligation that names no check, names a kind OBLIGATION_CHECKS does not have, or needs a value the record and the boxes do not state is unchecked, never held; a check never repairs anything and reads no value the record or the boxes do not state; obligations_in_scope is the live obligations whose subjects meet the given refs or their downstream closure"
       ],
       "status": "canonical",
       "tests": [
@@ -4812,7 +4822,8 @@
         "Protecting an executing candidate and its input from automatic cleanup, and recording its finished result in the working position for recovery and comparison without moving the editing base or accepting a Stage.",
         "The read-only Worktree Graph: the Working Head and its line (its first-parent chain, oldest first, each step with its retained label, request, summary and Stage; a step's request is its admission's rawLanguage, else the words its run kept), after a return to an earlier step the later line the head left (the runs beyond it the head once stood on and those they were made through, along the branch moved onto last, #575), other accepted lines, running and interrupted candidate work with exact bases and declared read/write refs, retained results off the head's line and whether the StateRecord combine rule accepts them with the head, a conflicting one the line moved past and nobody continued or admitted being a draft the line superseded (#575), plus each drawing's latest revision as project_runtime.binding's representation-status projection reads it (what the Drawing tool says) and each render attempt's retained source state; each finished line's retained admission (admitted, rejected, superseded or none) and Study",
         "Kaiwen's retention rule (#575): which runs go to the project trash (plan_cleaning) - a draft the Worktree Graph names superseded, an attempt an admitted result replaced or its loop withdrew, a design change whose run never finished - and only off every kept line (the Working Head's, a Stage's, an admitted result's), never continued, admitted or rejected, no name a person saved (an agent's or any other caller's name goes with it into the trash) and no row a person chose, no execution's input, holding only what its execution wrote, and named by no retained record outside it but the admission that replaced it; moving them in order (clean_superseded), the trash read and restore (GET /api/trash, POST /api/trash/restore), the 30-day purge, and the sweeps at project open (after the index loads) and after each Continue on a thread of their own (RetentionSweeps)",
-        "expiring superseded local recovery in the project's own runtime (prune_recovery over archflow.project.repository's prune_working_draft, its rule unchanged): first in every retention sweep and every 15 minutes while the project is open (RECOVERY_PRUNE_INTERVAL_S), the timer the Hub kept until ADR-012"
+        "expiring superseded local recovery in the project's own runtime (prune_recovery over archflow.project.repository's prune_working_draft, its rule unchanged): first in every retention sweep and every 15 minutes while the project is open (RECOVERY_PRUNE_INTERVAL_S), the timer the Hub kept until ADR-012",
+        "relation_problems: the violated relations, then the unchecked ones, by relation id, from the run's retained relation reports, at most RELATION_PROBLEMS_SHOWN; a check that held on the pairs it measured but left a pair unmeasured is unchecked"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - monkeyarch.application.project_runner",
@@ -4840,7 +4851,8 @@
         "SeatOutcome",
         "RelationTotals",
         "Job",
-        "Studio events"
+        "Studio events",
+        "relationProblems and obligationProblems on a candidate read, from the same reports the counts add up"
       ],
       "public_api": [
         "POST /api/proposals/{proposal_id}/candidate",
@@ -4902,7 +4914,10 @@
         "ProjectTrashDto",
         "TrashEntryDto",
         "TrashRestoreRequestDto",
-        "TrashRestoreDto"
+        "TrashRestoreDto",
+        "RelationProblem",
+        "relation_problems",
+        "RELATION_PROBLEMS_SHOWN"
       ],
       "depends_on": [
         "archflow.project.inputs",
@@ -5818,13 +5833,14 @@
       "purpose": "Say what a finished candidate validates to - the kernel's receipt - and, separately, whether it is ready for human review and what refuses it.",
       "owns": [
         "building the CandidateSubmission and asking archflow.validation.engine.validate_submission about it",
-        "the five-clause review-readiness verdict (receipt, seat execution, relations held, relations fully checked, exports available) and its blocked_by list",
+        "the six-clause review-readiness verdict (receipt, seat execution, relations held, relations fully checked, exports available, obligations held) and its blocked_by list",
         "source coverage from published references and the candidate's exact StateRecord; normative requirement-to-result projection remains incomplete",
         "memoizing one validation per candidate and issue, computed once in this process",
         "the impact arrangement around StateRecord.closure: direct, propagated, protected, conflicts, locks and unknown coverage",
         "the before/after/why comparison of two runs' exported objects, joined by name from retained seat-3dm-inspection records",
         "candidate validation against its verified Stage source and exact historical published base through the existing validators",
-        "available composed registrations are distinct from certified native exports; native execution-ref coverage is still checked"
+        "available composed registrations are distinct from certified native exports; native execution-ref coverage is still checked",
+        "checking a candidate's obligations on its exact record and inspected boxes and on its source run's (candidate_obligations, ObligationReadout); a violation the source did not have is new"
       ],
       "does_not_own": [
         "the validators themselves - archflow.validation.engine",
@@ -5849,7 +5865,8 @@
         "Impact",
         "Comparison",
         "ObjectChange",
-        "ComponentChange"
+        "ComponentChange",
+        "obligationProblems (violated, new ones first, then unchecked; at most 20) and obligationsChecked on the validation readout"
       ],
       "public_api": [
         "GET /api/candidates/{candidate_id}/validation",
@@ -5866,7 +5883,9 @@
         "shapes_of",
         "Comparison",
         "ValidationStore.receipt_ids",
-        "validate_design_candidate"
+        "validate_design_candidate",
+        "candidate_obligations",
+        "ObligationReadout"
       ],
       "depends_on": [
         "archflow.project.refs",
@@ -5880,12 +5899,13 @@
       ],
       "invariants": [
         "the receipt and review readiness are deliberately two different answers and are never merged",
-        "review_ready requires all five clauses; every refusal is named in blocked_by",
+        "review_ready requires all six clauses; every refusal is named in blocked_by",
         "review readiness never issues a run or advances a stage; archflow.project.issue remains the only issuer",
         "a validation is about one candidate at one issue - the key includes the published version",
         "impact adds no propagation rule of its own; it calls StateRecord.closure and arranges the answer",
         "the comparison is a join on retained records, with a stated tolerance, not browser or geometry inference",
-        "the validation readout for a retained Stage-based candidate uses its exact historical source base, matching design acceptance; legacy candidates retain current-HEAD validation and formal issue remains separate"
+        "the validation readout for a retained Stage-based candidate uses its exact historical source base, matching design acceptance; legacy candidates retain current-HEAD validation and formal issue remains separate",
+        "obligations.held refuses only a violation the candidate's source run did not have: a condition already broken where the change started does not block, and an unchecked obligation refuses nothing"
       ],
       "status": "canonical",
       "tests": [

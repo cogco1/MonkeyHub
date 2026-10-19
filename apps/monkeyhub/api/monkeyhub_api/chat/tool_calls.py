@@ -117,7 +117,7 @@ def _finish(base: str, started: Mapping, submitted: Mapping, deadline: float) ->
         "candidate": {
             key: candidate.get(key) for key in
             ("candidateId", "stateDigest", "changedVsProjection", "seatExecutionComplete",
-             "relationChecks", "harness", "honesty")
+             "relationChecks", "relationProblems", "obligationProblems", "harness", "honesty")
             if key in candidate
         },
         # What the run saved, by the fields that say whether it is really there.
