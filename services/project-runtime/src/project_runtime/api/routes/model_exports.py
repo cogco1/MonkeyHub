@@ -4,7 +4,9 @@ from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.requests import Request
 from ...binding import bound_project
-from ...application import model_exports
+import base64
+
+from ...application import model_exports, state_files
 from ...errors import StudioError
 
 router = APIRouter(tags=["model exports"])
@@ -31,6 +33,16 @@ class ModelExportRequest(ExportDTO):
     project_revision: ProjectRevision | None = Field(None, alias="projectRevision")
     source_artifact_id: str | None = Field(None, alias="sourceArtifactId", pattern=r"^[a-f0-9]{64}$")
     upload: ModelUpload | None = None
+    with_state: bool = Field(False, alias="withState", description=(
+        "3dm of a projectRevision only: the file also carries that run's design record and the project's design "
+        "decisions, sealed, so that a later reader can tell what was changed outside MonkeyHub (#657)."))
+    parent_file_sha256: str | None = Field(None, alias="parentFileSha256", pattern=r"^[a-f0-9]{64}$",
+                                           description="withState only: the state file this revision was made from.")
+
+
+class StateFileRequest(ExportDTO):
+    file_name: str = Field(alias="fileName", min_length=1, max_length=240)
+    content_base64: str = Field(alias="contentBase64", max_length=55924056)
 
 
 @router.get("/exports/capabilities")
@@ -41,6 +53,19 @@ def capabilities():
 @router.post("/exports", status_code=202)
 def create_export(request: Request, payload: ModelExportRequest):
     return model_exports.submit(bound_project(request.app.state), request.app.state.jobs, payload)
+
+
+@router.post("/state-files/inspect")
+def inspect_state_file(request: Request, payload: StateFileRequest):
+    """What one state-carrying 3DM states, what changed in it outside MonkeyHub since its seal, and the condition
+    each such change makes on the parts it touched. A read: nothing is retained."""
+    try:
+        data = base64.b64decode(payload.content_base64, validate=True)
+    except ValueError as exc:
+        raise StudioError(422, "STATE_FILE_INVALID", "Invalid base64 file bytes.") from exc
+    if not data or len(data) > 40 * 1024 * 1024:
+        raise StudioError(413, "STATE_FILE_INVALID", "A state file is 1 byte to 40 MiB.")
+    return state_files.inspect_state_file(bound_project(request.app.state), data)
 
 
 @router.get("/exports/{export_id}")

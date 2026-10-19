@@ -1073,8 +1073,16 @@ class DirectLoftTests(unittest.TestCase):
             edit_drawn_element(row, context, kind="scale", scale=[0, 1, 1])
         rows = (*_rows(), replace(row, references={"base": {"datum": "capitals-west-top"}}))
         _, context = _produce(rows)
-        with self.assertRaisesRegex(ElementProducerError, "cannot detach its host"):
-            edit_drawn_element(rows[-1], context, kind="move", translation=[1, 0, 0])
+        for kind, action in (("move", {"translation": [1, 0.5, 0]}), ("copy", {"translation": [1, 0, 0]}),
+                             ("rotate", {"axis": [0, 1, 0], "angle_degrees": 90})):
+            with self.subTest(kind=kind), self.assertRaisesRegex(ElementProducerError, "cannot detach its host"):
+                edit_drawn_element(rows[-1], context, kind=kind, **action)
+        moved = edit_drawn_element(rows[-1], context, kind="move", translation=[1, 0, 0])
+        self.assertEqual(moved.references, rows[-1].references, "a move in plan keeps it on the datum it is anchored to")
+        before = [p for s in rows[-1].params["profiles"] for p in s]
+        after = [p for s in moved.params["profiles"] for p in s]
+        self.assertEqual([(round(a[0] - b[0], 9), round(a[1] - b[1], 9), round(a[2] - b[2], 9)) for a, b in zip(after, before)],
+                         [(1.0, 0.0, 0.0)] * len(before))
 
     def test_section_heights_are_relative_to_the_datum_without_moving_the_profiles(self) -> None:
         for bottom, top, support in ((0.4, 1.4375, {"rise": 0.4}),

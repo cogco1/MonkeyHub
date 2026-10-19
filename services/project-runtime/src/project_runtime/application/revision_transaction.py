@@ -441,12 +441,14 @@ _CONTEXT_TEXT = 300
 
 def revision_context(*, working: Mapping[str, Any], decisions: Sequence[Decision], record: StateRecord,
                      results: Sequence[Any], last_change: Mapping[str, Any] | None,
-                     tried: Sequence[Mapping[str, Any]], honesty: Sequence[str] = ()) -> dict[str, Any]:
+                     tried: Sequence[Mapping[str, Any]], honesty: Sequence[str] = (),
+                     outside: Sequence[Mapping[str, Any]] = ()) -> dict[str, Any]:
     """The bounded reading a change is written from: every item names where it came from.
 
     ``results`` are the record's obligation results on the working design (``check_obligations``);
     ``last_change`` is the working design's own landed change, with its objects before and after, so that
-    undoing it is an ordinary change; ``tried`` are results the architect rejected. Lists are cut at a fixed
+    undoing it is an ordinary change; ``tried`` are results the architect rejected; ``outside`` are the
+    changes made outside MonkeyHub that a file brought in, newest first, each to be named. Lists are cut at a fixed
     length and say how many were left out; nothing here is a judgement.
     """
 
@@ -466,7 +468,8 @@ def revision_context(*, working: Mapping[str, Any], decisions: Sequence[Decision
     rejected = [{"ref": f"decision:{d.decision_id}", "disposition": d.disposition, "targetRef": d.target_ref,
                  "words": d.words[:_CONTEXT_TEXT]} for d in decisions if d.disposition in REJECTING]
     answer: dict[str, Any] = {"working": dict(working), "lastChange": None if last_change is None else dict(last_change)}
-    for key, rows in (("keep", keep), ("rejected", rejected), ("conditions", conditions), ("tried", list(tried))):
+    for key, rows in (("outside", [{**row, "statement": str(row.get("statement", ""))[:_CONTEXT_TEXT]} for row in outside]),
+                      ("keep", keep), ("rejected", rejected), ("conditions", conditions), ("tried", list(tried))):
         answer[key] = rows[:_CONTEXT_ROWS]
         if len(rows) > _CONTEXT_ROWS:
             answer[f"{key}Omitted"] = len(rows) - _CONTEXT_ROWS

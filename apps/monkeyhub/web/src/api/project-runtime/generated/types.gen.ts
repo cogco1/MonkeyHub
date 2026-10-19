@@ -6780,6 +6780,18 @@ export type ModelExportRequest = {
      */
     sourceArtifactId?: string | null;
     upload?: ModelUpload | null;
+    /**
+     * Withstate
+     *
+     * 3dm of a projectRevision only: the file also carries that run's design record and the project's design decisions, sealed, so that a later reader can tell what was changed outside MonkeyHub (#657).
+     */
+    withState?: boolean;
+    /**
+     * Parentfilesha256
+     *
+     * withState only: the state file this revision was made from.
+     */
+    parentFileSha256?: string | null;
 };
 
 /**
@@ -12034,6 +12046,20 @@ export type StageContextChangesDto = {
 };
 
 /**
+ * StateFileRequest
+ */
+export type StateFileRequest = {
+    /**
+     * Filename
+     */
+    fileName: string;
+    /**
+     * Contentbase64
+     */
+    contentBase64: string;
+};
+
+/**
  * StateProjectionDto
  *
  * The wire form of ``GET /api/state``.
@@ -12875,6 +12901,12 @@ export type TransformElementRequestDto = {
      * Copyelementid
      */
     copyElementId?: string | null;
+    /**
+     * Alone
+     *
+     * move only: move this element by itself although other elements depend on it or relations name it. Each of those keeps its own definition and is rebuilt from it - one placed by its own coordinates stays where it is, one hosted by or measured from this element follows - and the candidate's readback and validation show what that does. A parameter-bound coordinate the move changes stops following its parameter, and the summary names each parameter; the others keep their bindings. Without it such a move is refused.
+     */
+    alone?: boolean;
     /**
      * Keep
      */
@@ -15480,6 +15512,39 @@ export type CreateExportApiExportsPostResponses = {
      * Successful Response
      */
     202: unknown;
+};
+
+export type InspectStateFileApiStateFilesInspectPostData = {
+    body: StateFileRequest;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/state-files/inspect';
+};
+
+export type InspectStateFileApiStateFilesInspectPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InspectStateFileApiStateFilesInspectPostError = InspectStateFileApiStateFilesInspectPostErrors[keyof InspectStateFileApiStateFilesInspectPostErrors];
+
+export type InspectStateFileApiStateFilesInspectPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
 };
 
 export type ReadExportApiExportsExportIdGetData = {

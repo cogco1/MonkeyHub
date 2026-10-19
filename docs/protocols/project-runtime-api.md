@@ -432,6 +432,13 @@ keeps its current numeric position. A datum change propagates through existing d
 dependencies. Cycles, missing targets, nonpositive height, protected state and stale bases
 refuse before a candidate is saved.
 
+A `move` of an element that other elements depend on, or that relations name, is refused unless the
+request says `alone: true`. The element then moves by itself: each element depending on it keeps its own
+definition and is rebuilt from it (one placed by its own coordinates stays, one hosted by or measured from the
+moved element follows), and the candidate's readback and validation show the result. A parameter-bound
+coordinate the move changes stops following its parameter (the change's summary names each one); every other
+entry keeps its binding. `alone` is refused for any other kind.
+
 `POST /api/proposals/transform` also accepts `kind: "compress-above"` for one atomic
 height edit of planar surfaces. It takes exactly one of `componentId` or nonempty
 `elementIds`, without `elementId`, plus finite `threshold` and `factor` with
@@ -1133,7 +1140,7 @@ detail}], questionRefs, conditions: [{obligationId, statement, checkable, valida
 working: {runId, stateDigest, revisionSha256}, seconds}`. Nothing moves on `problems`, `needs_question`
 or `refused`. A kept target or a rejected option changes only after its decision is revised.
 
-`GET /api/revisions/context` is what a change is written from: `working` (runId, stateDigest, revisionSha256, label), `keep` and `rejected` (each decision's ref, target and the architect's words), `conditions` (each live condition's ref, statement, subjects, `validatorRef`, `checkable` and how it stands on the working design: `onWorkingDesign` held, violated or unchecked, with `detail`), `lastChange` (the working design's own landed change: its summary, the words it answered and its objects before and after against its parent, so that undoing it is an ordinary change), `tried` (results the architect rejected, with their words) and `honesty`. Each list holds at most 40 rows and says how many it left out.
+`GET /api/revisions/context` is what a change is written from: `working` (runId, stateDigest, revisionSha256, label), `outside` (every change made outside MonkeyHub that a state file brought into the design, newest file first: its words with the part and amount, `subjects`, `inTheDesign` and `fileSha256`), `keep` and `rejected` (each decision's ref, target and the architect's words), `conditions` (each live condition's ref, statement, subjects, `validatorRef`, `checkable` and how it stands on the working design: `onWorkingDesign` held, violated or unchecked, with `detail`), `lastChange` (the working design's own landed change: its summary, the words it answered and its objects before and after against its parent, so that undoing it is an ordinary change), `tried` (results the architect rejected, with their words) and `honesty`. Each list holds at most 40 rows and says how many it left out.
 
 **The design-loop setting.** The Hub's application setting `designLoop` reaches the Runtime as
 `ARCHFLOW_STUDIO_DESIGN_LOOP`, in three tiers; the default, and a Runtime started by hand, is `legacy`.
@@ -1157,6 +1164,19 @@ user's message and words to it, takes the loop's `taskClass` beside it as for an
 `polish` loop lands only a result it looked at, or a repair superseding a looked-at attempt; `buildOnly` builds
 one to look at), never sends a confirmation, and gives the guide that names it; in the other tiers the chat's
 tools and guide are as they were.
+
+**The design-loop tools.** While the design loop is enforced, the Hub's tool server also answers four tools
+over the chat's own bindings: `design_read` (`GET /api/revisions/context` and the construction model, or the
+construction vocabulary), `design_submit` (`POST /api/revisions` with the user's message and words bound),
+`design_ask` and `design_report_limitation`. The Hub counts, per answered user message, the changes that came
+back with `problems`; past the repair limit (`MONKEYHUB_REPAIR_BUDGET`, default 3) a submission is refused with
+`409 REPAIR_BUDGET_EXHAUSTED` before anything is sent, and earlier attempts on the same base are superseded by
+the result that lands. Started with `--design-loop`, the tool server lists only these four; for an external host
+it binds itself at the first call and publishes the request named by `MONKEYHUB_DESIGN_REQUEST_FILE` as the
+user's message. With `MONKEYHUB_DESIGN_LOOP_STATE` naming a file outside any project, each outcome is written
+there, and `design_loop.py stop-hook --state <file>`, run as the CLI's Stop hook, holds the turn open until a
+change landed, the architect was asked or a limitation was reported, at most three times.
+`design_loop.cli_profile` gives the system prompt, settings, environment and allowed tools of such a turn.
 
 ## 6. Pick and gesture resolution
 
@@ -2043,6 +2063,24 @@ rechecks the retained output digest. Failed jobs have no downloadable output;
 unfinished jobs after a Runtime restart report `interrupted` and are not replayed.
 These operations use existing jobs and P036 noncanonical export runs, leaving
 project HEAD and the authoritative model unchanged.
+
+**A 3DM that carries its state (#657).** With `withState: true` (a `projectRevision`, `targetFormat` `3dm`
+only, else `422 EXPORT_STATE_UNAVAILABLE`) the delivered 3DM also holds, as the document strings
+`archflow:state` and `archflow:binding`, that run's State Record, the project's active design decisions as
+portable rows (`disposition`, `targetRef`, `rawLanguage`, `strength`, `extent`) and a seal over them: digests
+of the record, the decisions and each row, each named object's box and geometry digest, and the optional
+`parentFileSha256` of the state file the revision was made from. The report adds `withState`,
+`stateRecordDigest`, `decisionsCarried` and `parentFileSha256`.
+
+`POST /api/state-files/inspect` takes `{fileName, contentBase64}` and retains nothing. It answers `fileSha256`,
+`sealed`, `parentFileSha256`, the `record` and `decisions` the file states, `outOfBand` (each difference from
+its seal: `row_added`, `row_changed`, `row_removed`, `decisions_changed`, `object_added`, `object_removed`,
+`object_duplicate`, `object_moved` beyond 2 mm, or `unsealed`), `reencoded` (objects whose mesh was re-encoded
+within the box tolerance) and `conditions`: for each change made outside MonkeyHub, one open
+`DesignObligation` with no check on the parts it touched (an object's part and its component, a changed row, the
+decisions' targets). Whoever builds a project from the file adds them to its record, so that the one-call
+revision asks before changing anything the record does not know was changed. A file whose state cannot be read
+is `422 STATE_FILE_<code>`.
 
 The current provider supports bounded 3DM/GLB triangle-mesh interchange and
 validated same-format delivery. It does not reconstruct exact CAD solids or

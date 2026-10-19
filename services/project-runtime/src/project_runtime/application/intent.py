@@ -436,7 +436,11 @@ def _require_independent_element(record, entity) -> None:
                           "Direct transform cannot detach them; edit the controlling relation instead.")
 
 
-def _direct_element_fields(record, entity, row, changed):
+def _direct_element_fields(record, entity, row, changed, detached: list[str] | None = None):
+    """The element's fields after a direct edit. A parameter-bound value it changes is refused, unless ``detached``
+    is given (a move alone): then only the entries the edit changes are written as values, every other entry keeps
+    its binding, and each parameter an entry stops following is added to ``detached``."""
+
     from archflow.state.state_record import _element_fields
 
     params = dict(entity.fields.get("params", {}))
@@ -451,12 +455,37 @@ def _direct_element_fields(record, entity, row, changed):
         if row.params.get(key) == changed.params.get(key):
             continue
         if bound(authored_params.get(key)):
-            raise ValueError(f"{entity.entity_id}.{key} is parameter-bound; edit its existing control instead of detaching it")
+            if detached is None:
+                raise ValueError(f"{entity.entity_id}.{key} is parameter-bound; edit its existing control instead of "
+                                 "detaching it, or move it alone")
+            if key in changed.params:
+                params[key] = _keep_bound(authored_params[key], row.params.get(key), changed.params[key], detached)
+            else:
+                params.pop(key, None)
+            continue
         if key in changed.params:
             params[key] = changed.params[key]
         else:
             params.pop(key, None)
     return {**entity.fields, "producer": changed.producer, "params": params}
+
+
+def _keep_bound(authored, before, after, detached: list[str]):
+    """``after``, with every entry the edit left as it was still written as ``authored`` wrote it (its binding)."""
+
+    if isinstance(before, (int, float)) and isinstance(after, (int, float)) and not isinstance(before, bool) \
+            and abs(float(before) - float(after)) <= 1e-9:
+        return authored
+    if before == after:
+        return authored
+    if isinstance(authored, Mapping) and isinstance(before, Mapping) and isinstance(after, Mapping):
+        return {key: _keep_bound(authored.get(key, value), before.get(key), value, detached) for key, value in after.items()}
+    if (isinstance(authored, (list, tuple)) and isinstance(before, (list, tuple)) and isinstance(after, (list, tuple))
+            and len(authored) == len(before) == len(after)):
+        return [_keep_bound(a, b, c, detached) for a, b, c in zip(authored, before, after)]
+    if isinstance(authored, str) and authored.startswith("@"):
+        detached.append(authored[1:])
+    return after
 
 
 def _decimal(value: float) -> str:
@@ -504,8 +533,13 @@ def _action_words(kind: str, action: Mapping[str, Any]) -> str:
 
 def direct_element_proposal(projection: StateProjection, *, element_id: str, kind: str,
                             copy_element_id: str | None = None, keep_refs: Sequence[str] = (),
-                            **action: Any) -> Mapping[str, Any]:
-    """One direct modeling action on the record's element, through the existing typed edit."""
+                            alone: bool = False, **action: Any) -> Mapping[str, Any]:
+    """One direct modeling action on the record's element, through the existing typed edit.
+
+    ``alone`` moves an element that others depend on or relations name by itself: each of them keeps its own
+    definition, and the candidate's readback and validation say what that does. An entry of a parameter-bound
+    value the move changes stops following its parameter, and the summary names each one; the others keep theirs.
+    """
 
     from monkeyarch.authoring.element_producers import ProductionContext, edit_drawn_element, element_rows_of, produce_rows
     from monkeyarch.domain.reference_resolver import ReferenceContext
@@ -515,7 +549,7 @@ def direct_element_proposal(projection: StateProjection, *, element_id: str, kin
     entity = next((item for item in record.entities_of("Element@1") if item.entity_id == element_id), None)
     if entity is None:
         raise StudioError(404, "ELEMENT_UNKNOWN", f"{element_id} is not an editable element of this record")
-    if kind not in {"push_pull", "copy"}:
+    if kind not in {"push_pull", "copy"} and not (alone and kind == "move"):
         _require_independent_element(record, entity)
     try:
         rows = element_rows_of(record)
@@ -523,7 +557,8 @@ def direct_element_proposal(projection: StateProjection, *, element_id: str, kin
         context = ProductionContext(ReferenceContext(grids=project_grids_of(record), levels=project_levels_of(record)), {})
         produce_rows(rows, context)
         changed = edit_drawn_element(row, context, kind=kind, **action)
-        fields = _direct_element_fields(record, entity, row, changed)
+        detached: list[str] | None = [] if alone and kind == "move" else None
+        fields = _direct_element_fields(record, entity, row, changed, detached)
         target_id = element_id
         if kind == "copy":
             target_id = copy_element_id or f"{element_id}-copy-{uuid4().hex[:8]}"
@@ -533,7 +568,9 @@ def direct_element_proposal(projection: StateProjection, *, element_id: str, kin
                    "basis_refs": list(entity.basis_refs), "fields": fields}
     except (TypeError, ValueError, KeyError) as exc:
         raise StudioError(422, "DIRECT_EDIT_UNSUPPORTED", str(exc)) from exc
-    said = f"{kind.replace('_', '/')} {element_id}" + (f" as {target_id}" if kind == "copy" else "") + _action_words(kind, action)
+    said = (f"{kind.replace('_', '/')} {element_id}" + (" alone" if alone else "")
+            + (f" as {target_id}" if kind == "copy" else "") + _action_words(kind, action)
+            + (f"; it no longer follows {_listed(sorted(set(detached)))}" if detached else ""))
     return component_edit_proposal(projection, {
         "summary": said, "entities": [updated], "parameters": [], "relations": [],
         "removeEntityIds": [], "removeParameterKeys": [], "removeRelationIds": [],
