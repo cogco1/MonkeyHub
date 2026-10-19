@@ -24,7 +24,7 @@ from .workers import project_key
 
 
 _CANDIDATE_REQUEST = re.compile(
-    r"^/api/(proposals/[^/]+/candidate|candidates/combine|capabilities/[^/]+/run|options/[^/]+/select|program)$"
+    r"^/api/(proposals/[^/]+/candidate|candidates/combine|capabilities/[^/]+/run|options/[^/]+/select|program|revisions)$"
 )
 _ACCEPT_REQUEST = re.compile(r"^/api/candidates/([^/]+)/accept$")
 _PROPOSAL_CANDIDATE = re.compile(r"^/api/proposals/([^/]+)/candidate$")

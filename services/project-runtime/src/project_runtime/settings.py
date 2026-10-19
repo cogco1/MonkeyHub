@@ -45,6 +45,13 @@ RENDER_PROVIDER_ENV = "ARCHFLOW_STUDIO_RENDER_PROVIDER"
 RENDER_MODEL_ENV = "ARCHFLOW_STUDIO_RENDER_MODEL"
 RENDER_API_KEY_ENV = "ARCHFLOW_STUDIO_RENDER_API_KEY"
 RENDER_TIMEOUT_ENV = "ARCHFLOW_STUDIO_RENDER_TIMEOUT_S"
+# Whether the Agent reaches the working design only through POST /api/revisions
+# (#185). ``enforced`` refuses an Agent's own Continue and its admission of a
+# result; ``off`` leaves both as they were. A person's actions are never affected.
+DESIGN_LOOP_ENV = "ARCHFLOW_STUDIO_DESIGN_LOOP"
+DESIGN_LOOP_ENFORCED = "enforced"
+DESIGN_LOOP_OFF = "off"
+DESIGN_LOOPS = (DESIGN_LOOP_ENFORCED, DESIGN_LOOP_OFF)
 
 # The two modes of the protocol boundary. ``local`` is the pair the launcher
 # starts on this machine: one loopback listener, one user, no token. ``remote``
@@ -148,6 +155,9 @@ class StudioSettings:
     render_model: str | None = None
     render_api_key: str | None = field(default=None, repr=False)
     render_timeout_s: float = 120.0
+    # The Hub's designLoop setting. A runtime started by hand serves no Hub Agent,
+    # so nothing it does depends on this.
+    design_loop: str = DESIGN_LOOP_OFF
 
     def __post_init__(self) -> None:
         """Local listeners stay on loopback; remote listeners need credentials.
@@ -162,6 +172,8 @@ class StudioSettings:
             or self.cache_dir.resolve(strict=False).is_relative_to(Path(self.project_dir).resolve(strict=False))
         ):
             raise SettingsError(f"{CACHE_DIR_ENV} must be an absolute directory outside the project.")
+        if self.design_loop not in DESIGN_LOOPS:
+            raise SettingsError(f"{DESIGN_LOOP_ENV} must be one of {', '.join(DESIGN_LOOPS)}.")
         if self.render_provider not in ("off", "gemini"):
             raise SettingsError(f"{RENDER_PROVIDER_ENV} must be off or gemini.")
         if not math.isfinite(self.render_timeout_s) or not 1 <= self.render_timeout_s <= 300:
@@ -246,6 +258,12 @@ class StudioSettings:
         return None if self.cache_dir is None else self.cache_dir / "index"
 
     @property
+    def design_loop_enforced(self) -> bool:
+        """Whether the Agent reaches the working design only through POST /api/revisions."""
+
+        return self.design_loop == DESIGN_LOOP_ENFORCED
+
+    @property
     def exports(self) -> bool:
         """Whether a candidate run writes geometry at all."""
 
@@ -308,6 +326,7 @@ class StudioSettings:
             render_model=os.environ.get(RENDER_MODEL_ENV, "").strip() or None,
             render_api_key=os.environ.get(RENDER_API_KEY_ENV, "").strip() or None,
             render_timeout_s=render_timeout,
+            design_loop=os.environ.get(DESIGN_LOOP_ENV, "").strip().lower() or DESIGN_LOOP_OFF,
             cad_export=cad_export_from_env(os.environ),
             powershell=Path(powershell) if powershell else None,
             reference_run=reference_run or None,

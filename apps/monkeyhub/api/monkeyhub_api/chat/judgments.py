@@ -16,7 +16,7 @@ from ..models import HubFailure
 
 # Besides retained feedback, the Agent's judgments Hub binds to the user's own
 # message (#294 Q3): a closed loop's admission, and a Continue on the user's words.
-_BOUND_WORDS = {("POST", "/api/admissions"), ("PUT", "/api/working-draft")}
+_BOUND_WORDS = {("POST", "/api/admissions"), ("PUT", "/api/working-draft"), ("POST", "/api/revisions")}
 
 
 def _binds_words(method: str, path: str) -> bool:
@@ -56,6 +56,18 @@ def _user_words(message: dict, quote: str | None, purpose: str) -> str:
     if len(wording) > 2000:
         raise HubFailure(422, "CHAT_FEEDBACK_TOO_LONG", "Select the exact passage of the user's words with feedbackQuote beside method/path/body (at most 2000 characters); the user need not repeat the message.")
     return wording
+
+
+def _revision_body(chat_id: str, session: dict, body: dict, quote: str | None = None) -> dict:
+    """A change carried onto the working design on the user's own words, bound to the message it answers (#185).
+
+    The words are the ones a Continue binds: the whole message, or one exact passage of it.
+    """
+    if {"messageSource", "message_source", "rawLanguage", "raw_language"}.intersection(body):
+        raise HubFailure(422, "CHAT_REVISION_INVALID", "The chat fills messageSource and rawLanguage from this user turn; never supply them.")
+    message = _user_message(chat_id, session, "A revision")
+    return {**body, "projectId": session["projectId"], "rawLanguage": _user_words(message, quote, "A revision"),
+            "messageSource": {"sessionId": chat_id, "messageId": message["id"]}}
 
 
 def _admission_body(chat_id: str, session: dict, body: dict, quote: str | None = None) -> dict:

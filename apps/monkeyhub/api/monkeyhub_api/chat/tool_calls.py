@@ -47,6 +47,8 @@ _TOOL_ARGUMENTS = {
 _FINISHABLE = "/api/capabilities/candidate.modify_existing/run"
 _CHECKPOINT = re.compile(r"^/api/proposals/[A-Za-z0-9_-]+/candidate$")
 _AWAIT_MAX_S = 180
+# How long the chat waits for POST /api/revisions: a little past the Hub's own wait for it.
+_REVISION_WAIT_S = 440
 _POLL_S = 0.4
 
 
@@ -252,7 +254,8 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if name == "studio_schema" and not path:
         # A malformed question is refused before a runtime is prepared for it.
         studio_tool._discovery(arguments)
-        return studio_tool._discover_actions(preparation._bound_studio(hub, chat_id)[0], arguments)
+        return studio_tool._discover_actions(preparation._bound_studio(hub, chat_id)[0], arguments,
+                                             enforced=studio_tool.design_loop_offered())
     if any(key in arguments for key in ("pathPrefix", "offset", "limit")):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "pathPrefix, offset and limit belong to studio_schema action discovery; omit path.")
     # Asking what a documented action takes is not calling it. The path is
@@ -262,7 +265,12 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     # the Studio is resolved, so a refused request never starts a runtime.
     if parsed.scheme or parsed.netloc or parsed.fragment or method not in allowed:
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "This action is not exposed to the chat.")
-    permitted = studio_tool._schema_allowed(method, parsed.path) if name == "studio_schema" else allowed[method].fullmatch(parsed.path)
+    revising = method == "POST" and parsed.path == studio_tool.REVISIONS
+    if revising and not studio_tool.design_loop_enforced(hub):
+        raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "POST /api/revisions is offered to the chat only while this Hub's "
+                         "design loop is enforced, and it is off. Nothing was executed.")
+    permitted = (studio_tool._schema_allowed(method, parsed.path, enforced=revising) if name == "studio_schema"
+                 else allowed[method].fullmatch(parsed.path))
     if not permitted:
         replacement = studio_tool._REPLACED_ACTIONS.get((method, parsed.path))
         if replacement is not None:
@@ -276,6 +284,11 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if name == "studio_request" and method == "POST" and parsed.path == "/api/proposals":
         # Checked, like the path, before the Studio is resolved.
         refusal = studio_tool._semantic_edit_refusal(arguments.get("body"))
+        if refusal is not None:
+            raise refusal
+    if name == "studio_request" and revising:
+        # The change inside a revision is held to what its own route allows the chat.
+        refusal = studio_tool._revision_refusal(arguments.get("body"))
         if refusal is not None:
             raise refusal
     if name == "studio_request" and method == "POST" and parsed.path == "/api/proposals/elevation":
@@ -339,7 +352,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             hidden = {"messageSource", "rawLanguage"}
             schema["properties"] = {key: value for key, value in schema["properties"].items() if key not in hidden}
             schema["required"] = [key for key in schema.get("required", []) if key not in hidden]
-            if method == "POST":
+            if parsed.path == "/api/admissions":
                 task = document["components"]["schemas"]["AdmissionTaskDto"]["properties"]
                 task["kind"] = {**task["kind"], "enum": ["hub-chat"]}
         return studio_tool._request_contract(document, template, method, operation)
@@ -401,9 +414,10 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if (method, parsed.path) in judgments._BOUND_WORDS:
         if parsed.query or not isinstance(body, dict):
             raise HubFailure(422, "CHAT_TOOL_INVALID", f"{method} {parsed.path} takes its whole request in the body, without query parameters.")
-        bind = judgments._admission_body if method == "POST" else judgments._continue_body
+        bind = {"/api/admissions": judgments._admission_body, "/api/working-draft": judgments._continue_body,
+                studio_tool.REVISIONS: judgments._revision_body}[parsed.path]
         body = bind(chat_id, session, body, arguments.get("feedbackQuote"))
-        if method == "POST":
+        if parsed.path == "/api/admissions":
             landing = _landing(chat_id, session, body, arguments) if arguments.get("continue") else None
             # A loop is admitted once it has finished, its declared look first (#294).
             visual_review._require_look(chat_id, body, arguments.get("taskClass"))
@@ -425,7 +439,9 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             operation_id = str(UUID(operation_id))
         except (ValueError, AttributeError, TypeError) as exc:
             raise HubFailure(422, "OPERATION_ID_INVALID", "operationId must be a UUID.") from exc
+        # A revision answers only once its change is built, read back and checked (#185).
         started = transport._request_json(hub, f"/api/runtime/projects/{runtime_id}/studio{path}", method, body,
+                                          timeout=_REVISION_WAIT_S if revising else 180,
                                           headers={"Idempotency-Key": operation_id, "X-Monkey-Chat": chat_id})
     else:
         started = transport._request_json(base, path, method, body)

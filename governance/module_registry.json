@@ -4755,7 +4755,8 @@
         "a row no producer can read leaves its element without drawing controls and never fails a state read: the drawing context and the state read catch what reading drawing inputs may raise (DRAWING_INPUT_ERRORS, the set construction reads a record with)",
         "ProjectBinding and ReadToken are the Runtime's public read API: MonkeyHub opens a project in process with ProjectBinding.unconfigured (no configured reference run, nothing exported), and binding.py imports no web framework; the app-state glue beside it reads its state object structurally (ProcessState) (#519)",
         "RunChanges is one reader's reading of runs' retained changes (candidate_delta), for a request's Worktree Graph or one projector pass: each run's change, or its refusal, is read once and answered again to that reader only; nothing it read outlives the reader, because a run's change may still be being retained or move to the project trash and back, and nobody changes what it answers (#575). Built on one snapshot of the project index (#599), it answers each run that snapshot read whole with the parts of its change the tree reads (change_parts), in the change's own shape so a reader refuses them as it refused the change, and reads every other run",
-        "the design tree's views read the project index only when it holds every write this process made, and then from one snapshot (indexed_runs, #599): inside that read (ProjectBinding.indexed_reading), on the reading thread only, the reference survey, a run's newest runner receipt and the runs that may hold the frozen stage workflow answer from the snapshot; a write never opens one, every other thread reads the runs, and whenever the index cannot answer, or a run was not read whole when it was projected, the runs are read so every refusal stays their own"
+        "the design tree's views read the project index only when it holds every write this process made, and then from one snapshot (indexed_runs, #599): inside that read (ProjectBinding.indexed_reading), on the reading thread only, the reference survey, a run's newest runner receipt and the runs that may hold the frozen stage workflow answer from the snapshot; a write never opens one, every other thread reads the runs, and whenever the index cannot answer, or a run was not read whole when it was projected, the runs are read so every refusal stays their own",
+        "while the design loop is enforced, PUT /api/working-draft bound to a chat message (the Agent's own Continue) is refused with DESIGN_LOOP_REQUIRED; POST /api/revisions continues through select_working_draft itself"
       ],
       "status": "canonical",
       "tests": [
@@ -5055,7 +5056,8 @@
         "the source-bound, read-only visual observation channel (GH-303): VisualReviewRequest over exact model or registered-page sources, EvidenceFrame values taken from the model-view and page-export owners, the strict VisualObservation answer and provider seam, and the Harness allowance; POST /api/visual-reviews defaults to structured observation and also delivers exact rendered frames to the caller without another provider or fabricated findings; different documents may share a page index while exact sources and generated frame names stay distinct; a modeling view named <view>-material is the model view's material display of the same exact model",
         "candidate admission: one CandidateAdmission@1 per closed loop (a task, one worktree of it, or one person's act) in the fixed explicit studio-admissions P036 run, written only through the completion gate Stage acceptance shares, with the boundary's actor, the stated task, Study and bound message, each result's outcome, pinned model, receipt and superseded attempts",
         "the Candidate Pool read for the Design Tree: admitted Candidates and their Studies from admission records and from legacy facts that already prove admission (a committed Stage's run, a retained Exploration's non-base option, an accepted episode's produced run), with lineage-derived continuedFrom and acceptedStageRef and Working Head membership",
-        "the attributable, revisioned rejection, archival/restoration and endorsement of an exact retained Candidate or Stage; this changes no design position"
+        "the attributable, revisioned rejection, archival/restoration and endorsement of an exact retained Candidate or Stage; this changes no design position",
+        "the one-call revision (revise over RevisionPorts, POST /api/revisions): base, keep decisions protected, a touched rejected option, conditions in reach that no check can verify, the build, the read-back and comparison, validation, admission and Continue, in that order, answered as landed, admitted, problems, needs_question or refused; every step is an existing route or function"
       ],
       "does_not_own": [
         "running the proposal - project_runtime.candidate",
@@ -5109,7 +5111,9 @@
         "the visual-review answer: observation, provider usage and next budgetState by default, or delivery=frames with verified PNG data/source/view/digest/dimensions, null observation/usage and next budgetState; existing source/budget/order refusals spend nothing before delivery/provider invocation; VISUAL_PROVIDER_UNAVAILABLE applies only to observation, and VISUAL_PROVIDER_FAILED carries spent budgetState and usage",
         "retained CandidateAdmission@1 records and their DTOs",
         "candidates[] and studies[] on the design history read",
-        "CandidateReview"
+        "CandidateReview",
+        "RevisionOutcome: one outcome with its code, the problems or question refs by source, the conditions in reach, the comparison and where the working design stands",
+        "the revision context: the working design, keep and rejected decisions in the architect's words, every live condition with whether a check can verify it and how it stands on the working design, the last landed change with its objects before and after, and rejected results; bounded lists"
       ],
       "public_api": [
         "POST /api/intents",
@@ -5273,7 +5277,17 @@
         "PoolStudy",
         "POST /api/candidate-reviews",
         "kept_refs",
-        "resolve_keep_refs"
+        "resolve_keep_refs",
+        "POST /api/revisions",
+        "revise",
+        "RevisionRequest",
+        "RevisionOutcome",
+        "RevisionPorts",
+        "RevisionRequestDto",
+        "RevisionOutcomeDto",
+        "require_design_loop",
+        "GET /api/revisions/context",
+        "revision_context"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -5372,7 +5386,8 @@
         "admission accepts no Stage, advances no branch, moves no Working Head and writes no working position; a Runtime connected to a shared project refuses admissions until they synchronize",
         "an elevation edit on a record whose rows cannot be read answers 422 ELEVATION_EDIT_INVALID, never a 500",
         "the record's keep resolution protects what a keep names: each resolved ref, and for a kept geometry id its own parts and its child components' parts, never a shape a script placed under it (made_by_construction), so every route that takes keep, bare ids included, protects a geometry's form",
-        "GET /api/design-history reads the Candidate Pool's lineage, which runs hold legacy admission evidence and the Working Head's survey from one snapshot of the project index when it holds every write this process made (#599); the Stages, their sources and acceptance, the reviews and the admissions are read from the project, and without an answering index everything is, giving the same bytes"
+        "GET /api/design-history reads the Candidate Pool's lineage, which runs hold legacy admission evidence and the Working Head's survey from one snapshot of the project index when it holds every write this process made (#599); the Stages, their sources and acceptance, the reviews and the admissions are read from the project, and without an answering index everything is, giving the same bytes",
+        "a revision builds nothing for a question and moves nothing on problems; an uncheckable condition in reach passes only when the architect's bound words confirm it, and a kept target or rejected option only after its decision is revised; while the design loop is enforced the Agent's own admission of a result and its Continue are refused with DESIGN_LOOP_REQUIRED, and a person's acts are unaffected"
       ],
       "status": "canonical",
       "tests": [
@@ -5415,7 +5430,8 @@
         "tools/tests/test_benchmark_visual_observation.py",
         "services/project-runtime/tests/test_recipe_export.py",
         "tools/tests/test_export_drawing_recipe.py",
-        "services/project-runtime/tests/test_indexed_reads.py"
+        "services/project-runtime/tests/test_indexed_reads.py",
+        "services/project-runtime/tests/test_revision_transaction.py"
       ],
       "notes": "ADR-001's record, section 2.1, makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -5454,7 +5470,8 @@
         "services/project-runtime/src/project_runtime/application/visual_observation.py",
         "services/project-runtime/src/project_runtime/application/visual_reviews.py",
         "tools/benchmarks/benchmark_visual_observation.py",
-        "tools/project/export_drawing_recipe.py"
+        "tools/project/export_drawing_recipe.py",
+        "services/project-runtime/src/project_runtime/application/revision_transaction.py"
       ]
     },
     {
@@ -5688,7 +5705,8 @@
         "Reading the positive application-text intent context budget from ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS; preserving per-attempt provider usage and request-output outcomes through the existing optional Monitor adapter",
         "operator-configured actor authentication with explicit project read/propose/accept/release grants; shared-project service role excludes local computation; Runtime upstream settings contain no project authority",
         "ActorAttribution and request_attribution: who caused one request and through which surface (studio, or a Hub-managed process), read from the middleware's resolved actor and this process's own launch settings and never from a request body or header",
-        "holding the open project's writer lease from before the process serves until it has stopped and drained (ADR-012, _hold_project over archflow.project.repository's hold_writer_lease): the runtime is the project's only writer, and a second runtime for the same project stops with PROJECT_WRITER_BUSY"
+        "holding the open project's writer lease from before the process serves until it has stopped and drained (ADR-012, _hold_project over archflow.project.repository's hold_writer_lease): the runtime is the project's only writer, and a second runtime for the same project stops with PROJECT_WRITER_BUSY",
+        "design_loop (ARCHFLOW_STUDIO_DESIGN_LOOP: enforced | off, off for a Runtime started by hand), read once with the rest of the process configuration"
       ],
       "does_not_own": [
         "any design question or kernel call",
@@ -7232,7 +7250,8 @@
         "Render provider/model/timeout preferences remain in UserSettingsDto; explicit launch environment supplies the secret only to the configured Runtime adapter, with no project or HTTP key field",
         "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement (monkeyhub_api/settings); the resolved values reach a Project Runtime only through its launch environment",
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
-        "Component information in Modeling (#549): topic-agnostic MonkeyHubComponentInfo@1 datasets (docs/protocols/component-info.md), each kept on its own Board card under customData.componentInfo, checked and imported or replaced by dataset id on the Board through its save queue, read while Modeling shows a model once per Board revision, and shown in one closable card for a picked component only when the pick and the dataset's appliesTo (project, run, state digest) match the exact version on screen; datasets for another version are listed, never shown, and a click makes no request and writes nothing"
+        "Component information in Modeling (#549): topic-agnostic MonkeyHubComponentInfo@1 datasets (docs/protocols/component-info.md), each kept on its own Board card under customData.componentInfo, checked and imported or replaced by dataset id on the Board through its save queue, read while Modeling shows a model once per Board revision, and shown in one closable card for a picked component only when the pick and the dataset's appliesTo (project, run, state digest) match the exact version on screen; datasets for another version are listed, never shown, and a click makes no request and writes nothing",
+        "the designLoop application setting (enforced | off) passed to each Project Runtime it starts; while enforced the chat offers POST /api/revisions with the user's message and words bound, and the guide that names it, and while off the chat's tools and guide are unchanged"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -7577,7 +7596,8 @@
         "apps/monkeyhub/api/tests/test_chat_render.py",
         "apps/monkeyhub/api/tests/test_chat_progress.py",
         "apps/monkeyhub/web/test/componentInfo.test.ts",
-        "apps/monkeyhub/web/test/workspaceWidth.test.ts"
+        "apps/monkeyhub/web/test/workspaceWidth.test.ts",
+        "apps/monkeyhub/api/tests/test_design_loop_setting.py"
       ],
       "depends_on": [
         "archflow.contracts.canonical",

@@ -381,3 +381,96 @@ def admission_dto(record: AdmissionRecord) -> CandidateAdmissionDto:
             reason=row.get("reason"), blocked_by=row.get("blockedBy"),
         ) for row in payload["results"]],
     )
+
+
+# ---- one revision in one call (#185) -------------------------------------------
+
+
+class RevisionRequestDto(BaseModel):
+    """One change against the exact working design, carried through every check to the working design."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    project_id: str = Field(alias="projectId", min_length=1)
+    source_run_id: RunId = Field(alias="sourceRunId", description="The working design's run, as it was read.")
+    state_digest: str = Field(alias="stateDigest", min_length=1, description="The working design's stateDigest, as it was read.")
+    kind: Literal["construction", "facets", "hosted-opening", "elevation", "proposal"] = Field(
+        description="Which proposal route the change is: POST /api/proposals/construction, /facets, /hosted-opening, "
+                    "/elevation, or POST /api/proposals for a semanticEdit.")
+    proposal: dict = Field(description="That route's body without projectId, stateDigest, sourceRunId, keep and summary, "
+                                       "which this request supplies.")
+    summary: str = Field(min_length=1, max_length=2000, description="The change in words; its run keeps them.")
+    keep: list[str] = Field(default_factory=list, max_length=200,
+                            description="Refs to keep beside the project's keep decisions, which are always kept.")
+    confirmed: list[str] = Field(
+        default_factory=list, max_length=50,
+        description="obligation:<id> refs no check can verify that the architect's own words in this message confirm "
+                    "the change keeps. A kept target or a rejected option is changed by revising that decision first.")
+    supersedes: list[RunId] = Field(default_factory=list, max_length=64,
+                                    description="Earlier attempts of this same change that this result replaces.")
+    land: bool = Field(default=True, description="false admits the result as a candidate to compare and leaves the "
+                                                 "working design where it is.")
+    label: str | None = Field(default=None, max_length=240)
+    wait_seconds: int = Field(default=240, ge=1, le=300, alias="waitSeconds",
+                              description="How long to wait for the build before answering RUN_TIMEOUT.")
+    message_source: MessageSourceDto | None = Field(
+        alias="messageSource", default=None,
+        description="The chat message this change answers, as the Hub binds it; provenance, never a credential.")
+    raw_language: str | None = Field(
+        alias="rawLanguage", default=None, min_length=1, max_length=2000,
+        description="The user's own words the change answers, as the Hub binds them.")
+
+
+class RevisionProblemDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    source: str = Field(description="Where it came from: proposal, build, readback, relation:<id>, obligation:<id>, "
+                                    "a review clause, or admission")
+    kind: str
+    detail: str
+
+
+class RevisionConditionDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    obligation_id: str = Field(alias="obligationId")
+    statement: str
+    checkable: bool
+    validator_ref: str | None = Field(alias="validatorRef")
+
+
+class RevisionWorkingDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    run_id: str | None = Field(alias="runId")
+    state_digest: str | None = Field(alias="stateDigest")
+    revision_sha256: str | None = Field(alias="revisionSha256")
+
+
+class RevisionOutcomeDto(BaseModel):
+    """Exactly one outcome: landed, admitted, problems, needs_question or refused."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    outcome: Literal["landed", "admitted", "problems", "needs_question", "refused"]
+    code: str
+    detail: str
+    proposal_id: str | None = Field(alias="proposalId")
+    candidate_id: str | None = Field(alias="candidateId")
+    state_digest: str | None = Field(alias="stateDigest", description="The built candidate's state, when one was built.")
+    problems: list[RevisionProblemDto]
+    question_refs: list[str] = Field(alias="questionRefs", description="What the architect is asked about, when the outcome "
+                                                                       "is needs_question.")
+    conditions: list[RevisionConditionDto] = Field(description="The conditions in the change's reach.")
+    compare: dict | None = Field(description="The built model against the design it was made from: counts and the "
+                                             "objects that changed, with their boxes before and after.")
+    working: RevisionWorkingDto | None = Field(description="Where the working design stands after the call.")
+    seconds: dict[str, float]
+
+
+def revision_dto(outcome) -> RevisionOutcomeDto:
+    return RevisionOutcomeDto(
+        outcome=outcome.outcome, code=outcome.code, detail=outcome.detail, proposal_id=outcome.proposal_id,
+        candidate_id=outcome.candidate_id, state_digest=outcome.state_digest,
+        problems=[RevisionProblemDto(source=row.source, kind=row.kind, detail=row.detail) for row in outcome.problems],
+        question_refs=list(outcome.question_refs),
+        conditions=[RevisionConditionDto.model_validate(row) for row in outcome.conditions],
+        compare=None if outcome.compare is None else dict(outcome.compare),
+        working=None if outcome.working is None else RevisionWorkingDto.model_validate(outcome.working),
+        seconds=dict(outcome.seconds),
+    )

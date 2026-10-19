@@ -15,6 +15,7 @@ from ..dto.working_draft import (
     LocalDraftRequestDto, RepresentationStatusDto, WorkingDraftSaveDto, WorkingDraftSelectionDto, WorkingRevisionDto,
     WorkingSourceDto, working_source_dto,
 )
+from .episodes import require_design_loop
 from .proposals import _require_bound_project
 
 router = APIRouter(tags=["working-draft"])
@@ -38,6 +39,9 @@ def select_current_working_draft(request: Request, payload: WorkingDraftSelectio
     binding = bound_project(request.app.state)
     _require_bound_project(binding, payload.projectId)
     message = None if payload.messageSource is None else payload.messageSource.model_dump(by_alias=True)
+    if message is not None and payload.runId is not None:
+        # The Agent's own Continue: while the design loop is enforced it lands only through POST /api/revisions.
+        require_design_loop(request, "The Agent continues the working design")
     answer = select_working_draft(binding, payload.runId, payload.baseRevisionSha256, payload.branchId,
                                   attribution=request_attribution(request), message_source=message,
                                   raw_language=payload.rawLanguage)

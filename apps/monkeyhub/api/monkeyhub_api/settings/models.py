@@ -7,6 +7,10 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
+# What a Hub nobody configured does with the Agent's design changes (#185).
+DESIGN_LOOP_DEFAULT = "enforced"
+
+
 class UserSettingsDto(BaseModel):
     """PUT replaces the saved preferences; omitted or null fields use defaults."""
 
@@ -80,6 +84,10 @@ class ApplicationSettingsDto(BaseModel):
     library_dir: str | None = Field(default=None, alias="libraryDir", min_length=1)
     reference_run: str | None = Field(default=None, alias="referenceRun", min_length=1)
     cad_export: Literal["occt", "rhino", "off"] = Field(default="occt", alias="cadExport")
+    # Whether the Agent reaches the working design only through POST /api/revisions,
+    # which checks, builds, reads back and validates a change before it lands (#185).
+    # off leaves the Agent's own admission and Continue as they were.
+    design_loop: Literal["enforced", "off"] = Field(default=DESIGN_LOOP_DEFAULT, alias="designLoop")
     studio_port: int = Field(default=8789, alias="studioPort", ge=1024, le=65535)
     monitor_port: int = Field(default=8788, alias="monitorPort", ge=1024, le=65535)
 

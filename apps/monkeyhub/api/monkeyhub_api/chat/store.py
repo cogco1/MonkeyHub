@@ -33,7 +33,7 @@ from uuid import uuid4
 from pydantic import Field
 
 from .. import projects
-from . import activity, guides, mcp_server, media, providers, skill_plugins, transport, turn_context
+from . import activity, guides, mcp_server, media, providers, skill_plugins, studio_tool, transport, turn_context
 from ..settings.store import read_application_settings
 
 from ..models import (
@@ -1178,7 +1178,7 @@ class ChatStore:
                       "chat_present", *computer_tools.TOOL_NAMES)
         mcp_servers["monkeyhub"] = {
             **mcp, "enabled": True, "required": True,
-            "env_vars": ["MONKEYHUB_PRESENTATION_TOKEN"],
+            "env_vars": ["MONKEYHUB_PRESENTATION_TOKEN", studio_tool.DESIGN_LOOP_ENV],
             "enabled_tools": list(tool_names),
             "tools": {name: {"approval_mode": "approve"} for name in tool_names},
         }
@@ -1196,6 +1196,7 @@ class ChatStore:
             environment.pop("ANTHROPIC_API_KEY", None)
             environment.update(plan)
         environment["MONKEYHUB_PRESENTATION_TOKEN"] = self.presentation_token(session.id)
+        environment[studio_tool.DESIGN_LOOP_ENV] = read_application_settings(self.runtime_root).design_loop
         if kind == "claude":
             # Project memory has one owner, project_runtime.memory (#252). Claude Code's
             # own auto-memory would keep agent-written notes of its own under
@@ -1430,6 +1431,7 @@ class ChatStore:
 
         environment = dict(os.environ)
         environment["MONKEYHUB_PRESENTATION_TOKEN"] = self.presentation_token(session_id)
+        environment[studio_tool.DESIGN_LOOP_ENV] = read_application_settings(self.runtime_root).design_loop
         try:
             with self._lock:
                 session = self._sessions[session_id]

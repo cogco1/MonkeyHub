@@ -10489,6 +10489,222 @@ export type RevisionAttributionDto = {
 };
 
 /**
+ * RevisionConditionDto
+ */
+export type RevisionConditionDto = {
+    /**
+     * Obligationid
+     */
+    obligationId: string;
+    /**
+     * Statement
+     */
+    statement: string;
+    /**
+     * Checkable
+     */
+    checkable: boolean;
+    /**
+     * Validatorref
+     */
+    validatorRef: string | null;
+};
+
+/**
+ * RevisionOutcomeDto
+ *
+ * Exactly one outcome: landed, admitted, problems, needs_question or refused.
+ */
+export type RevisionOutcomeDto = {
+    /**
+     * Outcome
+     */
+    outcome: 'landed' | 'admitted' | 'problems' | 'needs_question' | 'refused';
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Detail
+     */
+    detail: string;
+    /**
+     * Proposalid
+     */
+    proposalId: string | null;
+    /**
+     * Candidateid
+     */
+    candidateId: string | null;
+    /**
+     * Statedigest
+     *
+     * The built candidate's state, when one was built.
+     */
+    stateDigest: string | null;
+    /**
+     * Problems
+     */
+    problems: Array<RevisionProblemDto>;
+    /**
+     * Questionrefs
+     *
+     * What the architect is asked about, when the outcome is needs_question.
+     */
+    questionRefs: Array<string>;
+    /**
+     * Conditions
+     *
+     * The conditions in the change's reach.
+     */
+    conditions: Array<RevisionConditionDto>;
+    /**
+     * Compare
+     *
+     * The built model against the design it was made from: counts and the objects that changed, with their boxes before and after.
+     */
+    compare: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Where the working design stands after the call.
+     */
+    working: RevisionWorkingDto | null;
+    /**
+     * Seconds
+     */
+    seconds: {
+        [key: string]: number;
+    };
+};
+
+/**
+ * RevisionProblemDto
+ */
+export type RevisionProblemDto = {
+    /**
+     * Source
+     *
+     * Where it came from: proposal, build, readback, relation:<id>, obligation:<id>, a review clause, or admission
+     */
+    source: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Detail
+     */
+    detail: string;
+};
+
+/**
+ * RevisionRequestDto
+ *
+ * One change against the exact working design, carried through every check to the working design.
+ */
+export type RevisionRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Sourcerunid
+     *
+     * The working design's run, as it was read.
+     */
+    sourceRunId: string;
+    /**
+     * Statedigest
+     *
+     * The working design's stateDigest, as it was read.
+     */
+    stateDigest: string;
+    /**
+     * Kind
+     *
+     * Which proposal route the change is: POST /api/proposals/construction, /facets, /hosted-opening, /elevation, or POST /api/proposals for a semanticEdit.
+     */
+    kind: 'construction' | 'facets' | 'hosted-opening' | 'elevation' | 'proposal';
+    /**
+     * Proposal
+     *
+     * That route's body without projectId, stateDigest, sourceRunId, keep and summary, which this request supplies.
+     */
+    proposal: {
+        [key: string]: unknown;
+    };
+    /**
+     * Summary
+     *
+     * The change in words; its run keeps them.
+     */
+    summary: string;
+    /**
+     * Keep
+     *
+     * Refs to keep beside the project's keep decisions, which are always kept.
+     */
+    keep?: Array<string>;
+    /**
+     * Confirmed
+     *
+     * obligation:<id> refs no check can verify that the architect's own words in this message confirm the change keeps. A kept target or a rejected option is changed by revising that decision first.
+     */
+    confirmed?: Array<string>;
+    /**
+     * Supersedes
+     *
+     * Earlier attempts of this same change that this result replaces.
+     */
+    supersedes?: Array<string>;
+    /**
+     * Land
+     *
+     * false admits the result as a candidate to compare and leaves the working design where it is.
+     */
+    land?: boolean;
+    /**
+     * Label
+     */
+    label?: string | null;
+    /**
+     * Waitseconds
+     *
+     * How long to wait for the build before answering RUN_TIMEOUT.
+     */
+    waitSeconds?: number;
+    /**
+     * The chat message this change answers, as the Hub binds it; provenance, never a credential.
+     */
+    messageSource?: MessageSourceDto | null;
+    /**
+     * Rawlanguage
+     *
+     * The user's own words the change answers, as the Hub binds them.
+     */
+    rawLanguage?: string | null;
+};
+
+/**
+ * RevisionWorkingDto
+ */
+export type RevisionWorkingDto = {
+    /**
+     * Runid
+     */
+    runId: string | null;
+    /**
+     * Statedigest
+     */
+    stateDigest: string | null;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string | null;
+};
+
+/**
  * RhinoWorkExportRequestDto
  *
  * Which run's export is being made editable.
@@ -18397,6 +18613,80 @@ export type AdmitCandidateResultsApiAdmissionsPostResponses = {
 };
 
 export type AdmitCandidateResultsApiAdmissionsPostResponse = AdmitCandidateResultsApiAdmissionsPostResponses[keyof AdmitCandidateResultsApiAdmissionsPostResponses];
+
+export type ReviseWorkingDesignApiRevisionsPostData = {
+    body: RevisionRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/revisions';
+};
+
+export type ReviseWorkingDesignApiRevisionsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReviseWorkingDesignApiRevisionsPostError = ReviseWorkingDesignApiRevisionsPostErrors[keyof ReviseWorkingDesignApiRevisionsPostErrors];
+
+export type ReviseWorkingDesignApiRevisionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: RevisionOutcomeDto;
+};
+
+export type ReviseWorkingDesignApiRevisionsPostResponse = ReviseWorkingDesignApiRevisionsPostResponses[keyof ReviseWorkingDesignApiRevisionsPostResponses];
+
+export type ReadRevisionContextApiRevisionsContextGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/revisions/context';
+};
+
+export type ReadRevisionContextApiRevisionsContextGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadRevisionContextApiRevisionsContextGetError = ReadRevisionContextApiRevisionsContextGetErrors[keyof ReadRevisionContextApiRevisionsContextGetErrors];
+
+export type ReadRevisionContextApiRevisionsContextGetResponses = {
+    /**
+     * Response Read Revision Context Api Revisions Context Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadRevisionContextApiRevisionsContextGetResponse = ReadRevisionContextApiRevisionsContextGetResponses[keyof ReadRevisionContextApiRevisionsContextGetResponses];
 
 export type ForkCommittedDesignApiDesignBranchesPostData = {
     body: ForkDesignBranchRequestDto;
