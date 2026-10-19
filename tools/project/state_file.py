@@ -30,13 +30,14 @@ stale base changes nothing.
 
 ``parts`` answers the seven parts of a file's state, each with its canonical digest and one digest per row:
 components, parameters, relations, conditions (the record's obligations and every carried decision that is not a
-rejection), rejected options with their reasons, evidence, and dependencies. ``replay`` builds the same parts from
+rejection), rejected options with their reasons, evidence (with the declared option and its rationale), and
+dependencies. ``replay`` builds the same parts from
 an opening record and its decisions, or from a state file, by applying the events in order through the product's
 own operator, and also says, for each change, whether it was made against the content rebuilt so far and made
 the content it recorded. Both answer ``parts``; the two are compared part by part. Left out of both, as
-bookkeeping: the record's run id, base, predecessor, decision ref, invalidated refs, option, project id and
-schema, and each carried decision's id (every hop opens a new project, which records the decisions again under
-new ids and binds the record to its own run).
+bookkeeping: the record's run id, base, predecessor, decision ref, invalidated refs (the last step's history,
+not the design), project id and schema, and each carried decision's id and extent (every hop opens a new
+project, which records the decisions again under new ids and binds the record to its own run).
 
 Exit code 0 is success, and the answer is one JSON object on stdout; a failure writes its reason to stderr.
 Nothing is ever deleted: a project directory or output file that already exists is refused.
@@ -410,8 +411,9 @@ def state_parts(record: Mapping[str, Any], decisions: Sequence[Mapping[str, Any]
         "conditions": {**_rows(record.get("obligations") or (), lambda row: f"obligation:{row['obligation_id']}"),
                        **_rows([row for row in carried if row["disposition"] not in _REJECTING], decided)},
         "rejected": _rows([row for row in carried if row["disposition"] in _REJECTING], decided),
-        "evidence": _rows([{"evidence_refs": sorted(record.get("evidence_refs") or ()),
-                            "basis_refs": sorted(record.get("basis_refs") or ())}], lambda row: "record"),
+        "evidence": {**_rows([{"evidence_refs": sorted(record.get("evidence_refs") or ()),
+                               "basis_refs": sorted(record.get("basis_refs") or ())}], lambda row: "record"),
+                     **_rows([{"option": record.get("option") or {}}], lambda row: "option")},
         "dependencies": _rows(edges, lambda row: f"{row['upstream']}>{row['downstream']}:{row['relation']}"),
     }
     return {name: {"sha256": canonical_digest(rows[name]), "rows": rows[name]} for name in PARTS}
