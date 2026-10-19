@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query
 from starlette.requests import Request
 
 from ...application.artifacts import ModelSource
-from ...authentication import request_attribution
+from ...authentication import agent_chat, request_attribution
 from ...binding import bound_project
 from ...application.representation_dependencies import UNAVAILABLE, ReplacementCycle, representation_status
 from ...application.working_draft import (
@@ -39,7 +39,7 @@ def select_current_working_draft(request: Request, payload: WorkingDraftSelectio
     binding = bound_project(request.app.state)
     _require_bound_project(binding, payload.projectId)
     message = None if payload.messageSource is None else payload.messageSource.model_dump(by_alias=True)
-    if message is not None and payload.runId is not None:
+    if payload.runId is not None and (agent_chat(request) is not None or message is not None):
         # The Agent's own Continue: while the design loop is enforced it lands only through POST /api/revisions.
         require_design_loop(request, "The Agent continues the working design")
     answer = select_working_draft(binding, payload.runId, payload.baseRevisionSha256, payload.branchId,

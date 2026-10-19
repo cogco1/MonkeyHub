@@ -22,7 +22,7 @@ from starlette.requests import Request
 
 from ..dto.proposal import EpisodeDto, episode_dto
 from ...binding import bound_project
-from ...authentication import ActorAttribution, request_attribution
+from ...authentication import ActorAttribution, agent_chat, authenticated_actor, request_attribution, require_actor
 from ...synchronization import accept_shared_candidate, fork_shared_branch
 from ...errors import StudioError
 from archflow.project.repository import ProjectRepositoryError
@@ -33,7 +33,10 @@ from ...application.design_history import (
 )
 from ...application.decisions import DecisionContext, compile_scoped_decisions
 from ...application.projection import project_state, require_actionable
+from ...application.candidate import describe
 from ...application.compare import compare_runs, shapes_of
+from ...application.validation import candidate_obligations
+from ...jobs import SUCCEEDED
 from ...application.revision_transaction import Decision, RevisionRequest, revise, revision_context
 from archflow.state.state_record import check_obligations, obligation_measured
 from ...application.working_draft import resolve_working_source, select_working_draft
@@ -158,7 +161,8 @@ def admit_candidate_results(request: Request, payload: AdmissionRequestDto, resp
     if request.app.state.settings.sync_url:
         raise StudioError(409, "SYNC_ADMISSION_UNSUPPORTED", "This Runtime is connected to a shared project, and "
                           "admissions are not synchronized yet; a local one would diverge from the shared project.")
-    if payload.task.kind == TASK_HUB_CHAT and any(row.outcome == ADMITTED for row in payload.results):
+    if (agent_chat(request) is not None or payload.task.kind == TASK_HUB_CHAT) and any(
+            row.outcome == ADMITTED for row in payload.results):
         require_design_loop(request, "An Agent admits a result")
     record, created = admit_results(binding, payload.model_dump(by_alias=True, exclude={"project_id"}),
                                     _attribution(request), events=request.app.state.events)
@@ -192,11 +196,26 @@ def revise_working_design(request: Request, payload: RevisionRequestDto) -> Revi
     if request.app.state.settings.sync_url:
         raise StudioError(409, "SYNC_REVISION_UNSUPPORTED", "This Runtime is connected to a shared project, and its "
                           "admissions are not synchronized yet.")
+    if not request.app.state.settings.design_loop_enforced:
+        raise StudioError(409, "DESIGN_LOOP_OFF", "The design loop is off in this Runtime, so its changes are checked, "
+                          "admitted and continued step by step as before; POST /api/revisions is not offered.")
     message = None if payload.message_source is None else payload.message_source.model_dump(by_alias=True)
+    if authenticated_actor(request) is not None:
+        # The middleware asked for accept; the change itself is a proposal too.
+        require_actor(request, "propose", payload.project_id)
+    chat = agent_chat(request)
+    if chat is not None:
+        if message is None or message.get("sessionId") != chat:
+            raise StudioError(422, "REVISION_INVALID", "An Agent's revision names the message of its own chat that it "
+                              "answers; the Hub binds it.")
+        if payload.confirmed:
+            raise StudioError(422, "REVISION_INVALID", "Only the architect confirms that a change keeps a condition no "
+                              "check can verify; the Agent asks instead. Nothing was proposed.")
     outcome = revise(RevisionRequest(
         project_id=payload.project_id, state_digest=payload.state_digest, source_run_id=payload.source_run_id,
-        kind=payload.kind, proposal=payload.proposal, summary=payload.summary, keep=tuple(payload.keep),
-        confirmed=tuple(payload.confirmed), supersedes=tuple(payload.supersedes), land=payload.land,
+        kind=payload.kind, proposal=payload.proposal, candidate_id=payload.candidate_id, summary=payload.summary,
+        keep=tuple(payload.keep), confirmed=tuple(payload.confirmed), supersedes=tuple(payload.supersedes),
+        land=payload.land, build_only=payload.build_only,
         message_source=message, raw_language=payload.raw_language, label=payload.label,
         wait_s=float(payload.wait_seconds),
     ), _RevisionRoutes(request, message, payload.raw_language))
@@ -271,17 +290,50 @@ class _RevisionRoutes:
         self.message, self.words = message, words
 
     def working_head(self) -> tuple[str | None, str | None, str | None]:
+        """The working design's run, state and position revision; a project with no working run yet is its default."""
+
         source = resolve_working_source(self.binding)
         head = source.head
-        return (None if head is None else head.run_id, None if head is None else head.state_digest,
-                source.revision_sha256)
+        if head is None:
+            return None, project_state(self.binding).state_digest, source.revision_sha256
+        return head.run_id, head.state_digest, source.revision_sha256
 
-    def record(self, run_id: str):
+    def record(self, run_id: str | None):
         projection = project_state(self.binding, run_id=run_id)
         require_actionable(projection)
         return projection.record
 
-    def decisions(self, run_id: str) -> tuple[Decision, ...]:
+    def source_of(self, candidate_id: str) -> tuple[str | None, str | None]:
+        """The run and state a retained candidate was built from; the default design reads as no run."""
+
+        delta = self.binding.candidate_delta(candidate_id)
+        if delta is None:
+            raise StudioError(404, "CANDIDATE_NOT_FOUND", f"{candidate_id} is not a retained candidate of this project.")
+        run_id = delta["source_run_ref"]["run_id"]
+        if resolve_working_source(self.binding).head is None and run_id == project_state(self.binding).run.run_id:
+            return None, project_state(self.binding).state_digest
+        return run_id, project_state(self.binding, run_id=run_id).state_digest
+
+    def never_exported(self, run_id: str | None) -> bool:
+        """Whether the run, or the default design, never exported a model it could be compared with."""
+
+        if run_id is None:
+            return True
+        newest = self.binding.newest_runner_receipt(run_id)
+        if newest is None:
+            return True
+        return not any(isinstance(row, dict) and isinstance(row.get("cad"), dict) and row["cad"].get("inspection_ref")
+                       for row in newest[1].get("seat_results") or ())
+
+    def obligations(self, candidate_id: str) -> dict:
+        """Every condition's result on the candidate and which violations are new, whole, not shortened for display."""
+
+        candidate = describe(self.binding, None, candidate_id=candidate_id, job_id=None, status=SUCCEEDED, proposal_id=None)
+        readout = candidate_obligations(self.binding, candidate)
+        return {"results": [{"obligationId": row.obligation_id, "status": row.status, "detail": row.detail}
+                            for row in readout.results], "new": list(readout.new_violations)}
+
+    def decisions(self, run_id: str | None) -> tuple[Decision, ...]:
         """The design decisions that apply to this run's state: keep, reject and avoid, each with its words."""
 
         projection = project_state(self.binding, run_id=run_id)
@@ -316,7 +368,9 @@ class _RevisionRoutes:
     def candidate(self, candidate_id: str) -> Mapping[str, Any]:
         return read_candidate(self.request, candidate_id).model_dump(by_alias=True)
 
-    def compare(self, candidate_id: str, against: str) -> Mapping[str, Any]:
+    def compare(self, candidate_id: str, against: str | None) -> Mapping[str, Any]:
+        if against is None:
+            raise StudioError(404, "RUN_NOT_FOUND", "The default design has no run, so no model of its own to compare.")
         return compare_candidate(self.request, candidate_id, against).model_dump(by_alias=True)
 
     def validation(self, candidate_id: str) -> Mapping[str, Any]:

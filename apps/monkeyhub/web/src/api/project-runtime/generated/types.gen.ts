@@ -10513,13 +10513,13 @@ export type RevisionConditionDto = {
 /**
  * RevisionOutcomeDto
  *
- * Exactly one outcome: landed, admitted, problems, needs_question or refused.
+ * Exactly one outcome: landed, admitted, built, problems, needs_question or refused.
  */
 export type RevisionOutcomeDto = {
     /**
      * Outcome
      */
-    outcome: 'landed' | 'admitted' | 'problems' | 'needs_question' | 'refused';
+    outcome: 'landed' | 'admitted' | 'built' | 'problems' | 'needs_question' | 'refused';
     /**
      * Code
      */
@@ -10611,9 +10611,9 @@ export type RevisionRequestDto = {
     /**
      * Sourcerunid
      *
-     * The working design's run, as it was read.
+     * The working design's run, as it was read; null only while the project has no working run yet.
      */
-    sourceRunId: string;
+    sourceRunId?: string | null;
     /**
      * Statedigest
      *
@@ -10625,15 +10625,27 @@ export type RevisionRequestDto = {
      *
      * Which proposal route the change is: POST /api/proposals/construction, /facets, /hosted-opening, /elevation, or POST /api/proposals for a semanticEdit.
      */
-    kind: 'construction' | 'facets' | 'hosted-opening' | 'elevation' | 'proposal';
+    kind?: 'construction' | 'facets' | 'hosted-opening' | 'elevation' | 'proposal' | null;
     /**
      * Proposal
      *
      * That route's body without projectId, stateDigest, sourceRunId, keep and summary, which this request supplies.
      */
-    proposal: {
+    proposal?: {
         [key: string]: unknown;
-    };
+    } | null;
+    /**
+     * Candidateid
+     *
+     * Instead of kind and proposal: a candidate already built from the working design (one this call built with buildOnly, an option, a program or a combination), checked again and landed.
+     */
+    candidateId?: string | null;
+    /**
+     * Buildonly
+     *
+     * Build and check the change but admit nothing: the answer is built, and the candidate is landed later by naming it as candidateId, after a look.
+     */
+    buildOnly?: boolean;
     /**
      * Summary
      *

@@ -160,6 +160,20 @@ def request_attribution(request: Request) -> ActorAttribution:
     return ActorAttribution(actor.actor_id, True, origin)
 
 
+def agent_chat(request: Request) -> str | None:
+    """The Hub chat a request comes from, when the Hub that manages this Runtime vouched for it; else None.
+
+    The Hub forwards a chat's request with ``X-Monkey-Agent`` and its own worker identity; a person's request
+    through the same Hub carries neither. Nothing in a request body counts.
+    """
+
+    chat = request.headers.get("x-monkey-agent")
+    instance = getattr(request.app.state, "managed_instance_id", None)
+    if not chat or not instance or request.headers.get("x-monkey-worker") != instance:
+        return None
+    return chat
+
+
 def require_actor(request: Request, action: str, project_id: str | None = None) -> AuthenticatedActor:
     actor = authenticated_actor(request)
     if actor is None:
@@ -185,7 +199,7 @@ def request_action(method: str, path: str, *, shared_project: bool) -> str | Non
         # An explicit constraint decision uses the existing decision grant;
         # it still produces only a detached candidate, never Stage acceptance.
         return "accept"
-    if not shared_project and method == "POST" and path in {"/api/admissions", "/api/drawing-recipes/import"}:
+    if not shared_project and method == "POST" and path in {"/api/admissions", "/api/drawing-recipes/import", "/api/revisions"}:
         # Result admission and recipe import are explicit judgments using the
         # existing decision grant. Neither accepts a Stage. Both are Runtime consumers.
         return "accept"

@@ -5706,7 +5706,8 @@
         "operator-configured actor authentication with explicit project read/propose/accept/release grants; shared-project service role excludes local computation; Runtime upstream settings contain no project authority",
         "ActorAttribution and request_attribution: who caused one request and through which surface (studio, or a Hub-managed process), read from the middleware's resolved actor and this process's own launch settings and never from a request body or header",
         "holding the open project's writer lease from before the process serves until it has stopped and drained (ADR-012, _hold_project over archflow.project.repository's hold_writer_lease): the runtime is the project's only writer, and a second runtime for the same project stops with PROJECT_WRITER_BUSY",
-        "design_loop (ARCHFLOW_STUDIO_DESIGN_LOOP: enforced | off, off for a Runtime started by hand), read once with the rest of the process configuration"
+        "design_loop (ARCHFLOW_STUDIO_DESIGN_LOOP: enforced | off, off for a Runtime started by hand), read once with the rest of the process configuration",
+        "agent_chat: the Hub chat a request comes from, only as the managing Hub vouches for it with X-Monkey-Agent and its worker identity; the Agent is never told from a person by a request body"
       ],
       "does_not_own": [
         "any design question or kernel call",
@@ -5776,7 +5777,8 @@
         "CONDITIONAL_READS",
         "INDEXED_READS",
         "IndexRevisionHeader: X-Monkey-Index <epoch>:<revision> on a successful write once the project index holds it (#366)",
-        "OWNER_REFUSALS"
+        "OWNER_REFUSALS",
+        "agent_chat"
       ],
       "depends_on": [
         "archflow.project.index",
@@ -5923,7 +5925,8 @@
         "impact adds no propagation rule of its own; it calls StateRecord.closure and arranges the answer",
         "the comparison is a join on retained records, with a stated tolerance, not browser or geometry inference",
         "the validation readout for a retained Stage-based candidate uses its exact historical source base, matching design acceptance; legacy candidates retain current-HEAD validation and formal issue remains separate",
-        "obligations.held refuses only a violation the candidate's source run did not have: a condition already broken where the change started does not block, and an unchecked obligation refuses nothing"
+        "obligations.held refuses only a violation the candidate's source run did not have: a condition already broken where the change started does not block, and an unchecked obligation refuses nothing",
+        "conditions are checked, and obligations.held can refuse, only while the design loop is enforced; with it off a validation and a candidate read answer exactly as before, without obligationProblems, obligationsChecked or relationProblems"
       ],
       "status": "canonical",
       "tests": [
@@ -7415,7 +7418,8 @@
         "A chat render request names a provider the Runtime reports available, or is refused before admission: with none configured the answer says image generation is not configured and nothing is submitted; one requestId is one Runtime dispatch",
         "saving preferences never changes a running Project Runtime, its compiler or its project, and null clears a saved override",
         "Hub application launch choices do not replace user appearance or provider preferences, and never write project state",
-        "Beside a project workspace the projects list folds to its icons unless pinned (#283): the pin is UserSettingsDto.sidebarPinned, written only while pinned so a version older than it still reads the file; the folding, Focus and the conversation's width are this window's view state and reach no Project Runtime or project"
+        "Beside a project workspace the projects list folds to its icons unless pinned (#283): the pin is UserSettingsDto.sidebarPinned, written only while pinned so a version older than it still reads the file; the folding, Focus and the conversation's width are this window's view state and reach no Project Runtime or project",
+        "every request the Hub forwards for a chat carries X-Monkey-Agent with that chat and the worker identity; a person's request through the Hub carries neither; a revision's journal row ends as its outcome says (landed, admitted and built complete, problems fail, a question or refusal is refused) and a revision that lost its answer is never completed from its build alone"
       ],
       "files": [
         "apps/monkeyhub/api/monkeyhub_api/__init__.py",

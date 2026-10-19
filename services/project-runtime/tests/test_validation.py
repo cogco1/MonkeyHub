@@ -561,7 +561,16 @@ class ConditionSourceCoverageTests(ValidationTestCase):
 
 
 class ObligationClauseTests(ValidationTestCase):
-    """obligations.held: a violation the candidate brings blocks; one its source already had, or an unchecked duty, does not."""
+    """obligations.held: a violation the candidate brings blocks; one its source already had, or an unchecked duty, does not.
+
+    The conditions are checked only while the design loop is enforced; the last test shows a Runtime with it off.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.app = create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID, design_loop="enforced"))
+        self.client = TestClient(self.app)
+        self.addCleanup(self.client.close)
 
     def _candidate_against(self, validator_ref: str | None) -> dict:
         payload = json.loads(self.repository.layout.resolve_relative(RUNNER_RECORD_PATH).read_text(encoding="utf-8"))
@@ -610,6 +619,17 @@ class ObligationClauseTests(ValidationTestCase):
         [problem] = validation["obligationProblems"]
         self.assertEqual((problem["status"], problem["new"]), ("unchecked", False))
         self.assertIn("no executable check", problem["detail"])
+
+    def test_with_the_design_loop_off_a_violation_blocks_nothing_and_nothing_is_added(self) -> None:
+        accepted = self._candidate_against("validator:element-param-at-most/height/2.0")
+        self.app = create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
+        self.client = TestClient(self.app)
+        self.addCleanup(self.client.close)
+
+        validation = self.validation_of(accepted["candidateId"])
+
+        self.assertNotIn("obligations.held", validation["blockedBy"])
+        self.assertFalse({"obligationProblems", "obligationsChecked"} & set(validation))
 
 
 class ReviewReadinessTests(ValidationTestCase):

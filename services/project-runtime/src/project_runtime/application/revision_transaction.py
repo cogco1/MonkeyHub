@@ -1,29 +1,30 @@
 """One revision in one call: check what the change may not do, build it, read it back, validate, admit, continue.
 
-The caller hands over a change against the exact working design it read, and the
-architect's words it answers. The steps are the existing routes' own, in a fixed
-order, and the answer is exactly one of five outcomes:
+The caller hands over a change against the exact working design it read, or a candidate already built from
+it, and the architect's words it answers. The steps are the existing routes' own, in a fixed order, and the
+answer is exactly one of six outcomes:
 
-- ``landed``: the candidate was built, read back, found review-ready, admitted
-  and continued onto the working design;
-- ``admitted``: as ``landed``, for a change asked for with ``land=False`` (an
-  alternative to compare); the working design did not move;
-- ``problems``: the change could not be built, or was built and failed a check;
-  every problem names where it came from, and nothing moved;
-- ``needs_question``: the change meets something only the architect can settle -
-  a target they asked to keep, an option they rejected, a condition in the
-  change's reach that no check can verify, or a condition the change itself
-  drops or rewrites. The answer quotes their words and nothing moved;
-- ``refused``: the base is not the working design (``STALE_BASE``) or the request
-  is malformed; nothing was proposed.
+- ``landed``: the candidate was built, read back, found review-ready, admitted and continued onto the working
+  design;
+- ``admitted``: as ``landed``, for ``land=False`` (an alternative to compare); the working design stays;
+- ``built``: for ``build_only``: the candidate passed every check and waits for a look before it is landed by
+  naming it as ``candidate_id``; nothing was admitted;
+- ``problems``: the change could not be built, or was built and failed a check; every problem names where it
+  came from, and nothing moved (unless the outcome says the result was admitted);
+- ``needs_question``: the change meets something only the architect can settle - a target they asked to keep,
+  an option they rejected (or a whole it is part of), a condition in the change's reach that no check can
+  verify, or a condition the change itself drops or rewrites. The answer quotes their words; nothing moved;
+- ``refused``: the base is not the working design (``STALE_BASE``) or the request is malformed.
 
-A condition no check can verify stops the call unless the architect's bound words
-confirm it (``confirmed`` lists such ``obligation:<id>`` refs); a kept target or a
-rejected option is changed by revising that decision first, never from here.
+The base is bound when the call starts: if the working design moves while the change is built, nothing is
+admitted or continued. A project with no working run yet starts from its default design (no source run).
+A condition no check can verify passes only when ``confirmed`` names it and the architect's own words travel
+with the request; the route lets no Agent confirm anything. A kept target or a rejected option is changed by
+revising that decision first, never from here.
 
-Nothing here compiles, builds, validates or writes on its own: every step is a
-call through ``RevisionPorts``, which the route implements with the existing
-routes and functions. Repair budgets and the conversation belong to the caller.
+Nothing here compiles, builds, validates or writes on its own: every step is a call through
+``RevisionPorts``, which the route implements with the existing routes and functions. Repair budgets, looks
+and the conversation belong to the caller.
 """
 
 from __future__ import annotations
@@ -32,11 +33,12 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
-from archflow.state.state_record import StateRecord, obligation_checkable, obligations_in_scope
+from archflow.state.state_record import StateRecord, changed_refs, obligation_checkable, obligations_in_scope
 
 from ..errors import StudioError
 
-LANDED, ADMITTED, PROBLEMS, NEEDS_QUESTION, REFUSED = "landed", "admitted", "problems", "needs_question", "refused"
+LANDED, ADMITTED, BUILT = "landed", "admitted", "built"
+PROBLEMS, NEEDS_QUESTION, REFUSED = "problems", "needs_question", "refused"
 CHANGE_KINDS = ("construction", "facets", "hosted-opening", "elevation", "proposal")
 # The kinds that must leave a visible difference in the built model.
 _GEOMETRY_KINDS = frozenset({"construction", "hosted-opening"})
@@ -52,14 +54,16 @@ _LIVE = ("open", "blocked")
 class RevisionRequest:
     project_id: str
     state_digest: str
-    source_run_id: str
-    kind: str
-    proposal: Mapping[str, Any]
+    source_run_id: str | None
     summary: str
+    kind: str | None = None
+    proposal: Mapping[str, Any] | None = None
+    candidate_id: str | None = None
     keep: tuple[str, ...] = ()
     confirmed: tuple[str, ...] = ()
     supersedes: tuple[str, ...] = ()
     land: bool = True
+    build_only: bool = False
     message_source: Mapping[str, str] | None = None
     raw_language: str | None = None
     label: str | None = None
@@ -103,17 +107,23 @@ class RevisionOutcome:
 
 
 class RevisionPorts(Protocol):
-    """The existing routes the transaction calls, in the bound project. Each raises ``StudioError`` as its route does."""
+    """The existing routes the transaction calls, in the bound project. Each raises ``StudioError`` as its route does.
+
+    A run id of None is the project's default design, before any run continued it.
+    """
 
     def working_head(self) -> tuple[str | None, str | None, str | None]: ...   # run id, state digest, position revision
-    def record(self, run_id: str) -> StateRecord: ...
-    def decisions(self, run_id: str) -> Sequence[Decision]: ...
+    def record(self, run_id: str | None) -> StateRecord: ...
+    def decisions(self, run_id: str | None) -> Sequence[Decision]: ...
     def propose(self, kind: str, body: Mapping[str, Any]) -> Mapping[str, Any]: ...
     def run(self, proposal_id: str) -> Mapping[str, Any]: ...
     def job(self, job_id: str) -> Mapping[str, Any]: ...
+    def source_of(self, candidate_id: str) -> tuple[str | None, str | None]: ...   # the base a candidate was built from
     def candidate(self, candidate_id: str) -> Mapping[str, Any]: ...
-    def compare(self, candidate_id: str, against: str) -> Mapping[str, Any]: ...
+    def compare(self, candidate_id: str, against: str | None) -> Mapping[str, Any]: ...
+    def never_exported(self, run_id: str | None) -> bool: ...
     def validation(self, candidate_id: str) -> Mapping[str, Any]: ...
+    def obligations(self, candidate_id: str) -> Mapping[str, Any]: ...   # {"results": [...], "new": [...]}, whole
     def admit(self, body: Mapping[str, Any]) -> Mapping[str, Any]: ...
     def continue_(self, run_id: str, revision: str | None) -> Mapping[str, Any]: ...
 
@@ -128,7 +138,11 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
         seconds["total"] = round(clock() - started, 3)
         return RevisionOutcome(outcome, code, detail, seconds=dict(seconds), **fields)
 
-    if request.kind not in CHANGE_KINDS:
+    building = request.candidate_id is None
+    if building == (request.kind is None or request.proposal is None) or (not building and request.kind is not None):
+        return done(REFUSED, "REVISION_INVALID", "Send either a change (kind and proposal) or the candidateId of one "
+                    "already built from the working design, not both. Nothing was proposed.")
+    if building and request.kind not in CHANGE_KINDS:
         return done(REFUSED, "CHANGE_KIND_UNKNOWN", f"kind is one of {', '.join(CHANGE_KINDS)}; nothing was proposed.")
     wrong = [ref for ref in request.confirmed if not ref.startswith("obligation:")]
     if wrong:
@@ -137,44 +151,60 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
     if request.confirmed and request.raw_language is None:
         return done(REFUSED, "CONFIRMATION_INVALID", "A condition is confirmed only by the architect's own words; "
                     "this request carries none. Nothing was proposed.")
-    head_run, head_digest, _ = ports.working_head()
-    if (request.source_run_id, request.state_digest) != (head_run, head_digest):
-        return done(REFUSED, "STALE_BASE", f"The working design is run {head_run} at state {head_digest}; this change was "
+    base_run, base_digest, _ = ports.working_head()
+    base_ref = (request.source_run_id, request.state_digest)
+    if base_ref != (base_run, base_digest):
+        return done(REFUSED, "STALE_BASE", f"The working design is run {base_run} at state {base_digest}; this change was "
                     f"written against run {request.source_run_id} at {request.state_digest}. Read the design again and "
                     "write the change against it. Nothing was proposed.")
 
     decisions = tuple(ports.decisions(request.source_run_id))
-    protected = tuple(dict.fromkeys((*request.keep, *(d.target_ref for d in decisions if d.disposition == KEEP))))
-    body = {**request.proposal, "projectId": request.project_id, "stateDigest": request.state_digest,
-            "sourceRunId": request.source_run_id, "keep": list(protected)}
-    if request.kind in ("construction", "facets", "hosted-opening"):
-        body["summary"] = request.summary
-    try:
-        proposal = ports.propose(request.kind, body)
-    except StudioError as exc:
-        if exc.code == "STALE_BASE":
-            return done(REFUSED, exc.code, exc.detail)
-        return done(PROBLEMS, "PROPOSAL_REFUSED", "The change could not be made into a proposal; correct it and submit it again.",
-                    problems=(Problem("proposal", exc.code, _sentence(exc)),))
-    proposal_id = str(proposal["proposalId"])
-    impact = proposal.get("impact") or {}
-    direct = tuple(impact.get("direct") or ())
-    seconds["propose"] = round(clock() - started, 3)
-
-    if proposal.get("status") == "conflict":
-        refs = tuple(impact.get("conflicts") or ())
-        kept = [d for d in decisions if d.disposition == KEEP and d.target_ref in refs]
-        words = "; ".join(f"{d.target_ref}: \"{d.words}\"" for d in kept) or ", ".join(refs)
-        return done(NEEDS_QUESTION, "KEEP_CONFLICT", f"The change reaches what the architect asked to keep ({words}). "
-                    "Ask the architect before changing it; nothing was built.", proposal_id=proposal_id, question_refs=refs)
     base = ports.record(request.source_run_id)
-    reached = _with_wholes(base, direct)
-    rejected = [d for d in decisions if d.disposition in REJECTING and d.target_ref in reached]
+    protected = tuple(dict.fromkeys((*request.keep, *(d.target_ref for d in decisions if d.disposition == KEEP))))
+    proposal_id = None
+    if building:
+        body = {**request.proposal, "projectId": request.project_id, "stateDigest": request.state_digest,
+                "keep": list(protected)}
+        if request.source_run_id is not None:
+            body["sourceRunId"] = request.source_run_id
+        if request.kind in ("construction", "facets", "hosted-opening"):
+            body["summary"] = request.summary
+        try:
+            proposal = ports.propose(request.kind, body)
+        except StudioError as exc:
+            if exc.code == "STALE_BASE":
+                return done(REFUSED, exc.code, exc.detail)
+            return done(PROBLEMS, "PROPOSAL_REFUSED", "The change could not be made into a proposal; correct it and submit "
+                        "it again.", problems=(Problem("proposal", exc.code, _sentence(exc)),))
+        proposal_id = str(proposal["proposalId"])
+        impact = proposal.get("impact") or {}
+        direct = tuple(impact.get("direct") or ())
+        reach = tuple(dict.fromkeys((*direct, *(impact.get("propagated") or ()))))
+        conflicts = tuple(impact.get("conflicts") or ()) if proposal.get("status") == "conflict" else ()
+        seconds["propose"] = round(clock() - started, 3)
+    else:
+        source = ports.source_of(request.candidate_id)
+        if source != base_ref:
+            return done(REFUSED, "STALE_BASE", f"Candidate {request.candidate_id} was built from run {source[0]} at "
+                        f"state {source[1]}, not from the working design; build the change again against it.")
+        direct = changed_refs(base, ports.record(request.candidate_id))
+        reach = tuple(dict.fromkeys((*direct, *base.closure(tuple(sorted(direct))))))
+        conflicts = tuple(ref for ref in protected if ref in _with_wholes(base, reach))
+
+    if conflicts:
+        kept = [d for d in decisions if d.disposition == KEEP and d.target_ref in conflicts]
+        words = "; ".join(f"{d.target_ref}: \"{d.words}\"" for d in kept) or ", ".join(conflicts)
+        return done(NEEDS_QUESTION, "KEEP_CONFLICT", f"The change reaches what the architect asked to keep ({words}). "
+                    "Ask the architect before changing it; nothing was admitted.", proposal_id=proposal_id,
+                    candidate_id=request.candidate_id, question_refs=conflicts)
+    touched = _with_wholes(base, reach)
+    rejected = [d for d in decisions if d.disposition in REJECTING and d.target_ref in touched]
     if rejected:
         return done(NEEDS_QUESTION, "REJECTED_OPTION", "The change touches what the architect rejected: "
                     + "; ".join(f"{d.target_ref}: \"{d.words}\"" for d in rejected) + ". Ask before going back to it; "
-                    "nothing was built.", proposal_id=proposal_id, question_refs=tuple(d.target_ref for d in rejected))
-    scope = obligations_in_scope(base, direct)
+                    "nothing was admitted.", proposal_id=proposal_id, candidate_id=request.candidate_id,
+                    question_refs=tuple(d.target_ref for d in rejected))
+    scope = obligations_in_scope(base, reach)
     conditions = tuple({"obligationId": o.obligation_id, "statement": o.statement, "checkable": obligation_checkable(o),
                         "validatorRef": o.validator_ref} for o in scope)
     confirmed = set(request.confirmed)
@@ -182,43 +212,48 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
     if unchecked:
         return done(NEEDS_QUESTION, "UNCHECKED_CONDITION", "The change reaches conditions no check can verify: "
                     + "; ".join(f"obligation:{o.obligation_id}: \"{o.statement}\"" for o in unchecked)
-                    + ". Ask the architect whether the change keeps them; nothing was built.", proposal_id=proposal_id,
+                    + ". Ask the architect whether the change keeps them; nothing was admitted.", proposal_id=proposal_id,
+                    candidate_id=request.candidate_id,
                     question_refs=tuple(f"obligation:{o.obligation_id}" for o in unchecked), conditions=conditions)
 
-    try:
-        accepted = ports.run(proposal_id)
-    except StudioError as exc:
-        if exc.code == "STALE_BASE":
-            return done(REFUSED, exc.code, exc.detail, proposal_id=proposal_id)
-        return done(PROBLEMS, "RUN_REFUSED", "The candidate could not be started.", proposal_id=proposal_id,
-                    problems=(Problem("build", exc.code, _sentence(exc)),), conditions=conditions)
-    candidate_id, job_id = str(accepted["candidateId"]), str(accepted["jobId"])
-    deadline = clock() + min(max(request.wait_s, 1.0), WAIT_MAX_S)
-    while True:
-        job = ports.job(job_id)
-        if job.get("status") in ("succeeded", "failed"):
-            break
-        if clock() >= deadline:
-            return done(PROBLEMS, "RUN_TIMEOUT", "The candidate did not finish in time; it was not admitted and the working "
-                        f"design did not move. It is still building as job {job_id}.",
-                        proposal_id=proposal_id, candidate_id=candidate_id, conditions=conditions,
-                        problems=(Problem("build", "RUN_TIMEOUT", f"job {job_id} is still {job.get('status')}"),))
-        sleep(_POLL_S)
-    seconds["build"] = round(clock() - started, 3)
-    if job.get("status") != "succeeded":
-        return done(PROBLEMS, "BUILD_FAILED", "The candidate failed to build; nothing moved.", proposal_id=proposal_id,
-                    candidate_id=candidate_id, conditions=conditions,
-                    problems=(Problem("build", "BUILD_FAILED", str(job.get("error") or "the job failed without a sentence")[:600]),))
+    if building:
+        try:
+            accepted = ports.run(proposal_id)
+        except StudioError as exc:
+            if exc.code == "STALE_BASE":
+                return done(REFUSED, exc.code, exc.detail, proposal_id=proposal_id)
+            return done(PROBLEMS, "RUN_REFUSED", "The candidate could not be started.", proposal_id=proposal_id,
+                        problems=(Problem("build", exc.code, _sentence(exc)),), conditions=conditions)
+        candidate_id, job_id = str(accepted["candidateId"]), str(accepted["jobId"])
+        deadline = clock() + min(max(request.wait_s, 1.0), WAIT_MAX_S)
+        while True:
+            job = ports.job(job_id)
+            if job.get("status") in ("succeeded", "failed"):
+                break
+            if clock() >= deadline:
+                return done(PROBLEMS, "RUN_TIMEOUT", "The candidate did not finish in time; it was not admitted and the "
+                            f"working design did not move. It is still building as job {job_id}.",
+                            proposal_id=proposal_id, candidate_id=candidate_id, conditions=conditions,
+                            problems=(Problem("build", "RUN_TIMEOUT", f"job {job_id} is still {job.get('status')}"),))
+            sleep(_POLL_S)
+        seconds["build"] = round(clock() - started, 3)
+        if job.get("status") != "succeeded":
+            return done(PROBLEMS, "BUILD_FAILED", "The candidate failed to build; nothing moved.", proposal_id=proposal_id,
+                        candidate_id=candidate_id, conditions=conditions,
+                        problems=(Problem("build", "BUILD_FAILED", str(job.get("error") or "the job failed without a sentence")[:600]),))
+    else:
+        candidate_id = request.candidate_id
 
     candidate = ports.candidate(candidate_id)
     comparison = _compare(ports, candidate_id, request.source_run_id)
     validation = ports.validation(candidate_id)
+    obligations = ports.obligations(candidate_id)
     seconds["check"] = round(clock() - started, 3)
     built = dict(proposal_id=proposal_id, candidate_id=candidate_id, state_digest=candidate.get("stateDigest"),
                  conditions=conditions, compare=comparison)
 
     changed = _changed_conditions(base, ports.record(candidate_id), confirmed)
-    after = {row.get("obligationId"): row for row in validation.get("obligationProblems") or ()}
+    after = {row["obligationId"]: row for row in obligations.get("results") or ()}
     still_unchecked = [o for o in scope if (after.get(o.obligation_id) or {}).get("status") == "unchecked"
                        and f"obligation:{o.obligation_id}" not in confirmed]
     if changed or still_unchecked:
@@ -232,12 +267,20 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
                     + ". It was not admitted and the working design did not move; ask the architect.",
                     question_refs=refs, **built)
 
-    problems = _readback_problems(candidate, comparison, request.kind) + _validation_problems(validation, candidate)
+    problems = (_readback_problems(candidate, comparison, request.kind)
+                + _validation_problems(validation, candidate, obligations))
     if problems:
         return done(PROBLEMS, "CHECKS_FAILED", "The candidate was built and failed the checks below; it was not admitted and "
                     "the working design did not move. Submit a corrected change against the same base.",
                     problems=tuple(problems[:_SHOWN]), **built)
+    if request.build_only:
+        return done(BUILT, "BUILT", f"The candidate passed every check and is not admitted. Look at it, then land it with "
+                    f"candidateId {candidate_id} against the same base.", **built)
 
+    if request.land and ports.working_head()[:2] != base_ref:
+        return done(PROBLEMS, "WORKING_DESIGN_MOVED", "The working design moved while this change was built, so it was "
+                    "not admitted; read the design again and write the change against it.",
+                    problems=(Problem("base", "WORKING_DESIGN_MOVED", "the working design is no longer the base"),), **built)
     admission = {"projectId": request.project_id,
                  "task": {"kind": "hub-chat" if request.message_source is not None else "ui", "ids": []},
                  "results": [{"runId": candidate_id, "outcome": "admitted", "supersedes": list(request.supersedes),
@@ -251,14 +294,16 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
         return done(PROBLEMS, "ADMISSION_REFUSED", "The candidate passed its checks but could not be admitted; the "
                     "working design did not move.", problems=(Problem("admission", exc.code, _sentence(exc)),), **built)
     if request.land:
+        head_run, head_digest, revision = ports.working_head()
+        if (head_run, head_digest) != base_ref:
+            return done(PROBLEMS, "CONTINUE_REFUSED", f"The candidate is admitted, but the working design moved while it was "
+                        f"admitted, so it was not continued onto {candidate_id}. Read the design again.",
+                        problems=(Problem("continue", "WORKING_DESIGN_MOVED", "the working design is no longer the base"),),
+                        working={"runId": head_run, "stateDigest": head_digest, "revisionSha256": revision}, **built)
         try:
-            _, _, revision = ports.working_head()
             ports.continue_(candidate_id, revision)
         except StudioError as exc:
-            # The admission stands; only the move onto it was refused, for example by a Continue made meanwhile.
-            return done(PROBLEMS, "CONTINUE_REFUSED", f"The candidate passed its checks and is admitted, but the working "
-                        f"design did not move onto it. Read the design again; {candidate_id} stays an admitted candidate.",
-                        problems=(Problem("continue", exc.code, _sentence(exc)),), **built)
+            return _after_failed_continue(ports, done, candidate_id, exc, built)
     head_run, head_digest, revision = ports.working_head()
     seconds["land"] = round(clock() - started, 3)
     working = {"runId": head_run, "stateDigest": head_digest, "revisionSha256": revision}
@@ -266,6 +311,24 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
         return done(ADMITTED, "ADMITTED", "The change passed its checks and is admitted as a candidate to compare; "
                     "the working design did not move.", working=working, **built)
     return done(LANDED, "LANDED", "The change is on the working design.", working=working, **built)
+
+
+def _after_failed_continue(ports: RevisionPorts, done: Callable[..., RevisionOutcome], candidate_id: str,
+                           exc: StudioError, built: Mapping[str, Any]) -> RevisionOutcome:
+    """Where the working design stands after a refused or half-finished Continue, as read back, never assumed."""
+
+    problem = (Problem("continue", exc.code, _sentence(exc)),)
+    try:
+        head_run, head_digest, revision = ports.working_head()
+    except StudioError as unreadable:
+        return done(PROBLEMS, "CONTINUE_UNKNOWN", f"The candidate is admitted, the Continue onto it failed, and where the "
+                    f"working design now stands could not be read ({_sentence(unreadable)}).", problems=problem, **built)
+    working = {"runId": head_run, "stateDigest": head_digest, "revisionSha256": revision}
+    if head_run == candidate_id:
+        return done(LANDED, "LANDED_UNRECORDED", "The working design is on the change, but who continued it could not be "
+                    "retained beside it.", problems=problem, working=working, **built)
+    return done(PROBLEMS, "CONTINUE_REFUSED", f"The candidate is admitted, but the working design did not move onto it; "
+                f"{candidate_id} stays an admitted candidate.", problems=problem, working=working, **built)
 
 
 def _sentence(exc: StudioError) -> str:
@@ -309,25 +372,26 @@ def _changed_conditions(base: StateRecord, built: StateRecord, confirmed: set[st
     return changed
 
 
-def _compare(ports: RevisionPorts, candidate_id: str, against: str) -> Mapping[str, Any]:
-    """The built model against the design it was made from, or why that design has no model to compare."""
+def _compare(ports: RevisionPorts, candidate_id: str, against: str | None) -> Mapping[str, Any]:
+    """The built model against the design it was made from.
+
+    Only a base that never exported a model is excused from the comparison; any other failure to compare is a
+    problem of the change.
+    """
 
     try:
         answer = ports.compare(candidate_id, against)
     except StudioError as exc:
-        return {"against": against, "unavailable": _sentence(exc)}
+        never = ports.never_exported(against)
+        return {"against": against, "unavailable": _sentence(exc), "baseHasNoModel": never}
     changed = [row for row in answer.get("objects") or () if row.get("status") != "unchanged"]
     return {"against": against, **{key: answer.get(key) for key in ("changed", "unchanged", "added", "removed")},
             "objects": [{key: row.get(key) for key in ("name", "status", "before", "after")} for row in changed[:40]],
             "objectsOmitted": max(0, len(changed) - 40)}
 
 
-def _readback_problems(candidate: Mapping[str, Any], comparison: Mapping[str, Any], kind: str) -> list[Problem]:
-    """The built model must read back, and a change of form must show in it.
-
-    A design with no model of its own (a start that was never exported) cannot be compared; the comparison then
-    says why, and the built model alone is read back.
-    """
+def _readback_problems(candidate: Mapping[str, Any], comparison: Mapping[str, Any], kind: str | None) -> list[Problem]:
+    """The built model must read back, compare with its base, and, for a change of form, show the change."""
 
     if candidate.get("objectReadbackError"):
         return [Problem("readback", "OBJECT_READBACK", str(candidate["objectReadbackError"])[:600])]
@@ -335,13 +399,19 @@ def _readback_problems(candidate: Mapping[str, Any], comparison: Mapping[str, An
         return [Problem("readback", "OBJECT_READBACK", "the candidate's model reads back no object, so the change "
                         "cannot be confirmed; this Runtime may export no model")]
     if "unavailable" in comparison:
-        return []
+        if comparison.get("baseHasNoModel"):
+            return []
+        return [Problem("readback", "COMPARE_UNAVAILABLE", "the built model could not be compared with the design it "
+                        f"was made from, which has a model: {comparison['unavailable']}"[:600])]
     if kind in _GEOMETRY_KINDS and not any(comparison.get(key) for key in ("changed", "added", "removed")):
         return [Problem("readback", "NO_VISIBLE_CHANGE", "the built model is the same as the design it was made from")]
     return []
 
 
-def _validation_problems(validation: Mapping[str, Any], candidate: Mapping[str, Any]) -> list[Problem]:
+def _validation_problems(validation: Mapping[str, Any], candidate: Mapping[str, Any],
+                         obligations: Mapping[str, Any]) -> list[Problem]:
+    """Every failing review clause, by its source; violated conditions from the whole result, not a shortened list."""
+
     blocked = list(validation.get("blockedBy") or ())
     problems = []
     if "relations.held" in blocked or "relations.fully_checked" in blocked:
@@ -350,10 +420,12 @@ def _validation_problems(validation: Mapping[str, Any], candidate: Mapping[str, 
                                     str(row.get("detail"))))
         if not problems:
             problems.append(Problem("relations", "relations", "relations were violated or left unchecked"))
-    if "obligations.held" in blocked:
-        for row in validation.get("obligationProblems") or ():
-            if row.get("status") == "violated" and row.get("new"):
-                problems.append(Problem(f"obligation:{row.get('obligationId')}", "violated", str(row.get("detail"))))
+    new = set(obligations.get("new") or ())
+    for row in obligations.get("results") or ():
+        if row.get("status") == "violated" and row.get("obligationId") in new:
+            problems.append(Problem(f"obligation:{row.get('obligationId')}", "violated", str(row.get("detail"))[:600]))
+    if "obligations.held" in blocked and not new:
+        problems.append(Problem("obligations.held", "not ready", "a condition is violated that its base did not violate"))
     for clause in blocked:
         if clause not in ("relations.held", "relations.fully_checked", "obligations.held"):
             lines = list(validation.get("honesty") or ()) if clause == "runner.exports_available" else []

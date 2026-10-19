@@ -971,6 +971,11 @@ class ProjectRuntimeManager:
             forwarded = {key: value for key, value in headers.items()
                          if key in {"content-type", "x-monkey-operation", "x-monkey-parent", "if-none-match",
                                     "x-monkey-turn-id", "x-monkey-parent-span-id"}}
+            if admission and admission.record.sessionId:
+                # The chat this request comes from, vouched for by this Hub (#185): the Runtime
+                # tells the Agent from a person by this, never by what a request body says.
+                forwarded["X-Monkey-Agent"] = admission.record.sessionId
+                forwarded["X-Monkey-Worker"] = worker.instance_id
             if admission and method == "POST" and _CANDIDATE_REQUEST.fullmatch(parsed.path):
                 candidate_id = admission.record.candidateId
                 # A Hub restart can reconstruct this deterministic run identity.

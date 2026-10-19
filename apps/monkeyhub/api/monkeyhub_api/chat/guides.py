@@ -135,7 +135,11 @@ _MODELLING = chr(10).join([
 # about reading and looking at a result, is the same text.
 _REVISE = [
     "CHANGE THE DESIGN (the design loop is enforced): every change the user asks for goes through one call,",
-    "POST /api/revisions {sourceRunId, stateDigest, kind, proposal, summary, keep?, confirmed?, supersedes?, land?}.",
+    "POST /api/revisions {sourceRunId, stateDigest, kind, proposal, summary, keep?, supersedes?, land?, buildOnly?},",
+    "with the loop's taskClass beside method/path, as for an admission. deterministic_edit lands in this one call.",
+    "spatial_formal or polish: send buildOnly: true, read GET /api/candidates/{candidateId} for its modelSource, look",
+    "with visual_review, then land it with {sourceRunId, stateDigest, candidateId, summary} (a repair names the looked-at",
+    "attempt in supersedes). The same candidateId lands an option, program or combination built from the working design."
     "sourceRunId and stateDigest are the working design's, as GET /api/construction/model answers them, or the working",
     "a landed change answered. kind names the route the change would take, and proposal is that route's body without",
     "stateDigest, sourceRunId, keep and summary: construction {script, parameters?}, facets {targets}, hosted-opening",
@@ -148,8 +152,8 @@ _REVISE = [
     "  Correct the change and submit it again against the same base, with supersedes: [the candidateId that failed].",
     "- needs_question: nothing was built or moved. Ask the user exactly what detail and questionRefs name, quoting their",
     "  words, and stop; do not work around it. A kept target or a rejected option changes only after the user revises that",
-    "  decision. A condition no check can verify passes only with confirmed: ['obligation:<id>'] when the user's words in",
-    "  this message say the change keeps it.",
+    "  decision; a condition no check can verify is the user's to confirm, never yours.",
+    "- built: buildOnly's answer; nothing is admitted until you land the candidate.",
     "- refused: read the working design again (STALE_BASE) or correct the request.",
     "land: false admits an alternative the user asked to compare and leaves their working design where it is.",
     "Your own POST /api/admissions of a result and PUT /api/working-draft are refused (DESIGN_LOOP_REQUIRED); rejecting",

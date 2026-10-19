@@ -391,13 +391,20 @@ class RevisionRequestDto(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     project_id: str = Field(alias="projectId", min_length=1)
-    source_run_id: RunId = Field(alias="sourceRunId", description="The working design's run, as it was read.")
+    source_run_id: RunId | None = Field(default=None, alias="sourceRunId", description=(
+        "The working design's run, as it was read; null only while the project has no working run yet."))
     state_digest: str = Field(alias="stateDigest", min_length=1, description="The working design's stateDigest, as it was read.")
-    kind: Literal["construction", "facets", "hosted-opening", "elevation", "proposal"] = Field(
-        description="Which proposal route the change is: POST /api/proposals/construction, /facets, /hosted-opening, "
-                    "/elevation, or POST /api/proposals for a semanticEdit.")
-    proposal: dict = Field(description="That route's body without projectId, stateDigest, sourceRunId, keep and summary, "
-                                       "which this request supplies.")
+    kind: Literal["construction", "facets", "hosted-opening", "elevation", "proposal"] | None = Field(
+        default=None, description="Which proposal route the change is: POST /api/proposals/construction, /facets, "
+                                  "/hosted-opening, /elevation, or POST /api/proposals for a semanticEdit.")
+    proposal: dict | None = Field(default=None, description=(
+        "That route's body without projectId, stateDigest, sourceRunId, keep and summary, which this request supplies."))
+    candidate_id: RunId | None = Field(default=None, alias="candidateId", description=(
+        "Instead of kind and proposal: a candidate already built from the working design (one this call built with "
+        "buildOnly, an option, a program or a combination), checked again and landed."))
+    build_only: bool = Field(default=False, alias="buildOnly", description=(
+        "Build and check the change but admit nothing: the answer is built, and the candidate is landed later by "
+        "naming it as candidateId, after a look."))
     summary: str = Field(min_length=1, max_length=2000, description="The change in words; its run keeps them.")
     keep: list[str] = Field(default_factory=list, max_length=200,
                             description="Refs to keep beside the project's keep decisions, which are always kept.")
@@ -444,10 +451,10 @@ class RevisionWorkingDto(BaseModel):
 
 
 class RevisionOutcomeDto(BaseModel):
-    """Exactly one outcome: landed, admitted, problems, needs_question or refused."""
+    """Exactly one outcome: landed, admitted, built, problems, needs_question or refused."""
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
-    outcome: Literal["landed", "admitted", "problems", "needs_question", "refused"]
+    outcome: Literal["landed", "admitted", "built", "problems", "needs_question", "refused"]
     code: str
     detail: str
     proposal_id: str | None = Field(alias="proposalId")
