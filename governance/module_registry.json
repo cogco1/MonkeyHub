@@ -8497,6 +8497,69 @@
         "services/project-runtime/tests/test_domains.py"
       ],
       "notes": "spec docs/design/construction-api.md §3.6 (GH-419 Task C5)."
+    },
+    {
+      "module_id": "tools.project.state_file",
+      "owner_path": "tools/project/state_file.py",
+      "purpose": "Start a project from a record and its opening decisions, open a state-carrying 3DM as a project, and save its working design back as a sealed 3DM (#657, #185), composing the project tools and the project's own Runtime.",
+      "owns": [
+        "the init, open and save command lines and their one-JSON-object answers",
+        "building a project in a caller-named work root from a record: repository with authored inputs, a one-stage workflow frozen and opened, the runner run with export",
+        "recording carried decisions (product rows, or opening rows of text, target_ref and disposition) through POST /api/decisions",
+        "what open does with changes made outside MonkeyHub: rows already in the record it builds from, an element whose objects all moved by one offset kept as a landed move proposal, every other change (and a move the design refuses) a condition no check can verify on what it touched, with the project built again when a move is refused",
+        "the excerpt: the words a reviser is given about every outside change and its amount",
+        "save: the working design as a sealed 3DM naming the file it was opened from, and with --candidates each candidate built since the project was opened as a plain 3DM"
+      ],
+      "does_not_own": [
+        "the state strings, seal and difference reading - monkeycad.formats.state_file",
+        "the conditions an outside change makes, the export with state and the decision rows - project_runtime.documents (state_files)",
+        "running a stage, freezing a workflow or opening one - monkeyarch.application.project_runner, tools.project.freeze_project_stage_workflow, tools.project.open_stage_run",
+        "admission and Continue - project_runtime.intent, project_runtime.binding",
+        "deciding where a work root is: the caller names it, and nothing is ever deleted"
+      ],
+      "inputs": [
+        "CLI arguments",
+        "a record and opening decisions, or a state-carrying 3DM",
+        "the project built from them"
+      ],
+      "outputs": [
+        "a project in the work root",
+        "a sealed 3DM",
+        "candidate 3DMs",
+        "opened.json beside the project",
+        "one JSON answer on stdout"
+      ],
+      "public_api": [
+        "main",
+        "init",
+        "open_file",
+        "save",
+        "build_project",
+        "outside_plan",
+        "excerpt",
+        "StateFileCommandError"
+      ],
+      "depends_on": [
+        "archflow.project.repository",
+        "archflow.state.stage_workflow",
+        "archflow.state.state_record",
+        "monkeycad.formats",
+        "project_runtime.documents",
+        "project_runtime.shell"
+      ],
+      "invariants": [
+        "an existing project directory or output file is refused; nothing is deleted",
+        "every project write goes through the repository, the project tools or the project's Runtime routes",
+        "an outside change is kept only when the design takes it as a whole element's move; anything else is named and becomes a condition, never dropped in silence"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tools/tests/test_state_file_command.py"
+      ],
+      "notes": [],
+      "files": [
+        "tools/project/state_file.py"
+      ]
     }
   ]
 }

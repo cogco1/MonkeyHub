@@ -266,24 +266,34 @@ def _stop_hook(state_file: Path) -> int:
     return 0
 
 
-def cli_profile(state_file: Path, *, request_file: Path | None = None, python: str = sys.executable,
+def cli_profile(state_file: Path, *, request_file: Path | None = None, hub_url: str | None = None,
+                project_dir: Path | None = None, session_id: str | None = None, python: str = sys.executable,
                 server: str = "monkeyhub") -> dict[str, Any]:
     """What a CLI turn in the design loop is started with: prompt, settings with the Stop hook, environment, tools.
 
     ``request_file`` holds the words an external host's turn answers; its connection publishes them as the
-    user's message. ``mcp_args`` go after the MCP server's own arguments.
+    user's message. With ``hub_url``, ``project_dir`` and ``session_id`` the answer also holds ``mcp_config``,
+    ready for ``--mcp-config``: this Hub's tool server bound to that project and session, design-loop tools only.
     """
 
     hook = f'"{Path(python).as_posix()}" "{Path(__file__).resolve().as_posix()}" stop-hook --state "{Path(state_file).as_posix()}"'
-    return {
+    env = {"MONKEYHUB_DESIGN_LOOP": "enforced", STATE_ENV: str(state_file), REPAIR_BUDGET_ENV: str(repair_budget()),
+           "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP": str(STOP_BLOCKS + 1), "MCP_TOOL_TIMEOUT": "480000",
+           **({} if request_file is None else {REQUEST_FILE_ENV: str(request_file)})}
+    profile: dict[str, Any] = {
         "system_prompt": SYSTEM_PROMPT,
         "settings": {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": hook, "timeout": 30}]}]}},
-        "env": {"MONKEYHUB_DESIGN_LOOP": "enforced", STATE_ENV: str(state_file), REPAIR_BUDGET_ENV: str(repair_budget()),
-                "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP": str(STOP_BLOCKS + 1), "MCP_TOOL_TIMEOUT": "480000",
-                **({} if request_file is None else {REQUEST_FILE_ENV: str(request_file)})},
+        "env": env,
         "mcp_args": ["--design-loop"],
         "allowed_tools": [f"mcp__{server}__{name}" for name in TOOLS],
     }
+    if hub_url is not None and project_dir is not None and session_id is not None:
+        args = [str(Path(__file__).resolve().with_name("mcp_server.py")), "--mcp", "--hub-url", hub_url,
+                "--project-dir", str(project_dir), "--source-session-id", session_id, "--provider", "claude",
+                "--design-loop"]
+        profile["mcp_config"] = {"mcpServers": {server: {"command": python, "args": args, "env": dict(env),
+                                                          "alwaysLoad": True}}}
+    return profile
 
 
 if __name__ == "__main__":
