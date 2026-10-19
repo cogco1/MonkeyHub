@@ -1051,6 +1051,36 @@
       "kind": "turn_scratch",
       "owner": "hub.shell",
       "reason": "The Stop hook keeps its own count of how often it held the turn open, beside the loop state the launcher named (<state>.stop.json); nothing else is written and no project is read."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/state_files.py",
+      "function": "seal_model",
+      "operations": [
+        "write_bytes"
+      ],
+      "kind": "projection_cache",
+      "owner": "project_runtime.documents",
+      "reason": "Writes a scratch copy of one 3DM in a temporary directory under the project's Hub cache (<cache>/state-files, ADR-008: derived and deletable, never inside the project) so that the state-file reader and sealer, which read and write paths, can work on it; the directory is deleted on return. The sealed export is retained only by the export route through P036."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/state_files.py",
+      "function": "inspect_state_file",
+      "operations": [
+        "write_bytes"
+      ],
+      "kind": "projection_cache",
+      "owner": "project_runtime.documents",
+      "reason": "Writes a scratch copy of one 3DM in a temporary directory under the project's Hub cache (<cache>/state-files, ADR-008: derived and deletable, never inside the project) so that the state-file reader and sealer, which read and write paths, can work on it; the directory is deleted on return. The sealed export is retained only by the export route through P036."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/state_files.py",
+      "function": "__enter__",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "projection_cache",
+      "owner": "project_runtime.documents",
+      "reason": "Writes a scratch copy of one 3DM in a temporary directory under the project's Hub cache (<cache>/state-files, ADR-008: derived and deletable, never inside the project) so that the state-file reader and sealer, which read and write paths, can work on it; the directory is deleted on return. The sealed export is retained only by the export route through P036."
     }
   ],
   "forbidden_layer_imports": [

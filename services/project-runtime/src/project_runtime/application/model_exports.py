@@ -9,6 +9,7 @@ from uuid import uuid4
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from .artifacts import artifact_bytes, list_artifacts, require_model_source, require_complete_model, ModelSource
 from .projection import project_state
+from . import state_files
 from monkeycad.formats.meshes import convert, FORMATS
 from monkeycad.formats.conversion import ConversionCoordinator, ConversionFailure
 from ..errors import StudioError, error_sentence
@@ -105,6 +106,15 @@ def submit(binding, jobs, payload):
         source_revision = revision.model_dump(by_alias=True)
     if source_format not in FORMATS:
         raise StudioError(422, "EXPORT_FORMAT_INVALID", "Choose a 3DM, SKP, GLB or DWG source.")
+    carried = None
+    if getattr(payload, "with_state", False):
+        if payload.project_revision is None or target != "3dm":
+            raise StudioError(422, "EXPORT_STATE_UNAVAILABLE", "Only a 3DM of an exact project revision carries its "
+                              "design state: choose projectRevision and targetFormat 3dm.")
+        carried = {"record": projection.record, "decisions": state_files.file_decisions(binding),
+                   "parent": payload.parent_file_sha256}
+    elif getattr(payload, "parent_file_sha256", None) is not None:
+        raise StudioError(422, "EXPORT_STATE_UNAVAILABLE", "parentFileSha256 goes with withState.")
     export_id = "export-" + uuid4().hex
     run = binding.repository.create_run(export_id)
     if source_artifact is None:
@@ -132,6 +142,13 @@ def submit(binding, jobs, payload):
         try:
             output, details = convert(data, source_format, target)
             current = current | details
+            if carried is not None:
+                # The converted model, with the run's record and the project's decisions sealed into it (#657).
+                output = state_files.seal_model(binding, output, record=carried["record"], decisions=carried["decisions"],
+                                                parent_file_sha256=carried["parent"])
+                current = current | {"withState": True, "stateRecordDigest": carried["record"].digest,
+                                     "decisionsCarried": len(carried["decisions"]),
+                                     "parentFileSha256": carried["parent"]}
             artifact = binding.repository.ingest(run=run, destination=PersistenceDestination(PersistenceArea.OBJECT),
                 artifact_id="converted-model", media_type="model/gltf-binary" if target == "glb" else "application/octet-stream",
                 source=BytesIO(output))

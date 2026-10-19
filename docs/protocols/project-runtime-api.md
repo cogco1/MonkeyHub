@@ -2032,6 +2032,24 @@ unfinished jobs after a Runtime restart report `interrupted` and are not replaye
 These operations use existing jobs and P036 noncanonical export runs, leaving
 project HEAD and the authoritative model unchanged.
 
+**A 3DM that carries its state (#657).** With `withState: true` (a `projectRevision`, `targetFormat` `3dm`
+only, else `422 EXPORT_STATE_UNAVAILABLE`) the delivered 3DM also holds, as the document strings
+`archflow:state` and `archflow:binding`, that run's State Record, the project's active design decisions as
+portable rows (`disposition`, `targetRef`, `rawLanguage`, `strength`, `extent`) and a seal over them: digests
+of the record, the decisions and each row, each named object's box and geometry digest, and the optional
+`parentFileSha256` of the state file the revision was made from. The report adds `withState`,
+`stateRecordDigest`, `decisionsCarried` and `parentFileSha256`.
+
+`POST /api/state-files/inspect` takes `{fileName, contentBase64}` and retains nothing. It answers `fileSha256`,
+`sealed`, `parentFileSha256`, the `record` and `decisions` the file states, `outOfBand` (each difference from
+its seal: `row_added`, `row_changed`, `row_removed`, `decisions_changed`, `object_added`, `object_removed`,
+`object_duplicate`, `object_moved` beyond 2 mm, or `unsealed`), `reencoded` (objects whose mesh was re-encoded
+within the box tolerance) and `conditions`: for each change made outside MonkeyHub, one open
+`DesignObligation` with no check on the parts it touched (an object's part and its component, a changed row, the
+decisions' targets). Whoever builds a project from the file adds them to its record, so that the one-call
+revision asks before changing anything the record does not know was changed. A file whose state cannot be read
+is `422 STATE_FILE_<code>`.
+
 The current provider supports bounded 3DM/GLB triangle-mesh interchange and
 validated same-format delivery. It does not reconstruct exact CAD solids or
 transfer materials, textures or hierarchy. SKP/DWG routes report no configured
