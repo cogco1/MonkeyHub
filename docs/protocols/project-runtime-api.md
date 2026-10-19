@@ -435,8 +435,9 @@ refuse before a candidate is saved.
 A `move` of an element that other elements depend on, or that relations name, is refused unless the
 request says `alone: true`. The element then moves by itself: each element depending on it keeps its own
 definition and is rebuilt from it (one placed by its own coordinates stays, one hosted by or measured from the
-moved element follows), and the candidate's readback and validation show the result. `alone` is refused for
-any other kind.
+moved element follows), and the candidate's readback and validation show the result. A parameter-bound
+coordinate the move changes stops following its parameter (the change's summary names each one); every other
+entry keeps its binding. `alone` is refused for any other kind.
 
 `POST /api/proposals/transform` also accepts `kind: "compress-above"` for one atomic
 height edit of planar surfaces. It takes exactly one of `componentId` or nonempty

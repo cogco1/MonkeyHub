@@ -300,7 +300,8 @@ def _keep_move(client, project_id: str, move: Mapping[str, Any]) -> str:
         raise StateFileCommandError(f"the move of {move['element']} did not build: {job.get('error')}")
     _require_as_delivered(client, started["candidateId"], run_id, move)
     _land_as_person(client, project_id, started["candidateId"], _move_words(move))
-    return started["candidateId"]
+    summary = str((proposal.get("change") or {}).get("summary") or "")
+    return started["candidateId"], summary.split("; it no longer follows ", 1)[1] if "; it no longer follows " in summary else None
 
 
 def _require_as_delivered(client, candidate_id: str, against: str, move: Mapping[str, Any]) -> None:
@@ -324,7 +325,8 @@ def _require_as_delivered(client, candidate_id: str, against: str, move: Mapping
 
 
 def _move_words(move: Mapping[str, Any]) -> str:
-    return f"Outside MonkeyHub: {move['element']} was moved by {amount(move['offset'])}; kept in the design."
+    unbound = f", where it no longer follows {move['unbound']}" if move.get("unbound") else ""
+    return f"Outside MonkeyHub: {move['element']} was moved by {amount(move['offset'])}; kept in the design{unbound}."
 
 
 def _refusal(reason: str) -> str:
@@ -547,7 +549,8 @@ def open_file(file: Path, work_root: Path) -> dict[str, Any]:
             recorded = record_decisions(client, record.project_id, found.decisions)
             for move in kept:
                 try:
-                    landed.append({**move, "runId": _keep_move(client, record.project_id, move)})
+                    run, unbound = _keep_move(client, record.project_id, move)
+                    landed.append({**move, "runId": run, "unbound": unbound})
                 except StateFileCommandError as exc:
                     failed.append({**move, "reason": str(exc)[:600]})
             run_id, digest, _ = _head(client)
@@ -565,7 +568,8 @@ def open_file(file: Path, work_root: Path) -> dict[str, Any]:
     return {"projectDir": str(project_dir), "fileSha256": found.file_sha256, "sealed": found.binding is not None,
             "workingRunId": run_id, "stateDigest": digest, "decisions": len(recorded),
             "outside": [{"kind": f.kind, "ref": f.ref, "detail": f.detail} for f in found.out_of_band],
-            "kept": [{"element": row["element"], "offset": list(row["offset"]), "runId": row["runId"]} for row in landed],
+            "kept": [{"element": row["element"], "offset": list(row["offset"]), "runId": row["runId"],
+                      "noLongerFollows": row["unbound"]} for row in landed],
             "notKept": [{"element": row["element"], "offset": list(row["offset"]), "reason": row["reason"]} for row in refused],
             "conditions": [row.to_dict() for row in conditions if row.status.value in ("open", "blocked")],
             "outsideRows": [row.to_dict() for row in conditions], "reencoded": list(found.reencoded),

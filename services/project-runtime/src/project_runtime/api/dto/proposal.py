@@ -309,7 +309,8 @@ class TransformElementRequestDto(BaseModel):
         "move only: move this element by itself although other elements depend on it or relations name it. Each of "
         "those keeps its own definition and is rebuilt from it - one placed by its own coordinates stays where it is, "
         "one hosted by or measured from this element follows - and the candidate's readback and validation show what "
-        "that does. Without it such a move is refused.")
+        "that does. A parameter-bound coordinate the move changes stops following its parameter, and the summary "
+        "names each parameter; the others keep their bindings. Without it such a move is refused.")
     keep: list[str] = Field(default_factory=list)
     project_id: str | None = Field(alias="projectId", default=None, min_length=1)
     source_run_id: str | None = Field(alias="sourceRunId", default=None, min_length=1)

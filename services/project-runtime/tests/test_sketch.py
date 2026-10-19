@@ -721,6 +721,18 @@ class SketchDirectGeometryTestCase(unittest.TestCase):
         self.assertEqual(direct.status_code, 422, direct.text)
         self.assertEqual(direct.json()["code"], "DIRECT_EDIT_UNSUPPORTED")
         self.assertIn("parameter-bound", direct.json()["detail"])
+        # Alone, a move in plan leaves both bound x controls as they are; one along x stops following them, and says so.
+        for translation, words in (([0, 0, 1], None), ([5, 0, 0], "it no longer follows loft_left, loft_right")):
+            with self.subTest(translation=translation):
+                alone = self.client.post("/api/proposals/transform", json={
+                    "sourceRunId": first, "stateDigest": self.digest(first), "elementId": "editable-loft",
+                    "kind": "move", "translation": translation, "alone": True})
+                self.assertEqual(alone.status_code, 201, alone.text)
+                summary = alone.json()["change"]["summary"]
+                if words is None:
+                    self.assertNotIn("no longer follows", summary)
+                else:
+                    self.assertIn(words, summary)
         moved = self.semantic({"summary": "Move the loft five metres through its existing position control.",
                                "parameters": [{"key": "loft_x", "value": 5}]}, first)
         result = self.record(moved)
