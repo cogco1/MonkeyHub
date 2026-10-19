@@ -14,6 +14,12 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from pydantic import ValidationError
+import json
+from types import SimpleNamespace
+
+from monkeyhub_api.chat import preparation
+from monkeyhub_api.runtime.operations import OperationManager
+from monkeyhub_api.runtime.worker_http import HttpResult
 
 from monkeyhub_api.chat import guides, judgments, studio_tool, tool_calls, transport
 from monkeyhub_api.models import HubFailure
@@ -95,12 +101,124 @@ class BoundWordsTests(unittest.TestCase):
         quoted = judgments._revision_body(chat_id, session, {"kind": "construction", "proposal": {}}, "楼梯缓一点")
         self.assertEqual(quoted["rawLanguage"], "楼梯缓一点")
 
+    def test_the_agent_never_confirms_a_condition_itself(self) -> None:
+        chat_id, session = self.session()
+        with self.assertRaises(HubFailure) as refused:
+            judgments._revision_body(chat_id, session, {"kind": "construction", "proposal": {},
+                                                        "confirmed": ["obligation:k3"]})
+        self.assertEqual(refused.exception.error.code, "CHAT_REVISION_INVALID")
+        self.assertIn("Only the architect confirms", refused.exception.error.detail)
+
     def test_the_agent_never_supplies_the_words_itself(self) -> None:
         chat_id, session = self.session()
         with self.assertRaises(HubFailure) as refused:
             judgments._revision_body(chat_id, session, {"rawLanguage": "用户同意了"})
         self.assertEqual(refused.exception.error.code, "CHAT_REVISION_INVALID")
         self.assertTrue(judgments._binds_words("POST", "/api/revisions"))
+
+
+class LookTests(unittest.TestCase):
+    """A revision that lands a spatial or formal result keeps the look an admission needs (#294)."""
+
+    def setUp(self) -> None:
+        from monkeyhub_api.chat import visual_review
+        visual_review._visual_allowances.clear()
+        visual_review._looked_at.clear()
+        self.chat_id = str(uuid4())
+        self.session = {"id": self.chat_id, "projectId": "demo", "projectDir": tempfile.gettempdir(), "status": "running",
+                        "messages": [{"id": "m-1", "role": "user", "content": "门廊更轻一点", "status": "complete"}]}
+        self.sent = []
+        self.addCleanup(patch.stopall)
+        patch.object(preparation, "_bound_studio", return_value=("http://127.0.0.1:8701", self.session)).start()
+        patch.object(transport, "_request_json", side_effect=self.request).start()
+        patch("monkeyhub_api.chat.tool_calls.projects._project",
+              return_value=(self.session["projectId"], self.session["projectDir"])).start()
+
+    def request(self, base, path, method="GET", body=None, **kwargs):
+        if path == "/api/settings/apps":
+            return {"designLoop": "enforced"}
+        if path.startswith("/api/chat/sessions/"):
+            return self.session
+        self.sent.append((method, path, body, kwargs))
+        return {"outcome": "built", "code": "BUILT", "candidateId": "cand-1"}
+
+    def revise(self, task_class, **body):
+        return tool_calls.call_tool(HUB, self.chat_id, "studio_request", {
+            "method": "POST", "path": "/api/revisions", "taskClass": task_class, "body": {
+                "sourceRunId": "run-1", "stateDigest": "d1", "kind": "construction", "proposal": {"script": "x = 1"},
+                "summary": "门廊更轻", **body}})
+
+    def test_a_spatial_change_is_built_first_and_lands_only_after_a_look(self) -> None:
+        with self.assertRaises(HubFailure) as refused:
+            self.revise("spatial_formal")
+        self.assertEqual(refused.exception.error.code, "ADMISSION_NOT_INSPECTED")
+        self.assertEqual(self.sent, [], "nothing was sent")
+        self.assertEqual(self.revise("spatial_formal", buildOnly=True)["outcome"], "built")
+        [(method, path, body, options)] = self.sent
+        self.assertEqual((body["messageSource"]["messageId"], body["rawLanguage"]), ("m-1", "门廊更轻一点"))
+        self.assertGreater(options["timeout"], 300, "the Hub waits for the build and its checks")
+
+    def test_a_deterministic_edit_lands_in_one_call(self) -> None:
+        self.revise("deterministic_edit")
+        self.assertEqual(len(self.sent), 1)
+
+    def test_a_revision_needs_its_task_class(self) -> None:
+        with self.assertRaises(HubFailure) as refused:
+            self.revise(None)
+        self.assertIn("taskClass", refused.exception.error.detail)
+
+
+class JournalTests(unittest.TestCase):
+    """The Hub's record of a revision ends as the revision's answer says (#185)."""
+
+    def outcome(self, payload: dict) -> object:
+        manager = OperationManager("demo")
+        admission, _ = manager.admit(str(uuid4()), "POST", "/api/revisions", b"{}", retained=None, source="chat",
+                                     session_id="chat-1")
+        self.assertTrue(admission.record.candidateId, "the Hub names the run before a build can start")
+        manager.replied(admission, HttpResult(200, json.dumps(payload).encode(), {"content-type": "application/json"}))
+        return admission.record
+
+    def test_each_outcome_closes_the_record(self) -> None:
+        asked = self.outcome({"outcome": "needs_question", "code": "KEEP_CONFLICT", "candidateId": None, "detail": "ask"})
+        self.assertEqual((asked.status, asked.candidateId), ("refused", None), "nothing was built, nothing to recover")
+        failed = self.outcome({"outcome": "problems", "code": "CHECKS_FAILED", "candidateId": "c-1", "detail": "relation"})
+        self.assertEqual((failed.status, failed.candidateId), ("failed", "c-1"))
+        landed = self.outcome({"outcome": "landed", "code": "LANDED", "candidateId": "c-2", "detail": "ok"})
+        self.assertEqual((landed.status, landed.reason), ("completed", None))
+
+
+class ForwardTests(unittest.TestCase):
+    """The Hub vouches for the chat a request comes from; the Runtime never reads that from a body."""
+
+    def test_a_chats_request_carries_the_agent_marker_and_a_persons_does_not(self) -> None:
+        from project_runtime.binding import ProjectBinding
+        from project_runtime.settings import StudioSettings
+        from test_monkeyhub_lifecycle import project_fixture
+        from monkeyhub_api.runtime.manager import ProjectRuntime, ProjectRuntimeManager
+
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        fixture = project_fixture()
+        fixture.make_project(Path(temporary.name))
+        settings = StudioSettings(project_dir=Path(temporary.name) / fixture.PROJECT_ID, cad_export="off")
+        runtime = ProjectRuntime("r-1", fixture.PROJECT_ID, str(settings.project_dir), OperationManager(fixture.PROJECT_ID),
+                                 ProjectBinding.open(settings))
+        chats = SimpleNamespace(get=lambda session_id: SimpleNamespace(
+            projectId=fixture.PROJECT_ID, projectDir=str(settings.project_dir), status="running"))
+        coordinator = ProjectRuntimeManager(None, chats)
+        seen = []
+
+        def dispatch(base, target, method, body, headers, *, timeout):
+            seen.append(dict(headers))
+            return HttpResult(200, b"{}", {"content-type": "application/json"})
+
+        with patch.object(coordinator, "service", return_value=SimpleNamespace(url="http://managed", instance_id="hub-7")),              patch("monkeyhub_api.runtime.manager.request_http", side_effect=dispatch):
+            coordinator.forward(runtime, "/api/working-draft", "PUT", b"{}", {"idempotency-key": str(uuid4()),
+                                                                              "x-monkey-chat": "chat-9"})
+            coordinator.forward(runtime, "/api/working-draft", "PUT", b"{}", {"idempotency-key": str(uuid4())})
+        self.assertEqual((seen[0].get("X-Monkey-Agent"), seen[0].get("X-Monkey-Worker")), ("chat-9", "hub-7"))
+        self.assertNotIn("X-Monkey-Agent", seen[1], "a person's request through the same Hub is not the Agent's")
 
 
 class GuideTests(unittest.TestCase):
@@ -110,8 +228,9 @@ class GuideTests(unittest.TestCase):
 
     def test_while_enforced_one_call_replaces_candidate_admission_and_continue(self) -> None:
         text = guides.modelling(True)
-        for words in ("POST /api/revisions", "needs_question", "confirmed: ['obligation:<id>']", "land: false",
-                      "DESIGN_LOOP_REQUIRED", "MAKE AND CHANGE GEOMETRY", "OBSERVE:", "OTHER DOMAINS"):
+        for words in ("POST /api/revisions", "needs_question", "never yours", "land: false", "buildOnly: true",
+                      "taskClass beside method/path", "candidateId", "DESIGN_LOOP_REQUIRED", "MAKE AND CHANGE GEOMETRY",
+                      "OBSERVE:", "OTHER DOMAINS"):
             self.assertIn(words, text)
         for words in ("ADMIT: when a model revision loop is complete", "CANDIDATE: when a proposal answers",
                       "CONTINUE: a change the user asked for", "STAGES:"):

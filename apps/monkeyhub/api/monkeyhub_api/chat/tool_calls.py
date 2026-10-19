@@ -220,9 +220,10 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if "feedbackQuote" in arguments and (name != "studio_request" or not judgments._binds_words(method, parsed.path)
                                          or not isinstance(arguments["feedbackQuote"], str)):
         raise HubFailure(422, "CHAT_FEEDBACK_QUOTE", "feedbackQuote only selects the user's words for feedback, an admission or a Continue.")
-    if "taskClass" in arguments and (name, method, parsed.path) != ("studio_request", "POST", "/api/admissions"):
+    if "taskClass" in arguments and not (name == "studio_request" and method == "POST"
+                                         and parsed.path in ("/api/admissions", studio_tool.REVISIONS)):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "taskClass beside method/path names the loop POST /api/admissions "
-                         "closes; visual_review takes its own.")
+                         "or POST /api/revisions closes; visual_review takes its own.")
     if "continue" in arguments and ((name, method, parsed.path) != ("studio_request", "POST", "/api/admissions")
                                     or not isinstance(arguments["continue"], bool)):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "continue: true beside method/path lands the one result POST "
@@ -425,6 +426,12 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             landing = _landing(chat_id, session, body, arguments) if arguments.get("continue") else None
             # A loop is admitted once it has finished, its declared look first (#294).
             visual_review._require_look(chat_id, body, arguments.get("taskClass"))
+        if revising and not body.get("buildOnly"):
+            # Landing or admitting is the loop's admission (#294): a spatial or formal loop lands only a result it
+            # looked at, or a repair whose supersedes names an attempt it looked at; buildOnly builds one to look at.
+            visual_review._require_look(chat_id, {"messageSource": body["messageSource"], "results": [{
+                "runId": body.get("candidateId") or "(this change)", "outcome": "admitted",
+                "supersedes": list(body.get("supersedes") or ())}]}, arguments.get("taskClass"))
     if method == "POST" and parsed.path == "/api/board/export":
         if parsed.query:
             raise HubFailure(422, "CHAT_TOOL_INVALID", "The registered page read takes its source in the body, without query parameters.")

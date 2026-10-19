@@ -26,6 +26,7 @@ from ...jobs import QUEUED, RUNNING, SUCCEEDED, Job
 from ...application.validation import validate_candidate, validate_design_candidate, validation_key
 from ...errors import StudioError
 from ..dto.validation import ValidationDto
+from .candidates import loop_shaped
 from ..dto.validation import to_dto as validation_dto
 
 router = APIRouter(tags=["validation"])
@@ -44,7 +45,7 @@ def read_validation(request: Request, candidate_id: str) -> ValidationDto:
         related_event_id=f"studio:candidate:{project_id}:{candidate_id}", details={"blocking": True}) as interval:
         result = _read_validation(request, candidate_id)
         interval["details"]["validator_pass"] = result.receipt.passed
-        return result
+        return loop_shaped(request.app.state.settings, result, frozenset({"obligationProblems", "obligationsChecked"}))
 
 
 def _read_validation(request: Request, candidate_id: str) -> ValidationDto:

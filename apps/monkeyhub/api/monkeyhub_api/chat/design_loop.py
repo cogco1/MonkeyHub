@@ -44,20 +44,21 @@ SYSTEM_PROMPT = (
     "The design states what it keeps, what was rejected and the conditions it must hold; anything it does not "
     "state counts as absent, so ask rather than assume. End the turn in exactly one of three ways: the change "
     "landed (say what changed, from the comparison), you asked the architect with design_ask, or you reported "
-    "with design_report_limitation what MonkeyHub cannot do. Never describe a change that did not land as done."
+    "with design_report_limitation what MonkeyHub cannot do. When you are told of changes made outside MonkeyHub, "
+    "name each one with its amount in your answer. Never describe a change that did not land as done."
 )
 
 GUIDE = chr(10).join([
     "Revise the design through one call. design_read first: working (runId, stateDigest), keep, rejected,",
     "conditions (checkable or not, and how each stands now), lastChange and the model by geometry id.",
-    "design_submit {sourceRunId, stateDigest, kind, proposal, summary, keep?, confirmed?, land?} with the working",
+    "design_submit {sourceRunId, stateDigest, kind, proposal, summary, keep?, land?} with the working",
     "design's runId and stateDigest. kind and proposal are a proposal route and its body: construction",
     "{script, parameters?} (GET the vocabulary with design_read part=vocabulary), facets {targets},",
     "hosted-opening {host, kind, along, width, ...}, elevation {action: 'set-datum', levelId, value} or",
     "proposal {semanticEdit}. It answers one outcome: landed (done), problems (nothing moved; correct the change",
     "and submit again), needs_question (nothing built; call design_ask with that question), refused (read again).",
-    "A condition no check can verify passes only with confirmed: ['obligation:<id>'] when the architect's words",
-    "in this message say the change keeps it; a kept target or a rejected option is never changed from here.",
+    "A condition no check can verify is the architect's to confirm, never yours; a kept target or a rejected option",
+    "is never changed from here. If lastChange or a condition says something was changed outside MonkeyHub, name it.",
     "After {budget} changes with problems, ask or report a limitation instead of submitting again.",
 ])
 
@@ -86,7 +87,6 @@ def tool_definitions() -> list[dict]:
              "sourceRunId": text, "stateDigest": text, "kind": {"type": "string", "enum": _KINDS},
              "proposal": {"type": "object", "additionalProperties": True}, "summary": {**text, "maxLength": 2000},
              "keep": {"type": "array", "items": {"type": "string"}},
-             "confirmed": {"type": "array", "items": {"type": "string", "pattern": "^obligation:"}},
              "land": {"type": "boolean", "default": True},
              "feedbackQuote": {**text, "maxLength": 2000, "description": "The exact passage of the architect's message "
                                "the change answers, when not the whole message."}},
@@ -197,13 +197,14 @@ def call(hub: str, chat_id: str, name: str, arguments: Mapping[str, Any]) -> dic
         raise HubFailure(409, "REPAIR_BUDGET_EXHAUSTED", f"{len(failed)} changes for this message came back with problems; "
                          "ask the architect with design_ask, or report what MonkeyHub cannot do with "
                          "design_report_limitation. Nothing was submitted.")
-    body = {key: arguments[key] for key in ("sourceRunId", "stateDigest", "kind", "proposal", "summary", "keep",
-                                            "confirmed", "land") if key in arguments}
+    body = {key: arguments[key] for key in ("sourceRunId", "stateDigest", "kind", "proposal", "summary", "keep", "land")
+            if key in arguments}
     # Earlier attempts of this message on the same base are the ones this result replaces.
     attempts = [row["candidateId"] for row in failed if row.get("candidateId") and row["base"] == arguments["stateDigest"]]
     if attempts:
         body["supersedes"] = attempts
-    request = {"method": "POST", "path": "/api/revisions", "body": body}
+    # Readback checks a design-loop change; these tools take no look, so the loop is a deterministic edit.
+    request = {"method": "POST", "path": "/api/revisions", "body": body, "taskClass": "deterministic_edit"}
     if "feedbackQuote" in arguments:
         request["feedbackQuote"] = arguments["feedbackQuote"]
     answer = tool_calls.call_tool(hub, chat_id, "studio_request", request)

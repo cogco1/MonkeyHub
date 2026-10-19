@@ -481,14 +481,17 @@ def _validate(
 ) -> CandidateValidation:
     canonical_facts = _condition_sources(binding, head, candidate, published)
     artifacts, honesty = _artifacts_of(candidate)
-    obligations = candidate_obligations(binding, candidate)
+    # The conditions are checked, and refuse review readiness, only while the design loop is enforced (#185):
+    # with it off a validation answers exactly as it did before.
+    enforced = binding.settings.design_loop_enforced
+    obligations = candidate_obligations(binding, candidate) if enforced else ObligationReadout((), (), None)
     honesty = honesty + _exports_of(candidate) + obligations.honesty
     receipt = validate_submission(
         CanonicalState(ref=head),
         _submission(candidate, artifacts),
         tuple(validator() for validator in VALIDATORS),
     )
-    readiness = review_readiness(receipt, candidate, obligations)
+    readiness = review_readiness(receipt, candidate, obligations if enforced else None)
     events.publish(
         event={
             "type": VALIDATION_COMPUTED,

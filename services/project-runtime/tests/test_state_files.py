@@ -34,7 +34,7 @@ class StateFileTests(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
         make_project(self.root)
-        self.client = TestClient(create_app(StudioSettings(cad_export="occt", project_dir=self.root / PROJECT_ID,
+        self.client = TestClient(create_app(StudioSettings(cad_export="occt", project_dir=self.root / PROJECT_ID, design_loop="enforced",
                                                            cache_dir=self.root / "cache")))
         self.addCleanup(self.client.close)
 

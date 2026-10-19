@@ -1127,8 +1127,12 @@ def _obligation(obligation_id: str, validator_ref: str | None, *subjects: str) -
                             subject_refs=subjects, validator_ref=validator_ref)
 
 
-def _house(*obligations: DesignObligation, rise: float = 0.17) -> StateRecord:
-    """A wall with a window and a door, a lintel, a flight under a slab with a stair hole, and a parameter pair."""
+def _house(*obligations: DesignObligation, rise: float = 0.17, count: int = 10, going: float = 0.3, window_width: float = 1.0,
+           column: bool = False) -> StateRecord:
+    """A wall with a window and a door, a lintel, a flight under a slab with a stair hole, and a parameter pair.
+
+    With ``column`` a column also stands in the flight, through its fifth and sixth treads.
+    """
 
     def element(element_id: str, producer: str, references: dict, params: dict) -> Entity:
         return Entity(element_id, "Element@1", {"component_id": "house", "producer": producer, "references": references, "params": params},
@@ -1140,15 +1144,18 @@ def _house(*obligations: DesignObligation, rise: float = 0.17) -> StateRecord:
         Entity("level-2", "Level@1", {"role": "upper", "elevation": 3.0}),
         element("wall-a", "wall", {"line": {"from": {"point": [0.0, 0.0]}, "to": {"point": [6.0, 0.0]}}, "base": {"level": "level-1"}},
                 {"thickness": 0.2, "height": 3.0, "openings": [
-                    {"opening_id": "win", "kind": "window", "along": "@window_along", "width": 1.0, "sill": 0.9, "head": 2.1},
+                    {"opening_id": "win", "kind": "window", "along": "@window_along", "width": window_width, "sill": 0.9, "head": 2.1},
                     {"opening_id": "door", "kind": "door", "along": 4.5, "width": 1.0, "sill": 0.0, "head": 2.1}]}),
         element("lintel-win", "prism", {"base": {"level": "level-1"}}, {"profile": [[1.35, 0.0], [2.65, 0.0], [2.65, 0.2], [1.35, 0.2]], "height": 0.2}),
         element("stair", "stair", {"from": {"point": [1.0, 1.0]}, "to": {"point": [1.0, 4.0]}, "base": {"level": "level-1"}},
-                {"count": 10, "rise": rise, "going": 0.3, "width": 1.0}),
+                {"count": count, "rise": rise, "going": going, "width": 1.0}),
         element("slab", "prism", {"base": {"level": "level-2"}, "voids": ["hole"]},
                 {"profile": [[0.0, 0.0], [6.0, 0.0], [6.0, 6.0], [0.0, 6.0]], "height": 0.2}),
         element("hole", "prism", {"base": {"level": "level-2"}}, {"profile": [[0.4, 2.2], [1.6, 2.2], [1.6, 4.0], [0.4, 4.0]], "height": 0.3}),
     )
+    if column:
+        entities += (element("column", "prism", {"base": {"level": "level-1"}},
+                             {"profile": [[0.9, 2.4], [1.1, 2.4], [1.1, 2.6], [0.9, 2.6]], "height": 3.0}),)
     parameters = (Parameter("window_along", 2.0, "m", epistemic_status="declared"),
                   Parameter("dome_top", 44.8, "m", epistemic_status="declared"),
                   Parameter("dome_limit", 46.5, "m", epistemic_status="declared"))
@@ -1212,6 +1219,60 @@ class ObligationCheckTests(unittest.TestCase):
         self.assertIn("stair foot: 0.8000 to obj-wall-a", found["r8"][1])
         low = {**_BOXES, "obj-slab": ((0.0, 0.0, 2.0), (6.0, 6.0, 2.2)), "obj-hole": ((0.4, 2.2, 1.95), (1.6, 4.0, 2.25))}
         self.assertEqual(self.results(record, low)["k6"][0], "violated")
+
+    def test_material_standing_through_a_tread_leaves_it_no_headroom(self) -> None:
+        record = _house(_obligation("k6", "validator:headroom-at-least/2.0", "entity:stair"), column=True)
+        # The column rises from the floor through treads 5 and 6 (tops 0.85 and 1.02) into the stair hole.
+        status, detail = self.results(record, {**_BOXES, "obj-column": ((0.9, 2.4, 0.0), (1.1, 2.6, 3.0))})["k6"]
+        self.assertEqual(status, "violated")
+        self.assertIn("stair tread 5: headroom 0.0000 under obj-column < 2.0000", detail)
+        self.assertIn("stair tread 6: headroom 0.0000 under obj-column", detail)
+        # A stub wholly below tread 8's top stands under the flight, not in its headroom.
+        status, detail = self.results(record, {**_BOXES, "obj-column": ((0.9, 3.1, 0.0), (1.1, 3.3, 0.5))})["k6"]
+        self.assertEqual(status, "held")
+        self.assertIn("least headroom 2.3200 at stair tread 4", detail)
+
+    def test_an_entity_check_without_an_entity_subject_is_unchecked_never_held(self) -> None:
+        kinds = ("opening-piers-at-least/0.5", "wall-above-at-least/0.15", "headroom-at-least/2.0", "landing-depth-at-least/0.5",
+                 "doors-clear-of-flights", "centred-at/x/1.0", "element-param-at-most/rise/0.18", "element-param-at-least/rise/0.15")
+        for kind in kinds:
+            with self.subTest(kind=kind):
+                record = _house(_obligation("bare", f"validator:{kind}"),
+                                _obligation("params", f"validator:{kind}", "parameter:window_along"))
+                found = self.results(record, _BOXES)
+                self.assertEqual({k: v[0] for k, v in found.items()}, {"bare": "unchecked", "params": "unchecked"})
+                self.assertIn("no entity subject", found["bare"][1])
+                self.assertIn("no entity subject", found["params"][1])
+
+    def test_centred_at_on_parameters_alone_is_unchecked(self) -> None:
+        record = _house(_obligation("k5", "validator:centred-at/x/1.0", "parameter:window_along", "parameter:dome_top"))
+        status, detail = self.results(record, _BOXES)["k5"]
+        self.assertEqual(status, "unchecked")
+        self.assertIn("no entity subject", detail)
+
+    def test_a_subject_the_check_does_not_read_leaves_it_unchecked(self) -> None:
+        cases = (("opening-piers-at-least/0.5", "entity:wall-a"), ("wall-above-at-least/0.15", "entity:lintel-win"),
+                 ("headroom-at-least/2.0", "entity:stair"), ("landing-depth-at-least/0.5", "entity:stair"),
+                 ("doors-clear-of-flights", "entity:wall-a"), ("centred-at/x/1.0", "entity:stair"),
+                 ("element-param-at-most/rise/0.18", "entity:stair"), ("element-param-at-least/rise/0.15", "entity:stair"))
+        for kind, subject in cases:
+            with self.subTest(kind=kind):
+                record = _house(_obligation("alone", f"validator:{kind}", subject),
+                                _obligation("mixed", f"validator:{kind}", subject, "decision:opening"))
+                found = self.results(record, _BOXES)
+                self.assertEqual(found["alone"][0], "held")
+                self.assertEqual(found["mixed"][0], "unchecked")
+                self.assertIn("decision:opening", found["mixed"][1])
+
+    def test_a_flight_or_opening_with_nothing_to_measure_is_unchecked(self) -> None:
+        for name, record in (("no steps", _house(_obligation("k6", "validator:headroom-at-least/2.0", "entity:stair"), count=0)),
+                             ("no going", _house(_obligation("k6", "validator:headroom-at-least/2.0", "entity:stair"), going=0.0))):
+            with self.subTest(name):
+                self.assertEqual(self.results(record, _BOXES)["k6"][0], "unchecked")
+        reversed_window = _house(_obligation("k3", "validator:opening-piers-at-least/0.5", "entity:wall-a"), window_width=-1.0)
+        status, detail = self.results(reversed_window)["k3"]
+        self.assertEqual(status, "unchecked")
+        self.assertIn("win", detail)
 
     def test_scope_follows_subjects_and_their_downstream_closure(self) -> None:
         record = _house(_obligation("k3", "validator:opening-piers-at-least/0.5", "entity:wall-a"),

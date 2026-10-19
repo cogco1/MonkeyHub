@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # What a Hub nobody configured does with the Agent's design changes (#185).
-DESIGN_LOOP_DEFAULT = "enforced"
+DESIGN_LOOP_DEFAULT = "off"
 
 
 class UserSettingsDto(BaseModel):

@@ -1089,17 +1089,21 @@ runs and none of these facts lists no Candidate. Creating an Exploration (`POST
 
 `POST /api/revisions` carries one change onto the working design, running the steps above in a fixed
 order. It takes `{projectId, sourceRunId, stateDigest, kind, proposal, summary, keep?, confirmed?,
-supersedes?, land?, label?, waitSeconds?, messageSource?, rawLanguage?}`. `sourceRunId` and `stateDigest`
-are the working design's; `kind` is `construction`, `facets`, `hosted-opening`, `elevation` or `proposal`
-(a `semanticEdit` or an utterance), and `proposal` is that route's body without the fields this request
-supplies. In order:
+supersedes?, land?, buildOnly?, label?, waitSeconds?, messageSource?, rawLanguage?}`, or `candidateId` in place
+of `kind` and `proposal` to land a candidate already built from the working design (one built with `buildOnly`,
+an option, a program or a combination), which is checked again from step 3 on. `sourceRunId` and `stateDigest`
+are the working design's, bound when the call starts (`sourceRunId` is null while the project has no working
+run, and the change starts from its default design); `kind` is `construction`, `facets`, `hosted-opening`,
+`elevation` or `proposal` (a `semanticEdit` or an utterance), and `proposal` is that route's body without the
+fields this request supplies. It takes the `accept` grant, and the change itself the `propose` grant. In order:
 
 1. a base that is not the working design is `refused` with `STALE_BASE`, and nothing is proposed;
 2. the change becomes a proposal through its own route, every applicable `keep` decision passed as a
    protected ref; a refused proposal is `problems`;
 3. a keep conflict is `needs_question` (`KEEP_CONFLICT`), quoting the decision's words;
-4. a change whose direct references include the target of an applicable `reject` or `avoid` decision is
-   `needs_question` (`REJECTED_OPTION`);
+4. a change whose reach (its direct references, what they propagate to, and every whole each touched part
+   belongs to) includes the target of an applicable `reject` or `avoid` decision is `needs_question`
+   (`REJECTED_OPTION`);
 5. a live condition in the change's reach (its direct references and their downstream closure) that names
    no executable check is `needs_question` (`UNCHECKED_CONDITION`), unless `confirmed` names it as
    `obligation:<id>` and the request carries the architect's words; nothing is built for a question;
@@ -1107,31 +1111,46 @@ supplies. In order:
    finish is `problems` with `RUN_TIMEOUT` and keeps building;
 7. a built change that drops or rewrites one of the base's live conditions, or leaves one in reach that
    the built model still cannot check, is `needs_question` (`CONDITION_CHANGED`, `UNCHECKED_CONDITION`);
-8. the built model is read back: no object, a readback error, or a construction or hosted opening that
-   changed nothing against the base (`NO_VISIBLE_CHANGE`) is `problems`. A base with no model of its own
-   cannot be compared, and `compare.unavailable` says why;
+8. the built model is read back: no object, a readback error, a comparison that fails while the base has a
+   model (`COMPARE_UNAVAILABLE`), or a construction or hosted opening that changed nothing against the base
+   (`NO_VISIBLE_CHANGE`) is `problems`. Only a base that never exported a model is excused from the
+   comparison, and `compare.unavailable` with `baseHasNoModel` says so;
 9. validation runs: a violated or unchecked relation, a new violated condition (`obligations.held`) or
    another failing review clause is `problems`, each one named by its `source` (`relation:<id>`,
    `obligation:<id>`, the clause);
-10. otherwise the result is admitted (`hub-chat` with the bound `messageSource`, else `ui`) and continued
-    onto the working design: `landed`. With `land: false` it is admitted as a candidate to compare and
-    the working design stays: `admitted`.
+10. with `buildOnly` the answer is `built` and nothing is admitted; the candidate lands later by its
+    `candidateId`;
+11. if the working design moved while the change was built, nothing is admitted (`WORKING_DESIGN_MOVED`);
+    otherwise the result is admitted (`hub-chat` with the bound `messageSource`, else `ui`) and continued onto
+    the working design: `landed`. With `land: false` it is admitted as a candidate to compare and the working
+    design stays: `admitted`. A Continue that fails is answered with where the working design actually stands:
+    `CONTINUE_REFUSED` (it did not move), `LANDED_UNRECORDED` (it moved, but who continued could not be
+    retained) or `CONTINUE_UNKNOWN`.
 
-The answer is `{outcome, code, detail, proposalId, candidateId, stateDigest, problems: [{source, kind,
+Every decision about a condition reads its whole result, never the shortened `obligationProblems` list. The
+answer is `{outcome, code, detail, proposalId, candidateId, stateDigest, problems: [{source, kind,
 detail}], questionRefs, conditions: [{obligationId, statement, checkable, validatorRef}], compare,
 working: {runId, stateDigest, revisionSha256}, seconds}`. Nothing moves on `problems`, `needs_question`
 or `refused`. A kept target or a rejected option changes only after its decision is revised.
 
 `GET /api/revisions/context` is what a change is written from: `working` (runId, stateDigest, revisionSha256, label), `keep` and `rejected` (each decision's ref, target and the architect's words), `conditions` (each live condition's ref, statement, subjects, `validatorRef`, `checkable` and how it stands on the working design: `onWorkingDesign` held, violated or unchecked, with `detail`), `lastChange` (the working design's own landed change: its summary, the words it answered and its objects before and after against its parent, so that undoing it is an ordinary change), `tried` (results the architect rejected, with their words) and `honesty`. Each list holds at most 40 rows and says how many it left out.
 
-**The design-loop setting.** The Hub's application setting `designLoop` (`enforced` or `off`) reaches the
-Runtime as `ARCHFLOW_STUDIO_DESIGN_LOOP`; a Runtime started by hand is `off`. While it is `enforced`, the
-Agent's own way onto the working design is refused with `409 DESIGN_LOOP_REQUIRED`: `POST
-/api/admissions` of an `admitted` result with `task.kind` `hub-chat`, and `PUT /api/working-draft` bound
-to a chat message. `POST /api/revisions` admits and continues the result itself. A person's admission
+**The design-loop setting.** The Hub's application setting `designLoop` (`enforced` or `off`, default `off`)
+reaches the Runtime as `ARCHFLOW_STUDIO_DESIGN_LOOP`; a Runtime started by hand is `off`. The Runtime tells the
+Agent from a person by `X-Monkey-Agent`, which the managing Hub adds (with its `X-Monkey-Worker` identity) to
+every request it forwards for a chat; nothing in a request body counts. While the setting is `enforced`, the
+Agent's own way onto the working design is refused with `409 DESIGN_LOOP_REQUIRED`: `POST /api/admissions` of
+an `admitted` result, and `PUT /api/working-draft` onto a run. `POST /api/revisions` admits and continues the
+result itself; from the Agent it must name its own chat's message and may confirm nothing (`422
+REVISION_INVALID`). While the setting is `off`, `POST /api/revisions` answers `409 DESIGN_LOOP_OFF`, and
+validation and candidate reads answer exactly as before: no condition is checked, `obligations.held` never
+appears, and `obligationProblems`, `obligationsChecked` and `relationProblems` are left out. A person's admission
 and Continue, and the Agent's rejections and withdrawals, are not affected. The Hub's chat offers `POST
-/api/revisions` only while the setting is `enforced`, binds the user's message and words to it, and
-gives the guide that names it; while it is `off` the chat's tools and guide are as they were.
+/api/revisions` and `GET /api/revisions/context` only while the setting is `enforced`, binds the user's message
+and words to it, takes the loop's `taskClass` beside it as for an admission (a `spatial_formal` or `polish`
+loop lands only a result it looked at, or a repair superseding a looked-at attempt; `buildOnly` builds one to
+look at), never sends a confirmation, and gives the guide that names it; while it is `off` the chat's tools and
+guide are as they were.
 
 **The design-loop tools.** While the design loop is enforced, the Hub's tool server also answers four tools
 over the chat's own bindings: `design_read` (`GET /api/revisions/context` and the construction model, or the

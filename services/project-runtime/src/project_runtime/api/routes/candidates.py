@@ -30,6 +30,7 @@ import secrets
 import re
 
 from fastapi import APIRouter, Query
+from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
 from archflow.project.repository import ProjectRepositoryError
@@ -180,7 +181,7 @@ def read_candidate(request: Request, candidate_id: str) -> CandidateDto:
         related_event_id=f"studio:candidate:{project_id}:{candidate_id}", details={"blocking": True}) as interval:
         result = _read_candidate(request, candidate_id)
         interval["details"]["success"] = result.status == SUCCEEDED and result.object_readback_error is None
-        return result
+        return loop_shaped(request.app.state.settings, result, LOOP_FIELDS)
 
 
 def _read_candidate(request: Request, candidate_id: str) -> CandidateDto:
@@ -243,18 +244,32 @@ def _read_candidate(request: Request, candidate_id: str) -> CandidateDto:
     )
 
 
+# What a candidate read adds while the design loop is enforced (#185); with it off the read is as before.
+LOOP_FIELDS = frozenset({"relationProblems", "obligationProblems"})
+
+
+def loop_shaped(settings: StudioSettings, dto, fields: frozenset[str]):
+    """The DTO as the route answers it: whole while the design loop is enforced, without ``fields`` while it is off."""
+
+    if settings.design_loop_enforced:
+        return dto
+    return JSONResponse(dto.model_dump(mode="json", by_alias=True, exclude={
+        name for name, field in type(dto).model_fields.items() if (field.alias or name) in fields}))
+
+
 def _candidate_with_objects(binding: ProjectBinding, candidate: CandidateRun) -> CandidateDto:
     if candidate.status != SUCCEEDED:
         return candidate_dto(candidate, object_readback_error=f"Candidate is {candidate.status}; retained object inspection is unavailable.")
+    enforced = binding.settings.design_loop_enforced
     try:
         shapes = shapes_of(binding, candidate.candidate_id)
     except StudioError as exc:
-        obligations = obligation_problems_dto(candidate_obligations(binding, candidate))
+        obligations = obligation_problems_dto(candidate_obligations(binding, candidate)) if enforced else None
         return candidate_dto(candidate, object_readback_error=f"{exc.code}: {exc.detail}", obligation_problems=obligations)
     except ProjectRepositoryError as exc:
-        obligations = obligation_problems_dto(candidate_obligations(binding, candidate))
+        obligations = obligation_problems_dto(candidate_obligations(binding, candidate)) if enforced else None
         return candidate_dto(candidate, object_readback_error=str(exc), obligation_problems=obligations)
-    obligations = obligation_problems_dto(candidate_obligations(binding, candidate, shapes=shapes))
+    obligations = obligation_problems_dto(candidate_obligations(binding, candidate, shapes=shapes)) if enforced else None
     missing = [seat.seat_id for seat in candidate.seat_results if not (seat.cad or {}).get("inspection_ref")]
     return candidate_dto(
         candidate, shapes=shapes,

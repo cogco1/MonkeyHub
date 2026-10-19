@@ -19,7 +19,8 @@
         "project_runtime.documents",
         "project_runtime.intent",
         "project_runtime.shell",
-        "project_runtime.validation"
+        "project_runtime.validation",
+        "tools.project.state_file"
       ],
       "write_scope": [
         "apps/monkeyhub/api/monkeyhub_api/chat/design_loop.py",
@@ -57,17 +58,21 @@
         "services/project-runtime/src/project_runtime/api/routes/candidates.py",
         "services/project-runtime/src/project_runtime/api/routes/episodes.py",
         "services/project-runtime/src/project_runtime/api/routes/model_exports.py",
+        "services/project-runtime/src/project_runtime/api/routes/validation.py",
         "services/project-runtime/src/project_runtime/api/routes/working_draft.py",
         "services/project-runtime/src/project_runtime/application/candidate.py",
         "services/project-runtime/src/project_runtime/application/model_exports.py",
         "services/project-runtime/src/project_runtime/application/revision_transaction.py",
         "services/project-runtime/src/project_runtime/application/state_files.py",
         "services/project-runtime/src/project_runtime/application/validation.py",
+        "services/project-runtime/src/project_runtime/authentication.py",
         "services/project-runtime/src/project_runtime/settings.py",
         "services/project-runtime/tests/test_candidate.py",
         "services/project-runtime/tests/test_revision_transaction.py",
         "services/project-runtime/tests/test_state_files.py",
-        "services/project-runtime/tests/test_validation.py"
+        "services/project-runtime/tests/test_validation.py",
+        "tools/project/state_file.py",
+        "tools/tests/test_state_file_command.py"
       ],
       "depends_on": []
     }

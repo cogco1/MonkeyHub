@@ -697,7 +697,12 @@ class CandidateRunTests(CandidateTestCase):
 
         accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")
         self.assertEqual(job["status"], "succeeded", job)
-        self.assertEqual(self.client.get(f"/api/candidates/{accepted['candidateId']}").json()["relationProblems"], [])
+        self.assertNotIn("relationProblems", self.client.get(f"/api/candidates/{accepted['candidateId']}").json(),
+                         "with the design loop off a candidate read is as it was")
+        enforced = TestClient(create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID,
+                                                        design_loop="enforced")))
+        self.addCleanup(enforced.close)
+        self.assertEqual(enforced.get(f"/api/candidates/{accepted['candidateId']}").json()["relationProblems"], [])
 
         run = self.repository.create_run("relation-problems")
         report = {"schema": "RelationCheckReport@1", "record_digest": "0" * 64,
