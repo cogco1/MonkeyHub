@@ -532,8 +532,8 @@ class RevisionRouteTests(unittest.TestCase):
             "projectId": PROJECT_ID, "runId": run_id, "baseRevisionSha256": self.head(person)["revisionSha256"]})
         self.assertEqual(moved.status_code, 200, moved.text)
 
-    def test_with_the_setting_off_everything_answers_as_before(self) -> None:
-        agent = self.runtime("off", managed=True)
+    def test_legacy_answers_everything_as_before(self) -> None:
+        agent = self.runtime("legacy", managed=True)
         run_id = self.candidate(agent)
         candidate = agent.get(f"/api/candidates/{run_id}").json()
         validation = agent.get(f"/api/candidates/{run_id}/validation").json()
@@ -542,7 +542,28 @@ class RevisionRouteTests(unittest.TestCase):
         self.assertNotIn("obligations.held", validation["blockedBy"])
         refused = agent.post("/api/revisions", json={"projectId": PROJECT_ID, "sourceRunId": None, "stateDigest": "x",
                                                      "kind": "proposal", "proposal": {}, "summary": "x"})
-        self.assertEqual(refused.json()["code"], "DESIGN_LOOP_OFF")
+        self.assertEqual(refused.json()["code"], "DESIGN_LOOP_NOT_ENFORCED")
+        admitted = agent.post("/api/admissions", headers=AGENT, json={
+            "projectId": PROJECT_ID, "task": {"kind": "hub-chat"}, "messageSource": MESSAGE,
+            "results": [{"runId": run_id, "outcome": "admitted"}]})
+        self.assertNotEqual(admitted.json().get("code"), "DESIGN_LOOP_REQUIRED", admitted.text)
+        moved = agent.put("/api/working-draft", headers=AGENT, json={
+            "projectId": PROJECT_ID, "runId": run_id, "baseRevisionSha256": self.head(agent)["revisionSha256"],
+            "messageSource": MESSAGE, "rawLanguage": "就这样"})
+        self.assertEqual(moved.status_code, 200, moved.text)
+
+
+    def test_advisory_checks_and_lists_problems_but_keeps_the_old_ways_onto_the_working_design(self) -> None:
+        agent = self.runtime("advisory", managed=True)
+        run_id = self.candidate(agent)
+        candidate = agent.get(f"/api/candidates/{run_id}").json()
+        validation = agent.get(f"/api/candidates/{run_id}/validation").json()
+        self.assertIn("relationProblems", candidate)
+        self.assertIn("obligationProblems", candidate)
+        self.assertIn("obligationsChecked", validation)
+        refused = agent.post("/api/revisions", json={"projectId": PROJECT_ID, "sourceRunId": None, "stateDigest": "x",
+                                                     "kind": "proposal", "proposal": {}, "summary": "x"})
+        self.assertEqual(refused.json()["code"], "DESIGN_LOOP_NOT_ENFORCED")
         admitted = agent.post("/api/admissions", headers=AGENT, json={
             "projectId": PROJECT_ID, "task": {"kind": "hub-chat"}, "messageSource": MESSAGE,
             "results": [{"runId": run_id, "outcome": "admitted"}]})

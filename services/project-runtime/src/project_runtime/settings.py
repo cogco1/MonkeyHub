@@ -45,13 +45,17 @@ RENDER_PROVIDER_ENV = "ARCHFLOW_STUDIO_RENDER_PROVIDER"
 RENDER_MODEL_ENV = "ARCHFLOW_STUDIO_RENDER_MODEL"
 RENDER_API_KEY_ENV = "ARCHFLOW_STUDIO_RENDER_API_KEY"
 RENDER_TIMEOUT_ENV = "ARCHFLOW_STUDIO_RENDER_TIMEOUT_S"
-# Whether the Agent reaches the working design only through POST /api/revisions
-# (#185). ``enforced`` refuses an Agent's own Continue and its admission of a
-# result; ``off`` leaves both as they were. A person's actions are never affected.
+# The design loop (#185), in three tiers. ``legacy`` answers exactly as before
+# it existed. ``advisory`` checks the conditions a design must keep, blocks a
+# new violation's review readiness and lists the problems, but enforces no way
+# onto the working design. ``enforced`` also makes POST /api/revisions the
+# Agent's only way there: its own Continue and admission of a result are
+# refused. A person's actions are never affected.
 DESIGN_LOOP_ENV = "ARCHFLOW_STUDIO_DESIGN_LOOP"
+DESIGN_LOOP_LEGACY = "legacy"
+DESIGN_LOOP_ADVISORY = "advisory"
 DESIGN_LOOP_ENFORCED = "enforced"
-DESIGN_LOOP_OFF = "off"
-DESIGN_LOOPS = (DESIGN_LOOP_ENFORCED, DESIGN_LOOP_OFF)
+DESIGN_LOOPS = (DESIGN_LOOP_LEGACY, DESIGN_LOOP_ADVISORY, DESIGN_LOOP_ENFORCED)
 
 # The two modes of the protocol boundary. ``local`` is the pair the launcher
 # starts on this machine: one loopback listener, one user, no token. ``remote``
@@ -155,9 +159,8 @@ class StudioSettings:
     render_model: str | None = None
     render_api_key: str | None = field(default=None, repr=False)
     render_timeout_s: float = 120.0
-    # The Hub's designLoop setting. A runtime started by hand serves no Hub Agent,
-    # so nothing it does depends on this.
-    design_loop: str = DESIGN_LOOP_OFF
+    # The Hub's designLoop setting; a runtime started by hand answers as before.
+    design_loop: str = DESIGN_LOOP_LEGACY
 
     def __post_init__(self) -> None:
         """Local listeners stay on loopback; remote listeners need credentials.
@@ -264,6 +267,12 @@ class StudioSettings:
         return self.design_loop == DESIGN_LOOP_ENFORCED
 
     @property
+    def design_loop_checks(self) -> bool:
+        """Whether conditions are checked and their problems listed (advisory or enforced); legacy answers as before."""
+
+        return self.design_loop != DESIGN_LOOP_LEGACY
+
+    @property
     def exports(self) -> bool:
         """Whether a candidate run writes geometry at all."""
 
@@ -326,7 +335,7 @@ class StudioSettings:
             render_model=os.environ.get(RENDER_MODEL_ENV, "").strip() or None,
             render_api_key=os.environ.get(RENDER_API_KEY_ENV, "").strip() or None,
             render_timeout_s=render_timeout,
-            design_loop=os.environ.get(DESIGN_LOOP_ENV, "").strip().lower() or DESIGN_LOOP_OFF,
+            design_loop=os.environ.get(DESIGN_LOOP_ENV, "").strip().lower() or DESIGN_LOOP_LEGACY,
             cad_export=cad_export_from_env(os.environ),
             powershell=Path(powershell) if powershell else None,
             reference_run=reference_run or None,

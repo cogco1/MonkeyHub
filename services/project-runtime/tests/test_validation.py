@@ -563,12 +563,13 @@ class ConditionSourceCoverageTests(ValidationTestCase):
 class ObligationClauseTests(ValidationTestCase):
     """obligations.held: a violation the candidate brings blocks; one its source already had, or an unchecked duty, does not.
 
-    The conditions are checked only while the design loop is enforced; the last test shows a Runtime with it off.
+    The conditions are checked only while the design loop checks them (advisory or enforced); the last test shows
+    a legacy Runtime.
     """
 
     def setUp(self) -> None:
         super().setUp()
-        self.app = create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID, design_loop="enforced"))
+        self.app = create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID, design_loop="advisory"))
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
 
@@ -620,7 +621,7 @@ class ObligationClauseTests(ValidationTestCase):
         self.assertEqual((problem["status"], problem["new"]), ("unchecked", False))
         self.assertIn("no executable check", problem["detail"])
 
-    def test_with_the_design_loop_off_a_violation_blocks_nothing_and_nothing_is_added(self) -> None:
+    def test_in_legacy_a_violation_blocks_nothing_and_nothing_is_added(self) -> None:
         accepted = self._candidate_against("validator:element-param-at-most/height/2.0")
         self.app = create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         self.client = TestClient(self.app)

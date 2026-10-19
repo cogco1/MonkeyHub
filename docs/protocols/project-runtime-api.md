@@ -1135,22 +1135,28 @@ or `refused`. A kept target or a rejected option changes only after its decision
 
 `GET /api/revisions/context` is what a change is written from: `working` (runId, stateDigest, revisionSha256, label), `keep` and `rejected` (each decision's ref, target and the architect's words), `conditions` (each live condition's ref, statement, subjects, `validatorRef`, `checkable` and how it stands on the working design: `onWorkingDesign` held, violated or unchecked, with `detail`), `lastChange` (the working design's own landed change: its summary, the words it answered and its objects before and after against its parent, so that undoing it is an ordinary change), `tried` (results the architect rejected, with their words) and `honesty`. Each list holds at most 40 rows and says how many it left out.
 
-**The design-loop setting.** The Hub's application setting `designLoop` (`enforced` or `off`, default `off`)
-reaches the Runtime as `ARCHFLOW_STUDIO_DESIGN_LOOP`; a Runtime started by hand is `off`. The Runtime tells the
-Agent from a person by `X-Monkey-Agent`, which the managing Hub adds (with its `X-Monkey-Worker` identity) to
-every request it forwards for a chat; nothing in a request body counts. While the setting is `enforced`, the
-Agent's own way onto the working design is refused with `409 DESIGN_LOOP_REQUIRED`: `POST /api/admissions` of
-an `admitted` result, and `PUT /api/working-draft` onto a run. `POST /api/revisions` admits and continues the
-result itself; from the Agent it must name its own chat's message and may confirm nothing (`422
-REVISION_INVALID`). While the setting is `off`, `POST /api/revisions` answers `409 DESIGN_LOOP_OFF`, and
-validation and candidate reads answer exactly as before: no condition is checked, `obligations.held` never
-appears, and `obligationProblems`, `obligationsChecked` and `relationProblems` are left out. A person's admission
-and Continue, and the Agent's rejections and withdrawals, are not affected. The Hub's chat offers `POST
-/api/revisions` and `GET /api/revisions/context` only while the setting is `enforced`, binds the user's message
-and words to it, takes the loop's `taskClass` beside it as for an admission (a `spatial_formal` or `polish`
-loop lands only a result it looked at, or a repair superseding a looked-at attempt; `buildOnly` builds one to
-look at), never sends a confirmation, and gives the guide that names it; while it is `off` the chat's tools and
-guide are as they were.
+**The design-loop setting.** The Hub's application setting `designLoop` reaches the Runtime as
+`ARCHFLOW_STUDIO_DESIGN_LOOP`, in three tiers; the default, and a Runtime started by hand, is `legacy`.
+
+- `legacy`: everything answers exactly as before the loop existed. No condition is checked,
+  `obligations.held` never appears, validation and candidate reads leave out `obligationProblems`,
+  `obligationsChecked` and `relationProblems`, and `POST /api/revisions` answers `409 DESIGN_LOOP_NOT_ENFORCED`.
+- `advisory`: conditions are checked, `obligations.held` refuses review readiness on a new violation, and the
+  problem lists appear on validation and candidate reads; every way onto the working design is as before, and
+  `POST /api/revisions` still answers `409 DESIGN_LOOP_NOT_ENFORCED`.
+- `enforced`: as `advisory`, and the Agent's own way onto the working design is refused with `409
+  DESIGN_LOOP_REQUIRED`: `POST /api/admissions` of an `admitted` result, and `PUT /api/working-draft` onto a run.
+  `POST /api/revisions` admits and continues the result itself; from the Agent it must name its own chat's message
+  and may confirm nothing (`422 REVISION_INVALID`).
+
+The Runtime tells the Agent from a person by `X-Monkey-Agent`, which the managing Hub adds (with its
+`X-Monkey-Worker` identity) to every request it forwards for a chat; nothing in a request body counts. A
+person's admission and Continue, and the Agent's rejections and withdrawals, are never affected. The Hub's chat
+offers `POST /api/revisions` and `GET /api/revisions/context` only while the setting is `enforced`, binds the
+user's message and words to it, takes the loop's `taskClass` beside it as for an admission (a `spatial_formal` or
+`polish` loop lands only a result it looked at, or a repair superseding a looked-at attempt; `buildOnly` builds
+one to look at), never sends a confirmation, and gives the guide that names it; in the other tiers the chat's
+tools and guide are as they were.
 
 ## 6. Pick and gesture resolution
 

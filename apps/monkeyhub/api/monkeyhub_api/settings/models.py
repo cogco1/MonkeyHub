@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # What a Hub nobody configured does with the Agent's design changes (#185).
-DESIGN_LOOP_DEFAULT = "off"
+DESIGN_LOOP_DEFAULT = "legacy"
 
 
 class UserSettingsDto(BaseModel):
@@ -84,10 +84,11 @@ class ApplicationSettingsDto(BaseModel):
     library_dir: str | None = Field(default=None, alias="libraryDir", min_length=1)
     reference_run: str | None = Field(default=None, alias="referenceRun", min_length=1)
     cad_export: Literal["occt", "rhino", "off"] = Field(default="occt", alias="cadExport")
-    # Whether the Agent reaches the working design only through POST /api/revisions,
-    # which checks, builds, reads back and validates a change before it lands (#185).
-    # off leaves the Agent's own admission and Continue as they were.
-    design_loop: Literal["enforced", "off"] = Field(default=DESIGN_LOOP_DEFAULT, alias="designLoop")
+    # The design loop (#185): legacy answers as before; advisory checks the conditions a
+    # design must keep and lists the problems; enforced also makes POST /api/revisions,
+    # which checks, builds, reads back and validates a change, the Agent's only way onto
+    # the working design.
+    design_loop: Literal["legacy", "advisory", "enforced"] = Field(default=DESIGN_LOOP_DEFAULT, alias="designLoop")
     studio_port: int = Field(default=8789, alias="studioPort", ge=1024, le=65535)
     monitor_port: int = Field(default=8788, alias="monitorPort", ge=1024, le=65535)
 

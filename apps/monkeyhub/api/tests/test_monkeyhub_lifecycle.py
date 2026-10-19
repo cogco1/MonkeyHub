@@ -132,7 +132,7 @@ class LocalHubCase(unittest.TestCase):
     def configuration(self, **changes):
         return {
             "projectDir": None, "workspaceDir": None, "libraryDir": None, "referenceRun": None, "cadExport": "off",
-            "studioPort": self.studio_port, "monitorPort": self.monitor_port,
+            "designLoop": "legacy", "studioPort": self.studio_port, "monitorPort": self.monitor_port,
             **changes,
         }
 

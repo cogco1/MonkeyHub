@@ -270,7 +270,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     looping = (method, parsed.path) in studio_tool.LOOP_ACTIONS
     if looping and not studio_tool.design_loop_enforced(hub):
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", f"{method} {parsed.path} is offered to the chat only while this "
-                         "Hub's design loop is enforced, and it is off. Nothing was executed.")
+                         "Hub's design loop is enforced, and it is not. Nothing was executed.")
     permitted = (studio_tool._schema_allowed(method, parsed.path, enforced=looping) if name == "studio_schema"
                  else allowed[method].fullmatch(parsed.path))
     if not permitted:

@@ -244,14 +244,14 @@ def _read_candidate(request: Request, candidate_id: str) -> CandidateDto:
     )
 
 
-# What a candidate read adds while the design loop is enforced (#185); with it off the read is as before.
+# What a candidate read adds while the design loop checks conditions (#185); in legacy the read is as before.
 LOOP_FIELDS = frozenset({"relationProblems", "obligationProblems"})
 
 
 def loop_shaped(settings: StudioSettings, dto, fields: frozenset[str]):
-    """The DTO as the route answers it: whole while the design loop is enforced, without ``fields`` while it is off."""
+    """The DTO as the route answers it: whole while the design loop checks conditions, without ``fields`` in legacy."""
 
-    if settings.design_loop_enforced:
+    if settings.design_loop_checks:
         return dto
     return JSONResponse(dto.model_dump(mode="json", by_alias=True, exclude={
         name for name, field in type(dto).model_fields.items() if (field.alias or name) in fields}))
@@ -260,7 +260,7 @@ def loop_shaped(settings: StudioSettings, dto, fields: frozenset[str]):
 def _candidate_with_objects(binding: ProjectBinding, candidate: CandidateRun) -> CandidateDto:
     if candidate.status != SUCCEEDED:
         return candidate_dto(candidate, object_readback_error=f"Candidate is {candidate.status}; retained object inspection is unavailable.")
-    enforced = binding.settings.design_loop_enforced
+    enforced = binding.settings.design_loop_checks
     try:
         shapes = shapes_of(binding, candidate.candidate_id)
     except StudioError as exc:
