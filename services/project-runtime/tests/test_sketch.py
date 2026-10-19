@@ -235,6 +235,26 @@ class SketchTestCase(unittest.TestCase):
         self.assertEqual(self.repository.read_head().version, head)
         self.assertEqual(sorted(path.name for path in (self.root / PROJECT_ID / "runs").iterdir()), runs_before)
 
+    def test_alone_moves_an_element_others_depend_on_by_itself(self) -> None:
+        def move(element: str, translation: list[float], **extra):
+            return self.client.post("/api/proposals/transform", json={
+                "stateDigest": self.state_digest, "elementId": element, "kind": "move", "translation": translation,
+                "alone": True, **extra})
+
+        # The base carries the cornice; the cornice stands on the base's top, and moves there in plan.
+        for element, translation in (("portico-base", [0.3, 0, 0]), ("portico-cornice", [0, 0, 0.5])):
+            with self.subTest(element=element):
+                response = move(element, translation)
+                self.assertEqual(response.status_code, 201, response.text)
+                self.assertIn(f"move {element} alone", response.json()["change"]["summary"])
+        lifted = move("portico-cornice", [0, 0.5, 0])
+        self.assertEqual((lifted.status_code, lifted.json()["code"]), (422, "DIRECT_EDIT_UNSUPPORTED"), lifted.text)
+        self.assertIn("only a move in plan", lifted.json()["detail"])
+        turned = self.client.post("/api/proposals/transform", json={
+            "stateDigest": self.state_digest, "elementId": "portico-cornice", "kind": "rotate", "axis": [0, 1, 0],
+            "angleDegrees": 90, "alone": True})
+        self.assertEqual(turned.status_code, 422, "alone applies to a move only")
+
 
 class SketchCandidateTestCase(unittest.TestCase):
     """The drawn action, run the only way anything runs here: as a candidate."""

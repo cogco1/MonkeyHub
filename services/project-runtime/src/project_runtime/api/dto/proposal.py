@@ -305,6 +305,11 @@ class TransformElementRequestDto(BaseModel):
     origin: tuple[float, float, float] | None = Field(default=None, description=
         "rotate/scale: the fixed point, in project coordinates. " + MODELING_FRAME)
     copy_element_id: str | None = Field(alias="copyElementId", default=None, min_length=1)
+    alone: bool = Field(default=False, description=
+        "move only: move this element by itself although other elements depend on it or relations name it. Each of "
+        "those keeps its own definition and is rebuilt from it - one placed by its own coordinates stays where it is, "
+        "one hosted by or measured from this element follows - and the candidate's readback and validation show what "
+        "that does. Without it such a move is refused.")
     keep: list[str] = Field(default_factory=list)
     project_id: str | None = Field(alias="projectId", default=None, min_length=1)
     source_run_id: str | None = Field(alias="sourceRunId", default=None, min_length=1)
@@ -312,6 +317,8 @@ class TransformElementRequestDto(BaseModel):
 
     @model_validator(mode="after")
     def action_parameters(self) -> "TransformElementRequestDto":
+        if self.alone and self.kind != "move":
+            raise ValueError("alone applies to a move only")
         if self.kind == "compress-above":
             if self.element_id is not None or ((self.component_id is None) == (self.element_ids is None)):
                 raise ValueError("compress-above requires exactly one componentId or elementIds, without elementId")

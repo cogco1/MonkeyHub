@@ -432,6 +432,12 @@ keeps its current numeric position. A datum change propagates through existing d
 dependencies. Cycles, missing targets, nonpositive height, protected state and stale bases
 refuse before a candidate is saved.
 
+A `move` of an element that other elements depend on, or that relations name, is refused unless the
+request says `alone: true`. The element then moves by itself: each element depending on it keeps its own
+definition and is rebuilt from it (one placed by its own coordinates stays, one hosted by or measured from the
+moved element follows), and the candidate's readback and validation show the result. `alone` is refused for
+any other kind.
+
 `POST /api/proposals/transform` also accepts `kind: "compress-above"` for one atomic
 height edit of planar surfaces. It takes exactly one of `componentId` or nonempty
 `elementIds`, without `elementId`, plus finite `threshold` and `factor` with
@@ -1133,7 +1139,7 @@ detail}], questionRefs, conditions: [{obligationId, statement, checkable, valida
 working: {runId, stateDigest, revisionSha256}, seconds}`. Nothing moves on `problems`, `needs_question`
 or `refused`. A kept target or a rejected option changes only after its decision is revised.
 
-`GET /api/revisions/context` is what a change is written from: `working` (runId, stateDigest, revisionSha256, label), `keep` and `rejected` (each decision's ref, target and the architect's words), `conditions` (each live condition's ref, statement, subjects, `validatorRef`, `checkable` and how it stands on the working design: `onWorkingDesign` held, violated or unchecked, with `detail`), `lastChange` (the working design's own landed change: its summary, the words it answered and its objects before and after against its parent, so that undoing it is an ordinary change), `tried` (results the architect rejected, with their words) and `honesty`. Each list holds at most 40 rows and says how many it left out.
+`GET /api/revisions/context` is what a change is written from: `working` (runId, stateDigest, revisionSha256, label), `outside` (every change made outside MonkeyHub that a state file brought into the design, newest file first: its words with the part and amount, `subjects`, `inTheDesign` and `fileSha256`), `keep` and `rejected` (each decision's ref, target and the architect's words), `conditions` (each live condition's ref, statement, subjects, `validatorRef`, `checkable` and how it stands on the working design: `onWorkingDesign` held, violated or unchecked, with `detail`), `lastChange` (the working design's own landed change: its summary, the words it answered and its objects before and after against its parent, so that undoing it is an ordinary change), `tried` (results the architect rejected, with their words) and `honesty`. Each list holds at most 40 rows and says how many it left out.
 
 **The design-loop setting.** The Hub's application setting `designLoop` reaches the Runtime as
 `ARCHFLOW_STUDIO_DESIGN_LOOP`, in three tiers; the default, and a Runtime started by hand, is `legacy`.

@@ -273,20 +273,54 @@ def outside_plan(record: StateRecord, found) -> tuple[list[dict[str, Any]], list
 
 
 def _keep_move(client, project_id: str, move: Mapping[str, Any]) -> str:
-    """Take one outside move into the design: a move proposal of its element, built, admitted and continued."""
+    """Take one outside move into the design: a move proposal of its element, built, read back and, when the model
+    it builds is the delivered one, admitted and continued.
+
+    An element others depend on, or that relations name, is moved alone: what depends on it keeps its own
+    definition. Either way the move is kept only if the built model differs from the design it was made on by
+    exactly this element's objects, each moved by the delivered offset.
+    """
 
     run_id, digest, _ = _head(client)
-    dx, dy, dz = move["offset"]
+    # Below the tolerance the file cannot tell a move from re-encoding: such a component is no move at all, so a part
+    # moved in plan stays on what it is anchored to.
+    dx, dy, dz = (0.0 if abs(value) <= BOX_TOLERANCE_M else value for value in move["offset"])
     # The file is Z-up (x east, y north, z up); the modeling frame is Y-up with plan (x, z).
-    proposal = _call(client, "POST", "/api/proposals/transform", {
-        "projectId": project_id, "stateDigest": digest, "sourceRunId": run_id, "elementId": move["element"],
-        "kind": "move", "translation": [dx, dz, dy]})
+    body = {"projectId": project_id, "stateDigest": digest, "sourceRunId": run_id, "elementId": move["element"],
+            "kind": "move", "translation": [dx, dz, dy]}
+    try:
+        proposal = _call(client, "POST", "/api/proposals/transform", body)
+    except StateFileCommandError as exc:
+        if "ELEMENT_HAS_DEPENDENTS" not in str(exc):
+            raise
+        proposal = _call(client, "POST", "/api/proposals/transform", {**body, "alone": True})
     started = _call(client, "POST", f"/api/proposals/{proposal['proposalId']}/candidate")
     job = _wait_job(client, started["jobId"])
     if job["status"] != "succeeded":
         raise StateFileCommandError(f"the move of {move['element']} did not build: {job.get('error')}")
+    _require_as_delivered(client, started["candidateId"], run_id, move)
     _land_as_person(client, project_id, started["candidateId"], _move_words(move))
     return started["candidateId"]
+
+
+def _require_as_delivered(client, candidate_id: str, against: str, move: Mapping[str, Any]) -> None:
+    """Refuse a built move whose model is not the delivered one: another object moved, or this one by another amount."""
+
+    compared = _call(client, "GET", f"/api/candidates/{candidate_id}/compare", params={"against": against})
+    moved = {finding.ref.removeprefix("object:") for finding in move["findings"]}
+    seen = set()
+    for row in compared.get("objects") or ():
+        name, before, after = row["name"], row.get("before"), row.get("after")
+        if before is None or after is None:
+            raise StateFileCommandError(f"the move of {move['element']} would {'add' if before is None else 'remove'} {name}")
+        shift = [a - b for a, b in zip((*after["min"], *after["max"]), (*before["min"], *before["max"]))]
+        expected = list(move["offset"]) * 2 if name in moved else [0.0] * 6
+        if max(abs(a - b) for a, b in zip(shift, expected)) > BOX_TOLERANCE_M:
+            raise StateFileCommandError(f"the move of {move['element']} would also move {name}" if name not in moved
+                                        else f"the move of {move['element']} would put {name} elsewhere than delivered")
+        seen.add(name)
+    if moved - seen:
+        raise StateFileCommandError(f"the move of {move['element']} left no readback of {sorted(moved - seen)}")
 
 
 def _move_words(move: Mapping[str, Any]) -> str:

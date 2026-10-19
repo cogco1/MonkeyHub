@@ -80,22 +80,28 @@ class StateFileCommandTests(unittest.TestCase):
         self.assertEqual(sorted((row["disposition"], row["rawLanguage"]) for row in sealed.decisions),
                          [("keep", "门廊基座别动"), ("reject", "不要长凳靠墙")])
 
-        # A consultant moves the bench on its own, and the base without the cornice that stands on it.
+        # A consultant moves the bench, which nothing depends on; the cornice north, off the base it stands on; and the
+        # base east and up, without the cornice, which the record measures from the base's top.
         model = rhino3dm.File3dm.Read(str(start))
         for item in model.Objects:
-            offset = {"obj-garden-bench": (0.5, 1.0, 0.2), "obj-portico-base": (0.3, 0.0, 0.0)}.get(item.Attributes.Name)
+            offset = {"obj-garden-bench": (0.5, 1.0, 0.2), "obj-portico-cornice": (0.0, 0.5, 0.0),
+                      "obj-portico-base": (0.3, 0.0, 0.2)}.get(item.Attributes.Name)
             if offset:
                 self.assertTrue(item.Geometry.Translate(rhino3dm.Vector3d(*offset)))
         delivered = self.root / "delivered.3dm"
         self.assertTrue(model.Write(str(delivered), 8))
 
         opened = state_file.open_file(delivered, self.root / "w1")
-        self.assertEqual([(row["element"], row["offset"]) for row in opened["kept"]], [("garden-bench", [0.5, 1.0, 0.2])])
+        self.assertEqual([(row["element"], row["offset"]) for row in opened["kept"]],
+                         [("garden-bench", [0.5, 1.0, 0.2]), ("portico-cornice", [0.0, 0.5, 0.0])],
+                         "the cornice moves alone: the relation naming it is checked again, not a reason to refuse")
         self.assertEqual([row["element"] for row in opened["notKept"]], ["portico-base"])
-        self.assertIn("rel-cornice-on-base", opened["notKept"][0]["reason"])
+        self.assertIn("would also move obj-portico-cornice", opened["notKept"][0]["reason"],
+                      "raised, the base would lift the cornice measured from it, which the delivered file did not move")
         self.assertEqual([row["subject_refs"] for row in opened["conditions"]], [["entity:portico-base", "entity:portico"]])
         for words in ("garden-bench was moved by (0.500, 1.000, 0.200) m", "kept in the design",
-                      "portico-base was moved by (0.300, 0.000, 0.000) m", "could not be kept",
+                      "portico-cornice was moved by (0.000, 0.500, 0.000) m",
+                      "portico-base was moved by (0.300, 0.000, 0.200) m", "could not be kept",
                       "Ask the architect before changing what these touched: entity:portico, entity:portico-base."):
             self.assertIn(words, opened["excerpt"])
 
@@ -104,9 +110,9 @@ class StateFileCommandTests(unittest.TestCase):
         with state_file.runtime(project) as client:
             outside = state_file._call(client, "GET", "/api/revisions/context")["outside"]
             self.assertEqual(sorted((row["subjects"][0], row["inTheDesign"]) for row in outside),
-                             [("entity:garden-bench", True), ("entity:portico-base", False)])
+                             [("entity:garden-bench", True), ("entity:portico-base", False), ("entity:portico-cornice", True)])
             self.assertTrue(any("(0.500, 1.000, 0.200) m (east, north, up)" in row["statement"] for row in outside))
-            self.assertTrue(any("(0.300, 0.000, 0.000) m (east, north, up)" in row["statement"] for row in outside))
+            self.assertTrue(any("(0.300, 0.000, 0.200) m (east, north, up)" in row["statement"] for row in outside))
             run_id, digest, _ = state_file._head(client)
             proposal = state_file._call(client, "POST", "/api/proposals/transform", {
                 "projectId": "file-demo", "stateDigest": digest, "sourceRunId": run_id, "elementId": "garden-bench",

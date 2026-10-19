@@ -504,8 +504,12 @@ def _action_words(kind: str, action: Mapping[str, Any]) -> str:
 
 def direct_element_proposal(projection: StateProjection, *, element_id: str, kind: str,
                             copy_element_id: str | None = None, keep_refs: Sequence[str] = (),
-                            **action: Any) -> Mapping[str, Any]:
-    """One direct modeling action on the record's element, through the existing typed edit."""
+                            alone: bool = False, **action: Any) -> Mapping[str, Any]:
+    """One direct modeling action on the record's element, through the existing typed edit.
+
+    ``alone`` moves an element that others depend on or relations name by itself: each of them keeps its own
+    definition, and the candidate's readback and validation say what that does.
+    """
 
     from monkeyarch.authoring.element_producers import ProductionContext, edit_drawn_element, element_rows_of, produce_rows
     from monkeyarch.domain.reference_resolver import ReferenceContext
@@ -515,7 +519,7 @@ def direct_element_proposal(projection: StateProjection, *, element_id: str, kin
     entity = next((item for item in record.entities_of("Element@1") if item.entity_id == element_id), None)
     if entity is None:
         raise StudioError(404, "ELEMENT_UNKNOWN", f"{element_id} is not an editable element of this record")
-    if kind not in {"push_pull", "copy"}:
+    if kind not in {"push_pull", "copy"} and not (alone and kind == "move"):
         _require_independent_element(record, entity)
     try:
         rows = element_rows_of(record)
@@ -533,7 +537,8 @@ def direct_element_proposal(projection: StateProjection, *, element_id: str, kin
                    "basis_refs": list(entity.basis_refs), "fields": fields}
     except (TypeError, ValueError, KeyError) as exc:
         raise StudioError(422, "DIRECT_EDIT_UNSUPPORTED", str(exc)) from exc
-    said = f"{kind.replace('_', '/')} {element_id}" + (f" as {target_id}" if kind == "copy" else "") + _action_words(kind, action)
+    said = (f"{kind.replace('_', '/')} {element_id}" + (" alone" if alone else "")
+            + (f" as {target_id}" if kind == "copy" else "") + _action_words(kind, action))
     return component_edit_proposal(projection, {
         "summary": said, "entities": [updated], "parameters": [], "relations": [],
         "removeEntityIds": [], "removeParameterKeys": [], "removeRelationIds": [],

@@ -12902,6 +12902,12 @@ export type TransformElementRequestDto = {
      */
     copyElementId?: string | null;
     /**
+     * Alone
+     *
+     * move only: move this element by itself although other elements depend on it or relations name it. Each of those keeps its own definition and is rebuilt from it - one placed by its own coordinates stays where it is, one hosted by or measured from this element follows - and the candidate's readback and validation show what that does. Without it such a move is refused.
+     */
+    alone?: boolean;
+    /**
      * Keep
      */
     keep?: Array<string>;
