@@ -44,13 +44,14 @@ SYSTEM_PROMPT = (
     "The design states what it keeps, what was rejected and the conditions it must hold; anything it does not "
     "state counts as absent, so ask rather than assume. End the turn in exactly one of three ways: the change "
     "landed (say what changed, from the comparison), you asked the architect with design_ask, or you reported "
-    "with design_report_limitation what MonkeyHub cannot do. When you are told of changes made outside MonkeyHub, "
-    "name each one with its amount in your answer. Never describe a change that did not land as done."
+    "with design_report_limitation what MonkeyHub cannot do. When design_read lists changes made outside MonkeyHub "
+    "(outside), or you are told of them, name each one with its amount in your answer. Never describe a change that "
+    "did not land as done."
 )
 
 GUIDE = chr(10).join([
     "Revise the design through one call. design_read first: working (runId, stateDigest), keep, rejected,",
-    "conditions (checkable or not, and how each stands now), lastChange and the model by geometry id.",
+    "conditions (checkable or not, and how each stands now), outside, lastChange and the model by geometry id.",
     "design_submit {sourceRunId, stateDigest, kind, proposal, summary, keep?, land?} with the working",
     "design's runId and stateDigest. kind and proposal are a proposal route and its body: construction",
     "{script, parameters?} (GET the vocabulary with design_read part=vocabulary), facets {targets},",
@@ -58,7 +59,8 @@ GUIDE = chr(10).join([
     "proposal {semanticEdit}. It answers one outcome: landed (done), problems (nothing moved; correct the change",
     "and submit again), needs_question (nothing built; call design_ask with that question), refused (read again).",
     "A condition no check can verify is the architect's to confirm, never yours; a kept target or a rejected option",
-    "is never changed from here. If lastChange or a condition says something was changed outside MonkeyHub, name it.",
+    "is never changed from here. outside lists each change made outside MonkeyHub, newest file first, and whether",
+    "the design has it: name each one with its amount; one the design lacks is asked about before it is touched.",
     "After {budget} changes with problems, ask or report a limitation instead of submitting again.",
 ])
 

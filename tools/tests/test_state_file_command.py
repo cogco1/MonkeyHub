@@ -102,6 +102,11 @@ class StateFileCommandTests(unittest.TestCase):
         # One change built during the hop, then the save.
         project = Path(opened["projectDir"])
         with state_file.runtime(project) as client:
+            outside = state_file._call(client, "GET", "/api/revisions/context")["outside"]
+            self.assertEqual(sorted((row["subjects"][0], row["inTheDesign"]) for row in outside),
+                             [("entity:garden-bench", True), ("entity:portico-base", False)])
+            self.assertTrue(any("(0.500, 1.000, 0.200) m (east, north, up)" in row["statement"] for row in outside))
+            self.assertTrue(any("(0.300, 0.000, 0.000) m (east, north, up)" in row["statement"] for row in outside))
             run_id, digest, _ = state_file._head(client)
             proposal = state_file._call(client, "POST", "/api/proposals/transform", {
                 "projectId": "file-demo", "stateDigest": digest, "sourceRunId": run_id, "elementId": "garden-bench",

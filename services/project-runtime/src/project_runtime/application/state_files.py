@@ -16,9 +16,9 @@ from pathlib import Path
 import tempfile
 from typing import Any, Mapping, Sequence
 
-from archflow.state.operational_state import DesignObligation
+from archflow.state.operational_state import DesignObligation, ObligationStatus
 from archflow.state.state_record import StateRecord, StateRecordError, part_of_object, resolve_element_bindings
-from monkeycad.formats.state_file import OutOfBand, StateFileError, read_state_file, seal_state_file
+from monkeycad.formats.state_file import BOX_TOLERANCE_M, OutOfBand, StateFileError, read_state_file, seal_state_file
 
 from ..binding import ProjectBinding
 from ..errors import StudioError
@@ -90,27 +90,56 @@ def inspect_state_file(binding: ProjectBinding, data: bytes) -> dict[str, Any]:
             "conditions": [row.to_dict() for row in conditions]}
 
 
-def outside_conditions(record: StateRecord, findings: Sequence[OutOfBand], decisions: Sequence[Mapping[str, Any]], *,
-                       file_sha256: str) -> tuple[DesignObligation, ...]:
-    """One condition no check can verify per change made outside MonkeyHub, on the parts it touched.
+def moved_by(detail: Mapping[str, Any]) -> tuple[float, float, float] | None:
+    """The one offset an object's box moved by, in the file's Z-up frame (east, north, up), or None when its
+    size changed too."""
 
-    The record does not have these changes: a reviser who reaches one of those parts must ask whether the
-    change made outside is to be kept. An object that belongs to no part of the record, a seal that is
-    missing and a re-encoded mesh make no condition.
+    try:
+        before, after = detail["before"], detail["after"]
+        low = [a - b for a, b in zip(after["min"], before["min"])]
+        high = [a - b for a, b in zip(after["max"], before["max"])]
+    except (KeyError, TypeError):
+        return None
+    if len(low) != 3 or max(abs(a - b) for a, b in zip(low, high)) > BOX_TOLERANCE_M:
+        return None
+    return tuple(round((a + b) / 2, 6) for a, b in zip(low, high))  # type: ignore[return-value]
+
+
+def amount(offset: Sequence[float]) -> str:
+    """An offset in words: metres east, north and up."""
+
+    dx, dy, dz = offset
+    return f"({dx:.3f}, {dy:.3f}, {dz:.3f}) m (east, north, up)"
+
+
+def outside_conditions(record: StateRecord, findings: Sequence[OutOfBand], decisions: Sequence[Mapping[str, Any]], *,
+                       file_sha256: str, kept: Sequence[Mapping[str, Any]] = ()) -> tuple[DesignObligation, ...]:
+    """One row per change made outside MonkeyHub, on the parts it touched, so that every one stays named.
+
+    A change in ``findings`` is one the record does not have: its row is a condition no check can verify, and a
+    reviser who reaches one of those parts must ask whether the change made outside is to be kept. Each move in
+    ``kept`` ({"element", "offset"}) is taken into the design as a landed change: its row is satisfied, so it
+    asks nothing and only names the move. An object that belongs to no part of the record, a seal that is
+    missing and a re-encoded mesh make no row. Ids are the file's, so rows from several files never meet.
     """
 
     elements = resolve_element_bindings(record)
     components = {entity_id: row.get("component_id") for entity_id, row in elements.items()}
     targets = sorted({str(row.get("targetRef")) for row in decisions if row.get("targetRef")})
     conditions: list[DesignObligation] = []
+    prefix = f"outside-{file_sha256[:12]}"
+
+    def parts(element: str) -> tuple[str, ...]:
+        component = components.get(element)
+        return tuple(dict.fromkeys([f"entity:{element}", *([f"entity:{component}"] if component else [])]))
+
     for finding in findings:
         subjects: tuple[str, ...] = ()
         if finding.kind.startswith("object_"):
             name = finding.ref.removeprefix("object:")
             element = part_of_object(name, elements)
             if element is not None:
-                component = components.get(element)
-                subjects = tuple(dict.fromkeys([f"entity:{element}", *([f"entity:{component}"] if component else [])]))
+                subjects = parts(element)
             what = _object_words(finding, name)
         elif finding.kind.startswith("row_"):
             subjects = (finding.ref,) if finding.ref.split(":", 1)[0] in ("entity", "parameter", "relation") else ()
@@ -124,16 +153,35 @@ def outside_conditions(record: StateRecord, findings: Sequence[OutOfBand], decis
         if not subjects:
             continue
         conditions.append(DesignObligation(
-            obligation_id=f"outside-{len(conditions) + 1}",
+            obligation_id=f"{prefix}-{len(conditions) + 1}",
             statement=f"Outside MonkeyHub, {what}. The design record does not have this change: ask the architect "
                       "whether it is kept before changing what it touched.",
             source_ref=f"{FILE_SOURCE}:{file_sha256}", subject_refs=subjects))
+    for move in kept:
+        conditions.append(DesignObligation(
+            obligation_id=f"{prefix}-{len(conditions) + 1}",
+            statement=f"Outside MonkeyHub, {move['element']} was moved by {amount(move['offset'])}. The design has this "
+                      "move: it was taken in as a landed change.",
+            source_ref=f"{FILE_SOURCE}:{file_sha256}", status=ObligationStatus.SATISFIED, subject_refs=parts(move["element"])))
     return tuple(conditions)
+
+
+def outside_rows(record: StateRecord) -> list[dict[str, Any]]:
+    """Every change made outside MonkeyHub that a file brought into this design, newest file first: its words,
+    the parts it touched, and whether the design has it."""
+
+    rows = [{"ref": f"obligation:{row.obligation_id}", "statement": row.statement, "subjects": list(row.subject_refs),
+             "inTheDesign": row.status is ObligationStatus.SATISFIED, "fileSha256": row.source_ref.split(":", 1)[1]}
+            for row in record.obligations if row.source_ref.startswith(f"{FILE_SOURCE}:")]
+    order = list(dict.fromkeys(row["fileSha256"] for row in rows))
+    return sorted(rows, key=lambda row: -order.index(row["fileSha256"]))
 
 
 def _object_words(finding: OutOfBand, name: str) -> str:
     if finding.kind == "object_moved":
-        return f"{name} was moved by {float(finding.detail.get('moved_m', 0.0)):.3f} m"
+        offset = moved_by(finding.detail)
+        return f"{name} was moved by " + (amount(offset) if offset is not None
+                                          else f"{float(finding.detail.get('moved_m', 0.0)):.3f} m")
     return {"object_added": f"{name} was added", "object_removed": f"{name} was removed",
             "object_duplicate": f"{name} was duplicated"}.get(finding.kind, f"{name} changed")
 

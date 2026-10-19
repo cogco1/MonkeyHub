@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 from monkeycad.backends.occt.kernel import occt_available
 from archflow.state.state_record import StateRecord, check_obligations, obligations_in_scope
 from monkeycad.formats.state_file import OutOfBand
-from project_runtime.application.state_files import decision_request, outside_conditions
+from project_runtime.application.state_files import decision_request, outside_conditions, outside_rows
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 
@@ -120,11 +120,29 @@ class OutsideConditionTests(unittest.TestCase):
                          "an object no part delivered and a missing seal make no condition")
         self.assertIn("0.500 m", conditions[0].statement)
         self.assertTrue(all(row.validator_ref is None for row in conditions))
+        first = conditions[0].obligation_id
+        self.assertTrue(first.startswith("outside-aaaaaaaaaaaa-"), "ids are the file's, so two files' rows never meet")
         with_them = replace(self.record, obligations=(*self.record.obligations, *conditions))
         results = {row.obligation_id: row.status for row in check_obligations(with_them)}
-        self.assertEqual(results["outside-1"], "unchecked", "never counted as held")
+        self.assertEqual(results[first], "unchecked", "never counted as held")
         self.assertEqual([row.obligation_id for row in obligations_in_scope(with_them, ("entity:portico-base",))
-                          if row.obligation_id.startswith("outside-")], ["outside-1"])
+                          if row.obligation_id.startswith("outside-")], [first])
+
+    def test_a_kept_move_is_named_with_its_amount_and_asks_nothing(self) -> None:
+        moved = OutOfBand("object_moved", "object:obj-portico-base", {
+            "moved_m": 0.3, "before": {"min": [0, 0, 0], "max": [4, 2, 0.6]}, "after": {"min": [0.3, 0, 0], "max": [4.3, 2, 0.6]}})
+        older = outside_conditions(self.record, (moved,), [], file_sha256="a" * 64)
+        newer = outside_conditions(self.record, (), [], file_sha256="b" * 64,
+                                   kept=[{"element": "portico-base", "offset": (0.0, 0.5, 0.0)}])
+        self.assertIn("(0.300, 0.000, 0.000) m (east, north, up)", older[0].statement)
+        self.assertIn("(0.000, 0.500, 0.000) m (east, north, up)", newer[0].statement)
+        with_them = replace(self.record, obligations=(*self.record.obligations, *older, *newer))
+        self.assertEqual([row.obligation_id for row in obligations_in_scope(with_them, ("entity:portico-base",))
+                          if row.obligation_id.startswith("outside-")], [older[0].obligation_id], "a kept move asks nothing")
+        self.assertNotIn(newer[0].obligation_id, {row.obligation_id for row in check_obligations(with_them)})
+        rows = outside_rows(with_them)
+        self.assertEqual([(row["fileSha256"][0], row["inTheDesign"]) for row in rows], [("b", True), ("a", False)],
+                         "every outside change is listed, newest file first, with whether the design has it")
 
 
 if __name__ == "__main__":

@@ -70,6 +70,7 @@ from archflow.state.state_record import (  # noqa: E402
     StateRecord, StateRecordOperator, apply_state_record_operator, part_of_object, resolve_element_bindings,
 )
 from monkeycad.formats.state_file import BOX_TOLERANCE_M, StateFileError, read_state_file  # noqa: E402
+from project_runtime.application.state_files import amount, moved_by, outside_conditions  # noqa: E402
 
 TOOLS = Path(__file__).resolve().parent
 STAGE_RUN = "stage-0-001"
@@ -253,7 +254,7 @@ def outside_plan(record: StateRecord, found) -> tuple[list[dict[str, Any]], list
     for finding in found.out_of_band:
         if finding.kind == "object_moved":
             element = part_of_object(finding.ref.removeprefix("object:"), elements)
-            offset = _offset(finding.detail)
+            offset = moved_by(finding.detail)
             if element is not None and offset is not None:
                 moved.setdefault(element, []).append((finding, offset))
                 continue
@@ -269,20 +270,6 @@ def outside_plan(record: StateRecord, found) -> tuple[list[dict[str, Any]], list
         else:
             others.extend(f for f, _ in rows)
     return keep, others
-
-
-def _offset(detail: Mapping[str, Any]) -> tuple[float, float, float] | None:
-    """The one offset a box moved by, in the file's Z-up frame, or None when it also changed size."""
-
-    try:
-        before, after = detail["before"], detail["after"]
-        low = [a - b for a, b in zip(after["min"], before["min"])]
-        high = [a - b for a, b in zip(after["max"], before["max"])]
-    except (KeyError, TypeError):
-        return None
-    if max(abs(a - b) for a, b in zip(low, high)) > BOX_TOLERANCE_M:
-        return None
-    return tuple(round((a + b) / 2, 6) for a, b in zip(low, high))  # type: ignore[return-value]
 
 
 def _keep_move(client, project_id: str, move: Mapping[str, Any]) -> str:
@@ -303,9 +290,7 @@ def _keep_move(client, project_id: str, move: Mapping[str, Any]) -> str:
 
 
 def _move_words(move: Mapping[str, Any]) -> str:
-    dx, dy, dz = move["offset"]
-    return (f"Outside MonkeyHub: {move['element']} was moved by ({dx:.3f}, {dy:.3f}, {dz:.3f}) m (east, north, up); "
-            "kept in the design.")
+    return f"Outside MonkeyHub: {move['element']} was moved by {amount(move['offset'])}; kept in the design."
 
 
 def _refusal(reason: str) -> str:
@@ -319,7 +304,9 @@ def _refusal(reason: str) -> str:
 
 def _finding_words(finding) -> str:
     if finding.kind == "object_moved":
-        return f"{finding.ref.removeprefix('object:')} was moved by {float(finding.detail.get('moved_m', 0.0)):.3f} m"
+        offset = moved_by(finding.detail)
+        return f"{finding.ref.removeprefix('object:')} was moved by " + (
+            amount(offset) if offset is not None else f"{float(finding.detail.get('moved_m', 0.0)):.3f} m")
     return {"object_added": f"{finding.ref} was added", "object_removed": f"{finding.ref} was removed",
             "object_duplicate": f"{finding.ref} was duplicated", "row_added": f"{finding.ref} was added in the record",
             "row_removed": f"{finding.ref} was removed from the record", "row_changed": f"{finding.ref} was changed in the record",
@@ -347,9 +334,10 @@ def excerpt(kept: Sequence[Mapping[str, Any]], others: Sequence[Any], conditions
             lines.append("- The file carries no seal, so what changed in it cannot be told.")
         else:
             lines.append(f"- {_finding_words(finding)}; the design record does not have this change.")
-    if conditions:
+    asking = [row for row in conditions if row.status.value in ("open", "blocked")]
+    if asking:
         lines.append("Ask the architect before changing what these touched: "
-                     + ", ".join(sorted({ref for row in conditions for ref in row.subject_refs})) + ".")
+                     + ", ".join(sorted({ref for row in asking for ref in row.subject_refs})) + ".")
     return "\n".join(lines)
 
 
@@ -505,7 +493,6 @@ def init(record_file: Path, opening_file: Path, work_root: Path, out: Path) -> d
 
 
 def open_file(file: Path, work_root: Path) -> dict[str, Any]:
-    from project_runtime.application.state_files import outside_conditions
 
     try:
         found = read_state_file(Path(file))
@@ -519,7 +506,7 @@ def open_file(file: Path, work_root: Path) -> dict[str, Any]:
         # A move the design cannot take as it stands (it would tear a declared relation) is not kept: it
         # becomes a condition, which lives in the record, so the project is built again with it.
         unkept = [*others, *(finding for move in refused for finding in move["findings"])]
-        conditions = outside_conditions(record, unkept, found.decisions, file_sha256=found.file_sha256)
+        conditions = outside_conditions(record, unkept, found.decisions, file_sha256=found.file_sha256, kept=kept)
         project_dir = build_project(replace(record, obligations=(*record.obligations, *conditions)), root)
         landed, failed = [], []
         with runtime(project_dir) as client:
@@ -546,7 +533,8 @@ def open_file(file: Path, work_root: Path) -> dict[str, Any]:
             "outside": [{"kind": f.kind, "ref": f.ref, "detail": f.detail} for f in found.out_of_band],
             "kept": [{"element": row["element"], "offset": list(row["offset"]), "runId": row["runId"]} for row in landed],
             "notKept": [{"element": row["element"], "offset": list(row["offset"]), "reason": row["reason"]} for row in refused],
-            "conditions": [row.to_dict() for row in conditions], "reencoded": list(found.reencoded),
+            "conditions": [row.to_dict() for row in conditions if row.status.value in ("open", "blocked")],
+            "outsideRows": [row.to_dict() for row in conditions], "reencoded": list(found.reencoded),
             "excerpt": excerpt(landed, unkept, conditions, refused)}
 
 
