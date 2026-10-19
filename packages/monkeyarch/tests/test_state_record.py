@@ -1231,6 +1231,9 @@ class ObligationCheckTests(unittest.TestCase):
         status, detail = self.results(record, {**_BOXES, "obj-column": ((0.9, 3.1, 0.0), (1.1, 3.3, 0.5))})["k6"]
         self.assertEqual(status, "held")
         self.assertIn("least headroom 2.3200 at stair tread 4", detail)
+        # A side wall built 20 mm into the flight's edge, as touching parts are, is a joint, not an obstruction.
+        status, _ = self.results(record, {**_BOXES, "obj-column": ((1.48, 1.0, 0.0), (1.7, 4.0, 3.0))})["k6"]
+        self.assertEqual(status, "held")
 
     def test_an_entity_check_without_an_entity_subject_is_unchecked_never_held(self) -> None:
         kinds = ("opening-piers-at-least/0.5", "wall-above-at-least/0.15", "headroom-at-least/2.0", "landing-depth-at-least/0.5",

@@ -1288,6 +1288,10 @@ OBLIGATION_CHECKS: Mapping[str, str] = MappingProxyType({
 
 _MEASURED_KINDS = frozenset({"wall-above-at-least", "headroom-at-least", "landing-depth-at-least", "doors-clear-of-flights", "centred-at"})
 _OBLIGATION_TOLERANCE = 1e-6
+# Parts that touch are built embedded up to 25 mm into each other. Material that runs through a tread but
+# overlaps it in plan by no more than this is the joint of a wall or rail beside the flight, not something in
+# the way of the person on it.
+_EMBED_M = 0.03
 _CENTRE_TOLERANCE = 1e-3
 _BESIDE_M = 0.5
 _REACH_M = 50.0
@@ -1627,7 +1631,7 @@ def _check_headroom(record, obligation, arguments, boxes):
                     continue                                      # and ends at or below it: it stands under the tread
                 overlap_lo = tuple(max(tread_lo[i], lo[i]) for i in (0, 1))
                 overlap_hi = tuple(min(tread_hi[i], hi[i]) for i in (0, 1))
-                if any(overlap_hi[i] - overlap_lo[i] <= _OBLIGATION_TOLERANCE for i in (0, 1)):
+                if any(overlap_hi[i] - overlap_lo[i] <= (_EMBED_M if through else _OBLIGATION_TOLERANCE) for i in (0, 1)):
                     continue
                 if any(_within(vlo, vhi, overlap_lo, overlap_hi) for vlo, vhi in model.void_boxes(other)):
                     continue
