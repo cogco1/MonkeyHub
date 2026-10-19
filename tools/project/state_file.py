@@ -3,7 +3,10 @@
     python tools/project/state_file.py init --record record.json --opening opening.json --work-root W --out start.3dm
     python tools/project/state_file.py open --file in.3dm --work-root W
     python tools/project/state_file.py save --project-dir W/<project> --out model.3dm [--parent-file-sha256 S]
-                                       [--candidates DIR]
+                                       [--candidates DIR] [--events hop.jsonl]
+    python tools/project/state_file.py parts --file model.3dm
+    python tools/project/state_file.py replay (--record record.json --opening opening.json | --start-file F.3dm)
+                                         [--events hop-01.jsonl hop-02.jsonl ...]
 
 Each command composes tools and routes MonkeyHub already has (#657, #185). A project is built in the work root
 the caller gives: the record and its seats become the project's input, a one-stage workflow is frozen and
@@ -19,7 +22,21 @@ so a revision asks before changing them. The answer lists every outside change, 
 ``excerpt``, the words a reviser is given about them.
 
 ``save`` writes the working design as a sealed 3DM naming the file it was opened from; with ``--candidates``
-it also writes each candidate built since the project was opened, as a plain 3DM.
+it also writes each candidate built since the project was opened, as a plain 3DM, and with ``--events`` the
+decisions this hop put into the design, one JSON line each: every change that landed on the working design
+(``accept``, with its operator), every design decision recorded (``decision``) and every one withdrawn
+(``withdraw``). Nothing else is an event: a change that came back with problems, a question, a limitation or a
+stale base changes nothing.
+
+``parts`` answers the seven parts of a file's state, each with its canonical digest and one digest per row:
+components, parameters, relations, conditions (the record's obligations and every carried decision that is not a
+rejection), rejected options with their reasons, evidence, and dependencies. ``replay`` builds the same parts from
+an opening record and its decisions, or from a state file, by applying the events in order through the product's
+own operator, and also says, for each change, whether it was made against the content rebuilt so far and made
+the content it recorded. Both answer ``parts``; the two are compared part by part. Left out of both, as
+bookkeeping: the record's run id, base, predecessor, decision ref, invalidated refs, option, project id and
+schema, and each carried decision's id (every hop opens a new project, which records the decisions again under
+new ids and binds the record to its own run).
 
 Exit code 0 is success, and the answer is one JSON object on stdout; a failure writes its reason to stderr.
 Nothing is ever deleted: a project directory or output file that already exists is refused.
@@ -45,9 +62,12 @@ from tools.dev import source_roots  # noqa: E402
 
 source_roots.put_first(REPO)
 
+from archflow.contracts.canonical import canonical_digest  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository  # noqa: E402
 from archflow.state.stage_workflow import DesignPhase, ProjectStage, ProjectStageWorkflow  # noqa: E402
-from archflow.state.state_record import StateRecord, part_of_object, resolve_element_bindings  # noqa: E402
+from archflow.state.state_record import (  # noqa: E402
+    StateRecord, StateRecordOperator, apply_state_record_operator, part_of_object, resolve_element_bindings,
+)
 from monkeycad.formats.state_file import BOX_TOLERANCE_M, StateFileError, read_state_file  # noqa: E402
 
 TOOLS = Path(__file__).resolve().parent
@@ -338,10 +358,134 @@ def _runs(project_dir: Path) -> list[str]:
     return sorted(path.name for path in (Path(project_dir) / "runs").iterdir() if path.is_dir())
 
 
-def _write_opened(work_root: Path, project_dir: Path, file_sha256: str | None) -> None:
+def _write_opened(work_root: Path, project_dir: Path, file_sha256: str | None,
+                  decisions: Sequence[Mapping[str, Any]] = ()) -> None:
     (Path(work_root) / OPENED).write_text(json.dumps({"projectDir": str(project_dir), "runs": _runs(project_dir),
-                                                      "fileSha256": file_sha256}, indent=1) + "\n",
-                                          encoding="utf-8", newline="\n")
+                                                      "decisions": list(decisions), "fileSha256": file_sha256},
+                                                     ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
+
+
+def _decisions(client) -> list[dict[str, Any]]:
+    """The project's active design decisions, each with its id."""
+
+    from project_runtime.application.state_files import file_decisions
+    from project_runtime.binding import bound_project
+
+    return file_decisions(bound_project(client.app.state))
+
+
+# ---- the state's parts, and the history that rebuilds them ---------------------------------------
+
+PARTS = ("components", "parameters", "relations", "conditions", "rejected", "evidence", "dependencies")
+_REJECTING = ("reject", "avoid")
+
+
+def _rows(rows: Sequence[Mapping[str, Any]], key) -> dict[str, str]:
+    """One canonical digest per row, under the row's own name (a repeated name is numbered)."""
+
+    named: dict[str, str] = {}
+    for row in rows:
+        name = base = str(key(row))
+        count = 1
+        while name in named:
+            count += 1
+            name = f"{base}#{count}"
+        named[name] = canonical_digest(dict(row))
+    return named
+
+
+def state_parts(record: Mapping[str, Any], decisions: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """The seven parts of a state, each with its canonical digest and one digest per row."""
+
+    built = StateRecord.from_dict(dict(record))
+    record = built.to_dict()  # the rows as the product writes them, whoever wrote this copy
+    carried = [_decision_row(row) for row in decisions]
+    decided = lambda row: f"{row['disposition']}:{row['targetRef']}:{canonical_digest(row)[:12]}"  # noqa: E731
+    edges = [{"upstream": edge.upstream_ref, "downstream": edge.downstream_ref, "relation": edge.relation,
+              "source": edge.source_ref, "effect": edge.effect.value} for edge in built.dependency_edges()]
+    rows = {
+        "components": _rows(record.get("entities") or (), lambda row: row["entity_id"]),
+        "parameters": _rows(record.get("parameters") or (), lambda row: row["key"]),
+        "relations": _rows(record.get("relations") or (), lambda row: row["relation_id"]),
+        "conditions": {**_rows(record.get("obligations") or (), lambda row: f"obligation:{row['obligation_id']}"),
+                       **_rows([row for row in carried if row["disposition"] not in _REJECTING], decided)},
+        "rejected": _rows([row for row in carried if row["disposition"] in _REJECTING], decided),
+        "evidence": _rows([{"evidence_refs": sorted(record.get("evidence_refs") or ()),
+                            "basis_refs": sorted(record.get("basis_refs") or ())}], lambda row: "record"),
+        "dependencies": _rows(edges, lambda row: f"{row['upstream']}>{row['downstream']}:{row['relation']}"),
+    }
+    return {name: {"sha256": canonical_digest(rows[name]), "rows": rows[name]} for name in PARTS}
+
+
+def _bound(record: StateRecord) -> StateRecord:
+    """A record that can be cited: one without a base (an authored record) is bound to a stand-in run."""
+
+    if record.base is not None:
+        return record
+    from archflow.project.refs import ProjectVersionRef, RunRef
+
+    return record.bound_to(RunRef(record.project_id, "replay", ProjectVersionRef(record.project_id, 0, None)))
+
+
+def replay(start_record: Mapping[str, Any], start_decisions: Sequence[Mapping[str, Any]],
+           events: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """The parts the history rebuilds: each accepted change applied in order by the product's operator.
+
+    A change is applied to the design content the history has rebuilt so far. Its run and base are bookkeeping
+    (every hop is opened as a new project), so only the content is compared: each step says whether the content
+    it was made against, and the content it made, are the ones rebuilt here.
+    """
+
+    record = StateRecord.from_dict(dict(start_record))
+    decisions = [_decision_row(row) for row in start_decisions]
+    steps = []
+    for number, event in enumerate(events, 1):
+        kind = event.get("kind")
+        if kind == "accept":
+            record = _bound(record)
+            operator = StateRecordOperator.from_dict(event["operator"])
+            step = {"event": number, "kind": kind, "runId": event.get("runId"),
+                    "baseMatches": operator.base_record_digest == record.digest}
+            try:
+                record = apply_state_record_operator(record, replace(operator, base_record_digest=record.digest,
+                                                                     base_state_digest=record.state_digest))
+            except Exception as exc:  # the product refuses the change on this content: the history does not rebuild
+                raise StateFileCommandError(f"event {number} ({event.get('runId')}) does not apply: {exc}") from exc
+            steps.append({**step, "resultMatches": record.digest == event.get("resultRecordDigest")})
+        elif kind == "decision":
+            decisions.append(_decision_row(event["row"]))
+            steps.append({"event": number, "kind": kind})
+        elif kind == "withdraw":
+            row = _decision_row(event["row"])
+            if row not in decisions:
+                raise StateFileCommandError(f"event {number} withdraws a decision the history does not have")
+            decisions.remove(row)
+            steps.append({"event": number, "kind": kind})
+        else:
+            raise StateFileCommandError(f"event {number} is not an accept, a decision or a withdrawal: {kind!r}")
+    return {"parts": state_parts(record.to_dict(), decisions), "steps": steps}
+
+
+def _hop_events(client, opened: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """What this hop put into the design: changes landed on the working design, and decisions recorded or withdrawn."""
+
+    from project_runtime.binding import bound_project
+
+    binding = bound_project(client.app.state)
+    before = set(opened.get("runs") or ())
+    lineage = (_call(client, "GET", "/api/working-source").get("head") or {}).get("lineage") or ()
+    events = []
+    for run_id in reversed(lineage):  # oldest first
+        delta = None if run_id in before else binding.candidate_delta(run_id)
+        if delta is not None:
+            events.append({"kind": "accept", "runId": run_id, "summary": delta.get("request"),
+                           "operator": delta["operator"], "resultRecordDigest": delta.get("result_record_digest")})
+    now = _decisions(client)
+    active = {row["decisionId"] for row in now}
+    known = {row["decisionId"] for row in opened.get("decisions") or ()}
+    events += [{"kind": "withdraw", "row": row} for row in opened.get("decisions") or () if row["decisionId"] not in active]
+    events += [{"kind": "decision", "row": row} for row in now if row["decisionId"] not in known]
+    return events
 
 
 def init(record_file: Path, opening_file: Path, work_root: Path, out: Path) -> dict[str, Any]:
@@ -353,7 +497,8 @@ def init(record_file: Path, opening_file: Path, work_root: Path, out: Path) -> d
         recorded = record_decisions(client, record.project_id, rows)
         run_id, digest, _ = _head(client)
         saved = export_model(client, run_id, digest, out, with_state=True)
-    _write_opened(work_root, project_dir, saved["sha256"])
+        decisions = _decisions(client)
+    _write_opened(work_root, project_dir, saved["sha256"], decisions)
     return {"projectDir": str(project_dir), "decisions": len(recorded), **saved}
 
 
@@ -383,6 +528,7 @@ def open_file(file: Path, work_root: Path) -> dict[str, Any]:
                 except StateFileCommandError as exc:
                     failed.append({**move, "reason": str(exc)[:600]})
             run_id, digest, _ = _head(client)
+            decisions = _decisions(client)
         if not failed:
             break
         if refused:
@@ -392,7 +538,7 @@ def open_file(file: Path, work_root: Path) -> dict[str, Any]:
         dropped = {row["element"] for row in failed}
         kept = [move for move in kept if move["element"] not in dropped]
         root = root / "open-again"
-    _write_opened(project_dir.parent, project_dir, found.file_sha256)
+    _write_opened(project_dir.parent, project_dir, found.file_sha256, decisions)
     return {"projectDir": str(project_dir), "fileSha256": found.file_sha256, "sealed": found.binding is not None,
             "workingRunId": run_id, "stateDigest": digest, "decisions": len(recorded),
             "outside": [{"kind": f.kind, "ref": f.ref, "detail": f.detail} for f in found.out_of_band],
@@ -402,7 +548,8 @@ def open_file(file: Path, work_root: Path) -> dict[str, Any]:
             "excerpt": excerpt(landed, unkept, conditions, refused)}
 
 
-def save(project_dir: Path, out: Path, parent: str | None, candidates: Path | None) -> dict[str, Any]:
+def save(project_dir: Path, out: Path, parent: str | None, candidates: Path | None,
+         events: Path | None = None) -> dict[str, Any]:
     project_dir = Path(project_dir)
     opened_file = project_dir.parent / OPENED
     opened = json.loads(opened_file.read_text(encoding="utf-8")) if opened_file.is_file() else {}
@@ -429,7 +576,29 @@ def save(project_dir: Path, out: Path, parent: str | None, candidates: Path | No
                                                 Path(candidates) / f"{candidate}.3dm", with_state=False))
                 except StateFileCommandError as exc:
                     written.append({"runId": candidate, "unavailable": str(exc)[:400]})
-    return {**saved, "parentFileSha256": parent, "candidates": written}
+        hop = _hop_events(client, opened) if events is not None else None
+    if hop is not None:
+        if Path(events).exists():
+            raise StateFileCommandError(f"{events} already exists.")
+        Path(events).write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in hop), encoding="utf-8",
+                                newline="\n")
+    return {**saved, "parentFileSha256": parent, "candidates": written,
+            **({} if hop is None else {"events": str(events), "eventCount": len(hop)})}
+
+
+def replay_command(args) -> dict[str, Any]:
+    if args.start_file:
+        found = read_state_file(Path(args.start_file))
+        record, decisions = found.record, found.decisions
+    elif args.record and args.opening:
+        record = json.loads(Path(args.record).read_text(encoding="utf-8"))
+        opening = json.loads(Path(args.opening).read_text(encoding="utf-8"))
+        decisions = opening.get("decisions", []) if isinstance(opening, dict) else opening
+    else:
+        raise StateFileCommandError("replay starts from --record with --opening, or from --start-file")
+    events = [json.loads(line) for path in args.events for line in Path(path).read_text(encoding="utf-8").splitlines()
+              if line.strip()]
+    return replay(record, decisions, events)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -448,15 +617,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     saved.add_argument("--out", required=True)
     saved.add_argument("--parent-file-sha256")
     saved.add_argument("--candidates")
+    saved.add_argument("--events")
+    parted = commands.add_parser("parts", help="the seven parts of a state file, each with its digests")
+    parted.add_argument("--file", required=True)
+    replayed = commands.add_parser("replay", help="the parts an opening record and its events rebuild")
+    replayed.add_argument("--record")
+    replayed.add_argument("--opening")
+    replayed.add_argument("--start-file")
+    replayed.add_argument("--events", nargs="*", default=[])
     args = parser.parse_args(argv)
     try:
         if args.command == "init":
             answer = init(Path(args.record), Path(args.opening), Path(args.work_root), Path(args.out))
         elif args.command == "open":
             answer = open_file(Path(args.file), Path(args.work_root))
-        else:
+        elif args.command == "save":
             answer = save(Path(args.project_dir), Path(args.out), args.parent_file_sha256,
-                          None if args.candidates is None else Path(args.candidates))
+                          None if args.candidates is None else Path(args.candidates),
+                          None if args.events is None else Path(args.events))
+        elif args.command == "parts":
+            found = read_state_file(Path(args.file))
+            answer = {"parts": state_parts(found.record, found.decisions)}
+        else:
+            answer = replay_command(args)
     except (StateFileCommandError, StateFileError, OSError, ValueError, KeyError) as exc:
         print(f"state_file {args.command}: {exc}", file=sys.stderr)
         return 1

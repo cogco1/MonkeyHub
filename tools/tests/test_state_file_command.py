@@ -6,6 +6,8 @@ MonkeyHub (one element moved on its own, one that carries another moved), opened
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 from pathlib import Path
 import sys
@@ -120,9 +122,71 @@ class StateFileCommandTests(unittest.TestCase):
                             f"{name} is where the delivered file had it")
         self.assertEqual(sorted(row["rawLanguage"] for row in out.decisions), ["不要长凳靠墙", "门廊基座别动"])
 
+    def test_the_events_each_hop_saves_rebuild_the_state_its_file_carries(self) -> None:
+        file = self.root / "start.3dm"
+        made = state_file.init(self.root / "record.json", self.root / "opening.json", self.root / "w0", file)
+        project, events = Path(made["projectDir"]), []
+        for hop, translation in enumerate(([0.5, 0.0, 0.0], [0.0, 0.0, 0.5]), 1):
+            if hop > 1:
+                project = Path(state_file.open_file(file, self.root / f"w{hop}")["projectDir"])
+            with state_file.runtime(project) as client:
+                run_id, digest, _ = state_file._head(client)
+                proposal = state_file._call(client, "POST", "/api/proposals/transform", {
+                    "projectId": "file-demo", "stateDigest": digest, "sourceRunId": run_id, "elementId": "garden-bench",
+                    "kind": "move", "translation": translation})
+                started = state_file._call(client, "POST", f"/api/proposals/{proposal['proposalId']}/candidate")
+                self.assertEqual(state_file._wait_job(client, started["jobId"])["status"], "succeeded")
+                state_file._land_as_person(client, "file-demo", started["candidateId"], f"hop {hop}")
+                if hop == 1:
+                    state_file.record_decisions(client, "file-demo", [
+                        {"text": "柱廊两侧要对称", "target_ref": "entity:portico", "disposition": "keep"}])
+            start, file = file, self.root / f"model-{hop}.3dm"
+            saved = state_file.save(project, file, None, None, self.root / f"hop-{hop}.jsonl")
+            hop_events = [json.loads(line) for line in (self.root / f"hop-{hop}.jsonl").read_text(encoding="utf-8").splitlines()]
+            self.assertEqual([row["kind"] for row in hop_events], ["accept", "decision"] if hop == 1 else ["accept"])
+            self.assertEqual(saved["eventCount"], len(hop_events))
+            events += hop_events
+
+            found = read_state_file(file)
+            parts = state_file.state_parts(found.record, found.decisions)
+            for rebuilt in (state_file.replay(RECORD, OPENING, events), state_file.replay(
+                    read_state_file(start).record, read_state_file(start).decisions, hop_events)):
+                self.assertEqual(rebuilt["parts"], parts, f"hop {hop}")
+                self.assertTrue(all(step.get("baseMatches", True) and step.get("resultMatches", True)
+                                    for step in rebuilt["steps"]), rebuilt["steps"])
+            self.assertIn("conditions", parts)
+            self.assertEqual(sorted(parts["rejected"]["rows"])[0].split(":")[0], "reject")
+
+        # The same answers on the command line, as the shell calls them.
+        answers = []
+        for argv in (["parts", "--file", str(file)],
+                     ["replay", "--record", str(self.root / "record.json"), "--opening", str(self.root / "opening.json"),
+                      "--events", str(self.root / "hop-1.jsonl"), str(self.root / "hop-2.jsonl")],
+                     ["replay", "--start-file", str(self.root / "model-1.3dm"), "--events", str(self.root / "hop-2.jsonl")]):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(state_file.main(argv), 0)
+            answers.append(json.loads(out.getvalue())["parts"])
+        self.assertEqual(answers[0], answers[1])
+        self.assertEqual(answers[0], answers[2])
+
     def test_a_failure_says_why_on_stderr_and_exits_nonzero(self) -> None:
         missing = self.root / "missing.3dm"
         self.assertEqual(state_file.main(["open", "--file", str(missing), "--work-root", str(self.root / "w")]), 1)
+
+
+class ReplayTests(unittest.TestCase):
+    """The history's own rules, without building anything."""
+
+    def test_a_withdrawn_decision_leaves_the_state_and_one_the_history_lacks_is_refused(self) -> None:
+        reject = {"disposition": "reject", "targetRef": "entity:garden-bench", "rawLanguage": "不要长凳靠墙", "strength": "hard"}
+        rebuilt = state_file.replay(RECORD, OPENING, [{"kind": "withdraw", "row": reject}])
+        self.assertEqual(rebuilt["parts"]["rejected"]["rows"], {})
+        self.assertEqual(rebuilt["parts"], state_file.state_parts(RECORD, OPENING[:1]))
+        with self.assertRaises(state_file.StateFileCommandError):
+            state_file.replay(RECORD, OPENING, [{"kind": "withdraw", "row": reject}] * 2)
+        with self.assertRaises(state_file.StateFileCommandError):
+            state_file.replay(RECORD, OPENING, [{"kind": "rename"}])
 
 
 if __name__ == "__main__":

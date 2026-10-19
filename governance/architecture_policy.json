@@ -1105,6 +1105,16 @@
     },
     {
       "path": "tools/project/state_file.py",
+      "function": "save",
+      "operations": [
+        "write_text"
+      ],
+      "kind": "cli_workspace",
+      "owner": "tools.project.state_file",
+      "reason": "Writes the hop's events, one JSON line each, at the new --events path its caller names (an existing file is refused); the project itself is read through its Runtime and never written here."
+    },
+    {
+      "path": "tools/project/state_file.py",
       "function": "build_project",
       "operations": [
         "mkdir",

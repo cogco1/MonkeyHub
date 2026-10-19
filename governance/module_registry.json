@@ -8501,14 +8501,15 @@
     {
       "module_id": "tools.project.state_file",
       "owner_path": "tools/project/state_file.py",
-      "purpose": "Start a project from a record and its opening decisions, open a state-carrying 3DM as a project, and save its working design back as a sealed 3DM (#657, #185), composing the project tools and the project's own Runtime.",
+      "purpose": "Start a project from a record and its opening decisions, open a state-carrying 3DM as a project, save its working design back as a sealed 3DM with the hop's events, and rebuild a state's parts from its history (#657, #185), composing the project tools and the project's own Runtime.",
       "owns": [
         "the init, open and save command lines and their one-JSON-object answers",
         "building a project in a caller-named work root from a record: repository with authored inputs, a one-stage workflow frozen and opened, the runner run with export",
         "recording carried decisions (product rows, or opening rows of text, target_ref and disposition) through POST /api/decisions",
         "what open does with changes made outside MonkeyHub: rows already in the record it builds from, an element whose objects all moved by one offset kept as a landed move proposal, every other change (and a move the design refuses) a condition no check can verify on what it touched, with the project built again when a move is refused",
         "the excerpt: the words a reviser is given about every outside change and its amount",
-        "save: the working design as a sealed 3DM naming the file it was opened from, and with --candidates each candidate built since the project was opened as a plain 3DM"
+        "save: the working design as a sealed 3DM naming the file it was opened from, with --candidates each candidate built since the project was opened as a plain 3DM, and with --events the hop's events: each change landed on the working design since it was opened (its operator) and each design decision recorded or withdrawn",
+        "parts and replay: a state's seven parts (components, parameters, relations, conditions, rejected options, evidence, dependencies) with canonical digests per part and per row, from a state file or rebuilt from an opening record or a state file by applying events in order through apply_state_record_operator; run, base and the other bookkeeping fields are left out, and the content each change was made against is compared"
       ],
       "does_not_own": [
         "the state strings, seal and difference reading - monkeycad.formats.state_file",
@@ -8526,6 +8527,7 @@
         "a project in the work root",
         "a sealed 3DM",
         "candidate 3DMs",
+        "the hop's events, one JSON line each",
         "opened.json beside the project",
         "one JSON answer on stdout"
       ],
@@ -8537,9 +8539,14 @@
         "build_project",
         "outside_plan",
         "excerpt",
+        "state_parts",
+        "replay",
+        "PARTS",
         "StateFileCommandError"
       ],
       "depends_on": [
+        "archflow.contracts.canonical",
+        "archflow.project.refs",
         "archflow.project.repository",
         "archflow.state.stage_workflow",
         "archflow.state.state_record",
@@ -8550,7 +8557,8 @@
       "invariants": [
         "an existing project directory or output file is refused; nothing is deleted",
         "every project write goes through the repository, the project tools or the project's Runtime routes",
-        "an outside change is kept only when the design takes it as a whole element's move; anything else is named and becomes a condition, never dropped in silence"
+        "an outside change is kept only when the design takes it as a whole element's move; anything else is named and becomes a condition, never dropped in silence",
+        "a replay changes nothing: it reads files and applies the product's operator in memory"
       ],
       "status": "canonical",
       "tests": [
