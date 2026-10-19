@@ -116,7 +116,7 @@ export type ApplicationSettingsDto = {
     /**
      * Designloop
      */
-    designLoop?: 'enforced' | 'off';
+    designLoop?: 'legacy' | 'advisory' | 'enforced';
     /**
      * Studioport
      */

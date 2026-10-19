@@ -64,7 +64,7 @@ SAVED_LAUNCH = """{{
   "libraryDir": {library},
   "referenceRun": "run-002",
   "cadExport": "rhino",
-  "designLoop": "off",
+  "designLoop": "legacy",
   "studioPort": 18801,
   "monitorPort": 18802
 }}

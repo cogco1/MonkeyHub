@@ -37,6 +37,7 @@
         "apps/monkeyhub/api/tests/test_applications.py",
         "apps/monkeyhub/api/tests/test_design_loop.py",
         "apps/monkeyhub/api/tests/test_design_loop_setting.py",
+        "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
         "apps/monkeyhub/api/tests/test_settings.py",
         "apps/monkeyhub/web/src/api/generated/index.ts",
         "apps/monkeyhub/web/src/api/generated/sdk.gen.ts",

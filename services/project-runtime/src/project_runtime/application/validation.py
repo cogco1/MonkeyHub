@@ -481,9 +481,9 @@ def _validate(
 ) -> CandidateValidation:
     canonical_facts = _condition_sources(binding, head, candidate, published)
     artifacts, honesty = _artifacts_of(candidate)
-    # The conditions are checked, and refuse review readiness, only while the design loop is enforced (#185):
-    # with it off a validation answers exactly as it did before.
-    enforced = binding.settings.design_loop_enforced
+    # The conditions are checked, and refuse review readiness, only while the design loop checks them (advisory
+    # or enforced, #185): in legacy a validation answers exactly as it did before.
+    enforced = binding.settings.design_loop_checks
     obligations = candidate_obligations(binding, candidate) if enforced else ObligationReadout((), (), None)
     honesty = honesty + _exports_of(candidate) + obligations.honesty
     receipt = validate_submission(

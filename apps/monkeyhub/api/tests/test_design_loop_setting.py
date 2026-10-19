@@ -31,7 +31,9 @@ HUB = "http://127.0.0.1:8700"
 class DesignLoopSettingTests(unittest.TestCase):
     def test_the_setting_is_enforced_or_off(self) -> None:
         self.assertEqual(ApplicationSettingsDto().design_loop, DESIGN_LOOP_DEFAULT)
-        self.assertEqual(ApplicationSettingsDto.model_validate({"designLoop": "off"}).design_loop, "off")
+        for tier in ("legacy", "advisory", "enforced"):
+            self.assertEqual(ApplicationSettingsDto.model_validate({"designLoop": tier}).design_loop, tier)
+        self.assertEqual(DESIGN_LOOP_DEFAULT, "legacy")
         with self.assertRaises(ValidationError):
             ApplicationSettingsDto.model_validate({"designLoop": "sometimes"})
 
@@ -40,7 +42,7 @@ class DesignLoopSettingTests(unittest.TestCase):
         self.assertIn('"ARCHFLOW_STUDIO_DESIGN_LOOP": settings.design_loop', source)
 
     def test_the_conversation_is_offered_what_it_was_started_with(self) -> None:
-        for value, offered in (("enforced", True), ("off", False), ("", False)):
+        for value, offered in (("enforced", True), ("advisory", False), ("legacy", False), ("", False)):
             with patch.dict("os.environ", {studio_tool.DESIGN_LOOP_ENV: value}):
                 self.assertIs(studio_tool.design_loop_offered(), offered)
         source = (Path(studio_tool.__file__).parent / "store.py").read_text(encoding="utf-8")
@@ -50,7 +52,7 @@ class DesignLoopSettingTests(unittest.TestCase):
     def test_an_unreadable_setting_reads_as_the_default(self) -> None:
         with patch.object(transport, "_request_json", side_effect=OSError("no Hub")):
             self.assertEqual(studio_tool.design_loop_enforced(HUB), DESIGN_LOOP_DEFAULT == "enforced")
-        for value, enforced in (("enforced", True), ("off", False)):
+        for value, enforced in (("enforced", True), ("advisory", False), ("legacy", False)):
             with patch.object(transport, "_request_json", return_value={"designLoop": value}):
                 self.assertIs(studio_tool.design_loop_enforced(HUB), enforced)
 
@@ -69,7 +71,7 @@ class OfferedCallTests(unittest.TestCase):
 
     def test_while_off_the_chat_refuses_the_call_before_any_runtime_is_asked(self) -> None:
         asked = []
-        with patch.object(transport, "_request_json", side_effect=lambda *a, **k: asked.append(a) or {"designLoop": "off"}):
+        with patch.object(transport, "_request_json", side_effect=lambda *a, **k: asked.append(a) or {"designLoop": "advisory"}):
             with self.assertRaises(HubFailure) as refused:
                 tool_calls.call_tool(HUB, str(uuid4()), "studio_request", {
                     "method": "POST", "path": "/api/revisions", "body": {"kind": "construction", "proposal": {}}})

@@ -197,8 +197,9 @@ def revise_working_design(request: Request, payload: RevisionRequestDto) -> Revi
         raise StudioError(409, "SYNC_REVISION_UNSUPPORTED", "This Runtime is connected to a shared project, and its "
                           "admissions are not synchronized yet.")
     if not request.app.state.settings.design_loop_enforced:
-        raise StudioError(409, "DESIGN_LOOP_OFF", "The design loop is off in this Runtime, so its changes are checked, "
-                          "admitted and continued step by step as before; POST /api/revisions is not offered.")
+        raise StudioError(409, "DESIGN_LOOP_NOT_ENFORCED", f"The design loop is {request.app.state.settings.design_loop} "
+                          "in this Runtime, so changes are admitted and continued step by step; POST /api/revisions is "
+                          "offered only while it is enforced.")
     message = None if payload.message_source is None else payload.message_source.model_dump(by_alias=True)
     if authenticated_actor(request) is not None:
         # The middleware asked for accept; the change itself is a proposal too.
