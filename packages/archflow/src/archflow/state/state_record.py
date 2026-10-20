@@ -1297,10 +1297,11 @@ _LEVEL_M = 0.05
 # Producers that build no solid a readback would hold.
 _NO_SOLID = frozenset({"declined", "curve"})
 # A railing, balustrade or handrail post stands at a flight's side: material no thicker than this across the
-# flight, within this of a side edge, is that, not something in the way. A part whose component declares
-# architectural.role railing is one wherever it stands (a centre rail on a wide flight).
+# flight, within this of a side edge, standing on the tread or starting no higher above it than a guard's top rail,
+# is that, not something in the way. What a part is called changes nothing: only where its material stands.
 _RAIL_THICK_M = 0.06
 _RAIL_BAND_M = 0.10
+_RAIL_HIGH_M = 1.2
 _CENTRE_TOLERANCE = 1e-3
 _BESIDE_M = 0.5
 _REACH_M = 50.0
@@ -1582,13 +1583,6 @@ class _Model:
         return ((min(p[0] for p in points) - pad, min(p[1] for p in points) - pad),
                 (max(p[0] for p in points) + pad, max(p[1] for p in points) + pad))
 
-    def railings(self, record: StateRecord) -> set[str]:
-        """The parts whose component declares architectural.role railing."""
-
-        roles = {entity.entity_id: component_facets(entity).get("architectural.role")
-                 for entity in record.entities_of("Component@1")}
-        return {element for element, row in self.fields.items() if roles.get(row.get("component_id")) == "railing"}
-
     def box_of(self, element: str) -> Box:
         rows = self.material.get(element)
         if not rows:
@@ -1665,12 +1659,13 @@ def _plans_meet(a, b) -> bool:
     return all(a[0][i] <= b[1][i] + _OBLIGATION_TOLERANCE and b[0][i] <= a[1][i] + _OBLIGATION_TOLERANCE for i in (0, 1))
 
 
-def _edge_rail(flight: Mapping[str, Any], lo: tuple, hi: tuple) -> bool:
-    """Material no thicker than a railing across the flight, standing within its band at one of the side edges."""
+def _edge_rail(flight: Mapping[str, Any], lo: tuple, hi: tuple, top: float) -> bool:
+    """Material no thicker than a railing across the flight, within its band at one of the side edges, that stands
+    on the tread whose top is ``top`` or starts no higher above it than a railing reaches; above that it is overhead."""
 
     i = 1 - flight["axis"]
     flo, fhi = flight["lo"], flight["hi"]
-    if hi[i] - lo[i] > _RAIL_THICK_M + _OBLIGATION_TOLERANCE:
+    if hi[i] - lo[i] > _RAIL_THICK_M + _OBLIGATION_TOLERANCE or lo[2] - top > _RAIL_HIGH_M + _OBLIGATION_TOLERANCE:
         return False
     return hi[i] <= flo[i] + _RAIL_BAND_M + _OBLIGATION_TOLERANCE or lo[i] >= fhi[i] - _RAIL_BAND_M - _OBLIGATION_TOLERANCE
 
@@ -1701,7 +1696,6 @@ def _within(lo: tuple, hi: tuple, inner_lo: tuple, inner_hi: tuple) -> bool:
 def _check_headroom(record, obligation, arguments, boxes):
     minimum = _number_argument(arguments, 0, "minimum")
     model = _Model(record, boxes)
-    railings = model.railings(record)
     problems, worst = [], (math.inf, "")
     for element in _entity_subjects(obligation):
         flight = _flight(model, element)
@@ -1724,7 +1718,7 @@ def _check_headroom(record, obligation, arguments, boxes):
                 overlap_hi = tuple(min(tread_hi[i], hi[i]) for i in (0, 1))
                 if any(overlap_hi[i] - overlap_lo[i] <= _OBLIGATION_TOLERANCE for i in (0, 1)):
                     continue
-                if other in railings or _edge_rail(flight, lo, hi) or (through and _edge_joint(flight, lo, hi)):
+                if _edge_rail(flight, lo, hi, top) or (through and _edge_joint(flight, lo, hi)):
                     continue                                      # a railing at the side, or a joint at the edge
                 if any(_within(vlo, vhi, overlap_lo, overlap_hi) for vlo, vhi in model.void_boxes(other)):
                     continue
