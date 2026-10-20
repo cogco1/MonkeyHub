@@ -241,6 +241,33 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
             return done(PROBLEMS, "BUILD_FAILED", "The candidate failed to build; nothing moved.", proposal_id=proposal_id,
                         candidate_id=candidate_id, conditions=conditions,
                         problems=(Problem("build", "BUILD_FAILED", str(job.get("error") or "the job failed without a sentence")[:600]),))
+        # What the build changed, not only what the proposal said it would: anything the proposal's impact left out
+        # is held to the same keep, rejection and condition checks before anything is admitted.
+        built_direct = changed_refs(base, ports.record(candidate_id))
+        built_reach = tuple(dict.fromkeys((*built_direct, *base.closure(tuple(sorted(built_direct))))))
+        if set(built_reach) - set(reach):
+            late = _with_wholes(base, built_reach)
+            kept = tuple(ref for ref in protected if ref in late and ref not in touched)
+            if kept:
+                return done(NEEDS_QUESTION, "KEEP_CONFLICT", "The built change reaches what the architect asked to keep, "
+                            "beyond what its proposal said: " + ", ".join(kept) + ". It was not admitted; ask the "
+                            "architect.", proposal_id=proposal_id, candidate_id=candidate_id, question_refs=kept)
+            rejected = [d for d in decisions if d.disposition in REJECTING and d.target_ref in late and d.target_ref not in touched]
+            if rejected:
+                return done(NEEDS_QUESTION, "REJECTED_OPTION", "The built change touches what the architect rejected, "
+                            "beyond what its proposal said: " + "; ".join(f"{d.target_ref}: \"{d.words}\"" for d in rejected)
+                            + ". It was not admitted; ask before going back to it.", proposal_id=proposal_id,
+                            candidate_id=candidate_id, question_refs=tuple(d.target_ref for d in rejected))
+            known = {o.obligation_id for o in scope}
+            scope = (*scope, *(o for o in obligations_in_scope(base, built_reach) if o.obligation_id not in known))
+            unchecked = [o for o in scope if o.obligation_id not in known and not obligation_checkable(o)
+                         and f"obligation:{o.obligation_id}" not in confirmed]
+            if unchecked:
+                return done(NEEDS_QUESTION, "UNCHECKED_CONDITION", "The built change reaches conditions no check can "
+                            "verify, beyond what its proposal said: " + "; ".join(
+                                f"obligation:{o.obligation_id}: \"{o.statement}\"" for o in unchecked)
+                            + ". It was not admitted; ask the architect whether it keeps them.", proposal_id=proposal_id,
+                            candidate_id=candidate_id, question_refs=tuple(f"obligation:{o.obligation_id}" for o in unchecked))
     else:
         candidate_id = request.candidate_id
 
