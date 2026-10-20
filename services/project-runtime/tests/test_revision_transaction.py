@@ -555,21 +555,18 @@ class RevisionRouteTests(unittest.TestCase):
         self.assertEqual(answer["outcome"], "landed", answer)
         self.assertEqual(self.head(agent)["head"]["runId"], answer["candidateId"])
 
-    def test_the_agent_carries_a_confirmation_only_with_the_hubs_word_for_it(self) -> None:
+    def test_the_agent_never_confirms_whatever_it_sends(self) -> None:
         agent = self.runtime(managed=True, reference_run=self.conditioned(None))
         asked = self.revise(agent, 2.4, headers=AGENT, messageSource=MESSAGE, rawLanguage="基座再高一点")
         self.assertEqual((asked["outcome"], asked["code"]), ("needs_question", "UNCHECKED_CONDITION"), asked)
-        self.assertEqual(asked["questionRefs"], ["obligation:base-height-limit"])
         later = {"sessionId": "chat-1", "messageId": "m-2"}
-        unvouched = agent.post("/api/revisions", headers=AGENT, json={
-            "projectId": PROJECT_ID, "sourceRunId": self.head(agent)["head"]["runId"],
-            "stateDigest": self.head(agent)["head"]["stateDigest"], "kind": "proposal", "summary": "x",
-            "proposal": {"utterance": "set height to 2.4", "targetComponentId": "portico", "elementId": "portico-base"},
-            "confirmed": asked["questionRefs"], "messageSource": later, "rawLanguage": "可以，抬吧"})
-        self.assertEqual((unvouched.status_code, unvouched.json()["code"]), (422, "REVISION_INVALID"), unvouched.text)
-        answer = self.revise(agent, 2.4, headers={**AGENT, "X-Monkey-Confirmation": "operation-1"},
-                             messageSource=later, rawLanguage="可以，抬吧", confirmed=asked["questionRefs"])
-        self.assertEqual(answer["outcome"], "landed", answer)
+        for headers in (AGENT, {**AGENT, "X-Monkey-Confirmation": "operation-1"}):
+            refused = agent.post("/api/revisions", headers=headers, json={
+                "projectId": PROJECT_ID, "sourceRunId": self.head(agent)["head"]["runId"],
+                "stateDigest": self.head(agent)["head"]["stateDigest"], "kind": "proposal", "summary": "x",
+                "proposal": {"utterance": "set height to 2.4", "targetComponentId": "portico", "elementId": "portico-base"},
+                "confirmed": asked["questionRefs"], "messageSource": later, "rawLanguage": "可以，抬吧"})
+            self.assertEqual((refused.status_code, refused.json()["code"]), (422, "REVISION_INVALID"), refused.text)
 
     def test_a_person_through_the_same_hub_is_not_the_agent(self) -> None:
         person = self.runtime(managed=True)

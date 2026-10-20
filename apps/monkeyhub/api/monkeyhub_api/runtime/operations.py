@@ -193,8 +193,6 @@ class OperationManager:
                 sourceStageRef=payload.get("sourceStageRef") or payload.get("expectedHeadStageRef"),
                 proposalId=proposal.group(1) if proposal else None,
                 candidateId=candidate, sessionId=session_id,
-                messageId=(payload.get("messageSource") or {}).get("messageId")
-                if route == "/api/revisions" and isinstance(payload.get("messageSource"), dict) else None,
                 createdAt=datetime.now(timezone.utc).isoformat(),
             )
             expected_stage, branch_id = payload.get("expectedHeadStageRef"), payload.get("branchId", "main")
@@ -229,8 +227,6 @@ class OperationManager:
                 record.status = ("completed" if outcome in _REVISION_DONE
                                  else "failed" if outcome == "problems" else "refused")
                 record.reason = None if outcome in _REVISION_DONE else str(payload.get("detail") or outcome)[:1200]
-                if outcome == "needs_question":
-                    record.questionRefs = [str(ref) for ref in payload.get("questionRefs") or ()]
             elif response.status >= 400:
                 code = str(payload.get("code", ""))
                 admitted = any(isinstance(payload.get(name), str) for name in ("proposalId", "jobId", "candidateId"))
@@ -442,32 +438,6 @@ class OperationManager:
                     raise HubFailure(503, "OPERATION_LOG_UNAVAILABLE",
                                      "The dismissal could not be saved, so the notice stays. Nothing else changed.") from exc
             return self._shown(record, admission, admissionSequence=sequence)
-
-    def question_answered(self, session_id: str, refs: object, state_digest: object, message_id: object,
-                          user_messages: list[str]) -> str | None:
-        """The revision whose question ``refs`` answer, when the chat may confirm them; else None.
-
-        It is this chat's latest revision that asked anything (needs_question), on the same base, and the message
-        confirming is the first user message after the one that question answered: the architect's reply to it.
-        A later message, about anything else, confirms nothing. ``user_messages`` are the chat's user message ids
-        in order.
-        """
-
-        if not isinstance(refs, list) or not refs or not all(isinstance(ref, str) for ref in refs):
-            return None
-        with self._lock:
-            asked = [admission.record for admission in self._operations.values()
-                     if admission.record.sessionId == session_id and admission.record.kind == "POST /api/revisions"
-                     and admission.record.questionRefs]
-            if not asked:
-                return None
-            latest = max(asked, key=lambda record: record.createdAt or "")
-        if latest.baseDigest != state_digest or latest.messageId not in user_messages:
-            return None
-        after = user_messages[user_messages.index(latest.messageId) + 1:]
-        if not after or after[0] != message_id:
-            return None
-        return latest.operationId if set(refs) <= set(latest.questionRefs or ()) else None
 
     def runs_of(self, session_id: str, since: datetime) -> list[OperationRecord]:
         """Copies of the new runs one chat asked this Hub for since ``since``, in admission order."""

@@ -44,11 +44,6 @@ class OperationRecord(BaseModel):
     committed: bool = False
     reason: str | None = None
     sessionId: str | None = None
-    messageId: str | None = Field(default=None, description=(
-        "The chat message a revision answered (#185), as the chat bound it; null for any other request."))
-    questionRefs: list[str] | None = Field(default=None, description=(
-        "What a revision that answered needs_question asked the architect about (#185): the conditions and "
-        "decisions only they can settle. The chat confirms these, on the same base, only in a later message."))
     admissionSequence: int | None = Field(default=None, ge=1, description=(
         "Project-scoped request order projected from the existing Hub admission journal. "
         "Not a completion order or design version; null for observations without a journal entry."
