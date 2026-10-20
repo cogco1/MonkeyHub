@@ -28,12 +28,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from ...application.validation import (
     EFFECTIVE_CHECKS,
     VALIDATOR_NAMES,
-    VALIDATOR_NOTE,
     CandidateValidation,
 )
 from archflow.validation.model import ValidationReceipt
 
-from .candidate import RelationChecksDto, relations_dto
+from .candidate import ObligationProblemDto, RelationChecksDto, obligation_problems_dto, relations_dto
 from .project import ProjectVersionDto
 
 
@@ -97,6 +96,15 @@ class ValidationDto(BaseModel):
         alias="relationChecks",
         description="the candidate's own three states, copied not recomputed",
     )
+    obligation_problems: list[ObligationProblemDto] = Field(
+        default_factory=list, alias="obligationProblems",
+        description="obligations violated or unchecked on this candidate, while the design loop checks them; new "
+        "marks a violation the run it was made from did not have. They block no review clause",
+    )
+    obligations_checked: int = Field(
+        default=0, alias="obligationsChecked",
+        description="how many of the record's live obligations an executable check reported held or violated",
+    )
     seat_execution_complete: bool = Field(alias="seatExecutionComplete")
     review_ready: bool = Field(
         alias="reviewReady",
@@ -125,8 +133,10 @@ def to_dto(validation: CandidateValidation) -> ValidationDto:
         canonical_facts=validation.canonical_facts,
         validators=list(VALIDATOR_NAMES),
         effective_checks=list(EFFECTIVE_CHECKS),
-        validator_note=VALIDATOR_NOTE,
+        validator_note=validation.validator_note,
         relation_checks=relations_dto(validation.relation_checks),
+        obligation_problems=obligation_problems_dto(validation.obligations),
+        obligations_checked=sum(1 for row in validation.obligations.results if row.status != "unchecked"),
         seat_execution_complete=validation.seat_execution_complete,
         review_ready=validation.review_ready,
         blocked_by=list(validation.blocked_by),

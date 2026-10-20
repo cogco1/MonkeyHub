@@ -24,8 +24,9 @@ from .workers import project_key
 
 
 _CANDIDATE_REQUEST = re.compile(
-    r"^/api/(proposals/[^/]+/candidate|candidates/combine|capabilities/[^/]+/run|options/[^/]+/select|program)$"
+    r"^/api/(proposals/[^/]+/candidate|candidates/combine|capabilities/[^/]+/run|options/[^/]+/select|program|revisions)$"
 )
+_REVISION_DONE = frozenset({"landed", "admitted", "built"})
 _ACCEPT_REQUEST = re.compile(r"^/api/candidates/([^/]+)/accept$")
 _PROPOSAL_CANDIDATE = re.compile(r"^/api/proposals/([^/]+)/candidate$")
 _ACTIVE = {"queued", "planning", "validated", "executing", "committing"}
@@ -219,7 +220,14 @@ class OperationManager:
             for name in ("proposalId", "jobId", "candidateId"):
                 if isinstance(payload.get(name), str):
                     setattr(record, name, payload[name])
-            if response.status >= 400:
+            if response.status < 400 and record.kind == "POST /api/revisions":
+                # One answer closes a revision (#185): what was built, if anything, and how it ended.
+                record.candidateId = payload.get("candidateId") if isinstance(payload.get("candidateId"), str) else None
+                outcome = payload.get("outcome")
+                record.status = ("completed" if outcome in _REVISION_DONE
+                                 else "failed" if outcome == "problems" else "refused")
+                record.reason = None if outcome in _REVISION_DONE else str(payload.get("detail") or outcome)[:1200]
+            elif response.status >= 400:
                 code = str(payload.get("code", ""))
                 admitted = any(isinstance(payload.get(name), str) for name in ("proposalId", "jobId", "candidateId"))
                 if response.status in _REFUSAL_STATUSES and not admitted and code not in _RETAINED_CODES:
@@ -295,7 +303,10 @@ class OperationManager:
                         # Stage acceptance is independent of formal issue.
                         record.resultRevision = None
                         continue
-                elif not admission.accepting_candidate and candidate and candidate.get("status") in {"completed", "succeeded"}:
+                elif (not admission.accepting_candidate and record.kind != "POST /api/revisions"
+                      and candidate and candidate.get("status") in {"completed", "succeeded"}):
+                    # A revision that lost its answer is not complete because its build is: whether it landed
+                    # is read from the working design and the admissions, not from the run.
                     record.status, record.reason = "completed", None
                     record.resultDigest = candidate.get("resultStateDigest") or candidate.get("resultRecordDigest")
                     record.baseDigest = candidate.get("baseStateDigest") or record.baseDigest

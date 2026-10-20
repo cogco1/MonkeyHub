@@ -130,6 +130,73 @@ _MODELLING = chr(10).join([
     "Stage acceptance, formal issue and printer upload are separate from this tool's reversible design actions.",
 ])
 
+# The same guide while the design loop is enforced (#185): one call replaces the
+# candidate, admission and Continue steps; everything about writing a change, and
+# about reading and looking at a result, is the same text.
+_REVISE = [
+    "CHANGE THE DESIGN (the design loop is enforced): every change the user asks for goes through one call,",
+    "POST /api/revisions {sourceRunId, stateDigest, kind, proposal, summary, keep?, supersedes?, land?, buildOnly?},",
+    "with the loop's taskClass beside method/path, as for an admission. deterministic_edit lands in this one call.",
+    "spatial_formal or polish: send buildOnly: true, read GET /api/candidates/{candidateId} for its modelSource, look",
+    "with visual_review, then land it with {sourceRunId, stateDigest, candidateId, summary} (a repair names the looked-at",
+    "attempt in supersedes). The same candidateId lands an option, program or combination built from the working design.",
+    "sourceRunId and stateDigest are the working design's, as GET /api/revisions/context answers them (working), or the",
+    "working a landed change answered; that read also lists what the user kept and rejected, in their words, every",
+    "condition and whether a check can verify it, and the last landed change. kind names the route the change would",
+    "take, and proposal is that route's body without",
+    "stateDigest, sourceRunId, keep and summary: construction {script, parameters?}, facets {targets}, hosted-opening",
+    "{host, kind, along, width, ...}, elevation {action: 'set-datum', levelId, value}, or proposal {semanticEdit}.",
+    "The chat fills projectId, messageSource and rawLanguage. The call protects every keep decision, stops on a rejected",
+    "option or on a condition no check can verify, builds the change, reads its model back, validates it, admits it and",
+    "moves the user's working design onto it. It answers exactly one outcome:",
+    "- landed: done. Say what changed, from compare (each changed object with its box before and after).",
+    "- problems: nothing moved. Each problem names its source (proposal, build, readback, relation:<id>, obligation:<id>).",
+    "  Correct the change and submit it again against the same base, with supersedes: [the candidateId that failed].",
+    "- needs_question: nothing was built or moved. Ask the user exactly what detail and questionRefs name, quoting their",
+    "  words, and stop; do not work around it. A kept target or a rejected option changes only after the user revises that",
+    "  decision; a condition no check can verify is the user's to confirm, never yours.",
+    "- built: buildOnly's answer; nothing is admitted until you land the candidate.",
+    "- refused: read the working design again (STALE_BASE) or correct the request.",
+    "land: false admits an alternative the user asked to compare and leaves their working design where it is.",
+    "Your own POST /api/admissions of a result and PUT /api/working-draft are refused (DESIGN_LOOP_REQUIRED); rejecting",
+    "or withdrawing a result stays available.",
+    "",
+]
+_LINES = _MODELLING.split(chr(10))
+_MODELLING_REVISIONS = chr(10).join([
+    *(line for line in _LINES[:_LINES.index("") + 1]),
+    *(line for line in _LINES[_LINES.index("") + 1:_LINES.index("CANDIDATE: when a proposal answers status 'proposed', POST /api/proposals/{id}/candidate with no body and awaitSeconds: 60 beside method/path.")]
+      if not line.startswith("STAGES:")),
+    *_REVISE,
+    *_LINES[_LINES.index("OBSERVE: GET /api/candidates/{id} lists retained objects: Z-up bbox [x, z, y], lengthUnit, upAxis or objectReadbackError."):
+            _LINES.index("ADMIT: when a model revision loop is complete, POST /api/admissions once with")],
+    *_LINES[_LINES.index("OTHER READS: GET /api/project, /api/state/volumes, /api/program, /api/options, /api/artifacts, /api/jobs/{id}."):],
+])
+
+
+# advisory: the steps as before, and what the checks the design loop now runs add to the reads.
+_ADVISORY = [
+    "CONDITIONS: a candidate read and its validation also list relationProblems (declared relations violated or left",
+    "unchecked) and obligationProblems (conditions the design must keep that are violated, new where the design it was",
+    "made from did not violate them, or that no check could verify). They block nothing; name each in your answer.",
+    "GET /api/revisions/context reads what the architect kept and rejected, in their words, and how each condition",
+    "stands on the working design.",
+]
+_MODELLING_ADVISORY = chr(10).join([
+    *_LINES[:_LINES.index("OTHER READS: GET /api/project, /api/state/volumes, /api/program, /api/options, /api/artifacts, /api/jobs/{id}.")],
+    *_ADVISORY,
+    *_LINES[_LINES.index("OTHER READS: GET /api/project, /api/state/volumes, /api/program, /api/options, /api/artifacts, /api/jobs/{id}."):],
+])
+
+
+def modelling(tier: bool | str) -> str:
+    """studio_request's guide: the one-call revision while the design loop is enforced; the steps as before, told
+    about the problem lists, while it is advisory; the steps exactly as before in legacy (``True`` is enforced)."""
+    if tier is True or tier == "enforced":
+        return _MODELLING_REVISIONS
+    return _MODELLING_ADVISORY if tier == "advisory" else _MODELLING
+
+
 # The full text of each domain the upfront guide names in one line. Answered
 # with studio_schema action discovery for that pathPrefix, never repeated in
 # the schema answers themselves.

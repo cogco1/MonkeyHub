@@ -31,7 +31,7 @@ if __package__ in {None, ""}:
     sys.modules.setdefault("monkeyhub_api.chat.mcp_server", sys.modules[__name__])
 
 from .. import projects
-from . import guides, providers, tool_calls, transport
+from . import guides, providers, studio_tool, tool_calls, transport
 
 from ..models import ChatPresentationBindRequest, ChatPresentationRequest, HubFailure
 
@@ -132,7 +132,13 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Refusals spend nothing: VISUAL_BUDGET_EXHAUSTED, VISUAL_REVIEW_NOT_WARRANTED, VISUAL_REVIEW_OUT_OF_ORDER,",
         "VISUAL_SOURCE_MISMATCH (read the current exact source), VISUAL_PROVIDER_UNAVAILABLE. VISUAL_PROVIDER_FAILED spends the review.",
     ])
-    modelling = guides._MODELLING
+    # The design loop the conversation was started with; a later change reaches the next conversation.
+    tier = studio_tool.design_loop_tier()
+    enforced = tier == studio_tool.DESIGN_LOOP_ENFORCED
+    modelling = guides.modelling(tier)
+    if enforced:
+        request_schema["properties"]["feedbackQuote"]["description"] = request_schema["properties"]["feedbackQuote"][
+            "description"].replace("/api/admissions or PUT /api/working-draft", "/api/admissions, /api/revisions or PUT /api/working-draft")
     presentation_instructions = guides._PRESENTATION_INSTRUCTIONS if external else guides._NATIVE_PRESENTATION_INSTRUCTIONS
     tools = [
         {"name": "chat_present", "description": presentation_instructions, "inputSchema": {

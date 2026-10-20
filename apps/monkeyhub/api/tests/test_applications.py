@@ -33,7 +33,7 @@ from project_runtime.settings import StudioSettings
 from project_runtime.render_adapters.gemini import adapter_from_settings
 from monkeyhub_api.runtime.applications import Applications
 from monkeyhub_api.models import HubFailure
-from monkeyhub_api.settings.models import ApplicationSettingsDto
+from monkeyhub_api.settings.models import DESIGN_LOOP_DEFAULT, ApplicationSettingsDto
 
 
 class StudioChildEnvironmentTests(unittest.TestCase):
@@ -74,6 +74,7 @@ class StudioChildEnvironmentTests(unittest.TestCase):
             "ARCHFLOW_STUDIO_MODE": "local",
             "ARCHFLOW_STUDIO_PROJECT_DIR": str(self.project),
             "ARCHFLOW_STUDIO_CAD_EXPORT": "occt",
+            "ARCHFLOW_STUDIO_DESIGN_LOOP": DESIGN_LOOP_DEFAULT,
             "ARCHFLOW_STUDIO_INTENT_PROVIDER": "deterministic",
         })
         self.assertEqual(

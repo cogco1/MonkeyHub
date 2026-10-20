@@ -45,6 +45,17 @@ RENDER_PROVIDER_ENV = "ARCHFLOW_STUDIO_RENDER_PROVIDER"
 RENDER_MODEL_ENV = "ARCHFLOW_STUDIO_RENDER_MODEL"
 RENDER_API_KEY_ENV = "ARCHFLOW_STUDIO_RENDER_API_KEY"
 RENDER_TIMEOUT_ENV = "ARCHFLOW_STUDIO_RENDER_TIMEOUT_S"
+# The design loop (#185), in three tiers. ``legacy`` answers exactly as before
+# it existed. ``advisory`` checks the conditions a design must keep, blocks a
+# new violation's review readiness and lists the problems, but enforces no way
+# onto the working design. ``enforced`` also makes POST /api/revisions the
+# Agent's only way there: its own Continue and admission of a result are
+# refused. A person's actions are never affected.
+DESIGN_LOOP_ENV = "ARCHFLOW_STUDIO_DESIGN_LOOP"
+DESIGN_LOOP_LEGACY = "legacy"
+DESIGN_LOOP_ADVISORY = "advisory"
+DESIGN_LOOP_ENFORCED = "enforced"
+DESIGN_LOOPS = (DESIGN_LOOP_LEGACY, DESIGN_LOOP_ADVISORY, DESIGN_LOOP_ENFORCED)
 
 # The two modes of the protocol boundary. ``local`` is the pair the launcher
 # starts on this machine: one loopback listener, one user, no token. ``remote``
@@ -148,6 +159,8 @@ class StudioSettings:
     render_model: str | None = None
     render_api_key: str | None = field(default=None, repr=False)
     render_timeout_s: float = 120.0
+    # The Hub's designLoop setting; a runtime started by hand answers as before.
+    design_loop: str = DESIGN_LOOP_LEGACY
 
     def __post_init__(self) -> None:
         """Local listeners stay on loopback; remote listeners need credentials.
@@ -162,6 +175,8 @@ class StudioSettings:
             or self.cache_dir.resolve(strict=False).is_relative_to(Path(self.project_dir).resolve(strict=False))
         ):
             raise SettingsError(f"{CACHE_DIR_ENV} must be an absolute directory outside the project.")
+        if self.design_loop not in DESIGN_LOOPS:
+            raise SettingsError(f"{DESIGN_LOOP_ENV} must be one of {', '.join(DESIGN_LOOPS)}.")
         if self.render_provider not in ("off", "gemini"):
             raise SettingsError(f"{RENDER_PROVIDER_ENV} must be off or gemini.")
         if not math.isfinite(self.render_timeout_s) or not 1 <= self.render_timeout_s <= 300:
@@ -246,6 +261,18 @@ class StudioSettings:
         return None if self.cache_dir is None else self.cache_dir / "index"
 
     @property
+    def design_loop_enforced(self) -> bool:
+        """Whether the Agent reaches the working design only through POST /api/revisions."""
+
+        return self.design_loop == DESIGN_LOOP_ENFORCED
+
+    @property
+    def design_loop_checks(self) -> bool:
+        """Whether conditions are checked and their problems listed (advisory or enforced); legacy answers as before."""
+
+        return self.design_loop != DESIGN_LOOP_LEGACY
+
+    @property
     def exports(self) -> bool:
         """Whether a candidate run writes geometry at all."""
 
@@ -308,6 +335,9 @@ class StudioSettings:
             render_model=os.environ.get(RENDER_MODEL_ENV, "").strip() or None,
             render_api_key=os.environ.get(RENDER_API_KEY_ENV, "").strip() or None,
             render_timeout_s=render_timeout,
+            # "off", the setting's name before it had three tiers, is legacy.
+            design_loop={"": DESIGN_LOOP_LEGACY, "off": DESIGN_LOOP_LEGACY}.get(
+                os.environ.get(DESIGN_LOOP_ENV, "").strip().lower(), os.environ.get(DESIGN_LOOP_ENV, "").strip().lower()),
             cad_export=cad_export_from_env(os.environ),
             powershell=Path(powershell) if powershell else None,
             reference_run=reference_run or None,

@@ -611,7 +611,7 @@ neighbouring element whose field shares a name is named there only to be refused
    The Worktree Graph names the run's line step by them.
 4. **Follow it.** `GET /api/jobs/{jobId}`, or the event stream.
 5. **Read review readiness.** `GET /api/candidates/{id}/validation` returns the kernel's
-   validation receipt unedited, and beside it the server's `reviewReady`, a fixed conjunction of five named
+   validation receipt unedited, and beside it the server's `reviewReady`, a fixed conjunction of six named
    clauses with `blockedBy[]` naming every clause that refused. Three-state law, verbatim:
    *held / violated / unchecked are distinct; unchecked is never green; the server reports
    candidate review readiness.* A client renders the server's boolean and computes no readiness
@@ -619,6 +619,23 @@ neighbouring element whose field shares a name is named there only to be refused
    or advance a stage.
 
 Review readiness is memoised per (candidate, published version): reading it twice is one result.
+
+**Conditions the design must keep are checked (#659)** while the design loop checks them (`advisory` or
+`enforced`). A `DesignObligation` names its check in `validatorRef` as `validator:<kind>/<arguments>`; the kinds
+are `state_record.OBLIGATION_CHECKS`. Validation checks every live obligation on the candidate's exact record and
+its inspected object boxes, and again on the run it was made from. Each one is `held`, `violated` or
+`unchecked`; an obligation with no check, an unknown kind, a value nothing states, or a model read back without
+a part where the check looks (the flight's plan for headroom, the strip ahead of each stair end for a landing),
+or without one the record does not place, is `unchecked`, never held. Headroom does not count a railing:
+material no thicker than 60 mm across the flight within 100 mm of a side edge that stands on the tread or starts
+no more than 1.2 m above it. What a part is called changes nothing. The results are reported, never a clause of
+review readiness: no tier makes a condition block a person's or the Agent's admission or a Stage acceptance.
+In `enforced`, `POST /api/revisions` refuses a new violation itself. `obligationProblems[]` (on the validation and on
+`GET /api/candidates/{id}`) lists the violated ones, new first, then the unchecked ones, at most 20, each with
+`obligationId`, `validatorRef`, `status`, `new` and `detail`; `obligationsChecked` counts those a check
+reported held or violated. `relationProblems[]` on the candidate names the violated relations, then the
+unchecked ones (a check that left a pair unmeasured is unchecked), at most 20, with `relationId`, `kind`,
+`status` and `detail`.
 
 **Declared materials reach the candidate's model.** `POST /api/proposals/facets` sets a
 component's `material.name` (the architect's words) and, when the design states it,
@@ -1072,6 +1089,97 @@ produced (`legacy: episode`). An admission record is stronger than any of them. 
 recovery rows, chat candidate ids, pins and newest files prove nothing, so a project with many
 runs and none of these facts lists no Candidate. Creating an Exploration (`POST
 /api/working-copies`) is retired; retained Explorations stay readable and selectable.
+
+### 5.6 One revision in one call (#185)
+
+`POST /api/revisions` carries one change onto the working design, running the steps above in a fixed
+order. It takes `{projectId, sourceRunId, stateDigest, kind, proposal, summary, keep?, confirmed?,
+supersedes?, land?, buildOnly?, label?, waitSeconds?, messageSource?, rawLanguage?}`, or `candidateId` in place
+of `kind` and `proposal` to land a candidate already built from the working design (one built with `buildOnly`,
+an option, a program or a combination), which is checked again from step 3 on. `sourceRunId` and `stateDigest`
+are the working design's, bound when the call starts (`sourceRunId` is null while the project has no working
+run, and the change starts from its default design); `kind` is `construction`, `facets`, `hosted-opening`,
+`elevation` or `proposal` (a `semanticEdit` or an utterance), and `proposal` is that route's body without the
+fields this request supplies. It takes the `accept` grant, and the change itself the `propose` grant. In order:
+
+1. a base that is not the working design is `refused` with `STALE_BASE`, and nothing is proposed;
+2. the change becomes a proposal through its own route, every applicable `keep` decision passed as a
+   protected ref; a refused proposal is `problems`;
+3. a keep conflict is `needs_question` (`KEEP_CONFLICT`), quoting the decision's words;
+4. a change whose reach (its direct references, what they propagate to, and every whole each touched part
+   belongs to) includes the target of an applicable `reject` or `avoid` decision is `needs_question`
+   (`REJECTED_OPTION`);
+5. a live condition in the change's reach (its direct references and their downstream closure) that names
+   no executable check is `needs_question` (`UNCHECKED_CONDITION`), unless `confirmed` names it as
+   `obligation:<id>` and the request carries the architect's words; nothing is built for a question;
+6. the candidate is built and waited for (`waitSeconds`, default 240, at most 300); a build that does not
+   finish is `problems` with `RUN_TIMEOUT` and keeps building. What the build changed against the base, where
+   its proposal's impact did not name it, meets steps 3 to 5 again (`KEEP_CONFLICT`, `REJECTED_OPTION`,
+   `UNCHECKED_CONDITION`), before anything is admitted;
+7. a built change that drops or rewrites one of the base's live conditions, or leaves one in reach that
+   the built model still cannot check, is `needs_question` (`CONDITION_CHANGED`, `UNCHECKED_CONDITION`);
+8. the built model is read back: no object, a readback error, a comparison that fails while the base has a
+   model (`COMPARE_UNAVAILABLE`), or a construction or hosted opening that changed nothing against the base
+   (`NO_VISIBLE_CHANGE`) is `problems`. Only a base that never exported a model is excused from the
+   comparison, and `compare.unavailable` with `baseHasNoModel` says so;
+9. validation runs: a violated or unchecked relation, a condition violated where the base did not violate it,
+   or a failing review clause is `problems`, each one named by its `source` (`relation:<id>`,
+   `obligation:<id>`, the clause);
+10. with `buildOnly` the answer is `built` and nothing is admitted; the candidate lands later by its
+    `candidateId`;
+11. if the working design moved while the change was built, nothing is admitted (`WORKING_DESIGN_MOVED`);
+    otherwise the result is admitted (`hub-chat` with the bound `messageSource`, else `ui`) and continued onto
+    the working design: `landed`. With `land: false` it is admitted as a candidate to compare and the working
+    design stays: `admitted`. A Continue that fails is answered with where the working design actually stands:
+    `CONTINUE_REFUSED` (it did not move), `LANDED_UNRECORDED` (it moved, but who continued could not be
+    retained) or `CONTINUE_UNKNOWN`.
+
+Every decision about a condition reads its whole result, never the shortened `obligationProblems` list. The
+answer is `{outcome, code, detail, proposalId, candidateId, stateDigest, problems: [{source, kind,
+detail}], questionRefs, conditions: [{obligationId, statement, checkable, validatorRef}], compare,
+working: {runId, stateDigest, revisionSha256}, seconds}`. Nothing moves on `problems`, `needs_question`
+or `refused`. A kept target or a rejected option changes only after its decision is revised.
+
+`GET /api/revisions/context` is what a change is written from: `working` (runId, stateDigest, revisionSha256, label), `keep` and `rejected` (each decision's ref, target and the architect's words), `conditions` (each live condition's ref, statement, subjects, `validatorRef`, `checkable` and how it stands on the working design: `onWorkingDesign` held, violated or unchecked, with `detail`), `lastChange` (the working design's own landed change: its summary, the words it answered and its objects before and after against its parent, so that undoing it is an ordinary change), `tried` (results the architect rejected, with their words) and `honesty`. Each list holds at most 40 rows and says how many it left out.
+
+**The design-loop setting.** The Hub's application setting `designLoop` reaches the Runtime as
+`ARCHFLOW_STUDIO_DESIGN_LOOP`, in three tiers; the default, and a Runtime started by hand, is `legacy`. A
+saved `off`, the setting's value before it had tiers, reads as `legacy`.
+
+- `legacy`: every route main has answers byte for byte as main does (`tests/test_legacy_answers.py` compares a
+  scenario's answers with main's). No condition is checked; validation and candidate reads leave out
+  `obligationProblems`, `obligationsChecked` and `relationProblems` and keep their old notes; the chat keeps its
+  old guide and error words. Of the two new routes, `POST /api/revisions` answers `409 DESIGN_LOOP_NOT_ENFORCED`.
+- `advisory`: conditions are checked and the problem lists appear on validation and candidate reads, blocking
+  nothing; every way onto the working design is as before, and `POST /api/revisions` still answers
+  `409 DESIGN_LOOP_NOT_ENFORCED`. The chat may read `GET /api/revisions/context`, and its guide says what the
+  two lists are.
+- `enforced`: as `advisory`, and the Agent's own way onto the working design is refused with `409
+  DESIGN_LOOP_REQUIRED`: `POST /api/admissions` of an `admitted` result, and `PUT /api/working-draft` onto a run.
+  `POST /api/revisions` admits and continues the result itself; from the Agent it must name its own chat's message
+  and never carries `confirmed` (`422 REVISION_INVALID`).
+
+The Runtime tells the Agent from a person by `X-Monkey-Agent`, which the managing Hub adds (with its
+`X-Monkey-Worker` identity) to every request it forwards for a chat; nothing in a request body counts. A
+person's admission and Continue, and the Agent's rejections and withdrawals, are never affected. The Hub's chat
+offers `POST /api/revisions` only while the setting is `enforced` (`GET /api/revisions/context` also in
+`advisory`), binds the user's message and words to it, and takes the loop's `taskClass` beside it as for an
+admission (a `spatial_formal` or `polish` loop lands only a result it looked at, or a repair superseding a
+looked-at attempt; `buildOnly` builds one to look at).
+
+**The Agent never confirms.** A condition no check can verify, a kept target or a rejected option in reach makes a
+revision answer `needs_question` with `questionRefs`, and the Agent asks. Nothing in a chat stands for the
+architect's answer, whatever its words: the chat refuses `confirmed` (`422 CHAT_REVISION_INVALID`) and the Runtime
+refuses it from the Agent (`422 REVISION_INVALID`). A person's own request may carry `confirmed` with their words;
+the Hub page has no control for it yet. These questions stop a change only while the design loop is `enforced`:
+in `legacy` and `advisory` a condition no check can verify blocks nothing, and the reviser is only told about it.
+
+**What enforced closes, and what it does not.** In `enforced` the Hub's Claude chat runs without Bash or
+PowerShell, so the Agent reaches the design only through this Hub, which vouches for it. A Codex chat (exec or ACP) keeps the shell
+of its workspace sandbox, and computer-use tools stay approved where this machine's policy enables them; neither
+is taken away in `enforced`. The Runtime does not verify identity
+otherwise: a local process that calls the Runtime's port or the Hub's forwarding route directly, without the
+chat header, is taken as a person.
 
 ## 6. Pick and gesture resolution
 

@@ -7,6 +7,10 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
+# What a Hub nobody configured does with the Agent's design changes (#185).
+DESIGN_LOOP_DEFAULT = "legacy"
+
+
 class UserSettingsDto(BaseModel):
     """PUT replaces the saved preferences; omitted or null fields use defaults."""
 
@@ -80,8 +84,19 @@ class ApplicationSettingsDto(BaseModel):
     library_dir: str | None = Field(default=None, alias="libraryDir", min_length=1)
     reference_run: str | None = Field(default=None, alias="referenceRun", min_length=1)
     cad_export: Literal["occt", "rhino", "off"] = Field(default="occt", alias="cadExport")
+    # The design loop (#185): legacy answers as before; advisory checks the conditions a
+    # design must keep and lists the problems; enforced also makes POST /api/revisions,
+    # which checks, builds, reads back and validates a change, the Agent's only way onto
+    # the working design.
+    design_loop: Literal["legacy", "advisory", "enforced"] = Field(default=DESIGN_LOOP_DEFAULT, alias="designLoop")
     studio_port: int = Field(default=8789, alias="studioPort", ge=1024, le=65535)
     monitor_port: int = Field(default=8788, alias="monitorPort", ge=1024, le=65535)
+
+    @field_validator("design_loop", mode="before")
+    @classmethod
+    def _design_loop_was_off(cls, value: object) -> object:
+        # "off", saved before the setting had three tiers, is legacy.
+        return "legacy" if value == "off" else value
 
     @field_validator("project_dir", "workspace_dir", "library_dir")
     @classmethod

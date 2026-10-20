@@ -100,7 +100,7 @@ class Applications:
         with self._lock:
             previous = read_application_settings(self.runtime_root)
             changed_services = set()
-            if (settings.project_dir, settings.reference_run, settings.cad_export, settings.studio_port) != (previous.project_dir, previous.reference_run, previous.cad_export, previous.studio_port):
+            if (settings.project_dir, settings.reference_run, settings.cad_export, settings.design_loop, settings.studio_port) != (previous.project_dir, previous.reference_run, previous.cad_export, previous.design_loop, previous.studio_port):
                 changed_services.add("studio")
             if settings.monitor_port != previous.monitor_port:
                 changed_services.add("monitor")
@@ -216,6 +216,7 @@ class Applications:
             "ARCHFLOW_STUDIO_MODE": "local",
             "ARCHFLOW_STUDIO_PROJECT_DIR": str(project),
             "ARCHFLOW_STUDIO_CAD_EXPORT": settings.cad_export,
+            "ARCHFLOW_STUDIO_DESIGN_LOOP": settings.design_loop,
             "ARCHFLOW_STUDIO_INTENT_PROVIDER": preferences.intent_provider or "deterministic",
             "MONKEYMONITOR_DATA_DIR": str(diagnostics),
         })

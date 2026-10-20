@@ -843,6 +843,18 @@ export type CandidateDto = {
     seatResults: Array<CandidateSeatResultDto>;
     relationChecks: RelationChecksDto;
     /**
+     * Relationproblems
+     *
+     * the violated relations, then the unchecked ones (at most 20), from the reports relationChecks counts
+     */
+    relationProblems?: Array<RelationProblemDto>;
+    /**
+     * Obligationproblems
+     *
+     * the record's obligations that are violated or unchecked on this candidate (at most 20); null when not read
+     */
+    obligationProblems?: Array<ObligationProblemDto> | null;
+    /**
      * Artifacts
      */
     artifacts: Array<ProjectArtifactDto>;
@@ -7315,6 +7327,38 @@ export type ObjectBindingDto = {
 };
 
 /**
+ * ObligationProblemDto
+ *
+ * One obligation the candidate does not show held: violated, or with no check that could run.
+ */
+export type ObligationProblemDto = {
+    /**
+     * Obligationid
+     */
+    obligationId: string;
+    /**
+     * Validatorref
+     */
+    validatorRef: string | null;
+    /**
+     * Status
+     *
+     * violated | unchecked
+     */
+    status: string;
+    /**
+     * New
+     *
+     * violated here and not on the run the candidate was made from; only a new violation blocks review readiness
+     */
+    new: boolean;
+    /**
+     * Detail
+     */
+    detail: string;
+};
+
+/**
  * ObservationUsageDto
  *
  * What one review cost, as the provider reported it.
@@ -9951,6 +9995,34 @@ export type RelationChecksDto = {
 };
 
 /**
+ * RelationProblemDto
+ *
+ * One declared relation the run did not find held, in its report's own words.
+ */
+export type RelationProblemDto = {
+    /**
+     * Relationid
+     */
+    relationId: string;
+    /**
+     * Kind
+     *
+     * the check kind that measured it
+     */
+    kind: string;
+    /**
+     * Status
+     *
+     * violated | unchecked
+     */
+    status: string;
+    /**
+     * Detail
+     */
+    detail: string;
+};
+
+/**
  * RenderCameraDto
  *
  * The camera one Modeling view was drawn through.
@@ -10414,6 +10486,234 @@ export type RevisionAttributionDto = {
      * hub: through a runtime the Hub manages (its Agent or its window); studio: a runtime no Hub manages.
      */
     origin: string;
+};
+
+/**
+ * RevisionConditionDto
+ */
+export type RevisionConditionDto = {
+    /**
+     * Obligationid
+     */
+    obligationId: string;
+    /**
+     * Statement
+     */
+    statement: string;
+    /**
+     * Checkable
+     */
+    checkable: boolean;
+    /**
+     * Validatorref
+     */
+    validatorRef: string | null;
+};
+
+/**
+ * RevisionOutcomeDto
+ *
+ * Exactly one outcome: landed, admitted, built, problems, needs_question or refused.
+ */
+export type RevisionOutcomeDto = {
+    /**
+     * Outcome
+     */
+    outcome: 'landed' | 'admitted' | 'built' | 'problems' | 'needs_question' | 'refused';
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Detail
+     */
+    detail: string;
+    /**
+     * Proposalid
+     */
+    proposalId: string | null;
+    /**
+     * Candidateid
+     */
+    candidateId: string | null;
+    /**
+     * Statedigest
+     *
+     * The built candidate's state, when one was built.
+     */
+    stateDigest: string | null;
+    /**
+     * Problems
+     */
+    problems: Array<RevisionProblemDto>;
+    /**
+     * Questionrefs
+     *
+     * What the architect is asked about, when the outcome is needs_question.
+     */
+    questionRefs: Array<string>;
+    /**
+     * Conditions
+     *
+     * The conditions in the change's reach.
+     */
+    conditions: Array<RevisionConditionDto>;
+    /**
+     * Compare
+     *
+     * The built model against the design it was made from: counts and the objects that changed, with their boxes before and after.
+     */
+    compare: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Where the working design stands after the call.
+     */
+    working: RevisionWorkingDto | null;
+    /**
+     * Seconds
+     */
+    seconds: {
+        [key: string]: number;
+    };
+};
+
+/**
+ * RevisionProblemDto
+ */
+export type RevisionProblemDto = {
+    /**
+     * Source
+     *
+     * Where it came from: proposal, build, readback, relation:<id>, obligation:<id>, a review clause, or admission
+     */
+    source: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Detail
+     */
+    detail: string;
+};
+
+/**
+ * RevisionRequestDto
+ *
+ * One change against the exact working design, carried through every check to the working design.
+ */
+export type RevisionRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Sourcerunid
+     *
+     * The working design's run, as it was read; null only while the project has no working run yet.
+     */
+    sourceRunId?: string | null;
+    /**
+     * Statedigest
+     *
+     * The working design's stateDigest, as it was read.
+     */
+    stateDigest: string;
+    /**
+     * Kind
+     *
+     * Which proposal route the change is: POST /api/proposals/construction, /facets, /hosted-opening, /elevation, or POST /api/proposals for a semanticEdit.
+     */
+    kind?: 'construction' | 'facets' | 'hosted-opening' | 'elevation' | 'proposal' | null;
+    /**
+     * Proposal
+     *
+     * That route's body without projectId, stateDigest, sourceRunId, keep and summary, which this request supplies.
+     */
+    proposal?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Candidateid
+     *
+     * Instead of kind and proposal: a candidate already built from the working design (one this call built with buildOnly, an option, a program or a combination), checked again and landed.
+     */
+    candidateId?: string | null;
+    /**
+     * Buildonly
+     *
+     * Build and check the change but admit nothing: the answer is built, and the candidate is landed later by naming it as candidateId, after a look.
+     */
+    buildOnly?: boolean;
+    /**
+     * Summary
+     *
+     * The change in words; its run keeps them.
+     */
+    summary: string;
+    /**
+     * Keep
+     *
+     * Refs to keep beside the project's keep decisions, which are always kept.
+     */
+    keep?: Array<string>;
+    /**
+     * Confirmed
+     *
+     * obligation:<id> refs no check can verify that the architect's own words in this message confirm the change keeps. A kept target or a rejected option is changed by revising that decision first.
+     */
+    confirmed?: Array<string>;
+    /**
+     * Supersedes
+     *
+     * Earlier attempts of this same change that this result replaces.
+     */
+    supersedes?: Array<string>;
+    /**
+     * Land
+     *
+     * false admits the result as a candidate to compare and leaves the working design where it is.
+     */
+    land?: boolean;
+    /**
+     * Label
+     */
+    label?: string | null;
+    /**
+     * Waitseconds
+     *
+     * How long to wait for the build before answering RUN_TIMEOUT.
+     */
+    waitSeconds?: number;
+    /**
+     * The chat message this change answers, as the Hub binds it; provenance, never a credential.
+     */
+    messageSource?: MessageSourceDto | null;
+    /**
+     * Rawlanguage
+     *
+     * The user's own words the change answers, as the Hub binds them.
+     */
+    rawLanguage?: string | null;
+};
+
+/**
+ * RevisionWorkingDto
+ */
+export type RevisionWorkingDto = {
+    /**
+     * Runid
+     */
+    runId: string | null;
+    /**
+     * Statedigest
+     */
+    stateDigest: string | null;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string | null;
 };
 
 /**
@@ -12743,6 +13043,18 @@ export type ValidationDto = {
      * the candidate's own three states, copied not recomputed
      */
     relationChecks: RelationChecksDto;
+    /**
+     * Obligationproblems
+     *
+     * obligations violated or unchecked on this candidate, while the design loop checks them; new marks a violation the run it was made from did not have. They block no review clause
+     */
+    obligationProblems?: Array<ObligationProblemDto>;
+    /**
+     * Obligationschecked
+     *
+     * how many of the record's live obligations an executable check reported held or violated
+     */
+    obligationsChecked?: number;
     /**
      * Seatexecutioncomplete
      */
@@ -18313,6 +18625,80 @@ export type AdmitCandidateResultsApiAdmissionsPostResponses = {
 };
 
 export type AdmitCandidateResultsApiAdmissionsPostResponse = AdmitCandidateResultsApiAdmissionsPostResponses[keyof AdmitCandidateResultsApiAdmissionsPostResponses];
+
+export type ReviseWorkingDesignApiRevisionsPostData = {
+    body: RevisionRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/revisions';
+};
+
+export type ReviseWorkingDesignApiRevisionsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReviseWorkingDesignApiRevisionsPostError = ReviseWorkingDesignApiRevisionsPostErrors[keyof ReviseWorkingDesignApiRevisionsPostErrors];
+
+export type ReviseWorkingDesignApiRevisionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: RevisionOutcomeDto;
+};
+
+export type ReviseWorkingDesignApiRevisionsPostResponse = ReviseWorkingDesignApiRevisionsPostResponses[keyof ReviseWorkingDesignApiRevisionsPostResponses];
+
+export type ReadRevisionContextApiRevisionsContextGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/revisions/context';
+};
+
+export type ReadRevisionContextApiRevisionsContextGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadRevisionContextApiRevisionsContextGetError = ReadRevisionContextApiRevisionsContextGetErrors[keyof ReadRevisionContextApiRevisionsContextGetErrors];
+
+export type ReadRevisionContextApiRevisionsContextGetResponses = {
+    /**
+     * Response Read Revision Context Api Revisions Context Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadRevisionContextApiRevisionsContextGetResponse = ReadRevisionContextApiRevisionsContextGetResponses[keyof ReadRevisionContextApiRevisionsContextGetResponses];
 
 export type ForkCommittedDesignApiDesignBranchesPostData = {
     body: ForkDesignBranchRequestDto;

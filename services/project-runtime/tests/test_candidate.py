@@ -692,6 +692,39 @@ class CandidateRunTests(CandidateTestCase):
             len(report["checks"]),
         )
 
+    def test_relation_problems_name_violated_then_unchecked_relations(self) -> None:
+        from project_runtime.application.candidate import relation_problems
+
+        accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assertNotIn("relationProblems", self.client.get(f"/api/candidates/{accepted['candidateId']}").json(),
+                         "with the design loop off a candidate read is as it was")
+        enforced = TestClient(create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID,
+                                                        design_loop="enforced")))
+        self.addCleanup(enforced.close)
+        self.assertEqual(enforced.get(f"/api/candidates/{accepted['candidateId']}").json()["relationProblems"], [])
+
+        run = self.repository.create_run("relation-problems")
+        report = {"schema": "RelationCheckReport@1", "record_digest": "0" * 64,
+                  "counts": {"held": 1, "violated": 1, "unchecked": 2}, "held": False, "fully_checked": False,
+                  "checks": [
+                      {"relation_id": "r-held", "kind": "support", "check_kind": "support_contact", "status": "held",
+                       "tolerance": 0.001, "measured": {}, "detail": "held"},
+                      {"relation_id": "r-partial", "kind": "interface", "check_kind": "solid_nonpenetration", "status": "held",
+                       "tolerance": 0.0, "measured": {"unchecked_pair_count": 1.0}, "detail": "a / b: unchecked: no readback"},
+                      {"relation_id": "r-open", "kind": "support", "check_kind": "support_contact", "status": "unchecked",
+                       "tolerance": 0.001, "measured": {}, "detail": "no bounds"},
+                      {"relation_id": "r-broken", "kind": "support", "check_kind": "support_contact", "status": "violated",
+                       "tolerance": 0.001, "measured": {"gap": 0.3}, "detail": "gap 0.3000 m"},
+                  ]}
+        self.repository.put_json(run=run, destination=_run_records(run.run_id), record_kind="seat-relation-check", payload=report)
+
+        rows = relation_problems(bound_project(self.app.state), run.run_id)
+
+        self.assertEqual([(row.relation_id, row.status) for row in rows],
+                         [("r-broken", "violated"), ("r-open", "unchecked"), ("r-partial", "unchecked")])
+        self.assertEqual(rows[0].detail, "gap 0.3000 m")
+
     def test_a_candidate_run_never_becomes_the_projection_reference(
         self,
     ) -> None:

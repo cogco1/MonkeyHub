@@ -114,6 +114,10 @@ export type ApplicationSettingsDto = {
      */
     cadExport?: 'occt' | 'rhino' | 'off';
     /**
+     * Designloop
+     */
+    designLoop?: 'legacy' | 'advisory' | 'enforced';
+    /**
      * Studioport
      */
     studioPort?: number;

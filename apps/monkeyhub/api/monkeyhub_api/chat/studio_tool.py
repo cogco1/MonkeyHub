@@ -10,6 +10,7 @@ and a render submission.
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Mapping
 
@@ -18,8 +19,8 @@ from . import guides, providers, transport
 from ..models import HubFailure
 
 
-_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|project|construction(?:/model)?|domains(?:/[a-z]+/readiness)?|state/(?:frame|volumes)|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|memory(?:/locate)?|drawings/(?:styles|model-view|plans/vector|plans/dimensions|corrections)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision|render/(?:capabilities|jobs(?:/[A-Za-z0-9_-]+)?))$")
-_POST = re.compile(r"^/api/(exports|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|memory(?:/about|/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(?:construction|facets|hosted-opening|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets|section-perspectives|plans|plans/status)|admissions|render/jobs)$")
+_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|revisions/context|project|construction(?:/model)?|domains(?:/[a-z]+/readiness)?|state/(?:frame|volumes)|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|memory(?:/locate)?|drawings/(?:styles|model-view|plans/vector|plans/dimensions|corrections)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision|render/(?:capabilities|jobs(?:/[A-Za-z0-9_-]+)?))$")
+_POST = re.compile(r"^/api/(exports|revisions|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|memory(?:/about|/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(?:construction|facets|hosted-opening|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets|section-perspectives|plans|plans/status)|admissions|render/jobs)$")
 _WRITE = re.compile(r"^/api/(board|document-annotations|working-draft)$")
 # The agent routes the construction contract replaced (#419). The Studio still
 # serves them to its own web client, so a refusal names the agent's route
@@ -56,8 +57,65 @@ _MEANING_REFUSAL = "Meaning is added with POST /api/proposals/facets."
 _POST_READS = {"/api/intents/context", "/api/drawings/plans/status", "/api/memory/about"}
 
 
-def _schema_allowed(method: str, path: str) -> bool:
+# The one call that carries a change onto the working design (#185). The chat
+# offers it only while the design loop is enforced, and then the Runtime takes
+# no other way there from the Agent.
+REVISIONS = "/api/revisions"
+DESIGN_LOOP_LEGACY, DESIGN_LOOP_ADVISORY, DESIGN_LOOP_ENFORCED = "legacy", "advisory", "enforced"
+# The call is offered only while the design loop is enforced; what a change is written from, while it checks
+# conditions (advisory or enforced). In legacy the chat is offered neither.
+REVISION_ACTION = ("POST", REVISIONS)
+CONTEXT_ACTION = ("GET", REVISIONS + "/context")
+LOOP_ACTIONS = frozenset({REVISION_ACTION, CONTEXT_ACTION})
+# What the conversation was started with: the Hub sets it for every CLI turn it
+# starts, and an external host sets it itself. It decides the guide and the action
+# list; whether the call is allowed is still asked of the Hub when it is made.
+DESIGN_LOOP_ENV = "MONKEYHUB_DESIGN_LOOP"
+
+
+def _tier(value: object) -> str:
+    value = str(value or "").strip().lower()
+    return value if value in (DESIGN_LOOP_ADVISORY, DESIGN_LOOP_ENFORCED) else DESIGN_LOOP_LEGACY
+
+
+def design_loop_tier() -> str:
+    """The design loop this conversation was started with: legacy unless the Hub said advisory or enforced."""
+    return _tier(os.environ.get(DESIGN_LOOP_ENV))
+
+
+def design_loop_offered() -> bool:
+    """Whether this conversation was started with the design loop enforced."""
+    return design_loop_tier() == DESIGN_LOOP_ENFORCED
+
+
+def design_loop_setting(hub: str) -> str:
+    """This Hub's designLoop setting now; an unreadable setting reads as the default."""
+    from ..settings.models import DESIGN_LOOP_DEFAULT
+    try:
+        value = transport._request_json(hub, "/api/settings/apps", timeout=10).get("designLoop")
+    except (HubFailure, OSError, ValueError, AttributeError):
+        value = None
+    return _tier(value or DESIGN_LOOP_DEFAULT)
+
+
+def design_loop_enforced(hub: str) -> bool:
+    """Whether this Hub's designLoop setting is enforced; an unreadable setting reads as the default."""
+    return design_loop_setting(hub) == DESIGN_LOOP_ENFORCED
+
+
+def loop_action_offered(method: str, path: str, tier: str) -> bool:
+    """Whether a design-loop action is offered in ``tier``; every other action is not a loop action."""
+    if (method, path) == REVISION_ACTION:
+        return tier == DESIGN_LOOP_ENFORCED
+    if (method, path) == CONTEXT_ACTION:
+        return tier != DESIGN_LOOP_LEGACY
+    return True
+
+
+def _schema_allowed(method: str, path: str, *, enforced: bool = False, tier: str | None = None) -> bool:
     """Apply the execution allow-list to a schema template, never to a write."""
+    if not loop_action_offered(method, path, tier or (DESIGN_LOOP_ENFORCED if enforced else DESIGN_LOOP_LEGACY)):
+        return False
     pattern = {"GET": _READ, "POST": _POST, "PUT": _WRITE}.get(method)
     return pattern is not None and any(
         pattern.fullmatch(re.sub(r"\{[^}/]+\}", sample, path))
@@ -86,6 +144,17 @@ def _semantic_edit_refusal(body) -> HubFailure | None:
     return None
 
 
+def _revision_refusal(body) -> HubFailure | None:
+    """Why a revision's change may not be sent from the chat: the same narrowing its own route has here."""
+    if not isinstance(body, Mapping) or not isinstance(body.get("proposal"), Mapping):
+        return None  # the Runtime's own validation answers a malformed body
+    if body.get("kind") == "proposal":
+        return _semantic_edit_refusal(body["proposal"])
+    if body.get("kind") == "elevation":
+        return _elevation_refusal(body["proposal"])
+    return None
+
+
 def _elevation_refusal(body) -> HubFailure | None:
     """Why an agent's elevation request may not be sent, or None for a set-datum.
 
@@ -96,14 +165,14 @@ def _elevation_refusal(body) -> HubFailure | None:
     return None
 
 
-def _available_actions(document: dict) -> list[dict]:
+def _available_actions(document: dict, *, enforced: bool = False, tier: str | None = None) -> list[dict]:
     """A view of this Runtime and this chat's transport, not another registry."""
     return [
         {"method": method.upper(), "path": path,
          "summary": str(operation.get("summary") or operation.get("operationId") or "")[:180]}
         for path, operations in sorted(document.get("paths", {}).items())
         for method, operation in sorted(operations.items())
-        if isinstance(operation, dict) and _schema_allowed(method.upper(), path)
+        if isinstance(operation, dict) and _schema_allowed(method.upper(), path, enforced=enforced, tier=tier)
     ]
 
 
@@ -121,9 +190,10 @@ def _discovery(arguments: dict) -> tuple[str | None, str, int, int]:
     return method, prefix, offset, limit
 
 
-def _discover_actions(base: str, arguments: dict) -> dict:
+def _discover_actions(base: str, arguments: dict, *, enforced: bool = False, tier: str | None = None) -> dict:
     method, prefix, offset, limit = _discovery(arguments)
-    rows = [row for row in _available_actions(transport._request_json(base, "/openapi.json"))
+    rows = [row for row in _available_actions(transport._request_json(base, "/openapi.json"), enforced=enforced,
+                                              tier=tier)
             if row["path"].startswith(prefix) and (method is None or row["method"] == method.upper())]
     result = {"actions": rows[offset:offset + limit], "total": len(rows), "offset": offset, "limit": limit,
               "note": "Current Runtime actions exposed to this chat. Choose method/path for studio_schema to read inputs; "

@@ -73,6 +73,8 @@ _WORK_COPY_CHECK_S = _IDLE_RETAINED_REFRESH_S
 _STUDIO_REPLAY = 200
 # Forwarded POSTs that read and never change the project, so no operation is
 # admitted for them: a body names what to read, or the project is read again.
+# How long the Hub waits for POST /api/revisions: its build wait (at most 300 s) and its checks.
+REVISION_TIMEOUT_S = 420
 _READ_POSTS = frozenset({"/api/state/closure", "/api/pick/resolve", "/api/project/refresh"})
 # Reading the project again (ADR-012): the Hub reads it again too, whole.
 _REFRESH_PATH = "/api/project/refresh"
@@ -969,6 +971,11 @@ class ProjectRuntimeManager:
             forwarded = {key: value for key, value in headers.items()
                          if key in {"content-type", "x-monkey-operation", "x-monkey-parent", "if-none-match",
                                     "x-monkey-turn-id", "x-monkey-parent-span-id"}}
+            if admission and admission.record.sessionId:
+                # The chat this request comes from, vouched for by this Hub (#185): the Runtime
+                # tells the Agent from a person by this, never by what a request body says.
+                forwarded["X-Monkey-Agent"] = admission.record.sessionId
+                forwarded["X-Monkey-Worker"] = worker.instance_id
             if admission and method == "POST" and _CANDIDATE_REQUEST.fullmatch(parsed.path):
                 candidate_id = admission.record.candidateId
                 # A Hub restart can reconstruct this deterministic run identity.
@@ -990,7 +997,9 @@ class ProjectRuntimeManager:
                 base = runtime.binding.load_run(source_run).base if source_run else runtime.binding.head()
                 runtime.operations.bind_proposal(admission, proposal, base.version)
             dispatched = True
-            result = request_http(worker.url, path, method, body or None, forwarded, timeout=180)
+            # A revision waits for its own build, read-back and validation (#185).
+            timeout = REVISION_TIMEOUT_S if parsed.path == "/api/revisions" else 180
+            result = request_http(worker.url, path, method, body or None, forwarded, timeout=timeout)
             if admission:
                 result.headers["X-Monkey-Operation-Id"] = admission.record.operationId
                 runtime.operations.replied(admission, result)
