@@ -40,6 +40,7 @@ from ...jobs import SUCCEEDED
 from ...application.revision_transaction import Decision, RevisionRequest, revise, revision_context
 from archflow.state.state_record import check_obligations, obligation_measured
 from ...application.working_draft import resolve_working_source, select_working_draft
+from ...application.state_files import outside_rows
 from ...application.episodes import (
     add_working_copy_option, list_working_copies,
     read_working_copy, select_working_copy_option,
@@ -278,7 +279,8 @@ def read_revision_context(request: Request) -> dict:
              for record_row, row in rows if row["outcome"] == "rejected"]
     return revision_context(
         working=working, decisions=ports.decisions(working["runId"]), record=record,
-        results=check_obligations(record, boxes=boxes), last_change=last_change, tried=tried, honesty=honesty)
+        results=check_obligations(record, boxes=boxes), last_change=last_change, tried=tried, honesty=honesty,
+        outside=outside_rows(record))
 
 
 # The proposal route of each kind of change, with the body it takes.

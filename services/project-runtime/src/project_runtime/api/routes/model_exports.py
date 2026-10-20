@@ -4,7 +4,9 @@ from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.requests import Request
 from ...binding import bound_project
-from ...application import model_exports
+import base64
+
+from ...application import model_exports, state_files
 from ...errors import StudioError
 
 router = APIRouter(tags=["model exports"])
@@ -33,6 +35,17 @@ class ModelExportRequest(ExportDTO):
     upload: ModelUpload | None = None
 
 
+class StateFileExportRequest(ExportDTO):
+    project_revision: ProjectRevision = Field(alias="projectRevision")
+    parent_file_sha256: str | None = Field(None, alias="parentFileSha256", pattern=r"^[a-f0-9]{64}$",
+                                           description="The state file this revision was opened from.")
+
+
+class StateFileRequest(ExportDTO):
+    file_name: str = Field(alias="fileName", min_length=1, max_length=240)
+    content_base64: str = Field(alias="contentBase64", max_length=55924056)
+
+
 @router.get("/exports/capabilities")
 def capabilities():
     return model_exports.capabilities()
@@ -41,6 +54,39 @@ def capabilities():
 @router.post("/exports", status_code=202)
 def create_export(request: Request, payload: ModelExportRequest):
     return model_exports.submit(bound_project(request.app.state), request.app.state.jobs, payload)
+
+
+def _require_enforced(request: Request) -> None:
+    # A state file is the design loop's (#657, #185): the routes exist in every tier, and answer only while it is
+    # enforced, so the export a legacy or advisory Runtime offers is exactly the one it always was.
+    settings = request.app.state.settings
+    if not settings.design_loop_enforced:
+        raise StudioError(409, "DESIGN_LOOP_NOT_ENFORCED", f"The design loop is {settings.design_loop} in this Runtime; "
+                          "state files are written and read only while it is enforced.")
+
+
+@router.post("/state-files/export", status_code=202)
+def export_state_file(request: Request, payload: StateFileExportRequest):
+    """A 3DM of an exact project revision that carries its design record and the project's design decisions,
+    sealed, so a later reader can tell what was changed outside MonkeyHub (#657). Read it back like any export."""
+    _require_enforced(request)
+    export = ModelExportRequest(targetFormat="3dm", projectRevision=payload.project_revision)
+    return model_exports.submit(bound_project(request.app.state), request.app.state.jobs, export,
+                                with_state=True, parent_file_sha256=payload.parent_file_sha256)
+
+
+@router.post("/state-files/inspect")
+def inspect_state_file(request: Request, payload: StateFileRequest):
+    """What one state-carrying 3DM states, what changed in it outside MonkeyHub since its seal, and the condition
+    each such change makes on the parts it touched. A read: nothing is retained."""
+    _require_enforced(request)
+    try:
+        data = base64.b64decode(payload.content_base64, validate=True)
+    except ValueError as exc:
+        raise StudioError(422, "STATE_FILE_INVALID", "Invalid base64 file bytes.") from exc
+    if not data or len(data) > 40 * 1024 * 1024:
+        raise StudioError(413, "STATE_FILE_INVALID", "A state file is 1 byte to 40 MiB.")
+    return state_files.inspect_state_file(bound_project(request.app.state), data)
 
 
 @router.get("/exports/{export_id}")

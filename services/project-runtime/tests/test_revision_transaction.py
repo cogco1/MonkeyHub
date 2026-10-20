@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient
 from archflow.state.operational_state import DesignObligation
 from archflow.state.state_record import Entity, StateRecord
 from monkeycad.backends.occt.kernel import occt_available
+from project_runtime.application.state_files import FILE_SOURCE
 from project_runtime.application.revision_transaction import (
     ADMITTED, BUILT, LANDED, NEEDS_QUESTION, PROBLEMS, REFUSED, Decision, RevisionRequest, revise,
 )
@@ -283,6 +284,28 @@ class RevisionOrderTests(unittest.TestCase):
     def test_a_confirmation_needs_the_architects_words_and_names_only_conditions(self) -> None:
         self.assertEqual(_revise(FakePorts(), confirmed=("obligation:k3",)).code, "CONFIRMATION_INVALID")
         self.assertEqual(_revise(FakePorts(), confirmed=("entity:slab",), raw_language="可以").code, "CONFIRMATION_INVALID")
+
+    def test_a_question_on_the_whole_design_from_a_file_no_seal_vouches_for_stops_every_change(self) -> None:
+        whole = DesignObligation("outside-c-1", "Outside MonkeyHub, the file carries no seal.", f"{FILE_SOURCE}:{'c' * 64}",
+                                 subject_refs=("project:demo",))
+        for name, change in (("a part", {"direct": ("entity:stair",)}),
+                             ("a parameter", {"direct": ("parameter:rise",), "propagated": ("entity:stair",)}),
+                             ("a parameter nothing reads", {"direct": ("parameter:unused",)}),
+                             ("a new part", {"direct": ("entity:new-shed",)})):
+            with self.subTest(name):
+                ports = FakePorts(base=_record(whole), **change)
+                outcome = _revise(ports)
+                self.assertEqual((outcome.outcome, outcome.code), (NEEDS_QUESTION, "UNCHECKED_CONDITION"))
+                self.assertEqual(outcome.question_refs, ("obligation:outside-c-1",))
+                self.assertNotIn("run", ports.calls)
+
+    def test_a_question_from_a_file_on_a_whole_is_reached_by_changing_its_part_and_no_other_condition_is(self) -> None:
+        outside = DesignObligation("outside-c-2", "The file states as the architect's: keep entity:house.",
+                                   f"{FILE_SOURCE}:{'c' * 64}", subject_refs=("entity:house",))
+        said = _obligation("k1", None, "entity:house", statement="房子的气质")
+        outcome = _revise(FakePorts(base=_record(outside, said)))
+        self.assertEqual(outcome.question_refs, ("obligation:outside-c-2",),
+                         "a condition said of the whole is reached as before: only through what depends on it")
 
     def test_a_condition_the_built_model_cannot_check_asks_after_building(self) -> None:
         measured = _obligation("k6", "validator:headroom-at-least/2.0", "entity:stair")

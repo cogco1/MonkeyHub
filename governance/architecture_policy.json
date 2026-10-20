@@ -1029,6 +1029,100 @@
       "kind": "projection_cache",
       "owner": "project_runtime.documents",
       "reason": "The projection cache (ADR-008, #367): PNG blobs named by their own sha256 under the project's Hub cache directory, never the project folder; written to a temp file then renamed, and removed by the reachability collector after a grace window. Derived, deletable and never cited as evidence."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/design_loop.py",
+      "function": "_write_state",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "replace"
+      ],
+      "kind": "turn_scratch",
+      "owner": "hub.shell",
+      "reason": "Atomically replaces one turn's design-loop state (each design_submit outcome, a question asked, a limitation reported) at the file the CLI's launcher names in MONKEYHUB_DESIGN_LOOP_STATE, outside any project, for the turn's Stop hook to read. Unset, nothing is written. It holds no project state; P036 alone proves outcomes."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/design_loop.py",
+      "function": "_stop_hook",
+      "operations": [
+        "write_text"
+      ],
+      "kind": "turn_scratch",
+      "owner": "hub.shell",
+      "reason": "The Stop hook keeps its own count of how often it held the turn open, beside the loop state the launcher named (<state>.stop.json); nothing else is written and no project is read."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/state_files.py",
+      "function": "seal_model",
+      "operations": [
+        "write_bytes"
+      ],
+      "kind": "projection_cache",
+      "owner": "project_runtime.documents",
+      "reason": "Writes a scratch copy of one 3DM in a temporary directory under the project's Hub cache (<cache>/state-files, ADR-008: derived and deletable, never inside the project) so that the state-file reader and sealer, which read and write paths, can work on it; the directory is deleted on return. The sealed export is retained only by the export route through P036."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/state_files.py",
+      "function": "inspect_state_file",
+      "operations": [
+        "write_bytes"
+      ],
+      "kind": "projection_cache",
+      "owner": "project_runtime.documents",
+      "reason": "Writes a scratch copy of one 3DM in a temporary directory under the project's Hub cache (<cache>/state-files, ADR-008: derived and deletable, never inside the project) so that the state-file reader and sealer, which read and write paths, can work on it; the directory is deleted on return. The sealed export is retained only by the export route through P036."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/state_files.py",
+      "function": "__enter__",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "projection_cache",
+      "owner": "project_runtime.documents",
+      "reason": "Writes a scratch copy of one 3DM in a temporary directory under the project's Hub cache (<cache>/state-files, ADR-008: derived and deletable, never inside the project) so that the state-file reader and sealer, which read and write paths, can work on it; the directory is deleted on return. The sealed export is retained only by the export route through P036."
+    },
+    {
+      "path": "tools/project/state_file.py",
+      "function": "export_model",
+      "operations": [
+        "mkdir",
+        "write_bytes"
+      ],
+      "kind": "cli_workspace",
+      "owner": "tools.project.state_file",
+      "reason": "Writes only where its caller points it: the sealed or plain 3DM a Runtime export answered, at a new --out path or under the --candidates directory (an existing file is refused), and opened.json, the project directory and the runs it held when opened, beside the project in the caller's --work-root. The project itself is written only by the project tools and the Runtime it starts."
+    },
+    {
+      "path": "tools/project/state_file.py",
+      "function": "_write_opened",
+      "operations": [
+        "write_text"
+      ],
+      "kind": "cli_workspace",
+      "owner": "tools.project.state_file",
+      "reason": "Writes only where its caller points it: the sealed or plain 3DM a Runtime export answered, at a new --out path or under the --candidates directory (an existing file is refused), and opened.json, the project directory and the runs it held when opened, beside the project in the caller's --work-root. The project itself is written only by the project tools and the Runtime it starts."
+    },
+    {
+      "path": "tools/project/state_file.py",
+      "function": "save",
+      "operations": [
+        "write_text"
+      ],
+      "kind": "cli_workspace",
+      "owner": "tools.project.state_file",
+      "reason": "Writes the hop's events, one JSON line each, at the new --events path its caller names (an existing file is refused); the project itself is read through its Runtime and never written here."
+    },
+    {
+      "path": "tools/project/state_file.py",
+      "function": "build_project",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "cli_workspace",
+      "owner": "tools.project.state_file",
+      "reason": "Creates the caller's --work-root and writes workflow.json there, the one-stage workflow handed to freeze_project_stage_workflow.py; the project's own files are written by the repository and the project tools."
     }
   ],
   "forbidden_layer_imports": [

@@ -12034,6 +12034,33 @@ export type StageContextChangesDto = {
 };
 
 /**
+ * StateFileExportRequest
+ */
+export type StateFileExportRequest = {
+    projectRevision: ProjectRevision;
+    /**
+     * Parentfilesha256
+     *
+     * The state file this revision was opened from.
+     */
+    parentFileSha256?: string | null;
+};
+
+/**
+ * StateFileRequest
+ */
+export type StateFileRequest = {
+    /**
+     * Filename
+     */
+    fileName: string;
+    /**
+     * Contentbase64
+     */
+    contentBase64: string;
+};
+
+/**
  * StateProjectionDto
  *
  * The wire form of ``GET /api/state``.
@@ -15480,6 +15507,72 @@ export type CreateExportApiExportsPostResponses = {
      * Successful Response
      */
     202: unknown;
+};
+
+export type ExportStateFileApiStateFilesExportPostData = {
+    body: StateFileExportRequest;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/state-files/export';
+};
+
+export type ExportStateFileApiStateFilesExportPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExportStateFileApiStateFilesExportPostError = ExportStateFileApiStateFilesExportPostErrors[keyof ExportStateFileApiStateFilesExportPostErrors];
+
+export type ExportStateFileApiStateFilesExportPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: unknown;
+};
+
+export type InspectStateFileApiStateFilesInspectPostData = {
+    body: StateFileRequest;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/state-files/inspect';
+};
+
+export type InspectStateFileApiStateFilesInspectPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InspectStateFileApiStateFilesInspectPostError = InspectStateFileApiStateFilesInspectPostErrors[keyof InspectStateFileApiStateFilesInspectPostErrors];
+
+export type InspectStateFileApiStateFilesInspectPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
 };
 
 export type ReadExportApiExportsExportIdGetData = {
