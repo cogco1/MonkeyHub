@@ -1110,7 +1110,9 @@ fields this request supplies. It takes the `accept` grant, and the change itself
    no executable check is `needs_question` (`UNCHECKED_CONDITION`), unless `confirmed` names it as
    `obligation:<id>` and the request carries the architect's words; nothing is built for a question;
 6. the candidate is built and waited for (`waitSeconds`, default 240, at most 300); a build that does not
-   finish is `problems` with `RUN_TIMEOUT` and keeps building;
+   finish is `problems` with `RUN_TIMEOUT` and keeps building. What the build changed against the base, where
+   its proposal's impact did not name it, meets steps 3 to 5 again (`KEEP_CONFLICT`, `REJECTED_OPTION`,
+   `UNCHECKED_CONDITION`), before anything is admitted;
 7. a built change that drops or rewrites one of the base's live conditions, or leaves one in reach that
    the built model still cannot check, is `needs_question` (`CONDITION_CHANGED`, `UNCHECKED_CONDITION`);
 8. the built model is read back: no object, a readback error, a comparison that fails while the base has a

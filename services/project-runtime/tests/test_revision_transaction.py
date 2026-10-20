@@ -151,6 +151,22 @@ def _revise(ports: FakePorts, **overrides):
 
 
 class RevisionOrderTests(unittest.TestCase):
+    def test_what_the_build_changed_beyond_its_proposal_is_checked_before_anything_is_admitted(self) -> None:
+        base = _record(_obligation("slab-said", None, "entity:slab"))
+        built = replace(base, entities=tuple(replace(e, fields={**e.fields, "params": {"height": 0.3}})
+                                             if e.entity_id == "slab" else e for e in base.entities))
+        for name, decisions, code in (("kept", (Decision("d1", "keep", "entity:slab", "楼板不动"),), "KEEP_CONFLICT"),
+                                      ("rejected", (Decision("d2", "reject", "entity:slab", "不要厚楼板"),), "REJECTED_OPTION"),
+                                      ("unchecked", (), "UNCHECKED_CONDITION")):
+            with self.subTest(name):
+                # The proposal names the stair only; the build also changed the slab.
+                ports = FakePorts(base=base, built=built, decisions=decisions)
+                outcome = _revise(ports)
+                self.assertEqual((outcome.outcome, outcome.code), (NEEDS_QUESTION, code), outcome.detail)
+                self.assertIn("beyond what its proposal said", outcome.detail)
+                self.assertIn("run", ports.calls)
+                self.assertNotIn("admit", ports.calls)
+
     def test_a_change_that_passes_every_check_lands(self) -> None:
         ports = FakePorts(decisions=(Decision("d1", "keep", "entity:slab", "楼板不动"),))
         outcome = _revise(ports)
