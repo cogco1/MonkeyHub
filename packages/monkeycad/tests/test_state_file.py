@@ -277,6 +277,23 @@ def test_a_turn_mirror_or_resize_and_an_unnamed_object_are_out_of_band(tmp_path:
     assert [(row.kind, row.detail) for row in unnamed.out_of_band] == [("object_unnamed", {"before": 0, "after": 1})]
 
 
+def test_an_extrusion_turned_inside_its_box_is_out_of_band(tmp_path: Path) -> None:
+    # The L as an extrusion, with the render mesh Rhino keeps and a reader takes its box from (rhino3dm cannot give
+    # one a render mesh without failing on exit, so the file is kept); its vertices are read as a Brep's.
+    sealed = tmp_path / "sealed.3dm"
+    seal_state_file(Path(__file__).with_name("fixtures") / "ell-extrusion.3dm", sealed, record=RECORD,
+                    decisions=DECISIONS, parent_file_sha256=None)
+    assert read_state_file(sealed).out_of_band == ()
+    turn = rhino3dm.Transform.Rotation(3.141592653589793, rhino3dm.Vector3d(0, 0, 1), rhino3dm.Point3d(2, 2, 0.5))
+
+    def turned(model) -> None:
+        for item in model.Objects:
+            assert item.Geometry.Transform(turn)
+
+    found = read_state_file(_rewrite(sealed, tmp_path / "turned.3dm", turned))
+    assert [(row.kind, row.ref) for row in found.out_of_band] == [("object_reshaped", "object:ell")]
+
+
 def test_compare_names_added_removed_and_duplicate_objects() -> None:
     wall = ObjectRow("wall", (0.0, 0.0, 0.0), (4.0, 0.2, 3.0), "a" * 64)
     binding = binding_for(RECORD, DECISIONS, (wall,), None)

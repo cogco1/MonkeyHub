@@ -343,10 +343,25 @@ def _object_rows(inspection: ThreeDmInspection, shapes: Mapping[str, str] | None
     return tuple(sorted(rows, key=lambda row: (row.name, row.min, row.max, row.geometry_sha256 or "")))
 
 
+def _points(geometry: Any) -> set[tuple[float, float, float]]:
+    """The vertices of a mesh, a Brep or an extrusion; none for any other geometry."""
+
+    kind = type(geometry).__name__
+    if kind == "Extrusion":
+        geometry, kind = geometry.ToBrep(False), "Brep"
+    if kind == "Mesh":
+        vertices = geometry.Vertices
+        return {(float(p.X), float(p.Y), float(p.Z)) for p in (vertices[index] for index in range(len(vertices)))}
+    if kind == "Brep" and geometry is not None:
+        vertices = geometry.Vertices
+        return {(float(p.X), float(p.Y), float(p.Z)) for p in (vertices[index].Location for index in range(len(vertices)))}
+    return set()
+
+
 def _shapes(data: bytes) -> tuple[dict[str, tuple[float, ...]], int | None]:
-    """Where each named mesh object's vertices sit inside its own box, by object id, and how many top-level objects
-    have no name; ({}, None) when the file cannot be read for them. A re-encoded mesh, or one moved whole, keeps
-    them; a turned, mirrored or reshaped one does not."""
+    """Where each named mesh, Brep or extrusion object's vertices sit inside its own box, by object id, and how many
+    top-level objects have no name; ({}, None) when the file cannot be read for them. A re-encoded mesh, or an
+    object moved whole, keeps them; a turned, mirrored or reshaped one does not."""
 
     try:
         rhino3dm = importlib.import_module("rhino3dm")
@@ -364,11 +379,7 @@ def _shapes(data: bytes) -> tuple[dict[str, tuple[float, ...]], int | None]:
         if not attributes.Name:
             unnamed += 1
             continue
-        geometry = item.Geometry
-        if type(geometry).__name__ != "Mesh":
-            continue
-        vertices = geometry.Vertices
-        points = {(float(p.X), float(p.Y), float(p.Z)) for p in (vertices[index] for index in range(len(vertices)))}
+        points = _points(item.Geometry)
         if not points:
             continue
         low = [min(point[axis] for point in points) for axis in range(3)]

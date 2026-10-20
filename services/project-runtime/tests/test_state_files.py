@@ -135,14 +135,21 @@ class OutsideConditionTests(unittest.TestCase):
         self.assertEqual([row.obligation_id for row in obligations_in_scope(with_them, ("entity:portico-base",))
                           if row.obligation_id.startswith("outside-")], [first])
 
-    def test_a_seal_that_vouches_for_nothing_puts_the_whole_design_to_the_architect(self) -> None:
-        for kind in ("unsealed", "seal_broken", "state_replaced"):
+    def test_a_seal_that_vouches_for_nothing_puts_the_whole_design_and_each_decision_to_the_architect(self) -> None:
+        keep = {"disposition": "keep", "targetRef": "entity:portico", "rawLanguage": "门廊别动", "strength": "hard"}
+        for kind in ("unsealed", "seal_broken", None):
             with self.subTest(kind=kind):
-                [condition] = outside_conditions(self.record, (OutOfBand(kind, "file", {}),), [], file_sha256="c" * 64)
-                wholes = sorted(f"entity:{e.entity_id}" for e in self.record.entities_of("Component@1") if e.parent_id is None)
-                self.assertEqual(list(condition.subject_refs), wholes)
-                self.assertIn("cannot be told" if kind != "state_replaced" else "the design is the one the seal keeps",
-                              condition.statement)
+                findings = () if kind is None else (OutOfBand(kind, "file", {}),)
+                whole, said = outside_conditions(self.record, findings, [keep], file_sha256="c" * 64, vouched=False)
+                self.assertEqual(whole.subject_refs, (f"project:{PROJECT_ID}",))
+                self.assertIn("cannot be told", whole.statement)
+                self.assertIn("ask them before changing anything in the design", whole.statement)
+                self.assertEqual(said.subject_refs, ("entity:portico",))
+                self.assertIn("keep entity:portico (\"门廊别动\")", said.statement)
+                self.assertIn("not recorded as theirs", said.statement)
+        # A record removed from beside a sound seal changes nothing: the seal keeps the design.
+        self.assertEqual(outside_conditions(self.record, (OutOfBand("state_replaced", "file", {}),), [keep],
+                                            file_sha256="c" * 64), ())
 
     def test_a_part_moved_by_several_objects_asks_once_and_every_file_is_listed_newest_first(self) -> None:
         def moved(name, dx):

@@ -36,6 +36,7 @@ from typing import Any, Callable, Mapping, Protocol, Sequence
 from archflow.state.state_record import StateRecord, changed_refs, obligation_checkable, obligations_in_scope
 
 from ..errors import StudioError
+from .state_files import FILE_SOURCE, WHOLE_DESIGN
 
 LANDED, ADMITTED, BUILT = "landed", "admitted", "built"
 PROBLEMS, NEEDS_QUESTION, REFUSED = "problems", "needs_question", "refused"
@@ -204,7 +205,7 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
                     + "; ".join(f"{d.target_ref}: \"{d.words}\"" for d in rejected) + ". Ask before going back to it; "
                     "nothing was admitted.", proposal_id=proposal_id, candidate_id=request.candidate_id,
                     question_refs=tuple(d.target_ref for d in rejected))
-    scope = obligations_in_scope(base, reach)
+    scope = _in_scope(base, reach)
     conditions = tuple({"obligationId": o.obligation_id, "statement": o.statement, "checkable": obligation_checkable(o),
                         "validatorRef": o.validator_ref} for o in scope)
     confirmed = set(request.confirmed)
@@ -259,7 +260,7 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
                             + ". It was not admitted; ask before going back to it.", proposal_id=proposal_id,
                             candidate_id=candidate_id, question_refs=tuple(d.target_ref for d in rejected))
             known = {o.obligation_id for o in scope}
-            scope = (*scope, *(o for o in obligations_in_scope(base, built_reach) if o.obligation_id not in known))
+            scope = (*scope, *(o for o in _in_scope(base, built_reach) if o.obligation_id not in known))
             conditions = tuple({"obligationId": o.obligation_id, "statement": o.statement,
                                 "checkable": obligation_checkable(o), "validatorRef": o.validator_ref} for o in scope)
             unchecked = [o for o in scope if o.obligation_id not in known and not obligation_checkable(o)
@@ -369,6 +370,22 @@ def _confirmation(scope: Sequence[Any], confirmed: set[str]) -> str | None:
     named = [f"obligation:{o.obligation_id}" for o in scope if f"obligation:{o.obligation_id}" in confirmed]
     return (f"Confirmed in the architect's reply to the question about {', '.join(named)}; their words are kept "
             "with this change." if named else None)
+
+
+def _in_scope(base: StateRecord, reach: Sequence[str]) -> tuple[Any, ...]:
+    """The live conditions a change reaches, in record order: those on what it reaches downstream, and each
+    question about a change made outside MonkeyHub on a whole it changes a part of, or on the whole design, which
+    every change reaches."""
+
+    downstream = {o.obligation_id for o in obligations_in_scope(base, reach)}
+    wholes = _with_wholes(base, reach)
+
+    def outside(o: Any) -> bool:
+        return bool(reach) and o.source_ref.startswith(f"{FILE_SOURCE}:") and (
+            any(ref.startswith(WHOLE_DESIGN) for ref in o.subject_refs) or bool(wholes.intersection(o.subject_refs)))
+
+    return tuple(o for o in base.obligations if o.status.value in ("open", "blocked")
+                 and (o.obligation_id in downstream or outside(o)))
 
 
 def _with_wholes(record: StateRecord, refs: Sequence[str]) -> set[str]:

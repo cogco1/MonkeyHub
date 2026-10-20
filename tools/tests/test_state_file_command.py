@@ -177,11 +177,25 @@ class StateFileCommandTests(unittest.TestCase):
         self.assertTrue(model.Write(str(unsealed), 8))
         reopened = state_file.open_file(unsealed, self.root / "w2")
         self.assertFalse(reopened["vouched"])
-        self.assertEqual([row["subject_refs"] for row in reopened["conditions"]], [["entity:building"]])
+        self.assertEqual([row["subject_refs"] for row in reopened["conditions"]][0], ["project:file-demo"],
+                         "every change waits for the architect")
+        self.assertIn(["entity:portico-base"], [row["subject_refs"] for row in reopened["conditions"]],
+                      "a decision the file states asks before what it names is changed")
         self.assertEqual(reopened["decisions"], 0, "decisions no seal vouches for are not recorded as the architect's")
         for words in ("MonkeyHub cannot tell this file's design from changes made outside it",
-                      "they are not recorded as the architect's: keep on entity:portico-base"):
+                      "each waits for the architect's answer before what it names is changed: keep on entity:portico-base",
+                      "Until the architect answers, ask before changing anything in the design."):
             self.assertIn(words, reopened["excerpt"])
+        # And so it does: a change to a part nothing else names stops for the question on the whole design.
+        whole = next(row["obligation_id"] for row in reopened["conditions"] if row["subject_refs"] == ["project:file-demo"])
+        with state_file.runtime(Path(reopened["projectDir"])) as client:
+            run_id, digest, _ = state_file._head(client)
+            answer = client.post("/api/revisions", json={
+                "projectId": "file-demo", "sourceRunId": run_id, "stateDigest": digest, "kind": "proposal",
+                "summary": "raise the bench", "proposal": {"utterance": "set height to 0.7", "targetComponentId": "garden",
+                                                           "elementId": "garden-bench"}}).json()
+        self.assertEqual((answer["outcome"], answer["code"]), ("needs_question", "UNCHECKED_CONDITION"), answer)
+        self.assertEqual(answer["questionRefs"], [f"obligation:{whole}"])
 
     def test_the_events_each_hop_saves_rebuild_the_state_its_file_carries(self) -> None:
         file = self.root / "start.3dm"

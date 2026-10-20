@@ -81,7 +81,7 @@ from archflow.state.state_record import (  # noqa: E402
     StateRecord, StateRecordError, StateRecordOperator, apply_state_record_operator, part_of_object, resolve_element_bindings,
 )
 from monkeycad.formats.state_file import StateFileError, read_state_file  # noqa: E402
-from project_runtime.application.state_files import change_words, outside_conditions  # noqa: E402
+from project_runtime.application.state_files import WHOLE_DESIGN, change_words, outside_conditions  # noqa: E402
 
 TOOLS = Path(__file__).resolve().parent
 STAGE_RUN = "stage-0-001"
@@ -249,10 +249,10 @@ def export_model(client, run_id: str, state_digest: str, out: Path, *, with_stat
 def excerpt(found, record: StateRecord, conditions: Sequence[Any]) -> str:
     """What a reviser is told about the changes made outside MonkeyHub, in words."""
 
-    if not found.out_of_band:
+    sealed = found.sealed_record is not None and found.sealed_decisions is not None
+    if not found.out_of_band and sealed:
         return ""
     elements = resolve_element_bindings(record)
-    sealed = found.sealed_record is not None
     lines = [("Changes made outside MonkeyHub since this file was last saved by it. The design keeps what MonkeyHub "
               "saved: its record, its decisions, and every part where the record has it." if sealed else
               "MonkeyHub cannot tell this file's design from changes made outside it. The design is built from the "
@@ -262,10 +262,13 @@ def excerpt(found, record: StateRecord, conditions: Sequence[Any]) -> str:
         element = part_of_object(finding.ref.removeprefix("object:"), elements) if finding.kind.startswith("object_") else None
         lines.append(f"- {change_words(finding)}" + (f" (part {element})" if element else "") + ".")
     if not sealed and found.decisions:
-        lines.append("The file also states decisions MonkeyHub cannot vouch for; they are not recorded as the architect's: "
+        lines.append("The file also states decisions MonkeyHub cannot vouch for; they are not recorded as the architect's, "
+                     "and each waits for the architect's answer before what it names is changed: "
                      + "; ".join(f"{row.get('disposition')} on {row.get('targetRef')} (\"{row.get('rawLanguage')}\")"
                                  for row in found.decisions) + ".")
-    if conditions:
+    if any(ref.startswith(WHOLE_DESIGN) for row in conditions for ref in row.subject_refs):
+        lines.append("Until the architect answers, ask before changing anything in the design.")
+    elif conditions:
         lines.append("Until the architect answers, ask before changing "
                      + ", ".join(sorted({ref for row in conditions for ref in row.subject_refs})) + ".")
     return "\n".join(lines)
@@ -448,7 +451,8 @@ def open_file(file: Path, work_root: Path, *, refuse_unvouched: bool = False) ->
         except (StateRecordError, KeyError, TypeError, ValueError) as exc:
             raise FileRefused(f"{file} carries no seal and its design record is not one: {exc}") from exc
         decisions = []
-    conditions = outside_conditions(record, found.out_of_band, decisions or found.decisions, file_sha256=found.file_sha256)
+    conditions = outside_conditions(record, found.out_of_band, decisions or found.decisions, file_sha256=found.file_sha256,
+                                    vouched=vouched)
     taken = (Path(work_root) / record.project_id).exists()
     try:
         project_dir = build_project(replace(record, obligations=(*record.obligations, *conditions)), Path(work_root))

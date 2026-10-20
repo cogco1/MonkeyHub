@@ -2086,9 +2086,9 @@ tier. `POST /api/state-files/export` takes `{projectRevision, parentFileSha256?}
 export (`GET /api/exports/{id}`, then its bytes). The 3DM also holds, as the document strings `archflow:state`
 and `archflow:binding`, that run's State Record, the project's active design decisions as portable rows
 (`disposition`, `targetRef`, `rawLanguage`, `strength`, `extent`) and a seal: digests of the record, the decisions
-and each row, each named object's box, geometry digest and where its mesh vertices sit inside that box (their
-mean and spread), how many top-level objects have no name, the optional `parentFileSha256`, and a copy of the
-record and decisions it vouches for, which its digests must match. The report adds `withState`,
+and each row, each named object's box, geometry digest and where its mesh, Brep or extrusion vertices sit inside
+that box (their mean and spread), how many top-level objects have no name, the optional `parentFileSha256`, and a
+copy of the record and decisions it vouches for, which its digests must match. The report adds `withState`,
 `stateRecordDigest`, `decisionsCarried` and `parentFileSha256`.
 
 `POST /api/state-files/inspect` takes `{fileName, contentBase64}` and retains nothing. It answers `fileSha256`,
@@ -2100,12 +2100,19 @@ when the seal keeps none), `outOfBand` (each difference from the seal: `row_adde
 `unsealed`, `seal_broken` (a seal removed, unreadable or not matching its own digests, read as none), or
 `state_replaced` (the record string removed or unreadable, read from the copy a sound seal keeps)), `reencoded`
 (objects whose mesh was only re-encoded) and `conditions`: for each part a change made outside MonkeyHub touched,
-one open `DesignObligation` with no check, awaiting the architect; when no seal vouches for the file, one on the
-whole design (its outermost components), which every change reaches. Whoever builds a
-project from the file builds it from the record and decisions the seal keeps, or, with no seal that vouches for
-them, from the record the file states without its decisions, and adds these questions, so that the one-call
-revision asks before changing anything changed outside. A file whose state cannot be read is
-`422 STATE_FILE_<code>`; a seal whose kept copy does not match its own digests is `STATE_FILE_BINDING_CORRUPT`.
+one open `DesignObligation` with no check, awaiting the architect, which a revision reaching that part or a part
+of it asks about. When no seal vouches for the file (none, a broken one, or one that keeps no copy of the design),
+one is on the whole design, subject `project:<projectId>`, which every change reaches, and one is on what each
+decision the file states names: those decisions are not recorded as the architect's. A record removed from beside
+a sound seal asks nothing; the seal keeps the design. Whoever builds a project from the file builds it from the
+record and decisions the seal keeps, or, with no seal that vouches for them, from the record the file states
+without its decisions, and adds these questions, so that the one-call revision asks before changing anything
+changed outside. A file whose state cannot be read is `422 STATE_FILE_<code>`; a seal whose kept copy does not
+match its own digests is `STATE_FILE_BINDING_CORRUPT`.
+
+The seal has no key. It tells a change made by anyone who leaves the seal as it is; someone who rewrites the
+kept copy and recomputes its digests, which anyone running code on the file can do, makes a file that reads as
+sealed and unchanged.
 
 The current provider supports bounded 3DM/GLB triangle-mesh interchange and
 validated same-format delivery. It does not reconstruct exact CAD solids or
