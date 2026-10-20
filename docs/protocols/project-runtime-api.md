@@ -1987,8 +1987,12 @@ The optional fields are `language` (`en` or `zh-CN`), `theme`
 `intentModel`, positive finite `intentTimeoutS`, `renderProvider` (`off`, `gemini`), a nonempty
 `renderModel` of at most 160 characters, `renderTimeoutS` from 1 to 300, `chatProvider`
 (`codex`, `claude`, `coding-plan`), a nonempty `chatModel`, an http(s) `codingPlanBaseUrl`,
-boolean `autoUpdate`, and boolean `sidebarPinned` (#283: the projects list kept open beside a
-project workspace; the Hub page writes it only while pinned). Other fields are refused.
+boolean `autoUpdate`, boolean `sidebarPinned` (#283: the projects list kept open beside a
+project workspace; the Hub page writes it only while pinned), and boolean `workshopMode` (#668:
+no update is checked for, downloaded or switched in at quit, and from its next launch the desktop
+runs once per account and asks for port 8790 first; written only while on, through
+`PUT /api/updates/settings {"workshopMode": true}`, which then refuses `POST /api/updates/check` and
+`{"autoUpdate": …}` with 409 `UPDATE_WORKSHOP_MODE`). Other fields are refused.
 Both routes return saved fields only; nulls are
 omitted. PUT replaces the file, so a client preserves any saved fields it is not editing. A
 malformed file answers 422 `USER_SETTINGS_INVALID` and can be replaced by an explicit valid PUT.

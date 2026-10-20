@@ -2017,12 +2017,18 @@ export type UpdateCheck = {
 
 /**
  * UpdateSettings
+ *
+ * One switch per request: autoUpdate or workshopMode.
  */
 export type UpdateSettings = {
     /**
      * Autoupdate
      */
-    autoUpdate: boolean;
+    autoUpdate?: boolean | null;
+    /**
+     * Workshopmode
+     */
+    workshopMode?: boolean | null;
 };
 
 /**
@@ -2072,6 +2078,10 @@ export type UpdateStatus = {
      */
     nextLaunch?: boolean;
     check?: UpdateCheck;
+    /**
+     * Workshopmode
+     */
+    workshopMode?: boolean;
 };
 
 /**
@@ -2140,6 +2150,10 @@ export type UserSettingsDto = {
      * Autoupdate
      */
     autoUpdate?: boolean | null;
+    /**
+     * Workshopmode
+     */
+    workshopMode?: boolean | null;
     /**
      * Sidebarpinned
      */

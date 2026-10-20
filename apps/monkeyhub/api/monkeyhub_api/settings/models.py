@@ -62,6 +62,12 @@ class UserSettingsDto(BaseModel):
     # MonkeyHub's automatic desktop updates; absent means on. The Hub reads
     # and writes it; the Project Runtime ignores it.
     auto_update: bool | None = Field(default=None, alias="autoUpdate")
+    # 工作坊模式 (#668), for a machine that must keep one version for days: no
+    # update is checked for, downloaded or switched in, the desktop runs once
+    # per account and asks for the same port on every launch. The desktop host
+    # reads it from this file before the Hub starts. Absent means off, and only
+    # on is written, so older versions read the file while it is off.
+    workshop_mode: bool | None = Field(default=None, alias="workshopMode")
     # The projects list kept open beside a project workspace (#283); absent,
     # it folds to its icons while one is open. The Hub page writes it only
     # while pinned, so versions older than this field still read the file
