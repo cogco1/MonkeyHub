@@ -1306,8 +1306,8 @@ class ChatTests(unittest.TestCase):
         with self.store._lock:
             enforced, _ = self.store._command(saved)
         at = legacy.index("--disallowedTools")
-        self.assertEqual(enforced[at + 1:at + 3], [legacy[at + 1], "Bash"])
-        self.assertEqual(enforced[:at + 2] + enforced[at + 3:], legacy, "the shell is the only thing taken away")
+        self.assertEqual(enforced[at + 1:at + 4], [legacy[at + 1], "Bash", "PowerShell"])
+        self.assertEqual(enforced[:at + 2] + enforced[at + 4:], legacy, "the shells are the only thing taken away")
 
     def test_codex_is_not_given_the_project_as_a_writable_root(self):
         """ADR-012 for Codex: the Hub names no writable place in the project.
