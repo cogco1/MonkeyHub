@@ -19,6 +19,7 @@ from . import (
     health,
     index,
     intents,
+    live_rhino,
     options,
     pick,
     program,
@@ -58,6 +59,7 @@ router.include_router(pick.router)
 router.include_router(proposals.router)
 router.include_router(construction.router)
 router.include_router(intents.router)
+router.include_router(live_rhino.router)
 router.include_router(options.router)
 router.include_router(candidates.router)
 router.include_router(capabilities.router)

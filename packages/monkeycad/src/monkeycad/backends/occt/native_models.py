@@ -15,12 +15,17 @@ from monkeycad.backends.occt.kernel import _explore, _occt
 from monkeycad.backends.occt.step import StepEntry
 
 
-def _native_wire(occ, curve, object_id):
-    """Transfer curve geometry without fitting or sampling it."""
+def _native_wire(occ, curve, object_id, reverse=False):
+    """Transfer curve geometry without fitting or sampling it; ``reverse`` runs it end to start."""
     polyline = curve.TryGetPolyline()
     if polyline is not None:
         maker = occ.BRepBuilderAPI.BRepBuilderAPI_MakePolygon()
         points = list(polyline)
+        if reverse:
+            # A polyline is a wire of several edges. Reversing that wire flips
+            # each edge but keeps their order, so a trim loop that uses the
+            # polyline backwards would not close; build it backwards instead.
+            points.reverse()
         closed = len(points) > 2 and points[0] == points[-1]
         for point in points[:-1] if closed else points:
             maker.Add(occ.gp.gp_Pnt(point.X, point.Y, point.Z))
@@ -36,7 +41,10 @@ def _native_wire(occ, curve, object_id):
                             occ.gp.gp_Dir(plane.ZAxis.X, plane.ZAxis.Y, plane.ZAxis.Z),
                             occ.gp.gp_Dir(plane.XAxis.X, plane.XAxis.Y, plane.XAxis.Z))
         edge = occ.BRepBuilderAPI.BRepBuilderAPI_MakeEdge(occ.gp.gp_Circ(axis, arc.Radius), arc.StartAngle, arc.EndAngle)
-        return occ.BRepBuilderAPI.BRepBuilderAPI_MakeWire(edge.Edge()).Wire()
+        wire = occ.BRepBuilderAPI.BRepBuilderAPI_MakeWire(edge.Edge()).Wire()
+        if reverse:
+            wire.Reverse()
+        return wire
     nurbs = curve.ToNurbsCurve()
     if nurbs is None or not nurbs.IsValid:
         raise OcctBuildError(f"3DM object {object_id}: curve has no valid NURBS form")
@@ -70,7 +78,10 @@ def _native_wire(occ, curve, object_id):
     edge = occ.BRepBuilderAPI.BRepBuilderAPI_MakeEdge(geometry, nurbs.Domain.T0, nurbs.Domain.T1)
     if not edge.IsDone():
         raise OcctBuildError(f"3DM object {object_id}: NURBS edge transfer failed")
-    return occ.BRepBuilderAPI.BRepBuilderAPI_MakeWire(edge.Edge()).Wire()
+    wire = occ.BRepBuilderAPI.BRepBuilderAPI_MakeWire(edge.Edge()).Wire()
+    if reverse:
+        wire.Reverse()
+    return wire
 
 
 def _native_sew(occ, faces, object_id, *, closed, allow_disjoint=False):
@@ -176,10 +187,7 @@ def _native_planar_brep(occ, rhino, brep, object_id):
             for trim in loop.Trims:
                 if trim.EdgeIndex < 0:
                     raise OcctCapabilityError(object_id, "3dm-brep", "singular planar trim is unsupported")
-                segment = _native_wire(occ, brep.Edges[trim.EdgeIndex], object_id)
-                if trim.IsReversed:
-                    segment.Reverse()
-                wire.Add(segment)
+                wire.Add(_native_wire(occ, brep.Edges[trim.EdgeIndex], object_id, reverse=trim.IsReversed))
             if not wire.IsDone() or not occ.BRep.BRep_Tool.IsClosed_s(wire.Wire()):
                 raise OcctBuildError(f"3DM object {object_id}: incomplete trim loop")
             wires.append(wire.Wire())
@@ -251,13 +259,17 @@ def _native_geometry(occ, rhino, geometry, object_id):
     raise OcctCapabilityError(object_id, type(geometry).__name__, "unsupported visible 3DM geometry; no objects were omitted")
 
 
-def read_three_dm(data: bytes) -> tuple[tuple[StepEntry, ...], str]:
+def read_three_dm(data: bytes, *, omitted: list | None = None) -> tuple[tuple[StepEntry, ...], str]:
     """Read visible native geometry in its unchanged CAD Z-up coordinates and units.
 
     No host, writes, execution receipt, bounding-box geometry or untrimmed
     surface substitute. Mesh sources are faceted; saved BRep render meshes
-    are explicitly approximate. Any unsupported visible object fails the
-    entire read. Definition templates appear only through their instances.
+    are explicitly approximate. Definition templates appear only through
+    their instances. By default any unsupported visible object fails the
+    entire read. A caller that passes ``omitted`` gets the readable objects
+    instead, and each visible object that could not be transferred is
+    appended to it as ``{"id", "reason"}`` (gap 15: one bad trim loop stopped
+    a whole site model from being drawn). Document-level faults still fail.
     """
     if not isinstance(data, bytes) or not data:
         raise OcctBuildError("3DM source must be nonempty bytes")
@@ -348,10 +360,17 @@ def read_three_dm(data: bytes) -> tuple[tuple[StepEntry, ...], str]:
             layer = object_layer(item)
             color = item.Attributes.DrawColor(model) if layer else item.Attributes.ObjectColor
             entries.append(StepEntry(name, (layer.FullPath,) if layer else (), tuple(color[:3]), shape, quality))
+        except (OcctBuildError, OcctCapabilityError) as exc:
+            if omitted is None:
+                raise
+            omitted.append({"id": name, "reason": str(exc).replace("; no objects were omitted", "")})
         except OcctBackendError:
             raise
         except Exception as exc:
-            raise OcctBuildError(f"3DM object {name}: native geometry transfer failed: {exc}") from exc
+            failure = OcctBuildError(f"3DM object {name}: native geometry transfer failed: {exc}")
+            if omitted is None:
+                raise failure from exc
+            omitted.append({"id": name, "reason": str(failure)})
 
     for key, item in objects.items():
         if key not in templates and not item.Attributes.IsInstanceDefinitionObject:
@@ -364,3 +383,17 @@ def read_three_dm(data: bytes) -> tuple[tuple[StepEntry, ...], str]:
 __all__ = [
     "read_three_dm",
 ]
+
+
+def drawable_report(data: bytes) -> dict:
+    """Which visible objects of a 3dm the drawing routes will draw, and each they will leave out and why.
+
+    ``checked`` is false, with the fault in ``detail``, when the file cannot be
+    read at all; the drawing routes refuse such a file with their own error.
+    """
+    omitted: list = []
+    try:
+        entries, _ = read_three_dm(data, omitted=omitted)
+    except OcctBackendError as exc:
+        return {"checked": False, "detail": str(exc)[:500]}
+    return {"checked": True, "drawable": len(entries), "objects": omitted}

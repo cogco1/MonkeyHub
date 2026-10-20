@@ -425,6 +425,36 @@ export type ArtifactListDto = {
 };
 
 /**
+ * AttributesOp
+ */
+export type AttributesOp = {
+    /**
+     * Op
+     */
+    op: 'attributes';
+    /**
+     * Ids
+     */
+    ids: Array<string>;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Layer
+     */
+    layer?: string | null;
+    /**
+     * Usertext
+     *
+     * extra user text on each created object
+     */
+    userText?: {
+        [key: string]: string;
+    } | null;
+};
+
+/**
  * AuthoredControlDraftDto
  *
  * A control somebody would have to author, and where it was read from.
@@ -673,6 +703,50 @@ export type BoxDto = {
 };
 
 /**
+ * BoxOp
+ */
+export type BoxOp = {
+    /**
+     * Layer
+     *
+     * full layer path, created when missing, e.g. HUB::Site::Streets
+     */
+    layer: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Usertext
+     *
+     * extra user text on each created object
+     */
+    userText?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Op
+     */
+    op: 'box';
+    /**
+     * Min
+     */
+    min: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Max
+     */
+    max: [
+        number,
+        number,
+        number
+    ];
+};
+
+/**
  * CameraDto
  *
  * Where the architect stood when they drew: the viewpoint is part of the intent.
@@ -714,6 +788,108 @@ export type CameraDto = {
      * Zoom
      */
     zoom?: number | null;
+};
+
+/**
+ * CameraPassCameraDto
+ *
+ * A pinhole camera in the model's frame and length unit.
+ */
+export type CameraPassCameraDto = {
+    /**
+     * Position
+     */
+    position: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Target
+     */
+    target: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Up
+     */
+    up?: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Fovdeg
+     *
+     * vertical field of view
+     */
+    fovDeg?: number;
+};
+
+/**
+ * CameraPassRequestDto
+ *
+ * Draw an ID, a line and a depth image of one exact model through a perspective camera (#19).
+ *
+ * Name ``view`` (a saved model view, which brings its own model) or
+ * ``camera`` with ``size`` and one model: ``modelSource``, or ``sourceAsset``
+ * as the drawing routes take an imported or snapshot model.
+ */
+export type CameraPassRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    view?: CameraPassViewDto | null;
+    camera?: CameraPassCameraDto | null;
+    /**
+     * Size
+     *
+     * the camera's view in pixels; its aspect is kept
+     */
+    size?: [
+        number,
+        number
+    ] | null;
+    /**
+     * Longedge
+     */
+    longEdge?: number;
+    /**
+     * Idby
+     */
+    idBy?: 'object' | 'layer' | 'material';
+    modelSource?: ModelSourceDto | null;
+    /**
+     * Sourceasset
+     *
+     * {runId, assetSha256} of an imported or snapshot model
+     */
+    sourceAsset?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+};
+
+/**
+ * CameraPassViewDto
+ *
+ * A saved perspective model view: the document ``POST /api/render/views`` registered.
+ */
+export type CameraPassViewDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
 };
 
 /**
@@ -3251,6 +3427,20 @@ export type DeleteElementRequestDto = {
 };
 
 /**
+ * DeleteOp
+ */
+export type DeleteOp = {
+    /**
+     * Op
+     */
+    op: 'delete';
+    /**
+     * Ids
+     */
+    ids: Array<string>;
+};
+
+/**
  * DependencyEdgeDto
  *
  * One kernel dependency edge, with the refs still prefixed.
@@ -4173,6 +4363,44 @@ export type DocumentWorkCopyRequestDto = {
 };
 
 /**
+ * DotOp
+ */
+export type DotOp = {
+    /**
+     * Layer
+     *
+     * full layer path, created when missing, e.g. HUB::Site::Streets
+     */
+    layer: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Usertext
+     *
+     * extra user text on each created object
+     */
+    userText?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Op
+     */
+    op: 'dot';
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Point
+     *
+     * [x, y] or [x, y, z] in document units
+     */
+    point: Array<number>;
+};
+
+/**
  * DrawingAssetSourceDto
  */
 export type DrawingAssetSourceDto = {
@@ -5056,6 +5284,48 @@ export type ExportTimingDto = {
 };
 
 /**
+ * ExtrusionOp
+ *
+ * A closed planar outline at height z, extruded vertically into a capped solid.
+ */
+export type ExtrusionOp = {
+    /**
+     * Layer
+     *
+     * full layer path, created when missing, e.g. HUB::Site::Streets
+     */
+    layer: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Usertext
+     *
+     * extra user text on each created object
+     */
+    userText?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Op
+     */
+    op: 'extrusion';
+    /**
+     * Outline
+     */
+    outline: Array<Array<number>>;
+    /**
+     * Z
+     */
+    z?: number;
+    /**
+     * Height
+     */
+    height: number;
+};
+
+/**
  * FacetTargetDto
  *
  * Facets to set or remove on one geometry id (a component), or on one of its parts.
@@ -5549,6 +5819,60 @@ export type ImpactLockDto = {
 };
 
 /**
+ * ImportOp
+ *
+ * Every object of a .3dm on this machine, scaled about the origin then moved.
+ */
+export type ImportOp = {
+    /**
+     * Layer
+     *
+     * full layer path, created when missing, e.g. HUB::Site::Streets
+     */
+    layer: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Usertext
+     *
+     * extra user text on each created object
+     */
+    userText?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Op
+     */
+    op: 'import';
+    /**
+     * Path
+     *
+     * absolute path of an existing .3dm
+     */
+    path: string;
+    /**
+     * Scale
+     */
+    scale?: number;
+    /**
+     * Translate
+     */
+    translate?: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Keeplayers
+     *
+     * put each object under layer::<its source layer>
+     */
+    keepLayers?: boolean;
+};
+
+/**
  * IndexChangesDto
  *
  * ``GET /api/index``: a whole snapshot of the index, or the changes since a revision (#366).
@@ -5965,6 +6289,30 @@ export type KeepScopeDto = {
 };
 
 /**
+ * LayerOp
+ */
+export type LayerOp = {
+    /**
+     * Op
+     */
+    op: 'layer';
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Color
+     *
+     * [r, g, b] for a new layer
+     */
+    color?: [
+        number,
+        number,
+        number
+    ] | null;
+};
+
+/**
  * LevelDto
  */
 export type LevelDto = {
@@ -6052,6 +6400,282 @@ export type LineStepDto = {
      * When the working position last listed or moved onto it.
      */
     updatedAt: string | null;
+};
+
+/**
+ * LiveRhinoCreatedDto
+ */
+export type LiveRhinoCreatedDto = {
+    /**
+     * Operation
+     *
+     * index of the operation in the request
+     */
+    operation: number;
+    /**
+     * Id
+     *
+     * the new object's id
+     */
+    id: string;
+    /**
+     * Op
+     */
+    op: string;
+    [key: string]: unknown;
+};
+
+/**
+ * LiveRhinoDocumentSummaryDto
+ *
+ * The open document as Rhino holds it now.
+ */
+export type LiveRhinoDocumentSummaryDto = {
+    /**
+     * Title
+     */
+    title?: string | null;
+    /**
+     * Path
+     */
+    path?: string | null;
+    /**
+     * Units
+     *
+     * Rhino's model unit system, e.g. Feet
+     */
+    units: string;
+    /**
+     * Tolerance
+     */
+    tolerance: number;
+    /**
+     * Modified
+     *
+     * unsaved changes; a write and its Undo leave it true
+     */
+    modified: boolean;
+    /**
+     * Objectcount
+     *
+     * the objects in the document, hidden and locked included
+     */
+    objectCount: number;
+    [key: string]: unknown;
+};
+
+/**
+ * LiveRhinoInstanceDto
+ *
+ * One running Rhino with its script server on.
+ */
+export type LiveRhinoInstanceDto = {
+    /**
+     * Rhinoid
+     *
+     * pass as rhinoId when more than one Rhino runs
+     */
+    rhinoId: string;
+    /**
+     * Processid
+     */
+    processId: number;
+    /**
+     * Version
+     */
+    version?: string | null;
+    /**
+     * Documenttitle
+     */
+    documentTitle?: string | null;
+    /**
+     * Documentpath
+     *
+     * empty for an unsaved document
+     */
+    documentPath?: string | null;
+    /**
+     * Activeviewport
+     */
+    activeViewport?: string | null;
+    [key: string]: unknown;
+};
+
+/**
+ * LiveRhinoInstancesDto
+ */
+export type LiveRhinoInstancesDto = {
+    /**
+     * Instances
+     */
+    instances: Array<LiveRhinoInstanceDto>;
+    /**
+     * Note
+     */
+    note: string;
+    [key: string]: unknown;
+};
+
+/**
+ * LiveRhinoSnapshotDto
+ *
+ * The copy of the open document registered as an external model asset.
+ */
+export type LiveRhinoSnapshotDto = {
+    rhino: LiveRhinoInstanceDto;
+    document: LiveRhinoDocumentSummaryDto;
+    /**
+     * Meshedobjects
+     */
+    meshedObjects: number;
+    /**
+     * Writtenobjects
+     */
+    writtenObjects: number;
+    /**
+     * Omitted
+     *
+     * object type -> count left out with drawableOnly, e.g. TextDot, Hatch
+     */
+    omitted: {
+        [key: string]: number;
+    };
+    /**
+     * pass {runId, assetSha256} to a drawing route as sourceAsset
+     */
+    artifact: ProjectArtifactDto;
+    undrawable: LiveRhinoUndrawableDto;
+    [key: string]: unknown;
+};
+
+/**
+ * LiveRhinoSnapshotRequest
+ *
+ * Which open document to copy into the project as a model asset to draw from.
+ */
+export type LiveRhinoSnapshotRequest = {
+    /**
+     * Rhinoid
+     */
+    rhinoId?: string | null;
+    /**
+     * Documentpath
+     */
+    documentPath?: string | null;
+    /**
+     * Filename
+     */
+    fileName?: string | null;
+    /**
+     * Drawableonly
+     *
+     * write only what the drawing routes project (Breps, extrusions, meshes, curves, blocks); text dots, hatches, annotations and the like are left out and counted
+     */
+    drawableOnly?: boolean;
+    /**
+     * Layerprefixes
+     *
+     * only objects on these layers or below them
+     */
+    layerPrefixes?: Array<string> | null;
+};
+
+/**
+ * LiveRhinoUndrawableDto
+ *
+ * Which objects of the copy the drawing routes cannot project.
+ */
+export type LiveRhinoUndrawableDto = {
+    /**
+     * Checked
+     */
+    checked: boolean;
+    /**
+     * Drawable
+     */
+    drawable: number;
+    /**
+     * Objects
+     *
+     * {id, reason} of each object the drawing routes would skip
+     */
+    objects: Array<{
+        [key: string]: unknown;
+    }>;
+    [key: string]: unknown;
+};
+
+/**
+ * LiveRhinoWriteDto
+ *
+ * What one write did: one Rhino command, undone with one Undo.
+ */
+export type LiveRhinoWriteDto = {
+    rhino: LiveRhinoInstanceDto;
+    /**
+     * Writeid
+     *
+     * stamped on every created object as monkeyhub.write
+     */
+    writeId: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Created
+     */
+    created: Array<LiveRhinoCreatedDto>;
+    /**
+     * Changed
+     */
+    changed: Array<unknown>;
+    /**
+     * Deleted
+     */
+    deleted: Array<unknown>;
+    /**
+     * Imported
+     */
+    imported: Array<unknown>;
+    document: LiveRhinoDocumentSummaryDto;
+    [key: string]: unknown;
+};
+
+/**
+ * LiveRhinoWriteRequest
+ *
+ * One write: all operations land as one Rhino command, undone with one Undo.
+ */
+export type LiveRhinoWriteRequest = {
+    /**
+     * Rhinoid
+     *
+     * from GET /api/live-rhino/instances; omit when one Rhino runs
+     */
+    rhinoId?: string | null;
+    /**
+     * Documentpath
+     *
+     * the open document this write is meant for
+     */
+    documentPath?: string | null;
+    /**
+     * Label
+     *
+     * what this write does, shown in Rhino's undo list
+     */
+    label: string;
+    /**
+     * Operations
+     */
+    operations: Array<LayerOp | PolylineOp | ExtrusionOp | BoxOp | MeshOp | DotOp | ImportOp | TransformOp | DeleteOp | AttributesOp>;
+    /**
+     * Allowuserobjects
+     *
+     * transform, delete and attributes may touch objects the architect made only when they asked for it
+     */
+    allowUserObjects?: boolean;
 };
 
 /**
@@ -6674,6 +7298,46 @@ export type MemoryRevisionRequestDto = {
 };
 
 /**
+ * MeshOp
+ */
+export type MeshOp = {
+    /**
+     * Layer
+     *
+     * full layer path, created when missing, e.g. HUB::Site::Streets
+     */
+    layer: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Usertext
+     *
+     * extra user text on each created object
+     */
+    userText?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Op
+     */
+    op: 'mesh';
+    /**
+     * Vertices
+     */
+    vertices: Array<[
+        number,
+        number,
+        number
+    ]>;
+    /**
+     * Faces
+     */
+    faces: Array<Array<number>>;
+};
+
+/**
  * MessageSourceDto
  *
  * Which chat message a decision's words came from, as the caller states it.
@@ -6773,7 +7437,7 @@ export type ModelExportRequest = {
     /**
      * Targetformat
      */
-    targetFormat: '3dm' | 'skp' | 'glb' | 'dwg';
+    targetFormat: '3dm' | 'skp' | 'glb' | 'dwg' | 'stl';
     projectRevision?: ProjectRevision | null;
     /**
      * Sourceartifactid
@@ -8476,6 +9140,42 @@ export type PlanVectorDto = {
     cleanup?: {
         [key: string]: unknown;
     } | null;
+};
+
+/**
+ * PolylineOp
+ */
+export type PolylineOp = {
+    /**
+     * Layer
+     *
+     * full layer path, created when missing, e.g. HUB::Site::Streets
+     */
+    layer: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Usertext
+     *
+     * extra user text on each created object
+     */
+    userText?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Op
+     */
+    op: 'polyline';
+    /**
+     * Points
+     */
+    points: Array<Array<number>>;
+    /**
+     * Closed
+     */
+    closed?: boolean;
 };
 
 /**
@@ -10733,6 +11433,32 @@ export type RhinoWorkExportRequestDto = {
 };
 
 /**
+ * Rotation
+ */
+export type Rotation = {
+    /**
+     * Angledeg
+     */
+    angleDeg: number;
+    /**
+     * Center
+     */
+    center?: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Axis
+     */
+    axis?: [
+        number,
+        number,
+        number
+    ];
+};
+
+/**
  * RuntimeCandidateDto
  */
 export type RuntimeCandidateDto = {
@@ -10850,6 +11576,24 @@ export type SaveStudyRequestDto = {
      */
     expectedPreviousRef?: string | null;
     research?: StudyResearchRequestDto | null;
+};
+
+/**
+ * Scaling
+ */
+export type Scaling = {
+    /**
+     * Factor
+     */
+    factor: number;
+    /**
+     * Center
+     */
+    center?: [
+        number,
+        number,
+        number
+    ];
 };
 
 /**
@@ -11674,6 +12418,131 @@ export type SketchPrismRequestDto = {
 };
 
 /**
+ * SkillAccessDto
+ *
+ * What a runnable version needs beyond its own folders: what a person grants before it runs.
+ */
+export type SkillAccessDto = {
+    /**
+     * Programs
+     *
+     * programs it starts, e.g. blender, rhino; * for any
+     */
+    programs?: Array<string>;
+    /**
+     * Network
+     *
+     * whether it connects to other hosts
+     */
+    network?: boolean;
+    /**
+     * Ssh
+     *
+     * ssh/scp hosts, e.g. vast-gpu; * for any
+     */
+    ssh?: Array<string>;
+    /**
+     * Read
+     *
+     * absolute folders it reads; * for any
+     */
+    read?: Array<string>;
+    /**
+     * Write
+     *
+     * absolute folders it writes outside its run; * for any
+     */
+    write?: Array<string>;
+    /**
+     * Packages
+     *
+     * Python requirements installed into the skill's own folder
+     */
+    packages?: Array<string>;
+};
+
+/**
+ * SkillApprovalDto
+ */
+export type SkillApprovalDto = {
+    /**
+     * Approvalid
+     */
+    approvalId?: string | null;
+    /**
+     * Skillid
+     */
+    skillId: string;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Codesha256
+     */
+    codeSha256: string;
+    /**
+     * Scope
+     */
+    scope?: string;
+    /**
+     * Access
+     */
+    access?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Method
+     */
+    method: string;
+    /**
+     * Approvedat
+     */
+    approvedAt: string;
+    approvedBy: SkillAttributionDto;
+    /**
+     * Status
+     */
+    status?: string | null;
+    /**
+     * Revokedat
+     */
+    revokedAt?: string | null;
+};
+
+/**
+ * SkillApprovalRequestDto
+ *
+ * A person approves the exact code they were shown.
+ */
+export type SkillApprovalRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Codesha256
+     */
+    codeSha256: string;
+    /**
+     * Method
+     *
+     * where the person approved it
+     */
+    method?: string;
+    /**
+     * Scope
+     *
+     * once: one run; version: this exact code until revoked
+     */
+    scope?: 'once' | 'version';
+};
+
+/**
  * SkillAttributionDto
  */
 export type SkillAttributionDto = {
@@ -11731,6 +12600,56 @@ export type SkillDto = {
      */
     createdAt: string;
     attribution: SkillAttributionDto;
+    /**
+     * Entry
+     */
+    entry?: string | null;
+    /**
+     * Files
+     */
+    files?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Codesha256
+     */
+    codeSha256: string;
+    /**
+     * Approved
+     */
+    approved: boolean;
+    /**
+     * Approvals
+     */
+    approvals: Array<SkillApprovalDto>;
+    /**
+     * Access
+     */
+    access?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
+ * SkillImportRequestDto
+ *
+ * Register a package from MonkeyHub's own skills/ or the user's skill-packages folder.
+ */
+export type SkillImportRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Source
+     */
+    source: 'bundled' | 'user';
+    /**
+     * Name
+     *
+     * the package folder, e.g. site-palette
+     */
+    name: string;
 };
 
 /**
@@ -11769,6 +12688,59 @@ export type SkillIndexRowDto = {
      * Description
      */
     description: string;
+    /**
+     * Codesha256
+     */
+    codeSha256: string;
+    /**
+     * Runnable
+     */
+    runnable: boolean;
+    /**
+     * Approved
+     */
+    approved: boolean;
+    /**
+     * Access
+     */
+    access?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
+ * SkillInputRefDto
+ *
+ * A registered document (runId, assetSha256), a 3dm model asset (modelSha256), or a drawing
+ * (kind "drawing" with runId, assetSha256 and revisionRef: its SVG and registration are given).
+ */
+export type SkillInputRefDto = {
+    /**
+     * Kind
+     */
+    kind?: 'document' | 'model' | 'drawing' | 'file' | null;
+    /**
+     * Path
+     *
+     * kind "file": an absolute path of a file on this machine
+     */
+    path?: string | null;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Runid
+     */
+    runId?: string | null;
+    /**
+     * Assetsha256
+     */
+    assetSha256?: string | null;
+    /**
+     * Modelsha256
+     */
+    modelSha256?: string | null;
 };
 
 /**
@@ -11818,6 +12790,76 @@ export type SkillRequestDto = {
      * Supersedesversion
      */
     supersedesVersion?: number | null;
+    /**
+     * Files
+     *
+     * script files by relative path, e.g. scripts/run.py; text only
+     */
+    files?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Entry
+     *
+     * the file to run; makes the version runnable once approved
+     */
+    entry?: string | null;
+    /**
+     * what the version needs; part of what is granted
+     */
+    access?: SkillAccessDto | null;
+};
+
+/**
+ * SkillRevokeRequestDto
+ */
+export type SkillRevokeRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+};
+
+/**
+ * SkillRunRequestDto
+ *
+ * Run one approved version: its inputs are registered documents, its parameters one JSON object.
+ */
+export type SkillRunRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Version
+     *
+     * the latest version when omitted
+     */
+    version?: number | null;
+    /**
+     * Inputs
+     */
+    inputs?: {
+        [key: string]: SkillInputRefDto;
+    };
+    /**
+     * Parameters
+     */
+    parameters?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Agentrun
+     *
+     * set by the Hub for a chat's run: only an always-allowed version runs
+     */
+    agentRun?: boolean;
+    /**
+     * Grantid
+     *
+     * set by the Hub: the once grant a person gave in the chat for this run
+     */
+    grantId?: string | null;
 };
 
 /**
@@ -12918,6 +13960,32 @@ export type TransformElementRequestDto = {
      * Sourcestageref
      */
     sourceStageRef?: string | null;
+};
+
+/**
+ * TransformOp
+ *
+ * Scale, then rotate, then translate the named objects.
+ */
+export type TransformOp = {
+    /**
+     * Op
+     */
+    op: 'transform';
+    /**
+     * Ids
+     */
+    ids: Array<string>;
+    /**
+     * Translate
+     */
+    translate?: [
+        number,
+        number,
+        number
+    ] | null;
+    rotate?: Rotation | null;
+    scale?: Scaling | null;
 };
 
 /**
@@ -15686,6 +16754,89 @@ export type RetainRenderViewApiRenderViewsPostResponses = {
 
 export type RetainRenderViewApiRenderViewsPostResponse = RetainRenderViewApiRenderViewsPostResponses[keyof RetainRenderViewApiRenderViewsPostResponses];
 
+export type CreateCameraPassesApiRenderViewsPassesPostData = {
+    body: CameraPassRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/render/views/passes';
+};
+
+export type CreateCameraPassesApiRenderViewsPassesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateCameraPassesApiRenderViewsPassesPostError = CreateCameraPassesApiRenderViewsPassesPostErrors[keyof CreateCameraPassesApiRenderViewsPassesPostErrors];
+
+export type CreateCameraPassesApiRenderViewsPassesPostResponses = {
+    /**
+     * Response Create Camera Passes Api Render Views Passes Post
+     *
+     * Successful Response
+     */
+    202: {
+        [key: string]: unknown;
+    };
+};
+
+export type CreateCameraPassesApiRenderViewsPassesPostResponse = CreateCameraPassesApiRenderViewsPassesPostResponses[keyof CreateCameraPassesApiRenderViewsPassesPostResponses];
+
+export type ReadCameraPassesApiRenderViewsPassesPassIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Pass Id
+         */
+        pass_id: string;
+    };
+    query?: never;
+    url: '/api/render/views/passes/{pass_id}';
+};
+
+export type ReadCameraPassesApiRenderViewsPassesPassIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadCameraPassesApiRenderViewsPassesPassIdGetError = ReadCameraPassesApiRenderViewsPassesPassIdGetErrors[keyof ReadCameraPassesApiRenderViewsPassesPassIdGetErrors];
+
+export type ReadCameraPassesApiRenderViewsPassesPassIdGetResponses = {
+    /**
+     * Response Read Camera Passes Api Render Views Passes  Pass Id  Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadCameraPassesApiRenderViewsPassesPassIdGetResponse = ReadCameraPassesApiRenderViewsPassesPassIdGetResponses[keyof ReadCameraPassesApiRenderViewsPassesPassIdGetResponses];
+
 export type RenderCapabilitiesApiRenderCapabilitiesGetData = {
     body?: never;
     headers?: {
@@ -18026,6 +19177,241 @@ export type ReviewVisualSourcesApiVisualReviewsPostResponses = {
 
 export type ReviewVisualSourcesApiVisualReviewsPostResponse = ReviewVisualSourcesApiVisualReviewsPostResponses[keyof ReviewVisualSourcesApiVisualReviewsPostResponses];
 
+export type ReadLiveRhinoInstancesApiLiveRhinoInstancesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/live-rhino/instances';
+};
+
+export type ReadLiveRhinoInstancesApiLiveRhinoInstancesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadLiveRhinoInstancesApiLiveRhinoInstancesGetError = ReadLiveRhinoInstancesApiLiveRhinoInstancesGetErrors[keyof ReadLiveRhinoInstancesApiLiveRhinoInstancesGetErrors];
+
+export type ReadLiveRhinoInstancesApiLiveRhinoInstancesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: LiveRhinoInstancesDto;
+};
+
+export type ReadLiveRhinoInstancesApiLiveRhinoInstancesGetResponse = ReadLiveRhinoInstancesApiLiveRhinoInstancesGetResponses[keyof ReadLiveRhinoInstancesApiLiveRhinoInstancesGetResponses];
+
+export type ReadLiveRhinoDocumentApiLiveRhinoDocumentGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Rhinoid
+         */
+        rhinoId?: string | null;
+        /**
+         * Documentpath
+         */
+        documentPath?: string | null;
+        /**
+         * Layerprefix
+         *
+         * only objects on this layer or below it
+         */
+        layerPrefix?: string | null;
+        /**
+         * Ids
+         *
+         * comma-separated object ids
+         */
+        ids?: string | null;
+        /**
+         * Includegeometry
+         *
+         * points, vertices and text
+         */
+        includeGeometry?: boolean;
+        /**
+         * Offset
+         */
+        offset?: number;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/live-rhino/document';
+};
+
+export type ReadLiveRhinoDocumentApiLiveRhinoDocumentGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadLiveRhinoDocumentApiLiveRhinoDocumentGetError = ReadLiveRhinoDocumentApiLiveRhinoDocumentGetErrors[keyof ReadLiveRhinoDocumentApiLiveRhinoDocumentGetErrors];
+
+export type ReadLiveRhinoDocumentApiLiveRhinoDocumentGetResponses = {
+    /**
+     * Response Read Live Rhino Document Api Live Rhino Document Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadLiveRhinoDocumentApiLiveRhinoDocumentGetResponse = ReadLiveRhinoDocumentApiLiveRhinoDocumentGetResponses[keyof ReadLiveRhinoDocumentApiLiveRhinoDocumentGetResponses];
+
+export type WriteLiveRhinoDocumentApiLiveRhinoWritePostData = {
+    body: LiveRhinoWriteRequest;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/live-rhino/write';
+};
+
+export type WriteLiveRhinoDocumentApiLiveRhinoWritePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type WriteLiveRhinoDocumentApiLiveRhinoWritePostError = WriteLiveRhinoDocumentApiLiveRhinoWritePostErrors[keyof WriteLiveRhinoDocumentApiLiveRhinoWritePostErrors];
+
+export type WriteLiveRhinoDocumentApiLiveRhinoWritePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LiveRhinoWriteDto;
+};
+
+export type WriteLiveRhinoDocumentApiLiveRhinoWritePostResponse = WriteLiveRhinoDocumentApiLiveRhinoWritePostResponses[keyof WriteLiveRhinoDocumentApiLiveRhinoWritePostResponses];
+
+export type SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostData = {
+    body: LiveRhinoSnapshotRequest;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/live-rhino/snapshot';
+};
+
+export type SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostError = SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostErrors[keyof SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostErrors];
+
+export type SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: LiveRhinoSnapshotDto;
+};
+
+export type SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostResponse = SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostResponses[keyof SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostResponses];
+
+export type CaptureLiveRhinoViewApiLiveRhinoCaptureGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Rhinoid
+         */
+        rhinoId?: string | null;
+        /**
+         * Documentpath
+         */
+        documentPath?: string | null;
+        /**
+         * View
+         *
+         * a view name; the active view when omitted
+         */
+        view?: string | null;
+        /**
+         * Width
+         */
+        width?: number;
+        /**
+         * Height
+         */
+        height?: number;
+    };
+    url: '/api/live-rhino/capture';
+};
+
+export type CaptureLiveRhinoViewApiLiveRhinoCaptureGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CaptureLiveRhinoViewApiLiveRhinoCaptureGetError = CaptureLiveRhinoViewApiLiveRhinoCaptureGetErrors[keyof CaptureLiveRhinoViewApiLiveRhinoCaptureGetErrors];
+
+export type CaptureLiveRhinoViewApiLiveRhinoCaptureGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type ReadOptionsApiOptionsGetData = {
     body?: never;
     headers?: {
@@ -20144,6 +21530,253 @@ export type ReadProjectionApiProjectionsKeyGetResponses = {
 
 export type ReadProjectionApiProjectionsKeyGetResponse = ReadProjectionApiProjectionsKeyGetResponses[keyof ReadProjectionApiProjectionsKeyGetResponses];
 
+export type ReadSkillLibraryApiSkillsLibraryGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/skills/library';
+};
+
+export type ReadSkillLibraryApiSkillsLibraryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillLibraryApiSkillsLibraryGetError = ReadSkillLibraryApiSkillsLibraryGetErrors[keyof ReadSkillLibraryApiSkillsLibraryGetErrors];
+
+export type ReadSkillLibraryApiSkillsLibraryGetResponses = {
+    /**
+     * Response Read Skill Library Api Skills Library Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadSkillLibraryApiSkillsLibraryGetResponse = ReadSkillLibraryApiSkillsLibraryGetResponses[keyof ReadSkillLibraryApiSkillsLibraryGetResponses];
+
+export type ImportSkillApiSkillsImportPostData = {
+    body: SkillImportRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/skills/import';
+};
+
+export type ImportSkillApiSkillsImportPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ImportSkillApiSkillsImportPostError = ImportSkillApiSkillsImportPostErrors[keyof ImportSkillApiSkillsImportPostErrors];
+
+export type ImportSkillApiSkillsImportPostResponses = {
+    /**
+     * Response Import Skill Api Skills Import Post
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ImportSkillApiSkillsImportPostResponse = ImportSkillApiSkillsImportPostResponses[keyof ImportSkillApiSkillsImportPostResponses];
+
+export type ReadSkillGrantsApiSkillsApprovalsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/skills/approvals';
+};
+
+export type ReadSkillGrantsApiSkillsApprovalsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillGrantsApiSkillsApprovalsGetError = ReadSkillGrantsApiSkillsApprovalsGetErrors[keyof ReadSkillGrantsApiSkillsApprovalsGetErrors];
+
+export type ReadSkillGrantsApiSkillsApprovalsGetResponses = {
+    /**
+     * Response Read Skill Grants Api Skills Approvals Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadSkillGrantsApiSkillsApprovalsGetResponse = ReadSkillGrantsApiSkillsApprovalsGetResponses[keyof ReadSkillGrantsApiSkillsApprovalsGetResponses];
+
+export type RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostData = {
+    body: SkillRevokeRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Approval Id
+         */
+        approval_id: string;
+    };
+    query?: never;
+    url: '/api/skills/approvals/{approval_id}/revoke';
+};
+
+export type RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostError = RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostErrors[keyof RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostErrors];
+
+export type RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostResponses = {
+    /**
+     * Response Revoke Skill Grant Api Skills Approvals  Approval Id  Revoke Post
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostResponse = RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostResponses[keyof RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostResponses];
+
+export type ReadSkillRunApiSkillsRunsRunIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/api/skills/runs/{run_id}';
+};
+
+export type ReadSkillRunApiSkillsRunsRunIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillRunApiSkillsRunsRunIdGetError = ReadSkillRunApiSkillsRunsRunIdGetErrors[keyof ReadSkillRunApiSkillsRunsRunIdGetErrors];
+
+export type ReadSkillRunApiSkillsRunsRunIdGetResponses = {
+    /**
+     * Response Read Skill Run Api Skills Runs  Run Id  Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadSkillRunApiSkillsRunsRunIdGetResponse = ReadSkillRunApiSkillsRunsRunIdGetResponses[keyof ReadSkillRunApiSkillsRunsRunIdGetResponses];
+
+export type ReadSkillRunOutputApiSkillsRunsRunIdOutputsNameGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/skills/runs/{run_id}/outputs/{name}';
+};
+
+export type ReadSkillRunOutputApiSkillsRunsRunIdOutputsNameGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillRunOutputApiSkillsRunsRunIdOutputsNameGetError = ReadSkillRunOutputApiSkillsRunsRunIdOutputsNameGetErrors[keyof ReadSkillRunOutputApiSkillsRunsRunIdOutputsNameGetErrors];
+
+export type ReadSkillRunOutputApiSkillsRunsRunIdOutputsNameGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type ReadSkillIndexApiSkillsGetData = {
     body?: never;
     headers?: {
@@ -20258,3 +21891,131 @@ export type ReadSkillApiSkillsSkillIdGetResponses = {
 };
 
 export type ReadSkillApiSkillsSkillIdGetResponse = ReadSkillApiSkillsSkillIdGetResponses[keyof ReadSkillApiSkillsSkillIdGetResponses];
+
+export type ApproveSkillApiSkillsSkillIdApprovalsPostData = {
+    body: SkillApprovalRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: never;
+    url: '/api/skills/{skill_id}/approvals';
+};
+
+export type ApproveSkillApiSkillsSkillIdApprovalsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ApproveSkillApiSkillsSkillIdApprovalsPostError = ApproveSkillApiSkillsSkillIdApprovalsPostErrors[keyof ApproveSkillApiSkillsSkillIdApprovalsPostErrors];
+
+export type ApproveSkillApiSkillsSkillIdApprovalsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SkillApprovalDto;
+};
+
+export type ApproveSkillApiSkillsSkillIdApprovalsPostResponse = ApproveSkillApiSkillsSkillIdApprovalsPostResponses[keyof ApproveSkillApiSkillsSkillIdApprovalsPostResponses];
+
+export type RunSkillApiSkillsSkillIdRunPostData = {
+    body: SkillRunRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: never;
+    url: '/api/skills/{skill_id}/run';
+};
+
+export type RunSkillApiSkillsSkillIdRunPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RunSkillApiSkillsSkillIdRunPostError = RunSkillApiSkillsSkillIdRunPostErrors[keyof RunSkillApiSkillsSkillIdRunPostErrors];
+
+export type RunSkillApiSkillsSkillIdRunPostResponses = {
+    /**
+     * Response Run Skill Api Skills  Skill Id  Run Post
+     *
+     * Successful Response
+     */
+    202: {
+        [key: string]: unknown;
+    };
+};
+
+export type RunSkillApiSkillsSkillIdRunPostResponse = RunSkillApiSkillsSkillIdRunPostResponses[keyof RunSkillApiSkillsSkillIdRunPostResponses];
+
+export type ReadSkillRunsApiSkillsSkillIdRunsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: never;
+    url: '/api/skills/{skill_id}/runs';
+};
+
+export type ReadSkillRunsApiSkillsSkillIdRunsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillRunsApiSkillsSkillIdRunsGetError = ReadSkillRunsApiSkillsSkillIdRunsGetErrors[keyof ReadSkillRunsApiSkillsSkillIdRunsGetErrors];
+
+export type ReadSkillRunsApiSkillsSkillIdRunsGetResponses = {
+    /**
+     * Response Read Skill Runs Api Skills  Skill Id  Runs Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadSkillRunsApiSkillsSkillIdRunsGetResponse = ReadSkillRunsApiSkillsSkillIdRunsGetResponses[keyof ReadSkillRunsApiSkillsSkillIdRunsGetResponses];

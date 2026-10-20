@@ -146,7 +146,7 @@ def submit(binding, jobs, payload, *, with_state: bool = False, parent_file_sha2
                                      "decisionsCarried": len(carried["decisions"]),
                                      "parentFileSha256": carried["parent"]}
             artifact = binding.repository.ingest(run=run, destination=PersistenceDestination(PersistenceArea.OBJECT),
-                artifact_id="converted-model", media_type="model/gltf-binary" if target == "glb" else "application/octet-stream",
+                artifact_id="converted-model", media_type={"glb": "model/gltf-binary", "stl": "model/stl"}.get(target, "application/octet-stream"),
                 source=BytesIO(output))
             _save(binding, run, current | details | {"status": "succeeded", "outputArtifact": asdict(artifact),
                 "nativeOutputArtifact": asdict(artifact) if target in ("skp", "dwg") else None,

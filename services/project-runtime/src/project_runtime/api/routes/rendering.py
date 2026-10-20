@@ -2,9 +2,13 @@
 from fastapi import APIRouter
 from starlette.requests import Request
 
+from ...application import camera_passes
+from ...application.artifacts import ModelSource
+from ...authentication import request_attribution
 from ...binding import bound_project
+from ...errors import StudioError
 from ..dto.rendering import (
-    RenderCapabilitiesDto, RenderJobDto, RenderJobListDto, RenderViewSourceRequestDto, render_capability_dto,
+    CameraPassRequestDto, RenderCapabilitiesDto, RenderJobDto, RenderJobListDto, RenderViewSourceRequestDto, render_capability_dto,
     render_job_dto,
 )
 from ..dto.artifacts import SourceDocumentDto, document_dto
@@ -16,6 +20,36 @@ router = APIRouter(prefix="/render", tags=["render"])
 @router.post("/views", response_model=SourceDocumentDto, response_model_by_alias=True, status_code=201)
 def retain_render_view(request: Request, payload: RenderViewSourceRequestDto):
     return document_dto(save_render_view(bound_project(request.app.state), payload))
+
+
+@router.post("/views/passes", status_code=202)
+def create_camera_passes(request: Request, payload: CameraPassRequestDto) -> dict:
+    """Draw an object-ID, a line and a depth image of one exact model through a perspective camera (#19).
+
+    A background job; read it at ``statusPath``. On success its three PNGs are
+    registered as documents beside the model, at up to 4096 pixels on the long
+    edge, with the camera, size, ID legend and depth range in their recipes.
+    """
+
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The camera pass names another project.")
+    return camera_passes.submit_camera_passes(
+        binding, request.app.state.jobs, attribution=request_attribution(request),
+        view=None if payload.view is None else payload.view.model_dump(by_alias=True),
+        camera=None if payload.camera is None else payload.camera.model_dump(by_alias=True),
+        size=payload.size, long_edge=payload.long_edge, id_by=payload.id_by,
+        model_source=None if payload.model_source is None else ModelSource.from_dict(
+            payload.model_source.model_dump(by_alias=True)),
+        source_asset=payload.source_asset, source_stage_ref=payload.source_stage_ref,
+    )
+
+
+@router.get("/views/passes/{pass_id}")
+def read_camera_passes(request: Request, pass_id: str) -> dict:
+    """One camera pass run's latest record: queued, running, succeeded (with its documents) or failed."""
+
+    return camera_passes.pass_report(bound_project(request.app.state), pass_id)
 
 
 @router.get("/capabilities", response_model=RenderCapabilitiesDto, response_model_by_alias=True)

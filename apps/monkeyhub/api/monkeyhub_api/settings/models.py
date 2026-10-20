@@ -43,6 +43,13 @@ class UserSettingsDto(BaseModel):
     chat_provider: Literal["codex", "claude", "coding-plan"] | None = Field(
         default=None, alias="chatProvider",
     )
+    # How a chat's Agent starts a skill, as Claude Code and Codex ask before a
+    # tool runs. ask: a version a person always allowed runs; any other is put
+    # to the person in the chat (allow once, always allow this version, deny).
+    # granted: only an always-allowed version runs; no question is asked.
+    # never: as granted, and an Agent starts no skill that declares access.
+    # Unset is ask. While designLoop is enforced (#185) the Hub reads it as never.
+    skill_agent_runs: Literal["ask", "granted", "never"] | None = Field(default=None, alias="skillAgentRuns")
     chat_model: str | None = Field(
         default=None, alias="chatModel", min_length=1, pattern=r"^[^\x00-\x1f\x7f]+$",
     )
