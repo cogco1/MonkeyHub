@@ -187,7 +187,7 @@ def test_state_rows_and_decisions_changed_outside_the_seal(tmp_path: Path) -> No
     assert rows.out_of_band == (
         OutOfBand("row_added", "entity:stair-1", {}),
         OutOfBand("row_removed", "obligation:obl-light", {}),
-        OutOfBand("row_changed", "parameter:stair_rise", {}),
+        OutOfBand("row_changed", "parameter:stair_rise", {"changes": [{"path": "value", "before": 0.175, "after": 0.19}]}),
     )
     assert rows.binding == read_state_file(sealed).binding
 

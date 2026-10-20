@@ -91,10 +91,16 @@ class StateFile:
 def row_digests(record: dict) -> dict[str, str]:
     """Digest per row: entities, parameters, relations, obligations by id, the rest as ``record:header``."""
 
+    return {ref: _digest(row) for ref, row in _record_rows(record).items()}
+
+
+def _record_rows(record: dict) -> dict[str, Any]:
+    """Each row by its ref: entities, parameters, relations, obligations by id, the rest as ``record:header``."""
+
     if not isinstance(record, Mapping):
         raise StateFileError("STATE_CORRUPT", "the record is not a JSON object")
     lists = {field for field, _, _ in _ROW_LISTS}
-    digests = {_HEADER_REF: _digest({key: value for key, value in record.items() if key not in lists})}
+    rows_by_ref: dict[str, Any] = {_HEADER_REF: {key: value for key, value in record.items() if key not in lists}}
     for field, prefix, id_key in _ROW_LISTS:
         rows = record.get(field) or ()
         if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
@@ -104,10 +110,19 @@ def row_digests(record: dict) -> dict[str, str]:
             if not isinstance(row_id, str) or not row_id:
                 raise StateFileError("STATE_CORRUPT", f"a row of record.{field} has no {id_key}")
             ref = f"{prefix}:{row_id}"
-            if ref in digests:
+            if ref in rows_by_ref:
                 raise StateFileError("STATE_CORRUPT", f"{ref} appears twice")
-            digests[ref] = _digest(row)
-    return dict(sorted(digests.items()))
+            rows_by_ref[ref] = row
+    return dict(sorted(rows_by_ref.items()))
+
+
+def _changes(before: Any, after: Any, path: str = "") -> list[dict[str, Any]]:
+    """Every value that differs between two rows, by its dotted path in the row; a list is one value."""
+
+    if isinstance(before, Mapping) and isinstance(after, Mapping):
+        return [change for key in sorted(before.keys() | after.keys(), key=str)
+                for change in _changes(before.get(key), after.get(key), f"{path}.{key}" if path else str(key))]
+    return [] if _digest(before) == _digest(after) else [{"path": path, "before": before, "after": after}]
 
 
 def object_rows(path: Path) -> tuple[ObjectRow, ...]:
@@ -165,13 +180,16 @@ def compare(
     sealed = _checked_binding(binding)
     found: list[OutOfBand] = []
     current_rows, sealed_rows = row_digests(record), sealed["row_digests"]
+    # A seal that keeps its record tells each changed row's values: what it sealed, and what the file now states.
+    kept_rows, stated_rows = (_record_rows(sealed["record"]), _record_rows(record)) if "record" in sealed else ({}, {})
     for ref in sorted(current_rows.keys() | sealed_rows.keys()):
         if ref not in sealed_rows:
             found.append(OutOfBand("row_added", ref, {}))
         elif ref not in current_rows:
             found.append(OutOfBand("row_removed", ref, {}))
         elif current_rows[ref] != sealed_rows[ref]:
-            found.append(OutOfBand("row_changed", ref, {}))
+            changes = _changes(kept_rows[ref], stated_rows[ref]) if ref in kept_rows else []
+            found.append(OutOfBand("row_changed", ref, {"changes": changes} if changes else {}))
     if _digest(list(decisions)) != sealed["decisions_digest"]:
         detail: dict = {}
         if "decisions" in sealed:

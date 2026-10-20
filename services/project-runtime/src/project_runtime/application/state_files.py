@@ -12,6 +12,7 @@ file writes nothing but a scratch copy in this project's cache, which is deleted
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import tempfile
 from typing import Any, Mapping, Sequence
@@ -195,8 +196,11 @@ def change_words(finding: OutOfBand) -> str:
     if finding.kind.startswith("object_"):
         return _object_words(finding, finding.ref.removeprefix("object:"))
     if finding.kind.startswith("row_"):
-        return {"row_added": f"{finding.ref} was added", "row_removed": f"{finding.ref} was removed",
-                "row_changed": f"{finding.ref} was changed"}[finding.kind] + " in the file's design record"
+        changes = finding.detail.get("changes") or ()
+        return ({"row_added": f"{finding.ref} was added", "row_removed": f"{finding.ref} was removed",
+                 "row_changed": f"{finding.ref} was changed"}[finding.kind] + " in the file's design record"
+                + (": " + "; ".join(f"{row.get('path')} from {_value_words(row.get('before'))} to "
+                                    f"{_value_words(row.get('after'))}" for row in changes) if changes else ""))
     if finding.kind == "decisions_changed":
         added, removed = finding.detail.get("added") or (), finding.detail.get("removed") or ()
         rows = [*(f"added {row.get('disposition')} on {row.get('targetRef')} (\"{row.get('rawLanguage')}\")" for row in added),
@@ -210,6 +214,13 @@ def change_words(finding: OutOfBand) -> str:
     if finding.kind == "state_replaced":
         return "the design record the file states was removed or made unreadable; the design is the one the seal keeps"
     return finding.kind
+
+
+def _value_words(value: Any) -> str:
+    """A record value as the file states it, cut short when long."""
+
+    words = "nothing" if value is None else json.dumps(value, ensure_ascii=False)
+    return words if len(words) <= 80 else words[:77] + "..."
 
 
 def _object_words(finding: OutOfBand, name: str) -> str:

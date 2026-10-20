@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 from monkeycad.backends.occt.kernel import occt_available
 from archflow.state.state_record import StateRecord, check_obligations, obligations_in_scope
 from monkeycad.formats.state_file import OutOfBand
-from project_runtime.application.state_files import decision_request, outside_conditions, outside_rows
+from project_runtime.application.state_files import change_words, decision_request, outside_conditions, outside_rows
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 
@@ -150,6 +150,14 @@ class OutsideConditionTests(unittest.TestCase):
         # A record removed from beside a sound seal changes nothing: the seal keeps the design.
         self.assertEqual(outside_conditions(self.record, (OutOfBand("state_replaced", "file", {}),), [keep],
                                             file_sha256="c" * 64), ())
+
+    def test_a_changed_row_names_its_values(self) -> None:
+        changed = OutOfBand("row_changed", "parameter:window_width", {"changes": [
+            {"path": "value", "before": 1.2, "after": 1.7}, {"path": "unit", "before": None, "after": "m"}]})
+        self.assertEqual(change_words(changed), "parameter:window_width was changed in the file's design record: "
+                                                "value from 1.2 to 1.7; unit from nothing to \"m\"")
+        self.assertEqual(change_words(OutOfBand("row_changed", "parameter:window_width", {})),
+                         "parameter:window_width was changed in the file's design record")
 
     def test_a_part_moved_by_several_objects_asks_once_and_every_file_is_listed_newest_first(self) -> None:
         def moved(name, dx):

@@ -161,7 +161,7 @@ class StateFileCommandTests(unittest.TestCase):
 
         opened = state_file.open_file(edited, self.root / "w1")
         self.assertTrue(opened["vouched"], "the design is built from the copy the seal keeps")
-        for words in ("entity:garden-bench was changed in the file's design record",
+        for words in ("entity:garden-bench was changed in the file's design record: fields.params.height from 0.5 to 0.9",
                       "removed reject on entity:garden-bench (\"不要长凳靠墙\")", "ask the architect whether to adopt it"):
             self.assertIn(words, opened["excerpt"])
         self.assertIn(["entity:garden-bench"], [row["subject_refs"] for row in opened["conditions"]])

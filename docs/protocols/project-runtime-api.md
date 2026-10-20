@@ -2093,8 +2093,9 @@ copy of the record and decisions it vouches for, which its digests must match. T
 
 `POST /api/state-files/inspect` takes `{fileName, contentBase64}` and retains nothing. It answers `fileSha256`,
 `sealed`, `sealKeepsRecord`, `parentFileSha256`, the `record` and `decisions` the seal keeps (what the file states
-when the seal keeps none), `outOfBand` (each difference from the seal: `row_added`, `row_changed`, `row_removed`,
-`decisions_changed` with the rows `added` and `removed`, `object_added`, `object_removed`, `object_duplicate`,
+when the seal keeps none), `outOfBand` (each difference from the seal: `row_added`, `row_changed` (with
+`changes`, each value's `path` in the row, `before` as sealed and `after` as the file states it, when the seal
+keeps its record), `row_removed`, `decisions_changed` with the rows `added` and `removed`, `object_added`, `object_removed`, `object_duplicate`,
 `object_moved` (one offset beyond 2 mm), `object_transformed` (a box turned, mirrored or resized),
 `object_reshaped` (its vertices sit elsewhere inside an unchanged box by more than 5 mm), `object_unnamed`,
 `unsealed`, `seal_broken` (a seal removed, unreadable or not matching its own digests, read as none), or
