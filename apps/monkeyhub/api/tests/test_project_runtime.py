@@ -917,6 +917,26 @@ for _ in range(5):
             worker = self.read_runtime(client, runtime_id)["workers"][0]
             self.assertIn(worker["state"], {"ready", "busy"})
 
+    def test_the_studios_running_when_the_hub_stopped_start_again_with_it(self):
+        # Gap 18: a quit leaves the note of running Studios; the next Hub reads
+        # it and starts them in the background, with no request to wait for.
+        with self.hub() as client:
+            runtime_id = self.open_project(client)
+            noted = client.app.state.applications.remembered_studios()
+            self.assertEqual([row["projectId"] for row in noted], [self.project_id])
+        with self.hub() as client:
+            def started():
+                response = client.get(f"/api/runtime/projects/{runtime_id}")
+                if response.status_code != 200:
+                    return None
+                workers = response.json()["workers"]
+                return workers if any(row["state"] in {"ready", "busy"} for row in workers) else None
+            wait_for(started, "The Studio running at the last stop did not start again", timeout=60)
+            stopped = client.post("/api/apps/monkeyarch/stop", params={"projectDir": str(self.project)})
+            self.assertEqual(stopped.status_code, 202, stopped.text)
+            self.assertEqual(client.app.state.applications.remembered_studios(), [],
+                             "a Studio stopped on request is not brought back")
+
     def test_a_running_studio_that_only_misses_probes_is_still_asked(self):
         # Gap 25: verified, alive, missing its health probes while busy.
         with self.hub() as client:

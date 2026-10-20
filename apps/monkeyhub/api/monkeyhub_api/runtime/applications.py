@@ -20,6 +20,11 @@ from ..settings.models import ApplicationSettingsDto
 from ..settings.store import read_application_settings, read_user_settings, save_application_settings
 from .workers import WorkerLaunch, WorkerSnapshot, WorkerSupervisor, project_key
 
+# The projects whose Studio this Hub was running (gap 18): written when one
+# starts or is stopped on request, left as it is when the Hub quits or dies, and
+# read once at the next start to bring those Studios back.
+STUDIOS_FILE = Path("runtime") / "studios.json"
+
 APPS = {
     "monkeyarch": ("MonkeyArch", "studio"),
     "monkeymonitor": ("MonkeyMonitor", "monitor"),
@@ -189,6 +194,8 @@ class Applications:
                 cwd=self.source_root, port=port, logs_dir=self.runtime_root / "logs",
                 health_fields={"name": "MonkeyMonitor"} if service == "monitor" else {"projectBound": True},
             ))
+            if selected_project is not None:
+                self._remember_studio(selected_project, project_id)
             return self.status(app_id, project_dir=project_dir)
 
     def _command(self, service: str, settings: ApplicationSettingsDto) -> tuple[list[str], dict[str, str]]:
@@ -242,7 +249,56 @@ class Applications:
             if service == "hub":
                 raise HubFailure(409, "APP_HOSTED_BY_HUB", "MonkeyFab is an operation page in this Hub and has no separate process to stop.")
             self.supervisor.stop(self._child_key(service, project_dir))
+            if service == "studio" and project_dir is not None:
+                self._remember_studio(project_dir, None)
             return self.status(app_id, project_dir=project_dir)
+
+    def remembered_studios(self) -> list[dict]:
+        """The projects whose Studio was running when this Hub last stopped, as ``{projectId, projectDir}``."""
+
+        try:
+            rows = json.loads((self.runtime_root / STUDIOS_FILE).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        return [row for row in rows if isinstance(row, dict) and isinstance(row.get("projectDir"), str)] \
+            if isinstance(rows, list) else []
+
+    def _remember_studio(self, project_dir: str, project_id: str | None) -> None:
+        """Note one project's Studio as running (with its id) or not (``None``); a failed write only loses the note."""
+
+        key = self._project_key(project_dir)
+        rows = [row for row in self.remembered_studios() if self._project_key(row["projectDir"]) != key]
+        if project_id is not None:
+            rows.append({"projectId": project_id, "projectDir": project_dir})
+        path = self.runtime_root / STUDIOS_FILE
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_name(path.name + ".tmp")
+            temporary.write_text(json.dumps(rows, ensure_ascii=False, indent=1), encoding="utf-8")
+            os.replace(temporary, path)
+        except OSError:
+            pass
+
+    def restore_studios(self, open_runtime) -> None:
+        """Start again the Studios this Hub was running when it stopped; a project that cannot start is skipped.
+
+        Runs once, in the background, after the Hub has started: a missing,
+        moved or broken project never holds up the Hub.
+        """
+
+        from ..projects import _project
+
+        for row in self.remembered_studios():
+            if self._closing:
+                return
+            try:
+                project_id, project_dir = _project(row["projectDir"])
+                if row.get("projectId") not in (None, project_id):
+                    continue
+                open_runtime(project_id, project_dir)
+                self.start("monkeyarch", project_dir=project_dir)
+            except (HubFailure, OSError, ValueError, KeyError, TypeError):
+                continue
 
     def begin_shutdown(self) -> None:
         with self._lock:

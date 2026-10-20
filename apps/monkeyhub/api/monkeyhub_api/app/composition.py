@@ -113,6 +113,10 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         # Packaged desktop only: finish this version's own next-launch
         # activation once it answers health, and check for updates.
         updates.start(settings.port, settings.managed_instance_id)
+        # Gap 18: the Studios running when the Hub stopped come back with it,
+        # in the background, so no project can hold up the Hub's start.
+        threading.Thread(target=applications.restore_studios, args=(runtimes.open,), name="restore-studios",
+                         daemon=True).start()
         yield
         await asyncio.to_thread(updates.shutdown)
         await asyncio.to_thread(chats.shutdown)

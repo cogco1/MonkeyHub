@@ -242,6 +242,18 @@
   ],
   "allowed_write_sites": [
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/runtime/applications.py",
+      "function": "_remember_studio",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "replace"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Atomically notes which projects' Studios this Hub runs (projectId and folder only) at runtime/studios.json under the nonproject Hub runtime root, so the next start brings them back (gap 18). No project data is written."
+    },
+    {
       "path": "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
       "function": "_save",
       "operations": [
