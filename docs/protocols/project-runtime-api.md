@@ -620,12 +620,14 @@ neighbouring element whose field shares a name is named there only to be refused
 
 Review readiness is memoised per (candidate, published version): reading it twice is one result.
 
-**Conditions the design must keep are checked (#659).** A `DesignObligation` names its check in
-`validatorRef` as `validator:<kind>/<arguments>`; the kinds are `state_record.OBLIGATION_CHECKS`. Validation
-checks every live obligation on the candidate's exact record and its inspected object boxes, and again on the
-run it was made from. Each one is `held`, `violated` or `unchecked`; an obligation with no check, an unknown
-kind or a value nothing states is `unchecked`, never held. The sixth clause, `obligations.held`, refuses only
-a violation the source run did not have. `obligationProblems[]` (on the validation and on
+**Conditions the design must keep are checked (#659)** while the design loop checks them (`advisory` or
+`enforced`). A `DesignObligation` names its check in `validatorRef` as `validator:<kind>/<arguments>`; the kinds
+are `state_record.OBLIGATION_CHECKS`. Validation checks every live obligation on the candidate's exact record and
+its inspected object boxes, and again on the run it was made from. Each one is `held`, `violated` or
+`unchecked`; an obligation with no check, an unknown kind, a value nothing states, or a model read back without
+an object of every part that builds one is `unchecked`, never held. The results are reported, never a clause of
+review readiness: no tier makes a condition block a person's or the Agent's admission or a Stage acceptance.
+In `enforced`, `POST /api/revisions` refuses a new violation itself. `obligationProblems[]` (on the validation and on
 `GET /api/candidates/{id}`) lists the violated ones, new first, then the unchecked ones, at most 20, each with
 `obligationId`, `validatorRef`, `status`, `new` and `detail`; `obligationsChecked` counts those a check
 reported held or violated. `relationProblems[]` on the candidate names the violated relations, then the
@@ -1115,8 +1117,8 @@ fields this request supplies. It takes the `accept` grant, and the change itself
    model (`COMPARE_UNAVAILABLE`), or a construction or hosted opening that changed nothing against the base
    (`NO_VISIBLE_CHANGE`) is `problems`. Only a base that never exported a model is excused from the
    comparison, and `compare.unavailable` with `baseHasNoModel` says so;
-9. validation runs: a violated or unchecked relation, a new violated condition (`obligations.held`) or
-   another failing review clause is `problems`, each one named by its `source` (`relation:<id>`,
+9. validation runs: a violated or unchecked relation, a condition violated where the base did not violate it,
+   or a failing review clause is `problems`, each one named by its `source` (`relation:<id>`,
    `obligation:<id>`, the clause);
 10. with `buildOnly` the answer is `built` and nothing is admitted; the candidate lands later by its
     `candidateId`;
@@ -1136,14 +1138,17 @@ or `refused`. A kept target or a rejected option changes only after its decision
 `GET /api/revisions/context` is what a change is written from: `working` (runId, stateDigest, revisionSha256, label), `keep` and `rejected` (each decision's ref, target and the architect's words), `conditions` (each live condition's ref, statement, subjects, `validatorRef`, `checkable` and how it stands on the working design: `onWorkingDesign` held, violated or unchecked, with `detail`), `lastChange` (the working design's own landed change: its summary, the words it answered and its objects before and after against its parent, so that undoing it is an ordinary change), `tried` (results the architect rejected, with their words) and `honesty`. Each list holds at most 40 rows and says how many it left out.
 
 **The design-loop setting.** The Hub's application setting `designLoop` reaches the Runtime as
-`ARCHFLOW_STUDIO_DESIGN_LOOP`, in three tiers; the default, and a Runtime started by hand, is `legacy`.
+`ARCHFLOW_STUDIO_DESIGN_LOOP`, in three tiers; the default, and a Runtime started by hand, is `legacy`. A
+saved `off`, the setting's value before it had tiers, reads as `legacy`.
 
-- `legacy`: everything answers exactly as before the loop existed. No condition is checked,
-  `obligations.held` never appears, validation and candidate reads leave out `obligationProblems`,
-  `obligationsChecked` and `relationProblems`, and `POST /api/revisions` answers `409 DESIGN_LOOP_NOT_ENFORCED`.
-- `advisory`: conditions are checked, `obligations.held` refuses review readiness on a new violation, and the
-  problem lists appear on validation and candidate reads; every way onto the working design is as before, and
-  `POST /api/revisions` still answers `409 DESIGN_LOOP_NOT_ENFORCED`.
+- `legacy`: every route main has answers byte for byte as main does (`tests/test_legacy_answers.py` compares a
+  scenario's answers with main's). No condition is checked; validation and candidate reads leave out
+  `obligationProblems`, `obligationsChecked` and `relationProblems` and keep their old notes; the chat keeps its
+  old guide and error words. Of the two new routes, `POST /api/revisions` answers `409 DESIGN_LOOP_NOT_ENFORCED`.
+- `advisory`: conditions are checked and the problem lists appear on validation and candidate reads, blocking
+  nothing; every way onto the working design is as before, and `POST /api/revisions` still answers
+  `409 DESIGN_LOOP_NOT_ENFORCED`. The chat may read `GET /api/revisions/context`, and its guide says what the
+  two lists are.
 - `enforced`: as `advisory`, and the Agent's own way onto the working design is refused with `409
   DESIGN_LOOP_REQUIRED`: `POST /api/admissions` of an `admitted` result, and `PUT /api/working-draft` onto a run.
   `POST /api/revisions` admits and continues the result itself; from the Agent it must name its own chat's message

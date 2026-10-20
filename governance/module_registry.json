@@ -5853,7 +5853,7 @@
       "purpose": "Say what a finished candidate validates to - the kernel's receipt - and, separately, whether it is ready for human review and what refuses it.",
       "owns": [
         "building the CandidateSubmission and asking archflow.validation.engine.validate_submission about it",
-        "the six-clause review-readiness verdict (receipt, seat execution, relations held, relations fully checked, exports available, obligations held) and its blocked_by list",
+        "the five-clause review-readiness verdict (receipt, seat execution, relations held, relations fully checked, exports available) and its blocked_by list",
         "source coverage from published references and the candidate's exact StateRecord; normative requirement-to-result projection remains incomplete",
         "memoizing one validation per candidate and issue, computed once in this process",
         "the impact arrangement around StateRecord.closure: direct, propagated, protected, conflicts, locks and unknown coverage",
@@ -5919,14 +5919,14 @@
       ],
       "invariants": [
         "the receipt and review readiness are deliberately two different answers and are never merged",
-        "review_ready requires all six clauses; every refusal is named in blocked_by",
+        "review_ready requires all five clauses; every refusal is named in blocked_by",
         "review readiness never issues a run or advances a stage; archflow.project.issue remains the only issuer",
         "a validation is about one candidate at one issue - the key includes the published version",
         "impact adds no propagation rule of its own; it calls StateRecord.closure and arranges the answer",
         "the comparison is a join on retained records, with a stated tolerance, not browser or geometry inference",
         "the validation readout for a retained Stage-based candidate uses its exact historical source base, matching design acceptance; legacy candidates retain current-HEAD validation and formal issue remains separate",
-        "obligations.held refuses only a violation the candidate's source run did not have: a condition already broken where the change started does not block, and an unchecked obligation refuses nothing",
-        "conditions are checked, and obligations.held can refuse, only while the design loop is advisory or enforced; in legacy a validation and a candidate read answer exactly as before, without obligationProblems, obligationsChecked or relationProblems"
+        "obligation results are reported, never a review clause: no tier makes a condition block an admission or a Stage acceptance; a violation the candidate's source run did not have is marked new",
+        "conditions are checked and listed only while the design loop is advisory or enforced; in legacy a validation and a candidate read answer exactly as before, without obligationProblems, obligationsChecked or relationProblems"
       ],
       "status": "canonical",
       "tests": [

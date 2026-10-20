@@ -92,6 +92,12 @@ class ApplicationSettingsDto(BaseModel):
     studio_port: int = Field(default=8789, alias="studioPort", ge=1024, le=65535)
     monitor_port: int = Field(default=8788, alias="monitorPort", ge=1024, le=65535)
 
+    @field_validator("design_loop", mode="before")
+    @classmethod
+    def _design_loop_was_off(cls, value: object) -> object:
+        # "off", saved before the setting had three tiers, is legacy.
+        return "legacy" if value == "off" else value
+
     @field_validator("project_dir", "workspace_dir", "library_dir")
     @classmethod
     def absolute_project(cls, value: str | None) -> str | None:

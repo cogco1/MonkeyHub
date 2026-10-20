@@ -9,6 +9,8 @@ the Agent's own way onto the working design, and changing nothing while it is of
 
 from __future__ import annotations
 
+import json
+
 from dataclasses import replace
 from pathlib import Path
 import shutil
@@ -30,7 +32,9 @@ from project_runtime.errors import StudioError
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 
-from .support import PROJECT_ID, make_empty_project, make_project
+from .support import (
+    PROJECT_ID, RUNNER_RECORD_PATH, make_empty_project, make_project, retain_runner_receipt, runner_state_digest,
+)
 
 
 def _obligation(obligation_id: str, validator_ref: str | None, *subjects: str, statement: str = "") -> DesignObligation:
@@ -289,8 +293,9 @@ class RevisionOrderTests(unittest.TestCase):
         self.assertNotIn("admit", ports.calls)
 
     def test_a_new_violation_is_a_problem_named_by_its_condition(self) -> None:
+        # Review readiness holds: conditions are no clause of it, and the revision refuses the violation itself.
         ports = FakePorts(base=_record(_obligation("rise", "validator:element-param-at-most/rise/0.18", "entity:stair")),
-                          validation={"blockedBy": ["obligations.held"], "honesty": [], "obligationProblems": []},
+                          validation={"blockedBy": [], "honesty": [], "obligationProblems": []},
                           obligations={"new": ["rise"], "results": [
                               {"obligationId": "rise", "status": "violated", "detail": "stair rise 0.2000 <= 0.1800"}]})
         outcome = _revise(ports)
@@ -389,8 +394,10 @@ class RevisionRouteTests(unittest.TestCase):
         self.repository, _ = make_project(self.root)
         self.project = self.root / PROJECT_ID
 
-    def runtime(self, design_loop: str = "enforced", *, managed: bool = False, project: Path | None = None) -> TestClient:
-        app = create_app(StudioSettings(cad_export="occt", project_dir=project or self.project, design_loop=design_loop))
+    def runtime(self, design_loop: str = "enforced", *, managed: bool = False, project: Path | None = None,
+                reference_run: str | None = None) -> TestClient:
+        app = create_app(StudioSettings(cad_export="occt", project_dir=project or self.project, design_loop=design_loop,
+                                        reference_run=reference_run))
         if managed:
             app.state.managed_instance_id = "hub-1"
         client = TestClient(app)
@@ -553,21 +560,34 @@ class RevisionRouteTests(unittest.TestCase):
         self.assertEqual(moved.status_code, 200, moved.text)
 
 
-    def test_advisory_checks_and_lists_problems_but_keeps_the_old_ways_onto_the_working_design(self) -> None:
-        agent = self.runtime("advisory", managed=True)
+    def conditioned(self, validator_ref: str) -> str:
+        """A run whose record says the portico base keeps a condition; the design starts from it."""
+
+        payload = json.loads(self.repository.layout.resolve_relative(RUNNER_RECORD_PATH).read_text(encoding="utf-8"))
+        payload["obligations"] = [_obligation("base-height-limit", validator_ref, "entity:portico-base").to_dict()]
+        run = self.repository.create_run("conditioned")
+        retain_runner_receipt(self.repository, run, record_payload=payload,
+                              design_state_digest=runner_state_digest(self.repository, run.run_id, payload))
+        return run.run_id
+
+    def test_advisory_lists_a_new_violation_and_blocks_nothing_on_the_old_ways_onto_the_working_design(self) -> None:
+        agent = self.runtime("advisory", managed=True, reference_run=self.conditioned("validator:element-param-at-most/height/2.0"))
         run_id = self.candidate(agent)
         candidate = agent.get(f"/api/candidates/{run_id}").json()
         validation = agent.get(f"/api/candidates/{run_id}/validation").json()
         self.assertIn("relationProblems", candidate)
-        self.assertIn("obligationProblems", candidate)
-        self.assertIn("obligationsChecked", validation)
+        [problem] = candidate["obligationProblems"]
+        self.assertEqual((problem["obligationId"], problem["status"], problem["new"]), ("base-height-limit", "violated", True))
+        self.assertEqual(validation["obligationProblems"], candidate["obligationProblems"])
+        self.assertIs(validation["reviewReady"], True, validation["blockedBy"])
         refused = agent.post("/api/revisions", json={"projectId": PROJECT_ID, "sourceRunId": None, "stateDigest": "x",
                                                      "kind": "proposal", "proposal": {}, "summary": "x"})
         self.assertEqual(refused.json()["code"], "DESIGN_LOOP_NOT_ENFORCED")
         admitted = agent.post("/api/admissions", headers=AGENT, json={
             "projectId": PROJECT_ID, "task": {"kind": "hub-chat"}, "messageSource": MESSAGE,
             "results": [{"runId": run_id, "outcome": "admitted"}]})
-        self.assertNotEqual(admitted.json().get("code"), "DESIGN_LOOP_REQUIRED", admitted.text)
+        self.assertEqual(admitted.status_code, 201, admitted.text)
+        self.assertEqual(admitted.json()["actor"]["origin"], "hub-agent")
         moved = agent.put("/api/working-draft", headers=AGENT, json={
             "projectId": PROJECT_ID, "runId": run_id, "baseRevisionSha256": self.head(agent)["revisionSha256"],
             "messageSource": MESSAGE, "rawLanguage": "就这样"})

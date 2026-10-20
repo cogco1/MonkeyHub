@@ -217,10 +217,13 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if "feedbackQuote" in arguments and (name != "studio_request" or not judgments._binds_words(method, parsed.path)
                                          or not isinstance(arguments["feedbackQuote"], str)):
         raise HubFailure(422, "CHAT_FEEDBACK_QUOTE", "feedbackQuote only selects the user's words for feedback, an admission or a Continue.")
-    if "taskClass" in arguments and not (name == "studio_request" and method == "POST"
-                                         and parsed.path in ("/api/admissions", studio_tool.REVISIONS)):
+    revisions_offered = studio_tool.design_loop_offered()
+    if "taskClass" in arguments and not (name == "studio_request" and method == "POST" and parsed.path in (
+            ("/api/admissions", studio_tool.REVISIONS) if revisions_offered else ("/api/admissions",))):
+        # The legacy words stay as they were; only an enforced conversation is told about POST /api/revisions.
         raise HubFailure(422, "CHAT_TOOL_INVALID", "taskClass beside method/path names the loop POST /api/admissions "
-                         "or POST /api/revisions closes; visual_review takes its own.")
+                         + ("or POST /api/revisions closes; " if revisions_offered else "closes; ")
+                         + "visual_review takes its own.")
     if "continue" in arguments and ((name, method, parsed.path) != ("studio_request", "POST", "/api/admissions")
                                     or not isinstance(arguments["continue"], bool)):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "continue: true beside method/path lands the one result POST "
@@ -256,7 +259,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         # A malformed question is refused before a runtime is prepared for it.
         studio_tool._discovery(arguments)
         return studio_tool._discover_actions(preparation._bound_studio(hub, chat_id)[0], arguments,
-                                             enforced=studio_tool.design_loop_offered())
+                                             tier=studio_tool.design_loop_tier())
     if any(key in arguments for key in ("pathPrefix", "offset", "limit")):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "pathPrefix, offset and limit belong to studio_schema action discovery; omit path.")
     # Asking what a documented action takes is not calling it. The path is
@@ -268,10 +271,12 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "This action is not exposed to the chat.")
     revising = method == "POST" and parsed.path == studio_tool.REVISIONS
     looping = (method, parsed.path) in studio_tool.LOOP_ACTIONS
-    if looping and not studio_tool.design_loop_enforced(hub):
+    setting = studio_tool.design_loop_setting(hub) if looping else studio_tool.DESIGN_LOOP_LEGACY
+    if looping and not studio_tool.loop_action_offered(method, parsed.path, setting):
+        needed = "enforced" if (method, parsed.path) == studio_tool.REVISION_ACTION else "advisory or enforced"
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", f"{method} {parsed.path} is offered to the chat only while this "
-                         "Hub's design loop is enforced, and it is not. Nothing was executed.")
-    permitted = (studio_tool._schema_allowed(method, parsed.path, enforced=looping) if name == "studio_schema"
+                         f"Hub's design loop is {needed}, and it is {setting}. Nothing was executed.")
+    permitted = (studio_tool._schema_allowed(method, parsed.path, tier=setting) if name == "studio_schema"
                  else allowed[method].fullmatch(parsed.path))
     if not permitted:
         replacement = studio_tool._REPLACED_ACTIONS.get((method, parsed.path))

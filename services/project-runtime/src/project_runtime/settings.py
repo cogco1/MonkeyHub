@@ -335,7 +335,9 @@ class StudioSettings:
             render_model=os.environ.get(RENDER_MODEL_ENV, "").strip() or None,
             render_api_key=os.environ.get(RENDER_API_KEY_ENV, "").strip() or None,
             render_timeout_s=render_timeout,
-            design_loop=os.environ.get(DESIGN_LOOP_ENV, "").strip().lower() or DESIGN_LOOP_LEGACY,
+            # "off", the setting's name before it had three tiers, is legacy.
+            design_loop={"": DESIGN_LOOP_LEGACY, "off": DESIGN_LOOP_LEGACY}.get(
+                os.environ.get(DESIGN_LOOP_ENV, "").strip().lower(), os.environ.get(DESIGN_LOOP_ENV, "").strip().lower()),
             cad_export=cad_export_from_env(os.environ),
             powershell=Path(powershell) if powershell else None,
             reference_run=reference_run or None,

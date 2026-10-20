@@ -174,9 +174,27 @@ _MODELLING_REVISIONS = chr(10).join([
 ])
 
 
-def modelling(enforced: bool) -> str:
-    """studio_request's guide: the one-call revision while the design loop is enforced, else the steps as before."""
-    return _MODELLING_REVISIONS if enforced else _MODELLING
+# advisory: the steps as before, and what the checks the design loop now runs add to the reads.
+_ADVISORY = [
+    "CONDITIONS: a candidate read and its validation also list relationProblems (declared relations violated or left",
+    "unchecked) and obligationProblems (conditions the design must keep that are violated, new where the design it was",
+    "made from did not violate them, or that no check could verify). They block nothing; name each in your answer.",
+    "GET /api/revisions/context reads what the architect kept and rejected, in their words, and how each condition",
+    "stands on the working design.",
+]
+_MODELLING_ADVISORY = chr(10).join([
+    *_LINES[:_LINES.index("OTHER READS: GET /api/project, /api/state/volumes, /api/program, /api/options, /api/artifacts, /api/jobs/{id}.")],
+    *_ADVISORY,
+    *_LINES[_LINES.index("OTHER READS: GET /api/project, /api/state/volumes, /api/program, /api/options, /api/artifacts, /api/jobs/{id}."):],
+])
+
+
+def modelling(tier: bool | str) -> str:
+    """studio_request's guide: the one-call revision while the design loop is enforced; the steps as before, told
+    about the problem lists, while it is advisory; the steps exactly as before in legacy (``True`` is enforced)."""
+    if tier is True or tier == "enforced":
+        return _MODELLING_REVISIONS
+    return _MODELLING_ADVISORY if tier == "advisory" else _MODELLING
 
 
 # The full text of each domain the upfront guide names in one line. Answered

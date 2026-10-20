@@ -133,8 +133,9 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "VISUAL_SOURCE_MISMATCH (read the current exact source), VISUAL_PROVIDER_UNAVAILABLE. VISUAL_PROVIDER_FAILED spends the review.",
     ])
     # The design loop the conversation was started with; a later change reaches the next conversation.
-    enforced = studio_tool.design_loop_offered()
-    modelling = guides.modelling(enforced)
+    tier = studio_tool.design_loop_tier()
+    enforced = tier == studio_tool.DESIGN_LOOP_ENFORCED
+    modelling = guides.modelling(tier)
     if enforced:
         request_schema["properties"]["feedbackQuote"]["description"] = request_schema["properties"]["feedbackQuote"][
             "description"].replace("/api/admissions or PUT /api/working-draft", "/api/admissions, /api/revisions or PUT /api/working-draft")

@@ -424,10 +424,8 @@ def _validation_problems(validation: Mapping[str, Any], candidate: Mapping[str, 
     for row in obligations.get("results") or ():
         if row.get("status") == "violated" and row.get("obligationId") in new:
             problems.append(Problem(f"obligation:{row.get('obligationId')}", "violated", str(row.get("detail"))[:600]))
-    if "obligations.held" in blocked and not new:
-        problems.append(Problem("obligations.held", "not ready", "a condition is violated that its base did not violate"))
     for clause in blocked:
-        if clause not in ("relations.held", "relations.fully_checked", "obligations.held"):
+        if clause not in ("relations.held", "relations.fully_checked"):
             lines = list(validation.get("honesty") or ()) if clause == "runner.exports_available" else []
             problems.append(Problem(clause, "not ready", "; ".join(lines)[:600] or f"{clause} does not hold"))
     return problems
