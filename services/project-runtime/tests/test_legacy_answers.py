@@ -5,8 +5,8 @@ its read, its validation, its export (and one asking for state), the Agent's adm
 rejected second candidate and refused direct moves -
 is run on this checkout and compared with what main answered to the same requests, kept in
 ``fixtures/legacy_answers_main.json``. Only what differs between any two runs of the same code is masked: run,
-proposal and job ids, digests, clock times and durations, and the temporary directory; each by order of first
-appearance, so a field added, dropped or moved still shows; a candidate's objects, which main too lists in no
+proposal and job ids, digests, clock times and durations, the temporary directory, and what native discovery
+found installed on the machine; each by order of first appearance, so a field added, dropped or moved still shows; a candidate's objects, which main too lists in no
 fixed order, are compared sorted by name. The two routes main did not have,
 ``POST /api/revisions`` and ``GET /api/revisions/context``, are not in the scenario.
 
@@ -49,12 +49,15 @@ _MASKS = (
     ("time", re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?")),
     ("stamp", re.compile(r"(?<![0-9])\d{8}[-T]\d{6}(?:-\d+)?(?![0-9])")),
 )
+_HOST_KEYS = frozenset({"discovery", "status", "reason"})
 _DURATION = re.compile(r'"(\w*(?:[Tt]ime|[Ss]econds|Ms|_s|S))"\s*:\s*-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?')
 
 
 def _in_order(text: str) -> str:
     """The body with a candidate's objects sorted by name: main serves that one list in no fixed order, and so does
-    this checkout. Written back as the server writes JSON, so nothing else in it changes."""
+    this checkout. What a native-discovery provider found installed on the machine (its discovery, status and
+    reason) is the machine's, not the code's, and is masked. Written back as the server writes JSON, so nothing
+    else in it changes."""
 
     try:
         body = json.loads(text)
@@ -63,7 +66,9 @@ def _in_order(text: str) -> str:
 
     def walk(value):
         if isinstance(value, dict):
-            return {key: (sorted((walk(item) for item in row), key=lambda item: str(item.get("name")))
+            host = value.get("providerVersion") == "native-discovery/1"
+            return {key: ("<host>" if host and key in _HOST_KEYS else
+                          sorted((walk(item) for item in row), key=lambda item: str(item.get("name")))
                           if key == "objects" and isinstance(row, list) and all(isinstance(item, dict) for item in row)
                           else walk(row)) for key, row in value.items()}
         return [walk(item) for item in value] if isinstance(value, list) else value
