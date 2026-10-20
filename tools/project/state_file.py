@@ -1,7 +1,7 @@
 """Start a project from a record, open a state-carrying 3DM as a project, and save its working design back.
 
     python tools/project/state_file.py init --record record.json --opening opening.json --work-root W --out start.3dm
-    python tools/project/state_file.py open --file in.3dm --work-root W
+    python tools/project/state_file.py open --file in.3dm --work-root W [--refuse-unvouched]
     python tools/project/state_file.py save --project-dir W/<project> --out model.3dm [--parent-file-sha256 S]
                                        [--candidates DIR] [--events hop.jsonl]
     python tools/project/state_file.py parts --file model.3dm
@@ -44,7 +44,10 @@ bookkeeping: the record's run id, base, predecessor, decision ref, invalidated r
 not the design), project id and schema, and each carried decision's id and extent (every hop opens a new
 project, which records the decisions again under new ids and binds the record to its own run).
 
-Exit code 0 is success, and the answer is one JSON object on stdout; a failure writes its reason to stderr.
+Exit code 0 is success, and the answer is one JSON object on stdout; a failure writes its reason to stderr. Exit
+code 2 is ``open`` refusing the file: it exists and is no state file MonkeyHub can read (its record unreadable and no
+sound seal to read it from), or, with ``--refuse-unvouched``, no seal vouches for its design (none, broken, or one that
+keeps no record). Every other failure is exit code 1.
 Nothing is ever deleted: a project directory or output file that already exists is refused.
 """
 
@@ -59,7 +62,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Any, Iterator, Mapping, NoReturn, Sequence
 
 REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
@@ -86,6 +89,11 @@ WAIT_S = 300.0
 
 class StateFileCommandError(RuntimeError):
     """A step of the command failed; the message says which and why."""
+
+
+class FileRefused(StateFileCommandError):
+    """open will not build from this file (exit code 2): it is no state file MonkeyHub can read, or, when asked to,
+    no seal vouches for its design. Any other failure is the command's own (exit code 1)."""
 
 
 # ---- building the project with the existing tools -----------------------------------------------
@@ -411,11 +419,17 @@ def init(record_file: Path, opening_file: Path, work_root: Path, out: Path) -> d
     return {"projectDir": str(project_dir), "decisions": len(recorded), **saved}
 
 
-def open_file(file: Path, work_root: Path) -> dict[str, Any]:
+def open_file(file: Path, work_root: Path, *, refuse_unvouched: bool = False) -> dict[str, Any]:
+    if not Path(file).is_file():
+        raise StateFileCommandError(f"{file} does not exist.")
     try:
         found = read_state_file(Path(file))
     except StateFileError as exc:
-        raise StateFileCommandError(f"{file} is not a state file MonkeyHub can open: {exc}") from exc
+        raise FileRefused(f"{file} is not a state file MonkeyHub can open: {exc}") from exc
+    if refuse_unvouched and (found.sealed_record is None or found.sealed_decisions is None):
+        why = {"unsealed": "it carries no seal", "seal_broken": "its seal was removed, made unreadable or does not match itself"}
+        reason = next((why[row.kind] for row in found.out_of_band if row.kind in why), "its seal keeps no record")
+        raise FileRefused(f"{file} is not opened: {reason}, so MonkeyHub cannot tell its design from changes made outside it.")
     if found.sealed_record is not None and found.sealed_decisions is not None:
         # The design is what the seal vouches for. A change made outside MonkeyHub, to the model or to the record and
         # decisions the file states, is not taken in: each part it touched keeps what its record says, and a question
@@ -428,7 +442,7 @@ def open_file(file: Path, work_root: Path) -> dict[str, Any]:
         try:
             record = StateRecord.from_dict(found.record)
         except (StateRecordError, KeyError, TypeError, ValueError) as exc:
-            raise StateFileCommandError(f"{file} carries no seal and its design record is not one: {exc}") from exc
+            raise FileRefused(f"{file} carries no seal and its design record is not one: {exc}") from exc
         decisions = []
     conditions = outside_conditions(record, found.out_of_band, decisions or found.decisions, file_sha256=found.file_sha256)
     project_dir = build_project(replace(record, obligations=(*record.obligations, *conditions)), Path(work_root))
@@ -497,8 +511,16 @@ def replay_command(args) -> dict[str, Any]:
     return replay(record, decisions, events)
 
 
+class _Parser(argparse.ArgumentParser):
+    """A mistaken command line is the command's own failure (exit code 1); exit code 2 is kept for a refused file."""
+
+    def error(self, message: str) -> NoReturn:
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = _Parser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
     started = commands.add_parser("init", help="start a project from a record and its opening decisions")
     started.add_argument("--record", required=True)
@@ -508,6 +530,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     opened = commands.add_parser("open", help="open a state-carrying 3DM as a project")
     opened.add_argument("--file", required=True)
     opened.add_argument("--work-root", required=True)
+    opened.add_argument("--refuse-unvouched", action="store_true",
+                        help="refuse (exit code 2) a file no seal vouches for, instead of opening it with the whole design "
+                             "waiting for the architect")
     saved = commands.add_parser("save", help="save the working design as a sealed 3DM")
     saved.add_argument("--project-dir", required=True)
     saved.add_argument("--out", required=True)
@@ -526,7 +551,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "init":
             answer = init(Path(args.record), Path(args.opening), Path(args.work_root), Path(args.out))
         elif args.command == "open":
-            answer = open_file(Path(args.file), Path(args.work_root))
+            answer = open_file(Path(args.file), Path(args.work_root), refuse_unvouched=args.refuse_unvouched)
         elif args.command == "save":
             answer = save(Path(args.project_dir), Path(args.out), args.parent_file_sha256,
                           None if args.candidates is None else Path(args.candidates),
@@ -536,6 +561,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             answer = {"parts": state_parts(found.record, found.decisions)}
         else:
             answer = replay_command(args)
+    except FileRefused as exc:
+        print(f"state_file {args.command}: {exc}", file=sys.stderr)
+        return 2
     except (StateFileCommandError, StateFileError, OSError, ValueError, KeyError) as exc:
         print(f"state_file {args.command}: {exc}", file=sys.stderr)
         return 1

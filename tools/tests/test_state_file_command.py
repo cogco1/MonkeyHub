@@ -233,6 +233,41 @@ class StateFileCommandTests(unittest.TestCase):
         self.assertEqual(state_file.main(["open", "--file", str(missing), "--work-root", str(self.root / "w")]), 1)
 
 
+@unittest.skipUnless(rhino3dm is not None, "rhino3dm is needed")
+class RefusalTests(unittest.TestCase):
+    """open refuses a file with exit code 2, before anything is built; every other failure is exit code 1."""
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="state-file-refusal-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+
+    def open(self, file: Path, *flags: str) -> int:
+        with contextlib.redirect_stderr(io.StringIO()):
+            return state_file.main(["open", "--file", str(file), "--work-root", str(self.root / "w"), *flags])
+
+    def state_file(self, name: str, **strings: str) -> Path:
+        model = rhino3dm.File3dm()
+        model.Strings["archflow:state"] = json.dumps({"schema": "ArchFlowStateFile@1", "record": RECORD, "decisions": []})
+        for key, value in strings.items():
+            model.Strings[key] = value
+        path = self.root / name
+        self.assertTrue(model.Write(str(path), 8))
+        return path
+
+    def test_exit_codes(self) -> None:
+        self.assertEqual(self.open(self.root / "missing.3dm"), 1, "no file is the caller's mistake, not a refusal")
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as usage:
+            state_file.main(["open", "--work-root", str(self.root / "w")])
+        self.assertEqual(usage.exception.code, 1, "a mistaken command line is not a refusal either")
+        garbage = self.root / "garbage.3dm"
+        garbage.write_bytes(b"not a model")
+        self.assertEqual(self.open(garbage), 2)
+        self.assertEqual(self.open(self.state_file("unsealed.3dm"), "--refuse-unvouched"), 2)
+        self.assertEqual(self.open(self.state_file("emptied.3dm", **{"archflow:binding": "{}"}), "--refuse-unvouched"), 2)
+        self.assertFalse((self.root / "w").exists(), "nothing was built")
+
+
 class ReplayTests(unittest.TestCase):
     """The history's own rules, without building anything."""
 
