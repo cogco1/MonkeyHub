@@ -443,11 +443,14 @@ class OperationManager:
                                      "The dismissal could not be saved, so the notice stays. Nothing else changed.") from exc
             return self._shown(record, admission, admissionSequence=sequence)
 
-    def question_answered(self, session_id: str, refs: object, state_digest: object, message_id: object) -> str | None:
+    def question_answered(self, session_id: str, refs: object, state_digest: object, message_id: object,
+                          user_messages: list[str]) -> str | None:
         """The revision whose question ``refs`` answer, when the chat may confirm them; else None.
 
-        It is this chat's latest revision that asked anything (needs_question), on the same base, in an earlier
-        message than the one confirming, and it asked about every ref confirmed.
+        It is this chat's latest revision that asked anything (needs_question), on the same base, and the message
+        confirming is the first user message after the one that question answered: the architect's reply to it.
+        A later message, about anything else, confirms nothing. ``user_messages`` are the chat's user message ids
+        in order.
         """
 
         if not isinstance(refs, list) or not refs or not all(isinstance(ref, str) for ref in refs):
@@ -459,7 +462,10 @@ class OperationManager:
             if not asked:
                 return None
             latest = max(asked, key=lambda record: record.createdAt or "")
-        if latest.baseDigest != state_digest or not latest.messageId or latest.messageId == message_id:
+        if latest.baseDigest != state_digest or latest.messageId not in user_messages:
+            return None
+        after = user_messages[user_messages.index(latest.messageId) + 1:]
+        if not after or after[0] != message_id:
             return None
         return latest.operationId if set(refs) <= set(latest.questionRefs or ()) else None
 

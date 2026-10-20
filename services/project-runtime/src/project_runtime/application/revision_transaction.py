@@ -260,6 +260,8 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
                             candidate_id=candidate_id, question_refs=tuple(d.target_ref for d in rejected))
             known = {o.obligation_id for o in scope}
             scope = (*scope, *(o for o in obligations_in_scope(base, built_reach) if o.obligation_id not in known))
+            conditions = tuple({"obligationId": o.obligation_id, "statement": o.statement,
+                                "checkable": obligation_checkable(o), "validatorRef": o.validator_ref} for o in scope)
             unchecked = [o for o in scope if o.obligation_id not in known and not obligation_checkable(o)
                          and f"obligation:{o.obligation_id}" not in confirmed]
             if unchecked:
@@ -267,7 +269,8 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
                             "verify, beyond what its proposal said: " + "; ".join(
                                 f"obligation:{o.obligation_id}: \"{o.statement}\"" for o in unchecked)
                             + ". It was not admitted; ask the architect whether it keeps them.", proposal_id=proposal_id,
-                            candidate_id=candidate_id, question_refs=tuple(f"obligation:{o.obligation_id}" for o in unchecked))
+                            candidate_id=candidate_id, question_refs=tuple(f"obligation:{o.obligation_id}" for o in unchecked),
+                            conditions=conditions)
     else:
         candidate_id = request.candidate_id
 
@@ -364,7 +367,8 @@ def _sentence(exc: StudioError) -> str:
 
 def _confirmation(scope: Sequence[Any], confirmed: set[str]) -> str | None:
     named = [f"obligation:{o.obligation_id}" for o in scope if f"obligation:{o.obligation_id}" in confirmed]
-    return f"The architect's words confirm the change keeps {', '.join(named)}." if named else None
+    return (f"Confirmed in the architect's reply to the question about {', '.join(named)}; their words are kept "
+            "with this change." if named else None)
 
 
 def _with_wholes(record: StateRecord, refs: Sequence[str]) -> set[str]:

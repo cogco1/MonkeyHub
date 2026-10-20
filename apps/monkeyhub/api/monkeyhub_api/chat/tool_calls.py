@@ -274,13 +274,16 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "This action is not exposed to the chat.")
     revising = method == "POST" and parsed.path == studio_tool.REVISIONS
     looping = (method, parsed.path) in studio_tool.LOOP_ACTIONS
-    setting = studio_tool.design_loop_setting(hub) if looping else studio_tool.DESIGN_LOOP_LEGACY
-    if looping and not studio_tool.loop_action_offered(method, parsed.path, setting):
+    # A conversation started in legacy is refused a loop action as main refuses any path it does not expose, and
+    # the Hub's setting is not read for it.
+    legacy = looping and studio_tool.design_loop_tier() == studio_tool.DESIGN_LOOP_LEGACY
+    setting = studio_tool.design_loop_setting(hub) if looping and not legacy else studio_tool.DESIGN_LOOP_LEGACY
+    if looping and not legacy and not studio_tool.loop_action_offered(method, parsed.path, setting):
         needed = "enforced" if (method, parsed.path) == studio_tool.REVISION_ACTION else "advisory or enforced"
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", f"{method} {parsed.path} is offered to the chat only while this "
                          f"Hub's design loop is {needed}, and it is {setting}. Nothing was executed.")
-    permitted = (studio_tool._schema_allowed(method, parsed.path, tier=setting) if name == "studio_schema"
-                 else allowed[method].fullmatch(parsed.path))
+    permitted = not legacy and (studio_tool._schema_allowed(method, parsed.path, tier=setting) if name == "studio_schema"
+                                else allowed[method].fullmatch(parsed.path))
     if not permitted:
         replacement = studio_tool._REPLACED_ACTIONS.get((method, parsed.path))
         if replacement is not None:

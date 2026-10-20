@@ -1261,15 +1261,50 @@ class ObligationCheckTests(unittest.TestCase):
         self.assertEqual(status, "violated")
         self.assertIn("stair head: 0.0000, nothing receives it at 1.7000", detail)
 
-    def test_a_readback_without_an_object_of_every_part_measures_nothing(self) -> None:
+    def test_a_readback_missing_a_part_where_a_check_looks_measures_nothing(self) -> None:
         record = _house(_obligation("k6", "validator:headroom-at-least/2.0", "entity:stair"),
                         _obligation("r8", "validator:landing-depth-at-least/1.2", "entity:stair"),
                         _obligation("r9", "validator:doors-clear-of-flights", "entity:wall-a"))
-        for missing in ("obj-stair", "obj-slab"):
-            with self.subTest(missing=missing):
-                found = self.results(record, {name: box for name, box in _BOXES.items() if name != missing})
-                self.assertEqual({k: v[0] for k, v in found.items()}, {"k6": "unchecked", "r8": "unchecked", "r9": "unchecked"})
-                self.assertIn(f"has no object of {missing.removeprefix('obj-')}", found["r9"][1])
+        # The stair itself: every check of it reads its box.
+        found = self.results(record, {name: box for name, box in _BOXES.items() if name != "obj-stair"})
+        self.assertEqual({k: v[0] for k, v in found.items()}, {"k6": "unchecked", "r8": "unchecked", "r9": "unchecked"})
+        # The slab over the flight and its landings: headroom and landing cannot be told; the doors never read it.
+        found = self.results(record, {name: box for name, box in _BOXES.items() if name != "obj-slab"})
+        self.assertEqual({k: v[0] for k, v in found.items()}, {"k6": "unchecked", "r8": "unchecked", "r9": "held"})
+        self.assertIn("has no object of slab", found["k6"][1])
+
+    def test_a_part_missing_far_from_the_flight_changes_nothing_one_the_record_does_not_place_could_be_anywhere(self) -> None:
+        def element(element_id: str, params: dict) -> Entity:
+            return Entity(element_id, "Element@1", {"component_id": "house", "producer": "prism",
+                                                    "references": {"base": {"level": "level-1"}}, "params": params},
+                          parent_id="house")
+
+        base = _house(_obligation("k6", "validator:headroom-at-least/2.0", "entity:stair"),
+                      _obligation("r8", "validator:landing-depth-at-least/0.5", "entity:stair"))
+        shed = replace(base, entities=(*base.entities, element("shed", {"profile": [[20, 20], [24, 20], [24, 23], [20, 23]], "height": 2.4})))
+        self.assertEqual({k: v[0] for k, v in self.results(shed, _BOXES).items()}, {"k6": "held", "r8": "held"})
+        planed = replace(base, entities=(*base.entities, element("post", {
+            "profile": [[0, 0], [0.1, 0], [0.1, 0.1], [0, 0.1]], "height": 2.4,
+            "work_plane": {"origin": [20, 0, 20], "xAxis": [1, 0, 0], "yAxis": [0, 0, 1], "normal": [0, 1, 0]}})))
+        self.assertEqual({k: v[0] for k, v in self.results(planed, _BOXES).items()}, {"k6": "unchecked", "r8": "unchecked"})
+
+    def test_a_railing_at_the_flights_side_is_not_in_the_way(self) -> None:
+        record = _house(_obligation("k6", "validator:headroom-at-least/2.0", "entity:stair"), column=True)
+        for name, box in (("12 mm glass standing just inside the flight's edge", ((1.47, 1.0, 0.0), (1.482, 4.0, 3.0))),
+                          ("a 50 mm post half inside the flight", ((1.475, 2.5, 0.0), (1.525, 2.55, 1.2))),
+                          ("a handrail along the edge above the treads", ((1.45, 1.0, 0.9), (1.5, 4.0, 2.7)))):
+            with self.subTest(name):
+                status, detail = self.results(record, {**_BOXES, "obj-column": box})["k6"]
+                self.assertEqual(status, "held", detail)
+        # A rail its component declares as one is a railing wherever it stands: a centre rail on a wide flight.
+        centre = ((0.97, 1.0, 0.0), (1.03, 4.0, 1.2))
+        self.assertEqual(self.results(record, {**_BOXES, "obj-column": centre})["k6"][0], "violated")
+        declared = replace(record, entities=tuple(
+            replace(e, fields={**e.fields, "component_id": "rail"}, parent_id="rail") if e.entity_id == "column" else e
+            for e in record.entities) + (Entity("rail", "Component@1", {"intent": "centre rail",
+                                                                         "facets": {"architectural.role": "railing"}},
+                                                 parent_id="house"),))
+        self.assertEqual(self.results(declared, {**_BOXES, "obj-column": centre})["k6"][0], "held")
 
     def test_an_entity_check_without_an_entity_subject_is_unchecked_never_held(self) -> None:
         kinds = ("opening-piers-at-least/0.5", "wall-above-at-least/0.15", "headroom-at-least/2.0", "landing-depth-at-least/0.5",
