@@ -123,8 +123,9 @@ def outside_conditions(record: StateRecord, findings: Sequence[OutOfBand], decis
     The design record does not take the change: the part keeps what its record says, and the file written back
     carries that. Whether to adopt the change is the architect's to answer, so each question is a condition no
     check can verify on that part alone, and a reviser who reaches the part asks. An object that belongs to no
-    part of the record, a seal that is missing and a re-encoded mesh ask nothing. Ids are the file's, so
-    questions from several files never meet.
+    part of the record and a re-encoded mesh ask nothing. A seal that is missing or broken, or a design record the
+    file no longer states, tells nothing of what changed: the question is then on the whole design. Ids are the
+    file's, so questions from several files never meet.
     """
 
     elements = resolve_element_bindings(record)
@@ -140,6 +141,10 @@ def outside_conditions(record: StateRecord, findings: Sequence[OutOfBand], decis
             # The parts whose decisions were added or removed in the file; without that detail, every target.
             changed = [*(finding.detail.get("added") or ()), *(finding.detail.get("removed") or ())]
             subjects = tuple(sorted({str(row.get("targetRef")) for row in changed if row.get("targetRef")})) if changed else tuple(targets)
+        elif finding.kind in ("unsealed", "seal_broken", "state_replaced"):
+            # Nothing tells what was changed: the whole design waits for the architect, on its outermost parts, which
+            # every change reaches through the wholes its parts belong to.
+            subjects = _wholes(record)
         else:
             continue
         if subjects:
@@ -179,8 +184,21 @@ def change_words(finding: OutOfBand) -> str:
                 *(f"removed {row.get('disposition')} on {row.get('targetRef')} (\"{row.get('rawLanguage')}\")" for row in removed)]
         return "the decisions the file carries were changed" + (": " + "; ".join(rows) if rows else "")
     if finding.kind == "unsealed":
-        return "the file carries no seal"
+        return "the file carries no seal, so what was changed in it outside MonkeyHub cannot be told"
+    if finding.kind == "seal_broken":
+        return ("the file's seal was removed, made unreadable or does not match itself, so what was changed in it "
+                "outside MonkeyHub cannot be told")
+    if finding.kind == "state_replaced":
+        return "the design record the file states was removed or made unreadable; the design is the one the seal keeps"
     return finding.kind
+
+
+def _wholes(record: StateRecord) -> tuple[str, ...]:
+    """The components no other component holds: what every part of the design belongs to."""
+
+    components = {entity.entity_id: entity for entity in record.entities_of("Component@1")}
+    return tuple(sorted(f"entity:{entity_id}" for entity_id, entity in components.items()
+                        if entity.parent_id not in components))
 
 
 def _object_words(finding: OutOfBand, name: str) -> str:

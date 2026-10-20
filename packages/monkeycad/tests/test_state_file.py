@@ -207,9 +207,21 @@ def test_a_seal_whose_kept_record_was_edited_does_not_match_itself(tmp_path: Pat
         binding["record"]["parameters"][0]["value"] = 0.19
         model.Strings[BINDING_KEY] = canonical_json(binding)
 
-    with pytest.raises(StateFileError) as refused:
-        read_state_file(_rewrite(sealed, tmp_path / "forged.3dm", edit))
-    assert refused.value.code == "BINDING_CORRUPT"
+    forged = read_state_file(_rewrite(sealed, tmp_path / "forged.3dm", edit))
+    assert (forged.binding, forged.sealed_record) == (None, None), "a seal that does not match itself vouches for nothing"
+    assert [row.kind for row in forged.out_of_band] == ["seal_broken"]
+    assert "does not match" in forged.out_of_band[0].detail["reason"]
+
+
+def test_a_state_string_removed_or_emptied_is_read_from_the_copy_the_seal_keeps(tmp_path: Path) -> None:
+    _, sealed = _sealed(tmp_path)
+
+    def empty(model) -> None:
+        model.Strings[STATE_KEY] = "{}"
+
+    found = read_state_file(_rewrite(sealed, tmp_path / "emptied.3dm", empty))
+    assert (found.record, found.decisions) == (RECORD, tuple(DECISIONS))
+    assert [row.kind for row in found.out_of_band] == ["state_replaced"]
 
 
 def _ell_mesh():
@@ -303,10 +315,11 @@ def test_refusals(tmp_path: Path) -> None:
     assert unsealed.record == RECORD
     assert unsealed.out_of_band == (OutOfBand("unsealed", "file", {}),)
 
-    bad_binding = _write_source(tmp_path / "bad-binding.3dm", {STATE_KEY: state, BINDING_KEY: "[]"})
-    with pytest.raises(StateFileError) as binding_error:
-        read_state_file(bad_binding)
-    assert binding_error.value.code == "BINDING_CORRUPT"
+    # A seal emptied or made unreadable is read as none, and said so.
+    for name, text in (("empty", "{}"), ("list", "[]"), ("null", "null"), ("broken", "{not json")):
+        found = read_state_file(_write_source(tmp_path / f"bad-binding-{name}.3dm", {STATE_KEY: state, BINDING_KEY: text}))
+        assert (found.binding, found.sealed_record, found.record) == (None, None, RECORD)
+        assert [row.kind for row in found.out_of_band] == ["seal_broken"]
 
     source = _write_source(tmp_path / "export.3dm")
     taken = tmp_path / "taken.3dm"

@@ -120,12 +120,10 @@ class OutsideConditionTests(unittest.TestCase):
     def test_each_change_is_a_question_for_the_architect_on_the_part_it_touched(self) -> None:
         findings = (OutOfBand("object_moved", "object:obj-portico-base", {"moved_m": 0.5}),
                     OutOfBand("row_changed", "parameter:module", {}),
-                    OutOfBand("object_added", "object:imported-chair", {}),
-                    OutOfBand("unsealed", "file", {}))
+                    OutOfBand("object_added", "object:imported-chair", {}))
         conditions = outside_conditions(self.record, findings, [{"targetRef": "entity:portico"}], file_sha256="a" * 64)
         self.assertEqual([row.subject_refs for row in conditions], [("entity:portico-base",), ("parameter:module",)],
-                         "the part alone, never the whole it belongs to; an object no part delivered and a missing seal "
-                         "make no question")
+                         "the part alone, never the whole it belongs to; an object no part delivered asks nothing")
         self.assertIn("0.500 m", conditions[0].statement)
         self.assertIn("waits for the architect's answer", conditions[0].statement)
         self.assertTrue(all(row.validator_ref is None for row in conditions))
@@ -136,6 +134,15 @@ class OutsideConditionTests(unittest.TestCase):
         self.assertEqual(results[first], "unchecked", "never counted as held")
         self.assertEqual([row.obligation_id for row in obligations_in_scope(with_them, ("entity:portico-base",))
                           if row.obligation_id.startswith("outside-")], [first])
+
+    def test_a_seal_that_vouches_for_nothing_puts_the_whole_design_to_the_architect(self) -> None:
+        for kind in ("unsealed", "seal_broken", "state_replaced"):
+            with self.subTest(kind=kind):
+                [condition] = outside_conditions(self.record, (OutOfBand(kind, "file", {}),), [], file_sha256="c" * 64)
+                wholes = sorted(f"entity:{e.entity_id}" for e in self.record.entities_of("Component@1") if e.parent_id is None)
+                self.assertEqual(list(condition.subject_refs), wholes)
+                self.assertIn("cannot be told" if kind != "state_replaced" else "the design is the one the seal keeps",
+                              condition.statement)
 
     def test_a_part_moved_by_several_objects_asks_once_and_every_file_is_listed_newest_first(self) -> None:
         def moved(name, dx):

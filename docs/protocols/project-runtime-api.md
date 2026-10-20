@@ -2096,11 +2096,15 @@ record and decisions it vouches for, which its digests must match. The report ad
 when the seal keeps none), `outOfBand` (each difference from the seal: `row_added`, `row_changed`, `row_removed`,
 `decisions_changed` with the rows `added` and `removed`, `object_added`, `object_removed`, `object_duplicate`,
 `object_moved` (one offset beyond 2 mm), `object_transformed` (a box turned, mirrored or resized),
-`object_reshaped` (its vertices sit elsewhere inside an unchanged box by more than 5 mm), `object_unnamed`, or
-`unsealed`), `reencoded` (objects whose mesh was only re-encoded) and `conditions`: for each part a change made
-outside MonkeyHub touched, one open `DesignObligation` with no check, awaiting the architect. Whoever builds a
-project from the file builds it from the record and decisions the seal keeps and adds these questions, so that
-the one-call revision asks before changing anything changed outside. A file whose state cannot be read is
+`object_reshaped` (its vertices sit elsewhere inside an unchanged box by more than 5 mm), `object_unnamed`,
+`unsealed`, `seal_broken` (a seal removed, unreadable or not matching its own digests, read as none), or
+`state_replaced` (the record string removed or unreadable, read from the copy a sound seal keeps)), `reencoded`
+(objects whose mesh was only re-encoded) and `conditions`: for each part a change made outside MonkeyHub touched,
+one open `DesignObligation` with no check, awaiting the architect; when no seal vouches for the file, one on the
+whole design (its outermost components), which every change reaches. Whoever builds a
+project from the file builds it from the record and decisions the seal keeps, or, with no seal that vouches for
+them, from the record the file states without its decisions, and adds these questions, so that the one-call
+revision asks before changing anything changed outside. A file whose state cannot be read is
 `422 STATE_FILE_<code>`; a seal whose kept copy does not match its own digests is `STATE_FILE_BINDING_CORRUPT`.
 
 The current provider supports bounded 3DM/GLB triangle-mesh interchange and

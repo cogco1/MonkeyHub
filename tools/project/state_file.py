@@ -20,7 +20,9 @@ it, and the file written back puts it there. Each part such a change touched get
 the architect, a condition no check can verify on that part alone, so a revision that reaches it asks; the
 question is in the record and in every file written back. The record and decisions the file states beside the
 seal are not read: the design is built from the copy the seal keeps, so a row or decision edited in the file is
-listed and asked about the same way, and a file without such a seal is refused. The answer lists every outside change,
+listed and asked about the same way. A file whose seal is missing or broken is opened from the record it states,
+with one question on the whole design and its decisions named, not recorded as the architect's. The answer lists
+every outside change,
 the questions, and ``excerpt``, the words a reviser is given: each change with its amount, to be named and put
 to the architect.
 
@@ -70,7 +72,7 @@ from archflow.contracts.canonical import canonical_digest  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository  # noqa: E402
 from archflow.state.stage_workflow import DesignPhase, ProjectStage, ProjectStageWorkflow  # noqa: E402
 from archflow.state.state_record import (  # noqa: E402
-    StateRecord, StateRecordOperator, apply_state_record_operator, part_of_object, resolve_element_bindings,
+    StateRecord, StateRecordError, StateRecordOperator, apply_state_record_operator, part_of_object, resolve_element_bindings,
 )
 from monkeycad.formats.state_file import StateFileError, read_state_file  # noqa: E402
 from project_runtime.application.state_files import change_words, outside_conditions  # noqa: E402
@@ -239,12 +241,19 @@ def excerpt(found, record: StateRecord, conditions: Sequence[Any]) -> str:
     if not found.out_of_band:
         return ""
     elements = resolve_element_bindings(record)
-    lines = ["Changes made outside MonkeyHub since this file was last saved by it. The design keeps what MonkeyHub "
-             "saved: its record, its decisions, and every part where the record has it. Name each change, with its "
-             "amount, in your answer, and ask the architect whether to adopt it:"]
+    sealed = found.sealed_record is not None
+    lines = [("Changes made outside MonkeyHub since this file was last saved by it. The design keeps what MonkeyHub "
+              "saved: its record, its decisions, and every part where the record has it." if sealed else
+              "MonkeyHub cannot tell this file's design from changes made outside it. The design is built from the "
+              "record the file states, and every change to it waits for the architect's answer.")
+             + " Name each change, with its amount, in your answer, and ask the architect whether to adopt it:"]
     for finding in found.out_of_band:
         element = part_of_object(finding.ref.removeprefix("object:"), elements) if finding.kind.startswith("object_") else None
         lines.append(f"- {change_words(finding)}" + (f" (part {element})" if element else "") + ".")
+    if not sealed and found.decisions:
+        lines.append("The file also states decisions MonkeyHub cannot vouch for; they are not recorded as the architect's: "
+                     + "; ".join(f"{row.get('disposition')} on {row.get('targetRef')} (\"{row.get('rawLanguage')}\")"
+                                 for row in found.decisions) + ".")
     if conditions:
         lines.append("Until the architect answers, ask before changing "
                      + ", ".join(sorted({ref for row in conditions for ref in row.subject_refs})) + ".")
@@ -407,19 +416,24 @@ def open_file(file: Path, work_root: Path) -> dict[str, Any]:
         found = read_state_file(Path(file))
     except StateFileError as exc:
         raise StateFileCommandError(f"{file} is not a state file MonkeyHub can open: {exc}") from exc
-    if found.sealed_record is None or found.sealed_decisions is None:
-        # Without a seal that keeps what it vouches for, the design cannot be told from what was changed outside.
-        raise StateFileCommandError(f"{file} carries no seal MonkeyHub can open it from"
-                                    + (" (it has none)" if found.binding is None else " (it was sealed before seals kept "
-                                       "their record)") + ": open the last file MonkeyHub saved, or start from the record.")
-    # The design is what the seal vouches for. A change made outside MonkeyHub, to the model or to the record and
-    # decisions the file states, is not taken in: each part it touched keeps what its record says, and a question on
-    # it waits for the architect, carried in the record and in every file written back.
-    record = StateRecord.from_dict(found.sealed_record)
-    conditions = outside_conditions(record, found.out_of_band, found.sealed_decisions, file_sha256=found.file_sha256)
+    if found.sealed_record is not None and found.sealed_decisions is not None:
+        # The design is what the seal vouches for. A change made outside MonkeyHub, to the model or to the record and
+        # decisions the file states, is not taken in: each part it touched keeps what its record says, and a question
+        # on it waits for the architect, carried in the record and in every file written back.
+        record, decisions = StateRecord.from_dict(found.sealed_record), list(found.sealed_decisions)
+    else:
+        # No seal vouches for anything (removed, broken, or from before seals kept their record): the record is the
+        # one the file states, with one question on the whole design, and its decisions are named, not recorded as
+        # the architect's.
+        try:
+            record = StateRecord.from_dict(found.record)
+        except (StateRecordError, KeyError, TypeError, ValueError) as exc:
+            raise StateFileCommandError(f"{file} carries no seal and its design record is not one: {exc}") from exc
+        decisions = []
+    conditions = outside_conditions(record, found.out_of_band, decisions or found.decisions, file_sha256=found.file_sha256)
     project_dir = build_project(replace(record, obligations=(*record.obligations, *conditions)), Path(work_root))
     with runtime(project_dir) as client:
-        recorded = record_decisions(client, record.project_id, found.sealed_decisions)
+        recorded = record_decisions(client, record.project_id, decisions)
         run_id, digest, _ = _head(client)
         decisions = _decisions(client)
     _write_opened(project_dir.parent, project_dir, found.file_sha256, decisions)

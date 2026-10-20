@@ -169,12 +169,16 @@ class StateFileCommandTests(unittest.TestCase):
         self.assertIn(("reject", "不要长凳靠墙"), [(row["disposition"], row["rawLanguage"]) for row in saved.decisions],
                       "a decision removed in the file is still the architect's")
 
-        # A file whose seal was taken away is not opened at all.
+        # A file whose seal was taken away opens from the record it states, and the whole design waits for the architect.
         model.Strings.Delete("archflow:binding")
         unsealed = self.root / "unsealed.3dm"
         self.assertTrue(model.Write(str(unsealed), 8))
-        self.assertEqual(state_file.main(["open", "--file", str(unsealed), "--work-root", str(self.root / "w2")]), 1)
-        self.assertFalse((self.root / "w2").exists(), "nothing was built from it")
+        reopened = state_file.open_file(unsealed, self.root / "w2")
+        self.assertEqual([row["subject_refs"] for row in reopened["conditions"]], [["entity:building"]])
+        self.assertEqual(reopened["decisions"], 0, "decisions no seal vouches for are not recorded as the architect's")
+        for words in ("MonkeyHub cannot tell this file's design from changes made outside it",
+                      "they are not recorded as the architect's: keep on entity:portico-base"):
+            self.assertIn(words, reopened["excerpt"])
 
     def test_the_events_each_hop_saves_rebuild_the_state_its_file_carries(self) -> None:
         file = self.root / "start.3dm"

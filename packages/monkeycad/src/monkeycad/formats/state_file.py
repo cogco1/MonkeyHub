@@ -215,30 +215,57 @@ def compare(
 
 
 def read_state_file(path: Path) -> StateFile:
-    """The state, seal and out-of-band differences of one 3DM; an unsealed file reports ``unsealed``."""
+    """The state, seal and out-of-band differences of one 3DM.
+
+    A seal that is missing reports ``unsealed``; one that is unreadable or does not match its own digests reports
+    ``seal_broken``, and either way the file is read as unsealed. A state string that is missing or unreadable is
+    read from the copy a sound seal keeps (``state_replaced``); with no such copy the file is not a state file.
+    """
 
     inspection = _inspect(path)
     shapes, unnamed = _shapes(Path(path).read_bytes())
     strings = _strings(inspection)
+    objects = _object_rows(inspection, shapes)
+    binding, broken = None, None
+    if BINDING_KEY in strings:
+        try:
+            binding = _checked_binding(_parse(strings[BINDING_KEY], "BINDING_CORRUPT"))
+        except StateFileError as exc:
+            broken = exc
+    replaced = None
+    try:
+        record, decisions = _state(strings)
+    except StateFileError as exc:
+        if binding is None or "record" not in binding:
+            raise
+        record, decisions, replaced = binding["record"], list(binding["decisions"]), exc
+    if binding is None:
+        out_of_band: tuple[OutOfBand, ...] = (
+            (OutOfBand("seal_broken", "file", {"reason": f"{broken.code}: {broken.detail}"[:300]}),) if broken is not None
+            else (OutOfBand("unsealed", "file", {}),))
+        reencoded: tuple[str, ...] = ()
+    else:
+        out_of_band, reencoded = compare(binding, record, decisions, objects, unnamed)
+        if replaced is not None:
+            out_of_band = (OutOfBand("state_replaced", "file", {"reason": replaced.code}), *out_of_band)
+    sealed_record = None if binding is None else binding.get("record")
+    sealed_decisions = None if binding is None or "decisions" not in binding else tuple(binding["decisions"])
+    return StateFile(record, tuple(decisions), binding, inspection.file_sha256, objects, out_of_band, reencoded,
+                     sealed_record, sealed_decisions)
+
+
+def _state(strings: Mapping[str, str]) -> tuple[dict, list[dict]]:
+    """The record and decisions the state string states, or why it states none."""
+
     if STATE_KEY not in strings:
         raise StateFileError("STATE_MISSING", f"no {STATE_KEY} string in the file")
     state = _parse(strings[STATE_KEY], "STATE_CORRUPT")
     if state.get("schema") != SCHEMA:
         raise StateFileError("SCHEMA_UNSUPPORTED", f"{STATE_KEY} schema is {state.get('schema')!r}")
     record, decisions = state.get("record"), state.get("decisions")
-    if not isinstance(record, dict) or not isinstance(decisions, list) \
-            or not all(isinstance(item, dict) for item in decisions):
+    if not isinstance(record, dict) or not isinstance(decisions, list)             or not all(isinstance(item, dict) for item in decisions):
         raise StateFileError("STATE_CORRUPT", f"{STATE_KEY} needs a record object and a list of decision objects")
-    objects = _object_rows(inspection, shapes)
-    binding = _checked_binding(_parse(strings[BINDING_KEY], "BINDING_CORRUPT")) if BINDING_KEY in strings else None
-    if binding is None:
-        out_of_band, reencoded = (OutOfBand("unsealed", "file", {}),), ()
-    else:
-        out_of_band, reencoded = compare(binding, record, decisions, objects, unnamed)
-    sealed_record = None if binding is None else binding.get("record")
-    sealed_decisions = None if binding is None or "decisions" not in binding else tuple(binding["decisions"])
-    return StateFile(record, tuple(decisions), binding, inspection.file_sha256, objects, out_of_band, reencoded,
-                     sealed_record, sealed_decisions)
+    return record, decisions
 
 
 def seal_state_file(
