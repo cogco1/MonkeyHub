@@ -46,8 +46,11 @@ project, which records the decisions again under new ids and binds the record to
 
 Exit code 0 is success, and the answer is one JSON object on stdout; a failure writes its reason to stderr. Exit
 code 2 is ``open`` refusing the file: it exists and is no state file MonkeyHub can read (its record unreadable and no
-sound seal to read it from), or, with ``--refuse-unvouched``, no seal vouches for its design (none, broken, or one that
-keeps no record). Every other failure is exit code 1.
+sound seal to read it from), no seal vouches for it and the record it states does not build, or, with
+``--refuse-unvouched``, no seal vouches for its design at all (none, broken, or one that keeps no record). Every other
+failure is exit code 1. ``open`` answers ``vouched``: true when the design was built from the record and decisions a
+sound seal keeps, false when it was built from the record the file states; ``sealed`` is true when the file carries a
+sound seal, whether or not it keeps a record.
 Nothing is ever deleted: a project directory or output file that already exists is refused.
 """
 
@@ -430,7 +433,8 @@ def open_file(file: Path, work_root: Path, *, refuse_unvouched: bool = False) ->
         why = {"unsealed": "it carries no seal", "seal_broken": "its seal was removed, made unreadable or does not match itself"}
         reason = next((why[row.kind] for row in found.out_of_band if row.kind in why), "its seal keeps no record")
         raise FileRefused(f"{file} is not opened: {reason}, so MonkeyHub cannot tell its design from changes made outside it.")
-    if found.sealed_record is not None and found.sealed_decisions is not None:
+    vouched = found.sealed_record is not None and found.sealed_decisions is not None
+    if vouched:
         # The design is what the seal vouches for. A change made outside MonkeyHub, to the model or to the record and
         # decisions the file states, is not taken in: each part it touched keeps what its record says, and a question
         # on it waits for the architect, carried in the record and in every file written back.
@@ -445,14 +449,21 @@ def open_file(file: Path, work_root: Path, *, refuse_unvouched: bool = False) ->
             raise FileRefused(f"{file} carries no seal and its design record is not one: {exc}") from exc
         decisions = []
     conditions = outside_conditions(record, found.out_of_band, decisions or found.decisions, file_sha256=found.file_sha256)
-    project_dir = build_project(replace(record, obligations=(*record.obligations, *conditions)), Path(work_root))
+    taken = (Path(work_root) / record.project_id).exists()
+    try:
+        project_dir = build_project(replace(record, obligations=(*record.obligations, *conditions)), Path(work_root))
+    except StateFileCommandError as exc:
+        if vouched or taken:
+            raise
+        raise FileRefused(f"{file} carries no seal that vouches for it, and the design record it states does not "
+                          f"build: {exc}") from exc
     with runtime(project_dir) as client:
         recorded = record_decisions(client, record.project_id, decisions)
         run_id, digest, _ = _head(client)
         decisions = _decisions(client)
     _write_opened(project_dir.parent, project_dir, found.file_sha256, decisions)
     return {"projectDir": str(project_dir), "fileSha256": found.file_sha256, "sealed": found.binding is not None,
-            "workingRunId": run_id, "stateDigest": digest, "decisions": len(recorded),
+            "vouched": vouched, "workingRunId": run_id, "stateDigest": digest, "decisions": len(recorded),
             "outside": [{"kind": f.kind, "ref": f.ref, "detail": f.detail} for f in found.out_of_band],
             "conditions": [row.to_dict() for row in conditions], "reencoded": list(found.reencoded),
             "excerpt": excerpt(found, record, conditions)}

@@ -13,6 +13,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
@@ -159,6 +160,7 @@ class StateFileCommandTests(unittest.TestCase):
         self.assertTrue(model.Write(str(edited), 8))
 
         opened = state_file.open_file(edited, self.root / "w1")
+        self.assertTrue(opened["vouched"], "the design is built from the copy the seal keeps")
         for words in ("entity:garden-bench was changed in the file's design record",
                       "removed reject on entity:garden-bench (\"不要长凳靠墙\")", "ask the architect whether to adopt it"):
             self.assertIn(words, opened["excerpt"])
@@ -174,6 +176,7 @@ class StateFileCommandTests(unittest.TestCase):
         unsealed = self.root / "unsealed.3dm"
         self.assertTrue(model.Write(str(unsealed), 8))
         reopened = state_file.open_file(unsealed, self.root / "w2")
+        self.assertFalse(reopened["vouched"])
         self.assertEqual([row["subject_refs"] for row in reopened["conditions"]], [["entity:building"]])
         self.assertEqual(reopened["decisions"], 0, "decisions no seal vouches for are not recorded as the architect's")
         for words in ("MonkeyHub cannot tell this file's design from changes made outside it",
@@ -266,6 +269,13 @@ class RefusalTests(unittest.TestCase):
         self.assertEqual(self.open(self.state_file("unsealed.3dm"), "--refuse-unvouched"), 2)
         self.assertEqual(self.open(self.state_file("emptied.3dm", **{"archflow:binding": "{}"}), "--refuse-unvouched"), 2)
         self.assertFalse((self.root / "w").exists(), "nothing was built")
+
+    def test_a_record_no_seal_vouches_for_that_does_not_build_is_refused(self) -> None:
+        unsealed = self.state_file("unsealed.3dm")
+        with mock.patch.object(state_file, "build_project", side_effect=state_file.StateFileCommandError("the runner failed")):
+            self.assertEqual(self.open(unsealed), 2)
+        (self.root / "w" / RECORD["project_id"]).mkdir(parents=True)
+        self.assertEqual(self.open(unsealed), 1, "a work root already used is the caller's mistake")
 
 
 class ReplayTests(unittest.TestCase):
