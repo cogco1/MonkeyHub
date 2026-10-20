@@ -1152,16 +1152,27 @@ saved `off`, the setting's value before it had tiers, reads as `legacy`.
 - `enforced`: as `advisory`, and the Agent's own way onto the working design is refused with `409
   DESIGN_LOOP_REQUIRED`: `POST /api/admissions` of an `admitted` result, and `PUT /api/working-draft` onto a run.
   `POST /api/revisions` admits and continues the result itself; from the Agent it must name its own chat's message
-  and may confirm nothing (`422 REVISION_INVALID`).
+  and carries `confirmed` only with the managing Hub's `X-Monkey-Confirmation` (`422 REVISION_INVALID` otherwise).
 
 The Runtime tells the Agent from a person by `X-Monkey-Agent`, which the managing Hub adds (with its
 `X-Monkey-Worker` identity) to every request it forwards for a chat; nothing in a request body counts. A
 person's admission and Continue, and the Agent's rejections and withdrawals, are never affected. The Hub's chat
-offers `POST /api/revisions` and `GET /api/revisions/context` only while the setting is `enforced`, binds the
-user's message and words to it, takes the loop's `taskClass` beside it as for an admission (a `spatial_formal` or
-`polish` loop lands only a result it looked at, or a repair superseding a looked-at attempt; `buildOnly` builds
-one to look at), never sends a confirmation, and gives the guide that names it; in the other tiers the chat's
-tools and guide are as they were.
+offers `POST /api/revisions` only while the setting is `enforced` (`GET /api/revisions/context` also in
+`advisory`), binds the user's message and words to it, and takes the loop's `taskClass` beside it as for an
+admission (a `spatial_formal` or `polish` loop lands only a result it looked at, or a repair superseding a
+looked-at attempt; `buildOnly` builds one to look at).
+
+**The architect confirms by answering.** A condition no check can verify, or a decision in reach, makes a
+revision answer `needs_question` with `questionRefs`; the Hub keeps them on the chat's operation record with
+the message the revision answered. The chat may then send the same change with `confirmed`, and the Hub forwards
+it only when every ref was asked by this chat's latest `needs_question`, on the same base, in an earlier message
+than the one now bound (`422 CONFIRMATION_NOT_ASKED` otherwise); it adds `X-Monkey-Confirmation` naming that
+question, and the change carries the user's words of the answering message.
+
+**What enforced closes, and what it does not.** In `enforced` the Hub's Claude chat runs without Bash, so the
+Agent reaches the design only through this Hub, which vouches for it. The Runtime does not verify identity
+otherwise: a local process that calls the Runtime's port or the Hub's forwarding route directly, without the
+chat header, is taken as a person.
 
 ## 6. Pick and gesture resolution
 

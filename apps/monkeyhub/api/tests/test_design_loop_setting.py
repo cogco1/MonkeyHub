@@ -124,13 +124,15 @@ class BoundWordsTests(unittest.TestCase):
         quoted = judgments._revision_body(chat_id, session, {"kind": "construction", "proposal": {}}, "楼梯缓一点")
         self.assertEqual(quoted["rawLanguage"], "楼梯缓一点")
 
-    def test_the_agent_never_confirms_a_condition_itself(self) -> None:
+    def test_a_confirmation_names_question_refs_and_carries_the_users_words(self) -> None:
         chat_id, session = self.session()
         with self.assertRaises(HubFailure) as refused:
-            judgments._revision_body(chat_id, session, {"kind": "construction", "proposal": {},
-                                                        "confirmed": ["obligation:k3"]})
+            judgments._revision_body(chat_id, session, {"kind": "construction", "proposal": {}, "confirmed": "yes"})
         self.assertEqual(refused.exception.error.code, "CHAT_REVISION_INVALID")
-        self.assertIn("Only the architect confirms", refused.exception.error.detail)
+        body = judgments._revision_body(chat_id, session, {"kind": "construction", "proposal": {},
+                                                           "confirmed": ["obligation:k3"]})
+        self.assertEqual((body["confirmed"], body["rawLanguage"]), (["obligation:k3"], "楼梯缓一点，别动楼板"),
+                         "whether it was asked is the Hub's to say when it forwards the change")
 
     def test_the_agent_never_supplies_the_words_itself(self) -> None:
         chat_id, session = self.session()
@@ -244,6 +246,50 @@ class ForwardTests(unittest.TestCase):
             coordinator.forward(runtime, "/api/working-draft", "PUT", b"{}", {"idempotency-key": str(uuid4())})
         self.assertEqual((seen[0].get("X-Monkey-Agent"), seen[0].get("X-Monkey-Worker")), ("chat-9", "hub-7"))
         self.assertNotIn("X-Monkey-Agent", seen[1], "a person's request through the same Hub is not the Agent's")
+
+    def test_the_architect_confirms_by_answering_the_question_this_chat_asked(self) -> None:
+        from project_runtime.binding import ProjectBinding
+        from project_runtime.settings import StudioSettings
+        from test_monkeyhub_lifecycle import project_fixture
+        from monkeyhub_api.runtime.manager import ProjectRuntime, ProjectRuntimeManager
+
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        fixture = project_fixture()
+        fixture.make_project(Path(temporary.name))
+        settings = StudioSettings(project_dir=Path(temporary.name) / fixture.PROJECT_ID, cad_export="off")
+        runtime = ProjectRuntime("r-1", fixture.PROJECT_ID, str(settings.project_dir), OperationManager(fixture.PROJECT_ID),
+                                 ProjectBinding.open(settings))
+        chats = SimpleNamespace(get=lambda session_id: SimpleNamespace(
+            projectId=fixture.PROJECT_ID, projectDir=str(settings.project_dir), status="running"))
+        coordinator = ProjectRuntimeManager(None, chats)
+        seen = []
+        asked = json.dumps({"outcome": "needs_question", "code": "UNCHECKED_CONDITION", "detail": "ask",
+                            "questionRefs": ["obligation:k3"]}).encode()
+
+        def dispatch(base, target, method, body, headers, *, timeout):
+            seen.append(dict(headers))
+            return HttpResult(200, asked if len(seen) == 1 else b'{"outcome": "landed"}', {"content-type": "application/json"})
+
+        def revise(message: str, digest: str = "s-1", **extra):
+            body = {"stateDigest": digest, "kind": "construction", "proposal": {}, "summary": "x",
+                    "messageSource": {"sessionId": "chat-9", "messageId": message}, "rawLanguage": "可以", **extra}
+            return coordinator.forward(runtime, "/api/revisions", "POST", json.dumps(body).encode(),
+                                       {"idempotency-key": str(uuid4()), "x-monkey-chat": "chat-9"})
+
+        with patch.object(coordinator, "service", return_value=SimpleNamespace(url="http://managed", instance_id="hub-7")),              patch("monkeyhub_api.runtime.manager.request_http", side_effect=dispatch):
+            revise("m-1")
+            question = [r for r in runtime.operations.records() if r.kind == "POST /api/revisions"][0]
+            self.assertEqual((question.questionRefs, question.messageId), (["obligation:k3"], "m-1"))
+            for message, digest, refs in (("m-1", "s-1", ["obligation:k3"]), ("m-2", "s-2", ["obligation:k3"]),
+                                          ("m-2", "s-1", ["obligation:other"])):
+                with self.subTest(message=message, digest=digest, refs=refs), self.assertRaises(HubFailure) as refused:
+                    revise(message, digest, confirmed=refs)
+                self.assertEqual(refused.exception.error.code, "CONFIRMATION_NOT_ASKED")
+            revise("m-2", confirmed=["obligation:k3"])
+        self.assertNotIn("X-Monkey-Confirmation", seen[0])
+        self.assertEqual(seen[-1].get("X-Monkey-Confirmation"), question.operationId,
+                         "the user's next message answers the question; the Runtime is told which")
 
 
 class GuideTests(unittest.TestCase):

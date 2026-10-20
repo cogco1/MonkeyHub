@@ -1250,6 +1250,10 @@ class ChatStore:
                                 "--setting-sources", "project,local", "--settings",
                                 skill_plugins.claude_settings(self.runtime_root, providers._claude_user_settings()))
             denied = providers._claude_denied(session.projectDir)
+            if environment.get(studio_tool.DESIGN_LOOP_ENV) == studio_tool.DESIGN_LOOP_ENFORCED:
+                # Enforced (#185): no shell, so the Agent reaches the design only through this Hub, which vouches
+                # for it; a shell could reach the Runtime's port and act as a person.
+                denied = (*denied, "Bash")
             command = [*commands[kind], "-p", "--output-format", "stream-json", "--verbose",
                        "--include-partial-messages", "--permission-mode", "dontAsk", "--permission-prompts", "none",
                        # Two different questions, and both have to be answered.
@@ -1614,7 +1618,9 @@ class ChatStore:
                     ) +
                     (
                         f"Use this chat's writable scratch directory at {self._scratch_path(session.id)} for "
-                        "temporary calculation scripts and derived working files; Write, Edit and Bash are available "
+                        "temporary calculation scripts and derived working files; "
+                        + ("Write and Edit are" if read_application_settings(self.runtime_root).design_loop
+                           == studio_tool.DESIGN_LOOP_ENFORCED else "Write, Edit and Bash are") + " available "
                         "there. Use this directory rather than the CLI's protected .claude directory. Scratch files "
                         "are not project records; save design results through the connected tools and P036. "
                         if session.provider != "codex" else ""
