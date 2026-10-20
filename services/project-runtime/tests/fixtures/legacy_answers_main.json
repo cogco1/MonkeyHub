@@ -92,6 +92,16 @@
    "{\"code\":\"ELEMENT_HAS_DEPENDENTS\",\"detail\":\"portico-base has dependent elements or named relationships: ['entity:portico-cornice', 'rel-cornice-on-base']. Direct transform cannot detach them; edit the controlling relation instead.\"}"
   ],
   [
+   "plan move of a part on another's top",
+   409,
+   "{\"code\":\"ELEMENT_HAS_DEPENDENTS\",\"detail\":\"portico-cornice has dependent elements or named relationships: ['rel-cornice-on-base']. Direct transform cannot detach them; edit the controlling relation instead.\"}"
+  ],
+  [
+   "a move asked to go alone",
+   422,
+   "{\"code\":\"REQUEST_INVALID\",\"detail\":\"body.alone: Extra inputs are not permitted\"}"
+  ],
+  [
    "admissions",
    200,
    "{\"projectId\":\"demo-project\",\"admissions\":[],\"warnings\":[]}"
@@ -187,6 +197,16 @@
    "direct move of a carried part",
    409,
    "{\"code\":\"ELEMENT_HAS_DEPENDENTS\",\"detail\":\"portico-base has dependent elements or named relationships: ['entity:portico-cornice', 'rel-cornice-on-base']. Direct transform cannot detach them; edit the controlling relation instead.\"}"
+  ],
+  [
+   "plan move of a part on another's top",
+   409,
+   "{\"code\":\"ELEMENT_HAS_DEPENDENTS\",\"detail\":\"portico-cornice has dependent elements or named relationships: ['rel-cornice-on-base']. Direct transform cannot detach them; edit the controlling relation instead.\"}"
+  ],
+  [
+   "a move asked to go alone",
+   422,
+   "{\"code\":\"REQUEST_INVALID\",\"detail\":\"body.alone: Extra inputs are not permitted\"}"
   ],
   [
    "admissions",

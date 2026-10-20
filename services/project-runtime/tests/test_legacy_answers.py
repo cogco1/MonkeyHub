@@ -1,7 +1,7 @@
 """In legacy, every route main has answers byte for byte as main does (#185).
 
 One scenario - a project whose record names a condition with an executable check, a candidate that violates it,
-its read, its validation, the Agent's admission, a Continue, a rejected second candidate and a refused direct move -
+its read, its validation, the Agent's admission, a Continue, a rejected second candidate and refused direct moves -
 is run on this checkout and compared with what main answered to the same requests, kept in
 ``fixtures/legacy_answers_main.json``. Only what differs between any two runs of the same code is masked: run,
 proposal and job ids, digests, clock times and durations, and the temporary directory; each by order of first
@@ -155,6 +155,11 @@ def scenario(root: Path, cad_export: str) -> list[list]:
         step("direct move of a carried part", person.post("/api/proposals/transform", json={
             "stateDigest": person.get("/api/state").json()["stateDigest"], "elementId": "portico-base",
             "kind": "move", "translation": [0.3, 0, 0]}))
+        here = person.get("/api/state").json()["stateDigest"]
+        step("plan move of a part on another's top", person.post("/api/proposals/transform", json={
+            "stateDigest": here, "elementId": "portico-cornice", "kind": "move", "translation": [0, 0, 0.5]}))
+        step("a move asked to go alone", person.post("/api/proposals/transform", json={
+            "stateDigest": here, "elementId": "portico-base", "kind": "move", "translation": [0.3, 0, 0], "alone": True}))
         step("admissions", person.get("/api/admissions"))
     finally:
         person.close()
