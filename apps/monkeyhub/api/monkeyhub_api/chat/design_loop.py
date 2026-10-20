@@ -30,6 +30,7 @@ from pathlib import Path
 import sys
 from typing import Any, Mapping
 
+NO_SHELL = ("Bash", "PowerShell")
 TOOLS = ("design_read", "design_submit", "design_ask", "design_report_limitation")
 STATE_ENV = "MONKEYHUB_DESIGN_LOOP_STATE"
 REPAIR_BUDGET_ENV = "MONKEYHUB_REPAIR_BUDGET"
@@ -289,6 +290,9 @@ def cli_profile(state_file: Path, *, request_file: Path | None = None, hub_url: 
         "env": env,
         "mcp_args": ["--design-loop"],
         "allowed_tools": [f"mcp__{server}__{name}" for name in TOOLS],
+        # No shell, whatever else the host allows: a shell could reach the Runtime's port and act as a person.
+        "disallowed_tools": list(NO_SHELL),
+        "permission_mode": "dontAsk",
     }
     if hub_url is not None and project_dir is not None and session_id is not None:
         args = [str(Path(__file__).resolve().with_name("mcp_server.py")), "--mcp", "--hub-url", hub_url,

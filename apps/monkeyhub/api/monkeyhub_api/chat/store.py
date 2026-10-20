@@ -1253,7 +1253,7 @@ class ChatStore:
             if environment.get(studio_tool.DESIGN_LOOP_ENV) == studio_tool.DESIGN_LOOP_ENFORCED:
                 # Enforced (#185): no shell, so the Agent reaches the design only through this Hub, which vouches
                 # for it; a shell could reach the Runtime's port and act as a person.
-                denied = (*denied, "Bash")
+                denied = (*denied, "Bash", "PowerShell")
             command = [*commands[kind], "-p", "--output-format", "stream-json", "--verbose",
                        "--include-partial-messages", "--permission-mode", "dontAsk", "--permission-prompts", "none",
                        # Two different questions, and both have to be answered.

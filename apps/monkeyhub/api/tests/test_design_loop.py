@@ -138,6 +138,7 @@ class StopHookTests(unittest.TestCase):
         self.assertEqual(profile["mcp_args"], ["--design-loop"])
         self.assertEqual({name.rsplit("__", 1)[1] for name in profile["allowed_tools"]}, set(design_loop.TOOLS))
         self.assertLess(len(profile["system_prompt"]), 1200)
+        self.assertEqual((profile["disallowed_tools"], profile["permission_mode"]), (["Bash", "PowerShell"], "dontAsk"))
         self.assertNotIn("mcp_config", profile)
         bound = design_loop.cli_profile(Path("D:/runs/hop-01/loop.json"), request_file=Path("D:/runs/hop-01/request.md"),
                                         hub_url="http://127.0.0.1:8700", project_dir=Path("D:/runs/hop-01/p"),
