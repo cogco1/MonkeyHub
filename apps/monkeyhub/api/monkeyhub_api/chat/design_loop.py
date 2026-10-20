@@ -45,7 +45,8 @@ SYSTEM_PROMPT = (
     "state counts as absent, so ask rather than assume. End the turn in exactly one of three ways: the change "
     "landed (say what changed, from the comparison), you asked the architect with design_ask, or you reported "
     "with design_report_limitation what MonkeyHub cannot do. When design_read lists changes made outside MonkeyHub "
-    "(outside), or you are told of them, name each one with its amount in your answer. Never describe a change that "
+    "(outside), or you are told of them, name each one with its amount in your answer and ask the architect whether "
+    "to adopt it; the design keeps its record's version until they say. Never describe a change that "
     "did not land as done."
 )
 
@@ -60,8 +61,8 @@ GUIDE = chr(10).join([
     "and submit again), needs_question (nothing built; call design_ask with that question), refused (read again).",
     "A condition no check can verify is the architect's to confirm, never yours (confirmed: the refs their later",
     "message agrees to after design_ask); a kept target or a rejected option",
-    "is never changed from here. outside lists each change made outside MonkeyHub, newest file first, and whether",
-    "the design has it: name each one with its amount; one the design lacks is asked about before it is touched.",
+    "is never changed from here. outside lists each change made outside MonkeyHub, newest file first, none in the",
+    "design: name each with its amount and ask the architect whether to adopt it; a change that reaches one asks first.",
     "After {budget} changes with problems, ask or report a limitation instead of submitting again.",
 ])
 

@@ -1,7 +1,7 @@
 """tools/project/state_file.py: start a project from a record, open a state-carrying 3DM, save the working design.
 
 One project, built by the product's own tools, goes the whole way: its sealed file is changed outside
-MonkeyHub (one element moved on its own, one that carries another moved), opened, revised once, and saved.
+MonkeyHub (three parts moved), opened, revised once, and saved with every part where its record has it.
 """
 
 from __future__ import annotations
@@ -58,6 +58,16 @@ OPENING = [{"text": "门廊基座别动", "target_ref": "entity:portico-base", "
            {"text": "不要长凳靠墙", "target_ref": "entity:garden-bench", "disposition": "reject"}]
 
 
+def _land_as_person(client, project_id: str, run_id: str, label: str) -> None:
+    """Admit a built candidate and continue the working design onto it, as the architect does."""
+
+    state_file._call(client, "POST", "/api/admissions", {"projectId": project_id, "task": {"kind": "ui"},
+                                                        "results": [{"runId": run_id, "outcome": "admitted", "label": label}]})
+    _, _, revision = state_file._head(client)
+    state_file._call(client, "PUT", "/api/working-draft", {"projectId": project_id, "runId": run_id,
+                                                          "baseRevisionSha256": revision})
+
+
 def _boxes(path: Path) -> dict[str, tuple]:
     return {row.name: (row.min, row.max) for row in object_rows(path)}
 
@@ -71,7 +81,7 @@ class StateFileCommandTests(unittest.TestCase):
         (self.root / "record.json").write_text(json.dumps(RECORD), encoding="utf-8")
         (self.root / "opening.json").write_text(json.dumps(OPENING, ensure_ascii=False), encoding="utf-8")
 
-    def test_init_open_and_save_keep_the_record_the_decisions_and_what_was_changed_outside(self) -> None:
+    def test_init_open_and_save_keep_the_record_and_put_what_was_changed_outside_to_the_architect(self) -> None:
         start = self.root / "start.3dm"
         made = state_file.init(self.root / "record.json", self.root / "opening.json", self.root / "w0", start)
         self.assertEqual(made["decisions"], 2)
@@ -80,39 +90,37 @@ class StateFileCommandTests(unittest.TestCase):
         self.assertEqual(sorted((row["disposition"], row["rawLanguage"]) for row in sealed.decisions),
                          [("keep", "门廊基座别动"), ("reject", "不要长凳靠墙")])
 
-        # A consultant moves the bench, which nothing depends on; the cornice north, off the base it stands on; and the
-        # base east and up, without the cornice, which the record measures from the base's top.
+        # A consultant moves the bench, the cornice north, and the base east and up without the cornice.
+        moves = {"obj-garden-bench": (0.5, 1.0, 0.2), "obj-portico-cornice": (0.0, 0.5, 0.0), "obj-portico-base": (0.3, 0.0, 0.2)}
         model = rhino3dm.File3dm.Read(str(start))
         for item in model.Objects:
-            offset = {"obj-garden-bench": (0.5, 1.0, 0.2), "obj-portico-cornice": (0.0, 0.5, 0.0),
-                      "obj-portico-base": (0.3, 0.0, 0.2)}.get(item.Attributes.Name)
+            offset = moves.get(item.Attributes.Name)
             if offset:
                 self.assertTrue(item.Geometry.Translate(rhino3dm.Vector3d(*offset)))
         delivered = self.root / "delivered.3dm"
         self.assertTrue(model.Write(str(delivered), 8))
 
         opened = state_file.open_file(delivered, self.root / "w1")
-        self.assertEqual([(row["element"], row["offset"]) for row in opened["kept"]],
-                         [("garden-bench", [0.5, 1.0, 0.2]), ("portico-cornice", [0.0, 0.5, 0.0])],
-                         "the cornice moves alone: the relation naming it is checked again, not a reason to refuse")
-        self.assertEqual([row["element"] for row in opened["notKept"]], ["portico-base"])
-        self.assertIn("would also move obj-portico-cornice", opened["notKept"][0]["reason"],
-                      "raised, the base would lift the cornice measured from it, which the delivered file did not move")
-        self.assertEqual([row["subject_refs"] for row in opened["conditions"]], [["entity:portico-base", "entity:portico"]])
-        for words in ("garden-bench was moved by (0.500, 1.000, 0.200) m", "kept in the design",
-                      "portico-cornice was moved by (0.000, 0.500, 0.000) m",
-                      "portico-base was moved by (0.300, 0.000, 0.200) m", "could not be kept",
-                      "Ask the architect before changing what these touched: entity:portico, entity:portico-base."):
+        self.assertNotIn("kept", opened, "nothing made outside MonkeyHub is taken into the design")
+        self.assertEqual(sorted(row["subject_refs"] for row in opened["conditions"]),
+                         [["entity:garden-bench"], ["entity:portico-base"], ["entity:portico-cornice"]],
+                         "one question on each moved part, none on the whole it belongs to")
+        self.assertTrue(all(row["validator_ref"] is None for row in opened["conditions"]))
+        for words in ("obj-garden-bench was moved by (0.500, 1.000, 0.200) m (east, north, up) (part garden-bench)",
+                      "obj-portico-cornice was moved by (0.000, 0.500, 0.000) m",
+                      "obj-portico-base was moved by (0.300, 0.000, 0.200) m",
+                      "ask the architect whether to adopt it",
+                      "Until the architect answers, ask before changing entity:garden-bench, entity:portico-base, "
+                      "entity:portico-cornice."):
             self.assertIn(words, opened["excerpt"])
 
-        # One change built during the hop, then the save.
+        # The questions reach the reviser; one change is built during the hop, then the save.
         project = Path(opened["projectDir"])
         with state_file.runtime(project) as client:
             outside = state_file._call(client, "GET", "/api/revisions/context")["outside"]
-            self.assertEqual(sorted((row["subjects"][0], row["inTheDesign"]) for row in outside),
-                             [("entity:garden-bench", True), ("entity:portico-base", False), ("entity:portico-cornice", True)])
-            self.assertTrue(any("(0.500, 1.000, 0.200) m (east, north, up)" in row["statement"] for row in outside))
-            self.assertTrue(any("(0.300, 0.000, 0.200) m (east, north, up)" in row["statement"] for row in outside))
+            self.assertEqual(sorted(row["subjects"] for row in outside),
+                             [["entity:garden-bench"], ["entity:portico-base"], ["entity:portico-cornice"]])
+            self.assertTrue(any("waits for the architect's answer" in row["statement"] for row in outside))
             run_id, digest, _ = state_file._head(client)
             proposal = state_file._call(client, "POST", "/api/proposals/transform", {
                 "projectId": "file-demo", "stateDigest": digest, "sourceRunId": run_id, "elementId": "garden-bench",
@@ -126,11 +134,14 @@ class StateFileCommandTests(unittest.TestCase):
 
         out = read_state_file(Path(saved["file"]))
         self.assertEqual(out.out_of_band, ())
-        before, after = _boxes(delivered), _boxes(Path(saved["file"]))
-        for name in ("obj-garden-bench", "obj-portico-cornice"):
-            self.assertTrue(all(abs(a - b) <= 0.002 for a, b in zip((*before[name][0], *before[name][1]),
+        recorded, after = _boxes(start), _boxes(Path(saved["file"]))
+        for name in recorded:
+            self.assertTrue(all(abs(a - b) <= 0.002 for a, b in zip((*recorded[name][0], *recorded[name][1]),
                                                                      (*after[name][0], *after[name][1]))),
-                            f"{name} is where the delivered file had it")
+                            f"{name} is where the record has it, not where the consultant put it")
+        self.assertEqual(sorted(row["subject_refs"] for row in out.record["obligations"] if row["obligation_id"].startswith("outside-")),
+                         [["entity:garden-bench"], ["entity:portico-base"], ["entity:portico-cornice"]],
+                         "the file written back carries the questions until the architect answers")
         self.assertEqual(sorted(row["rawLanguage"] for row in out.decisions), ["不要长凳靠墙", "门廊基座别动"])
 
     def test_the_events_each_hop_saves_rebuild_the_state_its_file_carries(self) -> None:
@@ -147,7 +158,7 @@ class StateFileCommandTests(unittest.TestCase):
                     "kind": "move", "translation": translation})
                 started = state_file._call(client, "POST", f"/api/proposals/{proposal['proposalId']}/candidate")
                 self.assertEqual(state_file._wait_job(client, started["jobId"])["status"], "succeeded")
-                state_file._land_as_person(client, "file-demo", started["candidateId"], f"hop {hop}")
+                _land_as_person(client, "file-demo", started["candidateId"], f"hop {hop}")
                 if hop == 1:
                     state_file.record_decisions(client, "file-demo", [
                         {"text": "柱廊两侧要对称", "target_ref": "entity:portico", "disposition": "keep"}])

@@ -16,7 +16,7 @@ from pathlib import Path
 import tempfile
 from typing import Any, Mapping, Sequence
 
-from archflow.state.operational_state import DesignObligation, ObligationStatus
+from archflow.state.operational_state import DesignObligation
 from archflow.state.state_record import StateRecord, StateRecordError, part_of_object, resolve_element_bindings
 from monkeycad.formats.state_file import BOX_TOLERANCE_M, OutOfBand, StateFileError, read_state_file, seal_state_file
 
@@ -113,33 +113,24 @@ def amount(offset: Sequence[float]) -> str:
 
 
 def outside_conditions(record: StateRecord, findings: Sequence[OutOfBand], decisions: Sequence[Mapping[str, Any]], *,
-                       file_sha256: str, kept: Sequence[Mapping[str, Any]] = ()) -> tuple[DesignObligation, ...]:
-    """One row per change made outside MonkeyHub, on the parts it touched, so that every one stays named.
+                       file_sha256: str) -> tuple[DesignObligation, ...]:
+    """One question awaiting the architect for each part a change made outside MonkeyHub touched.
 
-    A change in ``findings`` is one the record does not have: its row is a condition no check can verify, and a
-    reviser who reaches one of those parts must ask whether the change made outside is to be kept. Each move in
-    ``kept`` ({"element", "offset"}) is taken into the design as a landed change: its row is satisfied, so it
-    asks nothing and only names the move. An object that belongs to no part of the record, a seal that is
-    missing and a re-encoded mesh make no row. Ids are the file's, so rows from several files never meet.
+    The design record does not take the change: the part keeps what its record says, and the file written back
+    carries that. Whether to adopt the change is the architect's to answer, so each question is a condition no
+    check can verify on that part alone, and a reviser who reaches the part asks. An object that belongs to no
+    part of the record, a seal that is missing and a re-encoded mesh ask nothing. Ids are the file's, so
+    questions from several files never meet.
     """
 
     elements = resolve_element_bindings(record)
-    components = {entity_id: row.get("component_id") for entity_id, row in elements.items()}
     targets = sorted({str(row.get("targetRef")) for row in decisions if row.get("targetRef")})
-    conditions: list[DesignObligation] = []
-    prefix = f"outside-{file_sha256[:12]}"
-
-    def parts(element: str) -> tuple[str, ...]:
-        component = components.get(element)
-        return tuple(dict.fromkeys([f"entity:{element}", *([f"entity:{component}"] if component else [])]))
-
+    asked: dict[tuple[str, ...], list[str]] = {}
     for finding in findings:
-        subjects: tuple[str, ...] = ()
         if finding.kind.startswith("object_"):
             name = finding.ref.removeprefix("object:")
             element = part_of_object(name, elements)
-            if element is not None:
-                subjects = parts(element)
+            subjects: tuple[str, ...] = () if element is None else (f"entity:{element}",)
             what = _object_words(finding, name)
         elif finding.kind.startswith("row_"):
             subjects = (finding.ref,) if finding.ref.split(":", 1)[0] in ("entity", "parameter", "relation") else ()
@@ -150,28 +141,24 @@ def outside_conditions(record: StateRecord, findings: Sequence[OutOfBand], decis
             what = "the decisions the file carries were changed"
         else:
             continue
-        if not subjects:
-            continue
-        conditions.append(DesignObligation(
-            obligation_id=f"{prefix}-{len(conditions) + 1}",
-            statement=f"Outside MonkeyHub, {what}. The design record does not have this change: ask the architect "
-                      "whether it is kept before changing what it touched.",
-            source_ref=f"{FILE_SOURCE}:{file_sha256}", subject_refs=subjects))
-    for move in kept:
-        conditions.append(DesignObligation(
-            obligation_id=f"{prefix}-{len(conditions) + 1}",
-            statement=f"Outside MonkeyHub, {move['element']} was moved by {amount(move['offset'])}. The design has this "
-                      "move: it was taken in as a landed change.",
-            source_ref=f"{FILE_SOURCE}:{file_sha256}", status=ObligationStatus.SATISFIED, subject_refs=parts(move["element"])))
-    return tuple(conditions)
+        if subjects:
+            asked.setdefault(subjects, []).append(what)
+    prefix = f"outside-{file_sha256[:12]}"
+    return tuple(DesignObligation(
+        obligation_id=f"{prefix}-{number}",
+        statement=f"Outside MonkeyHub, {'; '.join(words)}. The design keeps what its record says, and the file written "
+                  f"back carries that; whether to adopt the change waits for the architect's answer: ask them before "
+                  f"changing {', '.join(subjects)}.",
+        source_ref=f"{FILE_SOURCE}:{file_sha256}", subject_refs=subjects)
+        for number, (subjects, words) in enumerate(asked.items(), 1))
 
 
 def outside_rows(record: StateRecord) -> list[dict[str, Any]]:
-    """Every change made outside MonkeyHub that a file brought into this design, newest file first: its words,
-    the parts it touched, and whether the design has it."""
+    """Every change made outside MonkeyHub that a file brought, newest file first: its words and the parts it
+    touched. Each waits for the architect's answer; none is in the design."""
 
     rows = [{"ref": f"obligation:{row.obligation_id}", "statement": row.statement, "subjects": list(row.subject_refs),
-             "inTheDesign": row.status is ObligationStatus.SATISFIED, "fileSha256": row.source_ref.split(":", 1)[1]}
+             "fileSha256": row.source_ref.split(":", 1)[1]}
             for row in record.obligations if row.source_ref.startswith(f"{FILE_SOURCE}:")]
     order = list(dict.fromkeys(row["fileSha256"] for row in rows))
     return sorted(rows, key=lambda row: -order.index(row["fileSha256"]))

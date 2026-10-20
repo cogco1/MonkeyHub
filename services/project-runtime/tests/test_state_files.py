@@ -109,40 +109,39 @@ class OutsideConditionTests(unittest.TestCase):
         record_path = root / PROJECT_ID / "input" / "runner" / "state-record.json"
         self.record = StateRecord.from_dict(json.loads(record_path.read_text(encoding="utf-8")))
 
-    def test_each_change_is_a_condition_no_check_verifies_on_what_it_touched(self) -> None:
+    def test_each_change_is_a_question_for_the_architect_on_the_part_it_touched(self) -> None:
         findings = (OutOfBand("object_moved", "object:obj-portico-base", {"moved_m": 0.5}),
                     OutOfBand("row_changed", "parameter:module", {}),
                     OutOfBand("object_added", "object:imported-chair", {}),
                     OutOfBand("unsealed", "file", {}))
         conditions = outside_conditions(self.record, findings, [{"targetRef": "entity:portico"}], file_sha256="a" * 64)
-        self.assertEqual([row.subject_refs for row in conditions],
-                         [("entity:portico-base", "entity:portico"), ("parameter:module",)],
-                         "an object no part delivered and a missing seal make no condition")
+        self.assertEqual([row.subject_refs for row in conditions], [("entity:portico-base",), ("parameter:module",)],
+                         "the part alone, never the whole it belongs to; an object no part delivered and a missing seal "
+                         "make no question")
         self.assertIn("0.500 m", conditions[0].statement)
+        self.assertIn("waits for the architect's answer", conditions[0].statement)
         self.assertTrue(all(row.validator_ref is None for row in conditions))
         first = conditions[0].obligation_id
-        self.assertTrue(first.startswith("outside-aaaaaaaaaaaa-"), "ids are the file's, so two files' rows never meet")
+        self.assertTrue(first.startswith("outside-aaaaaaaaaaaa-"), "ids are the file's, so two files' questions never meet")
         with_them = replace(self.record, obligations=(*self.record.obligations, *conditions))
         results = {row.obligation_id: row.status for row in check_obligations(with_them)}
         self.assertEqual(results[first], "unchecked", "never counted as held")
         self.assertEqual([row.obligation_id for row in obligations_in_scope(with_them, ("entity:portico-base",))
                           if row.obligation_id.startswith("outside-")], [first])
 
-    def test_a_kept_move_is_named_with_its_amount_and_asks_nothing(self) -> None:
-        moved = OutOfBand("object_moved", "object:obj-portico-base", {
-            "moved_m": 0.3, "before": {"min": [0, 0, 0], "max": [4, 2, 0.6]}, "after": {"min": [0.3, 0, 0], "max": [4.3, 2, 0.6]}})
-        older = outside_conditions(self.record, (moved,), [], file_sha256="a" * 64)
-        newer = outside_conditions(self.record, (), [], file_sha256="b" * 64,
-                                   kept=[{"element": "portico-base", "offset": (0.0, 0.5, 0.0)}])
+    def test_a_part_moved_by_several_objects_asks_once_and_every_file_is_listed_newest_first(self) -> None:
+        def moved(name, dx):
+            return OutOfBand("object_moved", f"object:{name}", {
+                "moved_m": dx, "before": {"min": [0, 0, 0], "max": [4, 2, 0.6]}, "after": {"min": [dx, 0, 0], "max": [4 + dx, 2, 0.6]}})
+
+        older = outside_conditions(self.record, (moved("obj-portico-base", 0.3),), [], file_sha256="a" * 64)
+        newer = outside_conditions(self.record, (moved("obj-portico-base", 0.1), moved("obj-portico-base-1", 0.1)), [],
+                                   file_sha256="b" * 64)
+        self.assertEqual(len(newer), 1)
         self.assertIn("(0.300, 0.000, 0.000) m (east, north, up)", older[0].statement)
-        self.assertIn("(0.000, 0.500, 0.000) m (east, north, up)", newer[0].statement)
-        with_them = replace(self.record, obligations=(*self.record.obligations, *older, *newer))
-        self.assertEqual([row.obligation_id for row in obligations_in_scope(with_them, ("entity:portico-base",))
-                          if row.obligation_id.startswith("outside-")], [older[0].obligation_id], "a kept move asks nothing")
-        self.assertNotIn(newer[0].obligation_id, {row.obligation_id for row in check_obligations(with_them)})
-        rows = outside_rows(with_them)
-        self.assertEqual([(row["fileSha256"][0], row["inTheDesign"]) for row in rows], [("b", True), ("a", False)],
-                         "every outside change is listed, newest file first, with whether the design has it")
+        self.assertEqual(newer[0].statement.count("(0.100, 0.000, 0.000) m (east, north, up)"), 2)
+        rows = outside_rows(replace(self.record, obligations=(*self.record.obligations, *older, *newer)))
+        self.assertEqual([row["fileSha256"][0] for row in rows], ["b", "a"])
 
 
 if __name__ == "__main__":

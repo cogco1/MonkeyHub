@@ -1140,12 +1140,8 @@ def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str
     if kind not in {"move", "copy", "rotate", "scale"}:
         raise ElementProducerError(f"unsupported direct modeling action {kind}")
     base = row.references["base"]
-    # On another element's published datum (a column on a podium, a parapet on its wall), every height is measured
-    # from that datum: a move in plan keeps them all, so the element stays on it; anything else would detach it.
-    in_plan = kind == "move" and translation is not None and vector(translation, "translation")[1] == 0
-    if "datum" in base and base["datum"] not in context.references.level_ids() and not in_plan:
-        raise ElementProducerError(f"{row.element_id}: this element is anchored to {base['datum']}; only a move in plan "
-                                   "keeps it there, and a direct transform cannot detach its host")
+    if "datum" in base and base["datum"] not in context.references.level_ids():
+        raise ElementProducerError(f"{row.element_id}: this element is anchored to {base['datum']}; direct transform cannot detach its host")
     corners = [list(point) for point in profile]
     if height:
         corners += [[point[i] + height * extrusion_axis[i] for i in range(3)] for point in profile]

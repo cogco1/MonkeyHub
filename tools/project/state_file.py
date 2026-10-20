@@ -14,12 +14,14 @@ opened, and the runner runs and exports it (create, freeze, open stage, run --ex
 through ``POST /api/decisions`` and files are written through ``POST /api/exports`` with ``withState``, on the
 project's own Runtime, started in this process.
 
-``open`` reads the file's state and its seal. What was changed outside MonkeyHub since the seal is handled as
-the product does it: rows edited in the file's state are already in the record it builds from; an element whose
-objects were all moved by one offset keeps the move, taken into the design as a landed change (a move proposal,
-admitted and continued); every other change becomes a condition no check can verify on the parts it touched,
-so a revision asks before changing them. The answer lists every outside change, whether it was kept, and
-``excerpt``, the words a reviser is given about them.
+``open`` reads the file's state and its seal. A change made outside MonkeyHub since the seal is not taken into
+the design: the model is rebuilt from the record, so a moved, added or removed object is where the record has
+it, and the file written back puts it there. Each part such a change touched gets one question that waits for
+the architect, a condition no check can verify on that part alone, so a revision that reaches it asks; the
+question is in the record and in every file written back. A row edited in the file's own record cannot be
+undone (the seal keeps only its digest) and is asked about the same way. The answer lists every outside change,
+the questions, and ``excerpt``, the words a reviser is given: each change with its amount, to be named and put
+to the architect.
 
 ``save`` writes the working design as a sealed 3DM naming the file it was opened from; with ``--candidates``
 it also writes each candidate built since the project was opened, as a plain 3DM, and with ``--events`` the
@@ -69,7 +71,7 @@ from archflow.state.stage_workflow import DesignPhase, ProjectStage, ProjectStag
 from archflow.state.state_record import (  # noqa: E402
     StateRecord, StateRecordOperator, apply_state_record_operator, part_of_object, resolve_element_bindings,
 )
-from monkeycad.formats.state_file import BOX_TOLERANCE_M, StateFileError, read_state_file  # noqa: E402
+from monkeycad.formats.state_file import StateFileError, read_state_file  # noqa: E402
 from project_runtime.application.state_files import amount, moved_by, outside_conditions  # noqa: E402
 
 TOOLS = Path(__file__).resolve().parent
@@ -227,153 +229,39 @@ def export_model(client, run_id: str, state_digest: str, out: Path, *, with_stat
     return {"file": str(out), "sha256": hashlib.sha256(data).hexdigest(), "runId": run_id, "stateDigest": state_digest}
 
 
-def _land_as_person(client, project_id: str, run_id: str, label: str) -> None:
-    """Admit a built candidate and continue the working design onto it, as the person opening the file."""
-
-    _call(client, "POST", "/api/admissions", {"projectId": project_id, "task": {"kind": "ui"},
-                                               "results": [{"runId": run_id, "outcome": "admitted", "label": label[:240],
-                                                            "summary": label}]})
-    _, _, revision = _head(client)
-    _call(client, "PUT", "/api/working-draft", {"projectId": project_id, "runId": run_id, "baseRevisionSha256": revision})
-
-
 # ---- what changed outside MonkeyHub ---------------------------------------------------------------
 
-def outside_plan(record: StateRecord, found) -> tuple[list[dict[str, Any]], list[Any]]:
-    # Each move to keep also names its findings, so a refused one becomes a condition like any other change.
-    """(moves to keep by element, the other changes) of a file's differences from its seal."""
-
-    elements = resolve_element_bindings(record)
-    objects_of: dict[str, list[str]] = {}
-    for row in found.objects:
-        element = part_of_object(row.name, elements)
-        if element is not None:
-            objects_of.setdefault(element, []).append(row.name)
-    moved: dict[str, list[Any]] = {}
-    others = []
-    for finding in found.out_of_band:
-        if finding.kind == "object_moved":
-            element = part_of_object(finding.ref.removeprefix("object:"), elements)
-            offset = moved_by(finding.detail)
-            if element is not None and offset is not None:
-                moved.setdefault(element, []).append((finding, offset))
-                continue
-        others.append(finding)
-    keep = []
-    for element, rows in sorted(moved.items()):
-        offsets = [offset for _, offset in rows]
-        whole = sorted(name for name in objects_of.get(element, ())) == sorted(f.ref.removeprefix("object:") for f, _ in rows)
-        same = all(max(abs(a - b) for a, b in zip(offset, offsets[0])) <= BOX_TOLERANCE_M for offset in offsets)
-        if whole and same:
-            keep.append({"element": element, "offset": offsets[0], "objects": [f.ref for f, _ in rows],
-                         "findings": [f for f, _ in rows]})
-        else:
-            others.extend(f for f, _ in rows)
-    return keep, others
-
-
-def _keep_move(client, project_id: str, move: Mapping[str, Any]) -> str:
-    """Take one outside move into the design: a move proposal of its element, built, read back and, when the model
-    it builds is the delivered one, admitted and continued.
-
-    An element others depend on, or that relations name, is moved alone: what depends on it keeps its own
-    definition. Either way the move is kept only if the built model differs from the design it was made on by
-    exactly this element's objects, each moved by the delivered offset.
-    """
-
-    run_id, digest, _ = _head(client)
-    # Below the tolerance the file cannot tell a move from re-encoding: such a component is no move at all, so a part
-    # moved in plan stays on what it is anchored to.
-    dx, dy, dz = (0.0 if abs(value) <= BOX_TOLERANCE_M else value for value in move["offset"])
-    # The file is Z-up (x east, y north, z up); the modeling frame is Y-up with plan (x, z).
-    body = {"projectId": project_id, "stateDigest": digest, "sourceRunId": run_id, "elementId": move["element"],
-            "kind": "move", "translation": [dx, dz, dy]}
-    try:
-        proposal = _call(client, "POST", "/api/proposals/transform", body)
-    except StateFileCommandError as exc:
-        if "ELEMENT_HAS_DEPENDENTS" not in str(exc):
-            raise
-        proposal = _call(client, "POST", "/api/proposals/transform", {**body, "alone": True})
-    started = _call(client, "POST", f"/api/proposals/{proposal['proposalId']}/candidate")
-    job = _wait_job(client, started["jobId"])
-    if job["status"] != "succeeded":
-        raise StateFileCommandError(f"the move of {move['element']} did not build: {job.get('error')}")
-    _require_as_delivered(client, started["candidateId"], run_id, move)
-    _land_as_person(client, project_id, started["candidateId"], _move_words(move))
-    summary = str((proposal.get("change") or {}).get("summary") or "")
-    return started["candidateId"], summary.split("; it no longer follows ", 1)[1] if "; it no longer follows " in summary else None
-
-
-def _require_as_delivered(client, candidate_id: str, against: str, move: Mapping[str, Any]) -> None:
-    """Refuse a built move whose model is not the delivered one: another object moved, or this one by another amount."""
-
-    compared = _call(client, "GET", f"/api/candidates/{candidate_id}/compare", params={"against": against})
-    moved = {finding.ref.removeprefix("object:") for finding in move["findings"]}
-    seen = set()
-    for row in compared.get("objects") or ():
-        name, before, after = row["name"], row.get("before"), row.get("after")
-        if before is None or after is None:
-            raise StateFileCommandError(f"the move of {move['element']} would {'add' if before is None else 'remove'} {name}")
-        shift = [a - b for a, b in zip((*after["min"], *after["max"]), (*before["min"], *before["max"]))]
-        expected = list(move["offset"]) * 2 if name in moved else [0.0] * 6
-        if max(abs(a - b) for a, b in zip(shift, expected)) > BOX_TOLERANCE_M:
-            raise StateFileCommandError(f"the move of {move['element']} would also move {name}" if name not in moved
-                                        else f"the move of {move['element']} would put {name} elsewhere than delivered")
-        seen.add(name)
-    if moved - seen:
-        raise StateFileCommandError(f"the move of {move['element']} left no readback of {sorted(moved - seen)}")
-
-
-def _move_words(move: Mapping[str, Any]) -> str:
-    unbound = f", where it no longer follows {move['unbound']}" if move.get("unbound") else ""
-    return f"Outside MonkeyHub: {move['element']} was moved by {amount(move['offset'])}; kept in the design{unbound}."
-
-
-def _refusal(reason: str) -> str:
-    """A refused move's reason in its route's own words, without the HTTP wrapping."""
-
-    try:
-        return str(json.loads(reason[reason.index("{"):])["detail"])[:240]
-    except (ValueError, KeyError, TypeError):
-        return reason[:240]
-
-
 def _finding_words(finding) -> str:
+    name = finding.ref.removeprefix("object:")
     if finding.kind == "object_moved":
         offset = moved_by(finding.detail)
-        return f"{finding.ref.removeprefix('object:')} was moved by " + (
-            amount(offset) if offset is not None else f"{float(finding.detail.get('moved_m', 0.0)):.3f} m")
-    return {"object_added": f"{finding.ref} was added", "object_removed": f"{finding.ref} was removed",
-            "object_duplicate": f"{finding.ref} was duplicated", "row_added": f"{finding.ref} was added in the record",
-            "row_removed": f"{finding.ref} was removed from the record", "row_changed": f"{finding.ref} was changed in the record",
-            "decisions_changed": "the decisions were changed", "unsealed": "the file carries no seal"}.get(finding.kind, finding.kind)
+        return f"{name} was moved by " + (amount(offset) if offset is not None
+                                          else f"{float(finding.detail.get('moved_m', 0.0)):.3f} m")
+    return {"object_added": f"{name} was added", "object_removed": f"{name} was removed",
+            "object_duplicate": f"{name} was duplicated", "row_added": f"{finding.ref} was added in the file's record",
+            "row_removed": f"{finding.ref} was removed from the file's record",
+            "row_changed": f"{finding.ref} was changed in the file's record",
+            "decisions_changed": "the decisions the file carries were changed"}.get(finding.kind, finding.kind)
 
 
-def excerpt(kept: Sequence[Mapping[str, Any]], others: Sequence[Any], conditions: Sequence[Any],
-            refused: Sequence[Mapping[str, Any]] = ()) -> str:
+def excerpt(found, record: StateRecord, conditions: Sequence[Any]) -> str:
     """What a reviser is told about the changes made outside MonkeyHub, in words."""
 
-    if not kept and not others:
+    if not found.out_of_band:
         return ""
-    lines = ["Changes made outside MonkeyHub since this file was last saved by it. Name each one, with its amount, "
-             "in your answer:"]
-    lines += [f"- {_move_words(move)}" for move in kept]
-    lines += [f"- {_move_words(move).removesuffix(' kept in the design.').rstrip(';')}. It could not be kept as it "
-              f"stands ({_refusal(move['reason'])}); the design still has it where it was." for move in refused]
-    moved_refused = {id(finding) for move in refused for finding in move["findings"]}
-    for finding in others:
-        if id(finding) in moved_refused:
-            continue
-        if finding.kind.startswith("row_") or finding.kind == "decisions_changed":
-            lines.append(f"- {_finding_words(finding)}; the design starts from the record as found.")
-        elif finding.kind == "unsealed":
+    elements = resolve_element_bindings(record)
+    lines = ["Changes made outside MonkeyHub since this file was last saved by it. The design keeps what its record "
+             "says, and the file written back puts every part where the record has it. Name each change, with its "
+             "amount, in your answer, and ask the architect whether to adopt it:"]
+    for finding in found.out_of_band:
+        if finding.kind == "unsealed":
             lines.append("- The file carries no seal, so what changed in it cannot be told.")
-        else:
-            lines.append(f"- {_finding_words(finding)}; the design record does not have this change.")
-    asking = [row for row in conditions if row.status.value in ("open", "blocked")]
-    if asking:
-        lines.append("Ask the architect before changing what these touched: "
-                     + ", ".join(sorted({ref for row in asking for ref in row.subject_refs})) + ".")
+            continue
+        element = part_of_object(finding.ref.removeprefix("object:"), elements) if finding.kind.startswith("object_") else None
+        lines.append(f"- {_finding_words(finding)}" + (f" (part {element})" if element else "") + ".")
+    if conditions:
+        lines.append("Until the architect answers, ask before changing "
+                     + ", ".join(sorted({ref for row in conditions for ref in row.subject_refs})) + ".")
     return "\n".join(lines)
 
 
@@ -529,51 +417,25 @@ def init(record_file: Path, opening_file: Path, work_root: Path, out: Path) -> d
 
 
 def open_file(file: Path, work_root: Path) -> dict[str, Any]:
-
     try:
         found = read_state_file(Path(file))
     except StateFileError as exc:
         raise StateFileCommandError(f"{file} is not a state file MonkeyHub can open: {exc}") from exc
     record = StateRecord.from_dict(found.record)
-    kept, others = outside_plan(record, found)
-    refused: list[dict[str, Any]] = []
-    root = Path(work_root)
-    while True:
-        # A move the design cannot take as it stands (it would tear a declared relation) is not kept: it
-        # becomes a condition, which lives in the record, so the project is built again with it.
-        unkept = [*others, *(finding for move in refused for finding in move["findings"])]
-        conditions = outside_conditions(record, unkept, found.decisions, file_sha256=found.file_sha256, kept=kept)
-        project_dir = build_project(replace(record, obligations=(*record.obligations, *conditions)), root)
-        landed, failed = [], []
-        with runtime(project_dir) as client:
-            recorded = record_decisions(client, record.project_id, found.decisions)
-            for move in kept:
-                try:
-                    run, unbound = _keep_move(client, record.project_id, move)
-                    landed.append({**move, "runId": run, "unbound": unbound})
-                except StateFileCommandError as exc:
-                    failed.append({**move, "reason": str(exc)[:600]})
-            run_id, digest, _ = _head(client)
-            decisions = _decisions(client)
-        if not failed:
-            break
-        if refused:
-            raise StateFileCommandError("a move kept in the first build was refused when the project was built again: "
-                                        + "; ".join(row["reason"] for row in failed))
-        refused = failed
-        dropped = {row["element"] for row in failed}
-        kept = [move for move in kept if move["element"] not in dropped]
-        root = root / "open-again"
+    # A change made outside MonkeyHub is not taken into the design: each part keeps what its record says, and a
+    # question on it waits for the architect, carried in the record and in every file written back.
+    conditions = outside_conditions(record, found.out_of_band, found.decisions, file_sha256=found.file_sha256)
+    project_dir = build_project(replace(record, obligations=(*record.obligations, *conditions)), Path(work_root))
+    with runtime(project_dir) as client:
+        recorded = record_decisions(client, record.project_id, found.decisions)
+        run_id, digest, _ = _head(client)
+        decisions = _decisions(client)
     _write_opened(project_dir.parent, project_dir, found.file_sha256, decisions)
     return {"projectDir": str(project_dir), "fileSha256": found.file_sha256, "sealed": found.binding is not None,
             "workingRunId": run_id, "stateDigest": digest, "decisions": len(recorded),
             "outside": [{"kind": f.kind, "ref": f.ref, "detail": f.detail} for f in found.out_of_band],
-            "kept": [{"element": row["element"], "offset": list(row["offset"]), "runId": row["runId"],
-                      "noLongerFollows": row["unbound"]} for row in landed],
-            "notKept": [{"element": row["element"], "offset": list(row["offset"]), "reason": row["reason"]} for row in refused],
-            "conditions": [row.to_dict() for row in conditions if row.status.value in ("open", "blocked")],
-            "outsideRows": [row.to_dict() for row in conditions], "reencoded": list(found.reencoded),
-            "excerpt": excerpt(landed, unkept, conditions, refused)}
+            "conditions": [row.to_dict() for row in conditions], "reencoded": list(found.reencoded),
+            "excerpt": excerpt(found, record, conditions)}
 
 
 def save(project_dir: Path, out: Path, parent: str | None, candidates: Path | None,

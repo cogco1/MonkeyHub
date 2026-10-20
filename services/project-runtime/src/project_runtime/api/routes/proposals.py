@@ -353,7 +353,7 @@ def _sketch_proposal(binding: ProjectBinding, projection: StateProjection,
 
 
 def _direct_proposal(request: Request, body: TransformElementRequestDto | PushPullRequestDto,
-                     kind: str, alone: bool = False, **action) -> ProposalDto:
+                     kind: str, **action) -> ProposalDto:
     binding, base, projection, previous, body = _proposal_source(request, body)
     if body.state_digest != projection.state_digest:
         raise _stale_base(binding, projection, body.state_digest, "the modeling action", body.source_run_id)
@@ -363,7 +363,7 @@ def _direct_proposal(request: Request, body: TransformElementRequestDto | PushPu
             threshold=body.threshold, factor=body.factor, keep_refs=tuple(body.keep)))
     else:
         proposal = proposal_from(direct_element_proposal(
-            projection, element_id=body.element_id, kind=kind, keep_refs=tuple(body.keep), alone=alone, **action))
+            projection, element_id=body.element_id, kind=kind, keep_refs=tuple(body.keep), **action))
     proposal = replace(proposal,
                        source_run_id=projection.run.run_id if projection.reference_state_exact else body.source_run_id,
                        source_stage_ref=projection.source_stage_ref)
@@ -376,7 +376,7 @@ def create_transform_proposal(request: Request, body: TransformElementRequestDto
 
     return _direct_proposal(request, body, body.kind, translation=body.translation, axis=body.axis,
                             angle_degrees=body.angle_degrees, scale=body.scale, origin=body.origin,
-                            copy_element_id=body.copy_element_id, alone=body.alone)
+                            copy_element_id=body.copy_element_id)
 
 
 @router.post("/proposals/push-pull", response_model=ProposalDto, response_model_by_alias=True, status_code=201)
