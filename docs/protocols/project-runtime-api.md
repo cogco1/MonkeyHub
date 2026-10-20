@@ -1157,7 +1157,7 @@ saved `off`, the setting's value before it had tiers, reads as `legacy`.
 - `enforced`: as `advisory`, and the Agent's own way onto the working design is refused with `409
   DESIGN_LOOP_REQUIRED`: `POST /api/admissions` of an `admitted` result, and `PUT /api/working-draft` onto a run.
   `POST /api/revisions` admits and continues the result itself; from the Agent it must name its own chat's message
-  and carries `confirmed` only with the managing Hub's `X-Monkey-Confirmation` (`422 REVISION_INVALID` otherwise).
+  and never carries `confirmed` (`422 REVISION_INVALID`).
 
 The Runtime tells the Agent from a person by `X-Monkey-Agent`, which the managing Hub adds (with its
 `X-Monkey-Worker` identity) to every request it forwards for a chat; nothing in a request body counts. A
@@ -1174,8 +1174,8 @@ refuses it from the Agent (`422 REVISION_INVALID`). A person's own request may c
 the Hub page has no control for it yet. These questions stop a change only while the design loop is `enforced`:
 in `legacy` and `advisory` a condition no check can verify blocks nothing, and the reviser is only told about it.
 
-**What enforced closes, and what it does not.** In `enforced` the Hub's Claude chat runs without Bash, so the
-Agent reaches the design only through this Hub, which vouches for it. A Codex chat (exec or ACP) keeps the shell
+**What enforced closes, and what it does not.** In `enforced` the Hub's Claude chat runs without Bash or
+PowerShell, so the Agent reaches the design only through this Hub, which vouches for it. A Codex chat (exec or ACP) keeps the shell
 of its workspace sandbox, and computer-use tools stay approved where this machine's policy enables them; neither
 is taken away in `enforced`. The Runtime does not verify identity
 otherwise: a local process that calls the Runtime's port or the Hub's forwarding route directly, without the
