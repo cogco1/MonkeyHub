@@ -48,14 +48,14 @@ P1-3 匿名导出、P1-4 总平面出图：彼此独立
 - **做什么**：把 `claude/skill-run` 上 `0f5ce85f..4070fc6f` 这一段合到 main 上，与设计循环 D 并存；底下的联合候选不带（见第 6 节第 1 条）。
 - **模块和文件**：`hub.shell`（`chat/studio_tool.py`、`chat/tool_calls.py`、`ChatShell.tsx`、`features/skills/`）、新模块 `project_runtime.live_rhino`、`project_runtime.skill_runs`、`project_runtime.skill_library`、`project_runtime.camera_passes`，以及 `monkeycad.formats`（STL）、`monkeycad.occt`（修剪环）、`monkeydiagram`。
 - **验收**：Live Rhino、skill 运行、STL、修剪环、相机分层图的测试在 main 上通过；设计循环 D 的测试照旧通过；PR 写明解决的冲突和改变的行为。
-- **状态**：分支 `claude/668-workshop-line`，见本 Issue 的版本线 PR。
+- **状态**：PR #669（分支 `claude/668-workshop-line`），等 owner 确认后合并。
 
 ### P0-2 工作坊模式
 
 - **做什么**：一个开关（设置 → 软件更新 → 工作坊模式），打开后：不检查、不下载、不在退出时切换更新；同一个账户只开一个 MonkeyHub（不管运行目录）；桌面每次先要 8790 端口，重启后地址不变，已打开的页面自己连回来。
 - **模块和文件**：`hub.shell`——`settings/models.py`（`workshopMode`）、`updates/desktop_updates.py`、`updates/models.py`、`updates/routes.py`、`SoftwareUpdateSettings.tsx`；桌面外壳 `apps/monkeyhub/desktop/src/{lib,main,single_instance}.rs`。
 - **验收**：开着时更新检查不发网络请求、“立即检查”和打开自动更新返回 409 `UPDATE_WORKSHOP_MODE`；第二次启动（换运行目录也一样）把已开窗口带到前面；同端口重启后页面事件流自己重连。
-- **状态**：与 P0-1 同一个 PR。
+- **状态**：与 P0-1 同在 PR #669。
 
 ### P0-3 国内网络下的对话后端
 
