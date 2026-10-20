@@ -191,7 +191,8 @@ class EndToEndTests(unittest.TestCase):
         self.addCleanup(patch.stopall)
         patch.object(preparation, "_bound_studio", side_effect=lambda *a, **k: (self.base, deepcopy(self.session))).start()
         patch.object(transport, "_request_json", side_effect=self.request).start()
-        patch.dict("os.environ", {design_loop.STATE_ENV: str(root / "loop.json")}).start()
+        # As cli_profile starts such a turn: its loop state, and the design loop it was started with.
+        patch.dict("os.environ", {design_loop.STATE_ENV: str(root / "loop.json"), "MONKEYHUB_DESIGN_LOOP": "enforced"}).start()
         self.state = root / "loop.json"
 
     def request(self, base, path, method="GET", body=None, **kwargs):
