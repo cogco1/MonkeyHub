@@ -1296,15 +1296,23 @@ class ObligationCheckTests(unittest.TestCase):
             with self.subTest(name):
                 status, detail = self.results(record, {**_BOXES, "obj-column": box})["k6"]
                 self.assertEqual(status, "held", detail)
-        # A rail its component declares as one is a railing wherever it stands: a centre rail on a wide flight.
-        centre = ((0.97, 1.0, 0.0), (1.03, 4.0, 1.2))
-        self.assertEqual(self.results(record, {**_BOXES, "obj-column": centre})["k6"][0], "violated")
+        # Material over the side band higher than a railing reaches is overhead, as anywhere else on the flight.
+        status, detail = self.results(record, {**_BOXES, "obj-column": ((1.45, 1.0, 1.9), (1.5, 4.0, 2.1))})["k6"]
+        self.assertEqual(status, "violated", detail)
+
+    def test_what_a_part_is_called_exempts_nothing(self) -> None:
+        record = _house(_obligation("k6", "validator:headroom-at-least/2.0", "entity:stair"), column=True)
         declared = replace(record, entities=tuple(
             replace(e, fields={**e.fields, "component_id": "rail"}, parent_id="rail") if e.entity_id == "column" else e
-            for e in record.entities) + (Entity("rail", "Component@1", {"intent": "centre rail",
+            for e in record.entities) + (Entity("rail", "Component@1", {"intent": "rail",
                                                                          "facets": {"architectural.role": "railing"}},
                                                  parent_id="house"),))
-        self.assertEqual(self.results(declared, {**_BOXES, "obj-column": centre})["k6"][0], "held")
+        for name, box in (("a 300 mm wall across the flight", ((0.5, 2.35, 0.0), (1.5, 2.65, 3.0))),
+                          ("a 200 mm column in the middle of the flight", ((0.9, 2.4, 0.0), (1.1, 2.6, 3.0))),
+                          ("a 60 mm centre rail", ((0.97, 1.0, 0.0), (1.03, 4.0, 1.2)))):
+            with self.subTest(name):
+                status, detail = self.results(declared, {**_BOXES, "obj-column": box})["k6"]
+                self.assertEqual(status, "violated", detail)
 
     def test_an_entity_check_without_an_entity_subject_is_unchecked_never_held(self) -> None:
         kinds = ("opening-piers-at-least/0.5", "wall-above-at-least/0.15", "headroom-at-least/2.0", "landing-depth-at-least/0.5",

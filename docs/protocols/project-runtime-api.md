@@ -626,9 +626,9 @@ are `state_record.OBLIGATION_CHECKS`. Validation checks every live obligation on
 its inspected object boxes, and again on the run it was made from. Each one is `held`, `violated` or
 `unchecked`; an obligation with no check, an unknown kind, a value nothing states, or a model read back without
 a part where the check looks (the flight's plan for headroom, the strip ahead of each stair end for a landing),
-or without one the record does not place, is `unchecked`, never held. Headroom does not count a railing: a part
-whose component declares `architectural.role: railing`, wherever it stands, or material no thicker than 60 mm
-across the flight within 100 mm of a side edge. The results are reported, never a clause of
+or without one the record does not place, is `unchecked`, never held. Headroom does not count a railing:
+material no thicker than 60 mm across the flight within 100 mm of a side edge that stands on the tread or starts
+no more than 1.2 m above it. What a part is called changes nothing. The results are reported, never a clause of
 review readiness: no tier makes a condition block a person's or the Agent's admission or a Stage acceptance.
 In `enforced`, `POST /api/revisions` refuses a new violation itself. `obligationProblems[]` (on the validation and on
 `GET /api/candidates/{id}`) lists the violated ones, new first, then the unchecked ones, at most 20, each with
