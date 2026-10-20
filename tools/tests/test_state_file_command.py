@@ -144,6 +144,38 @@ class StateFileCommandTests(unittest.TestCase):
                          "the file written back carries the questions until the architect answers")
         self.assertEqual(sorted(row["rawLanguage"] for row in out.decisions), ["不要长凳靠墙", "门廊基座别动"])
 
+    def test_a_record_or_decision_edited_in_the_file_is_listed_and_not_taken_in(self) -> None:
+        start = self.root / "start.3dm"
+        state_file.init(self.root / "record.json", self.root / "opening.json", self.root / "w0", start)
+
+        # Someone outside MonkeyHub raises the bench in the file's record and drops the architect's rejection of it.
+        model = rhino3dm.File3dm.Read(str(start))
+        state = json.loads(model.Strings["archflow:state"])
+        bench = next(row for row in state["record"]["entities"] if row["entity_id"] == "garden-bench")
+        bench["fields"]["params"]["height"] = 0.9
+        state["decisions"] = [row for row in state["decisions"] if row["disposition"] != "reject"]
+        model.Strings["archflow:state"] = json.dumps(state)
+        edited = self.root / "edited.3dm"
+        self.assertTrue(model.Write(str(edited), 8))
+
+        opened = state_file.open_file(edited, self.root / "w1")
+        for words in ("entity:garden-bench was changed in the file's design record",
+                      "removed reject on entity:garden-bench (\"不要长凳靠墙\")", "ask the architect whether to adopt it"):
+            self.assertIn(words, opened["excerpt"])
+        self.assertIn(["entity:garden-bench"], [row["subject_refs"] for row in opened["conditions"]])
+        saved = read_state_file(Path(state_file.save(Path(opened["projectDir"]), self.root / "model.3dm", None, None)["file"]))
+        bench = next(row for row in saved.record["entities"] if row["entity_id"] == "garden-bench")
+        self.assertEqual(bench["fields"]["params"]["height"], 0.5, "the design keeps the record MonkeyHub sealed")
+        self.assertIn(("reject", "不要长凳靠墙"), [(row["disposition"], row["rawLanguage"]) for row in saved.decisions],
+                      "a decision removed in the file is still the architect's")
+
+        # A file whose seal was taken away is not opened at all.
+        model.Strings.Delete("archflow:binding")
+        unsealed = self.root / "unsealed.3dm"
+        self.assertTrue(model.Write(str(unsealed), 8))
+        self.assertEqual(state_file.main(["open", "--file", str(unsealed), "--work-root", str(self.root / "w2")]), 1)
+        self.assertFalse((self.root / "w2").exists(), "nothing was built from it")
+
     def test_the_events_each_hop_saves_rebuild_the_state_its_file_carries(self) -> None:
         file = self.root / "start.3dm"
         made = state_file.init(self.root / "record.json", self.root / "opening.json", self.root / "w0", file)

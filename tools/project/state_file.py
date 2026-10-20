@@ -11,15 +11,16 @@
 Each command composes tools and routes MonkeyHub already has (#657, #185). A project is built in the work root
 the caller gives: the record and its seats become the project's input, a one-stage workflow is frozen and
 opened, and the runner runs and exports it (create, freeze, open stage, run --export). Decisions are recorded
-through ``POST /api/decisions`` and files are written through ``POST /api/exports`` with ``withState``, on the
-project's own Runtime, started in this process.
+through ``POST /api/decisions`` and files are written through ``POST /api/state-files/export``, on the project's
+own Runtime, started in this process with the design loop enforced.
 
 ``open`` reads the file's state and its seal. A change made outside MonkeyHub since the seal is not taken into
 the design: the model is rebuilt from the record, so a moved, added or removed object is where the record has
 it, and the file written back puts it there. Each part such a change touched gets one question that waits for
 the architect, a condition no check can verify on that part alone, so a revision that reaches it asks; the
-question is in the record and in every file written back. A row edited in the file's own record cannot be
-undone (the seal keeps only its digest) and is asked about the same way. The answer lists every outside change,
+question is in the record and in every file written back. The record and decisions the file states beside the
+seal are not read: the design is built from the copy the seal keeps, so a row or decision edited in the file is
+listed and asked about the same way, and a file without such a seal is refused. The answer lists every outside change,
 the questions, and ``excerpt``, the words a reviser is given: each change with its amount, to be named and put
 to the architect.
 
@@ -72,7 +73,7 @@ from archflow.state.state_record import (  # noqa: E402
     StateRecord, StateRecordOperator, apply_state_record_operator, part_of_object, resolve_element_bindings,
 )
 from monkeycad.formats.state_file import StateFileError, read_state_file  # noqa: E402
-from project_runtime.application.state_files import amount, moved_by, outside_conditions  # noqa: E402
+from project_runtime.application.state_files import change_words, outside_conditions  # noqa: E402
 
 TOOLS = Path(__file__).resolve().parent
 STAGE_RUN = "stage-0-001"
@@ -154,8 +155,9 @@ def runtime(project_dir: Path) -> Iterator[Any]:
     from project_runtime.main import create_app
     from project_runtime.settings import StudioSettings
 
+    # The design loop's own tool: state files are written and read while it is enforced (#185).
     app = create_app(StudioSettings(cad_export="occt", project_dir=Path(project_dir),
-                                    cache_dir=Path(project_dir).parent / "cache"))
+                                    cache_dir=Path(project_dir).parent / "cache", design_loop="enforced"))
     with TestClient(app) as client:
         yield client
 
@@ -210,12 +212,12 @@ def export_model(client, run_id: str, state_digest: str, out: Path, *, with_stat
     out = Path(out)
     if out.exists():
         raise StateFileCommandError(f"{out} already exists.")
-    body: dict[str, Any] = {"targetFormat": "3dm", "projectRevision": {"runId": run_id, "stateDigest": state_digest}}
+    revision = {"runId": run_id, "stateDigest": state_digest}
     if with_state:
-        body["withState"] = True
-        if parent is not None:
-            body["parentFileSha256"] = parent
-    started = _call(client, "POST", "/api/exports", body)
+        started = _call(client, "POST", "/api/state-files/export",
+                        {"projectRevision": revision, **({} if parent is None else {"parentFileSha256": parent})})
+    else:
+        started = _call(client, "POST", "/api/exports", {"targetFormat": "3dm", "projectRevision": revision})
     deadline = time.monotonic() + WAIT_S
     while (report := _call(client, "GET", f"/api/exports/{started['exportId']}"))["status"] in ("queued", "running"):
         if time.monotonic() > deadline:
@@ -231,34 +233,18 @@ def export_model(client, run_id: str, state_digest: str, out: Path, *, with_stat
 
 # ---- what changed outside MonkeyHub ---------------------------------------------------------------
 
-def _finding_words(finding) -> str:
-    name = finding.ref.removeprefix("object:")
-    if finding.kind == "object_moved":
-        offset = moved_by(finding.detail)
-        return f"{name} was moved by " + (amount(offset) if offset is not None
-                                          else f"{float(finding.detail.get('moved_m', 0.0)):.3f} m")
-    return {"object_added": f"{name} was added", "object_removed": f"{name} was removed",
-            "object_duplicate": f"{name} was duplicated", "row_added": f"{finding.ref} was added in the file's record",
-            "row_removed": f"{finding.ref} was removed from the file's record",
-            "row_changed": f"{finding.ref} was changed in the file's record",
-            "decisions_changed": "the decisions the file carries were changed"}.get(finding.kind, finding.kind)
-
-
 def excerpt(found, record: StateRecord, conditions: Sequence[Any]) -> str:
     """What a reviser is told about the changes made outside MonkeyHub, in words."""
 
     if not found.out_of_band:
         return ""
     elements = resolve_element_bindings(record)
-    lines = ["Changes made outside MonkeyHub since this file was last saved by it. The design keeps what its record "
-             "says, and the file written back puts every part where the record has it. Name each change, with its "
+    lines = ["Changes made outside MonkeyHub since this file was last saved by it. The design keeps what MonkeyHub "
+             "saved: its record, its decisions, and every part where the record has it. Name each change, with its "
              "amount, in your answer, and ask the architect whether to adopt it:"]
     for finding in found.out_of_band:
-        if finding.kind == "unsealed":
-            lines.append("- The file carries no seal, so what changed in it cannot be told.")
-            continue
         element = part_of_object(finding.ref.removeprefix("object:"), elements) if finding.kind.startswith("object_") else None
-        lines.append(f"- {_finding_words(finding)}" + (f" (part {element})" if element else "") + ".")
+        lines.append(f"- {change_words(finding)}" + (f" (part {element})" if element else "") + ".")
     if conditions:
         lines.append("Until the architect answers, ask before changing "
                      + ", ".join(sorted({ref for row in conditions for ref in row.subject_refs})) + ".")
@@ -421,13 +407,19 @@ def open_file(file: Path, work_root: Path) -> dict[str, Any]:
         found = read_state_file(Path(file))
     except StateFileError as exc:
         raise StateFileCommandError(f"{file} is not a state file MonkeyHub can open: {exc}") from exc
-    record = StateRecord.from_dict(found.record)
-    # A change made outside MonkeyHub is not taken into the design: each part keeps what its record says, and a
-    # question on it waits for the architect, carried in the record and in every file written back.
-    conditions = outside_conditions(record, found.out_of_band, found.decisions, file_sha256=found.file_sha256)
+    if found.sealed_record is None or found.sealed_decisions is None:
+        # Without a seal that keeps what it vouches for, the design cannot be told from what was changed outside.
+        raise StateFileCommandError(f"{file} carries no seal MonkeyHub can open it from"
+                                    + (" (it has none)" if found.binding is None else " (it was sealed before seals kept "
+                                       "their record)") + ": open the last file MonkeyHub saved, or start from the record.")
+    # The design is what the seal vouches for. A change made outside MonkeyHub, to the model or to the record and
+    # decisions the file states, is not taken in: each part it touched keeps what its record says, and a question on
+    # it waits for the architect, carried in the record and in every file written back.
+    record = StateRecord.from_dict(found.sealed_record)
+    conditions = outside_conditions(record, found.out_of_band, found.sealed_decisions, file_sha256=found.file_sha256)
     project_dir = build_project(replace(record, obligations=(*record.obligations, *conditions)), Path(work_root))
     with runtime(project_dir) as client:
-        recorded = record_decisions(client, record.project_id, found.decisions)
+        recorded = record_decisions(client, record.project_id, found.sealed_decisions)
         run_id, digest, _ = _head(client)
         decisions = _decisions(client)
     _write_opened(project_dir.parent, project_dir, found.file_sha256, decisions)

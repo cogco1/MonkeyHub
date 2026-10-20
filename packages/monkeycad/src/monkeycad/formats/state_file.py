@@ -4,7 +4,10 @@ Owns the ``archflow:state`` and ``archflow:binding`` document strings: writing t
 into a copy of a model exported elsewhere, reading them back, and naming every
 difference between the file as found and its seal (out-of-band edits). The record
 and decisions are caller data; only their rows are read here. Object rows come from
-``three_dm_inspector``: named top-level objects with saved visible bounds.
+``three_dm_inspector``: named top-level objects with saved visible bounds. The seal also keeps the record and
+decisions it vouches for, so a reader can build from what was sealed rather than from what the file says now,
+where each mesh object's vertices sit inside its own box (their mean and spread), which tells a turn, mirror or
+reshape inside an unchanged box from a mere re-encoding, and how many top-level objects have no name.
 
 Does not own the design record's meaning, choosing paths, receipts, or repairing a
 file; reading never writes.
@@ -31,6 +34,8 @@ BINDING_SCHEMA = "ArchFlowStateBinding@1"
 STATE_KEY = "archflow:state"
 BINDING_KEY = "archflow:binding"
 BOX_TOLERANCE_M = 0.002
+# Vertices that sit where they sat, to this, keep their shape: a re-encoded mesh keeps them, a turned one does not.
+SHAPE_TOLERANCE_M = 0.005
 _SEAL_TOLERANCE_M = 1e-9
 _HEADER_REF = "record:header"
 _ROW_LISTS = (
@@ -56,6 +61,8 @@ class ObjectRow:
     min: tuple[float, float, float]
     max: tuple[float, float, float]
     geometry_sha256: str | None
+    # Where a mesh's vertices sit inside its own box: their mean and spread on x, y and z, from the box's low corner.
+    shape: tuple[float, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +83,9 @@ class StateFile:
     objects: tuple[ObjectRow, ...]
     out_of_band: tuple[OutOfBand, ...]
     reencoded: tuple[str, ...]
+    # What the seal vouches for, when it keeps a copy: the record and decisions as MonkeyHub wrote them.
+    sealed_record: dict | None = None
+    sealed_decisions: tuple[dict, ...] | None = None
 
 
 def row_digests(record: dict) -> dict[str, str]:
@@ -101,9 +111,10 @@ def row_digests(record: dict) -> dict[str, str]:
 
 
 def object_rows(path: Path) -> tuple[ObjectRow, ...]:
-    """Named top-level objects of a 3DM with saved visible bounds and encoded-geometry digests."""
+    """Named top-level objects of a 3DM with saved visible bounds, encoded-geometry and shape digests."""
 
-    return _object_rows(_inspect(path))
+    shapes, _ = _shapes(Path(path).read_bytes())
+    return _object_rows(_inspect(path), shapes)
 
 
 def binding_for(
@@ -111,8 +122,10 @@ def binding_for(
     decisions: Sequence[dict],
     objects: Sequence[ObjectRow],
     parent_file_sha256: str | None,
+    unnamed: int = 0,
 ) -> dict:
-    """The seal of a state over these objects; a repeated name binds its first row (see ``compare``)."""
+    """The seal of a state over these objects; a repeated name binds its first row (see ``compare``). It keeps the
+    record and decisions themselves, which its digests then also vouch for."""
 
     return {
         "schema": BINDING_SCHEMA,
@@ -120,10 +133,14 @@ def binding_for(
         "decisions_digest": _digest(list(decisions)),
         "row_digests": row_digests(record),
         "objects": {
-            name: {"min": list(row.min), "max": list(row.max), "geometry_sha256": row.geometry_sha256}
+            name: {"min": list(row.min), "max": list(row.max), "geometry_sha256": row.geometry_sha256,
+                   "shape": None if row.shape is None else list(row.shape)}
             for name, row in _first_by_name(objects).items()
         },
         "parent_file_sha256": parent_file_sha256,
+        "record": record,
+        "decisions": list(decisions),
+        "unnamed": unnamed,
     }
 
 
@@ -132,12 +149,17 @@ def compare(
     record: dict,
     decisions: Sequence[dict],
     objects: Sequence[ObjectRow],
+    unnamed: int | None = None,
 ) -> tuple[tuple[OutOfBand, ...], tuple[str, ...]]:
     """(out-of-band differences, re-encoded object names) of a state and objects against a seal.
 
-    An object whose box stays within ``BOX_TOLERANCE_M`` but whose geometry digest changed
-    is re-encoded, not edited. A name carried by several objects is reported as
-    ``object_duplicate`` and compared through its first row in (min, max, digest) order.
+    A box that moved by one offset is ``object_moved``; one that changed otherwise (turned, mirrored, resized) is
+    ``object_transformed``. An object whose box stays within ``BOX_TOLERANCE_M`` but whose vertices sit elsewhere
+    inside it by more than ``SHAPE_TOLERANCE_M`` was turned, mirrored or reshaped (``object_reshaped``); one whose
+    geometry digest alone
+    changed is re-encoded, not edited. A name carried by several objects is reported as ``object_duplicate`` and
+    compared through its first row in (min, max, digest) order. A changed count of unnamed objects is
+    ``object_unnamed``.
     """
 
     sealed = _checked_binding(binding)
@@ -151,7 +173,13 @@ def compare(
         elif current_rows[ref] != sealed_rows[ref]:
             found.append(OutOfBand("row_changed", ref, {}))
     if _digest(list(decisions)) != sealed["decisions_digest"]:
-        found.append(OutOfBand("decisions_changed", "decisions", {}))
+        detail: dict = {}
+        if "decisions" in sealed:
+            kept = {_digest(row) for row in sealed["decisions"]}
+            now = {_digest(row) for row in decisions}
+            detail = {"added": [row for row in decisions if _digest(row) not in kept],
+                      "removed": [row for row in sealed["decisions"] if _digest(row) not in now]}
+        found.append(OutOfBand("decisions_changed", "decisions", detail))
 
     counts = Counter(row.name for row in objects)
     current_objects, sealed_objects = _first_by_name(objects), sealed["objects"]
@@ -170,11 +198,19 @@ def compare(
             continue
         moved = max(abs(a - b) for a, b in zip((*row.min, *row.max), (*before["min"], *before["max"])))
         if moved > BOX_TOLERANCE_M:
+            low = [a - b for a, b in zip(row.min, before["min"])]
+            high = [a - b for a, b in zip(row.max, before["max"])]
             detail = {"before": _box(before["min"], before["max"]), "after": after, "moved_m": moved}
-            found.append(OutOfBand("object_moved", ref, detail))
+            kind = "object_moved" if max(abs(a - b) for a, b in zip(low, high)) <= BOX_TOLERANCE_M else "object_transformed"
+            found.append(OutOfBand(kind, ref, detail))
+        elif None not in (row.shape, before.get("shape")) and len(row.shape) == len(before["shape"]) \
+                and max(abs(a - b) for a, b in zip(row.shape, before["shape"])) > SHAPE_TOLERANCE_M:
+            found.append(OutOfBand("object_reshaped", ref, {"box": after}))
         elif None not in (row.geometry_sha256, before["geometry_sha256"]) \
                 and row.geometry_sha256 != before["geometry_sha256"]:
             reencoded.append(name)
+    if unnamed is not None and isinstance(sealed.get("unnamed"), int) and unnamed != sealed["unnamed"]:
+        found.append(OutOfBand("object_unnamed", "objects:unnamed", {"before": sealed["unnamed"], "after": unnamed}))
     return tuple(sorted(found, key=lambda item: (item.ref, item.kind))), tuple(reencoded)
 
 
@@ -182,6 +218,7 @@ def read_state_file(path: Path) -> StateFile:
     """The state, seal and out-of-band differences of one 3DM; an unsealed file reports ``unsealed``."""
 
     inspection = _inspect(path)
+    shapes, unnamed = _shapes(Path(path).read_bytes())
     strings = _strings(inspection)
     if STATE_KEY not in strings:
         raise StateFileError("STATE_MISSING", f"no {STATE_KEY} string in the file")
@@ -192,13 +229,16 @@ def read_state_file(path: Path) -> StateFile:
     if not isinstance(record, dict) or not isinstance(decisions, list) \
             or not all(isinstance(item, dict) for item in decisions):
         raise StateFileError("STATE_CORRUPT", f"{STATE_KEY} needs a record object and a list of decision objects")
-    objects = _object_rows(inspection)
+    objects = _object_rows(inspection, shapes)
     binding = _checked_binding(_parse(strings[BINDING_KEY], "BINDING_CORRUPT")) if BINDING_KEY in strings else None
     if binding is None:
         out_of_band, reencoded = (OutOfBand("unsealed", "file", {}),), ()
     else:
-        out_of_band, reencoded = compare(binding, record, decisions, objects)
-    return StateFile(record, tuple(decisions), binding, inspection.file_sha256, objects, out_of_band, reencoded)
+        out_of_band, reencoded = compare(binding, record, decisions, objects, unnamed)
+    sealed_record = None if binding is None else binding.get("record")
+    sealed_decisions = None if binding is None or "decisions" not in binding else tuple(binding["decisions"])
+    return StateFile(record, tuple(decisions), binding, inspection.file_sha256, objects, out_of_band, reencoded,
+                     sealed_record, sealed_decisions)
 
 
 def seal_state_file(
@@ -225,8 +265,9 @@ def seal_state_file(
     inspection = _inspect(source)
     if inspection.file_sha256 != hashlib.sha256(data).hexdigest():
         raise StateFileError("FILE_UNREADABLE", f"{Path(source).name} changed while it was read")
-    sealed_objects = _object_rows(inspection)
-    binding = binding_for(record, decisions, sealed_objects, parent_file_sha256)
+    shapes, unnamed = _shapes(data)
+    sealed_objects = _object_rows(inspection, shapes)
+    binding = binding_for(record, decisions, sealed_objects, parent_file_sha256, unnamed)
     state = {"schema": SCHEMA, "record": record, "decisions": list(decisions)}
     state_text, binding_text = _json(state), _json(binding)
 
@@ -260,7 +301,7 @@ def _inspect(path: Path) -> ThreeDmInspection:
         raise StateFileError("FILE_UNREADABLE", f"{exc.code.value}: {exc.message}") from exc
 
 
-def _object_rows(inspection: ThreeDmInspection) -> tuple[ObjectRow, ...]:
+def _object_rows(inspection: ThreeDmInspection, shapes: Mapping[str, str] | None = None) -> tuple[ObjectRow, ...]:
     digests = {str(item["object_id"]): item["geometry_sha256"] for item in inspection.object_geometry_sha256}
     rows = []
     for item in inspection.named_object_bboxes:
@@ -270,8 +311,45 @@ def _object_rows(inspection: ThreeDmInspection) -> tuple[ObjectRow, ...]:
             _triple(item["bbox"]["min"]),
             _triple(item["bbox"]["max"]),
             None if digest is None else str(digest),
+            (shapes or {}).get(str(item["object_id"]).lower()),
         ))
     return tuple(sorted(rows, key=lambda row: (row.name, row.min, row.max, row.geometry_sha256 or "")))
+
+
+def _shapes(data: bytes) -> tuple[dict[str, tuple[float, ...]], int | None]:
+    """Where each named mesh object's vertices sit inside its own box, by object id, and how many top-level objects
+    have no name; ({}, None) when the file cannot be read for them. A re-encoded mesh, or one moved whole, keeps
+    them; a turned, mirrored or reshaped one does not."""
+
+    try:
+        rhino3dm = importlib.import_module("rhino3dm")
+        model = rhino3dm.File3dm.FromByteArray(data)
+    except Exception:  # noqa: BLE001 - the fingerprints are only a further reading; their absence compares nothing
+        return {}, None
+    if model is None:
+        return {}, None
+    shapes: dict[str, tuple[float, ...]] = {}
+    unnamed = 0
+    for item in model.Objects:
+        attributes = item.Attributes
+        if getattr(attributes, "IsInstanceDefinitionObject", False):
+            continue
+        if not attributes.Name:
+            unnamed += 1
+            continue
+        geometry = item.Geometry
+        if type(geometry).__name__ != "Mesh":
+            continue
+        vertices = geometry.Vertices
+        points = {(float(p.X), float(p.Y), float(p.Z)) for p in (vertices[index] for index in range(len(vertices)))}
+        if not points:
+            continue
+        low = [min(point[axis] for point in points) for axis in range(3)]
+        mean = [sum(point[axis] for point in points) / len(points) for axis in range(3)]
+        spread = [(sum((point[axis] - mean[axis]) ** 2 for point in points) / len(points)) ** 0.5 for axis in range(3)]
+        shapes[str(attributes.Id).lower()] = tuple(round(value, 6) + 0.0 for value in
+                                                   (*(m - l for m, l in zip(mean, low)), *spread))
+    return shapes, unnamed
 
 
 def _first_by_name(objects: Sequence[ObjectRow]) -> dict[str, ObjectRow]:
@@ -285,6 +363,7 @@ def _same_rows(found: Sequence[ObjectRow], sealed: Sequence[ObjectRow]) -> bool:
     return len(found) == len(sealed) and all(
         a.name == b.name
         and a.geometry_sha256 == b.geometry_sha256
+        and a.shape == b.shape
         and all(abs(x - y) <= _SEAL_TOLERANCE_M for x, y in zip((*a.min, *a.max), (*b.min, *b.max)))
         for a, b in zip(found, sealed)
     )
@@ -327,6 +406,12 @@ def _checked_binding(value: Any) -> dict:
     )
     if not well_formed:
         raise StateFileError("BINDING_CORRUPT", f"{BINDING_KEY} lacks a field or has one of the wrong type")
+    # The copy it keeps must be the one its digests vouch for, or the seal does not match itself.
+    if "record" in value and (not isinstance(value["record"], Mapping) or _digest(value["record"]) != value["record_digest"]):
+        raise StateFileError("BINDING_CORRUPT", f"{BINDING_KEY} keeps a record its own digest does not match")
+    if "decisions" in value and (not isinstance(value["decisions"], list)
+                                 or _digest(list(value["decisions"])) != value["decisions_digest"]):
+        raise StateFileError("BINDING_CORRUPT", f"{BINDING_KEY} keeps decisions its own digest does not match")
     return dict(value)
 
 
@@ -339,6 +424,8 @@ def _is_bound_object(item: Any) -> bool:
             for end in ("min", "max")
         )
         and isinstance(item.get("geometry_sha256"), (str, type(None)))
+        and (item.get("shape") is None or (isinstance(item["shape"], list) and len(item["shape"]) == 6 and all(
+            isinstance(x, (int, float)) and not isinstance(x, bool) for x in item["shape"])))
     )
 
 

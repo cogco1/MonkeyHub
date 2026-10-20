@@ -6780,18 +6780,6 @@ export type ModelExportRequest = {
      */
     sourceArtifactId?: string | null;
     upload?: ModelUpload | null;
-    /**
-     * Withstate
-     *
-     * 3dm of a projectRevision only: the file also carries that run's design record and the project's design decisions, sealed, so that a later reader can tell what was changed outside MonkeyHub (#657).
-     */
-    withState?: boolean;
-    /**
-     * Parentfilesha256
-     *
-     * withState only: the state file this revision was made from.
-     */
-    parentFileSha256?: string | null;
 };
 
 /**
@@ -12046,6 +12034,19 @@ export type StageContextChangesDto = {
 };
 
 /**
+ * StateFileExportRequest
+ */
+export type StateFileExportRequest = {
+    projectRevision: ProjectRevision;
+    /**
+     * Parentfilesha256
+     *
+     * The state file this revision was opened from.
+     */
+    parentFileSha256?: string | null;
+};
+
+/**
  * StateFileRequest
  */
 export type StateFileRequest = {
@@ -15502,6 +15503,39 @@ export type CreateExportApiExportsPostErrors = {
 export type CreateExportApiExportsPostError = CreateExportApiExportsPostErrors[keyof CreateExportApiExportsPostErrors];
 
 export type CreateExportApiExportsPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: unknown;
+};
+
+export type ExportStateFileApiStateFilesExportPostData = {
+    body: StateFileExportRequest;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/state-files/export';
+};
+
+export type ExportStateFileApiStateFilesExportPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExportStateFileApiStateFilesExportPostError = ExportStateFileApiStateFilesExportPostErrors[keyof ExportStateFileApiStateFilesExportPostErrors];
+
+export type ExportStateFileApiStateFilesExportPostResponses = {
     /**
      * Successful Response
      */

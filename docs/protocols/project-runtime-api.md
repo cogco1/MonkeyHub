@@ -2080,23 +2080,28 @@ unfinished jobs after a Runtime restart report `interrupted` and are not replaye
 These operations use existing jobs and P036 noncanonical export runs, leaving
 project HEAD and the authoritative model unchanged.
 
-**A 3DM that carries its state (#657).** With `withState: true` (a `projectRevision`, `targetFormat` `3dm`
-only, else `422 EXPORT_STATE_UNAVAILABLE`) the delivered 3DM also holds, as the document strings
-`archflow:state` and `archflow:binding`, that run's State Record, the project's active design decisions as
-portable rows (`disposition`, `targetRef`, `rawLanguage`, `strength`, `extent`) and a seal over them: digests
-of the record, the decisions and each row, each named object's box and geometry digest, and the optional
-`parentFileSha256` of the state file the revision was made from. The report adds `withState`,
+**A 3DM that carries its state (#657).** State files are the design loop's: their two routes answer only while
+it is `enforced` (`409 DESIGN_LOOP_NOT_ENFORCED` otherwise), and `POST /api/exports` takes no state field in any
+tier. `POST /api/state-files/export` takes `{projectRevision, parentFileSha256?}` and is read back like any
+export (`GET /api/exports/{id}`, then its bytes). The 3DM also holds, as the document strings `archflow:state`
+and `archflow:binding`, that run's State Record, the project's active design decisions as portable rows
+(`disposition`, `targetRef`, `rawLanguage`, `strength`, `extent`) and a seal: digests of the record, the decisions
+and each row, each named object's box, geometry digest and where its mesh vertices sit inside that box (their
+mean and spread), how many top-level objects have no name, the optional `parentFileSha256`, and a copy of the
+record and decisions it vouches for, which its digests must match. The report adds `withState`,
 `stateRecordDigest`, `decisionsCarried` and `parentFileSha256`.
 
 `POST /api/state-files/inspect` takes `{fileName, contentBase64}` and retains nothing. It answers `fileSha256`,
-`sealed`, `parentFileSha256`, the `record` and `decisions` the file states, `outOfBand` (each difference from
-its seal: `row_added`, `row_changed`, `row_removed`, `decisions_changed`, `object_added`, `object_removed`,
-`object_duplicate`, `object_moved` beyond 2 mm, or `unsealed`), `reencoded` (objects whose mesh was re-encoded
-within the box tolerance) and `conditions`: for each change made outside MonkeyHub, one open
-`DesignObligation` with no check on the parts it touched (an object's part and its component, a changed row, the
-decisions' targets). Whoever builds a project from the file adds them to its record, so that the one-call
-revision asks before changing anything the record does not know was changed. A file whose state cannot be read
-is `422 STATE_FILE_<code>`.
+`sealed`, `sealKeepsRecord`, `parentFileSha256`, the `record` and `decisions` the seal keeps (what the file states
+when the seal keeps none), `outOfBand` (each difference from the seal: `row_added`, `row_changed`, `row_removed`,
+`decisions_changed` with the rows `added` and `removed`, `object_added`, `object_removed`, `object_duplicate`,
+`object_moved` (one offset beyond 2 mm), `object_transformed` (a box turned, mirrored or resized),
+`object_reshaped` (its vertices sit elsewhere inside an unchanged box by more than 5 mm), `object_unnamed`, or
+`unsealed`), `reencoded` (objects whose mesh was only re-encoded) and `conditions`: for each part a change made
+outside MonkeyHub touched, one open `DesignObligation` with no check, awaiting the architect. Whoever builds a
+project from the file builds it from the record and decisions the seal keeps and adds these questions, so that
+the one-call revision asks before changing anything changed outside. A file whose state cannot be read is
+`422 STATE_FILE_<code>`; a seal whose kept copy does not match its own digests is `STATE_FILE_BINDING_CORRUPT`.
 
 The current provider supports bounded 3DM/GLB triangle-mesh interchange and
 validated same-format delivery. It does not reconstruct exact CAD solids or

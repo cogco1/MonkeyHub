@@ -193,7 +193,76 @@ def test_state_rows_and_decisions_changed_outside_the_seal(tmp_path: Path) -> No
 
     decisions = [*DECISIONS, {"decision_id": "d-2", "kind": "endorse", "by": "architect"}]
     changed = read_state_file(_rewrite(sealed, tmp_path / "decisions.3dm", _with_state(RECORD, decisions)))
-    assert changed.out_of_band == (OutOfBand("decisions_changed", "decisions", {}),)
+    assert changed.out_of_band == (OutOfBand("decisions_changed", "decisions", {"added": [decisions[1]], "removed": []}),)
+    # Whatever the file now says, the seal keeps what MonkeyHub wrote.
+    assert (rows.sealed_record, rows.sealed_decisions) == (RECORD, tuple(DECISIONS))
+    assert (changed.sealed_record, changed.sealed_decisions) == (RECORD, tuple(DECISIONS))
+
+
+def test_a_seal_whose_kept_record_was_edited_does_not_match_itself(tmp_path: Path) -> None:
+    _, sealed = _sealed(tmp_path)
+
+    def edit(model) -> None:
+        binding = json.loads(model.Strings[BINDING_KEY])
+        binding["record"]["parameters"][0]["value"] = 0.19
+        model.Strings[BINDING_KEY] = canonical_json(binding)
+
+    with pytest.raises(StateFileError) as refused:
+        read_state_file(_rewrite(sealed, tmp_path / "forged.3dm", edit))
+    assert refused.value.code == "BINDING_CORRUPT"
+
+
+def _ell_mesh():
+    """An L in plan, 4 by 4 m and 1 m high: turned half round or mirrored, it keeps its box and not its vertices."""
+
+    plan = ((0, 0), (4, 0), (4, 1), (1, 1), (1, 4), (0, 4))
+    mesh = rhino3dm.Mesh()
+    for z in (0.0, 1.0):
+        for x, y in plan:
+            mesh.Vertices.Add(float(x), float(y), z)
+    for i in range(6):
+        j = (i + 1) % 6
+        mesh.Faces.AddFace(i, j, j + 6, i + 6)
+    mesh.Compact()
+    return mesh
+
+
+def test_a_turn_mirror_or_resize_and_an_unnamed_object_are_out_of_band(tmp_path: Path) -> None:
+    model = rhino3dm.File3dm()
+    for name, mesh in (("ell", _ell_mesh()), ("wall", _box_mesh(*BOXES["wall"]))):
+        attributes = rhino3dm.ObjectAttributes()
+        attributes.Name = name
+        model.Objects.AddMesh(mesh, attributes)
+    assert model.Write(str(tmp_path / "export.3dm"), 8)
+    sealed = tmp_path / "sealed.3dm"
+    seal_state_file(tmp_path / "export.3dm", sealed, record=RECORD, decisions=DECISIONS, parent_file_sha256=None)
+
+    def change(name, transform):
+        def edit(model) -> None:
+            for item in model.Objects:
+                if item.Attributes.Name == name:
+                    assert item.Geometry.Transform(transform)
+        return edit
+
+    centre = rhino3dm.Point3d(2, 2, 0.5)
+    turned = read_state_file(_rewrite(sealed, tmp_path / "turned.3dm", change(
+        "ell", rhino3dm.Transform.Rotation(3.141592653589793, rhino3dm.Vector3d(0, 0, 1), centre))))
+    assert [(row.kind, row.ref) for row in turned.out_of_band] == [("object_reshaped", "object:ell")]
+    mirrored = read_state_file(_rewrite(sealed, tmp_path / "mirrored.3dm", change(
+        "ell", rhino3dm.Transform.Mirror(centre, rhino3dm.Vector3d(1, -1, 0)))))
+    assert [(row.kind, row.ref) for row in mirrored.out_of_band] == [], "an L mirrored on its diagonal is the same L"
+    flipped = read_state_file(_rewrite(sealed, tmp_path / "flipped.3dm", change(
+        "ell", rhino3dm.Transform.Mirror(centre, rhino3dm.Vector3d(1, 0, 0)))))
+    assert [(row.kind, row.ref) for row in flipped.out_of_band] == [("object_reshaped", "object:ell")]
+    stretched = read_state_file(_rewrite(sealed, tmp_path / "stretched.3dm", change(
+        "wall", rhino3dm.Transform.Scale(rhino3dm.Point3d(0, 0, 0), 2.0))))
+    assert [(row.kind, row.ref) for row in stretched.out_of_band] == [("object_transformed", "object:wall")]
+
+    def add_unnamed(model) -> None:
+        model.Objects.AddMesh(_box_mesh((10, 10, 0), (11, 11, 1)))
+
+    unnamed = read_state_file(_rewrite(sealed, tmp_path / "unnamed.3dm", add_unnamed))
+    assert [(row.kind, row.detail) for row in unnamed.out_of_band] == [("object_unnamed", {"before": 0, "after": 1})]
 
 
 def test_compare_names_added_removed_and_duplicate_objects() -> None:

@@ -77,14 +77,18 @@ def inspect_state_file(binding: ProjectBinding, data: bytes) -> dict[str, Any]:
             found = read_state_file(path)
         except StateFileError as exc:
             raise StudioError(422, f"STATE_FILE_{exc.code}", exc.detail or exc.code) from exc
+    # What the seal vouches for is the design; what the file says beside it is only listed.
+    sealed = found.sealed_record is not None
+    record_rows = found.sealed_record if sealed else found.record
+    decisions = list(found.sealed_decisions) if found.sealed_decisions is not None else list(found.decisions)
     try:
-        record = StateRecord.from_dict(found.record)
+        record = StateRecord.from_dict(record_rows)
     except (StateRecordError, KeyError, TypeError, ValueError) as exc:
         raise StudioError(422, "STATE_FILE_RECORD_INVALID", f"The file's design record is not a valid record: {exc}") from exc
-    conditions = outside_conditions(record, found.out_of_band, found.decisions, file_sha256=found.file_sha256)
-    return {"fileSha256": found.file_sha256, "sealed": found.binding is not None,
+    conditions = outside_conditions(record, found.out_of_band, decisions, file_sha256=found.file_sha256)
+    return {"fileSha256": found.file_sha256, "sealed": found.binding is not None, "sealKeepsRecord": sealed,
             "parentFileSha256": None if found.binding is None else found.binding.get("parent_file_sha256"),
-            "record": found.record, "decisions": list(found.decisions),
+            "record": record_rows, "decisions": decisions,
             "outOfBand": [{"kind": row.kind, "ref": row.ref, "detail": row.detail} for row in found.out_of_band],
             "reencoded": list(found.reencoded),
             "conditions": [row.to_dict() for row in conditions]}
@@ -128,21 +132,18 @@ def outside_conditions(record: StateRecord, findings: Sequence[OutOfBand], decis
     asked: dict[tuple[str, ...], list[str]] = {}
     for finding in findings:
         if finding.kind.startswith("object_"):
-            name = finding.ref.removeprefix("object:")
-            element = part_of_object(name, elements)
+            element = part_of_object(finding.ref.removeprefix("object:"), elements)
             subjects: tuple[str, ...] = () if element is None else (f"entity:{element}",)
-            what = _object_words(finding, name)
         elif finding.kind.startswith("row_"):
             subjects = (finding.ref,) if finding.ref.split(":", 1)[0] in ("entity", "parameter", "relation") else ()
-            what = {"row_added": f"{finding.ref} was added", "row_removed": f"{finding.ref} was removed",
-                    "row_changed": f"{finding.ref} was changed"}[finding.kind] + " in the file's design record"
         elif finding.kind == "decisions_changed":
-            subjects = tuple(targets)
-            what = "the decisions the file carries were changed"
+            # The parts whose decisions were added or removed in the file; without that detail, every target.
+            changed = [*(finding.detail.get("added") or ()), *(finding.detail.get("removed") or ())]
+            subjects = tuple(sorted({str(row.get("targetRef")) for row in changed if row.get("targetRef")})) if changed else tuple(targets)
         else:
             continue
         if subjects:
-            asked.setdefault(subjects, []).append(what)
+            asked.setdefault(subjects, []).append(change_words(finding))
     prefix = f"outside-{file_sha256[:12]}"
     return tuple(DesignObligation(
         obligation_id=f"{prefix}-{number}",
@@ -164,13 +165,53 @@ def outside_rows(record: StateRecord) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: -order.index(row["fileSha256"]))
 
 
+def change_words(finding: OutOfBand) -> str:
+    """One change made outside MonkeyHub, in words, with what it changed and by how much."""
+
+    if finding.kind.startswith("object_"):
+        return _object_words(finding, finding.ref.removeprefix("object:"))
+    if finding.kind.startswith("row_"):
+        return {"row_added": f"{finding.ref} was added", "row_removed": f"{finding.ref} was removed",
+                "row_changed": f"{finding.ref} was changed"}[finding.kind] + " in the file's design record"
+    if finding.kind == "decisions_changed":
+        added, removed = finding.detail.get("added") or (), finding.detail.get("removed") or ()
+        rows = [*(f"added {row.get('disposition')} on {row.get('targetRef')} (\"{row.get('rawLanguage')}\")" for row in added),
+                *(f"removed {row.get('disposition')} on {row.get('targetRef')} (\"{row.get('rawLanguage')}\")" for row in removed)]
+        return "the decisions the file carries were changed" + (": " + "; ".join(rows) if rows else "")
+    if finding.kind == "unsealed":
+        return "the file carries no seal"
+    return finding.kind
+
+
 def _object_words(finding: OutOfBand, name: str) -> str:
+    """One change to an object, in words; a moved box with its offset, a turned or resized one with its two boxes."""
+
+    detail = finding.detail
     if finding.kind == "object_moved":
-        offset = moved_by(finding.detail)
+        offset = moved_by(detail)
         return f"{name} was moved by " + (amount(offset) if offset is not None
-                                          else f"{float(finding.detail.get('moved_m', 0.0)):.3f} m")
+                                          else f"{float(detail.get('moved_m', 0.0)):.3f} m")
+    if finding.kind == "object_transformed":
+        return (f"{name} was turned, mirrored or resized: its box went from {_box_words(detail.get('before'))} "
+                f"to {_box_words(detail.get('after'))}")
+    if finding.kind == "object_reshaped":
+        return f"{name} was turned, mirrored or reshaped inside its box {_box_words(detail.get('box'))}"
+    if finding.kind == "object_unnamed":
+        return (f"the objects without a name went from {detail.get('before')} to {detail.get('after')}; "
+                "none of them belongs to a part of the design")
     return {"object_added": f"{name} was added", "object_removed": f"{name} was removed",
             "object_duplicate": f"{name} was duplicated"}.get(finding.kind, f"{name} changed")
+
+
+def _box_words(box: Mapping[str, Any] | None) -> str:
+    """A box as its size and its low corner, in metres east, north and up."""
+
+    try:
+        low, high = box["min"], box["max"]
+        size = " x ".join(f"{b - a:.3f}" for a, b in zip(low, high))
+        return f"{size} m at ({low[0]:.3f}, {low[1]:.3f}, {low[2]:.3f})"
+    except (KeyError, TypeError, IndexError):
+        return "(unknown)"
 
 
 class _scratch:

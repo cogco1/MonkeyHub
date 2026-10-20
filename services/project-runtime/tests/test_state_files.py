@@ -52,8 +52,7 @@ class StateFileTests(unittest.TestCase):
 
     def exported(self, **extra) -> bytes:
         head = self.head()
-        started = self.client.post("/api/exports", json={
-            "targetFormat": "3dm", "withState": True,
+        started = self.client.post("/api/state-files/export", json={
             "projectRevision": {"runId": head["runId"], "stateDigest": head["stateDigest"]}, **extra})
         self.assertEqual(started.status_code, 202, started.text)
         export_id = started.json()["exportId"]
@@ -91,12 +90,21 @@ class StateFileTests(unittest.TestCase):
         parent = self.inspect(self.exported())["fileSha256"]
         self.assertEqual(self.inspect(self.exported(parentFileSha256=parent))["parentFileSha256"], parent)
 
-    def test_only_a_3dm_of_an_exact_revision_carries_its_state(self) -> None:
+    def test_state_files_are_the_design_loops_and_the_export_route_is_as_it_was(self) -> None:
         self.landed(2.2)
         head = self.head()
-        refused = self.client.post("/api/exports", json={"targetFormat": "glb", "withState": True, "projectRevision": {
-            "runId": head["runId"], "stateDigest": head["stateDigest"]}})
-        self.assertEqual((refused.status_code, refused.json()["code"]), (422, "EXPORT_STATE_UNAVAILABLE"), refused.text)
+        revision = {"runId": head["runId"], "stateDigest": head["stateDigest"]}
+        refused = self.client.post("/api/exports", json={"targetFormat": "3dm", "withState": True, "projectRevision": revision})
+        self.assertEqual(refused.status_code, 422, "POST /api/exports takes no state field, as before")
+        self.assertIn("withState", refused.text)
+        for tier in ("legacy", "advisory"):
+            with self.subTest(tier=tier):
+                app = create_app(StudioSettings(cad_export="occt", project_dir=self.root / PROJECT_ID, design_loop=tier))
+                with TestClient(app) as other:
+                    for path, body in (("/api/state-files/export", {"projectRevision": revision}),
+                                       ("/api/state-files/inspect", {"fileName": "m.3dm", "contentBase64": "AA=="})):
+                        answer = other.post(path, json=body)
+                        self.assertEqual((answer.status_code, answer.json()["code"]), (409, "DESIGN_LOOP_NOT_ENFORCED"), answer.text)
 
 
 class OutsideConditionTests(unittest.TestCase):

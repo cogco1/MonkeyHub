@@ -57,7 +57,7 @@ def download(binding, export_id):
     return result, _object(binding, result["outputArtifact"], role="output")
 
 
-def submit(binding, jobs, payload):
+def submit(binding, jobs, payload, *, with_state: bool = False, parent_file_sha256: str | None = None):
     target = payload.target_format
     selection = sum((payload.upload is not None, payload.source_artifact_id is not None, payload.project_revision is not None))
     if selection != 1:
@@ -107,14 +107,10 @@ def submit(binding, jobs, payload):
     if source_format not in FORMATS:
         raise StudioError(422, "EXPORT_FORMAT_INVALID", "Choose a 3DM, SKP, GLB or DWG source.")
     carried = None
-    if getattr(payload, "with_state", False):
-        if payload.project_revision is None or target != "3dm":
-            raise StudioError(422, "EXPORT_STATE_UNAVAILABLE", "Only a 3DM of an exact project revision carries its "
-                              "design state: choose projectRevision and targetFormat 3dm.")
+    if with_state:
+        # Only the state-file route asks for this (#657), always for a 3DM of an exact project revision.
         carried = {"record": projection.record, "decisions": state_files.file_decisions(binding),
-                   "parent": payload.parent_file_sha256}
-    elif getattr(payload, "parent_file_sha256", None) is not None:
-        raise StudioError(422, "EXPORT_STATE_UNAVAILABLE", "parentFileSha256 goes with withState.")
+                   "parent": parent_file_sha256}
     export_id = "export-" + uuid4().hex
     run = binding.repository.create_run(export_id)
     if source_artifact is None:
