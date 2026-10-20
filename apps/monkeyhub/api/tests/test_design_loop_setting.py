@@ -79,15 +79,21 @@ class OfferedCallTests(unittest.TestCase):
             with self.subTest(tier=tier):
                 self.assertEqual({row["path"] for row in studio_tool._available_actions(document, tier=tier)}, paths)
 
-    def test_while_off_the_chat_refuses_the_call_before_any_runtime_is_asked(self) -> None:
-        asked = []
-        with patch.object(transport, "_request_json", side_effect=lambda *a, **k: asked.append(a) or {"designLoop": "advisory"}):
-            with self.assertRaises(HubFailure) as refused:
-                tool_calls.call_tool(HUB, str(uuid4()), "studio_request", {
-                    "method": "POST", "path": "/api/revisions", "body": {"kind": "construction", "proposal": {}}})
-        self.assertEqual(refused.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
-        self.assertIn("design loop is enforced", refused.exception.error.detail)
-        self.assertEqual([call[1] for call in asked], ["/api/settings/apps"])
+    def test_outside_enforced_the_chat_refuses_the_call_before_any_runtime_is_asked(self) -> None:
+        for tier, words, reads in (("legacy", "This path is not exposed to the chat", []),
+                                   ("advisory", "design loop is enforced, and it is advisory", ["/api/settings/apps"])):
+            asked = []
+            settings = patch.object(transport, "_request_json",
+                                    side_effect=lambda *a, **k: asked.append(a) or {"designLoop": tier})
+            studio = patch.object(preparation, "_bound_studio", side_effect=HubFailure(409, "CHAT_STUDIO_UNAVAILABLE", "x"))
+            with self.subTest(tier=tier), patch.dict("os.environ", {studio_tool.DESIGN_LOOP_ENV: tier}), settings, studio:
+                with self.assertRaises(HubFailure) as refused:
+                    tool_calls.call_tool(HUB, str(uuid4()), "studio_request", {
+                        "method": "POST", "path": "/api/revisions", "body": {"kind": "construction", "proposal": {}}})
+                self.assertEqual(refused.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
+                self.assertIn(words, refused.exception.error.detail)
+                self.assertEqual([call[1] for call in asked], reads,
+                                 "a legacy conversation is refused as main refuses a path it does not expose")
 
     def test_outside_enforced_a_misplaced_task_class_is_refused_in_mains_words(self) -> None:
         # main's text, word for word; only an enforced conversation is told about POST /api/revisions.
@@ -240,7 +246,8 @@ class ForwardTests(unittest.TestCase):
             seen.append(dict(headers))
             return HttpResult(200, b"{}", {"content-type": "application/json"})
 
-        with patch.object(coordinator, "service", return_value=SimpleNamespace(url="http://managed", instance_id="hub-7")),              patch("monkeyhub_api.runtime.manager.request_http", side_effect=dispatch):
+        worker = patch.object(coordinator, "service", return_value=SimpleNamespace(url="http://managed", instance_id="hub-7"))
+        with worker, patch("monkeyhub_api.runtime.manager.request_http", side_effect=dispatch):
             coordinator.forward(runtime, "/api/working-draft", "PUT", b"{}", {"idempotency-key": str(uuid4()),
                                                                               "x-monkey-chat": "chat-9"})
             coordinator.forward(runtime, "/api/working-draft", "PUT", b"{}", {"idempotency-key": str(uuid4())})
@@ -260,8 +267,11 @@ class ForwardTests(unittest.TestCase):
         settings = StudioSettings(project_dir=Path(temporary.name) / fixture.PROJECT_ID, cad_export="off")
         runtime = ProjectRuntime("r-1", fixture.PROJECT_ID, str(settings.project_dir), OperationManager(fixture.PROJECT_ID),
                                  ProjectBinding.open(settings))
+        # The user asks (m-1), the Agent asks back, the user answers (m-2) and later says something else (m-3).
+        messages = [SimpleNamespace(id=mid, role=role) for mid, role in
+                    (("m-1", "user"), ("a-1", "assistant"), ("m-2", "user"), ("a-2", "assistant"), ("m-3", "user"))]
         chats = SimpleNamespace(get=lambda session_id: SimpleNamespace(
-            projectId=fixture.PROJECT_ID, projectDir=str(settings.project_dir), status="running"))
+            projectId=fixture.PROJECT_ID, projectDir=str(settings.project_dir), status="running", messages=messages))
         coordinator = ProjectRuntimeManager(None, chats)
         seen = []
         asked = json.dumps({"outcome": "needs_question", "code": "UNCHECKED_CONDITION", "detail": "ask",
@@ -277,12 +287,13 @@ class ForwardTests(unittest.TestCase):
             return coordinator.forward(runtime, "/api/revisions", "POST", json.dumps(body).encode(),
                                        {"idempotency-key": str(uuid4()), "x-monkey-chat": "chat-9"})
 
-        with patch.object(coordinator, "service", return_value=SimpleNamespace(url="http://managed", instance_id="hub-7")),              patch("monkeyhub_api.runtime.manager.request_http", side_effect=dispatch):
+        worker = patch.object(coordinator, "service", return_value=SimpleNamespace(url="http://managed", instance_id="hub-7"))
+        with worker, patch("monkeyhub_api.runtime.manager.request_http", side_effect=dispatch):
             revise("m-1")
             question = [r for r in runtime.operations.records() if r.kind == "POST /api/revisions"][0]
             self.assertEqual((question.questionRefs, question.messageId), (["obligation:k3"], "m-1"))
             for message, digest, refs in (("m-1", "s-1", ["obligation:k3"]), ("m-2", "s-2", ["obligation:k3"]),
-                                          ("m-2", "s-1", ["obligation:other"])):
+                                          ("m-2", "s-1", ["obligation:other"]), ("m-3", "s-1", ["obligation:k3"])):
                 with self.subTest(message=message, digest=digest, refs=refs), self.assertRaises(HubFailure) as refused:
                     revise(message, digest, confirmed=refs)
                 self.assertEqual(refused.exception.error.code, "CONFIRMATION_NOT_ASKED")

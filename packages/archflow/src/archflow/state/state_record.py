@@ -1296,6 +1296,11 @@ _EMBED_M = 0.03
 _LEVEL_M = 0.05
 # Producers that build no solid a readback would hold.
 _NO_SOLID = frozenset({"declined", "curve"})
+# A railing, balustrade or handrail post stands at a flight's side: material no thicker than this across the
+# flight, within this of a side edge, is that, not something in the way. A part whose component declares
+# architectural.role railing is one wherever it stands (a centre rail on a wide flight).
+_RAIL_THICK_M = 0.06
+_RAIL_BAND_M = 0.10
 _CENTRE_TOLERANCE = 1e-3
 _BESIDE_M = 0.5
 _REACH_M = 50.0
@@ -1537,14 +1542,52 @@ class _Model:
             cavity = element in voids or "-aperture-" in name
             (self.cavities if cavity else self.material).setdefault(element, []).append((name, box))
 
-    def require_readback(self) -> None:
-        """Measure only a complete readback: a part that builds an object and has none in it could be anywhere."""
+    def require_readback(self, *regions: tuple[tuple[float, float], tuple[float, float]]) -> None:
+        """Measure only where the readback is complete: a part that builds an object and has none in it is missing
+        when the record places it in one of ``regions`` (plan boxes the check looks at), or does not say where."""
 
-        missing = sorted(element for element, row in self.fields.items()
-                         if row.get("producer") not in _NO_SOLID and element not in self.material and element not in self.cavities)
+        missing = []
+        for element, row in sorted(self.fields.items()):
+            if row.get("producer") in _NO_SOLID or element in self.material or element in self.cavities:
+                continue
+            place = self.stated_plan(element)
+            if place is None or any(_plans_meet(place, region) for region in regions):
+                missing.append(element)
         if missing:
             raise _Unchecked("the model read back has no object of " + ", ".join(missing[:6])
-                             + (f" and {len(missing) - 6} more" if len(missing) > 6 else ""))
+                             + (f" and {len(missing) - 6} more" if len(missing) > 6 else "")
+                             + ", where the check looks or somewhere the record does not say")
+
+    def stated_plan(self, element: str) -> tuple[tuple[float, float], tuple[float, float]] | None:
+        """Where the record alone places a part in plan, widened by its thickness: a wall's line, a flight's run,
+        a prism's own profile; None when it does not say (a work-plane profile, an array, a loft)."""
+
+        row = self.fields.get(element) or {}
+        params, references = row.get("params") or {}, row.get("references") or {}
+        try:
+            if row.get("producer") == "wall":
+                start, end, _ = _wall_line(row, element)
+                points, pad = [start, end], float(params.get("thickness") or 0.0)
+            elif row.get("producer") == "stair":
+                points = [_plan_point(references.get("from")), _plan_point(references.get("to"))]
+                pad = float(params.get("width") or 0.0)
+            elif row.get("producer") == "prism" and "work_plane" not in params:
+                points, pad = [_plan_point({"point": point}) for point in params.get("profile") or ()], 0.0
+            else:
+                return None
+        except (_Unchecked, TypeError, ValueError, KeyError):
+            return None
+        if not points or not math.isfinite(pad):
+            return None
+        return ((min(p[0] for p in points) - pad, min(p[1] for p in points) - pad),
+                (max(p[0] for p in points) + pad, max(p[1] for p in points) + pad))
+
+    def railings(self, record: StateRecord) -> set[str]:
+        """The parts whose component declares architectural.role railing."""
+
+        roles = {entity.entity_id: component_facets(entity).get("architectural.role")
+                 for entity in record.entities_of("Component@1")}
+        return {element for element, row in self.fields.items() if roles.get(row.get("component_id")) == "railing"}
 
     def box_of(self, element: str) -> Box:
         rows = self.material.get(element)
@@ -1618,6 +1661,20 @@ def _flight(model: _Model, element: str) -> dict[str, Any]:
             "base": lo[2], "lo": lo, "hi": hi, "axis": axis, "sense": 1.0 if u[axis] > 0 else -1.0}
 
 
+def _plans_meet(a, b) -> bool:
+    return all(a[0][i] <= b[1][i] + _OBLIGATION_TOLERANCE and b[0][i] <= a[1][i] + _OBLIGATION_TOLERANCE for i in (0, 1))
+
+
+def _edge_rail(flight: Mapping[str, Any], lo: tuple, hi: tuple) -> bool:
+    """Material no thicker than a railing across the flight, standing within its band at one of the side edges."""
+
+    i = 1 - flight["axis"]
+    flo, fhi = flight["lo"], flight["hi"]
+    if hi[i] - lo[i] > _RAIL_THICK_M + _OBLIGATION_TOLERANCE:
+        return False
+    return hi[i] <= flo[i] + _RAIL_BAND_M + _OBLIGATION_TOLERANCE or lo[i] >= fhi[i] - _RAIL_BAND_M - _OBLIGATION_TOLERANCE
+
+
 def _edge_joint(flight: Mapping[str, Any], lo: tuple, hi: tuple) -> bool:
     """Material built at most ``_EMBED_M`` into the flight across one of its outer edges, and further outside it."""
 
@@ -1644,10 +1701,11 @@ def _within(lo: tuple, hi: tuple, inner_lo: tuple, inner_hi: tuple) -> bool:
 def _check_headroom(record, obligation, arguments, boxes):
     minimum = _number_argument(arguments, 0, "minimum")
     model = _Model(record, boxes)
-    model.require_readback()
+    railings = model.railings(record)
     problems, worst = [], (math.inf, "")
     for element in _entity_subjects(obligation):
         flight = _flight(model, element)
+        model.require_readback(((flight["lo"][0], flight["lo"][1]), (flight["hi"][0], flight["hi"][1])))
         axis, across = flight["axis"], 1 - flight["axis"]
         origin = flight["start"][axis]
         for k in range(1, flight["count"] + 1):
@@ -1666,8 +1724,8 @@ def _check_headroom(record, obligation, arguments, boxes):
                 overlap_hi = tuple(min(tread_hi[i], hi[i]) for i in (0, 1))
                 if any(overlap_hi[i] - overlap_lo[i] <= _OBLIGATION_TOLERANCE for i in (0, 1)):
                     continue
-                if through and _edge_joint(flight, lo, hi):
-                    continue
+                if other in railings or _edge_rail(flight, lo, hi) or (through and _edge_joint(flight, lo, hi)):
+                    continue                                      # a railing at the side, or a joint at the edge
                 if any(_within(vlo, vhi, overlap_lo, overlap_hi) for vlo, vhi in model.void_boxes(other)):
                     continue
                 gap = 0.0 if through else lo[2] - top             # material through the tread leaves it no headroom
@@ -1721,7 +1779,6 @@ def _check_landing_depth(record, obligation, arguments, boxes):
     minimum = _number_argument(arguments, 0, "minimum")
     probe = _number_argument(arguments, 1, "probe height", 0.3)
     model = _Model(record, boxes)
-    model.require_readback()
     # The lowest level is the ground: a foot standing on it is received though no slab is modelled there.
     ground = min((float(e.fields.get("elevation")) for e in record.entities_of("Level@1")
                   if isinstance(e.fields.get("elevation"), (int, float)) and not isinstance(e.fields.get("elevation"), bool)),
@@ -1732,6 +1789,13 @@ def _check_landing_depth(record, obligation, arguments, boxes):
         axis, across = flight["axis"], 1 - flight["axis"]
         middle = (flight["lo"][across] + flight["hi"][across]) / 2
         top = flight["base"] + flight["count"] * flight["rise"]
+        # What a landing is measured on: the strip ahead of each end, across the flight, as deep as is asked for.
+        strips = []
+        for plan, sense in ((flight["start"], -flight["sense"]), (flight["end"], flight["sense"])):
+            lo, hi = [flight["lo"][0], flight["lo"][1]], [flight["hi"][0], flight["hi"][1]]
+            lo[axis], hi[axis] = sorted((plan[axis], plan[axis] + sense * (minimum + 0.05)))
+            strips.append(((lo[0], lo[1]), (hi[0], hi[1])))
+        model.require_readback(*strips)
         for label, plan, z, sense in (("foot", flight["start"], flight["base"], -flight["sense"]), ("head", flight["end"], top, flight["sense"])):
             point = [0.0, 0.0, z + probe]
             point[axis], point[across] = plan[axis], middle
@@ -1754,7 +1818,7 @@ def _check_landing_depth(record, obligation, arguments, boxes):
 def _check_doors_clear(record, obligation, arguments, boxes):
     gap_minimum = _number_argument(arguments, 0, "gap", 0.0)
     model = _Model(record, boxes)
-    model.require_readback()
+    # Every flight is measured from its own box, which box_of requires; nothing else is read.
     flights = [element for element, row in model.fields.items() if row.get("producer") == "stair"]
     problems, measured = [], []
     for element in _entity_subjects(obligation):

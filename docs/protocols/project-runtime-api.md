@@ -625,7 +625,10 @@ Review readiness is memoised per (candidate, published version): reading it twic
 are `state_record.OBLIGATION_CHECKS`. Validation checks every live obligation on the candidate's exact record and
 its inspected object boxes, and again on the run it was made from. Each one is `held`, `violated` or
 `unchecked`; an obligation with no check, an unknown kind, a value nothing states, or a model read back without
-an object of every part that builds one is `unchecked`, never held. The results are reported, never a clause of
+a part where the check looks (the flight's plan for headroom, the strip ahead of each stair end for a landing),
+or without one the record does not place, is `unchecked`, never held. Headroom does not count a railing: a part
+whose component declares `architectural.role: railing`, wherever it stands, or material no thicker than 60 mm
+across the flight within 100 mm of a side edge. The results are reported, never a clause of
 review readiness: no tier makes a condition block a person's or the Agent's admission or a Stage acceptance.
 In `enforced`, `POST /api/revisions` refuses a new violation itself. `obligationProblems[]` (on the validation and on
 `GET /api/candidates/{id}`) lists the violated ones, new first, then the unchecked ones, at most 20, each with
@@ -1167,12 +1170,15 @@ looked-at attempt; `buildOnly` builds one to look at).
 **The architect confirms by answering.** A condition no check can verify, or a decision in reach, makes a
 revision answer `needs_question` with `questionRefs`; the Hub keeps them on the chat's operation record with
 the message the revision answered. The chat may then send the same change with `confirmed`, and the Hub forwards
-it only when every ref was asked by this chat's latest `needs_question`, on the same base, in an earlier message
-than the one now bound (`422 CONFIRMATION_NOT_ASKED` otherwise); it adds `X-Monkey-Confirmation` naming that
-question, and the change carries the user's words of the answering message.
+it only when every ref was asked by this chat's latest `needs_question`, on the same base, and the message now
+bound is the user's first message after the question (`422 CONFIRMATION_NOT_ASKED` otherwise): a later message,
+about anything, confirms nothing. It adds `X-Monkey-Confirmation` naming that question, and the change carries
+the words of that reply.
 
 **What enforced closes, and what it does not.** In `enforced` the Hub's Claude chat runs without Bash, so the
-Agent reaches the design only through this Hub, which vouches for it. The Runtime does not verify identity
+Agent reaches the design only through this Hub, which vouches for it. A Codex chat (exec or ACP) keeps the shell
+of its workspace sandbox, and computer-use tools stay approved where this machine's policy enables them; neither
+is taken away in `enforced`. The Runtime does not verify identity
 otherwise: a local process that calls the Runtime's port or the Hub's forwarding route directly, without the
 chat header, is taken as a person.
 

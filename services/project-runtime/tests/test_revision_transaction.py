@@ -164,6 +164,9 @@ class RevisionOrderTests(unittest.TestCase):
                 outcome = _revise(ports)
                 self.assertEqual((outcome.outcome, outcome.code), (NEEDS_QUESTION, code), outcome.detail)
                 self.assertIn("beyond what its proposal said", outcome.detail)
+                if code == "UNCHECKED_CONDITION":
+                    self.assertIn("slab-said", [row["obligationId"] for row in outcome.conditions],
+                                  "the condition found after the build is in the answer's conditions")
                 self.assertIn("run", ports.calls)
                 self.assertNotIn("admit", ports.calls)
 

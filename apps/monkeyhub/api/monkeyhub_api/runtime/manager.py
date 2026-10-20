@@ -960,12 +960,13 @@ class ProjectRuntimeManager:
                 if method == "POST" and parsed.path == "/api/revisions" and isinstance(payload, dict) and payload.get("confirmed"):
                     # The architect confirms by answering what this chat asked them (#185); the Agent confirms nothing.
                     source = payload.get("messageSource") if isinstance(payload.get("messageSource"), dict) else {}
+                    replies = [row.id for row in getattr(session, "messages", ()) or () if getattr(row, "role", None) == "user"]
                     confirmation = runtime.operations.question_answered(
-                        session_id, payload.get("confirmed"), payload.get("stateDigest"), source.get("messageId"))
+                        session_id, payload.get("confirmed"), payload.get("stateDigest"), source.get("messageId"), replies)
                     if confirmation is None:
                         raise HubFailure(422, "CONFIRMATION_NOT_ASKED", "confirmed names only questionRefs this chat's "
-                                         "latest needs_question asked the architect, on the same base, and only in a "
-                                         "later message, which then carries their answer. Nothing was sent.")
+                                         "latest needs_question asked the architect, on the same base, and only in the "
+                                         "user's first message after it, which is their answer. Nothing was sent.")
             admission, fresh = runtime.operations.admit(operation_id, method, path, body,
                 retained=runtime.retained, source="chat" if session_id else "studio", session_id=session_id)
             if not fresh:
