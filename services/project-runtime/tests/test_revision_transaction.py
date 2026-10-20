@@ -446,6 +446,10 @@ class RevisionRouteTests(unittest.TestCase):
         client = self.runtime(project=empty.layout.root)
         base = client.post("/api/project/modeling?base=true", json={"projectId": empty.layout.root.name}).json()
         self.assertIsNone(self.head(client)["head"])
+        context = client.get("/api/revisions/context")
+        self.assertEqual(context.status_code, 200, context.text)
+        self.assertEqual((context.json()["working"]["runId"], context.json()["working"]["stateDigest"]),
+                         (None, base["stateDigest"]), "the first change is written from the default design")
         response = client.post("/api/revisions", json={
             "projectId": empty.layout.root.name, "sourceRunId": None, "stateDigest": base["stateDigest"],
             "kind": "construction", "summary": "a first volume",

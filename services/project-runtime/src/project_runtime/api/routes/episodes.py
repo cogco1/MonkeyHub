@@ -236,21 +236,29 @@ def read_revision_context(request: Request) -> dict:
     binding = bound_project(request.app.state)
     source = resolve_working_source(binding)
     head = source.head
-    if head is None:
-        raise StudioError(409, "WORKING_SOURCE_UNAVAILABLE", "The project has no working design to revise yet.")
     ports = _RevisionRoutes(request, None, None)
-    record = ports.record(head.run_id)
+    if head is None:
+        # A project with no working run yet is revised from its default design: sourceRunId null, its state digest.
+        default = project_state(binding)
+        require_actionable(default)
+        run_id, working = default.run.run_id, {"runId": None, "stateDigest": default.state_digest,
+                                               "revisionSha256": source.revision_sha256, "label": None}
+    else:
+        run_id, working = head.run_id, {"runId": head.run_id, "stateDigest": head.state_digest,
+                                        "revisionSha256": source.revision_sha256, "label": head.label}
+    record = ports.record(working["runId"])
     honesty: list[str] = []
     boxes = None
     if any(obligation_measured(row) for row in record.obligations):
         try:
-            boxes = {shape.name: (tuple(shape.bbox_min), tuple(shape.bbox_max)) for shape in shapes_of(binding, head.run_id)
+            boxes = {shape.name: (tuple(shape.bbox_min), tuple(shape.bbox_max)) for shape in shapes_of(binding, run_id)
                      if shape.bbox_min is not None and shape.bbox_max is not None}
         except (StudioError, ProjectRepositoryError) as exc:
             honesty.append(f"conditions measured on the built model were not checked: {exc}")
     admitted, _ = list_admissions(binding, include_rejected=True)
     rows = [(record_row, row) for record_row in admitted for row in record_row.results]
-    landed = next((pair for pair in reversed(rows) if pair[1]["runId"] == head.run_id and pair[1]["outcome"] == ADMITTED), None)
+    landed = None if head is None else next(
+        (pair for pair in reversed(rows) if pair[1]["runId"] == head.run_id and pair[1]["outcome"] == ADMITTED), None)
     last_change = None
     if landed is not None:
         last_change = {"runId": head.run_id, "summary": landed[1].get("summary") or landed[1].get("label"),
@@ -270,9 +278,7 @@ def read_revision_context(request: Request) -> dict:
     tried = [{"runId": row["runId"], "words": (record_row.payload.get("rawLanguage") or row.get("reason") or "")[:300]}
              for record_row, row in rows if row["outcome"] == "rejected"]
     return revision_context(
-        working={"runId": head.run_id, "stateDigest": head.state_digest, "revisionSha256": source.revision_sha256,
-                 "label": head.label},
-        decisions=ports.decisions(head.run_id), record=record,
+        working=working, decisions=ports.decisions(working["runId"]), record=record,
         results=check_obligations(record, boxes=boxes), last_change=last_change, tried=tried, honesty=honesty,
         outside=outside_rows(record))
 
