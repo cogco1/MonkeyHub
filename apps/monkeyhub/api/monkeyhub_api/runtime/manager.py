@@ -940,6 +940,7 @@ class ProjectRuntimeManager:
         if method == "POST" and parsed.path == "/api/drawing-recipes/inspect":
             mutation = False  # File validation is a read, including a refused file.
         admission = None
+        confirmation = None
         if mutation:
             operation_id = headers.get("idempotency-key") or str(uuid4())
             session_id = headers.get("x-monkey-chat")
@@ -956,6 +957,15 @@ class ProjectRuntimeManager:
                     if foreign:
                         raise HubFailure(409, "CANDIDATE_NOT_THIS_CHATS", "The Agent withdraws only a result it made in this chat: "
                                          + ", ".join(map(str, foreign)) + " was not. Only the architect's words can reject another result.")
+                if method == "POST" and parsed.path == "/api/revisions" and isinstance(payload, dict) and payload.get("confirmed"):
+                    # The architect confirms by answering what this chat asked them (#185); the Agent confirms nothing.
+                    source = payload.get("messageSource") if isinstance(payload.get("messageSource"), dict) else {}
+                    confirmation = runtime.operations.question_answered(
+                        session_id, payload.get("confirmed"), payload.get("stateDigest"), source.get("messageId"))
+                    if confirmation is None:
+                        raise HubFailure(422, "CONFIRMATION_NOT_ASKED", "confirmed names only questionRefs this chat's "
+                                         "latest needs_question asked the architect, on the same base, and only in a "
+                                         "later message, which then carries their answer. Nothing was sent.")
             admission, fresh = runtime.operations.admit(operation_id, method, path, body,
                 retained=runtime.retained, source="chat" if session_id else "studio", session_id=session_id)
             if not fresh:
@@ -976,6 +986,9 @@ class ProjectRuntimeManager:
                 # tells the Agent from a person by this, never by what a request body says.
                 forwarded["X-Monkey-Agent"] = admission.record.sessionId
                 forwarded["X-Monkey-Worker"] = worker.instance_id
+                if confirmation:
+                    # The question the user's message answers; the Runtime takes confirmed from the Agent only with it.
+                    forwarded["X-Monkey-Confirmation"] = confirmation
             if admission and method == "POST" and _CANDIDATE_REQUEST.fullmatch(parsed.path):
                 candidate_id = admission.record.candidateId
                 # A Hub restart can reconstruct this deterministic run identity.

@@ -1128,8 +1128,9 @@ def _obligation(obligation_id: str, validator_ref: str | None, *subjects: str) -
 
 
 def _house(*obligations: DesignObligation, rise: float = 0.17, count: int = 10, going: float = 0.3, window_width: float = 1.0,
-           column: bool = False) -> StateRecord:
-    """A wall with a window and a door, a lintel, a flight under a slab with a stair hole, and a parameter pair.
+           column: bool = False, landing: bool = True) -> StateRecord:
+    """A wall with a window and a door, a lintel, a flight under a slab with a stair hole, a landing at the flight's
+    head (unless ``landing`` is False), and a parameter pair.
 
     With ``column`` a column also stands in the flight, through its fifth and sixth treads.
     """
@@ -1153,6 +1154,9 @@ def _house(*obligations: DesignObligation, rise: float = 0.17, count: int = 10, 
                 {"profile": [[0.0, 0.0], [6.0, 0.0], [6.0, 6.0], [0.0, 6.0]], "height": 0.2}),
         element("hole", "prism", {"base": {"level": "level-2"}}, {"profile": [[0.4, 2.2], [1.6, 2.2], [1.6, 4.0], [0.4, 4.0]], "height": 0.3}),
     )
+    if landing:
+        entities += (element("landing", "prism", {"base": {"level": "level-1"}},
+                             {"profile": [[0.5, 4.0], [1.5, 4.0], [1.5, 5.5], [0.5, 5.5]], "height": 0.2, "elevation": 1.5}),)
     if column:
         entities += (element("column", "prism", {"base": {"level": "level-1"}},
                              {"profile": [[0.9, 2.4], [1.1, 2.4], [1.1, 2.6], [0.9, 2.6]], "height": 3.0}),)
@@ -1170,6 +1174,7 @@ _BOXES = {
     "obj-stair": ((0.5, 1.0, 0.0), (1.5, 4.0, 1.7)),
     "obj-slab": ((0.0, 0.0, 3.0), (6.0, 6.0, 3.2)),
     "obj-hole": ((0.4, 2.2, 2.95), (1.6, 4.0, 3.25)),
+    "obj-landing": ((0.5, 4.0, 1.5), (1.5, 5.5, 1.7)),
 }
 
 
@@ -1215,8 +1220,11 @@ class ObligationCheckTests(unittest.TestCase):
         self.assertIn("least wall above 0.7000", found["k4"][1])
         # Tread 4 ends at 1.2 under the slab (3.0 - 0.68 = 2.32); the treads under the hole see nothing above them.
         self.assertIn("least headroom 2.3200 at stair tread 4", found["k6"][1])
-        # The foot meets the wall 0.8 m away; the head is open to the north.
+        # The foot meets the wall 0.8 m away; the head lands on 1.5 m of landing, open to the north.
         self.assertIn("stair foot: 0.8000 to obj-wall-a", found["r8"][1])
+        shallow = self.results(_house(_obligation("r8", "validator:landing-depth-at-least/0.5", "entity:stair")), _BOXES)["r8"]
+        self.assertEqual(shallow[0], "held")
+        self.assertIn("stair head: 1.5000 to the edge of obj-landing", shallow[1])
         low = {**_BOXES, "obj-slab": ((0.0, 0.0, 2.0), (6.0, 6.0, 2.2)), "obj-hole": ((0.4, 2.2, 1.95), (1.6, 4.0, 2.25))}
         self.assertEqual(self.results(record, low)["k6"][0], "violated")
 
@@ -1234,6 +1242,34 @@ class ObligationCheckTests(unittest.TestCase):
         # A side wall built 20 mm into the flight's edge, as touching parts are, is a joint, not an obstruction.
         status, _ = self.results(record, {**_BOXES, "obj-column": ((1.48, 1.0, 0.0), (1.7, 4.0, 3.0))})["k6"]
         self.assertEqual(status, "held")
+
+    def test_thin_material_inside_the_flight_is_in_the_way(self) -> None:
+        record = _house(_obligation("k6", "validator:headroom-at-least/2.0", "entity:stair"), column=True)
+        for name, box in (("a 20 mm plate standing along the middle of the flight", ((0.99, 1.0, 0.0), (1.01, 4.0, 3.0))),
+                          ("12 mm glass across the whole width of the flight", ((0.5, 2.494, 0.0), (1.5, 2.506, 3.0))),
+                          ("a 25 mm post on the sixth tread", ((0.9875, 2.5375, 0.0), (1.0125, 2.5625, 3.0))),
+                          ("a wall 20 mm into the flight's edge whose body stands inside it", ((1.3, 1.0, 0.0), (1.52, 4.0, 3.0)))):
+            with self.subTest(name):
+                status, detail = self.results(record, {**_BOXES, "obj-column": box})["k6"]
+                self.assertEqual(status, "violated", detail)
+                self.assertIn("headroom 0.0000 under obj-column", detail)
+
+    def test_a_stair_head_nothing_receives_has_no_landing(self) -> None:
+        record = _house(_obligation("r8", "validator:landing-depth-at-least/1.2", "entity:stair"), landing=False)
+        boxes = {name: box for name, box in _BOXES.items() if name != "obj-landing"}
+        status, detail = self.results(record, boxes)["r8"]
+        self.assertEqual(status, "violated")
+        self.assertIn("stair head: 0.0000, nothing receives it at 1.7000", detail)
+
+    def test_a_readback_without_an_object_of_every_part_measures_nothing(self) -> None:
+        record = _house(_obligation("k6", "validator:headroom-at-least/2.0", "entity:stair"),
+                        _obligation("r8", "validator:landing-depth-at-least/1.2", "entity:stair"),
+                        _obligation("r9", "validator:doors-clear-of-flights", "entity:wall-a"))
+        for missing in ("obj-stair", "obj-slab"):
+            with self.subTest(missing=missing):
+                found = self.results(record, {name: box for name, box in _BOXES.items() if name != missing})
+                self.assertEqual({k: v[0] for k, v in found.items()}, {"k6": "unchecked", "r8": "unchecked", "r9": "unchecked"})
+                self.assertIn(f"has no object of {missing.removeprefix('obj-')}", found["r9"][1])
 
     def test_an_entity_check_without_an_entity_subject_is_unchecked_never_held(self) -> None:
         kinds = ("opening-piers-at-least/0.5", "wall-above-at-least/0.15", "headroom-at-least/2.0", "landing-depth-at-least/0.5",

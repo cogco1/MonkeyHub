@@ -1288,10 +1288,14 @@ OBLIGATION_CHECKS: Mapping[str, str] = MappingProxyType({
 
 _MEASURED_KINDS = frozenset({"wall-above-at-least", "headroom-at-least", "landing-depth-at-least", "doors-clear-of-flights", "centred-at"})
 _OBLIGATION_TOLERANCE = 1e-6
-# Parts that touch are built embedded up to 25 mm into each other. Material that runs through a tread but
-# overlaps it in plan by no more than this is the joint of a wall or rail beside the flight, not something in
-# the way of the person on it.
+# Parts that touch are built embedded up to 25 mm into each other. Material built no further than this into the
+# flight across one of its outer edges, with its body outside the flight, is the joint of a wall or rail beside
+# or at the end of the flight, not something in the way of the person on it.
 _EMBED_M = 0.03
+# A surface whose top lies within this of a stair end's level receives it (slabs too are built embedded).
+_LEVEL_M = 0.05
+# Producers that build no solid a readback would hold.
+_NO_SOLID = frozenset({"declined", "curve"})
 _CENTRE_TOLERANCE = 1e-3
 _BESIDE_M = 0.5
 _REACH_M = 50.0
@@ -1533,6 +1537,15 @@ class _Model:
             cavity = element in voids or "-aperture-" in name
             (self.cavities if cavity else self.material).setdefault(element, []).append((name, box))
 
+    def require_readback(self) -> None:
+        """Measure only a complete readback: a part that builds an object and has none in it could be anywhere."""
+
+        missing = sorted(element for element, row in self.fields.items()
+                         if row.get("producer") not in _NO_SOLID and element not in self.material and element not in self.cavities)
+        if missing:
+            raise _Unchecked("the model read back has no object of " + ", ".join(missing[:6])
+                             + (f" and {len(missing) - 6} more" if len(missing) > 6 else ""))
+
     def box_of(self, element: str) -> Box:
         rows = self.material.get(element)
         if not rows:
@@ -1605,6 +1618,25 @@ def _flight(model: _Model, element: str) -> dict[str, Any]:
             "base": lo[2], "lo": lo, "hi": hi, "axis": axis, "sense": 1.0 if u[axis] > 0 else -1.0}
 
 
+def _edge_joint(flight: Mapping[str, Any], lo: tuple, hi: tuple) -> bool:
+    """Material built at most ``_EMBED_M`` into the flight across one of its outer edges, and further outside it."""
+
+    flo, fhi = flight["lo"], flight["hi"]
+    for i in (0, 1):
+        inside = min(fhi[i], hi[i]) - max(flo[i], lo[i])
+        if inside > _EMBED_M:
+            continue
+        if lo[i] < flo[i] - _OBLIGATION_TOLERANCE and hi[i] <= flo[i] + _EMBED_M + _OBLIGATION_TOLERANCE:
+            outside = flo[i] - lo[i]
+        elif hi[i] > fhi[i] + _OBLIGATION_TOLERANCE and lo[i] >= fhi[i] - _EMBED_M - _OBLIGATION_TOLERANCE:
+            outside = hi[i] - fhi[i]
+        else:
+            continue
+        if outside > inside:
+            return True
+    return False
+
+
 def _within(lo: tuple, hi: tuple, inner_lo: tuple, inner_hi: tuple) -> bool:
     return all(lo[i] - _OBLIGATION_TOLERANCE <= inner_lo[i] and inner_hi[i] <= hi[i] + _OBLIGATION_TOLERANCE for i in (0, 1))
 
@@ -1612,6 +1644,7 @@ def _within(lo: tuple, hi: tuple, inner_lo: tuple, inner_hi: tuple) -> bool:
 def _check_headroom(record, obligation, arguments, boxes):
     minimum = _number_argument(arguments, 0, "minimum")
     model = _Model(record, boxes)
+    model.require_readback()
     problems, worst = [], (math.inf, "")
     for element in _entity_subjects(obligation):
         flight = _flight(model, element)
@@ -1631,7 +1664,9 @@ def _check_headroom(record, obligation, arguments, boxes):
                     continue                                      # and ends at or below it: it stands under the tread
                 overlap_lo = tuple(max(tread_lo[i], lo[i]) for i in (0, 1))
                 overlap_hi = tuple(min(tread_hi[i], hi[i]) for i in (0, 1))
-                if any(overlap_hi[i] - overlap_lo[i] <= (_EMBED_M if through else _OBLIGATION_TOLERANCE) for i in (0, 1)):
+                if any(overlap_hi[i] - overlap_lo[i] <= _OBLIGATION_TOLERANCE for i in (0, 1)):
+                    continue
+                if through and _edge_joint(flight, lo, hi):
                     continue
                 if any(_within(vlo, vhi, overlap_lo, overlap_hi) for vlo, vhi in model.void_boxes(other)):
                     continue
@@ -1666,10 +1701,31 @@ def _ray_hit(model: _Model, skip: str, point: tuple[float, float, float], axis: 
     return best, owner
 
 
+def _received(model: _Model, skip: str, point: tuple[float, float], level: float, axis: int, sense: float) -> tuple[float, str] | None:
+    """How far on from ``point`` a surface at ``level`` runs, along ``sense``: the material whose top lies at the level
+    and holds the plan point just past ``point``; None when nothing does."""
+
+    past = list(point)
+    past[axis] += sense * 0.05
+    best = None
+    for _, name, (lo, hi) in model.others(skip):
+        if abs(hi[2] - level) > _LEVEL_M or not all(lo[i] - _OBLIGATION_TOLERANCE <= past[i] <= hi[i] + _OBLIGATION_TOLERANCE for i in (0, 1)):
+            continue
+        run = (hi[axis] - point[axis]) if sense > 0 else (point[axis] - lo[axis])
+        if best is None or run > best[0]:
+            best = (max(0.0, run), name)
+    return best
+
+
 def _check_landing_depth(record, obligation, arguments, boxes):
     minimum = _number_argument(arguments, 0, "minimum")
     probe = _number_argument(arguments, 1, "probe height", 0.3)
     model = _Model(record, boxes)
+    model.require_readback()
+    # The lowest level is the ground: a foot standing on it is received though no slab is modelled there.
+    ground = min((float(e.fields.get("elevation")) for e in record.entities_of("Level@1")
+                  if isinstance(e.fields.get("elevation"), (int, float)) and not isinstance(e.fields.get("elevation"), bool)),
+                 default=None)
     problems, measured = [], []
     for element in _entity_subjects(obligation):
         flight = _flight(model, element)
@@ -1680,7 +1736,15 @@ def _check_landing_depth(record, obligation, arguments, boxes):
             point = [0.0, 0.0, z + probe]
             point[axis], point[across] = plan[axis], middle
             depth, owner = _ray_hit(model, element, tuple(point), axis, sense)  # type: ignore[arg-type]
-            line = f"{element} {label}: {_r(depth) if math.isfinite(depth) else 'open'} to {owner or 'nothing'}"
+            on_ground = label == "foot" and ground is not None and abs(z - ground) <= _LEVEL_M
+            surface = None if on_ground else _received(model, element, (point[0], point[1]), z, axis, sense)
+            if not on_ground and surface is None:
+                line = f"{element} {label}: 0.0000, nothing receives it at {_r(z)}"
+                depth = 0.0
+            else:
+                if surface is not None and surface[0] < depth:
+                    depth, owner = surface[0], f"the edge of {surface[1]}"
+                line = f"{element} {label}: {_r(depth) if math.isfinite(depth) else 'open'} to {owner or 'nothing'}"
             measured.append(line)
             if depth < minimum - _OBLIGATION_TOLERANCE:
                 problems.append(f"{line} < {_r(minimum)}")
@@ -1690,7 +1754,8 @@ def _check_landing_depth(record, obligation, arguments, boxes):
 def _check_doors_clear(record, obligation, arguments, boxes):
     gap_minimum = _number_argument(arguments, 0, "gap", 0.0)
     model = _Model(record, boxes)
-    flights = [element for element, row in model.fields.items() if row.get("producer") == "stair" and element in model.material]
+    model.require_readback()
+    flights = [element for element, row in model.fields.items() if row.get("producer") == "stair"]
     problems, measured = [], []
     for element in _entity_subjects(obligation):
         row = model.fields.get(element)

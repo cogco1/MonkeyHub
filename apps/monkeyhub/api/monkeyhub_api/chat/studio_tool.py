@@ -61,33 +61,60 @@ _POST_READS = {"/api/intents/context", "/api/drawings/plans/status", "/api/memor
 # offers it only while the design loop is enforced, and then the Runtime takes
 # no other way there from the Agent.
 REVISIONS = "/api/revisions"
-DESIGN_LOOP_ENFORCED = "enforced"
-# What the chat is offered only while the design loop is enforced: the call, and what a change is written from.
-LOOP_ACTIONS = frozenset({("POST", REVISIONS), ("GET", REVISIONS + "/context")})
+DESIGN_LOOP_LEGACY, DESIGN_LOOP_ADVISORY, DESIGN_LOOP_ENFORCED = "legacy", "advisory", "enforced"
+# The call is offered only while the design loop is enforced; what a change is written from, while it checks
+# conditions (advisory or enforced). In legacy the chat is offered neither.
+REVISION_ACTION = ("POST", REVISIONS)
+CONTEXT_ACTION = ("GET", REVISIONS + "/context")
+LOOP_ACTIONS = frozenset({REVISION_ACTION, CONTEXT_ACTION})
 # What the conversation was started with: the Hub sets it for every CLI turn it
 # starts, and an external host sets it itself. It decides the guide and the action
 # list; whether the call is allowed is still asked of the Hub when it is made.
 DESIGN_LOOP_ENV = "MONKEYHUB_DESIGN_LOOP"
 
 
+def _tier(value: object) -> str:
+    value = str(value or "").strip().lower()
+    return value if value in (DESIGN_LOOP_ADVISORY, DESIGN_LOOP_ENFORCED) else DESIGN_LOOP_LEGACY
+
+
+def design_loop_tier() -> str:
+    """The design loop this conversation was started with: legacy unless the Hub said advisory or enforced."""
+    return _tier(os.environ.get(DESIGN_LOOP_ENV))
+
+
 def design_loop_offered() -> bool:
     """Whether this conversation was started with the design loop enforced."""
-    return os.environ.get(DESIGN_LOOP_ENV, "").strip().lower() == DESIGN_LOOP_ENFORCED
+    return design_loop_tier() == DESIGN_LOOP_ENFORCED
 
 
-def design_loop_enforced(hub: str) -> bool:
-    """Whether this Hub's designLoop setting is enforced; an unreadable setting reads as the default."""
+def design_loop_setting(hub: str) -> str:
+    """This Hub's designLoop setting now; an unreadable setting reads as the default."""
     from ..settings.models import DESIGN_LOOP_DEFAULT
     try:
         value = transport._request_json(hub, "/api/settings/apps", timeout=10).get("designLoop")
     except (HubFailure, OSError, ValueError, AttributeError):
         value = None
-    return (value or DESIGN_LOOP_DEFAULT) == DESIGN_LOOP_ENFORCED
+    return _tier(value or DESIGN_LOOP_DEFAULT)
 
 
-def _schema_allowed(method: str, path: str, *, enforced: bool = False) -> bool:
+def design_loop_enforced(hub: str) -> bool:
+    """Whether this Hub's designLoop setting is enforced; an unreadable setting reads as the default."""
+    return design_loop_setting(hub) == DESIGN_LOOP_ENFORCED
+
+
+def loop_action_offered(method: str, path: str, tier: str) -> bool:
+    """Whether a design-loop action is offered in ``tier``; every other action is not a loop action."""
+    if (method, path) == REVISION_ACTION:
+        return tier == DESIGN_LOOP_ENFORCED
+    if (method, path) == CONTEXT_ACTION:
+        return tier != DESIGN_LOOP_LEGACY
+    return True
+
+
+def _schema_allowed(method: str, path: str, *, enforced: bool = False, tier: str | None = None) -> bool:
     """Apply the execution allow-list to a schema template, never to a write."""
-    if (method, path) in LOOP_ACTIONS and not enforced:
+    if not loop_action_offered(method, path, tier or (DESIGN_LOOP_ENFORCED if enforced else DESIGN_LOOP_LEGACY)):
         return False
     pattern = {"GET": _READ, "POST": _POST, "PUT": _WRITE}.get(method)
     return pattern is not None and any(
@@ -138,14 +165,14 @@ def _elevation_refusal(body) -> HubFailure | None:
     return None
 
 
-def _available_actions(document: dict, *, enforced: bool = False) -> list[dict]:
+def _available_actions(document: dict, *, enforced: bool = False, tier: str | None = None) -> list[dict]:
     """A view of this Runtime and this chat's transport, not another registry."""
     return [
         {"method": method.upper(), "path": path,
          "summary": str(operation.get("summary") or operation.get("operationId") or "")[:180]}
         for path, operations in sorted(document.get("paths", {}).items())
         for method, operation in sorted(operations.items())
-        if isinstance(operation, dict) and _schema_allowed(method.upper(), path, enforced=enforced)
+        if isinstance(operation, dict) and _schema_allowed(method.upper(), path, enforced=enforced, tier=tier)
     ]
 
 
@@ -163,9 +190,10 @@ def _discovery(arguments: dict) -> tuple[str | None, str, int, int]:
     return method, prefix, offset, limit
 
 
-def _discover_actions(base: str, arguments: dict, *, enforced: bool = False) -> dict:
+def _discover_actions(base: str, arguments: dict, *, enforced: bool = False, tier: str | None = None) -> dict:
     method, prefix, offset, limit = _discovery(arguments)
-    rows = [row for row in _available_actions(transport._request_json(base, "/openapi.json"), enforced=enforced)
+    rows = [row for row in _available_actions(transport._request_json(base, "/openapi.json"), enforced=enforced,
+                                              tier=tier)
             if row["path"].startswith(prefix) and (method is None or row["method"] == method.upper())]
     result = {"actions": rows[offset:offset + limit], "total": len(rows), "offset": offset, "limit": limit,
               "note": "Current Runtime actions exposed to this chat. Choose method/path for studio_schema to read inputs; "

@@ -561,10 +561,9 @@ class ConditionSourceCoverageTests(ValidationTestCase):
 
 
 class ObligationClauseTests(ValidationTestCase):
-    """obligations.held: a violation the candidate brings blocks; one its source already had, or an unchecked duty, does not.
-
-    The conditions are checked only while the design loop checks them (advisory or enforced); the last test shows
-    a legacy Runtime.
+    """Conditions checked while the design loop checks them: each violated or unchecked one is named, a violation
+    the candidate brings is marked new, and none of them blocks review readiness or an admission. The last test
+    shows a legacy Runtime.
     """
 
     def setUp(self) -> None:
@@ -587,19 +586,20 @@ class ObligationClauseTests(ValidationTestCase):
         accepted, _ = self.finished_candidate()
         return accepted
 
-    def test_a_new_violation_blocks_review_readiness_and_is_named(self) -> None:
+    def test_a_new_violation_is_named_and_does_not_block_review_readiness(self) -> None:
         accepted = self._candidate_against("validator:element-param-at-most/height/2.0")
 
         validation = self.validation_of(accepted["candidateId"])
         candidate = self.client.get(f"/api/candidates/{accepted['candidateId']}").json()
 
-        self.assertIn("obligations.held", validation["blockedBy"])
-        self.assertIs(validation["reviewReady"], False)
+        self.assertNotIn("obligations.held", validation["blockedBy"])
+        self.assertIs(validation["reviewReady"], True, validation["blockedBy"])
         [problem] = validation["obligationProblems"]
         self.assertEqual((problem["obligationId"], problem["status"], problem["new"]), ("base-height-limit", "violated", True))
         self.assertIn("2.2000", problem["detail"])
         self.assertEqual(candidate["obligationProblems"], validation["obligationProblems"])
         self.assertEqual(candidate["relationProblems"], [])
+        self.assertIn("obligations that name an executable check are reported separately", validation["validatorNote"])
 
     def test_a_violation_the_source_already_had_does_not_block(self) -> None:
         accepted = self._candidate_against("validator:element-param-at-most/height/0.5")
@@ -631,6 +631,8 @@ class ObligationClauseTests(ValidationTestCase):
 
         self.assertNotIn("obligations.held", validation["blockedBy"])
         self.assertFalse({"obligationProblems", "obligationsChecked"} & set(validation))
+        self.assertEqual(validation["validatorNote"], VALIDATOR_NOTE)
+        self.assertTrue(validation["canonicalFacts"].endswith("project conditions remain unchecked."))
 
 
 class ReviewReadinessTests(ValidationTestCase):

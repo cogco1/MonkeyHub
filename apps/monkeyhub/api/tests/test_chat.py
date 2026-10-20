@@ -1293,6 +1293,22 @@ class ChatTests(unittest.TestCase):
                 # Nothing else moves: the same tools, directories, mode and session.
                 self.assertEqual(command[:at] + command[at + 2:], undenied)
 
+    def test_with_the_design_loop_enforced_claude_has_no_shell_and_nothing_else_moves(self):
+        """#185: a shell could reach the Runtime's port and act as a person; enforced takes it away, legacy does not."""
+        from monkeyhub_api.settings.store import read_application_settings, save_application_settings
+
+        session = self.create(provider="claude")
+        with self.store._lock:
+            saved = self.store._sessions[session.id]
+            legacy, _ = self.store._command(saved)
+        settings = read_application_settings(self.runtime)
+        save_application_settings(self.runtime, settings.model_copy(update={"design_loop": "enforced"}))
+        with self.store._lock:
+            enforced, _ = self.store._command(saved)
+        at = legacy.index("--disallowedTools")
+        self.assertEqual(enforced[at + 1:at + 3], [legacy[at + 1], "Bash"])
+        self.assertEqual(enforced[:at + 2] + enforced[at + 3:], legacy, "the shell is the only thing taken away")
+
     def test_codex_is_not_given_the_project_as_a_writable_root(self):
         """ADR-012 for Codex: the Hub names no writable place in the project.
 

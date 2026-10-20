@@ -13078,7 +13078,7 @@ export type ValidationDto = {
     /**
      * Obligationproblems
      *
-     * obligations violated (a new one blocks obligations.held) or unchecked on this candidate
+     * obligations violated or unchecked on this candidate, while the design loop checks them; new marks a violation the run it was made from did not have. They block no review clause
      */
     obligationProblems?: Array<ObligationProblemDto>;
     /**
@@ -13094,13 +13094,13 @@ export type ValidationDto = {
     /**
      * Reviewready
      *
-     * whether all six server-owned review clauses hold; this never issues a run or advances a stage
+     * whether all five server-owned review clauses hold; this never issues a run or advances a stage
      */
     reviewReady: boolean;
     /**
      * Blockedby
      *
-     * each clause that refused, by name: validation.receipt, runner.seat_execution_complete, relations.held, relations.fully_checked, runner.exports_available, obligations.held
+     * each clause that refused, by name: validation.receipt, runner.seat_execution_complete, relations.held, relations.fully_checked, runner.exports_available
      */
     blockedBy: Array<string>;
     /**

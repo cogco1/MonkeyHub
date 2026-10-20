@@ -210,9 +210,11 @@ def revise_working_design(request: Request, payload: RevisionRequestDto) -> Revi
         if message is None or message.get("sessionId") != chat:
             raise StudioError(422, "REVISION_INVALID", "An Agent's revision names the message of its own chat that it "
                               "answers; the Hub binds it.")
-        if payload.confirmed:
+        if payload.confirmed and not request.headers.get("x-monkey-confirmation"):
+            # The managing Hub adds the header only to a reply answering a question this chat asked (#185).
             raise StudioError(422, "REVISION_INVALID", "Only the architect confirms that a change keeps a condition no "
-                              "check can verify; the Agent asks instead. Nothing was proposed.")
+                              "check can verify, by answering the question the Agent asked; the Hub binds that answer. "
+                              "Nothing was proposed.")
     outcome = revise(RevisionRequest(
         project_id=payload.project_id, state_digest=payload.state_digest, source_run_id=payload.source_run_id,
         kind=payload.kind, proposal=payload.proposal, candidate_id=payload.candidate_id, summary=payload.summary,

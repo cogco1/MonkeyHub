@@ -29,11 +29,13 @@ HUB = "http://127.0.0.1:8700"
 
 
 class DesignLoopSettingTests(unittest.TestCase):
-    def test_the_setting_is_enforced_or_off(self) -> None:
+    def test_the_setting_has_three_tiers_and_off_reads_as_legacy(self) -> None:
         self.assertEqual(ApplicationSettingsDto().design_loop, DESIGN_LOOP_DEFAULT)
         for tier in ("legacy", "advisory", "enforced"):
             self.assertEqual(ApplicationSettingsDto.model_validate({"designLoop": tier}).design_loop, tier)
         self.assertEqual(DESIGN_LOOP_DEFAULT, "legacy")
+        self.assertEqual(ApplicationSettingsDto.model_validate({"designLoop": "off"}).design_loop, "legacy",
+                         "a setting saved before there were three tiers still reads")
         with self.assertRaises(ValidationError):
             ApplicationSettingsDto.model_validate({"designLoop": "sometimes"})
 
@@ -69,6 +71,14 @@ class OfferedCallTests(unittest.TestCase):
         offered = {row["path"] for row in studio_tool._available_actions(self.DOCUMENT, enforced=True)}
         self.assertEqual(offered, {"/api/admissions", "/api/revisions"})
 
+    def test_advisory_reads_the_context_and_is_offered_no_call(self) -> None:
+        document = {"paths": {**self.DOCUMENT["paths"], "/api/revisions/context": {"get": {"summary": "Context"}}}}
+        for tier, paths in (("legacy", {"/api/admissions"}),
+                            ("advisory", {"/api/admissions", "/api/revisions/context"}),
+                            ("enforced", {"/api/admissions", "/api/revisions", "/api/revisions/context"})):
+            with self.subTest(tier=tier):
+                self.assertEqual({row["path"] for row in studio_tool._available_actions(document, tier=tier)}, paths)
+
     def test_while_off_the_chat_refuses_the_call_before_any_runtime_is_asked(self) -> None:
         asked = []
         with patch.object(transport, "_request_json", side_effect=lambda *a, **k: asked.append(a) or {"designLoop": "advisory"}):
@@ -78,6 +88,17 @@ class OfferedCallTests(unittest.TestCase):
         self.assertEqual(refused.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
         self.assertIn("design loop is enforced", refused.exception.error.detail)
         self.assertEqual([call[1] for call in asked], ["/api/settings/apps"])
+
+    def test_outside_enforced_a_misplaced_task_class_is_refused_in_mains_words(self) -> None:
+        # main's text, word for word; only an enforced conversation is told about POST /api/revisions.
+        main_words = "taskClass beside method/path names the loop POST /api/admissions closes; visual_review takes its own."
+        for tier, words in (("legacy", main_words), ("advisory", main_words),
+                            ("enforced", main_words.replace("admissions closes", "admissions or POST /api/revisions closes"))):
+            with self.subTest(tier=tier), patch.dict("os.environ", {studio_tool.DESIGN_LOOP_ENV: tier}):
+                with self.assertRaises(HubFailure) as refused:
+                    tool_calls.call_tool(HUB, str(uuid4()), "studio_request", {
+                        "method": "GET", "path": "/api/state", "taskClass": "deterministic_edit"})
+                self.assertEqual((refused.exception.error.code, refused.exception.error.detail), ("CHAT_TOOL_INVALID", words))
 
     def test_the_change_inside_a_revision_is_held_to_its_own_routes_narrowing(self) -> None:
         geometry = {"kind": "proposal", "proposal": {"semanticEdit": {"entities": [{"schema": "Element@1", "fields": {}}]}}}
@@ -103,13 +124,15 @@ class BoundWordsTests(unittest.TestCase):
         quoted = judgments._revision_body(chat_id, session, {"kind": "construction", "proposal": {}}, "楼梯缓一点")
         self.assertEqual(quoted["rawLanguage"], "楼梯缓一点")
 
-    def test_the_agent_never_confirms_a_condition_itself(self) -> None:
+    def test_a_confirmation_names_question_refs_and_carries_the_users_words(self) -> None:
         chat_id, session = self.session()
         with self.assertRaises(HubFailure) as refused:
-            judgments._revision_body(chat_id, session, {"kind": "construction", "proposal": {},
-                                                        "confirmed": ["obligation:k3"]})
+            judgments._revision_body(chat_id, session, {"kind": "construction", "proposal": {}, "confirmed": "yes"})
         self.assertEqual(refused.exception.error.code, "CHAT_REVISION_INVALID")
-        self.assertIn("Only the architect confirms", refused.exception.error.detail)
+        body = judgments._revision_body(chat_id, session, {"kind": "construction", "proposal": {},
+                                                           "confirmed": ["obligation:k3"]})
+        self.assertEqual((body["confirmed"], body["rawLanguage"]), (["obligation:k3"], "楼梯缓一点，别动楼板"),
+                         "whether it was asked is the Hub's to say when it forwards the change")
 
     def test_the_agent_never_supplies_the_words_itself(self) -> None:
         chat_id, session = self.session()
@@ -131,6 +154,8 @@ class LookTests(unittest.TestCase):
                         "messages": [{"id": "m-1", "role": "user", "content": "门廊更轻一点", "status": "complete"}]}
         self.sent = []
         self.addCleanup(patch.stopall)
+        # A turn the Hub starts carries its setting; this one was started enforced.
+        patch.dict("os.environ", {studio_tool.DESIGN_LOOP_ENV: "enforced"}).start()
         patch.object(preparation, "_bound_studio", return_value=("http://127.0.0.1:8701", self.session)).start()
         patch.object(transport, "_request_json", side_effect=self.request).start()
         patch("monkeyhub_api.chat.tool_calls.projects._project",
@@ -222,11 +247,63 @@ class ForwardTests(unittest.TestCase):
         self.assertEqual((seen[0].get("X-Monkey-Agent"), seen[0].get("X-Monkey-Worker")), ("chat-9", "hub-7"))
         self.assertNotIn("X-Monkey-Agent", seen[1], "a person's request through the same Hub is not the Agent's")
 
+    def test_the_architect_confirms_by_answering_the_question_this_chat_asked(self) -> None:
+        from project_runtime.binding import ProjectBinding
+        from project_runtime.settings import StudioSettings
+        from test_monkeyhub_lifecycle import project_fixture
+        from monkeyhub_api.runtime.manager import ProjectRuntime, ProjectRuntimeManager
+
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        fixture = project_fixture()
+        fixture.make_project(Path(temporary.name))
+        settings = StudioSettings(project_dir=Path(temporary.name) / fixture.PROJECT_ID, cad_export="off")
+        runtime = ProjectRuntime("r-1", fixture.PROJECT_ID, str(settings.project_dir), OperationManager(fixture.PROJECT_ID),
+                                 ProjectBinding.open(settings))
+        chats = SimpleNamespace(get=lambda session_id: SimpleNamespace(
+            projectId=fixture.PROJECT_ID, projectDir=str(settings.project_dir), status="running"))
+        coordinator = ProjectRuntimeManager(None, chats)
+        seen = []
+        asked = json.dumps({"outcome": "needs_question", "code": "UNCHECKED_CONDITION", "detail": "ask",
+                            "questionRefs": ["obligation:k3"]}).encode()
+
+        def dispatch(base, target, method, body, headers, *, timeout):
+            seen.append(dict(headers))
+            return HttpResult(200, asked if len(seen) == 1 else b'{"outcome": "landed"}', {"content-type": "application/json"})
+
+        def revise(message: str, digest: str = "s-1", **extra):
+            body = {"stateDigest": digest, "kind": "construction", "proposal": {}, "summary": "x",
+                    "messageSource": {"sessionId": "chat-9", "messageId": message}, "rawLanguage": "可以", **extra}
+            return coordinator.forward(runtime, "/api/revisions", "POST", json.dumps(body).encode(),
+                                       {"idempotency-key": str(uuid4()), "x-monkey-chat": "chat-9"})
+
+        with patch.object(coordinator, "service", return_value=SimpleNamespace(url="http://managed", instance_id="hub-7")),              patch("monkeyhub_api.runtime.manager.request_http", side_effect=dispatch):
+            revise("m-1")
+            question = [r for r in runtime.operations.records() if r.kind == "POST /api/revisions"][0]
+            self.assertEqual((question.questionRefs, question.messageId), (["obligation:k3"], "m-1"))
+            for message, digest, refs in (("m-1", "s-1", ["obligation:k3"]), ("m-2", "s-2", ["obligation:k3"]),
+                                          ("m-2", "s-1", ["obligation:other"])):
+                with self.subTest(message=message, digest=digest, refs=refs), self.assertRaises(HubFailure) as refused:
+                    revise(message, digest, confirmed=refs)
+                self.assertEqual(refused.exception.error.code, "CONFIRMATION_NOT_ASKED")
+            revise("m-2", confirmed=["obligation:k3"])
+        self.assertNotIn("X-Monkey-Confirmation", seen[0])
+        self.assertEqual(seen[-1].get("X-Monkey-Confirmation"), question.operationId,
+                         "the user's next message answers the question; the Runtime is told which")
+
 
 class GuideTests(unittest.TestCase):
-    def test_while_off_the_guide_is_the_step_by_step_one_word_for_word(self) -> None:
-        self.assertIs(guides.modelling(False), guides._MODELLING)
+    def test_in_legacy_the_guide_is_the_step_by_step_one_word_for_word(self) -> None:
+        for tier in (False, "legacy", "", "off"):
+            self.assertIs(guides.modelling(tier), guides._MODELLING)
         self.assertNotIn("/api/revisions", guides._MODELLING)
+
+    def test_advisory_is_the_legacy_guide_and_what_the_checks_add(self) -> None:
+        text = guides.modelling("advisory")
+        self.assertEqual(text.replace(chr(10).join(guides._ADVISORY) + chr(10), ""), guides._MODELLING)
+        for words in ("relationProblems", "obligationProblems", "They block nothing", "GET /api/revisions/context"):
+            self.assertIn(words, text)
+        self.assertNotIn("POST /api/revisions", text)
 
     def test_while_enforced_one_call_replaces_candidate_admission_and_continue(self) -> None:
         text = guides.modelling(True)

@@ -813,7 +813,8 @@ def describe(
             for row in seat_rows
         ),
         relation_checks=_relation_totals(binding, candidate_id),
-        relation_problems=relation_problems(binding, candidate_id),
+        # Listed only while the design loop checks conditions; legacy reads nothing more than before.
+        relation_problems=relation_problems(binding, candidate_id) if binding.settings.design_loop_checks else (),
         # Only this run's own receipts are read: a run never claims
         # another run's model. A run that did not export has none, so an
         # unexported run answers with an empty list by construction.

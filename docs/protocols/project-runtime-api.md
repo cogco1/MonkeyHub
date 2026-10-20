@@ -627,12 +627,14 @@ neighbouring element whose field shares a name is named there only to be refused
 
 Review readiness is memoised per (candidate, published version): reading it twice is one result.
 
-**Conditions the design must keep are checked (#659).** A `DesignObligation` names its check in
-`validatorRef` as `validator:<kind>/<arguments>`; the kinds are `state_record.OBLIGATION_CHECKS`. Validation
-checks every live obligation on the candidate's exact record and its inspected object boxes, and again on the
-run it was made from. Each one is `held`, `violated` or `unchecked`; an obligation with no check, an unknown
-kind or a value nothing states is `unchecked`, never held. The sixth clause, `obligations.held`, refuses only
-a violation the source run did not have. `obligationProblems[]` (on the validation and on
+**Conditions the design must keep are checked (#659)** while the design loop checks them (`advisory` or
+`enforced`). A `DesignObligation` names its check in `validatorRef` as `validator:<kind>/<arguments>`; the kinds
+are `state_record.OBLIGATION_CHECKS`. Validation checks every live obligation on the candidate's exact record and
+its inspected object boxes, and again on the run it was made from. Each one is `held`, `violated` or
+`unchecked`; an obligation with no check, an unknown kind, a value nothing states, or a model read back without
+an object of every part that builds one is `unchecked`, never held. The results are reported, never a clause of
+review readiness: no tier makes a condition block a person's or the Agent's admission or a Stage acceptance.
+In `enforced`, `POST /api/revisions` refuses a new violation itself. `obligationProblems[]` (on the validation and on
 `GET /api/candidates/{id}`) lists the violated ones, new first, then the unchecked ones, at most 20, each with
 `obligationId`, `validatorRef`, `status`, `new` and `detail`; `obligationsChecked` counts those a check
 reported held or violated. `relationProblems[]` on the candidate names the violated relations, then the
@@ -1122,8 +1124,8 @@ fields this request supplies. It takes the `accept` grant, and the change itself
    model (`COMPARE_UNAVAILABLE`), or a construction or hosted opening that changed nothing against the base
    (`NO_VISIBLE_CHANGE`) is `problems`. Only a base that never exported a model is excused from the
    comparison, and `compare.unavailable` with `baseHasNoModel` says so;
-9. validation runs: a violated or unchecked relation, a new violated condition (`obligations.held`) or
-   another failing review clause is `problems`, each one named by its `source` (`relation:<id>`,
+9. validation runs: a violated or unchecked relation, a condition violated where the base did not violate it,
+   or a failing review clause is `problems`, each one named by its `source` (`relation:<id>`,
    `obligation:<id>`, the clause);
 10. with `buildOnly` the answer is `built` and nothing is admitted; the candidate lands later by its
     `candidateId`;
@@ -1143,27 +1145,41 @@ or `refused`. A kept target or a rejected option changes only after its decision
 `GET /api/revisions/context` is what a change is written from: `working` (runId, stateDigest, revisionSha256, label), `outside` (every change made outside MonkeyHub that a state file brought into the design, newest file first: its words with the part and amount, `subjects`, `inTheDesign` and `fileSha256`), `keep` and `rejected` (each decision's ref, target and the architect's words), `conditions` (each live condition's ref, statement, subjects, `validatorRef`, `checkable` and how it stands on the working design: `onWorkingDesign` held, violated or unchecked, with `detail`), `lastChange` (the working design's own landed change: its summary, the words it answered and its objects before and after against its parent, so that undoing it is an ordinary change), `tried` (results the architect rejected, with their words) and `honesty`. Each list holds at most 40 rows and says how many it left out.
 
 **The design-loop setting.** The Hub's application setting `designLoop` reaches the Runtime as
-`ARCHFLOW_STUDIO_DESIGN_LOOP`, in three tiers; the default, and a Runtime started by hand, is `legacy`.
+`ARCHFLOW_STUDIO_DESIGN_LOOP`, in three tiers; the default, and a Runtime started by hand, is `legacy`. A
+saved `off`, the setting's value before it had tiers, reads as `legacy`.
 
-- `legacy`: everything answers exactly as before the loop existed. No condition is checked,
-  `obligations.held` never appears, validation and candidate reads leave out `obligationProblems`,
-  `obligationsChecked` and `relationProblems`, and `POST /api/revisions` answers `409 DESIGN_LOOP_NOT_ENFORCED`.
-- `advisory`: conditions are checked, `obligations.held` refuses review readiness on a new violation, and the
-  problem lists appear on validation and candidate reads; every way onto the working design is as before, and
-  `POST /api/revisions` still answers `409 DESIGN_LOOP_NOT_ENFORCED`.
+- `legacy`: every route main has answers byte for byte as main does (`tests/test_legacy_answers.py` compares a
+  scenario's answers with main's). No condition is checked; validation and candidate reads leave out
+  `obligationProblems`, `obligationsChecked` and `relationProblems` and keep their old notes; the chat keeps its
+  old guide and error words. Of the two new routes, `POST /api/revisions` answers `409 DESIGN_LOOP_NOT_ENFORCED`.
+- `advisory`: conditions are checked and the problem lists appear on validation and candidate reads, blocking
+  nothing; every way onto the working design is as before, and `POST /api/revisions` still answers
+  `409 DESIGN_LOOP_NOT_ENFORCED`. The chat may read `GET /api/revisions/context`, and its guide says what the
+  two lists are.
 - `enforced`: as `advisory`, and the Agent's own way onto the working design is refused with `409
   DESIGN_LOOP_REQUIRED`: `POST /api/admissions` of an `admitted` result, and `PUT /api/working-draft` onto a run.
   `POST /api/revisions` admits and continues the result itself; from the Agent it must name its own chat's message
-  and may confirm nothing (`422 REVISION_INVALID`).
+  and carries `confirmed` only with the managing Hub's `X-Monkey-Confirmation` (`422 REVISION_INVALID` otherwise).
 
 The Runtime tells the Agent from a person by `X-Monkey-Agent`, which the managing Hub adds (with its
 `X-Monkey-Worker` identity) to every request it forwards for a chat; nothing in a request body counts. A
 person's admission and Continue, and the Agent's rejections and withdrawals, are never affected. The Hub's chat
-offers `POST /api/revisions` and `GET /api/revisions/context` only while the setting is `enforced`, binds the
-user's message and words to it, takes the loop's `taskClass` beside it as for an admission (a `spatial_formal` or
-`polish` loop lands only a result it looked at, or a repair superseding a looked-at attempt; `buildOnly` builds
-one to look at), never sends a confirmation, and gives the guide that names it; in the other tiers the chat's
-tools and guide are as they were.
+offers `POST /api/revisions` only while the setting is `enforced` (`GET /api/revisions/context` also in
+`advisory`), binds the user's message and words to it, and takes the loop's `taskClass` beside it as for an
+admission (a `spatial_formal` or `polish` loop lands only a result it looked at, or a repair superseding a
+looked-at attempt; `buildOnly` builds one to look at).
+
+**The architect confirms by answering.** A condition no check can verify, or a decision in reach, makes a
+revision answer `needs_question` with `questionRefs`; the Hub keeps them on the chat's operation record with
+the message the revision answered. The chat may then send the same change with `confirmed`, and the Hub forwards
+it only when every ref was asked by this chat's latest `needs_question`, on the same base, in an earlier message
+than the one now bound (`422 CONFIRMATION_NOT_ASKED` otherwise); it adds `X-Monkey-Confirmation` naming that
+question, and the change carries the user's words of the answering message.
+
+**What enforced closes, and what it does not.** In `enforced` the Hub's Claude chat runs without Bash, so the
+Agent reaches the design only through this Hub, which vouches for it. The Runtime does not verify identity
+otherwise: a local process that calls the Runtime's port or the Hub's forwarding route directly, without the
+chat header, is taken as a person.
 
 **The design-loop tools.** While the design loop is enforced, the Hub's tool server also answers four tools
 over the chat's own bindings: `design_read` (`GET /api/revisions/context` and the construction model, or the

@@ -65,9 +65,10 @@ def _revision_body(chat_id: str, session: dict, body: dict, quote: str | None = 
     """
     if {"messageSource", "message_source", "rawLanguage", "raw_language"}.intersection(body):
         raise HubFailure(422, "CHAT_REVISION_INVALID", "The chat fills messageSource and rawLanguage from this user turn; never supply them.")
-    if body.get("confirmed"):
-        raise HubFailure(422, "CHAT_REVISION_INVALID", "Only the architect confirms that a change keeps a condition no "
-                         "check can verify; ask them instead of confirming it yourself. Nothing was sent.")
+    confirmed = body.get("confirmed")
+    if confirmed is not None and (not isinstance(confirmed, list) or not all(isinstance(ref, str) for ref in confirmed)):
+        raise HubFailure(422, "CHAT_REVISION_INVALID", "confirmed lists questionRefs the architect answered; it is "
+                         "never the Agent's own judgement. Nothing was sent.")
     message = _user_message(chat_id, session, "A revision")
     return {**body, "projectId": session["projectId"], "rawLanguage": _user_words(message, quote, "A revision"),
             "messageSource": {"sessionId": chat_id, "messageId": message["id"]}}
