@@ -1,7 +1,8 @@
 """In legacy, every route main has answers byte for byte as main does (#185).
 
 One scenario - a project whose record names a condition with an executable check, a candidate that violates it,
-its read, its validation, the Agent's admission, a Continue, a rejected second candidate and refused direct moves -
+its read, its validation, its export (and one asking for state), the Agent's admission, a Continue, a
+rejected second candidate and refused direct moves -
 is run on this checkout and compared with what main answered to the same requests, kept in
 ``fixtures/legacy_answers_main.json``. Only what differs between any two runs of the same code is masked: run,
 proposal and job ids, digests, clock times and durations, and the temporary directory; each by order of first
@@ -38,6 +39,7 @@ AGENT = {"X-Monkey-Agent": "chat-1", "X-Monkey-Worker": "hub-1"}
 MESSAGE = {"sessionId": "chat-1", "messageId": "m-1"}
 _MASKS = (
     ("cand", re.compile(r"studio-cand-\d{8}-\d{6}-[0-9a-f]{8}-[0-9a-f]{4}")),
+    ("shard", re.compile(r"(?<=objects/sha256/)[0-9a-f]{2}(?=/)")),
     ("sha", re.compile(r"(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])")),
     ("uuid", re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")),
     ("hex", re.compile(r"(?<![0-9a-zA-Z])[0-9a-f]{32}(?![0-9a-zA-Z])")),
@@ -134,9 +136,20 @@ def scenario(root: Path, cad_export: str) -> list[list]:
             started = step(f"candidate {height}", person.post(f"/api/proposals/{proposal['proposalId']}/candidate"))
             job = _wait(person, started["jobId"])
             steps.append([f"job {height}", 200, json.dumps({key: job.get(key) for key in ("status", "error")})])
-            step(f"read {height}", person.get(f"/api/candidates/{started['candidateId']}"))
+            read = step(f"read {height}", person.get(f"/api/candidates/{started['candidateId']}"))
             step(f"validation {height}", person.get(f"/api/candidates/{started['candidateId']}/validation"))
             candidates.append(started["candidateId"])
+            if height == 2.2:
+                revision = {"runId": started["candidateId"], "stateDigest": read.get("stateDigest")}
+                exported = step("export", person.post("/api/exports", json={"targetFormat": "3dm", "projectRevision": revision}))
+                if exported.get("exportId"):
+                    deadline = time.monotonic() + 120
+                    while (report := person.get(f"/api/exports/{exported['exportId']}")).json().get("status") in ("queued", "running"):
+                        assert time.monotonic() < deadline, "the export never finished"
+                        time.sleep(0.05)
+                    steps.append(["export report", report.status_code, report.text])
+                step("export asking for state", person.post("/api/exports", json={
+                    "targetFormat": "3dm", "projectRevision": revision, "withState": True}))
             # A run id starts with its second: one second apart, lists sorted by id keep the order they were made in.
             time.sleep(1.1)
         step("agent admits", agent.post("/api/admissions", headers=AGENT, json={
