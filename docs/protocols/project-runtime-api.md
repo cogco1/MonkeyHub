@@ -1167,13 +1167,12 @@ offers `POST /api/revisions` only while the setting is `enforced` (`GET /api/rev
 admission (a `spatial_formal` or `polish` loop lands only a result it looked at, or a repair superseding a
 looked-at attempt; `buildOnly` builds one to look at).
 
-**The architect confirms by answering.** A condition no check can verify, or a decision in reach, makes a
-revision answer `needs_question` with `questionRefs`; the Hub keeps them on the chat's operation record with
-the message the revision answered. The chat may then send the same change with `confirmed`, and the Hub forwards
-it only when every ref was asked by this chat's latest `needs_question`, on the same base, and the message now
-bound is the user's first message after the question (`422 CONFIRMATION_NOT_ASKED` otherwise): a later message,
-about anything, confirms nothing. It adds `X-Monkey-Confirmation` naming that question, and the change carries
-the words of that reply.
+**The Agent never confirms.** A condition no check can verify, a kept target or a rejected option in reach makes a
+revision answer `needs_question` with `questionRefs`, and the Agent asks. Nothing in a chat stands for the
+architect's answer, whatever its words: the chat refuses `confirmed` (`422 CHAT_REVISION_INVALID`) and the Runtime
+refuses it from the Agent (`422 REVISION_INVALID`). A person's own request may carry `confirmed` with their words;
+the Hub page has no control for it yet. These questions stop a change only while the design loop is `enforced`:
+in `legacy` and `advisory` a condition no check can verify blocks nothing, and the reviser is only told about it.
 
 **What enforced closes, and what it does not.** In `enforced` the Hub's Claude chat runs without Bash, so the
 Agent reaches the design only through this Hub, which vouches for it. A Codex chat (exec or ACP) keeps the shell

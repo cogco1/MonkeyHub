@@ -59,8 +59,7 @@ GUIDE = chr(10).join([
     "hosted-opening {host, kind, along, width, ...}, elevation {action: 'set-datum', levelId, value} or",
     "proposal {semanticEdit}. It answers one outcome: landed (done), problems (nothing moved; correct the change",
     "and submit again), needs_question (nothing built; call design_ask with that question), refused (read again).",
-    "A condition no check can verify is the architect's to confirm, never yours (confirmed: the refs their later",
-    "message agrees to after design_ask); a kept target or a rejected option",
+    "A condition no check can verify is the architect's to confirm, never yours; a kept target or a rejected option",
     "is never changed from here. outside lists each change made outside MonkeyHub, newest file first, none in the",
     "design: name each with its amount and ask the architect whether to adopt it; a change that reaches one asks first.",
     "After {budget} changes with problems, ask or report a limitation instead of submitting again.",
@@ -92,8 +91,6 @@ def tool_definitions() -> list[dict]:
              "proposal": {"type": "object", "additionalProperties": True}, "summary": {**text, "maxLength": 2000},
              "keep": {"type": "array", "items": {"type": "string"}},
              "land": {"type": "boolean", "default": True},
-             "confirmed": {"type": "array", "items": {"type": "string"}, "description": "The questionRefs of your "
-                           "last design_ask that this message of the architect agrees to; nothing else."},
              "feedbackQuote": {**text, "maxLength": 2000, "description": "The exact passage of the architect's message "
                                "the change answers, when not the whole message."}},
              "required": ["sourceRunId", "stateDigest", "kind", "proposal", "summary"], "additionalProperties": False}},
@@ -203,8 +200,7 @@ def call(hub: str, chat_id: str, name: str, arguments: Mapping[str, Any]) -> dic
         raise HubFailure(409, "REPAIR_BUDGET_EXHAUSTED", f"{len(failed)} changes for this message came back with problems; "
                          "ask the architect with design_ask, or report what MonkeyHub cannot do with "
                          "design_report_limitation. Nothing was submitted.")
-    body = {key: arguments[key] for key in ("sourceRunId", "stateDigest", "kind", "proposal", "summary", "keep", "land",
-                                             "confirmed")
+    body = {key: arguments[key] for key in ("sourceRunId", "stateDigest", "kind", "proposal", "summary", "keep", "land")
             if key in arguments}
     # Earlier attempts of this message on the same base are the ones this result replaces.
     attempts = [row["candidateId"] for row in failed if row.get("candidateId") and row["base"] == arguments["stateDigest"]]
