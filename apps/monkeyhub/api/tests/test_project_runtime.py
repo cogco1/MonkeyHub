@@ -902,6 +902,39 @@ for _ in range(5):
             self.assertEqual(ready["workers"][0]["desiredState"], "running")
             self.assertEqual(self.project_bytes(self.project), before)
 
+    def test_the_first_request_to_an_open_project_starts_its_studio(self):
+        # Gap 18: after a restart a project's runtime is open with no worker,
+        # and its first Studio request is often a page's. It starts the Studio
+        # rather than answer as if it had crashed.
+        with self.hub() as client:
+            opened = client.post("/api/runtime/projects/open", json={"projectId": self.project_id,
+                                                                      "projectDir": str(self.project)})
+            self.assertEqual(opened.status_code, 200, opened.text)
+            runtime_id = opened.json()["runtimeId"]
+            self.assertEqual(self.read_runtime(client, runtime_id)["workers"], [])
+            answered = self.proxy(client, runtime_id, "/api/project")
+            self.assertEqual(answered.status_code, 200, answered.text)
+            worker = self.read_runtime(client, runtime_id)["workers"][0]
+            self.assertIn(worker["state"], {"ready", "busy"})
+
+    def test_a_running_studio_that_only_misses_probes_is_still_asked(self):
+        # Gap 25: verified, alive, missing its health probes while busy.
+        with self.hub() as client:
+            runtime_id = self.open_project(client)
+            applications = client.app.state.applications
+            worker = applications.worker_snapshots(project_dir=str(self.project))[0]
+            missing = replace(worker, state="unavailable", healthy=False,
+                              error=HubError(code="SERVICE_UNAVAILABLE", detail="not answering"))
+            with patch.object(applications, "worker_snapshots", return_value=(missing,)):
+                answered = self.proxy(client, runtime_id, "/api/project")
+            self.assertEqual(answered.status_code, 200, answered.text)
+            crashed = replace(worker, state="crashed", healthy=False,
+                              error=HubError(code="PROCESS_EXITED", detail="exited"))
+            with patch.object(applications, "worker_snapshots", return_value=(crashed,)):
+                refused = self.proxy(client, runtime_id, "/api/project")
+            self.assertEqual((refused.status_code, refused.json()["code"]), (503, "WORKER_UNAVAILABLE"))
+            self.assertIn("stopped unexpectedly", refused.json()["detail"])
+
     def test_same_worker_recovers_readiness_without_rebuilding_unchanged_projection(self):
         from monkeyhub_api.runtime.worker_http import request_http
 

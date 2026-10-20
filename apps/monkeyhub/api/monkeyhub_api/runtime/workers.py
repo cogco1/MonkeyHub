@@ -30,6 +30,11 @@ _ACTIVE_PROBE_S = 1.0
 _STABLE_PROBE_S = 5.0
 # How long a verified service may miss probes before it is ``unavailable``.
 _UNAVAILABLE_AFTER_S = 5.0
+# The same for a service with work in progress (gap 25): its job may hold the
+# interpreter in native code (reading or meshing a large model) for minutes, and
+# its probes time out while the work goes on. Its process exiting is still seen
+# at once; only missed probes are given this long.
+_BUSY_UNAVAILABLE_AFTER_S = 600.0
 # How long a probe waits for the answer once its connection is open.
 _PROBE_TIMEOUT_S = 1.0
 # How long a probe of a launch that has not answered yet waits for its port to
@@ -318,7 +323,8 @@ class WorkerSupervisor:
                                 # losing its verified launch or usable page.
                                 if unavailable_since is None:
                                     unavailable_since = time.monotonic()
-                                if time.monotonic() - unavailable_since >= _UNAVAILABLE_AFTER_S:
+                                limit = _BUSY_UNAVAILABLE_AFTER_S if child.busy else _UNAVAILABLE_AFTER_S
+                                if time.monotonic() - unavailable_since >= limit:
                                     child.healthy = False
                                     child.state = "unavailable"
                                     child.error = HubError(code="SERVICE_UNAVAILABLE", detail="The owned service is not answering its health and project binding checks.")

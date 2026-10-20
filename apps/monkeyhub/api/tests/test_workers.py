@@ -239,6 +239,23 @@ class WorkerSupervisorTests(unittest.TestCase):
         self.assertEqual(ready.instance_id, original.instance_id)
         self.assertIsNone(ready.error)
 
+    def test_a_busy_worker_that_misses_probes_stays_busy(self):
+        # Gap 25: a job holding the interpreter in native code makes probes
+        # time out for minutes; the worker is alive and its job finishes.
+        launch = self.launch("busy-outage")
+        self.supervisor.start(launch)
+        original = self.wait_state(launch.worker_id, "ready")
+        self.supervisor.set_busy(launch.worker_id, True)
+        outage = Path(launch.environment["OUTAGE_FILE"])
+        outage.touch()
+        time.sleep(_UNAVAILABLE_AFTER_S + 2 * _ACTIVE_PROBE_S + 2)
+        current = self.supervisor.snapshot(launch.worker_id)
+        self.assertEqual((current.state, current.healthy, current.error), ("busy", True, None))
+        self.assertEqual(current.instance_id, original.instance_id)
+        outage.unlink()
+        self.supervisor.set_busy(launch.worker_id, False)
+        self.assertEqual(self.wait_state(launch.worker_id, "ready").instance_id, original.instance_id)
+
     def test_slow_project_summary_is_not_polled_and_still_rejects_changed_identity(self):
         launch = self.launch("slow-binding")
         outage = Path(launch.environment["OUTAGE_FILE"])
