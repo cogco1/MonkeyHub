@@ -1,8 +1,9 @@
 """Diagrams drawn from data (gap 38): a network, a section schematic or a timeline from a spec, with no model.
 
 A spec is checked, placed on one sheet in millimetres from the top left, and drawn on a ``PaperCanvas``, which the
-paper renderers write as PDF, SVG and DXF. Places are stated: a node, a span or a segment stands where its spec puts
-it, scaled to the sheet; nothing is laid out for it. Two styles: ``diagram-colour`` (low-saturation group tones,
+paper renderers write as PDF, SVG and DXF. A span or a segment stands where its spec puts it, scaled to the sheet;
+so does a node, or, when no node of a network states a place, every node is laid out in columns along the edges
+(``lay_out``). Two styles: ``diagram-colour`` (low-saturation group tones,
 lines coloured by kind) and ``diagram-mono`` (black lines, no fills, hierarchy by weight and dash) for print.
 
 Spec coordinates are the author's own units. A network's y runs down the page, as a Board's does; a section's y is
@@ -138,13 +139,19 @@ def check_network(spec: Any) -> dict[str, Any]:
             raise DiagramError(f"{path}.size", "must be [width, height]")
         nodes[nid] = {"id": nid, "label": _text(row.get("label"), f"{path}.label"),
                       "sublabel": _text(row.get("sublabel"), f"{path}.sublabel", required=False),
-                      "group": group, "at": _point(row.get("at"), f"{path}.at"),
+                      "group": group,
+                      "at": None if row.get("at") is None else _point(row.get("at"), f"{path}.at"),
                       "size": (_number(size[0], f"{path}.size[0]", positive=True),
                                _number(size[1], f"{path}.size[1]", positive=True)),
                       "shape": _choice(row.get("shape"), f"{path}.shape", ("box", "ellipse"), "box"),
                       "ref": _text(row.get("ref"), f"{path}.ref", required=False) or None}
     if not nodes:
         raise DiagramError("spec.nodes", "names no node")
+    placed = [nid for nid, node in nodes.items() if node["at"] is not None]
+    if placed and len(placed) < len(nodes):
+        raise DiagramError("spec.nodes", f"{len(placed)} of {len(nodes)} nodes give at: give every node at, or none "
+                                         "for a layout")
+    laid_out = not placed
     edges = []
     for i, raw in enumerate(_list(spec.get("edges"), "spec.edges", LIMITS["edges"])):
         path = f"spec.edges[{i}]"
@@ -160,6 +167,9 @@ def check_network(spec: Any) -> dict[str, Any]:
                 ends.append(_point(value, f"{path}.{key}"))
         if isinstance(ends[0], tuple) and isinstance(ends[1], tuple):
             raise DiagramError(path, "joins two points; an edge starts or ends at a node")
+        if laid_out and (isinstance(ends[0], tuple) or isinstance(ends[1], tuple) or row.get("via")):
+            raise DiagramError(path, "a point or via is a place in the diagram's units, which no node gives here: "
+                                     "give every node at, or join two nodes")
         line = _choice(row.get("line"), f"{path}.line", tuple(LINES), "main")
         via = [_point(p, f"{path}.via[{j}]") for j, p in enumerate(_list(row.get("via"), f"{path}.via", LIMITS["points"]))]
         edges.append({"from": ends[0], "to": ends[1], "line": line,
@@ -176,6 +186,9 @@ def check_network(spec: Any) -> dict[str, Any]:
     for key, value in lines.items():
         _text(value, f"spec.lines.{key}")
     notes = []
+    if laid_out and (spec.get("notes") or spec.get("scale") is not None):
+        raise DiagramError("spec.notes" if spec.get("notes") else "spec.scale",
+                           "is placed in the diagram's units, which no node gives here: give every node at")
     for i, raw in enumerate(_list(spec.get("notes"), "spec.notes", LIMITS["notes"])):
         row = _object(raw, f"spec.notes[{i}]", {"at", "text", "tone"})
         notes.append({"at": _point(row.get("at"), f"spec.notes[{i}].at"), "text": _text(row.get("text"), f"spec.notes[{i}].text"),
@@ -187,7 +200,7 @@ def check_network(spec: Any) -> dict[str, Any]:
         scale = {"length": _number(row.get("length"), "spec.scale.length", positive=True),
                  "label": _text(row.get("label"), "spec.scale.label")}
     return {"groups": list(groups.values()), "nodes": list(nodes.values()), "edges": edges, "lines": lines,
-            "notes": notes, "north": north, "scale": scale}
+            "notes": notes, "north": north, "scale": scale, "laidOut": laid_out}
 
 
 def _notes(value: Any, path: str) -> list[dict[str, Any]]:
@@ -571,6 +584,239 @@ def _midpoint(points: Sequence[tuple[float, float]]) -> tuple[tuple[float, float
     return points[0], (1.0, 0.0)
 
 
+# A network given no places (step 4): columns along its edges, groups kept together, few crossings, every
+# line on runs of its own. The places it gives are the author's units, as stated places are.
+RANK_GAP = 34.0      # spec units between two columns, before the room their lines take
+CHANNEL = 5.0        # spec units between two vertical runs in one gap
+ROW_GAP = 16.0       # spec units between two nodes, or a node and a passing line, in one column
+SWEEPS = 12
+
+
+def _ranked(spec: Mapping[str, Any]) -> tuple[dict[str, int], list[tuple[int, str, str, bool]]]:
+    """Each node's column, and the node-to-node edges as (index, tail, head, reversed) running left to right.
+
+    The edges are walked in the order given from each node in the order given; an edge that closes a cycle (a loop
+    or a return back to where the route came from) is turned round, so the main route runs left to right and the
+    lines that go back are drawn going back. A node's column is the longest run of edges that reaches it.
+    """
+
+    order = [node["id"] for node in spec["nodes"]]
+    out: dict[str, list[tuple[int, str]]] = {nid: [] for nid in order}
+    for i, edge in enumerate(spec["edges"]):
+        if isinstance(edge["from"], str) and isinstance(edge["to"], str) and edge["from"] != edge["to"]:
+            out[edge["from"]].append((i, edge["to"]))
+    state: dict[str, int] = {}
+    turned: set[int] = set()
+    for root in order:
+        if root in state:
+            continue
+        stack = [(root, iter(out[root]))]
+        state[root] = 1
+        while stack:
+            nid, children = stack[-1]
+            step = next(children, None)
+            if step is None:
+                state[nid] = 2
+                stack.pop()
+                continue
+            i, head = step
+            if state.get(head) == 1:
+                turned.add(i)
+            elif head not in state:
+                state[head] = 1
+                stack.append((head, iter(out[head])))
+    edges = []
+    for i, edge in enumerate(spec["edges"]):
+        if isinstance(edge["from"], str) and isinstance(edge["to"], str) and edge["from"] != edge["to"]:
+            tail, head = (edge["to"], edge["from"]) if i in turned else (edge["from"], edge["to"])
+            edges.append((i, tail, head, i in turned))
+    rank = {nid: 0 for nid in order}
+    incoming: dict[str, list[str]] = {nid: [] for nid in order}
+    for _, tail, head, _ in edges:
+        incoming[head].append(tail)
+    done: dict[str, int] = {}
+
+    def depth(nid: str) -> int:
+        # Iterative longest path over the acyclic edges.
+        if nid in done:
+            return done[nid]
+        work = [nid]
+        while work:
+            top = work[-1]
+            pending = [tail for tail in incoming[top] if tail not in done]
+            if pending:
+                work.extend(pending)
+                continue
+            done[top] = max((done[tail] + 1 for tail in incoming[top]), default=0)
+            work.pop()
+        return done[nid]
+
+    for nid in order:
+        rank[nid] = depth(nid)
+    return rank, edges
+
+
+def _packed(wanted: Sequence[float], offsets: Sequence[float]) -> list[float]:
+    """Rows as near the wanted ones as their order and spacing allow (least squares, by pooling adjacent violators)."""
+
+    blocks: list[list[float]] = []
+    for target in (w - o for w, o in zip(wanted, offsets)):
+        blocks.append([target, 1.0])
+        while len(blocks) > 1 and blocks[-2][0] / blocks[-2][1] > blocks[-1][0] / blocks[-1][1]:
+            total, count = blocks.pop()
+            blocks[-1][0] += total
+            blocks[-1][1] += count
+    shifts = [block[0] / block[1] for block in blocks for _ in range(int(block[1]))]
+    return [shift + offset for shift, offset in zip(shifts, offsets)]
+
+
+def lay_out(spec: Mapping[str, Any]) -> dict[str, Any]:
+    """The network with every node placed: columns along the edges, groups kept together, fewer crossings.
+
+    Every node-to-node edge gets the via points of an orthogonal run: out of its tail's right side, across each
+    gap on a vertical of its own and through each column it passes on a row kept free for it, into its head's left
+    side. Nothing else in the spec changes.
+    """
+
+    rank, edges = _ranked(spec)
+    nodes = {node["id"]: node for node in spec["nodes"]}
+    group_of = {nid: node["group"] for nid, node in nodes.items()}
+    columns: dict[int, list[str]] = {}
+    for nid in nodes:
+        columns.setdefault(rank[nid], []).append(nid)
+    # A line that passes a column takes a slot in it, named (edge index, column).
+    chains: dict[int, list[str]] = {}
+    for i, tail, head, _ in edges:
+        chain = [tail]
+        for r in range(rank[tail] + 1, rank[head]):
+            slot = f"\x00{i}:{r}"
+            columns[r].append(slot)
+            group_of[slot] = None
+            chain.append(slot)
+        chain.append(head)
+        chains[i] = chain
+    last = max(columns)
+    neighbours: dict[str, list[str]] = {item: [] for column in columns.values() for item in column}
+    for chain in chains.values():
+        for a, b in zip(chain, chain[1:]):
+            neighbours[a].append(b)
+            neighbours[b].append(a)
+    # Start by group, then the order given; then sweep: each item to the mean place of its neighbours in the column
+    # just swept, a group to the mean of its members, so a group's nodes in one column stay together.
+    first_seen = {nid: k for k, nid in enumerate(nodes)}
+    group_order = {group["id"]: k for k, group in enumerate(spec["groups"])}
+    for r, column in columns.items():
+        column.sort(key=lambda item: (group_order.get(group_of[item], len(group_order)), first_seen.get(item, 1e9)))
+    place = {item: float(k) for column in columns.values() for k, item in enumerate(column)}
+
+    def crossings() -> int:
+        count = 0
+        for r in range(last):
+            pairs = [(place[a], place[b]) for a in columns[r] for b in neighbours[a] if b in columns.get(r + 1, ())]
+            count += sum(1 for p, q in pairs for s, t in pairs if p < s and q > t)
+        return count
+
+    best = (crossings(), {r: list(column) for r, column in columns.items()})
+    for sweep in range(SWEEPS):
+        order = range(1, last + 1) if sweep % 2 == 0 else range(last - 1, -1, -1)
+        side = -1 if sweep % 2 == 0 else 1
+        for r in order:
+            column = columns[r]
+            centre = {}
+            for item in column:
+                near = [place[b] for b in neighbours[item] if b in columns.get(r + side, ())]
+                centre[item] = sum(near) / len(near) if near else place[item]
+            weight: dict[str, list[float]] = {}
+            for item in column:
+                if group_of[item] is not None:
+                    weight.setdefault(group_of[item], []).append(centre[item])
+            column.sort(key=lambda item: (sum(weight[group_of[item]]) / len(weight[group_of[item]])
+                                          if group_of[item] is not None else centre[item],
+                                          group_of[item] or "", centre[item], first_seen.get(item, 1e9)))
+            for k, item in enumerate(column):
+                place[item] = float(k)
+        now = crossings()
+        if now < best[0]:
+            best = (now, {r: list(column) for r, column in columns.items()})
+    columns = best[1]
+    # Coordinates: columns left to right, each wide as its widest node; items top to bottom, the column centred.
+    size = {item: nodes[item]["size"] if item in nodes else (0.0, 0.0) for column in columns.values() for item in column}
+    widths = {r: max((size[item][0] for item in column), default=0.0) for r, column in columns.items()}
+    gaps = {}
+    for r in range(last):
+        crossing_gap = sum(1 for chain in chains.values() for a, b in zip(chain, chain[1:])
+                           if a in columns[r] and b in columns[r + 1])
+        gaps[r] = RANK_GAP + CHANNEL * crossing_gap
+    left, x = {}, 0.0
+    for r in range(last + 1):
+        left[r] = x
+        x += widths[r] + gaps.get(r, 0.0)
+    # Rows: each column stacked in its order, then pulled toward the rows of its neighbours, sweeping left and right,
+    # so a route runs as straight as the order allows. Two passing lines sit closer than two nodes.
+    offsets = {}
+    for r, column in columns.items():
+        y, previous = 0.0, None
+        for item in column:
+            if previous is not None:
+                y += size[previous][1] / 2 + (ROW_GAP if previous in nodes or item in nodes else CHANNEL) + size[item][1] / 2
+            offsets[item] = y
+            previous = item
+    centre_y = {item: offsets[item] - (offsets[column[-1]]) / 2 for column in columns.values() for item in column}
+    for sweep in range(2 * SWEEPS // 3):
+        order = range(1, last + 1) if sweep % 2 == 0 else range(last - 1, -1, -1)
+        side = -1 if sweep % 2 == 0 else 1
+        for r in order:
+            column = columns[r]
+            wanted = []
+            for item in column:
+                near = [centre_y[b] for b in neighbours[item] if b in columns.get(r + side, ())]
+                wanted.append(sum(near) / len(near) if near else centre_y[item])
+            for item, y in zip(column, _packed(wanted, [offsets[item] for item in column])):
+                centre_y[item] = y
+    placed = {nid: (left[rank[nid]] + widths[rank[nid]] / 2, centre_y[nid]) for nid in nodes}
+    # Ports: the lines leaving a node's right side, and entering its left, spread over it in the order they go.
+    starts, ends = {}, {}
+    for nid in nodes:
+        h = nodes[nid]["size"][1]
+        leaving = sorted((i for i, chain in chains.items() if chain[0] == nid), key=lambda i: centre_y[chains[i][1]])
+        coming = sorted((i for i, chain in chains.items() if chain[-1] == nid), key=lambda i: centre_y[chains[i][-2]])
+        for k, i in enumerate(leaving):
+            starts[i] = centre_y[nid] - h / 2 + h * (k + 1) / (len(leaving) + 1)
+        for k, i in enumerate(coming):
+            ends[i] = centre_y[nid] - h / 2 + h * (k + 1) / (len(coming) + 1)
+    # Each gap's verticals, one per line crossing it, ordered so they cross each other least.
+    lanes: dict[tuple[int, int], float] = {}
+    for r in range(last):
+        crossing_here = [(i, k) for i, chain in chains.items() for k, (a, b) in enumerate(zip(chain, chain[1:]))
+                         if a in columns[r] and b in columns[r + 1]]
+
+        def ys(item):
+            i, k = item
+            a = starts[i] if k == 0 else centre_y[chains[i][k]]
+            b = ends[i] if k + 1 == len(chains[i]) - 1 else centre_y[chains[i][k + 1]]
+            return a, b
+
+        crossing_here.sort(key=lambda item: (ys(item)[0] - ys(item)[1], ys(item)[0]))
+        start = left[r] + widths[r]
+        for n, item in enumerate(crossing_here):
+            lanes[item] = start + gaps[r] * (n + 1) / (len(crossing_here) + 1)
+    laid = {**spec, "nodes": [{**node, "at": placed[node["id"]]} for node in spec["nodes"]], "edges": []}
+    for i, edge in enumerate(spec["edges"]):
+        if i not in chains:
+            laid["edges"].append(edge)
+            continue
+        chain = chains[i]
+        points = []
+        for k in range(len(chain) - 1):
+            a = starts[i] if k == 0 else centre_y[chain[k]]
+            b = ends[i] if k + 1 == len(chain) - 1 else centre_y[chain[k + 1]]
+            points += [(lanes[(i, k)], a), (lanes[(i, k)], b)]
+        via = [p for n, p in enumerate(points) if n == 0 or math.dist(p, points[n - 1]) > 1e-9]
+        reversed_ = next(turned for j, _, _, turned in edges if j == i)
+        laid["edges"].append({**edge, "via": list(reversed(via)) if reversed_ else via, "route": "straight"})
+    return laid
+
+
 def draw_network(spec: Mapping[str, Any], sheet: _Sheet, area: tuple[float, float, float, float], *, mono: bool,
                   legend_x: float | None) -> list[str]:
     """Nodes, edges, notes, north and scale in ``area`` (mm), the legend at legend_x; returns what it had to note."""
@@ -865,7 +1111,8 @@ def draw(kind: str, spec: Any, *, style_id: str, title: str, subtitle: str = "",
     if kind == "network":
         legend_width = 72.0
         area = (MARGIN_MM, top + 6, width - MARGIN_MM - legend_width - 6, height - MARGIN_MM)
-        warnings = draw_network(checked, sheet, area, mono=mono, legend_x=width - MARGIN_MM - legend_width)
+        drawn = lay_out(checked) if checked["laidOut"] else checked
+        warnings = draw_network(drawn, sheet, area, mono=mono, legend_x=width - MARGIN_MM - legend_width)
     elif kind == "section":
         warnings = draw_section(checked, sheet, (MARGIN_MM, top + 6, width - MARGIN_MM, height - MARGIN_MM), mono=mono)
     else:

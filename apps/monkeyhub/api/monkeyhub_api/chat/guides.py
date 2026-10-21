@@ -210,6 +210,7 @@ _GUIDES = {
         "Before drawing, read POST /api/intents/context for the task's scoped decisions (pathPrefix /api/decisions explains it).",
         "DIAGRAMS WITHOUT A MODEL: POST /api/drawings/diagrams {drawingId, kind, spec, title, subtitle?, styleId?}: kind 'network' draws nodes at",
         "the places you give (at is a node's centre, y down the page) joined by edges (line main|loop|return|branch; to may be a point);",
+        "Leave every node's at out and they are laid out in columns along the edges, groups together (edges then join two nodes).",
         "'section' draws spans, shapes and moves at one scale, height up; 'timeline' draws lanes of segments and events across a time axis.",
         "studio_schema with this path gives each spec. The same drawingId with a changed spec is a new revision.",
         "It is registered like a sheet and does not go on the Board by itself; viewRecipe.warnings names an edge that runs through a node.",

@@ -4,7 +4,7 @@ Design note, 2026-10-21. Decided the same day (the coordinator, for Kaiwen): sta
 steps 1 to 3; colour by default with a black-and-white style for print; an optional unchecked `ref` on a node; editing
 through the chat only.
 
-Status, 2026-10-21: steps 1 to 3 are built; step 4 is next. The kinds are `network`, `section` and `timeline`;
+Status, 2026-10-21: steps 1 to 4 are built. The kinds are `network`, `section` and `timeline`;
 the first is not called topology, a word the agent's texts reserve. A section is drawn in its own units at one scale in
 x and height, with spans (floors solid or dashed), polygons, ellipses, markers, moves and notes, as the breakdown's
 is, rather than in named levels; a timeline's segments and events may carry a colour of their own, the level's. Revisions

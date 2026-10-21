@@ -22,6 +22,63 @@ def node(nid, x, y, group=None):
     return {"id": nid, "label": nid, "at": [x, y], "size": [20, 10], **({"group": group} if group else {})}
 
 
+def thirteen():
+    """Thirteen nodes in three groups: a main route through all, with branches, loops and returns across it."""
+
+    ids = [f"n{k:02d}" for k in range(13)]
+    pairs = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8), (8, 9), (9, 10), (10, 11), (11, 12),
+             (2, 7), (4, 9), (1, 11), (6, 3), (10, 5), (12, 0), (3, 8), (0, 6)]
+    lines = ["main"] * 12 + ["branch", "branch", "loop", "return", "return", "return", "loop", "branch"]
+    return {"groups": [{"id": g, "label": g.upper(), "tone": tone} for g, tone in (("a", "lavender"), ("b", "sand"),
+                                                                                   ("c", "grey"))],
+            "nodes": [{"id": nid, "label": nid, "group": "abc"[k % 3]} for k, nid in enumerate(ids)],
+            "edges": [{"from": ids[a], "to": ids[b], "line": line} for (a, b), line in zip(pairs, lines)]}
+
+
+class NetworkLayoutTests(unittest.TestCase):
+    def test_thirteen_nodes_given_no_places_overlap_nothing_and_no_line_crosses_a_node(self):
+        checked = check("network", thirteen())
+        self.assertTrue(checked["laidOut"])
+        laid = diagrams.lay_out(checked)
+        boxes = {node["id"]: diagrams._box(node) for node in laid["nodes"]}
+        for a in boxes:
+            for b in boxes:
+                if a < b:
+                    (ax0, ay0, ax1, ay1), (bx0, by0, bx1, by1) = boxes[a], boxes[b]
+                    self.assertTrue(ax1 <= bx0 or bx1 <= ax0 or ay1 <= by0 or by1 <= ay0, (a, b))
+        nodes = {node["id"]: node for node in laid["nodes"]}
+        self.assertEqual([i for i, edge in enumerate(laid["edges"]) if diagrams._route(edge, nodes)[1]], [])
+        self.assertEqual(draw("network", thirteen(), style_id="diagram-colour", title="t", font_mapping=fonts()).warnings,
+                         ())
+        # The main route runs left to right; what goes back is drawn going back, arrow at its own head.
+        x = {nid: node["at"][0] for nid, node in nodes.items()}
+        self.assertEqual(sorted(x, key=x.get)[:3], ["n00", "n01", "n02"])
+        self.assertGreater(x["n12"], x["n00"])
+        self.assertEqual(diagrams.lay_out(check("network", thirteen())), laid, "the same spec, the same places")
+
+    def test_a_layout_keeps_a_groups_nodes_in_one_column_together(self):
+        spec = {"groups": [{"id": "g", "tone": "sand"}, {"id": "h", "tone": "sage"}],
+                "nodes": [{"id": "s", "label": "s"}, *({"id": f"{g}{k}", "label": f"{g}{k}", "group": g}
+                                                       for k in range(3) for g in "gh")],
+                "edges": [{"from": "s", "to": f"{g}{k}"} for k in range(3) for g in "gh"]}
+        laid = diagrams.lay_out(check("network", spec))
+        column = sorted((node for node in laid["nodes"] if node["id"] != "s"), key=lambda node: node["at"][1])
+        groups = [node["group"] for node in column]
+        self.assertEqual(groups, sorted(groups, key=groups.index), "each group's nodes stand together")
+
+    def test_a_layout_refuses_what_only_stated_places_can_place(self):
+        unplaced = thirteen()
+        for changes, path in (({"nodes": [*unplaced["nodes"][:-1], {"id": "n12", "label": "n12", "at": [0, 0]}]},
+                               "spec.nodes"),
+                              ({"notes": [{"at": [0, 0], "text": "a note"}]}, "spec.notes"),
+                              ({"scale": {"length": 10, "label": "10 m"}}, "spec.scale"),
+                              ({"edges": [{"from": "n00", "to": [5, 5]}]}, "spec.edges[0]"),
+                              ({"edges": [{"from": "n00", "to": "n01", "via": [[1, 1]]}]}, "spec.edges[0]")):
+            with self.subTest(path=path), self.assertRaises(DiagramError) as caught:
+                check("network", {**unplaced, **changes})
+            self.assertEqual(caught.exception.path, path)
+
+
 class NetworkCheckTests(unittest.TestCase):
     def test_what_cannot_be_drawn_is_named_by_its_path(self):
         good = {"nodes": [node("a", 0, 0), node("b", 50, 0)], "edges": [{"from": "a", "to": "b"}]}

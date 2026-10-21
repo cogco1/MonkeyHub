@@ -88,7 +88,7 @@ class DiagramRouteTests(unittest.TestCase):
         self.assertEqual(mono["viewRecipe"]["styleId"], "diagram-mono")
 
     def test_a_spec_that_cannot_be_drawn_is_refused_by_its_path(self):
-        for spec, path in (({**SPEC, "nodes": [{"id": "p1", "label": "P1"}]}, "spec.nodes[0].at"),
+        for spec, path in (({**SPEC, "nodes": [{**SPEC["nodes"][0], "at": [50]}, *SPEC["nodes"][1:]]}, "spec.nodes[0].at"),
                            ({**SPEC, "edges": [{"from": "p1", "to": "nowhere"}]}, "spec.edges[0].to"),
                            ({**SPEC, "colours": {}}, "spec"),
                            ({**SPEC, "groups": [{"id": "g", "tone": "neon"}]}, "spec.groups[0].tone")):
@@ -104,6 +104,16 @@ class DiagramRouteTests(unittest.TestCase):
                       view_recipe={"kind": "review-sheet"})
         self.assertEqual(self.post(status=409)["code"], "DRAWING_KIND_CHANGED")
 
+
+    def test_a_network_given_no_places_is_laid_out_and_recorded_as_given(self):
+        unplaced = {**SPEC, "nodes": [{key: value for key, value in node.items() if key != "at"} for node in SPEC["nodes"]],
+                    "edges": [edge for edge in SPEC["edges"] if isinstance(edge["to"], str)]}
+        document = self.post(drawingId="plan-laid-out", spec=unplaced)
+        recipe = document["viewRecipe"]
+        self.assertEqual(recipe["warnings"], [])
+        self.assertEqual([node["at"] for node in recipe["spec"]["nodes"]], [None, None, None], "the spec as given")
+        self.assertTrue(recipe["spec"]["laidOut"])
+        self.assertTrue(self.file(document, "png").startswith(b"\x89PNG"))
 
     def test_a_section_and_a_timeline_are_registered_as_a_network_is(self):
         section = {"axis": {"x": [0, 100], "y": [0, 50]}, "ground": {"y": 0},
