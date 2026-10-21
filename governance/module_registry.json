@@ -4459,7 +4459,8 @@
         "services/project-runtime/tests/test_indexed_reads.py",
         "services/project-runtime/tests/test_projections.py",
         "services/project-runtime/tests/test_drawing_sheets.py",
-        "services/project-runtime/tests/test_state_files.py"
+        "services/project-runtime/tests/test_state_files.py",
+        "services/project-runtime/tests/test_drawing_diagrams.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
@@ -4477,7 +4478,8 @@
         "services/project-runtime/src/project_runtime/application/projections.py",
         "services/project-runtime/src/project_runtime/api/routes/projections.py",
         "services/project-runtime/src/project_runtime/api/dto/projections.py",
-        "services/project-runtime/src/project_runtime/application/state_files.py"
+        "services/project-runtime/src/project_runtime/application/state_files.py",
+        "services/project-runtime/src/project_runtime/application/drawing_diagrams.py"
       ]
     },
     {
@@ -8408,12 +8410,14 @@
       "files": [
         "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
         "packages/monkeydiagram/src/monkeydiagram/rendering/paper.py",
-        "packages/monkeydiagram/src/monkeydiagram/documentation/sheet_layout.py"
+        "packages/monkeydiagram/src/monkeydiagram/documentation/sheet_layout.py",
+        "packages/monkeydiagram/src/monkeydiagram/diagrams.py"
       ],
       "tests": [
         "packages/monkeydiagram/tests/test_drawing_styles.py",
         "packages/monkeydiagram/tests/test_drawing_output.py",
-        "packages/monkeydiagram/tests/test_sheet_layout.py"
+        "packages/monkeydiagram/tests/test_sheet_layout.py",
+        "packages/monkeydiagram/tests/test_diagrams.py"
       ],
       "notes": "CREATE justified in docs/design/drawing-standard.md: existing CAD execution explicitly excludes drawing styles and sheets. The first consumer is the externally configured interior cabinet project; no project content or second persistence path enters the framework. #517 retired the Drawing Standard v0.1 validator (documentation/drawings.py) and its two JSON files: no production reader (topology audit Q13). The sheet styles and the paper scene remain."
     },
