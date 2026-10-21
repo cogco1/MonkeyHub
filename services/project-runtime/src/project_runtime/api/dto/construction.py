@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from archflow.state.state_record import _EPISTEMIC
 from monkeyarch.authoring.construction.vocabulary import LIMITS
@@ -164,16 +164,27 @@ class FacetsRequestDto(_SourceFields):
 
 # Stage C text (spec §3.5): the hosted-opening contract may say ``wall``, and only as the facet value.
 class HostedOpeningRequestDto(_SourceFields):
-    """A door or a window on geometry whose meaning is architectural.role = wall, against one exact state."""
+    """A door or a window on geometry whose meaning is architectural.role = wall, against one exact state.
+
+    Without ``opening`` it makes a new one and needs kind, along, width, sill and head. With ``opening``, the id of
+    one the host has (the model view lists a host's openings), it changes that one: the fields sent replace its
+    own, the rest stay. With ``opening`` and ``remove: true`` and nothing else, that opening and its family go.
+    """
 
     host: str = Field(min_length=1, description="the geometry id to take it; the model view lists hosted-opening "
                                                 "among its capabilities")
-    kind: Literal["door", "window"]
-    along: float = Field(description="metres from the host's alongLine.start toward its alongLine.end (as the model "
-                                     "view gives them) to the centre of the opening")
-    width: float = Field(gt=0, description="metres across the opening")
-    sill: float = Field(description="metres from the host's base up to the bottom of the opening; 0 for a door")
-    head: float = Field(description="metres from the host's base up to the top of the opening")
+    opening: str | None = Field(default=None, min_length=1,
+                                description="an opening the host has, by the id the model view lists, to change or "
+                                            "remove; left out, a new opening is made")
+    remove: bool = Field(default=False, description="with opening and nothing else: remove that opening and its family")
+    kind: Literal["door", "window"] | None = None
+    along: float | None = Field(default=None, description="metres from the host's alongLine.start toward its "
+                                                          "alongLine.end (as the model view gives them) to the centre "
+                                                          "of the opening")
+    width: float | None = Field(default=None, gt=0, description="metres across the opening")
+    sill: float | None = Field(default=None, description="metres from the host's base up to the bottom of the opening; "
+                                                         "0 for a door")
+    head: float | None = Field(default=None, description="metres from the host's base up to the top of the opening")
     shape: Literal["rectangular", "semicircular_arch"] | None = Field(
         default=None, description="rectangular when left out; a semicircular_arch needs springHeight")
     spring_height: float | None = Field(
@@ -191,6 +202,23 @@ class HostedOpeningRequestDto(_SourceFields):
         alias="interfaceRef", default=None, min_length=1,
         description="the connection between spaces it serves: one of the relationship refs the project's "
                     "connections declare. Left out, it serves none yet")
+
+    @model_validator(mode="after")
+    def _one_of_make_change_or_remove(self) -> "HostedOpeningRequestDto":
+        sizes = {"kind": self.kind, "along": self.along, "width": self.width, "sill": self.sill, "head": self.head}
+        given = [name for name, value in {**sizes, "shape": self.shape, "springHeight": self.spring_height,
+                                          "family": self.family, "interfaceRef": self.interface_ref}.items()
+                 if value is not None]
+        if self.opening is None:
+            missing = [name for name, value in sizes.items() if value is None]
+            if self.remove or missing:
+                raise ValueError("a new opening needs " + ", ".join(missing) if missing
+                                 else "remove names the opening to remove")
+        elif self.remove and given:
+            raise ValueError(f"remove takes only the opening; leave out {', '.join(given)}")
+        elif not self.remove and not given:
+            raise ValueError(f"say what changes in {self.opening}, or send remove: true")
+        return self
 
 
 class EnrichmentRequiredDto(BaseModel):

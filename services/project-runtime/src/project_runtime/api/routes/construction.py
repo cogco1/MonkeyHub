@@ -61,6 +61,8 @@ _SCRIPT_REFUSED = {422: {"model": ConstructionRefusalDto,
 _FACETS_REFUSED = {422: {"model": ConstructionRefusalDto,
                          "description": "Refused with a code and one sentence (FACETS_INVALID, FACETS_TARGET_INVALID)"}}
 _OPENING_REFUSED = {
+    404: {"model": ConstructionRefusalDto,
+          "description": "OPENING_UNKNOWN: the host has no opening by that id; the sentence names the ones it has"},
     409: {"model": EnrichmentRequiredDto,
           "description": "ENRICHMENT_REQUIRED names the facet to add first; STALE_BASE a request made against another state"},
     422: {"model": ConstructionRefusalDto,
@@ -189,6 +191,8 @@ def create_hosted_opening_proposal(request: Request, body: HostedOpeningRequestD
     anything else, the answer is 409 ENRICHMENT_REQUIRED naming the facet to add. The geometry keeps its id,
     its delivered object and whatever stands on it; a block that cannot take one as it is drawn (not a
     rectangle, lifted off its base) is refused with the reason. along is measured on the model view's alongLine.
+    With opening, the id of one the host has, it changes that opening (the fields sent replace its own) or, with
+    remove: true and nothing else, removes it and its family.
     """
 
     binding, base, projection, previous, body = _proposal_source(request, body)
@@ -196,7 +200,7 @@ def create_hosted_opening_proposal(request: Request, body: HostedOpeningRequestD
     proposal = hosted_opening_proposal(
         projection, body.host, kind=body.kind, along=body.along, width=body.width, sill=body.sill, head=body.head,
         shape=body.shape, spring_height=body.spring_height, family=body.family, interface_ref=body.interface_ref,
-        summary=body.summary, keep_refs=kept_refs(projection.record, body.keep),
+        opening=body.opening, remove=body.remove, summary=body.summary, keep_refs=kept_refs(projection.record, body.keep),
     )
     return _remember(request, proposal, base, previous, body)
 

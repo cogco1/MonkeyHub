@@ -214,6 +214,67 @@ class HostedOpeningChainTestCase(HostedOpeningTestCase):
             "shape": "semicircular_arch", "spring_height": 1.8}])
 
 
+class HostedOpeningChangeTestCase(HostedOpeningTestCase):
+    """Gap 36: an opening already in a host is resized or removed by its id, on the same route."""
+
+    cad_export = "occt"
+
+    def change(self, host: str, opening: str, *, expect: int = 201, **body: object) -> dict:
+        response = self.client.post("/api/proposals/hosted-opening", json={"host": host, "opening": opening, **body})
+        self.assertEqual(response.status_code, expect, response.text)
+        return response.json()
+
+    @staticmethod
+    def params(proposal: dict) -> dict:
+        [row] = [row for row in proposal["change"]["edits"]["entities"] if row["entity_id"] == "block-body"]
+        return row["fields"]["params"]
+
+    def test_an_opening_is_resized_and_another_removed(self) -> None:
+        chain = self.walled()
+        door = self.open("block", family=DOOR, **self.after(chain))
+        window = self.open("block", kind="window", along=1.5, width=1.2, sill=0.9, head=2.1, family=WINDOW,
+                           **self.after(door))
+        wider = self.change("block", "opening-1", width=1.4, head=2.4, **self.after(window))
+        self.assertEqual(wider["utterance"], "hosted opening: door opening-1 in block changed")
+        self.assertEqual(self.params(wider)["openings"], [
+            {"opening_id": "opening-1", "kind": "door", "along": 4.5, "width": 1.4, "sill": 0, "head": 2.4,
+             "type_id": "opening-1-type"},
+            {"opening_id": "opening-2", "kind": "window", "along": 1.5, "width": 1.2, "sill": 0.9, "head": 2.1,
+             "type_id": "opening-2-type"},
+        ])
+        gone = self.change("block", "opening-2", remove=True, **self.after(wider))
+        self.assertEqual(gone["utterance"], "hosted opening: opening-2 removed from block")
+        params = self.params(gone)
+        self.assertEqual([opening["opening_id"] for opening in params["openings"]], ["opening-1"])
+        self.assertEqual([item["type_id"] for item in params["types"]], ["opening-1-type"], "its family goes with it")
+
+        run = self.run_candidate(gone["proposalId"])
+        objects = self.objects(run)
+        self.assertFalse({name for name in objects if "opening-2" in name}, "nothing of the window is left")
+        self.assertIn("obj-door-leaf-block-body-opening-1-0", objects)
+        rows = {row["id"]: row for row in self.model(run)["entities"]}
+        self.assertEqual(rows["block"]["openings"],
+                         [{"id": "opening-1", "kind": "door", "along": 4.5, "width": 1.4, "sill": 0, "head": 2.4}])
+
+    def test_a_change_names_an_opening_the_host_has_and_says_what_to_change(self) -> None:
+        chain = self.walled()
+        door = self.open("block", **self.after(chain))
+        window = self.open("block", kind="window", along=1.5, width=1.2, sill=0.9, head=2.1, **self.after(door))
+        unknown = self.change("block", "opening-9", width=1, expect=404, **self.after(window))
+        self.assertEqual(unknown["code"], "OPENING_UNKNOWN")
+        self.assertIn("opening-1, opening-2", unknown["detail"])
+        # Removing takes nothing else; changing takes something; making one takes all its sizes.
+        self.change("block", "opening-1", remove=True, width=1, expect=422, **self.after(window))
+        self.change("block", "opening-1", expect=422, **self.after(window))
+        response = self.client.post("/api/proposals/hosted-opening", json={"host": "block", "along": 1, **self.after(window)})
+        self.assertEqual(response.status_code, 422, response.text)
+        # Moved into its neighbour (the window spans 0.9 to 2.1 along), the door is refused as an overlap.
+        overlap = self.change("block", "opening-1", along=2.4, expect=422, **self.after(window))
+        self.assertEqual(overlap["code"], "OPENING_INVALID")
+        self.assertIn("overlap", overlap["detail"])
+        self.assertEqual(layer_rule_violations(overlap["detail"]), ())
+
+
 class HostedOpeningRefusalTestCase(HostedOpeningTestCase):
     def test_a_block_that_cannot_be_a_wall_as_drawn_is_refused_with_the_reason(self) -> None:
         for script, reason in (

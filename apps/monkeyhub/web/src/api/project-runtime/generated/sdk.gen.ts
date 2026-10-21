@@ -1105,6 +1105,8 @@ export const createFacetsProposalApiProposalsFacetsPost = <ThrowOnError extends 
  * anything else, the answer is 409 ENRICHMENT_REQUIRED naming the facet to add. The geometry keeps its id,
  * its delivered object and whatever stands on it; a block that cannot take one as it is drawn (not a
  * rectangle, lifted off its base) is refused with the reason. along is measured on the model view's alongLine.
+ * With opening, the id of one the host has, it changes that opening (the fields sent replace its own) or, with
+ * remove: true and nothing else, removes it and its family.
  */
 export const createHostedOpeningProposalApiProposalsHostedOpeningPost = <ThrowOnError extends boolean = false>(options: Options<CreateHostedOpeningProposalApiProposalsHostedOpeningPostData, ThrowOnError>): RequestResult<CreateHostedOpeningProposalApiProposalsHostedOpeningPostResponses, CreateHostedOpeningProposalApiProposalsHostedOpeningPostErrors, ThrowOnError> => (options.client ?? client).post<CreateHostedOpeningProposalApiProposalsHostedOpeningPostResponses, CreateHostedOpeningProposalApiProposalsHostedOpeningPostErrors, ThrowOnError>({
     url: '/api/proposals/hosted-opening',

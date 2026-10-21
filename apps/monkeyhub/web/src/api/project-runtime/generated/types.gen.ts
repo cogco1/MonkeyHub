@@ -5693,6 +5693,10 @@ export type HttpValidationError = {
  * HostedOpeningRequestDto
  *
  * A door or a window on geometry whose meaning is architectural.role = wall, against one exact state.
+ *
+ * Without ``opening`` it makes a new one and needs kind, along, width, sill and head. With ``opening``, the id of
+ * one the host has (the model view lists a host's openings), it changes that one: the fields sent replace its
+ * own, the rest stay. With ``opening`` and ``remove: true`` and nothing else, that opening and its family go.
  */
 export type HostedOpeningRequestDto = {
     /**
@@ -5742,33 +5746,45 @@ export type HostedOpeningRequestDto = {
      */
     host: string;
     /**
+     * Opening
+     *
+     * an opening the host has, by the id the model view lists, to change or remove; left out, a new opening is made
+     */
+    opening?: string | null;
+    /**
+     * Remove
+     *
+     * with opening and nothing else: remove that opening and its family
+     */
+    remove?: boolean;
+    /**
      * Kind
      */
-    kind: 'door' | 'window';
+    kind?: 'door' | 'window' | null;
     /**
      * Along
      *
      * metres from the host's alongLine.start toward its alongLine.end (as the model view gives them) to the centre of the opening
      */
-    along: number;
+    along?: number | null;
     /**
      * Width
      *
      * metres across the opening
      */
-    width: number;
+    width?: number | null;
     /**
      * Sill
      *
      * metres from the host's base up to the bottom of the opening; 0 for a door
      */
-    sill: number;
+    sill?: number | null;
     /**
      * Head
      *
      * metres from the host's base up to the top of the opening
      */
-    head: number;
+    head?: number | null;
     /**
      * Shape
      *
@@ -18855,6 +18871,10 @@ export type CreateHostedOpeningProposalApiProposalsHostedOpeningPostData = {
 };
 
 export type CreateHostedOpeningProposalApiProposalsHostedOpeningPostErrors = {
+    /**
+     * OPENING_UNKNOWN: the host has no opening by that id; the sentence names the ones it has
+     */
+    404: ConstructionRefusalDto;
     /**
      * ENRICHMENT_REQUIRED names the facet to add first; STALE_BASE a request made against another state
      */
