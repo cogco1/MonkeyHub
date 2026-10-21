@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 import hashlib
 import json
+import math
 from io import BytesIO
 from pathlib import Path
 import tempfile
@@ -245,6 +246,21 @@ class BoardTests(unittest.TestCase):
             self.assertTrue(share < 0.35 and dots >= 25, (share, dots))
             share, dashes = inked(200)
             self.assertTrue(0.3 < share < 0.6 and dashes >= 15, ("the rectangle's dashed outline", share, dashes))
+
+    def test_a_dash_that_falls_a_hair_short_still_ends(self) -> None:
+        # Gap 40 on a real board: at that view's scale the old walk found the third dash's start 2e-15 short of
+        # the dash, stepped by that and never moved on. A regression fails here instead of hanging the suite.
+        import threading
+
+        dash, gap, length = 11.538028169014085, 15.864788732394366, 272.5859154929576
+        done: dict = {}
+        worker = threading.Thread(daemon=True, target=lambda: done.update(
+            runs=boards._view_dashes([(0.0, 0.0), (length, 0.0)], dash, gap)))
+        worker.start()
+        worker.join(5)
+        self.assertIn("runs", done, "the dash walk ended")
+        self.assertEqual(len(done["runs"]), math.ceil(length / (dash + gap)))
+        self.assertAlmostEqual(done["runs"][1][0][0], dash + gap, places=9)
 
     def test_a_drawing_revision_marked_received_by_its_asset_is_refused_with_its_key(self) -> None:
         # The Board placed a drawing again when an agent marked its revision

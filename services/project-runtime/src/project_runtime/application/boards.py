@@ -627,23 +627,27 @@ def _view_dash(element: Mapping[str, Any], scale: float) -> tuple[float, float] 
 def _view_dashes(points: list[tuple[float, float]], dash: float, gap: float) -> list[list[tuple[float, float]]]:
     """The runs of a polyline a dashed stroke inks: ``dash`` long every ``dash + gap``, carried round its corners."""
 
-    period, runs, run, travelled = dash + gap, [], [], 0.0
+    # What is left of the current dash or gap is carried, not found again from the distance so far: a
+    # remainder a hair under ``dash`` made a step too small to move the distance, and the loop never ended.
+    # Each pass here either ends the segment or ends the dash or gap, so it always ends.
+    runs, run, inked, left = [], [], True, dash
     for a, b in zip(points, points[1:]):
         length = math.dist(a, b)
         t = 0.0
-        while t < length:
-            phase = travelled % period
-            inked = phase < dash
-            step = min(length - t, (dash - phase) if inked else (period - phase))
+        while length - t > 1e-9:
+            step = min(left, length - t)
             if inked:
                 if not run:
                     run.append((a[0] + (b[0] - a[0]) * t / length, a[1] + (b[1] - a[1]) * t / length))
                 run.append((a[0] + (b[0] - a[0]) * (t + step) / length, a[1] + (b[1] - a[1]) * (t + step) / length))
-            elif run:
-                runs.append(run)
-                run = []
             t += step
-            travelled += step
+            left -= step
+            if left <= 1e-9:
+                if inked:
+                    runs.append(run)
+                    run = []
+                inked = not inked
+                left = dash if inked else gap
     if run:
         runs.append(run)
     return runs
