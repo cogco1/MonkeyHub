@@ -86,7 +86,8 @@ def model_quantities(binding: ProjectBinding, *, model_source: ModelSource | Non
         if not material:
             material = worn.get(object_id) if worn.get(object_id) not in (None, "unknown", "no material") else None
             material_source = "model" if material else None
-        volume = measured.get("volume")
+        # A volume is a closed member's only (as IngeTrazo reports it too); an open one has area alone.
+        volume = measured.get("volume") if measured.get("closed") else None
         layers = measured.get("layers") or []
         rows.append({
             "objectId": object_id, "role": role, "material": material, "materialSource": material_source,

@@ -80,11 +80,15 @@ class QuantitiesTests(unittest.TestCase):
             "obj-roof.cap-2-body": {"closed": True, "solid_count": 1, "volume": 0.5, "layers": ["Roof"],
                                     "declared_delivery": "closed_solid", "bbox": None},
             "obj-wrap-body": {"closed": False, "solid_count": 0, "volume": None, "layers": ["Membrane"],
-                              "declared_delivery": "open_surface", "bbox": None}}}
+                              "declared_delivery": "open_surface", "bbox": None},
+            # A solid whose shell is not closed: the kernel has a number, but no volume is claimed.
+            "obj-leaky-body": {"closed": False, "solid_count": 1, "volume": 0.1, "layers": ["Roof"],
+                               "declared_delivery": "closed_solid", "bbox": None}}}
         verified = SimpleNamespace(length_unit="foot", physical_object_ids=tuple(receipt["readback"]), entries=())
         facets = {"roof.cap": {"material.name": "Steel", "architectural.role": "roof"},
                   "roof.cap-2": {"material.name": "Steel", "architectural.role": "roof"},
-                  "wrap": {"material.name": "Membrane"}}
+                  "wrap": {"material.name": "Membrane"},
+                  "leaky": {"material.name": "Steel", "architectural.role": "roof"}}
         with mock.patch.object(quantities, "load_drawing_source", return_value=(selected, None, receipt, verified)), \
              mock.patch.object(quantities, "_member_facets", return_value=facets), \
              mock.patch.object(quantities, "object_groups", return_value={}):
@@ -94,7 +98,9 @@ class QuantitiesTests(unittest.TestCase):
                           rows["obj-roof.cap-2-body"]["materialSource"]), ("Steel", "roof", "facet"))
         self.assertAlmostEqual(rows["obj-roof.cap-body"]["volumeM3"], 0.25 * 0.3048 ** 3)
         groups = {(group["material"], group["role"]): group for group in result["summary"]}
-        self.assertEqual((groups[("Steel", "roof")]["count"], groups[("Steel", "roof")]["volume"]), (2, 0.75))
+        self.assertEqual((groups[("Steel", "roof")]["count"], groups[("Steel", "roof")]["openCount"],
+                          groups[("Steel", "roof")]["volume"]), (3, 1, 0.75))
+        self.assertIsNone(rows["obj-leaky-body"]["volume"])
         self.assertEqual((groups[("Membrane", None)]["openCount"], groups[("Membrane", None)]["volume"]), (1, 0.0))
         self.assertEqual(result["totals"]["closedCount"], 2)
 
