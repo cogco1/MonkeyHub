@@ -5923,6 +5923,53 @@
       ]
     },
     {
+      "module_id": "project_runtime.quantities",
+      "owner_path": "services/project-runtime/src/project_runtime/application/quantities.py",
+      "purpose": "Read the quantities of one exact model member by member (G4): volume, area, closure, role and material, with sums by material and role and a CSV table.",
+      "owns": [
+        "one row per physical member of the model the drawing routes select: closure, solid count and volume as its CAD receipt recorded of the cold read (measured on the same exact shape where an imported model's receipt keeps only bounds), area measured on that shape, in the model's unit and in metres",
+        "a member's role and material from the construction facets of the geometry id it belongs to by the one naming rule (part_of_object), else the material the model asset gives it",
+        "the sums of closed members by material and role, open members counted apart and adding only area, and the CSV form of both"
+      ],
+      "does_not_own": [
+        "selecting and reading the model - project_runtime.documents (drawings)",
+        "the facets - project_runtime.construction",
+        "measuring a shape - monkeycad.occt"
+      ],
+      "inputs": [
+        "a model version (modelSource), an imported or snapshot model (sourceAsset) or a committed Stage",
+        "json or csv"
+      ],
+      "outputs": [
+        "members, summary and totals, or the same as CSV"
+      ],
+      "public_api": [
+        "POST /api/quantities",
+        "model_quantities",
+        "quantities_csv",
+        "CSV_COLUMNS"
+      ],
+      "depends_on": [
+        "archflow.state.state_record",
+        "monkeycad.occt",
+        "project_runtime.binding",
+        "project_runtime.construction",
+        "project_runtime.documents",
+        "project_runtime.shell"
+      ],
+      "invariants": [
+        "nothing is retained",
+        "a volume is a closed member's; an open surface or a curve has none"
+      ],
+      "status": "canonical",
+      "tests": [
+        "services/project-runtime/tests/test_quantities.py"
+      ],
+      "files": [
+        "services/project-runtime/src/project_runtime/application/quantities.py"
+      ]
+    },
+    {
       "module_id": "project_runtime.skill_library",
       "owner_path": "services/project-runtime/src/project_runtime/application/skill_library.py",
       "purpose": "Read the skill packages shipped with MonkeyHub (apps/monkeyhub/skills, at the same path in the release) and the user's own (%LOCALAPPDATA%\\MonkeyHub\\skill-packages), and register one into the bound project as a version of its skill.",

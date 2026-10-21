@@ -67,6 +67,8 @@ _MODELLING = chr(10).join([
     "The model has one material per name, in that colour or one telling materials apart; what states none wears none,",
     "marked material_status undeclared; a succeeded candidate checked both on readback. GET /api/construction/model?run=<candidateId>",
     "shows the facets and partFacets it was built from. Leave a missing material unknown, or offer it as a reversible proposal.",
+    "QUANTITIES: POST /api/quantities {modelSource | sourceAsset | sourceStageRef} is a read: each physical member's volume, area,",
+    "closure, role and material (from its facets, else the model's own), with sums by material and role; format:\"csv\" for a table.",
     "CAPABILITIES appear per entity in the model view once its facets allow them, e.g. hosted-opening",
     "(a door or window with its frame and leaf) on a wall: POST /api/proposals/hosted-opening.",
     "DOMAINS: GET /api/domains/{structure|envelope}/readiness says what a domain reads or which facets to add; it never guesses.",

@@ -16,7 +16,11 @@ from __future__ import annotations
 from dataclasses import replace
 import re
 
+from typing import Literal
+
 from fastapi import APIRouter, Query
+from fastapi.responses import Response
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.requests import Request
 
 from monkeyarch.authoring.construction.vocabulary import vocabulary
@@ -29,8 +33,10 @@ from ...application.construction import (
     hosted_opening_proposal,
     kept_refs,
 )
-from ...application.artifacts import MODEL_UPLOAD_RUN_PREFIX
+from ...application import quantities
+from ...application.artifacts import MODEL_UPLOAD_RUN_PREFIX, ModelSource
 from ...application.projection import StateProjection, project_state
+from ..dto.artifacts import ModelSourceDto
 from ...application.proposals import Proposal
 from ..dto.construction import (
     ConstructionModelDto,
@@ -102,6 +108,41 @@ def _not_a_design_state(run: str, projection: StateProjection) -> str:
     reason = f" ({projection.reference_state_error})" if projection.reference_state_error else ""
     return (f"Run {run} has no exact retained design state{reason}, so it has no construction model. "
             "GET /api/construction/model without run reads the project's own.")
+
+
+class QuantitiesRequestDto(BaseModel):
+    """One exact model, as the drawing routes select it, and whether the answer is JSON or CSV."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    project_id: str = Field(alias="projectId", min_length=1)
+    model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
+    source_asset: dict[str, str] | None = Field(alias="sourceAsset", default=None,
+                                                description="{runId, assetSha256} of an imported or snapshot model")
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
+    format: Literal["json", "csv"] = "json"
+
+
+@router.post("/quantities", responses={200: {"content": {"text/csv": {}}}})
+def read_quantities(request: Request, payload: QuantitiesRequestDto):
+    """Each physical member's volume, area, closure, role and material, and their sums by material and role (G4).
+
+    A read: volume, closure and solid count are the model's recorded cold read,
+    area is measured on the same exact shapes, role and material are its
+    construction facets (else the material the model asset gives the member).
+    ``format: "csv"`` answers the same as CSV.
+    """
+
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The quantities request names another project.")
+    result = quantities.model_quantities(
+        binding, model_source=None if payload.model_source is None else ModelSource.from_dict(
+            payload.model_source.model_dump(by_alias=True)),
+        source_asset=payload.source_asset, source_stage_ref=payload.source_stage_ref)
+    if payload.format == "csv":
+        return Response(content=quantities.quantities_csv(result), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": 'attachment; filename="quantities.csv"', "Cache-Control": "no-store"})
+    return result
 
 
 @router.post("/proposals/construction", response_model=ConstructionProposalDto, response_model_by_alias=True,
