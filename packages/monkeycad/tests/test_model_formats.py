@@ -406,12 +406,13 @@ class FormatTests(unittest.TestCase):
         self.assertEqual(info["outputMetrics"]["boundsMetersZUp"], info["sourceMetrics"]["boundsMetersZUp"])
         self.assertIn("Y up", info["losses"]["units"])
 
-    def test_3dm_to_fbx_declares_metres_and_y_up_and_reopens(self):
+    def test_3dm_to_fbx_is_in_centimetres_and_y_up_and_reopens(self):
+        # The UE plugin's import_file reads FBX numbers as centimetres, whatever UnitScaleFactor says.
         output, info = convert(ThreeDM().write(self.two_objects()), "3dm", "fbx")
         text = output.decode("utf-8")
         self.assertTrue(text.startswith("; FBX 7.4.0 project file"))
         for setting in ('P: "UpAxis", "int", "Integer", "",1', 'P: "FrontAxis", "int", "Integer", "",2',
-                        'P: "CoordAxis", "int", "Integer", "",0', 'P: "UnitScaleFactor", "double", "Number", "",100'):
+                        'P: "CoordAxis", "int", "Integer", "",0', 'P: "UnitScaleFactor", "double", "Number", "",1\n'):
             self.assertIn(setting, text)
         self.assertEqual(text.count('"Model::'), 2)
         self.assertEqual(text.count('"Geometry::'), 2)
@@ -422,7 +423,9 @@ class FormatTests(unittest.TestCase):
         self.assertEqual(info["outputValidation"]["status"], "passed")
         self.assertEqual((info["outputMetrics"]["objectCount"], info["outputMetrics"]["triangleCount"]), (2, 13))
         self.assertEqual(info["outputMetrics"]["boundsMetersZUp"], info["sourceMetrics"]["boundsMetersZUp"])
-        self.assertIn("metres", info["losses"]["units"].lower())
+        self.assertIn("centimetres", info["losses"]["units"].lower())
+        # The model's (10, 20, 0) is (1000, 0, -2000) centimetres, Y up.
+        self.assertIn("a: 1000,0,-2000,", text)
 
     def test_stl_is_written_never_read_as_a_source(self):
         with self.assertRaises(ConversionError):

@@ -12,7 +12,7 @@ Never change HEAD or treat an uploaded file as the current project state.
 | 3DM | GLB | Bounded, lossy mesh conversion; requires rhino3dm. Exact surfaces without render meshes are refused. |
 | GLB | 3DM | Bounded triangle-mesh conversion; requires rhino3dm. No reconstruction of CAD solids. |
 | 3DM, GLB | OBJ | Written only: one object per model object, metres, Y up as glTF (north is -Z), vertex normals, `usemtl` material names and no `.mtl`. Read back only to validate it. |
-| 3DM, GLB | FBX | Written only: ASCII FBX 7.4, metres declared (`UnitScaleFactor` 100), Y up as glTF; per object a model, its geometry with vertex normals and its material's base colour. Read back only to validate it. |
+| 3DM, GLB | FBX | Written only: ASCII FBX 7.4 in centimetres (`UnitScaleFactor` 1), which an importer without a unit conversion reads at full size, Y up as glTF; per object a model, its geometry with vertex normals and its material's base colour. Read back only to validate it. |
 | 3DM | SKP | 当前没有配置可用的执行器 (`blocked-runtime`); native bridge/validator not configured. |
 | 3DM | DWG | 当前没有配置可用的执行器 (`blocked-runtime`); native bridge/validator not configured. |
 | GLB | SKP | 当前没有配置可用的执行器 (`blocked-runtime`); native bridge/validator not configured. |

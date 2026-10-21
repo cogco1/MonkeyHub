@@ -88,7 +88,7 @@ class InProcessMeshProvider:
         if target in ("obj", "fbx"):
             details["losses"] = {
                 "units": ("Metres, Y up as glTF: the model's north is -Z." if target == "obj" else
-                          "Metres declared in the file (UnitScaleFactor 100), Y up as glTF: the model's north is -Z."),
+                          "Centimetres declared in the file (UnitScaleFactor 1), Y up as glTF: the model's north is -Z."),
                 "layers": "Flattened: one object per model object.",
                 "materials": ("Each object names its material (usemtl); no .mtl, so no colour." if target == "obj" else
                               "Each object keeps its material's base colour (DiffuseColor, linear) and opacity."),

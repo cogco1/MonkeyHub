@@ -633,8 +633,12 @@ class OBJ:
 
 
 class FBX:
-    """ASCII FBX 7.4 in metres (UnitScaleFactor 100) and Y up as glTF: per mesh a model, its geometry with
-    normals, and its material's base colour. Written, never a source."""
+    """ASCII FBX 7.4 in centimetres (UnitScaleFactor 1) and Y up as glTF: per mesh a model, its geometry with
+    normals, and its material's base colour. Written, never a source.
+
+    Centimetres because a game engine's importer without a scene-unit conversion (the UE plugin's import_file) reads
+    the numbers as centimetres: a model in metres declared by UnitScaleFactor 100 came in a hundred times small.
+    """
 
     version = "monkeyhub-fbx/1"
     HEADER = "; FBX 7.4.0 project file"
@@ -655,7 +659,7 @@ class FBX:
             material = materials.setdefault(mesh.material, next(ids))
             indices = [-i - 1 if k == 2 else i for triangle in mesh.triangles for k, i in enumerate(triangle)]
             objects += [f'\tGeometry: {geometry}, "Geometry::{name}", "Mesh" {{',
-                        *self._array("Vertices", [c for point in mesh.vertices for c in _y_up(point)], 2),
+                        *self._array("Vertices", [c * 100.0 for point in mesh.vertices for c in _y_up(point)], 2),
                         *self._array("PolygonVertexIndex", indices, 2),
                         "\t\tGeometryVersion: 124",
                         "\t\tLayerElementNormal: 0 {", "\t\t\tVersion: 101", '\t\t\tName: ""',
@@ -683,12 +687,12 @@ class FBX:
         definitions = [("GlobalSettings", 1), ("Model", count), ("Geometry", count), ("Material", len(materials))]
         settings = [("UpAxis", 1), ("UpAxisSign", 1), ("FrontAxis", 2), ("FrontAxisSign", 1), ("CoordAxis", 0),
                     ("CoordAxisSign", 1), ("OriginalUpAxis", 1), ("OriginalUpAxisSign", 1)]
-        lines = [self.HEADER, "; MonkeyHub: metres, Y up (the model's north is -Z)",
+        lines = [self.HEADER, "; MonkeyHub: centimetres, Y up (the model's north is -Z)",
                  "FBXHeaderExtension:  {", "\tFBXHeaderVersion: 1003", "\tFBXVersion: 7400", '\tCreator: "MonkeyHub"', "}",
                  "GlobalSettings:  {", "\tVersion: 1000", "\tProperties70:  {",
                  *(f'\t\tP: "{key}", "int", "Integer", "",{value}' for key, value in settings),
-                 '\t\tP: "UnitScaleFactor", "double", "Number", "",100',
-                 '\t\tP: "OriginalUnitScaleFactor", "double", "Number", "",100', "\t}", "}",
+                 '\t\tP: "UnitScaleFactor", "double", "Number", "",1',
+                 '\t\tP: "OriginalUnitScaleFactor", "double", "Number", "",1', "\t}", "}",
                  "Definitions:  {", "\tVersion: 100", f"\tCount: {sum(n for _, n in definitions)}",
                  *(line for kind, n in definitions for line in (f'\tObjectType: "{kind}" {{', f"\t\tCount: {n}", "\t}")),
                  "}", "Objects:  {", *objects, "}", "Connections:  {", *connections, "}"]
@@ -700,9 +704,9 @@ class FBX:
             text = data.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise ConversionError("Invalid FBX: not UTF-8 text.") from exc
-        if not text.startswith(self.HEADER) or 'P: "UnitScaleFactor", "double", "Number", "",100' not in text \
+        if not text.startswith(self.HEADER) or 'P: "UnitScaleFactor", "double", "Number", "",1\n' not in text \
                 or 'P: "UpAxis", "int", "Integer", "",1' not in text:
-            raise ConversionError("Only MonkeyHub's own FBX, in metres and Y up, is read back.")
+            raise ConversionError("Only MonkeyHub's own FBX, in centimetres and Y up, is read back.")
         meshes = []
         for name, vertex_count, vertices, index_count, indices in self._GEOMETRY.findall(text):
             values = [float(v) for v in vertices.split(",")]
@@ -710,7 +714,8 @@ class FBX:
             if len(values) != int(vertex_count) or len(corners) != int(index_count) or len(corners) % 3 \
                     or any((k == 2) != (i < 0) for n, i in enumerate(corners) for k in [n % 3]):
                 raise ConversionError("Invalid FBX: a geometry's arrays or triangles do not add up.")
-            points = [(values[i], -values[i + 2], values[i + 1]) for i in range(0, len(values), 3)]
+            points = [(values[i] / 100.0, -values[i + 2] / 100.0, values[i + 1] / 100.0)
+                      for i in range(0, len(values), 3)]
             flat = [-i - 1 if i < 0 else i for i in corners]
             meshes.append(Mesh(name, points, [tuple(flat[i:i + 3]) for i in range(0, len(flat), 3)]))
         scene = Scene(meshes, "Meters", [])
