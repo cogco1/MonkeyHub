@@ -4559,7 +4559,8 @@
         "the one raster of a registered document page (page_raster, cached_page, #368): at most 2048 px with transparency, a bounded PNG served as its own bytes; Board previews, Publish images and the publication exports' raster previews read it from the projection cache (GET /api/projections/pages) instead of each rasterising the page",
         "handing one explicitly chosen registered image page, up to three reference pages and the person's words to the host conversation as an image discussion (#253), re-verified against the registered documents on confirmation, without reading the Board scene for it or saving the Board; the dialog closes only once the host took the request, and a host's refusal keeps it open with the reason",
         "the export raster of a registered document page (page_export_png): the PNG a Board PNG export writes at full size, a PDF page at 144 dpi over white; a view sheet's retained PNG is this export of its PDF",
-        "showing the selected page against the editing base as project_runtime.binding's representation status answers it for that exact page (#288), read again only when the selection or what that status is derived from moves, with the page's own Stage label and generation time; the Board compares no sources itself, and showing the status never changes, rebinds or sends a page"
+        "showing the selected page against the editing base as project_runtime.binding's representation status answers it for that exact page (#288), read again only when the selection or what that status is derived from moves, with the page's own Stage label and generation time; the Board compares no sources itself, and showing the status never changes, rebinds or sends a page",
+        "drawing one frame or region of a scene revision as the Board shows it for an agent to read (view_board, gap 28): its exact registered pages under the person's strokes, shapes, text and tracing-paper snapshots, at most 2048 px and 4 MiB, with every mark listed by type, colours, box, last change, frame and, for each page under it, the shared part in page fractions; it approximates Excalidraw's drawing and writes nothing"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (project_runtime.documents and monkeydiagram.drawing_runs)",
@@ -4572,18 +4573,23 @@
         "one selected registered edit drawing or frame, selected board marks and text, optional registered reference pages joined by explicit selected connectors, and an explicitly reviewed design comment",
         "Caller-ordered exact registered document pages and export format; optional maxEdge (1-2048) bounds transient PNG/JPEG previews without changing ordinary export defaults",
         "an optional exact scene revision sha256 to read instead of the latest",
+        "a frame's element id or a scene-coordinate region and maxEdge (64-2048) for a board view",
         "Optional explicit exact-page navigation request and transient requestId from the Render workspace"
       ],
       "outputs": [
         "BoardDto",
         "retained single-operator board scene revision",
         "transient merged or per-page PDF, PNG, JPEG, or ZIP board export bytes",
-        "page-normalized geometric annotations, selected text in deterministic Board reading order, and a one-time BoardDesignRequest for the existing Studio conversation"
+        "page-normalized geometric annotations, selected text in deterministic Board reading order, and a one-time BoardDesignRequest for the existing Studio conversation",
+        "BoardViewDto: the drawn region as a PNG with its frames, pages and marks"
       ],
       "public_api": [
         "GET /api/board",
         "PUT /api/board",
         "POST /api/board/export",
+        "POST /api/board/view",
+        "view_board",
+        "BoardView",
         "read_board",
         "save_board",
         "export_board_pages",
@@ -7628,6 +7634,7 @@
         "ProjectRuntimeProvider / useStudio / useConnection: project-bound client and protocol identity",
         "ProjectWorkspace: Arch/Board/Design tree navigation, exact Board page visit and candidate preview without editing-base change; Drawing mounts explicit recipe export, file inspection and confirmed import via RecipeTransfer; comparisonRequest {candidateRunId, requestId} / onComparisonClose and the Design tree Compare open one read-only before/after against the exact retained base, once per request id: ids only grow, and null withdraws a requested comparison, loading or shown, without onComparisonClose; onRenderChatRequest passes a Board image discussion naming this workspace's own project to the host conversation composer, which sends nothing until the architect sends; a request naming another project, or one the composer shown cannot take, is refused back to the Board's dialog as a BoardRenderError",
         "studio_request POST /api/board/export: one registered clean-source page as a native MCP PNG image; studio_schema exposes the existing export request",
+        "studio_request POST /api/board/view: one Board frame or region with what the person drew on its pages as a native MCP PNG image, and its marks listed as text (gap 28); a read, never admitted",
         "visual_review: the Agent's bounded look through POST /api/visual-reviews; Hub fills projectId and the per-user-message allowance; native delivery defaults to frames, validates exact source/digest/PNG/dimensions and returns native images to the current model with no findings; explicit observation delivery retains configured-provider findings and marks preserve findings escalate",
         "studio_request POST /api/drawings/plans (dressingOperations place and edit entourage; marked sourceKind agent unless the request names a kind) with the reads GET /api/drawings/plans/vector, GET /api/drawings/plans/dimensions and POST /api/drawings/plans/status",
         "POST /api/chat/presentation/bind",

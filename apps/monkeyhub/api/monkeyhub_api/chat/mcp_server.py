@@ -230,7 +230,8 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
                     image_read = (params.get("name") == "studio_request"
                                   and (str(arguments.get("method", "GET")).upper(),
                                        urlsplit(arguments.get("path", "")).path) in {
-                                           ("GET", "/api/drawings/model-view"), ("POST", "/api/board/export")})
+                                           ("GET", "/api/drawings/model-view"), ("POST", "/api/board/export"),
+                                           ("POST", "/api/board/view")})
                     if name == "visual_review" and value.get("delivery") == "frames":
                         metadata = {key: item for key, item in value.items() if key != "frames"}
                         content = [{"type": "text", "text": providers._redact(json.dumps(metadata, ensure_ascii=False))}]

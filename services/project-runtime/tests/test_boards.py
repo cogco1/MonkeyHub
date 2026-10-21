@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+import hashlib
 import json
 from io import BytesIO
 from pathlib import Path
@@ -141,6 +142,81 @@ class BoardTests(unittest.TestCase):
         response = self.client.put("/api/board", json=request)
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
+
+    def annotated_frame(self) -> list[dict]:
+        document = self.upload(image_bytes(color="yellow", size=(400, 300)), "一层平面.png", "image/png")
+        return [
+            {"id": "frame", "type": "frame", "x": 0, "y": 0, "width": 500, "height": 400, "name": "一层平面批注"},
+            image_element(document),  # x 30..430, y 40..340
+            {"id": "stroke", "type": "freedraw", "x": 130, "y": 140, "width": 100, "height": 0,
+             "points": [[0, 0], [50, 0], [100, 0]], "strokeColor": "#e03131", "strokeWidth": 4, "opacity": 100,
+             "frameId": "frame", "updated": 1792540000000},
+            {"id": "note", "type": "text", "x": 250, "y": 250, "width": 120, "height": 30, "text": "入口加宽",
+             "fontSize": 20, "strokeColor": "#1971c2", "frameId": "frame"},
+            {"id": "outside", "type": "rectangle", "x": 900, "y": 900, "width": 50, "height": 50},
+            {"id": "gone", "type": "freedraw", "x": 200, "y": 200, "width": 10, "height": 10,
+             "points": [[0, 0], [10, 10]], "isDeleted": True},
+        ]
+
+    def test_a_frame_is_read_with_its_marks_and_where_they_fall_on_each_page(self) -> None:
+        # Gap 28: what a person drew over a page on the Board, for an agent to read.
+        self.save(body(self.annotated_frame()))
+        before = self.files()
+        response = self.client.post("/api/board/view", json={"projectId": PROJECT_ID, "frameId": "frame", "maxEdge": 500})
+        self.assertEqual(response.status_code, 200, response.text)
+        view = response.json()
+        self.assertEqual(self.files(), before, "reading the board writes nothing")
+        self.assertEqual(view["frame"], {"id": "frame", "name": "一层平面批注"})
+        self.assertEqual([row["id"] for row in view["frames"]], ["frame"])
+        self.assertEqual(view["region"], {"x": 0, "y": 0, "width": 500, "height": 400})
+        self.assertEqual([(row["elementId"], row["fileName"], row["tracingPaper"]) for row in view["pages"]],
+                         [("drawing", "一层平面.png", False)])
+        marks = {row["id"]: row for row in view["annotations"]}
+        self.assertEqual(set(marks), {"stroke", "note"}, "a mark outside the frame or deleted is not in it")
+        self.assertEqual(view["annotationCount"], 2)
+        stroke = marks["stroke"]
+        self.assertEqual((stroke["type"], stroke["strokeColor"], stroke["pointCount"], stroke["frameId"]),
+                         ("freedraw", "#e03131", 3, "frame"))
+        self.assertEqual(stroke["updatedAt"], "2026-10-20T23:46:40Z")
+        self.assertEqual(stroke["box"], {"x": 130, "y": 140, "width": 100, "height": 0})
+        self.assertEqual([(row["elementId"], row["at"]) for row in stroke["onPages"]],
+                         [("drawing", {"x0": 0.25, "y0": 0.3333, "x1": 0.5, "y1": 0.3333})])
+        note = marks["note"]
+        self.assertEqual((note["text"], note["onPages"][0]["at"]), ("入口加宽", {"x0": 0.55, "y0": 0.7, "x1": 0.85, "y1": 0.8}))
+        image = view["image"]
+        data = base64.b64decode(image["data"])
+        self.assertEqual(hashlib.sha256(data).hexdigest(), image["sha256"])
+        with Image.open(BytesIO(data)) as picture:
+            self.assertEqual((picture.format, picture.size, (image["width"], image["height"])), ("PNG", (500, 400), (500, 400)))
+            pixels = picture.convert("RGB")
+            red = pixels.getpixel((180, 140))
+            self.assertTrue(red[0] > 180 and red[1] < 110 and red[2] < 110, red)
+            self.assertEqual(pixels.getpixel((60, 300)), (255, 255, 0), "the page is under the marks")
+            self.assertEqual(pixels.getpixel((470, 380)), (255, 255, 255), "outside the page the board is white")
+            text = [pixels.getpixel((x, y)) for x in range(250, 370) for y in range(250, 280)]
+            self.assertTrue(any(b > r + 60 for r, _, b in text), "the note's blue text is drawn")
+
+    def test_a_board_region_is_read_and_a_bad_request_is_refused(self) -> None:
+        empty = self.client.post("/api/board/view", json={"projectId": PROJECT_ID})
+        self.assertEqual((empty.status_code, empty.json()["code"]), (422, "BOARD_EMPTY"))
+        self.save(body(self.annotated_frame()))
+        region = self.client.post("/api/board/view", json={
+            "projectId": PROJECT_ID, "region": {"x": 100, "y": 100, "width": 200, "height": 100}, "maxEdge": 400})
+        self.assertEqual(region.status_code, 200, region.text)
+        self.assertEqual([row["id"] for row in region.json()["annotations"]], ["stroke"])
+        self.assertEqual((region.json()["image"]["width"], region.json()["image"]["height"]), (400, 200))
+        whole = self.client.post("/api/board/view", json={"projectId": PROJECT_ID, "maxEdge": 256}).json()
+        self.assertEqual({row["id"] for row in whole["annotations"]}, {"stroke", "note", "outside"})
+        for request, status, code in (
+                ({"frameId": "frame", "region": {"x": 0, "y": 0, "width": 1, "height": 1}}, 422, "BOARD_INVALID"),
+                ({"frameId": "no-such-frame"}, 404, "BOARD_FRAME_NOT_FOUND"),
+                ({"region": {"x": 0, "y": 0, "width": 0, "height": 1}}, 422, None),
+                ({"maxEdge": 4096}, 422, None),
+                ({"projectId": "another-project"}, 403, "PROJECT_MISMATCH")):
+            refused = self.client.post("/api/board/view", json={"projectId": PROJECT_ID, **request})
+            self.assertEqual(refused.status_code, status, (request, refused.text))
+            if code:
+                self.assertEqual(refused.json()["code"], code)
 
     def test_empty_read_and_invalid_first_save_create_no_run(self) -> None:
         before = self.files()

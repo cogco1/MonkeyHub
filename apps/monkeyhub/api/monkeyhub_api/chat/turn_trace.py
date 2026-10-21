@@ -17,7 +17,7 @@ from archflow.contracts.canonical import canonical_digest
 log = logging.getLogger(__name__)
 
 # The two raw reads that answer the Agent with one image of their own.
-_IMAGE_READS = {("GET", "/api/drawings/model-view"), ("POST", "/api/board/export")}
+_IMAGE_READS = {("GET", "/api/drawings/model-view"), ("POST", "/api/board/export"), ("POST", "/api/board/view")}
 
 
 def _now():

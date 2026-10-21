@@ -294,6 +294,11 @@ _GUIDES = {
         'DRAWING PAGE: POST /api/board/export is a read-only native MCP image: body {projectId, pages:[{runId, assetSha256, revisionRef, pageIndex}], format:"png", zip:false, maxEdge:2048}.',
         "Copy exact source fields from GET /api/documents or the generated drawing result; revisionRef must be explicit (null for sources without a revision),",
         "pageIndex is zero-based. One clean source page, no annotations, at most 2048 pixels per edge and 4 MiB; use smaller maxEdge if too large. No operationId or awaitSeconds.",
+        "WHAT IS DRAWN ON THE BOARD: POST /api/board/view is a read-only native MCP image of one frame or region with its pages under the person's",
+        "strokes, shapes, text and tracing-paper snapshots, as the Board shows them: body {projectId, frameId} (a frame's element id; the answer's",
+        "frames lists them) or {projectId, region:{x, y, width, height}} in scene coordinates, optional maxEdge 64-2048. Beside the image it lists",
+        "every mark: type, colours, box, updatedAt, frameId, text, and onPages (each page under it, the shared part as page fractions from the top",
+        "left). Read it whenever the user refers to what they drew or wrote on the Board; POST /api/board/export shows the clean page only.",
     ]),
     "/api/exports": chr(10).join([
         "MODEL CONVERSION: When asked to export/convert a model to 3DM, SKP, GLB or DWG, use POST /api/exports via studio_request. Do not use an export button or write a converter in the shell.",

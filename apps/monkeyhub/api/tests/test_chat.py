@@ -3856,6 +3856,79 @@ class ChatTests(unittest.TestCase):
         self.assertEqual({p: p.read_bytes() for p in project.rglob("*") if p.is_file()}, before)
         self.assertFalse((self.runtime / "operations").exists())
 
+    def test_what_is_drawn_on_a_board_frame_reaches_mcp_as_image_and_list(self):
+        # Gap 28: the person's marks over a page, which the clean page read leaves out.
+        import io
+        from PIL import Image
+        from project_runtime.main import create_app as studio_app
+        from project_runtime.settings import StudioSettings
+
+        project = self.root / "chat-project"
+        FilesystemProjectRepository.initialize(project, project_id="chat-project", initial_state={"project_id": "chat-project", "version": 0})
+        session = self.create(project=project)
+        self.store._sessions[session.id].status = "running"
+        client = TestClient(studio_app(StudioSettings(project_dir=project, cad_export="off")))
+        self.addCleanup(client.close)
+        page = io.BytesIO()
+        Image.new("RGB", (200, 100), (255, 255, 0)).save(page, format="PNG")
+        document = client.post("/api/documents", json={"projectId": session.projectId, "fileName": "plan.png",
+            "mimeType": "image/png", "contentBase64": base64.b64encode(page.getvalue()).decode()}).json()
+        saved = client.put("/api/board", json={"projectId": session.projectId, "baseRevisionSha256": None,
+            "title": "Board", "seenDocuments": [], "elements": [
+                {"id": "frame", "type": "frame", "x": 0, "y": 0, "width": 200, "height": 100, "name": "Plan notes"},
+                {"id": "page", "type": "image", "fileId": "page-file", "x": 0, "y": 0, "width": 200, "height": 100,
+                 "scale": [1, 1], "customData": {"sourceDocument": {"runId": document["runId"],
+                 "assetSha256": document["assetSha256"], "revisionRef": None, "pageIndex": 0}}},
+                {"id": "stroke", "type": "freedraw", "x": 50, "y": 50, "width": 100, "height": 0,
+                 "points": [[0, 0], [100, 0]], "strokeColor": "#e03131", "strokeWidth": 4, "frameId": "frame"}]})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        before = {p: p.read_bytes() for p in project.rglob("*") if p.is_file()}
+        forwarded = []
+
+        def request(base, path, method="GET", body=None, **kwargs):
+            if path == "/api/board/view":
+                forwarded.append(body)
+                reply = client.post(path, json=body)
+                if reply.status_code >= 400:
+                    raise HubFailure(reply.status_code, reply.json()["code"], reply.json()["detail"])
+                return reply.json()
+            return self.studio(session, [])(base, path, method, body, **kwargs)
+
+        class Stream(io.StringIO):
+            def reconfigure(self, **kwargs):
+                pass
+
+        calls = [{"method": "POST", "path": "/api/board/view", "body": {"frameId": "frame", "maxEdge": 400}},
+                 {"method": "POST", "path": "/api/board/view", "body": {"frameId": "frame", "pages": []}}]
+        lines = [{"jsonrpc": "2.0", "id": index, "method": "tools/call", "params": {
+            "name": "studio_request", "arguments": arg}} for index, arg in enumerate(calls, 1)]
+        writer = Stream()
+        with patch.object(transport, "_request_json", side_effect=request), \
+             patch.object(mcp_server.sys, "stdin", Stream("\n".join(json.dumps(line) for line in lines) + "\n")), \
+             patch.object(mcp_server.sys, "stdout", writer):
+            mcp_server._mcp(self.store.hub_url, session.id)
+        success, refused = [json.loads(line)["result"] for line in writer.getvalue().splitlines()]
+        self.assertNotIn("isError", success)
+        text, image = success["content"]
+        metadata = json.loads(text["text"])
+        self.assertTrue(metadata["annotationsIncluded"])
+        self.assertEqual(metadata["representation"], "board-region")
+        self.assertEqual(metadata["frame"], {"id": "frame", "name": "Plan notes"})
+        self.assertEqual([(row["id"], row["onPages"][0]["at"]) for row in metadata["annotations"]],
+                         [("stroke", {"x0": 0.25, "y0": 0.5, "x1": 0.75, "y1": 0.5})])
+        self.assertNotIn("data", metadata)
+        self.assertEqual((image["type"], image["mimeType"]), ("image", "image/png"))
+        with Image.open(io.BytesIO(base64.b64decode(image["data"]))) as picture:
+            self.assertEqual(picture.size, (400, 200))
+            red = picture.convert("RGB").getpixel((200, 100))
+            self.assertTrue(red[0] > 180 and red[1] < 110, red)
+        self.assertTrue(refused["isError"])
+        self.assertEqual(json.loads(refused["content"][0]["text"])["code"], "CHAT_TOOL_INVALID")
+        self.assertEqual(forwarded, [{"frameId": "frame", "maxEdge": 400, "projectId": session.projectId}],
+                         "the Hub fills the project and refuses a field the read does not take before asking")
+        self.assertEqual({p: p.read_bytes() for p in project.rglob("*") if p.is_file()}, before)
+        self.assertFalse((self.runtime / "operations").exists(), "a read is never admitted")
+
     def test_drawing_page_tool_rejects_unbound_and_non_image_requests_before_export(self):
         body = {"projectId": "chat-project", "pages": [{"runId": "run-001", "assetSha256": "a" * 64,
                 "revisionRef": None, "pageIndex": 0}], "format": "png", "zip": False}

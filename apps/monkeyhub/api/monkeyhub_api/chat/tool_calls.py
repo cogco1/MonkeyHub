@@ -315,7 +315,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "continue: true beside method/path lands the one result POST "
                          "/api/admissions admits; a Continue on its own is PUT /api/working-draft.")
     if "operationId" in arguments and (name != "studio_request" or method == "GET" or (
-            method == "POST" and parsed.path in {"/api/board/export", "/api/drawings/plans/status"})):
+            method == "POST" and parsed.path in {"/api/board/export", "/api/board/view", "/api/drawings/plans/status"})):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "operationId identifies a Studio mutation request.")
     if "awaitSeconds" in arguments and name != "studio_request":
         # Only one tool can wait for anything. Quietly dropping the option here
@@ -483,7 +483,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         body = dict(body)
         if body.get("projectId", session["projectId"]) != session["projectId"]:
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "A tool cannot select another project.")
-        if parsed.path in {"/api/proposals", "/api/board/export", "/api/project/modeling", "/api/render/jobs"}:
+        if parsed.path in {"/api/proposals", "/api/board/export", "/api/board/view", "/api/project/modeling", "/api/render/jobs"}:
             body["projectId"] = session["projectId"]
         if method == "POST" and _SKILL_RUN.fullmatch(parsed.path):
             body = _agent_skill_run(hub, chat_id, base, parsed.path, body, _PERMISSION_WAIT_S)
@@ -529,6 +529,10 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         if parsed.query:
             raise HubFailure(422, "CHAT_TOOL_INVALID", "The registered page read takes its source in the body, without query parameters.")
         return studio_tool._read_drawing_page(base, body)
+    if method == "POST" and parsed.path == "/api/board/view":
+        if parsed.query:
+            raise HubFailure(422, "CHAT_TOOL_INVALID", "The Board read takes its frame or region in the body, without query parameters.")
+        return studio_tool._read_board_view(base, body)
     if method == "POST" and parsed.path == "/api/render/jobs":
         # Before admission: a provider this Runtime does not offer takes nothing.
         studio_tool._render_provider_available(base, body)
