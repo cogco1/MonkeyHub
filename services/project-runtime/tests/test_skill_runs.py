@@ -353,8 +353,12 @@ open(os.path.join(args.outputs, "seen.json"), "w", encoding="utf-8").write(json.
         seen = json.loads({row["name"]: row for row in record["outputs"]}["seen.json"]["text"])
         frame, crop = seen.pop("frame"), seen.pop("flatCrop")
         self.assertEqual(seen, {"kind": "drawing", "svg": True, "hasRecipe": True, "revisionRef": drawing["revisionRef"]})
-        # An elevation's record keeps its frame flat (gap 16); a skill reads it under "frame" as for a cut plan.
-        self.assertNotIn("frame", drawing["viewRecipe"])
+        # An elevation's record keeps its frame flat; every reader, a skill and the drawing's own answer
+        # alike, is given it again under "frame" as for a cut plan (gap 16).
+        self.assertEqual(drawing["viewRecipe"]["frame"]["crop_uv"], drawing["viewRecipe"]["crop_uv"])
+        listed = self.client.get("/api/documents", params={"runId": drawing["runId"]}).json()["documents"]
+        self.assertEqual([row["viewRecipe"]["frame"]["look"] for row in listed if row["revisionRef"] == drawing["revisionRef"]],
+                         [drawing["viewRecipe"]["look"]])
         self.assertEqual((frame["crop_uv"], frame["kind"], crop), (drawing["viewRecipe"]["crop_uv"],
                                                                    "model-axis-elevation", drawing["viewRecipe"]["crop_uv"]))
 
