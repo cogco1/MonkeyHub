@@ -559,6 +559,45 @@ class ChatPresentationTests(unittest.TestCase):
         self.assertIsNone(row.suggestion.timeEstimate.value)
         self.assertEqual(self.store.get(self.bound["chatId"]).status, "idle")
 
+    def unbound(self, source):
+        return {"command": sys.executable, "args": [str(Path(mcp_server.__file__)), "--mcp", "--hub-url",
+                                                    self.store.hub_url, "--source-session-id", source]}
+
+    def test_an_external_connection_without_a_project_makes_one_and_binds_it(self):
+        # Gap 39: a level breakdown had to POST /api/chat/projects itself before its MCP connection could bind.
+        source, turn, user = "breakdown-session", str(uuid4()), str(uuid4())
+        with self.live_server():
+            replies = self.mcp([
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+                self.tool_call(2, "chat_present", {"turnId": turn, "messageId": user, "kind": "user", "content": "Start"}),
+                self.tool_call(3, "presentation_bind", {}),
+                self.tool_call(4, "project_create", {"name": "gravity-tower-study"}),
+                self.tool_call(5, "chat_present", {"turnId": turn, "messageId": user, "kind": "user", "content": "Start"}),
+                self.tool_call(6, "project_create", {"name": "another-study"}),
+            ], connection=self.unbound(source), expected_errors=(2, 3, 6))
+        tools = {tool["name"]: tool for tool in replies[0]["result"]["tools"]}
+        self.assertEqual(tools["project_create"]["inputSchema"]["required"], ["name"])
+        self.assertIn("projectDir", tools["presentation_bind"]["inputSchema"]["properties"])
+        self.assertEqual(json.loads(replies[1]["result"]["content"][0]["text"])["code"], "CHAT_PROJECT_REQUIRED")
+        self.assertEqual(json.loads(replies[2]["result"]["content"][0]["text"])["code"], "CHAT_PROJECT_REQUIRED")
+        made = json.loads(replies[3]["result"]["content"][0]["text"])
+        self.assertEqual(made["project"]["projectId"], "gravity-tower-study")
+        self.assertTrue(Path(made["project"]["projectDir"]).is_dir())
+        self.assertNotIn("token", made)
+        chat = self.store.get(made["chatId"])
+        self.assertEqual((chat.projectId, [row.content for row in chat.messages]), ("gravity-tower-study", ["Start"]))
+        self.assertEqual(json.loads(replies[5]["result"]["content"][0]["text"])["code"], "CHAT_PROJECT_BOUND")
+
+    def test_an_external_connection_without_a_project_can_bind_an_existing_one(self):
+        with self.live_server():
+            replies = self.mcp([self.tool_call(1, "presentation_bind", {"projectDir": str(self.project)})],
+                               connection=self.unbound("existing-session"))
+            fixed = self.mcp([self.tool_call(1, "presentation_bind", {"projectDir": str(self.project)})],
+                             expected_errors=(1,))
+        bound = json.loads(replies[0]["result"]["content"][0]["text"])
+        self.assertEqual(self.store.get(bound["chatId"]).projectDir, self.store.get(self.bound["chatId"]).projectDir)
+        self.assertEqual(json.loads(fixed[0]["result"]["content"][0]["text"])["code"], "CHAT_PRESENTATION_INVALID")
+
     def test_external_mcp_live_protocol_two_turns_path_image_and_rebind(self):
         image_path = self.root / "external-preview.png"
         image_path.write_bytes(self.image.getvalue())

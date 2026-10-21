@@ -130,6 +130,10 @@ an existing project folder, and that agent's actual stable session ID:
 python apps/monkeyhub/api/monkeyhub_api/chat/mcp_server.py --mcp --hub-url http://127.0.0.1:8790 --project-dir "<project folder>" --source-session-id "<source session id>" --title "Design review"
 ```
 
+Without a project yet, leave out `--project-dir`: the connection then offers `project_create {name}`,
+which makes an empty project in the Hub's workspace and binds to it, and `presentation_bind {projectDir}`
+for an existing project folder.
+
 This is an MCP server command to register in the external host, not a second Hub launcher.
 Use `--provider claude` for Claude; the default is `codex`. No global agent settings are changed
 by Hub. Call `presentation_bind` once to create or recover the same project/source conversation
