@@ -61,13 +61,13 @@ class InProcessMeshProvider:
     name = "InProcessMeshProvider"
     version = VERSION
     input_formats = ("3dm", "glb")
-    output_formats = ("3dm", "glb", "stl")
+    output_formats = ("3dm", "glb", "stl", "obj", "fbx")
     execution_mode = "headless"
     execution_host = "in-process"
 
     def capability(self, source, target):
         if source not in self.input_formats or target not in self.output_formats:
-            return Capability(False, False, "unsupported-semantics", "This provider implements only bounded 3DM/GLB mesh interchange and STL print meshes.")
+            return Capability(False, False, "unsupported-semantics", "This provider implements only bounded 3DM/GLB mesh interchange, STL print meshes and OBJ/FBX meshes.")
         if "3dm" in (source, target):
             try:
                 ThreeDM()
@@ -83,6 +83,18 @@ class InProcessMeshProvider:
                 "layers": "None: one triangle soup.", "materials": "None.", "structure": "Objects and instances are merged.",
                 "geometry": ("Triangles only; saved BREP and extrusion render meshes approximate exact surfaces. Curves, "
                              "text, hatches and solids without a render mesh are left out and counted in omitted."),
+            }
+            return ConvertedFile(output, details)
+        if target in ("obj", "fbx"):
+            details["losses"] = {
+                "units": ("Metres, Y up as glTF: the model's north is -Z." if target == "obj" else
+                          "Metres declared in the file (UnitScaleFactor 100), Y up as glTF: the model's north is -Z."),
+                "layers": "Flattened: one object per model object.",
+                "materials": ("Each object names its material (usemtl); no .mtl, so no colour." if target == "obj" else
+                              "Each object keeps its material's base colour (DiffuseColor, linear) and opacity."),
+                "structure": "Hierarchy, instances and CAD metadata are not transferred.",
+                "geometry": ("Triangle meshes with vertex normals; no UVs. Saved BREP render meshes approximate exact "
+                             "surfaces; no solids reconstructed."),
             }
             return ConvertedFile(output, details)
         details["losses"] = ({"units": "unchanged", "layers": "unchanged", "materials": "unchanged",

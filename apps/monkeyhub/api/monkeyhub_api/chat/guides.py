@@ -305,14 +305,14 @@ _GUIDES = {
         "left). Read it whenever the user refers to what they drew or wrote on the Board; POST /api/board/export shows the clean page only.",
     ]),
     "/api/exports": chr(10).join([
-        "MODEL CONVERSION: When asked to export/convert a model to 3DM, SKP, GLB or DWG, use POST /api/exports via studio_request. Do not use an export button or write a converter in the shell.",
+        "MODEL CONVERSION: When asked to export/convert a model to 3DM, SKP, GLB, DWG, or for a game engine OBJ or FBX, use POST /api/exports via studio_request. Do not use an export button or write a converter in the shell.",
         "Body: {targetFormat: 'glb', attachmentId: '<exact chat attachment id>'} for an upload, or {targetFormat: 'glb', projectRevision: {runId, stateDigest, assetSha256}} for the exact current project model.",
         "Read current project state/artifacts first; never substitute an upload for project state. If 'this model' could mean the project or an upload, or multiple uploads match, ask which model. Do not guess by filename or newest file.",
         "Read GET /api/exports/capabilities for supported routes. Submission returns jobId/statusPath; poll that statusPath with GET, report queued/running progress, and only on succeeded return its downloadUrl as a Markdown link with warnings.",
         "On failed/interrupted report failureReason, never invent a file link. For SKP/DWG without an available verified executor, say 当前没有配置可用的执行器; never describe the format as permanently unsupported.",
         "Installed software does not establish conversion capability. The backend chooses providers; users do not need to choose software. Same-format validated delivery is not a conversion. Do not use awaitSeconds on exports.",
         "AXES: the plan's +z is north, the 3DM's +Y and the GLB's -Z; the GLB, the 3DM and the Hub viewport agree, turned from Z-up to Y-up and never mirrored.",
-        "What the 3DM hides (the solid an opening or a cut removes, a hidden layer) is left out of a GLB or STL; the report counts it as omitted 'hidden object'. Say so with the warnings.",
+        "What the 3DM hides (the solid an opening or a cut removes, a hidden layer) is left out of a GLB, STL, OBJ or FBX; the report counts it as omitted 'hidden object'. Say so with the warnings.",
     ]),
     "/api/render": chr(10).join([
         "RENDER: an AI render makes one new image from one exact registered source image (a PNG or JPEG page), up to the",

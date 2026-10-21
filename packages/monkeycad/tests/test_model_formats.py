@@ -379,18 +379,64 @@ class FormatTests(unittest.TestCase):
                      for a, b, c in ((points[flat[i]], points[flat[i + 1]], points[flat[i + 2]]) for i in range(0, len(flat), 3))) / 6
         self.assertAlmostEqual(volume, 8.0, places=4)
 
+    @staticmethod
+    def two_objects():
+        from monkeycad.formats.meshes import Material
+        cube = Mesh("Cube", [(x + 10, y + 20, z) for x, y, z in CUBE], CUBE_TRIANGLES, "Walls",
+                    material=Material("Plaster", (230, 220, 200, 255)))
+        return Scene([cube, Mesh("Offset triangle", [(1, 2, 3), (2, 2, 3), (1, 3, 3)], [(0, 1, 2)], "Structure")],
+                      "Meters", [])
+
+    def test_3dm_to_obj_keeps_each_object_in_metres_y_up_with_normals(self):
+        # Gap 35: the UE plugin imports only FBX and OBJ.
+        output, info = convert(ThreeDM().write(self.two_objects()), "3dm", "obj")
+        text = output.decode("utf-8")
+        self.assertTrue(text.startswith("# MonkeyHub OBJ"))
+        lines = text.splitlines()
+        self.assertEqual([line for line in lines if line.startswith("o ")], ["o Cube", "o Offset triangle"])
+        self.assertEqual(sum(line.startswith("v ") for line in lines), 11)
+        self.assertEqual(sum(line.startswith("vn ") for line in lines), 11)
+        self.assertEqual(sum(line.startswith("f ") for line in lines), 13)
+        self.assertIn("v 10 0 -20", lines, "the model's (10, 20, 0) is glTF's (10, 0, -20): north is -Z")
+        self.assertIn("usemtl Plaster", lines)
+        self.assertTrue(all(len(line.split()) == 4 and all("//" in corner for corner in line.split()[1:])
+                            for line in lines if line.startswith("f ")))
+        self.assertEqual(info["outputValidation"]["status"], "passed")
+        self.assertEqual(info["outputMetrics"]["objectCount"], 2)
+        self.assertEqual(info["outputMetrics"]["boundsMetersZUp"], info["sourceMetrics"]["boundsMetersZUp"])
+        self.assertIn("Y up", info["losses"]["units"])
+
+    def test_3dm_to_fbx_declares_metres_and_y_up_and_reopens(self):
+        output, info = convert(ThreeDM().write(self.two_objects()), "3dm", "fbx")
+        text = output.decode("utf-8")
+        self.assertTrue(text.startswith("; FBX 7.4.0 project file"))
+        for setting in ('P: "UpAxis", "int", "Integer", "",1', 'P: "FrontAxis", "int", "Integer", "",2',
+                        'P: "CoordAxis", "int", "Integer", "",0', 'P: "UnitScaleFactor", "double", "Number", "",100'):
+            self.assertIn(setting, text)
+        self.assertEqual(text.count('"Model::'), 2)
+        self.assertEqual(text.count('"Geometry::'), 2)
+        self.assertIn('"Material::Plaster"', text)
+        self.assertEqual(text.count("LayerElementNormal: 0"), 2)
+        # Each triangle's last index is written as -(i + 1), as FBX ends a polygon.
+        self.assertIn("PolygonVertexIndex: *3 {\n\t\t\ta: 0,1,-3\n\t\t}", text)
+        self.assertEqual(info["outputValidation"]["status"], "passed")
+        self.assertEqual((info["outputMetrics"]["objectCount"], info["outputMetrics"]["triangleCount"]), (2, 13))
+        self.assertEqual(info["outputMetrics"]["boundsMetersZUp"], info["sourceMetrics"]["boundsMetersZUp"])
+        self.assertIn("metres", info["losses"]["units"].lower())
+
     def test_stl_is_written_never_read_as_a_source(self):
         with self.assertRaises(ConversionError):
             convert(b"solid", "stl", "glb")
 
-    def test_all_ten_unavailable_routes_are_explicit(self):
+    def test_every_unavailable_route_is_explicit(self):
         from monkeycad.formats.conversion import ConversionCoordinator, NO_EXECUTOR
         routes = ConversionCoordinator().capabilities()
-        self.assertEqual(len(routes), 16)
+        self.assertEqual(len(routes), 24)
         available = sorted((r["sourceFormat"], r["targetFormat"]) for r in routes if r["available"])
-        self.assertEqual(available, [("3dm", "glb"), ("3dm", "stl"), ("glb", "3dm"), ("glb", "stl")])
+        self.assertEqual(available, [("3dm", "fbx"), ("3dm", "glb"), ("3dm", "obj"), ("3dm", "stl"),
+                                     ("glb", "3dm"), ("glb", "fbx"), ("glb", "obj"), ("glb", "stl")])
         blocked = [r for r in routes if not r["available"]]
-        self.assertEqual(len(blocked), 12)
+        self.assertEqual(len(blocked), 16)
         for route in blocked:
             with self.assertRaisesRegex(ConversionError, NO_EXECUTOR):
                 convert(b"anything", route["sourceFormat"], route["targetFormat"])

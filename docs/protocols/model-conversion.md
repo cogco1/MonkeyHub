@@ -11,6 +11,8 @@ Never change HEAD or treat an uploaded file as the current project state.
 |---|---|---|
 | 3DM | GLB | Bounded, lossy mesh conversion; requires rhino3dm. Exact surfaces without render meshes are refused. |
 | GLB | 3DM | Bounded triangle-mesh conversion; requires rhino3dm. No reconstruction of CAD solids. |
+| 3DM, GLB | OBJ | Written only: one object per model object, metres, Y up as glTF (north is -Z), vertex normals, `usemtl` material names and no `.mtl`. Read back only to validate it. |
+| 3DM, GLB | FBX | Written only: ASCII FBX 7.4, metres declared (`UnitScaleFactor` 100), Y up as glTF; per object a model, its geometry with vertex normals and its material's base colour. Read back only to validate it. |
 | 3DM | SKP | 当前没有配置可用的执行器 (`blocked-runtime`); native bridge/validator not configured. |
 | 3DM | DWG | 当前没有配置可用的执行器 (`blocked-runtime`); native bridge/validator not configured. |
 | GLB | SKP | 当前没有配置可用的执行器 (`blocked-runtime`); native bridge/validator not configured. |
@@ -28,7 +30,7 @@ Supported mesh conversions report loss of materials, textures, hierarchy and CAD
 semantics. GLB uses meters/Y-up; the adapter's common mesh uses meters/Z-up.
 The turn is a rotation: the 3DM's +Y, which is the modeling plan's +z (north),
 becomes glTF's -Z, so the GLB, the 3DM and the Hub viewport agree. What a 3DM
-hides is left out of a GLB or STL, as the model view hides it: an object saved
+hides is left out of a GLB, STL, OBJ or FBX, as the model view hides it: an object saved
 hidden (an opening's aperture, a cut's tool) or one on a layer hidden itself or
 under a hidden parent. The report counts these in `omitted` as `hidden object`.
 Same-format 3DM/GLB requests validate and return original bytes without conversion.

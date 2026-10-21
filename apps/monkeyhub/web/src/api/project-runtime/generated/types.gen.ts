@@ -7485,7 +7485,7 @@ export type ModelExportRequest = {
     /**
      * Targetformat
      */
-    targetFormat: '3dm' | 'skp' | 'glb' | 'dwg' | 'stl';
+    targetFormat: '3dm' | 'skp' | 'glb' | 'dwg' | 'stl' | 'obj' | 'fbx';
     projectRevision?: ProjectRevision | null;
     /**
      * Sourceartifactid
