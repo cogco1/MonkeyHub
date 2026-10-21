@@ -18,6 +18,7 @@ import base64
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 from time import perf_counter
 from typing import Any, Mapping
 import uuid
@@ -99,7 +100,7 @@ def submit_camera_passes(
     binding: ProjectBinding, jobs, *, attribution: ActorAttribution, view: Mapping[str, str] | None = None,
     camera: Mapping[str, Any] | None = None, size: tuple[int, int] | None = None, long_edge: int = 2048,
     id_by: str = "layer", model_source=None, source_asset: Mapping[str, str] | None = None,
-    source_stage_ref: str | None = None,
+    source_stage_ref: str | None = None, clip: Mapping[str, Any] | None = None,
 ) -> dict:
     """Check the request, retain the queued run, and draw the passes as a background job."""
 
@@ -114,6 +115,8 @@ def submit_camera_passes(
             raise _invalid("A saved view draws its own model; name no other.")
         chosen, screen, document = _saved_view(binding, view)
         model_source, source_stage_ref = document.model_source, document.source_stage_ref
+        if clip is None and isinstance((document.view_recipe or {}).get("clip"), Mapping):
+            clip = document.view_recipe["clip"]
         origin = {"view": {"runId": document.run_id, "assetSha256": document.asset_sha256}}
     else:
         try:
@@ -128,6 +131,14 @@ def submit_camera_passes(
         screen = (int(size[0]), int(size[1]))
         origin = {}
     width, height = _size(screen, long_edge)
+    if clip is not None:
+        try:
+            clip = {"origin": [float(v) for v in clip["origin"]], "normal": [float(v) for v in clip["normal"]]}
+            if len(clip["origin"]) != 3 or len(clip["normal"]) != 3 or not any(clip["normal"]) \
+                    or not all(math.isfinite(v) for v in clip["origin"] + clip["normal"]):
+                raise ValueError("three finite numbers each, the normal not zero")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise _invalid(f"A section clip is {{origin, normal}} in the model's frame: {exc}") from exc
     # Selects and checks the model now, so a refusal is the request's, not the job's.
     drawings.select_drawing_source(binding, model_source=model_source, source_stage_ref=source_stage_ref,
                                    source_asset=None if source_asset is None else dict(source_asset))
@@ -139,6 +150,7 @@ def submit_camera_passes(
     queued = {
         "schema": SCHEMA, "projectId": binding.project_id, "passId": pass_id, "status": "queued",
         "camera": chosen.to_dict(), "size": [width, height], "idBy": id_by, **origin,
+        **({"clip": clip} if clip is not None else {}),
         "modelSource": None if model_source is None else model_source.to_dict(),
         "sourceAsset": None if source_asset is None else dict(source_asset), "sourceStageRef": source_stage_ref,
         "renderer": CAMERA_RENDERER_VERSION,
@@ -192,7 +204,9 @@ def _draw(binding, chosen: PerspectiveCamera, width, height, id_by, model_source
         groups = None if id_by == "object" else drawings.object_groups(
             binding, selected, source, [mesh.object_id for mesh in meshes], id_by)
         text = {"Software": "MonkeyHub camera passes", "Renderer": CAMERA_RENDERER_VERSION}
-        drawn = camera_passes(meshes, camera=chosen, width=width, height=height, groups=groups, text=text)
+        clip = queued.get("clip")
+        drawn = camera_passes(meshes, camera=chosen, width=width, height=height, groups=groups, text=text,
+                              clip=None if clip is None else (clip["origin"], clip["normal"]))
     except MeshViewError as exc:
         raise StudioError(409, "DRAWING_SOURCE_INVALID", str(exc)) from exc
     rendered = perf_counter()
@@ -202,6 +216,7 @@ def _draw(binding, chosen: PerspectiveCamera, width, height, id_by, model_source
     base_recipe = {"kind": PASS_KIND, "camera": chosen.to_dict(), "size": [width, height], "idBy": id_by,
                    "renderer": CAMERA_RENDERER_VERSION, "passId": queued["passId"],
                    **({"fromView": queued["view"]} if queued.get("view") else {}),
+                   **({"clip": queued["clip"]} if queued.get("clip") else {}),
                    **({"sourceAsset": dict(source_asset), "follow": "frozen"} if source_asset is not None else {})}
     identity = hashlib.sha256(json.dumps({"model": selected.to_dict(), "stage": source_stage_ref,
                                           "recipe": base_recipe | {"passId": None}},

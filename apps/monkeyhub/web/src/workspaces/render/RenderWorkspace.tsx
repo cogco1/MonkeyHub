@@ -139,7 +139,8 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
     try {
       const captured = await renderViewImage(view);
       const retained = await studio.retainRenderView({ projectId, modelSource: view.modelSource,
-        sourceStageRef: view.sourceStageRef ?? null, camera: captured.camera, screenSize: captured.screenSize }, captured.png);
+        sourceStageRef: view.sourceStageRef ?? null, camera: captured.camera, screenSize: captured.screenSize,
+        ...(view.clip ? { clip: view.clip } : {}) }, captured.png);
       if (retained.projectId !== projectId) throw new Error("The captured view belongs to another project.");
       if (!alive.current) return;
       ++readEpoch.current;

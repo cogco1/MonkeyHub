@@ -308,7 +308,8 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
           active={active && modelShown} refreshKey={refreshKey + attempt + headMoves} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
           onDesignContextChange={designContextChanged} onRenderReader={registerRenderReader} cameraRequest={cameraRequest}
           onView={(view) => viewRun({ ...view, back: false }, true)} onRecorder={registerRecorder}
-          onOpenTree={designTree.available ? () => onWorkspaceChange("tree") : undefined} treeMove={designTree.headMove} />
+          onOpenTree={designTree.available ? () => onWorkspaceChange("tree") : undefined} treeMove={designTree.headMove}
+          onBoard={(source) => { setVisit(null); setBoardPage({ source, requestId: crypto.randomUUID() }); setBoardRefresh((value) => value + 1); onWorkspaceChange("board"); }} />
       </div>}
       {(publishVisited || workspace === "publish") && <div data-project-surface="publish" hidden={shown !== "publish"} inert={!active || shown !== "publish"}
         style={{ height: "100%", minHeight: 0, display: shown === "publish" ? "block" : "none" }}>

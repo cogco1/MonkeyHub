@@ -1,4 +1,5 @@
-import { useConnection } from "../../api/project-runtime/ProjectRuntimeContext";
+import { useConnection, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import { pageSource, type PageSource } from "../../workspaces/monkeyboard/boardScene";
 /**
  * The model, and the few facts that sit over it.
  *
@@ -207,6 +208,7 @@ function sketchControls(state: SketchState) {
 export function Stage({
   active = true,
   onOpenBoard,
+  onBoard,
   onChatRequest,
   onOpenTree,
   viewportRef,
@@ -463,6 +465,8 @@ export function Stage({
   /** A host page already shows the workspace entries and the project's position. */
   active?: boolean;
   onOpenBoard?: () => void;
+  /** Open the Board on one registered page, placing it there if it is not yet. */
+  onBoard?: (source: PageSource) => void;
   onChatRequest?: () => void;
 }) {
   const t = useT();
@@ -505,6 +509,32 @@ export function Stage({
     origin[index] = section.at;
     viewport.section({ origin, normal });
   }, [section]);
+  // G5 step 3: the live cut drawn exactly by the drawing route, which leaves it off the Board until "Put on Board".
+  const studio = useStudio();
+  const [sectionDrawing, setSectionDrawing] = useState<{ state: "busy" } | { state: "drawn"; page: PageSource; fileName: string }
+    | { state: "failed"; detail: string } | null>(null);
+  useEffect(() => { setSectionDrawing(null); }, [section?.axis, section?.at, section?.flip, viewedModelSource?.runId]);
+  const drawSection = async () => {
+    if (!section || !documentProjectId || !viewedModelSource) {
+      setSectionDrawing({ state: "failed", detail: t("stage.section.drawUnavailable") });
+      return;
+    }
+    const index = SECTION_AXES[section.axis];
+    // The plan route's normal points from the kept side to the side the viewer stands on.
+    const normal: Vec3 = [0, 0, 0];
+    normal[index] = section.flip ? 1 : -1;
+    const origin: Vec3 = [0, 0, 0];
+    origin[index] = section.at;
+    setSectionDrawing({ state: "busy" });
+    try {
+      const drawn = await studio.drawingPlan({
+        projectId: documentProjectId, modelSource: viewedModelSource, sourceKind: "human", board: "on-request",
+        ...(section.axis === "z" ? { cutHeight: section.at } : { section: { origin, normal } }) });
+      setSectionDrawing({ state: "drawn", page: pageSource(drawn, drawn.pages[0]?.pageIndex ?? 0), fileName: drawn.fileName });
+    } catch (error) {
+      setSectionDrawing({ state: "failed", detail: error instanceof Error ? error.message : String(error) });
+    }
+  };
   const chooseSection = (axis: SectionAxis | "off") => {
     if (axis === "off") { setSection(null); return; }
     // A new direction starts through the middle of the model.
@@ -1526,6 +1556,14 @@ export function Stage({
         <span>{t("stage.section.flip")}</span>
         <input type="checkbox" data-section-flip checked={section.flip} onChange={(event) => setSection({ ...section, flip: event.target.checked })} />
       </label>}
+      {section && <button type="button" data-section-draw disabled={sectionDrawing?.state === "busy" || !viewedModelSource}
+        title={section.axis === "z" ? t("stage.section.drawPlanTitle") : t("stage.section.drawSectionTitle")}
+        onClick={() => void drawSection()}>{sectionDrawing?.state === "busy" ? t("stage.section.drawing") : t("stage.section.draw")}</button>}
+      {sectionDrawing?.state === "drawn" && <p className="stage-menu__note" data-section-drawn>
+        {t("stage.section.drawn", { fileName: sectionDrawing.fileName })}
+        {onBoard && <button type="button" data-section-board onClick={() => onBoard(sectionDrawing.page)}>{t("stage.section.toBoard")}</button>}
+      </p>}
+      {sectionDrawing?.state === "failed" && <p className="stage-menu__note" role="alert">{sectionDrawing.detail}</p>}
       <span className="stage-menu__sep" aria-hidden="true" />
       {/* One button, home: the reference run's exports when it left any, else the export the
           stage actually opened on - named for what it brings back, disabled only when there is nothing. */}

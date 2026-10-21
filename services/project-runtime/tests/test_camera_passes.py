@@ -89,6 +89,22 @@ class CameraPassRouteTest(unittest.TestCase):
         self.assertIn("legend", listed[record["documents"]["id"]["assetSha256"]]["viewRecipe"])
         self.assertIn("depth", listed[record["documents"]["depth"]["assetSha256"]]["viewRecipe"])
 
+    def test_a_pass_cut_at_a_live_section_keeps_the_cut_in_its_record_and_images(self):
+        # G5 step 4: the plane x = 6, kept toward +X, leaves only the fixture's second box.
+        clip = {"origin": [6, 0, 0], "normal": [1, 0, 0]}
+        whole = self.finish(self.start(camera=self.camera, size=[400, 300], longEdge=400, idBy="object", sourceAsset=self.asset))
+        cut = self.finish(self.start(camera=self.camera, size=[400, 300], longEdge=400, idBy="object",
+                                     sourceAsset=self.asset, clip=clip))
+        self.assertEqual((whole["status"], cut["status"]), ("succeeded", "succeeded"), cut)
+        self.assertEqual(cut["clip"], {"origin": [6.0, 0.0, 0.0], "normal": [1.0, 0.0, 0.0]})
+        self.assertLess(cut["seenObjects"], whole["seenObjects"])
+        listed = {row["assetSha256"]: row for row in self.client.get(
+            "/api/documents", params={"runId": self.asset["runId"]}).json()["documents"]}
+        self.assertEqual(listed[cut["documents"]["depth"]["assetSha256"]]["viewRecipe"]["clip"], cut["clip"])
+        self.assertNotIn("clip", listed[whole["documents"]["depth"]["assetSha256"]]["viewRecipe"])
+        self.start(status=422, camera=self.camera, size=[400, 300], sourceAsset=self.asset,
+                   clip={"origin": [0, 0, 0], "normal": [0, 0, 0]})
+
     def test_a_request_names_one_view_and_one_model(self):
         both = self.start(status=422, camera=self.camera, size=[100, 100], sourceAsset=self.asset,
                           view={"runId": self.asset["runId"], "assetSha256": self.asset["assetSha256"]})

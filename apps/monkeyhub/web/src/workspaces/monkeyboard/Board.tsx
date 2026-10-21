@@ -818,6 +818,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       // Version thumbnails stay available in Project documents for explicit
       // placement; merely viewing a model must not change the saved board.
       if (document.viewRecipe?.kind === "viewport-preview") continue;
+      // A section drawn from the Modeling viewport waits for its "Put on Board" (G5): placed only when asked.
+      if (document.viewRecipe?.board === "on-request") continue;
       const key = documentKey(document);
       if (seen.current.has(key) || skipped.current.has(key) || queue.getState().conflict) continue;
       if ((document.replacesPages?.length ?? 0) > 0) continue;

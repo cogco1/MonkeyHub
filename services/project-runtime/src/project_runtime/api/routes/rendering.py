@@ -42,6 +42,7 @@ def create_camera_passes(request: Request, payload: CameraPassRequestDto) -> dic
         model_source=None if payload.model_source is None else ModelSource.from_dict(
             payload.model_source.model_dump(by_alias=True)),
         source_asset=payload.source_asset, source_stage_ref=payload.source_stage_ref,
+        clip=None if payload.clip is None else {"origin": list(payload.clip.origin), "normal": list(payload.clip.normal)},
     )
 
 

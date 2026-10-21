@@ -219,6 +219,9 @@ class PlanDrawingDto(BaseModel):
     follow: Literal["live", "frozen"] | None = Field(default=None, description=(
         "live follows the project's Working Head; frozen keeps this drawing on its chosen source until it is "
         "rebuilt. Omitted keeps the previous revision's choice; a new drawing is live."))
+    board: Literal["automatic", "on-request"] | None = Field(default=None, description=(
+        "on-request: the Board does not place this drawing by itself, only when a person asks (the Modeling "
+        "viewport's live section draws so). Omitted keeps the previous revision's; a new drawing is automatic."))
     reason: str | None = Field(default=None, min_length=1, max_length=200, description=(
         "Why this revision is asked for, in the asker's own words, such as the correction an agent was given; "
         "omit it for a direct edit. Retained with the revision beside who asked, never in its recipe."))

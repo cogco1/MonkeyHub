@@ -1,6 +1,12 @@
 # Live section in the Modeling viewport (G5)
 
-Design note, 2026-10-20. Not built yet; the steps below are the order of work.
+Design note, 2026-10-20; the steps below are the order of work.
+
+Status, 2026-10-21: step 1 is built without the plane's outline and drag handle (an offset field moves it) and
+with snapping still on the uncut model; step 2 fills closed members in the member's colour darkened, the
+architect's choice; step 3 draws with `board: "on-request"` and offers Put on Board, the architect's choice;
+step 4 keeps the cut in captured views and camera passes, which cut the geometry and draw the outline but do
+not fill the cut faces.
 
 ## Why
 

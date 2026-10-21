@@ -88,6 +88,7 @@ import {
   type SemanticHighlightTarget,
 } from "./modelDisplay";
 import { fitDistance } from "./fitCamera";
+import { buildSectionCaps, disposeSectionCaps, syncSectionCaps, type SectionCaps } from "./sectionCaps";
 import { captureNormalDrag, type NormalDragController } from "./normalDrag";
 import {
   configureOrthographicAspect,
@@ -466,6 +467,9 @@ interface ViewportRuntime {
   sectionPlanes: Plane[];
   /** Whether materials still carry the cut, so turning it off clears them once. */
   sectionApplied: boolean;
+  /** The fills of the cut closed members, and what they were built for: rebuilt when the model or its look changes. */
+  sectionCaps: SectionCaps | null;
+  sectionCapsKey: string | null;
   render: () => void;
 }
 
@@ -575,6 +579,21 @@ function clipModel(runtime: ViewportRuntime): void {
     });
   }
   runtime.sectionApplied = planes !== null;
+}
+
+/** The fills of a live section's cut closed members (G5, step 2): built for the model and its look, laid on the plane each frame. */
+function capSection(runtime: ViewportRuntime): void {
+  const key = runtime.section && runtime.model ? `${runtime.model.uuid}:${runtime.style}` : null;
+  if (key !== runtime.sectionCapsKey) {
+    if (runtime.sectionCaps) disposeSectionCaps(runtime.sectionCaps);
+    runtime.sectionCaps = key && runtime.model
+      ? buildSectionCaps(runtime.model, runtime.sectionPlanes, Math.max(1, (runtime.modelBounds?.radius ?? 1) * 4)) : null;
+    if (runtime.sectionCaps) runtime.scene.add(runtime.sectionCaps.group);
+    runtime.sectionCapsKey = key;
+  }
+  if (runtime.sectionCaps && runtime.section) {
+    syncSectionCaps(runtime.sectionCaps, runtime.section, runtime.modelBounds?.center ?? new Vector3());
+  }
 }
 
 function placeSun(runtime: ViewportRuntime): void {
@@ -2373,8 +2392,11 @@ export const ThreeDmViewport = forwardRef<
       renderView: () => {
         const runtime = runtimeRef.current;
         if (!runtime || (!runtime.model && !runtime.draftObjects.size)) return null;
-        return captureRenderView(runtime.scene, runtime.camera, runtime.controls.target,
+        const view = captureRenderView(runtime.scene, runtime.camera, runtime.controls.target,
           runtime.perspectiveCamera.fov, runtime.renderer.toneMappingExposure, runtime.renderer.shadowMap.enabled);
+        const cut = runtime.section;
+        // A capture keeps the live section it was cut at, so a camera pass of it is cut the same way (G5).
+        return cut ? { ...view, clip: { origin: cut.coplanarPoint(new Vector3()).toArray() as Vec3, normal: cut.normal.toArray() as Vec3 } } : view;
       },
       camera: cameraState,
       unprojectOnPlane,
@@ -2502,6 +2524,8 @@ export const ThreeDmViewport = forwardRef<
 
     const renderer = new WebGLRenderer({
       antialias: true,
+      // A live section fills its cut closed members through the stencil buffer (G5).
+      stencil: true,
       powerPreference: "high-performance",
       // The screenshot encoder runs asynchronously; retain the last explicit
       // render so the browser cannot serialize a cleared WebGL buffer.
@@ -2572,6 +2596,7 @@ export const ThreeDmViewport = forwardRef<
           runtime.secondary && runtime.blendT !== null ? 1 - runtime.blendT : 1);
       }
       clipModel(runtime);
+      capSection(runtime);
       renderer.render(scene, runtime.camera);
     };
 
@@ -2659,6 +2684,8 @@ export const ThreeDmViewport = forwardRef<
       section: null,
       sectionPlanes: [new Plane()],
       sectionApplied: false,
+      sectionCaps: null,
+      sectionCapsKey: null,
       render,
     };
     runtimeRef.current = runtime;
@@ -2716,6 +2743,8 @@ export const ThreeDmViewport = forwardRef<
       restoreHighlight(runtime);
       resetDisplayStyle(runtime);
       clearDraftPreview(runtime);
+      // The section fills share the model's geometry: taken off before the model is disposed.
+      if (runtime.sectionCaps) disposeSectionCaps(runtime.sectionCaps);
       if (runtime.model) disposeScene(runtime.model);
       if (runtime.ghost) disposeGhost(runtime.ghost);
       if (runtime.sketch) disposeScene(runtime.sketch);
