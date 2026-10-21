@@ -253,6 +253,10 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
                         chat_id = presentation_binding["chatId"]
                         value = {key: value for key, value in presentation_binding.items() if key != "token"}
                         value["instructions"] = guides._PRESENTATION_INSTRUCTIONS
+                        # The call a bound connection most often skips, said where it binds: a project tool
+                        # before the user's request is published is refused CHAT_NOT_RUNNING.
+                        value["next"] = ("Before any project tool, publish the user's request: chat_present kind=user "
+                                         "with a new UUID turnId and messageId and their words as content.")
                         if project is not None:
                             value["project"] = project
                     elif external is not None and presentation_binding is None and design_loop_only:

@@ -2476,9 +2476,12 @@ class ChatTests(unittest.TestCase):
     def test_a_tool_call_before_the_first_turn_is_not_told_the_chat_stopped(self):
         """#404 F12: CHAT_NOT_RUNNING said "no longer running" to a chat that had not started."""
 
+        # An external source is told the one call that starts its turn, in full, and that nothing ran.
         for messages, external, words in (([], False, "has not started a turn yet"),
-                                          ([], True, "chat_present kind=user"),
-                                          ([{"role": "user", "content": "hi"}], False, "turn has ended")):
+                                          ([], True, "chat_present kind=user, a new UUID turnId and messageId"),
+                                          ([], True, "Nothing was called"),
+                                          ([{"role": "user", "content": "hi"}], False, "turn has ended"),
+                                          ([{"role": "user", "content": "hi"}], True, "For a new request: Publish")):
             with self.subTest(messages=messages, external=external):
                 session = {"status": "idle", "messages": messages, "sourceSessionId": "source" if external else None}
                 failure = preparation._not_running(session)
