@@ -1590,25 +1590,26 @@ export function Stage({
           starts from, Versions, the Design Tree, the commands on the editing base, then Export and More (#352). */}
       <SurfaceMenus label={t("stage.ariaLabel")} active={active}>
         {editingBaseRunId !== null && <><span className="stage-bar__model" title={editingLabel ?? undefined}>{editingLabel}</span><MenuSeparator /></>}
-        <MenuCommand className="stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel" onClick={toggleVersions}>
+        {/* Versions, the Design Tree, Export and More act on the 3D model: not while a document page is open. */}
+        {!documentOpen && <MenuCommand className="stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel" onClick={toggleVersions}>
           {t("stage.versions.open")}
           {!onOpenTree && <>
             <span className="quiet">{versionCount}</span>
             {!documentOpen && hasModel && contextLabel && <span className="stage__versions-current"><span className="quiet">{t("stage.context.viewing")} </span>{contextLabel}</span>}
             {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
           </>}
-        </MenuCommand>
-        {onOpenTree && <MenuCommand className="stage__tree-link" onClick={onOpenTree}>{t("stage.tree.open")}</MenuCommand>}
+        </MenuCommand>}
+        {!documentOpen && onOpenTree && <MenuCommand className="stage__tree-link" onClick={onOpenTree}>{t("stage.tree.open")}</MenuCommand>}
         {explicitBase && <MenuCommand disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading"}
           onClick={onDefaultBase}>{t("stage.base.default")}</MenuCommand>}
         {!onReturnToBoard && picked && onOpenBoard && <MenuCommand onClick={onOpenBoard}>{t("workspace.monkeyboard")}</MenuCommand>}
         {!documentOpen && picked?.componentId && !infoOpen && <MenuCommand aria-controls="stage-component-info" onClick={openInfo}>
           {t("componentInfo.title")}</MenuCommand>}
-        {exportMenu}
-        {moreMenu}
+        {!documentOpen && exportMenu}
+        {!documentOpen && moreMenu}
       </SurfaceMenus>
       {onReturnToBoard && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
-        <button type="button" onClick={onReturnToBoard}>{t("workspace.monkeyboard")}</button>
+        <button type="button" onClick={onReturnToBoard}>{t("workspace.returnToBoard")}</button>
       </div>}
       {(baseChoice || editingStatus) && <div className="stage-decision" role="group" aria-label={t("stage.base.label")}>
         {baseChoice && <div className="base-choice" role="group" aria-label={t("board.feedback.choice")}>

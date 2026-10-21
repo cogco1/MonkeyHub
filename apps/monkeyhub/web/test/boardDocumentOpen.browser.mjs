@@ -244,7 +244,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   }
   assert.equal(saved.annotations.length, 1, "The mark drawn in the editor was not saved");
   await page.locator(".document-save-state").filter({ hasText: /^Saved$/ }).waitFor();
-  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await page.getByRole("button", { name: "Back to Board", exact: true }).click();
 
   await page.locator(".monkeyboard-canvas canvas").first().waitFor();
   const written = requests.filter((request) => request.method === "PUT" && request.path === "/api/document-annotations");
@@ -335,7 +335,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   await page.locator(".document-error").waitFor();
   assert.equal(await strokes(), strokesBefore + 1, "The refused stroke stays on the page");
   const refusedPageWrites = writes("/api/document-annotations");
-  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await page.getByRole("button", { name: "Back to Board", exact: true }).click();
   for (let attempt = 0; attempt < 100 && writes("/api/document-annotations") === refusedPageWrites; attempt++) await delay(100);
   assert.ok(writes("/api/document-annotations") > refusedPageWrites, "Leaving writes the page rather than skipping it");
   await delay(500);
@@ -349,7 +349,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   faults["/api/document-annotations"] = false;
   const acceptedFrom = writes("/api/document-annotations");
   await page.evaluate(() => {
-    const entry = [...document.querySelectorAll("button")].find((button) => button.textContent.trim() === "MonkeyBoard · Board");
+    const entry = [...document.querySelectorAll("button")].find((button) => button.textContent.trim() === "Back to Board");
     entry.click(); entry.click();
   });
   await page.locator(".monkeyboard-canvas canvas").first().waitFor();
@@ -424,7 +424,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   await page.locator('.document-viewport[aria-label="Annotation canvas, page 1"][data-ready=true]').waitFor();
   assert.equal(await page.getByLabel("Page", { exact: true }).inputValue(), "0");
   assert.equal(await page.locator(".document-page__ink [data-stroke-id]").count(), 0);
-  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await page.getByRole("button", { name: "Back to Board", exact: true }).click();
   const previousPage = await pageAnnotations(1);
   const extra = { id: "board-feedback-return", kind: "line", points: [[0.1, 0.1], [0.7, 0.2]], color: "#ff0000", lineWidth: 0.004 };
   await call("PUT", "/api/document-annotations", { projectId: project.projectId, runId: secondPage.runId,
@@ -476,7 +476,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
       assertStateBlocked();
       const comment = `Page two remains editable while 3D recovery is ${mode}.`;
       await page.getByLabel("Comment on this page", { exact: true }).fill(comment);
-      await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+      await page.getByRole("button", { name: "Back to Board", exact: true }).click();
       await page.locator(".monkeyboard-canvas canvas").first().waitFor();
       assertStateBlocked();
       const secondAfter = await pageAnnotations(1);
@@ -544,7 +544,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   assert.equal(await page.locator(".document-viewport, .document-page__raster").count(), 0, "No other page substitutes for the unavailable one");
   assert.deepEqual(requests.slice(beforeUnavailable).filter((entry) => entry.path === "/api/document-annotations"), [],
     "An unavailable page neither loads another page's annotations nor writes a substitute");
-  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await page.getByRole("button", { name: "Back to Board", exact: true }).click();
   await page.locator(".monkeyboard-canvas canvas").first().waitFor();
   assert.equal(await page.evaluate(() => window.__boardCanvas === document.querySelector(".monkeyboard-canvas canvas")), true);
   assert.deepEqual([await pageAnnotations(0), await pageAnnotations(1)], retainedPages);

@@ -243,8 +243,8 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
     <header className="render-toolbar render-mode-toolbar">
       <strong>Render</strong>
       <div role="group" aria-label={zh ? "工作模式" : "Render mode"}>
-        <button type="button" aria-pressed={mode === "ai"} onClick={() => setMode("ai")}>AI</button>
-        <button type="button" aria-pressed={mode === "physical"} onClick={() => setMode("physical")}>Physical</button>
+        <button type="button" aria-pressed={mode === "ai"} onClick={() => setMode("ai")}>{t("render.mode.ai")}</button>
+        <button type="button" aria-pressed={mode === "physical"} onClick={() => setMode("physical")}>{t("render.mode.physical")}</button>
       </div>
       <button type="button" onClick={() => void refresh()} disabled={loading}>{loading ? (zh ? "读取中…" : "Reading…") : (zh ? "刷新状态" : "Refresh status")}</button>
     </header>

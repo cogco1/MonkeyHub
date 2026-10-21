@@ -217,7 +217,7 @@ print(json.dumps({"png": base64.b64encode(data.getvalue()).decode()}))
   await page.getByRole("checkbox", { name: "Outline 2 · mass", exact: true }).check();
 
   // Saved control points and calibration survive leaving and a fresh document-editor mount.
-  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await page.getByRole("button", { name: "Back to Board", exact: true }).click();
   await page.locator(".monkeyboard-context").waitFor();
   assert.equal(await page.locator(".excalidraw .reset-zoom-button").innerText(), zoom);
   assert.match(await page.locator(".monkeyboard-footer").innerText(), /original-concept\.png/);
@@ -369,7 +369,7 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
   await page.locator(".stage-model").waitFor({ state: "visible" });
   assert.equal(await page.locator(".stage-model").getAttribute("aria-hidden"), "false");
   if (process.env.BOARD_SCREENSHOT) await page.screenshot({ path: process.env.BOARD_SCREENSHOT.replace(/\.png$/, "-model.png") });
-  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await page.getByRole("button", { name: "Back to Board", exact: true }).click();
   await page.locator(".monkeyboard-context").waitFor();
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });

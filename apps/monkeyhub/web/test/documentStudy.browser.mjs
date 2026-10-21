@@ -269,7 +269,7 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
   assert.equal(await panel().getByText("Saved actual result", { exact: true }).count(), 4);
   await page.screenshot({ path: path.join(evidenceDir, "study-counterfactuals.png") });
 
-  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await page.getByRole("button", { name: "Back to Board", exact: true }).click();
   await page.locator(".monkeyboard-context").waitFor();
   assert.equal(await page.evaluate(() => window.__studyBoardCanvas === document.querySelector(".monkeyboard-canvas canvas")), true);
   assert.equal(await page.locator(".excalidraw .reset-zoom-button").innerText(), zoom);
@@ -389,7 +389,7 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
   assert.equal(await page.getByRole("button", { name: "Return to annotations", exact: true }).isDisabled(), true);
   assert.equal(await sourceSelect().inputValue(), mainSelection);
   assert.equal(await tracePath(), correctedPath, "The existing source remains visible while its replacement uploads");
-  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await page.getByRole("button", { name: "Back to Board", exact: true }).click();
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
   assert.equal(await panel().isVisible(), true, "Leaving during the upload cannot hide an unfinished Study operation");
   assert.equal(await page.locator(".monkeyboard-context").isVisible(), false);

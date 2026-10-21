@@ -59,7 +59,7 @@ const menuWords = {
     sidebar: "侧栏", tools: "工具面板", theme: "主题", system: "跟随系统", dark: "深色", light: "浅色",
     uiStyle: "界面风格", classic: "经典", quiet: "静默仪表", titleblock: "图签", night: "夜航",
     size: "字号", compact: "紧凑", normal: "标准", large: "大",
-    update: "检查更新…",
+    update: "软件更新…",
   },
   en: {
     menus: "Menus", back: "Back to the previous conversation", forward: "Forward to the next conversation",
@@ -69,7 +69,7 @@ const menuWords = {
     sidebar: "Sidebar", tools: "Tools panel", theme: "Theme", system: "Match system", dark: "Dark", light: "Light",
     uiStyle: "Interface style", classic: "Classic", quiet: "Quiet instrument", titleblock: "Title block", night: "Night flight",
     size: "Text size", compact: "Compact", normal: "Standard", large: "Large",
-    update: "Check for updates…",
+    update: "Software update…",
   },
 } as const;
 // followHead: the tab was restored on a cold start, not opened to inspect that exact

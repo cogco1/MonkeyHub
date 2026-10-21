@@ -3669,7 +3669,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             {t("workspace.monkeydiagram")}
           </button>}
           {returnToBoard && <button type="button" className="btn" onClick={returnToBoard}>
-            {t("workspace.monkeyboard")}
+            {t("workspace.returnToBoard")}
           </button>}
         </div>
       </div>
