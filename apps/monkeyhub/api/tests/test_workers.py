@@ -81,6 +81,10 @@ class Handler(BaseHTTPRequestHandler):
 server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
 def stop():
     sys.stdin.readline()
+    # A job that is still running when the stop arrives finishes first.
+    drain = Path(os.environ["OUTAGE_FILE"]).with_suffix(".drain")
+    while drain.exists():
+        time.sleep(0.05)
     server.shutdown()
 threading.Thread(target=stop, daemon=True).start()
 server.serve_forever(poll_interval=0.05)
@@ -169,6 +173,30 @@ class WorkerSupervisorTests(unittest.TestCase):
         with self.assertRaises(HubFailure) as raised:
             self.supervisor.start(a)
         self.assertEqual(raised.exception.error.code, "HUB_STOPPING")
+
+    def test_a_closing_hub_waits_for_running_work_and_says_what_it_waits_for(self):
+        # Gap 24: the wait has no limit of its own; the desktop reads the note
+        # to say what a forced close would end.
+        launch = self.launch("project")
+        self.supervisor.start(launch)
+        self.wait_state(launch.worker_id, "ready")
+        self.supervisor.set_busy(launch.worker_id, True)
+        drain = Path(launch.project_dir) / "outage.drain"
+        drain.write_text("a job is running", encoding="utf-8")
+        applications = Applications(ROOT, self.root / "hub", free_ports(1)[0])
+        applications.supervisor = self.supervisor
+        timer = threading.Timer(2.5, drain.unlink)
+        timer.start()
+        self.addCleanup(timer.cancel)
+        started = time.monotonic()
+        with patch.object(applications, "_note_closing", wraps=applications._note_closing) as noted:
+            applications.shutdown()
+        self.assertGreaterEqual(time.monotonic() - started, 2.4, "the Hub stopped waiting before the job finished")
+        busy = {"service": "studio", "projectId": "project", "projectDir": launch.project_dir, "busy": True}
+        self.assertEqual([call.args[0] for call in noted.call_args_list], [[busy], []], "each change is noted once")
+        self.assertEqual(json.loads((self.root / "hub/runtime/closing.json").read_text(encoding="utf-8")),
+                         {"processId": os.getpid(), "waiting": []})
+        self.assertEqual(self.supervisor._children[launch.worker_id].process.returncode, 0)
 
     def test_recovery_refuses_foreign_listener_and_does_not_adopt_it(self):
         launch = self.launch("project")

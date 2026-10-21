@@ -24,6 +24,9 @@ from .workers import WorkerLaunch, WorkerSnapshot, WorkerSupervisor, project_key
 # starts or is stopped on request, left as it is when the Hub quits or dies, and
 # read once at the next start to bring those Studios back.
 STUDIOS_FILE = Path("runtime") / "studios.json"
+# What a closing Hub is still waiting for (gap 24), with its process id: the
+# desktop reads it to say what a forced close would end.
+CLOSING_FILE = Path("runtime") / "closing.json"
 
 APPS = {
     "monkeyarch": ("MonkeyArch", "studio"),
@@ -307,4 +310,24 @@ class Applications:
 
     def shutdown(self) -> None:
         self.begin_shutdown()
-        self.supervisor.shutdown()
+        noted: list[list[dict]] = []
+
+        def note(waiting: list[dict]) -> None:
+            if not noted or noted[-1] != waiting:
+                noted.append(waiting)
+                self._note_closing(waiting)
+
+        self.supervisor.shutdown(on_wait=note)
+
+    def _note_closing(self, waiting: list[dict]) -> None:
+        """Note what this closing Hub still waits for; a failed write only loses the note."""
+
+        path = self.runtime_root / CLOSING_FILE
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_name(path.name + ".tmp")
+            temporary.write_text(json.dumps({"processId": os.getpid(), "waiting": waiting}, ensure_ascii=False),
+                                 encoding="utf-8")
+            os.replace(temporary, path)
+        except OSError:
+            pass

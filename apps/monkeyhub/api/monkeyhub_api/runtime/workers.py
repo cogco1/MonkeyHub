@@ -409,7 +409,23 @@ class WorkerSupervisor:
             for worker_id in self._children:
                 self.stop(worker_id)
 
-    def shutdown(self) -> None:
+    def shutdown(self, on_wait: Callable[[list[dict]], None] | None = None) -> None:
+        """Stop every child and wait for each to finish the work it accepted.
+
+        The wait has no limit of its own: only the person, through the desktop,
+        ends work that is still running (gap 24). Until then ``on_wait`` is told
+        about once a second which children are still running.
+        """
+
         self.begin_shutdown()
-        for child in tuple(self._children.values()):
-            child.process.wait()
+        while True:
+            running = [child for child in tuple(self._children.values()) if child.process.poll() is None]
+            if on_wait is not None:
+                on_wait([{"service": child.launch.service_id, "projectId": child.launch.project_id,
+                          "projectDir": child.launch.project_dir, "busy": child.busy} for child in running])
+            if not running:
+                return
+            try:
+                running[0].process.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                pass

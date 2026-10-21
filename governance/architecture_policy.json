@@ -254,6 +254,18 @@
       "reason": "Atomically notes which projects' Studios this Hub runs (projectId and folder only) at runtime/studios.json under the nonproject Hub runtime root, so the next start brings them back (gap 18). No project data is written."
     },
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/runtime/applications.py",
+      "function": "_note_closing",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "replace"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Atomically notes, while the Hub closes, which of its children are still running (service, projectId, folder, busy) and its process id at runtime/closing.json under the nonproject Hub runtime root, for the desktop to name what a forced close would end (gap 24). No project data is written."
+    },
+    {
       "path": "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
       "function": "_save",
       "operations": [

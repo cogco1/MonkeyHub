@@ -5,8 +5,8 @@ use monkeyhub_desktop::updates::{
     target_directory, TrialReady,
 };
 use monkeyhub_desktop::{
-    is_status_url, DiagnosticLog, ExpectedIdentity, HealthError, LaunchConfig, OwnedRuntime,
-    SOURCE_REVISION,
+    closing_projects, is_status_url, waiting_text, DiagnosticLog, ExpectedIdentity, HealthError,
+    LaunchConfig, OwnedRuntime, SOURCE_REVISION,
 };
 use serde::Serialize;
 use std::{
@@ -30,13 +30,53 @@ struct Status {
     detail: String,
     log: String,
 }
+// How long a close waits before the window says what it waits for and offers a forced close (gap 24).
+const FORCE_OFFER_AFTER: Duration = Duration::from_secs(20);
+
 struct Shared {
     shutdown: AtomicBool,
     finished: AtomicBool,
+    // Set once the window has offered a forced close; a close after that asks for one.
+    force_offered: AtomicBool,
+    force_requested: AtomicBool,
     identity: Mutex<Option<ExpectedIdentity>>,
     status: Mutex<Status>,
     trial: bool,
     trial_committed: AtomicBool,
+}
+
+#[cfg(windows)]
+fn message_box(text: &str, title: &str, flags: u32) -> i32 {
+    #[link(name = "user32")]
+    extern "system" {
+        fn MessageBoxW(
+            hwnd: *mut std::ffi::c_void,
+            text: *const u16,
+            caption: *const u16,
+            flags: u32,
+        ) -> i32;
+    }
+    let text: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
+    let title: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
+    unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), title.as_ptr(), flags) }
+}
+
+/// Asks the person whether to end the Hub now, naming what is lost (gap 24).
+fn confirm_force_close(waiting: &[(String, bool)]) -> bool {
+    let text = format!(
+        "强制退出会立即结束 MonkeyHub 和它启动的项目服务。\n\n{}\n\n会丢失：这些服务里还没算完的工作（例如出图、渲染、读取模型），算到一半的结果不会保存，下次打开时这些操作会显示为未完成。\n不会丢失：已经存进项目的内容和对话记录。\n\n确定强制退出吗？",
+        waiting_text(waiting)
+    );
+    #[cfg(windows)]
+    {
+        // MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2 | MB_SETFOREGROUND | MB_TOPMOST; IDYES is 6.
+        message_box(&text, "MonkeyHub · 强制退出", 0x4 | 0x30 | 0x100 | 0x10000 | 0x40000) == 6
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = text;
+        false
+    }
 }
 
 fn paint_status(window: &WebviewWindow, shared: &Shared) {
@@ -177,10 +217,43 @@ fn supervise(
     let mut last_health = Instant::now() - Duration::from_secs(1);
     let mut pending_update: Option<String> = None;
     let mut trial_announced = false;
+    let mut stop_requested: Option<Instant> = None;
+    let mut waiting_painted = Instant::now();
     loop {
         let quitting = shared.shutdown.load(Ordering::SeqCst);
+        if let Some(since) = stop_requested {
+            // Gap 24: the wait has no limit of its own; after a while the window
+            // says how long and for what, and a second close may end it.
+            if since.elapsed() >= FORCE_OFFER_AFTER && waiting_painted.elapsed() >= Duration::from_secs(5) {
+                waiting_painted = Instant::now();
+                shared.force_offered.store(true, Ordering::SeqCst);
+                let waiting = closing_projects(&config.runtime_root, runtime.identity.process_id);
+                show_status(
+                    &window,
+                    &shared,
+                    &log,
+                    "stopping",
+                    "仍在关闭",
+                    &format!(
+                        "{}已等待 {} 秒，算完后会自动关闭。要立即退出，请再次关闭窗口。",
+                        waiting_text(&waiting),
+                        since.elapsed().as_secs()
+                    ),
+                );
+            }
+            if shared.force_requested.swap(false, Ordering::SeqCst) {
+                let waiting = closing_projects(&config.runtime_root, runtime.identity.process_id);
+                if confirm_force_close(&waiting) {
+                    log.state("force-stopping", "The person confirmed a forced close");
+                    runtime.force_stop();
+                } else {
+                    log.write("event=force-declined");
+                }
+            }
+        }
         if quitting && !stopping {
             stopping = true;
+            stop_requested = Some(Instant::now());
             show_status(
                 &window,
                 &shared,
@@ -436,6 +509,8 @@ fn run() -> Result<(), String> {
     let shared = Arc::new(Shared {
         shutdown: AtomicBool::new(false),
         finished: AtomicBool::new(false),
+        force_offered: AtomicBool::new(false),
+        force_requested: AtomicBool::new(false),
         identity: Mutex::new(None),
         status: Mutex::new(Status {
             title: "正在启动".into(),
@@ -480,6 +555,8 @@ fn run() -> Result<(), String> {
             window.on_window_event(move |event| {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
+                    // Gap 24: once the window has said what the close waits for, closing again asks to force it.
+                    if close_shared.force_offered.load(Ordering::SeqCst) { close_shared.force_requested.store(true, Ordering::SeqCst); }
                     close_shared.shutdown.store(true, Ordering::SeqCst);
                     if close_shared.finished.load(Ordering::SeqCst) { close_app.exit(0); }
                 }
@@ -524,24 +601,8 @@ fn main() {
         eprintln!("{error}");
         #[cfg(windows)]
         if !std::env::args_os().any(|arg| arg == "--update-trial") {
-            unsafe {
-                // A visible fallback also covers a missing WebView2 runtime.
-                #[link(name = "user32")]
-                extern "system" {
-                    fn MessageBoxW(
-                        hwnd: *mut std::ffi::c_void,
-                        text: *const u16,
-                        caption: *const u16,
-                        flags: u32,
-                    ) -> i32;
-                }
-                let message: Vec<u16> = error.encode_utf16().chain(Some(0)).collect();
-                let title: Vec<u16> = "MonkeyHub · 启动失败"
-                    .encode_utf16()
-                    .chain(Some(0))
-                    .collect();
-                MessageBoxW(std::ptr::null_mut(), message.as_ptr(), title.as_ptr(), 0x10);
-            }
+            // A visible fallback also covers a missing WebView2 runtime.
+            message_box(&error, "MonkeyHub · 启动失败", 0x10);
         }
         std::process::exit(1);
     }
