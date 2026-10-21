@@ -51,7 +51,8 @@ class Scene:
     units: str
     warnings: list[str]
     display: dict = field(default_factory=dict)
-    # What a tolerant read left out, by entity type; empty for a strict read.
+    # What a read left out: the objects the file hides, and by entity type what
+    # a tolerant read could not use.
     omitted: dict = field(default_factory=dict)
 
     def metrics(self):
@@ -219,11 +220,14 @@ class ThreeDM:
         self.version = "rhino3dm/" + rhino3dm.__version__
 
     def read(self, data, *, omit_unsupported=False):
-        """Every mesh, and every Brep or extrusion by its saved render mesh.
+        """Every mesh, and every Brep or extrusion by its saved render mesh, that the file shows.
 
-        A strict read refuses anything else. ``omit_unsupported`` (print meshes)
-        leaves curves, text, hatches and render-meshless solids out and counts
-        them in ``scene.omitted`` instead.
+        An object saved hidden, or on a layer that is hidden itself or under a
+        hidden parent, is left out and counted in ``scene.omitted``, as the
+        model view hides it: an opening's cutter is saved hidden on its wall's
+        layer. A strict read refuses anything else. ``omit_unsupported`` (print
+        meshes) leaves curves, text, hatches and render-meshless solids out and
+        counts them in ``scene.omitted`` instead.
         """
         r = self.r
         omitted = {}
@@ -237,7 +241,11 @@ class ThreeDM:
             raise ConversionError("3DM units are unspecified; set model units before conversion.")
         scale = r.UnitSystem.UnitScale(units, r.UnitSystem.Meters)
         meshes, warnings = [], []
+        hidden_layers = self._hidden_layers(model)
         for item in model.Objects:
+            if not item.Attributes.Visible or item.Attributes.LayerIndex in hidden_layers:
+                omitted["hidden object"] = omitted.get("hidden object", 0) + 1
+                continue
             geometry = item.Geometry
             if isinstance(geometry, r.Mesh):
                 pieces = [geometry]
@@ -276,10 +284,27 @@ class ThreeDM:
                                str(item.Attributes.Id), normals, colors, self._material(model, item.Attributes, layer)))
         warnings.append("Materials, textures, custom normals, CAD metadata and layer hierarchy are not preserved; layers are flattened into the default layer in GLB.")
         if omitted:
-            warnings.append("Left out of the print mesh: " + ", ".join(f"{count} {kind}" for kind, count in sorted(omitted.items())) + ".")
+            where = "the print mesh" if omit_unsupported else "the export"
+            warnings.append(f"Left out of {where}: " + ", ".join(f"{count} {kind}" for kind, count in sorted(omitted.items())) + ".")
         scene = Scene(meshes, str(units), list(dict.fromkeys(warnings)), omitted=omitted)
         scene.metrics()
         return scene
+
+    @staticmethod
+    def _hidden_layers(model):
+        """Indices of the layers the file hides: hidden themselves or under a hidden parent."""
+        layers = list(model.Layers)
+        by_id = {str(layer.Id): layer for layer in layers}
+        hidden = set()
+        for index, layer in enumerate(layers):
+            current, seen = layer, set()
+            while current is not None and str(current.Id) not in seen:
+                if not current.Visible:
+                    hidden.add(index)
+                    break
+                seen.add(str(current.Id))
+                current = by_id.get(str(current.ParentLayerId))
+        return hidden
 
     def _material(self, model, attributes, layer):
         r = self.r

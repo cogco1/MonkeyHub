@@ -320,6 +320,65 @@ class FormatTests(unittest.TestCase):
         self.assertIn("millimetres", info["losses"]["units"].lower())
         self.assertEqual(info["outputValidation"]["status"], "passed")
 
+    def test_what_the_file_hides_is_left_out_of_glb_and_stl(self):
+        # Gap 31: a wall's opening is saved as a hidden cutter on the wall's own layer; exported as a
+        # solid it filled the doorway. A hidden layer, or one under a hidden parent, is left out too.
+        import rhino3dm as r
+        model = r.File3dm()
+        model.Settings.ModelUnitSystem = r.UnitSystem.Meters
+
+        def layer(name, visible=True, parent=None):
+            native = r.Layer()
+            native.Name, native.Visible = name, visible
+            if parent is not None:
+                native.ParentLayerId = model.Layers[parent].Id
+            return model.Layers.Add(native)
+
+        def cube(name, index, shift=0.0, visible=True):
+            mesh = r.Mesh()
+            for x, y, z in CUBE:
+                mesh.Vertices.Add(x + shift, y, z)
+            for quad in CUBE_QUADS:
+                mesh.Faces.AddFace(*quad)
+            attributes = r.ObjectAttributes()
+            attributes.Name, attributes.LayerIndex, attributes.Visible = name, index, visible
+            model.Objects.AddMesh(mesh, attributes)
+
+        wall, reference = layer("wall"), layer("reference", visible=False)
+        cube("wall", wall)
+        cube("obj-wall-body-aperture-opening-1", wall, shift=0.5, visible=False)
+        cube("reference", reference, shift=5)
+        cube("site", layer("site", parent=reference), shift=9)
+        hidden_line = r.ObjectAttributes()
+        hidden_line.Visible = False
+        model.Objects.AddCurve(r.LineCurve(r.Point3d(0, 0, 0), r.Point3d(1, 0, 0)), hidden_line)
+        data = base64.b64decode(model.Encode())
+
+        output, info = convert(data, "3dm", "glb")
+        self.assertEqual([mesh.name for mesh in GLB().read(output).meshes], ["wall"])
+        self.assertEqual(info["omitted"], {"hidden object": 4})
+        self.assertIn("Left out of the export: 4 hidden object.", info["warnings"])
+        self.assertEqual(info["outputValidation"]["status"], "passed")
+        output, info = convert(data, "3dm", "stl")
+        self.assertEqual(struct.unpack_from("<I", output, 80)[0], 12)
+        self.assertEqual(info["omitted"], {"hidden object": 4})
+
+    def test_glb_turns_z_up_into_y_up_without_mirroring(self):
+        # Gap 32: the model's north (+Y) becomes glTF's -Z and its up (+Z) glTF's +Y. That is a
+        # rotation, not a mirror: an outward closed cube stays outward.
+        scene = Scene([Mesh("Cube", [(x + 10, y + 20, z) for x, y, z in CUBE], CUBE_TRIANGLES)], "Meters", [])
+        output, _ = convert(ThreeDM().write(scene), "3dm", "glb")
+        json_size = struct.unpack_from("<I", output, 12)[0]
+        document, binary = json.loads(output[20:20 + json_size]), output[28 + json_size:]
+        positions, indices = document["accessors"][:2]
+        points = [struct.unpack_from("<3f", binary, document["bufferViews"][positions["bufferView"]]["byteOffset"] + 12 * i)
+                  for i in range(positions["count"])]
+        flat = struct.unpack_from(f"<{indices['count']}I", binary, document["bufferViews"][indices["bufferView"]]["byteOffset"])
+        self.assertEqual((positions["min"], positions["max"]), ([10, 0, -22], [12, 2, -20]))
+        volume = sum(a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])
+                     for a, b, c in ((points[flat[i]], points[flat[i + 1]], points[flat[i + 2]]) for i in range(0, len(flat), 3))) / 6
+        self.assertAlmostEqual(volume, 8.0, places=4)
+
     def test_stl_is_written_never_read_as_a_source(self):
         with self.assertRaises(ConversionError):
             convert(b"solid", "stl", "glb")
