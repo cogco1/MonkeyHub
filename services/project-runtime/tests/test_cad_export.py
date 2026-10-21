@@ -1419,6 +1419,15 @@ class WholeAssemblyCandidateTests(OcctCandidateTestCase):
         report, glb = self.exported_glb(self.client, first, candidate_a["stateDigest"])
         self.assertEqual(sorted(mesh.name for mesh in GLB().read(glb).meshes), sorted(set(ASSEMBLY_OBJECTS) - {APERTURE}))
         self.assertEqual(report["omitted"], {"hidden object": 1})
+        # Gap 42: the model view, and so a review's frames, leaves that aperture out too, as the cut plans and
+        # elevations already do: the legend counts every object but it.
+        model = next(row["modelSource"] for row in candidate_a["artifacts"] if row.get("modelSource"))
+        for view in ("axon", "front"):
+            answer = self.client.get("/api/drawings/model-view", params={**model, "view": view, "display": "material"})
+            self.assertEqual(answer.status_code, 200, answer.text)
+            legend = answer.json()["legend"]
+            self.assertEqual(sum(row["objects"] for row in legend["materials"]) + legend["undeclared"],
+                             len(set(ASSEMBLY_OBJECTS) - {APERTURE}), view)
 
         # Restart. Reading A back runs no CAD at all, and A is an exact base to continue from.
         with no_cad_at_all(), no_process():

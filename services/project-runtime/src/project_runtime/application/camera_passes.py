@@ -197,7 +197,7 @@ def _draw(binding, chosen: PerspectiveCamera, width, height, id_by, model_source
              if isinstance(row, dict) and isinstance(row.get("bbox"), dict)]
     pixel = chosen.pixel_footprint(height, boxes)
     try:
-        meshes, skipped = triangulate(verified.entries, verified.physical_object_ids, linear_deflection=pixel * CHORD_PX)
+        meshes, skipped = triangulate(verified.entries, drawings.drawn_object_ids(verified), linear_deflection=pixel * CHORD_PX)
         if not meshes:
             raise MeshViewError("the model has no surfaces to draw")
         meshed = perf_counter()
