@@ -55,7 +55,7 @@ from monkeyarch.authoring.element_producers import (
 from monkeyarch.domain.reference_resolver import ReferenceContext
 from monkeyarch.authoring.construction.vocabulary import LIMITS
 
-EDITABLE_PRODUCERS = frozenset({"prism", "planar-surface", "curve", "loft", "wall"})
+EDITABLE_PRODUCERS = frozenset({"prism", "planar-surface", "curve", "loft", "wall", "stair", "railing"})
 MAX_PROFILE_POINTS = LIMITS["profilePoints"]
 MAX_PATH_POINTS = LIMITS["pathPoints"]
 MAX_COORDINATE = float(LIMITS["coordinateRange"])
@@ -990,6 +990,8 @@ class RowShape(Shape):
         self._refuse_reshaping(verb)
         if self.producer == "wall":
             self._apply_to_line(change, verb)
+        elif self.producer in ("stair", "railing"):
+            self._apply_to_run(change, verb)
         elif self.producer == "loft":
             for params, authored in ((self.params, True), (self.resolved_params, False)):
                 profiles = self._authored(params, "profiles") if authored else params["profiles"]
@@ -1064,6 +1066,34 @@ class RowShape(Shape):
                 if isinstance(opening, dict) and "at" in opening:
                     opening["at"] = self._moved_point(opening["at"], change, verb)
 
+    def _apply_to_run(self, change: PlanMap, verb: str) -> None:
+        """A flight's two ends, or a railing's points, moved, turned or mirrored in plan; a lift raises it."""
+
+        if change.kind == "scale":
+            raise ShapeError(f"{self.label()} can be moved, rotated or mirrored, not scaled")
+        for references, params, authored in ((self.references, self.params, True),
+                                             (self.resolved_references, self.resolved_params, False)):
+            if self.producer == "stair":
+                for key in ("from", "to"):
+                    references[key] = self._moved_point(references.get(key), change, verb)
+                if change.lift:
+                    elevation = params.get("elevation", 0.0)
+                    if authored and _bound(elevation):
+                        raise ShapeError(f"{self.label()} has its base bound to project parameters; "
+                                         "move it with set_base instead")
+                    value = clean(float(elevation) + change.lift)
+                    if value:
+                        params["elevation"] = value
+                    else:
+                        params.pop("elevation", None)
+            else:
+                points = self._authored(params, "points") if authored else params["points"]
+                moved = []
+                for x, y, z in points:
+                    px, pz = change.point(float(x), float(z))
+                    moved.append([clean(px), clean(float(y) + change.lift), clean(pz)])
+                params["points"] = moved
+
     def _moved_point(self, reference: object, change: PlanMap, verb: str) -> dict:
         if not isinstance(reference, dict) or set(reference) != {"point"}:
             raise ShapeError(f"{self.label()} is placed on the project's grid or on another shape's line; "
@@ -1118,7 +1148,8 @@ class RowShape(Shape):
     def check_extent(self) -> None:
         """Every number this row's placement states stays within reach after an edit."""
 
-        for value in (*_numbers_in(self.params), *_numbers_in(self.references.get("line"))):
+        placed = {key: self.references.get(key) for key in ("line", "from", "to")}
+        for value in (*_numbers_in(self.params), *_numbers_in(placed)):
             coordinate(value, f"a value of {self.label()}")
         height = self.params.get("height")
         if is_number(height) and float(height) < MIN_LENGTH:
@@ -1180,7 +1211,7 @@ class RowShape(Shape):
         drawing = self.resolved_params.get("work_plane")
         horizontal = drawing is None or (list(drawing.get("normal", ())) == [0.0, 1.0, 0.0]
                                          and float(drawing["xAxis"][1]) == 0 and float(drawing["yAxis"][1]) == 0)
-        return self.producer in ("prism", "wall") and horizontal and "rectangular_cutouts" not in self.params
+        return self.producer in ("prism", "wall", "stair") and horizontal and "rectangular_cutouts" not in self.params
 
 
 def lower_anchor(anchor: Anchor, element_id_of: Callable[[Shape], str]) -> tuple[dict, float | str | None]:
