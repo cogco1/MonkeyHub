@@ -5846,7 +5846,7 @@ export type HostedOpeningRequestDto = {
     /**
      * Family
      *
-     * the family that fills the opening, in metres: a window takes frame_width, frame_depth, frame_projection, glazing_thickness and glazing_offset; a door takes frame_width, frame_depth, frame_projection, leaf_thickness, leaf_offset, leaf_count (1 or 2), leaf_gap, clearance_bottom and clearance_top. Left out, the opening is an empty passage with no frame or leaf
+     * the family that fills the opening, in metres: a window takes frame_width, frame_depth and glazing_thickness (each > 0); a door takes frame_width, frame_depth, leaf_thickness (each > 0) and leaf_count (1 or 2). frame_projection, glazing_offset, leaf_offset, leaf_gap, clearance_bottom and clearance_top are 0 when left out: flush with the host's face, no gap. Left out, the opening is an empty passage with no frame or leaf
      */
     family?: {
         [key: string]: number | number;

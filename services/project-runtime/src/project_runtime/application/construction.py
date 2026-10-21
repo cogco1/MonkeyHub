@@ -850,20 +850,43 @@ def _voids_named(element: Entity) -> tuple[str, ...]:
     return tuple(void for void in voids if isinstance(void, str)) if isinstance(voids, (list, tuple)) else ()
 
 
+# What each family field takes. The sizes have no neutral value and are always
+# stated; an offset, gap or clearance left out is 0, which places the part flush
+# with the host's face or leaves no gap, so no size is made up for the caller.
+_FAMILY_VALUES = {
+    "frame_width": "metres > 0", "frame_depth": "metres > 0", "leaf_thickness": "metres > 0",
+    "glazing_thickness": "metres > 0", "leaf_count": "1 or 2",
+    "frame_projection": "metres, 0 when left out", "leaf_offset": "metres, 0 when left out",
+    "glazing_offset": "metres, 0 when left out", "leaf_gap": "metres >= 0, 0 when left out",
+    "clearance_bottom": "metres >= 0, 0 when left out", "clearance_top": "metres >= 0, 0 when left out",
+}
+_FAMILY_ZERO = frozenset({"frame_projection", "leaf_offset", "glazing_offset", "leaf_gap", "clearance_bottom",
+                          "clearance_top"})
+
+
 def _opening_family(kind: str, type_id: str, family: Mapping[str, Any]) -> DoorType | WindowType:
-    """The family that fills a door or window, checked by constructing the type the opening solver fills it with."""
+    """The family that fills a door or window, checked by constructing the type the opening solver fills it with.
+
+    A refusal names each field that is missing or not taken with what it takes, and that leaving the family out
+    makes an empty passage, so a caller can complete the request in one more call (gap found by the benchmark).
+    """
 
     kind_type = DoorType if kind == "door" else WindowType
     takes = [item.name for item in dataclasses.fields(kind_type) if item.name != "type_id"]
-    unknown, missing = sorted(set(family) - set(takes)), [name for name in takes if name not in family]
+    filled = {**{name: 0.0 for name in takes if name in _FAMILY_ZERO}, **family}
+    unknown, missing = sorted(set(family) - set(takes)), [name for name in takes if name not in filled]
     if unknown or missing:
-        raise StudioError(422, "FAMILY_INVALID", f"a {kind} family takes {', '.join(takes)}"
-                          + (f"; not {', '.join(unknown)}" if unknown else "")
-                          + (f"; {', '.join(missing)} missing" if missing else ""))
+        detail = [f"a {kind} family takes " + ", ".join(f"{name} ({_FAMILY_VALUES[name]})" for name in takes)]
+        if missing:
+            detail.append(f"missing: {', '.join(missing)}")
+        if unknown:
+            detail.append(f"not taken: {', '.join(unknown)}")
+        raise StudioError(422, "FAMILY_INVALID", "; ".join(detail) + ". Leave family out for an empty passage "
+                          "with no frame or leaf. Nothing was proposed.")
     try:
-        return kind_type(type_id=type_id, **family)
+        return kind_type(type_id=type_id, **filled)
     except (TypeError, ValueError) as exc:
-        raise StudioError(422, "FAMILY_INVALID", f"the {kind} family: {exc}") from exc
+        raise StudioError(422, "FAMILY_INVALID", f"the {kind} family: {exc}. Nothing was proposed.") from exc
 
 
 def _openings_of(element: Entity, values: Mapping[str, float]) -> list[dict[str, Any]]:

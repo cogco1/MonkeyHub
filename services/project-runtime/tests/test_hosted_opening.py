@@ -176,6 +176,22 @@ class HostedOpeningChainTestCase(HostedOpeningTestCase):
         self.assertNotIn("type_id", third)
         self.assertEqual(len(row["fields"]["params"]["types"]), 2)
 
+    def test_a_family_given_only_its_sizes_is_flush_with_no_gap(self) -> None:
+        # The sizes have no neutral value; an offset, gap or clearance left out is 0, and the refusal of a family
+        # without its sizes names each one with what it takes.
+        chain = self.walled()
+        sizes = {"frame_width": 0.06, "frame_depth": 0.12, "leaf_thickness": 0.04, "leaf_count": 1}
+        door = self.open("block", family=sizes, **self.after(chain))
+        [row] = [row for row in door["change"]["edits"]["entities"] if row["entity_id"] == "block-body"]
+        self.assertEqual(row["fields"]["params"]["types"], [{
+            "schema": "DoorType@1", "type_id": "opening-1-type", **sizes, "frame_projection": 0.0, "leaf_offset": 0.0,
+            "leaf_gap": 0.0, "clearance_bottom": 0.0, "clearance_top": 0.0}])
+        refused = self.open("block", expect=422, family={"frame_width": 0.06}, **self.after(chain))
+        self.assertEqual(refused["code"], "FAMILY_INVALID")
+        for said in ("missing: frame_depth, leaf_thickness, leaf_count", "leaf_count (1 or 2)", "frame_depth (metres > 0)",
+                     "leaf_gap (metres >= 0, 0 when left out)", "Leave family out for an empty passage"):
+            self.assertIn(said, refused["detail"])
+
     def test_the_next_id_skips_opening_and_type_ids_already_in_use(self) -> None:
         chain = self.walled()
         # A host whose one opening is opening-2 and which keeps a type called opening-3-type.
@@ -328,7 +344,8 @@ class HostedOpeningRefusalTestCase(HostedOpeningTestCase):
         chain = self.walled()
         for body, code, said in (
             ({"family": {**DOOR, "glazing_thickness": 0.02}}, "FAMILY_INVALID", "glazing_thickness"),
-            ({"family": {key: value for key, value in DOOR.items() if key != "leaf_gap"}}, "FAMILY_INVALID", "leaf_gap"),
+            ({"family": {key: value for key, value in DOOR.items() if key != "leaf_thickness"}}, "FAMILY_INVALID",
+             "missing: leaf_thickness"),
             ({"family": {**DOOR, "leaf_count": 3}}, "FAMILY_INVALID", "leaf_count"),
             ({"kind": "window", "family": DOOR}, "FAMILY_INVALID", "glazing_thickness"),
             ({"interfaceRef": INTERFACE}, "INTERFACE_UNKNOWN",
