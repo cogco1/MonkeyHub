@@ -291,6 +291,8 @@ _GUIDES = {
         "GET /api/documents lists registered drawings and pages (?runId=<runId> for one run's); GET /api/document-annotations reads page annotations and",
         "PUT /api/document-annotations saves them. Use their schemas for exact inputs. For page edits, read existing annotations and use",
         "baseRevisionSha256 with the exact run/asset/page/drawingRevisionRef.",
+        "RECEIVED: seenDocuments marks a registered document as already placed, so the Board does not place it again: the JSON text of",
+        '[runId, revisionRef], or [runId, assetSha256] only for a document without a revision. A drawing revision named by its asset is refused (BOARD_SEEN_KEY_INVALID).',
         'DRAWING PAGE: POST /api/board/export is a read-only native MCP image: body {projectId, pages:[{runId, assetSha256, revisionRef, pageIndex}], format:"png", zip:false, maxEdge:2048}.',
         "Copy exact source fields from GET /api/documents or the generated drawing result; revisionRef must be explicit (null for sources without a revision),",
         "pageIndex is zero-based. One clean source page, no annotations, at most 2048 pixels per edge and 4 MiB; use smaller maxEdge if too large. No operationId or awaitSeconds.",

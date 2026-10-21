@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from io import BytesIO
+import json
 import math
+import re
 from pathlib import PurePath
 from typing import Any, Literal, Mapping, Sequence
 import threading
@@ -25,7 +27,7 @@ from archflow.project.record_kinds import STUDIO_BOARD_SCENE
 from archflow.project.repository import ProjectRepositoryError
 
 from ..errors import StudioError
-from .artifacts import SourceDocument, document_bytes
+from .artifacts import SourceDocument, document_bytes, list_documents
 from ..binding import retained_sources
 from ..binding import ProjectBinding, record_kind
 from .projections import DOCUMENT_PAGE, ProjectionQueue, ProjectionSpec, on_demand_spec
@@ -393,6 +395,39 @@ def _validate_scene(
     return content
 
 
+def _check_seen_keys(binding: ProjectBinding, seen_documents: Sequence[str], previous: Mapping | None) -> None:
+    """Refuse a newly received id that names a drawing revision by its asset.
+
+    The Board marks a received document as the JSON text of ``[runId,
+    revisionRef]``, or ``[runId, assetSha256]`` only for a document without a
+    revision: two revisions of one drawing stay apart even with identical
+    pixels. An agent that wrote the asset form for a revision saw the Board
+    place the drawing again; now it is told the key. Ids already saved are
+    not read again.
+    """
+
+    known = set(previous.get("seenDocuments") or ()) if previous is not None else set()
+    for value in seen_documents:
+        if value in known:
+            continue
+        try:
+            parsed = json.loads(value)
+        except ValueError:
+            continue
+        if not (isinstance(parsed, list) and len(parsed) == 2 and all(isinstance(part, str) for part in parsed)
+                and re.fullmatch(r"[0-9a-f]{64}", parsed[1])):
+            continue
+        try:
+            revisions = sorted({document.revision_ref for document in list_documents(binding, parsed[0])
+                                if document.asset_sha256 == parsed[1] and document.revision_ref})
+        except (ProjectRepositoryError, OSError, StudioError, ValueError):
+            continue
+        if revisions:
+            raise StudioError(422, "BOARD_SEEN_KEY_INVALID", (
+                f"{value} names a drawing revision by its asset. The Board marks a received drawing as the JSON text "
+                "of [runId, revisionRef]: " + ", ".join(json.dumps([parsed[0], ref]) for ref in revisions[:3]) + "."))
+
+
 @retained_sources
 def save_board(
     binding: ProjectBinding, base_revision_sha256: str | None, title: str,
@@ -405,6 +440,7 @@ def save_board(
         if base_revision_sha256 != latest:
             raise StudioError(409, "BOARD_STALE", "The board has a newer saved revision. Read it before saving again.")
         previous = revisions.get(latest)
+        _check_seen_keys(binding, seen_documents, previous)
         if previous is not None and all(previous[key] == value for key, value in content.items()):
             return _scene(binding, latest, previous)
         payload = {"schema": "StudioBoardScene@1", "projectId": binding.project_id,

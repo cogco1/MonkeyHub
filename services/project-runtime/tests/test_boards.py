@@ -218,6 +218,27 @@ class BoardTests(unittest.TestCase):
             if code:
                 self.assertEqual(refused.json()["code"], code)
 
+    def test_a_drawing_revision_marked_received_by_its_asset_is_refused_with_its_key(self) -> None:
+        # The Board placed a drawing again when an agent marked its revision
+        # received as [runId, assetSha256]; the key is [runId, revisionRef].
+        from types import SimpleNamespace
+
+        document = self.upload(two_page_pdf())
+        plain = json.dumps([document["runId"], document["assetSha256"]])
+        saved = self.save(body([image_element(document)], seen=[plain]))
+        revision = SimpleNamespace(asset_sha256="d" * 64, revision_ref="drawing-revision:a1")
+        wrong, right = json.dumps(["studio-drawings", "d" * 64]), json.dumps(["studio-drawings", "drawing-revision:a1"])
+        with mock.patch.object(boards, "list_documents", return_value=(revision,)):
+            refused = self.client.put("/api/board", json=body([image_element(document)], saved["revisionSha256"],
+                                                              seen=[plain, wrong]))
+            self.assertEqual((refused.status_code, refused.json()["code"]), (422, "BOARD_SEEN_KEY_INVALID"))
+            self.assertIn(right, refused.json()["detail"])
+            fixed = self.save(body([image_element(document)], saved["revisionSha256"], seen=[plain, right]))
+        self.assertEqual(fixed["seenDocuments"], [plain, right])
+        # An id already saved is not read again: a board that holds one still saves.
+        with mock.patch.object(boards, "list_documents", side_effect=AssertionError("not read again")):
+            self.save(body([], fixed["revisionSha256"], seen=[plain, right]))
+
     def test_empty_read_and_invalid_first_save_create_no_run(self) -> None:
         before = self.files()
         response = self.client.get("/api/board")
