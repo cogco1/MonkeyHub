@@ -664,3 +664,36 @@ class SheetRequestDto(DrawingSourceRequestDto):
 
 
 DrawingFileFormat = Literal["pdf", "dxf", "svg", "png"]
+
+
+class DiagramRequestDto(BaseModel):
+    """A diagram drawn from data (gap 38): a network, a section schematic or a timeline; no model."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    project_id: str = Field(alias="projectId", min_length=1)
+    drawing_id: str = Field(alias="drawingId", pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$", description=(
+        "names the diagram's revisions: the same id with a changed spec registers a new document and keeps the "
+        "earlier one; the same request again returns the same document"))
+    kind: Literal["network", "section", "timeline"] = Field(description=(
+        "network: nodes at stated places joined by edges, such as a plan's zones and routes; section: spans, shapes "
+        "and moves at one scale in x and height; timeline: lanes across a time axis with segments and events"))
+    spec: dict[str, Any] = Field(description=(
+        "network: {nodes: [{id, label, sublabel?, group?, at: [x, y] (the centre, y down the page), size?: [w, h], "
+        "shape?: box|ellipse, ref?}], groups?: [{id, label, tone: grey|lavender|sand|sage|rose|sky|white}], "
+        "edges?: [{from, to (a node id or a point [x, y]), line?: main|loop|return|branch, style?: solid|dashed|dotted, "
+        "arrow?: end|both|none, label?, mark? (short text in a circle), via?: [[x, y], ...], route?: orthogonal|straight}], "
+        "lines?: {main|loop|return|branch: legend label}, notes?: [{at, text, tone?}], north?: degrees, "
+        "scale?: {length, label}}. "
+        "section: {axis: {x: [min, max], y: [min, max], ticks?: {x?, y?}, unit?, xLabel?}, ground?: {y, label?}, "
+        "spans: [{id, label?, x0, x1, y0, y1, tone?, floors?: [y, ...], floorStyle?: solid|dashed, "
+        "labelAt?: inside|above|below, ref?}], shapes?: [{kind: polygon (points) | ellipse (at, size) | marker (at), "
+        "tone?, line?}], moves?: [{from, to, line?, style?, arrow?, label?}], notes?}, y up. "
+        "timeline: {axis: {start, end, step?, unit?}, lanes: [{id, label}], segments?: [{lane, start, end, label?, "
+        "colour? (a tone or #rrggbb)}], events?: [{lane, at, label?, mark?: diamond|circle|tick, colour?}]}. "
+        "Places are in the author's own units, scaled to the sheet"))
+    style_id: Literal["diagram-colour", "diagram-mono"] = Field(
+        default="diagram-colour", alias="styleId",
+        description="diagram-colour: low-saturation group tones and lines coloured by kind; diagram-mono: black lines, no fills, for print")
+    title: str = Field(min_length=1, max_length=160)
+    subtitle: str | None = Field(default=None, max_length=480)

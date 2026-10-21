@@ -3775,6 +3775,52 @@ export type DesignStudyDto = {
 };
 
 /**
+ * DiagramRequestDto
+ *
+ * A diagram drawn from data (gap 38): a network, a section schematic or a timeline; no model.
+ */
+export type DiagramRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Drawingid
+     *
+     * names the diagram's revisions: the same id with a changed spec registers a new document and keeps the earlier one; the same request again returns the same document
+     */
+    drawingId: string;
+    /**
+     * Kind
+     *
+     * network: nodes at stated places joined by edges, such as a plan's zones and routes; section: spans, shapes and moves at one scale in x and height; timeline: lanes across a time axis with segments and events
+     */
+    kind: 'network' | 'section' | 'timeline';
+    /**
+     * Spec
+     *
+     * network: {nodes: [{id, label, sublabel?, group?, at: [x, y] (the centre, y down the page), size?: [w, h], shape?: box|ellipse, ref?}], groups?: [{id, label, tone: grey|lavender|sand|sage|rose|sky|white}], edges?: [{from, to (a node id or a point [x, y]), line?: main|loop|return|branch, style?: solid|dashed|dotted, arrow?: end|both|none, label?, mark? (short text in a circle), via?: [[x, y], ...], route?: orthogonal|straight}], lines?: {main|loop|return|branch: legend label}, notes?: [{at, text, tone?}], north?: degrees, scale?: {length, label}}. section: {axis: {x: [min, max], y: [min, max], ticks?: {x?, y?}, unit?, xLabel?}, ground?: {y, label?}, spans: [{id, label?, x0, x1, y0, y1, tone?, floors?: [y, ...], floorStyle?: solid|dashed, labelAt?: inside|above|below, ref?}], shapes?: [{kind: polygon (points) | ellipse (at, size) | marker (at), tone?, line?}], moves?: [{from, to, line?, style?, arrow?, label?}], notes?}, y up. timeline: {axis: {start, end, step?, unit?}, lanes: [{id, label}], segments?: [{lane, start, end, label?, colour? (a tone or #rrggbb)}], events?: [{lane, at, label?, mark?: diamond|circle|tick, colour?}]}. Places are in the author's own units, scaled to the sheet
+     */
+    spec: {
+        [key: string]: unknown;
+    };
+    /**
+     * Styleid
+     *
+     * diagram-colour: low-saturation group tones and lines coloured by kind; diagram-mono: black lines, no fills, for print
+     */
+    styleId?: 'diagram-colour' | 'diagram-mono';
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Subtitle
+     */
+    subtitle?: string | null;
+};
+
+/**
  * DocumentAnnotationRefDto
  *
  * One exact saved page revision to accompany a written design request.
@@ -17978,6 +18024,41 @@ export type ReadDrawingStylesApiDrawingsStylesGetResponses = {
 };
 
 export type ReadDrawingStylesApiDrawingsStylesGetResponse = ReadDrawingStylesApiDrawingsStylesGetResponses[keyof ReadDrawingStylesApiDrawingsStylesGetResponses];
+
+export type CreateDiagramApiDrawingsDiagramsPostData = {
+    body: DiagramRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/drawings/diagrams';
+};
+
+export type CreateDiagramApiDrawingsDiagramsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateDiagramApiDrawingsDiagramsPostError = CreateDiagramApiDrawingsDiagramsPostErrors[keyof CreateDiagramApiDrawingsDiagramsPostErrors];
+
+export type CreateDiagramApiDrawingsDiagramsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SourceDocumentDto;
+};
+
+export type CreateDiagramApiDrawingsDiagramsPostResponse = CreateDiagramApiDrawingsDiagramsPostResponses[keyof CreateDiagramApiDrawingsDiagramsPostResponses];
 
 export type CreateSheetApiDrawingsSheetsPostData = {
     body: SheetRequestDto;

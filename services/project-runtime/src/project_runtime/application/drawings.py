@@ -104,7 +104,7 @@ def is_vertical_section(recipe) -> bool:
 
 #: The kinds of drawing a drawing id can name, as a refusal says them.
 DRAWING_KINDS = {CUT_PLAN_KIND: "cut plan", ELEVATION_KIND: "elevation", SECTION_PERSPECTIVE_KIND: "section perspective",
-                 "review-sheet": "review sheet", "view-sheet": "view sheet"}
+                 "review-sheet": "review sheet", "view-sheet": "view sheet", "diagram": "diagram"}
 
 
 def refuse_other_kind(binding: ProjectBinding, drawing_id: str, kind: str, what: str) -> None:
@@ -1038,7 +1038,7 @@ def _drawn_sheet(binding, monitor, run_id, verified, frames, selected, layout, r
 SHEET_FILES = (("pdf", "application/pdf"), ("dxf", "application/dxf"), ("svg", SVG_MEDIA_TYPE), ("png", PNG_MEDIA_TYPE))
 #: The PDF metadata naming the digests of the sheet's DXF, SVG and PNG.
 SHEET_FILE_DIGESTS = "/ArchFlowSheetFiles"
-SHEET_KINDS = ("review-sheet", "view-sheet")
+SHEET_KINDS = ("review-sheet", "view-sheet", "diagram")  # a diagram's files are kept as a sheet's (gap 38)
 
 
 def _sheet_files(canvas, recipe_json: str) -> dict[str, bytes]:
