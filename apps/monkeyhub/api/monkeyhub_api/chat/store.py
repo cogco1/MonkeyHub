@@ -33,6 +33,7 @@ from uuid import uuid4
 from pydantic import Field
 
 from .. import projects
+from ..runtime.workers import project_key
 from . import activity, guides, mcp_server, media, providers, skill_plugins, studio_tool, transport, turn_context
 from ..settings.store import read_application_settings
 
@@ -448,10 +449,17 @@ class ChatStore:
             for session in self._sessions.values():
                 key = (session.projectId, session.projectDir)
                 counts[key] = counts.get(key, 0) + 1
+        # One entry per folder, however its conversations or settings spell it
+        # (gap 26); the first spelling seen is the one shown.
+        folded: dict[tuple[str, str], tuple[str, int]] = {}
+        for (project_id, project_dir), count in counts.items():
+            key = (project_id, project_key(project_dir))
+            spelling, total = folded.get(key, (project_dir, 0))
+            folded[key] = (spelling, total + count)
         listed: dict[tuple[str, str], ChatProject] = {}
-        for key, count in counts.items():
-            version, stage = projects._listed_project(key[1])[1]
-            listed[key] = ChatProject(projectId=key[0], projectDir=key[1], name=key[0],
+        for key, (spelling, count) in folded.items():
+            version, stage = projects._listed_project(spelling)[1]
+            listed[key] = ChatProject(projectId=key[0], projectDir=spelling, name=key[0],
                                         chatCount=count, version=version, stage=stage)
         workspace = self.workspace()
         workspace_root = Path(workspace.workspaceDir).resolve()
@@ -470,8 +478,8 @@ class ChatStore:
             except HubFailure:
                 pass
             else:
-                if (project_id, project_dir) not in listed:
-                    listed[(project_id, project_dir)] = ChatProject(
+                if (project_id, project_key(project_dir)) not in listed:
+                    listed[(project_id, project_key(project_dir))] = ChatProject(
                         projectId=project_id, projectDir=project_dir, name=project_id,
                         chatCount=0, version=version, stage=stage,
                     )
@@ -822,8 +830,8 @@ class ChatStore:
     def project_configuration(self, project_dir: str | None):
         """Hold the same lock across configuration changes and turn admission."""
         with self._lock:
-            target = str(Path(project_dir).resolve()) if project_dir else None
-            if any(self._sessions[key].projectDir != target for key in self._running):
+            target = project_key(project_dir) if project_dir else None
+            if any(project_key(self._sessions[key].projectDir) != target for key in self._running):
                 raise HubFailure(409, "CHAT_PROJECT_BUSY", "Stop the running chat before switching the active project.")
             yield
 
@@ -832,8 +840,8 @@ class ChatStore:
         with self._lock:
             if app_id in {"monkeyarch", "monkeyboard"} and stopping:
                 configured = project_dir if project_dir is not None else read_application_settings(self.runtime_root).project_dir
-                target = str(Path(configured).resolve()) if configured else None
-                if any(target is not None and os.path.normcase(self._sessions[key].projectDir) == os.path.normcase(target) for key in self._running):
+                target = project_key(configured) if configured else None
+                if any(target is not None and project_key(self._sessions[key].projectDir) == target for key in self._running):
                     raise HubFailure(409, "CHAT_RUNNING", "Stop the running chat before closing its design tools.")
             yield
 
@@ -2148,11 +2156,10 @@ class ChatStore:
 
     def close_project(self, project_dir: str) -> None:
         """Detach only this project's agents and cancel their pending permissions."""
-        target = os.path.normcase(str(Path(project_dir).resolve()))
+        target = project_key(project_dir)
         with self._lock:
             self._load()
-            ids = [row.id for row in self._sessions.values()
-                   if os.path.normcase(str(Path(row.projectDir).resolve())) == target]
+            ids = [row.id for row in self._sessions.values() if project_key(row.projectDir) == target]
         for session_id in ids:
             self.stop(session_id)
             with self._lock:

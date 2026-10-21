@@ -19,6 +19,7 @@ import webbrowser
 
 import uvicorn
 
+from ..models import plain_spelling
 from ..settings import credentials
 from ..updates.desktop_updates import recover_failed_start
 from .composition import SOURCE_ROOT, HubSettings, create_app
@@ -123,6 +124,9 @@ def main(argv: list[str] | None = None) -> None:
         if not local_appdata or not Path(local_appdata).is_absolute():
             parser.error("set --runtime-root to an absolute nonproject directory")
         runtime_root = Path(local_appdata) / "MonkeyHub"
+    # The desktop shell passes its canonical path, with a ``\\?\`` prefix that
+    # every project made under it would inherit (gap 26).
+    runtime_root = Path(plain_spelling(str(runtime_root)))
     hub_web = args.hub_web_dir
     if hub_web is None and (SOURCE_ROOT / "apps/monkeyhub/web/dist/index.html").is_file():
         hub_web = SOURCE_ROOT / "apps/monkeyhub/web/dist"

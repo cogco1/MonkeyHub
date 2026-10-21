@@ -15,6 +15,8 @@ from urllib.error import URLError
 from urllib.request import HTTPHandler, ProxyHandler, build_opener
 from uuid import uuid4
 
+from archflow.project.repository import project_root_key
+
 from ..models import HubError, HubFailure
 
 
@@ -70,7 +72,25 @@ class _ProbeHandler(HTTPHandler):
 
 
 def project_key(project_dir: str | None) -> str:
-    return os.path.normcase(str(Path(project_dir).resolve())) if project_dir is not None else ""
+    """The one key the Hub files a project folder under, however it is spelled (gap 26).
+
+    Case folded, resolved and without an extended-length prefix, as the project
+    library keys its roots: a folder opened by either spelling has one runtime,
+    one Studio and one operation journal.
+    """
+
+    return project_root_key(project_dir) if project_dir is not None else ""
+
+
+def earlier_project_keys(project_dir: str) -> tuple[str, ...]:
+    """The other key an earlier Hub may have filed this folder under: its prefixed spelling (gap 26)."""
+
+    key = project_key(project_dir)
+    if key[1:3] == ":\\":
+        return ("\\\\?\\" + key,)
+    if key.startswith("\\\\"):
+        return ("\\\\?\\unc\\" + key[2:],)
+    return ()
 
 
 @dataclass(frozen=True)

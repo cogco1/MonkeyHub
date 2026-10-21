@@ -267,6 +267,16 @@
       "reason": "Atomically saves only request signatures, exact project binding and recovery observations at runtime/operations/<runtimeId>.json under the caller-supplied nonproject Hub runtime root. No request body or canonical result is stored; P036 alone proves project outcomes."
     },
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
+      "function": "merge",
+      "operations": [
+        "replace"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Renames an operation journal an earlier Hub kept under a folder's long-path spelling to <name>.merged-into-<runtimeId> once _save has taken its entries in (gap 26), under the nonproject Hub runtime root. Nothing is deleted and no project data is written."
+    },
+    {
       "path": "apps/monkeyhub/api/monkeyhub_api/settings/store.py",
       "function": "_save_local_settings",
       "operations": [

@@ -18,6 +18,7 @@ from .. import projects
 from . import transport
 
 from ..models import HubFailure
+from ..runtime.workers import project_key
 
 
 # One preparation per project at a time in this process. A call that finds a
@@ -65,7 +66,7 @@ def _prepare_studio(hub: str, session: Mapping, budget: float) -> dict:
 
     query = urlencode({"projectDir": session["projectDir"]})
     with _PREPARING:
-        held = _PREPARATIONS.setdefault(os.path.normcase(session["projectDir"]), threading.Lock())
+        held = _PREPARATIONS.setdefault(project_key(session["projectDir"]), threading.Lock())
     if not held.acquire(timeout=max(0.0, left())):
         raise unready()
     try:

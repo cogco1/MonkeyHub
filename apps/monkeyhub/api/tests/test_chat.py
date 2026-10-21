@@ -28,13 +28,14 @@ from fastapi.testclient import TestClient
 
 from archflow.project.repository import FilesystemProjectRepository
 from monkeyhub_api import projects
+from monkeyhub_api.runtime.workers import project_key
 from monkeyhub_api.chat import (
     activity, guides, judgments, mcp_server, preparation, providers, skill_plugins, store as chat, studio_tool,
     tool_calls, transport, turn_context, visual_review,
 )
 from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import (
-    AppStatus, ChatCreateRequest, ChatDesignContext, ChatMessage, ChatPostRequest, HubFailure,
+    AppStatus, ChatCreateRequest, ChatDesignContext, ChatMessage, ChatPostRequest, ChatSummary, HubFailure,
 )
 from monkeyhub_api.settings.models import ApplicationSettingsDto
 
@@ -1385,7 +1386,7 @@ class ChatTests(unittest.TestCase):
 
         if method in {"POST", "PUT"} and not path.startswith("/api/fab/"):
             self.assertEqual(base, self.store.hub_url)
-            runtime_id = uuid5(NAMESPACE_URL, f"{session.projectId}:{os.path.normcase(str(Path(session.projectDir).resolve()))}")
+            runtime_id = uuid5(NAMESPACE_URL, f"{session.projectId}:{project_key(session.projectDir)}")
             prefix = f"/api/runtime/projects/{runtime_id}/studio"
             self.assertTrue(path.startswith(prefix + "/api/"), path)
             self.assertEqual(set(headers or {}), {"Idempotency-Key", "X-Monkey-Chat"})
@@ -2762,7 +2763,7 @@ class ChatTests(unittest.TestCase):
         """
 
         state = {"opens": 0, "starts": 0, "reads": 0, "running": False}
-        runtime_id = str(uuid5(NAMESPACE_URL, f"{session.projectId}:{os.path.normcase(str(Path(session.projectDir).resolve()))}"))
+        runtime_id = str(uuid5(NAMESPACE_URL, f"{session.projectId}:{project_key(session.projectDir)}"))
         guard = threading.Lock()
 
         def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
@@ -3375,6 +3376,19 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(listed.projectDir, str(self.project))
         # An unreadable project is reported as unknown rather than as a version.
         self.assertEqual(projects._position(str(self.root / "missing")), (None, None))
+
+    @unittest.skipUnless(sys.platform == "win32", "the extended-length spelling is a Windows one")
+    def test_a_project_reached_by_its_long_path_spelling_is_listed_once(self):
+        # Gap 26: a conversation saved under ``\\?\`` and a current project chosen
+        # under it are the same folder as the plain spelling, listed once.
+        session = self.create()
+        prefixed = "\\\\?\\" + str(self.project)
+        self.assertEqual(ChatSummary.model_validate({**session.model_dump(), "projectDir": prefixed}).projectDir,
+                         str(self.project))
+        current = ApplicationSettingsDto(projectDir=prefixed)
+        with patch("monkeyhub_api.chat.store.read_application_settings", return_value=current):
+            listed = [row for row in self.store.projects() if row.projectId == session.projectId]
+        self.assertEqual([(row.projectDir, row.chatCount) for row in listed], [(str(self.project), 1)])
 
     def test_the_chat_list_never_waits_for_the_project_list_and_an_unchanged_project_is_not_read_again(self):
         # #449: the Hub asks for both together on every refresh.

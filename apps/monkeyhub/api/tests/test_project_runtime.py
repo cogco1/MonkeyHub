@@ -20,7 +20,7 @@ import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from test_monkeyhub_lifecycle import LocalHubCase, ROOT, project_fixture, wait_for
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -936,6 +936,40 @@ for _ in range(5):
             self.assertEqual(stopped.status_code, 202, stopped.text)
             self.assertEqual(client.app.state.applications.remembered_studios(), [],
                              "a Studio stopped on request is not brought back")
+
+    @unittest.skipUnless(sys.platform == "win32", "the extended-length spelling is a Windows one")
+    def test_a_project_opened_by_its_long_path_spelling_is_the_same_runtime(self):
+        # Gap 26: an earlier Hub filed a folder reached through the desktop
+        # shell's runtime folder under its ``\\?\`` spelling as another project.
+        plain = str(self.project)
+        earlier_key = "\\\\?\\" + os.path.normcase(str(self.project.resolve()))
+        earlier = self.runtime / "runtime/operations" / f"{uuid5(NAMESPACE_URL, f'{self.project_id}:{earlier_key}')}.json"
+        operation_id = str(uuid4())
+        earlier.parent.mkdir(parents=True, exist_ok=True)
+        earlier.write_text(json.dumps({"projectId": self.project_id, "projectDir": earlier_key, "operations": [{
+            "record": {"operationId": operation_id, "projectId": self.project_id, "kind": "POST /api/program",
+                       "source": "hub", "status": "failed"},
+            "signature": ["POST", "/api/program", "0" * 64], "expectedStage": None,
+            "branchId": "main", "acceptingCandidate": False}],
+            "acknowledged": {operation_id: {"acknowledgedAt": "2026-10-01T00:00:00Z", "status": "failed"}}}),
+            encoding="utf-8")
+        with self.hub() as client:
+            opened = [client.post("/api/runtime/projects/open", json={"projectId": self.project_id, "projectDir": spelling})
+                      for spelling in ("\\\\?\\" + plain, plain)]
+            for response in opened:
+                self.assertEqual(response.status_code, 200, response.text)
+            runtime_id = opened[0].json()["runtimeId"]
+            self.assertEqual(opened[1].json()["runtimeId"], runtime_id)
+            self.assertEqual(opened[0].json()["projectDir"], plain)
+            listed = [row for row in client.get("/api/runtime").json()["projects"] if row["projectId"] == self.project_id]
+            self.assertEqual(len(listed), 1, listed)
+            merged = next(row for row in opened[1].json()["operations"] if row["operationId"] == operation_id)
+            self.assertEqual((merged["status"], merged["acknowledgedAt"]), ("failed", "2026-10-01T00:00:00Z"))
+        self.assertFalse(earlier.exists())
+        self.assertTrue(earlier.with_name(f"{earlier.name}.merged-into-{runtime_id}").is_file(), "kept, not deleted")
+        saved = json.loads((earlier.parent / f"{runtime_id}.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["projectDir"], os.path.normcase(str(self.project.resolve())))
+        self.assertIn(operation_id, [row["record"]["operationId"] for row in saved["operations"]])
 
     def test_a_running_studio_that_only_misses_probes_is_still_asked(self):
         # Gap 25: verified, alive, missing its health probes while busy.

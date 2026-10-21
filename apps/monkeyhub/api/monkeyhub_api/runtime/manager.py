@@ -41,7 +41,7 @@ from ..models import HubError, HubFailure
 from .models import HubRuntimeDto, OperationRecord, ProjectRuntimeDto, WorkerStatus
 from .operations import _ACTIVE, _CANDIDATE_REQUEST, _PROPOSAL_CANDIDATE, OperationManager
 from .worker_http import HttpResult, _WorkerEvents, request_http
-from .workers import project_key
+from .workers import earlier_project_keys, project_key
 
 # How long a request waits for a project's Studio it started itself (gap 18).
 _STUDIO_START_WAIT_S = 45.0
@@ -363,8 +363,13 @@ class ProjectRuntimeManager:
             runtime = self._projects.get(runtime_id)
             if runtime is None:
                 binding = ProjectBinding.unconfigured(Path(actual_dir), project_id=actual_id)
+                journals = self.applications.runtime_root / "runtime/operations"
                 operations = OperationManager(actual_id, project_dir=actual_dir,
-                    journal_path=self.applications.runtime_root / "runtime/operations" / f"{runtime_id}.json")
+                    journal_path=journals / f"{runtime_id}.json")
+                # Gap 26: the journal an earlier Hub kept under this folder's
+                # prefixed spelling joins this one, instead of being left behind.
+                operations.merge(journals / f"{uuid5(NAMESPACE_URL, f'{actual_id}:{earlier}')}.json"
+                                 for earlier in earlier_project_keys(actual_dir))
                 runtime = ProjectRuntime(runtime_id, actual_id, actual_dir, operations, binding)
                 self._projects[runtime_id] = runtime
             runtime.binding_signature = signature

@@ -9,6 +9,21 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 AppId = Literal["monkeyarch", "monkeymonitor", "monkeyboard", "monkeyrender", "monkeyfab"]
 
 
+def plain_spelling(path: str) -> str:
+    """``path`` without a Win32 extended-length prefix, otherwise as spelled: ``\\\\?\\C:\\p`` is ``C:\\p``.
+
+    The desktop shell hands the Hub its runtime folder with the prefix, and the
+    projects made under it inherited it, so one folder was filed and listed
+    under two spellings (gap 26). A UNC path keeps its two slashes.
+    """
+
+    if path[:8].upper() == "\\\\?\\UNC\\":
+        return "\\\\" + path[8:]
+    if path[:4] == "\\\\?\\" and path[5:7] == ":\\":
+        return path[4:]
+    return path
+
+
 class HubError(BaseModel):
     code: str
     detail: str
@@ -343,6 +358,13 @@ class ChatSummary(BaseModel):
     # decision: the same request the conversation shows with its options.
     # Derived on every read and never stored, so a record cannot go stale.
     attention: ChatAttention | None = None
+
+    @field_validator("projectDir")
+    @classmethod
+    def plain_project_dir(cls, value: str) -> str:
+        # A conversation an earlier Hub saved under the prefixed spelling of its
+        # folder belongs to the same project as one saved without it (gap 26).
+        return plain_spelling(value)
 
 
 class ChatDetail(ChatSummary):

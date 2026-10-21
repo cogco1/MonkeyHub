@@ -22,6 +22,7 @@ from .. import projects
 from . import design_loop, judgments, media, preparation, studio_tool, transport, visual_review
 
 from ..models import ChatPresentationRequest, HubFailure
+from ..runtime.workers import project_key
 
 
 # The proposal routes that answer a Proposal the client has just authored; its
@@ -536,7 +537,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         comparison = {"sourceRunId": proposal.get("sourceRunId")}
     if method in {"POST", "PUT"} and parsed.path not in studio_tool._POST_READS:
         from uuid import uuid5, NAMESPACE_URL
-        runtime_id = str(uuid5(NAMESPACE_URL, f"{session['projectId']}:{os.path.normcase(str(Path(session['projectDir']).resolve()))}"))
+        runtime_id = str(uuid5(NAMESPACE_URL, f"{session['projectId']}:{project_key(session['projectDir'])}"))
         operation_id = arguments.get("operationId") or str(uuid4())
         try:
             operation_id = str(UUID(operation_id))
