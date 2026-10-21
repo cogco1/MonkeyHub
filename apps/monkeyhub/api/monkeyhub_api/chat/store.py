@@ -171,6 +171,21 @@ class _Running:
     steering: threading.Lock = field(default_factory=threading.Lock)
 
 
+def _presented_id(value: str, field: str) -> str:
+    """A turn or message id an external source names: a lowercase UUID.
+
+    A malformed one is an invalid argument; answering it with the chat's own
+    404 told the source its chat was gone when only the id was wrong (gap 43).
+    """
+
+    try:
+        return projects._identifier(value)
+    except HubFailure:
+        raise HubFailure(422, "CHAT_PRESENTATION_INVALID",
+                         f"{field} must be a lowercase UUID, such as uuid4() makes; {value[:80]!r} is not. "
+                         "Nothing was published.") from None
+
+
 class ChatStore:
     def __init__(self, runtime_root: Path, hub_url: str, *, applications=None, commands=None, acp_command=None, timeout_s: float = 900):
         self.root = runtime_root / "chats"
@@ -672,8 +687,8 @@ class ChatStore:
             if (request.projectId != session.projectId or request.sourceSessionId != (session.sourceSessionId or f"hub:{session_id}")
                     or projects._project(session.projectDir) != (session.projectId, session.projectDir)):
                 raise HubFailure(409, "CHAT_PRESENTATION_MISMATCH", "The presentation belongs to a different project or source session.")
-            projects._identifier(request.messageId)
-            projects._identifier(request.turnId)
+            _presented_id(request.messageId, "messageId")
+            _presented_id(request.turnId, "turnId")
             if request.kind == "user" and (not session.sourceSessionId or request.status != "complete"):
                 raise HubFailure(422, "CHAT_PRESENTATION_INVALID", "Only an external source can start a turn with a complete user message.")
             if request.kind == "progress" and (request.attachments or request.documents):

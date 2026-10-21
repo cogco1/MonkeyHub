@@ -291,6 +291,17 @@ class ChatPresentationTests(unittest.TestCase):
         self.assertNotEqual(rebound["token"], self.bound["token"])
         self.assertEqual(self.present(client=client, token=rebound["token"], content="", attachments=[upload]), published)
 
+    def test_a_malformed_turn_or_message_id_is_an_invalid_argument_not_a_missing_chat(self):
+        """Gap 43: a turnId like "turn-1" was answered 404 CHAT_NOT_FOUND, as if the chat were gone."""
+
+        for field, value in (("turnId", "turn-1"), ("messageId", "m-1"), ("turnId", str(uuid4()).upper())):
+            with self.subTest(field=field, value=value):
+                refused = self.present("user", expected=422, **{field: value})
+                self.assertEqual(refused["code"], "CHAT_PRESENTATION_INVALID")
+                self.assertIn(f"{field} must be a lowercase UUID", refused["detail"])
+                self.assertIn("Nothing was published", refused["detail"])
+        self.assertEqual(self.present("user")["status"], "running")
+
     def test_wrong_binding_or_revision_cannot_change_saved_result(self):
         for changes in ({"chatId": self.bound["chatId"], "sourceSessionId": "another-source"},
                         {"chatId": self.bound["chatId"], "provider": "claude"}):
