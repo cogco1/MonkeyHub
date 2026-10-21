@@ -28,6 +28,10 @@ import {
   type Vec3,
   type ModelSnap,
 } from "../../workspaces/monkeyarch/viewer/ThreeDmViewport";
+
+/** The live section's directions and the coordinate each cuts (G5). */
+type SectionAxis = "z" | "x" | "y";
+const SECTION_AXES: Record<SectionAxis, 0 | 1 | 2> = { x: 0, y: 1, z: 2 };
 import { Annotate, GESTURE_TOOLS, type AnnotationStyle, type GestureTool } from "../../workspaces/monkeyarch/Annotate";
 import { VersionsStrip, type VersionGroup, type DesignHistoryControls } from "./VersionsStrip";
 import { DocumentCanvas, type DocumentViewContext } from "../../workspaces/monkeydiagram/DocumentCanvas";
@@ -487,6 +491,28 @@ export function Stage({
   // canvas opens in it; a refreshed page opens in the style chosen last (#562).
   const [displayStyle, setDisplayStyle] = useState<ModelDisplayStyle>(() => rememberedDisplayStyle());
   const chooseDisplayStyle = (style: ModelDisplayStyle) => { setDisplayStyle(style); rememberDisplayStyle(style); };
+  // G5: a live cutting plane, a look only: which way it cuts, where, and which side stays drawn.
+  const [section, setSection] = useState<{ axis: SectionAxis; at: number; flip: boolean } | null>(null);
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    if (!section) { viewport.section(null); return; }
+    const index = SECTION_AXES[section.axis];
+    // A plan cut keeps what is below it, a vertical cut the side its axis points to; Flip keeps the other.
+    const normal: Vec3 = [0, 0, 0];
+    normal[index] = (section.axis === "z" ? -1 : 1) * (section.flip ? -1 : 1);
+    const origin: Vec3 = [0, 0, 0];
+    origin[index] = section.at;
+    viewport.section({ origin, normal });
+  }, [section]);
+  const chooseSection = (axis: SectionAxis | "off") => {
+    if (axis === "off") { setSection(null); return; }
+    // A new direction starts through the middle of the model.
+    const bounds = viewportRef.current?.bounds();
+    const index = SECTION_AXES[axis];
+    const middle = bounds ? Number(((bounds.min[index] + bounds.max[index]) / 2).toFixed(3)) : 0;
+    setSection((current) => current?.axis === axis ? current : { axis, at: middle, flip: false });
+  };
   const [parameterLocksOpen, setParameterLocksOpen] = useState(false);
   // #352: the palette's own More: the less frequent drawing tools, tracing paper and the drawing plane.
   const [moreToolsOpen, setMoreToolsOpen] = useState(false);
@@ -1484,6 +1510,22 @@ export function Stage({
             {t(`stage.display.${style}`)}</option>)}
         </select>
       </label>
+      {/* G5: a live cut for looking; the exact section is still drawn by the drawing routes. */}
+      <label className="stage-menu__field" title={t("stage.section.title")}>
+        <span>{t("stage.section.label")}</span>
+        <select data-section-axis value={section?.axis ?? "off"} onChange={(event) => chooseSection(event.target.value as SectionAxis | "off")}>
+          {(["off", "z", "x", "y"] as const).map((axis) => <option key={axis} value={axis}>{t(`stage.section.${axis}`)}</option>)}
+        </select>
+      </label>
+      {section && <label className="stage-menu__field">
+        <span>{t("stage.section.at")}</span>
+        <input type="number" data-section-at step="any" value={section.at}
+          onChange={(event) => { const at = Number(event.target.value); if (event.target.value !== "" && Number.isFinite(at)) setSection({ ...section, at }); }} />
+      </label>}
+      {section && <label className="stage-menu__field">
+        <span>{t("stage.section.flip")}</span>
+        <input type="checkbox" data-section-flip checked={section.flip} onChange={(event) => setSection({ ...section, flip: event.target.checked })} />
+      </label>}
       <span className="stage-menu__sep" aria-hidden="true" />
       {/* One button, home: the reference run's exports when it left any, else the export the
           stage actually opened on - named for what it brings back, disabled only when there is nothing. */}

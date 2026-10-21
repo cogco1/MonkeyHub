@@ -224,6 +224,12 @@ export interface ViewBounds {
   max: Vec3;
 }
 
+/** A live cutting plane (G5): through ``origin``; ``normal`` points to the side that stays drawn. */
+export interface SectionPlane {
+  origin: Vec3;
+  normal: Vec3;
+}
+
 export interface ViewportLoadOptions {
   /** Parse a possible replacement while the current model remains interactive. */
   readonly background?: boolean;
@@ -317,6 +323,12 @@ export interface ViewportController {
   elevationGuide(elevation: number | null): void;
   translationGizmo(spec: TranslationGizmoSpec | null): void;
   translationPointer(kind: "hover" | "start" | "move" | "end", clientX: number, clientY: number): TranslationSample | null;
+  /**
+   * Cut the model at a plane while it is turned (G5), or draw it whole again
+   * with null. A look, never an edit: nothing is saved, and a pick on the
+   * cut-away side hits nothing. The exact section stays the drawing routes'.
+   */
+  section(plane: SectionPlane | null): void;
   fitView(): void;
   /** Frame the resolved current selection through the active camera. */
   fitSelection(): boolean;
@@ -449,6 +461,11 @@ interface ViewportRuntime {
   presentationCamera: CameraSnapshot | null;
   /** Hands the component what Presentation's legend says now: null outside Presentation or without a model. */
   presented: (legend: PresentationLegend | null) => void;
+  /** The live cut, or null; ``sectionPlanes`` is the one array every clipped material holds. */
+  section: Plane | null;
+  sectionPlanes: Plane[];
+  /** Whether materials still carry the cut, so turning it off clears them once. */
+  sectionApplied: boolean;
   render: () => void;
 }
 
@@ -537,6 +554,29 @@ function undeclaredObject(runtime: ViewportRuntime, object: Object3D): boolean {
  * point; it is not part of the model, so nothing picks, snaps to or frames it.
  * Outside Presentation, or with nothing loaded, there is no ground.
  */
+/**
+ * Give every material of the model, its comparison, ghost, outline and edge overlay the live cut, or take it off.
+ * Run before each frame: the display styles and highlights swap materials, and a material already holding the
+ * cut is left as it is, so its shader is not rebuilt.
+ */
+function clipModel(runtime: ViewportRuntime): void {
+  const planes = runtime.section ? runtime.sectionPlanes : null;
+  if (!planes && !runtime.sectionApplied) return;
+  for (const root of [runtime.model, runtime.secondary, runtime.ghost, runtime.outline, runtime.styleEdges?.group ?? null]) {
+    root?.traverse((object) => {
+      const material = (object as Mesh | Line).material as Material | Material[] | undefined;
+      if (!material) return;
+      for (const own of Array.isArray(material) ? material : [material]) {
+        if (own.clippingPlanes !== planes) {
+          own.clippingPlanes = planes;
+          own.needsUpdate = true;
+        }
+      }
+    });
+  }
+  runtime.sectionApplied = planes !== null;
+}
+
 function placeSun(runtime: ViewportRuntime): void {
   const { sun, shadowGround } = runtime;
   const box = runtime.style === "presentation" && runtime.model ? new Box3().setFromObject(runtime.model) : null;
@@ -2009,8 +2049,11 @@ export const ThreeDmViewport = forwardRef<
         intersections.push(...(object instanceof Line ? raycastCurve(object, raycaster)
           : raycaster.intersectObject(object, false)));
       });
+      const cut = runtime.section ?? null;
       const hit = intersections.sort((a, b) => a.distance - b.distance).find((intersection) => {
         if (!isDisplayed(intersection.object)) return false;
+        // What a live section cuts away is not drawn, so it is not picked either.
+        if (cut && cut.distanceToPoint(intersection.point) < 0) return false;
         if (!(intersection.object instanceof Line)) return true;
         const screen = intersection.point.clone().project(runtime.camera);
         return screen.z >= -1 && screen.z <= 1 && Math.hypot(
@@ -2385,6 +2428,21 @@ export const ThreeDmViewport = forwardRef<
       applyCamera,
       originalOutline,
       setOutlineVisible,
+      section: (plane) => {
+        const runtime = runtimeRef.current;
+        if (!runtime) return;
+        if (plane === null) {
+          runtime.section = null;
+        } else {
+          const normal = new Vector3(...plane.normal);
+          if (normal.lengthSq() === 0) return;
+          // The one plane every clipped material already holds moves in place: no shader is rebuilt as it is dragged.
+          const cut = runtime.sectionPlanes[0];
+          cut.setFromNormalAndCoplanarPoint(normal.normalize(), new Vector3(...plane.origin));
+          runtime.section = cut;
+        }
+        runtime.render();
+      },
       bounds: () => {
         const runtime = runtimeRef.current;
         const box = runtime ? boundsForRuntime(runtime) : null;
@@ -2452,6 +2510,8 @@ export const ThreeDmViewport = forwardRef<
     renderer.outputColorSpace = SRGBColorSpace;
     renderer.toneMapping = ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
+    // A live section clips the model's own materials only, never the grid or the gizmos (G5).
+    renderer.localClippingEnabled = true;
     // Filtered (soft) shadow maps; paintStage turns them on for Presentation alone.
     renderer.shadowMap.type = PCFShadowMap;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -2511,6 +2571,7 @@ export const ThreeDmViewport = forwardRef<
         syncFeatureEdgeOverlay(runtime.styleEdges, new Set(runtime.highlighted),
           runtime.secondary && runtime.blendT !== null ? 1 - runtime.blendT : 1);
       }
+      clipModel(runtime);
       renderer.render(scene, runtime.camera);
     };
 
@@ -2595,6 +2656,9 @@ export const ThreeDmViewport = forwardRef<
       shadowGround,
       presentationCamera: null,
       presented: setLegend,
+      section: null,
+      sectionPlanes: [new Plane()],
+      sectionApplied: false,
       render,
     };
     runtimeRef.current = runtime;

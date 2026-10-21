@@ -1274,6 +1274,17 @@ button.chip:hover {
   outline-offset: -2px;
 }
 
+.stage-menu__field input[type="number"] {
+  width: 7em;
+  min-height: 28px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+
 .stage-menu__views {
   display: flex;
   flex-wrap: wrap;
