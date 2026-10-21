@@ -218,6 +218,34 @@ class BoardTests(unittest.TestCase):
             if code:
                 self.assertEqual(refused.json()["code"], code)
 
+    def test_dashed_and_dotted_strokes_are_drawn_as_the_board_draws_them(self) -> None:
+        # Gap 40: a legend's dashed route came out solid in the board view.
+        def line(element_id, y, style):
+            return {"id": element_id, "type": "line", "x": 20, "y": y, "width": 360, "height": 0, "points": [[0, 0], [360, 0]],
+                    "strokeColor": "#000000", "strokeWidth": 2, "strokeStyle": style, "frameId": "frame"}
+
+        self.save(body([
+            {"id": "frame", "type": "frame", "x": 0, "y": 0, "width": 400, "height": 300, "name": "图例"},
+            line("solid", 50, "solid"), line("dashed", 100, "dashed"), line("dotted", 150, "dotted"),
+            {"id": "box", "type": "rectangle", "x": 20, "y": 200, "width": 360, "height": 80, "strokeColor": "#000000",
+             "strokeWidth": 2, "strokeStyle": "dashed", "backgroundColor": "transparent", "frameId": "frame"},
+        ]))
+        view = self.client.post("/api/board/view", json={"projectId": PROJECT_ID, "frameId": "frame", "maxEdge": 400}).json()
+        with Image.open(BytesIO(base64.b64decode(view["image"]["data"]))) as picture:
+            pixels = picture.convert("RGB")
+
+            def inked(y):
+                row = [sum(pixels.getpixel((x, y))) < 300 for x in range(30, 370)]
+                return sum(row) / len(row), sum(1 for a, b in zip(row, row[1:]) if b and not a)
+
+            self.assertEqual(inked(50), (1.0, 0), "a solid line is unbroken")
+            share, dashes = inked(100)
+            self.assertTrue(0.3 < share < 0.6 and dashes >= 15, (share, dashes))
+            share, dots = inked(150)
+            self.assertTrue(share < 0.35 and dots >= 25, (share, dots))
+            share, dashes = inked(200)
+            self.assertTrue(0.3 < share < 0.6 and dashes >= 15, ("the rectangle's dashed outline", share, dashes))
+
     def test_a_drawing_revision_marked_received_by_its_asset_is_refused_with_its_key(self) -> None:
         # The Board placed a drawing again when an agent marked its revision
         # received as [runId, assetSha256]; the key is [runId, revisionRef].

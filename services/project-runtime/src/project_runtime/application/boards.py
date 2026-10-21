@@ -612,6 +612,43 @@ def _view_page_image(raster: PageRaster, element: Mapping[str, Any], canvas_box:
     return part.resize(size, Image.Resampling.LANCZOS), (round(visible[0]), round(visible[1]))
 
 
+def _view_dash(element: Mapping[str, Any], scale: float) -> tuple[float, float] | None:
+    """A dashed or dotted stroke's dash and gap in canvas pixels, as Excalidraw draws them; None draws it solid.
+
+    Dashed is 8 on and 8 + strokeWidth off, dotted 1.5 on and 6 + strokeWidth off, in scene units. A
+    pattern under 3 pixels cannot be seen at that scale and is drawn solid.
+    """
+    stroke_width = _view_number(element.get("strokeWidth"), 1)
+    dash, gap = {"dashed": (8.0, 8.0 + stroke_width), "dotted": (1.5, 6.0 + stroke_width)}.get(
+        element.get("strokeStyle"), (0.0, 0.0))
+    return (dash * scale, gap * scale) if (dash + gap) * scale >= 3 else None
+
+
+def _view_dashes(points: list[tuple[float, float]], dash: float, gap: float) -> list[list[tuple[float, float]]]:
+    """The runs of a polyline a dashed stroke inks: ``dash`` long every ``dash + gap``, carried round its corners."""
+
+    period, runs, run, travelled = dash + gap, [], [], 0.0
+    for a, b in zip(points, points[1:]):
+        length = math.dist(a, b)
+        t = 0.0
+        while t < length:
+            phase = travelled % period
+            inked = phase < dash
+            step = min(length - t, (dash - phase) if inked else (period - phase))
+            if inked:
+                if not run:
+                    run.append((a[0] + (b[0] - a[0]) * t / length, a[1] + (b[1] - a[1]) * t / length))
+                run.append((a[0] + (b[0] - a[0]) * (t + step) / length, a[1] + (b[1] - a[1]) * (t + step) / length))
+            elif run:
+                runs.append(run)
+                run = []
+            t += step
+            travelled += step
+    if run:
+        runs.append(run)
+    return runs
+
+
 def _view_draw(canvas, element: Mapping[str, Any], origin: tuple[float, float], scale: float) -> None:
     """One mark drawn onto ``canvas`` (RGBA) at its opacity."""
     from PIL import ImageDraw
@@ -621,6 +658,8 @@ def _view_draw(canvas, element: Mapping[str, Any], origin: tuple[float, float], 
     fill = _view_rgb(element.get("backgroundColor"))
     alpha = max(0, min(255, round(_view_number(element.get("opacity"), 100) * 2.55)))
     width = max(1, round(_view_number(element.get("strokeWidth"), 1) * scale * (1.5 if kind == "freedraw" else 1)))
+    # Excalidraw draws a freehand stroke solid whatever its style; arrowheads stay solid here.
+    dash = None if kind == "freedraw" else _view_dash(element, scale)
     turned = kind == "text" and bool(_view_number(element.get("angle")))
     # Most marks are opaque: drawn straight onto the canvas. A translucent or
     # turned text mark is drawn on its own layer first.
@@ -630,6 +669,15 @@ def _view_draw(canvas, element: Mapping[str, Any], origin: tuple[float, float], 
     def at(point: tuple[float, float]) -> tuple[float, float]:
         return (point[0] - origin[0]) * scale, (point[1] - origin[1]) * scale
 
+    def outline(ring: list[tuple[float, float]], filled: tuple[int, int, int] | None, colour) -> None:
+        if dash is None:
+            draw.polygon(ring, fill=filled, outline=colour, width=width)
+            return
+        if filled is not None:
+            draw.polygon(ring, fill=filled)
+        for run in _view_dashes(ring + ring[:1], *dash):
+            draw.line(run, fill=colour, width=width, joint="curve")
+
     if kind in _VIEW_LINEAR_TYPES:
         points = [at(point) for point in _view_points(element)]
         if len(points) == 1:
@@ -638,7 +686,8 @@ def _view_draw(canvas, element: Mapping[str, Any], origin: tuple[float, float], 
         elif points:
             if kind != "freedraw" and fill is not None and len(points) > 2 and points[0] == points[-1]:
                 draw.polygon(points, fill=fill)
-            draw.line(points, fill=stroke, width=width, joint="curve")
+            for run in [points] if dash is None else _view_dashes(points, *dash):
+                draw.line(run, fill=stroke, width=width, joint="curve")
             if kind == "arrow":
                 for head, tip, back in (("endArrowhead", points[-1], points[-2]), ("startArrowhead", points[0], points[1])):
                     if element.get(head):
@@ -673,16 +722,15 @@ def _view_draw(canvas, element: Mapping[str, Any], origin: tuple[float, float], 
         ring = [at((cx + rx * math.cos(t) * math.cos(angle) - ry * math.sin(t) * math.sin(angle),
                     cy + rx * math.cos(t) * math.sin(angle) + ry * math.sin(t) * math.cos(angle)))
                 for t in (2 * math.pi * i / 64 for i in range(64))]
-        draw.polygon(ring, fill=fill, outline=stroke, width=width)
+        outline(ring, fill, stroke)
     elif kind == "diamond":
         corners = _view_corners(element)
-        ring = [at(((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)) for a, b in zip(corners, corners[1:] + corners[:1])]
-        draw.polygon(ring, fill=fill, outline=stroke, width=width)
+        outline([at(((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)) for a, b in zip(corners, corners[1:] + corners[:1])], fill, stroke)
+    elif kind == "rectangle":
+        outline([at(point) for point in _view_corners(element)], fill, stroke)
     else:
-        # A rectangle, and the outline of any kind this reader does not draw.
-        ring = [at(point) for point in _view_corners(element)]
-        draw.polygon(ring, fill=fill if kind == "rectangle" else None,
-                     outline=stroke if kind == "rectangle" else (150, 150, 150), width=width)
+        # The outline of any kind this reader does not draw.
+        draw.polygon([at(point) for point in _view_corners(element)], outline=(150, 150, 150), width=width)
     if layer is canvas:
         return
     if alpha < 255:
