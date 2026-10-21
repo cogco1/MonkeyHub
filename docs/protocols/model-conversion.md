@@ -26,6 +26,11 @@ This is not general CAD interchange. Unsupported entities, animation, compressio
 and other unsupported GLB features are refused rather than silently discarded.
 Supported mesh conversions report loss of materials, textures, hierarchy and CAD
 semantics. GLB uses meters/Y-up; the adapter's common mesh uses meters/Z-up.
+The turn is a rotation: the 3DM's +Y, which is the modeling plan's +z (north),
+becomes glTF's -Z, so the GLB, the 3DM and the Hub viewport agree. What a 3DM
+hides is left out of a GLB or STL, as the model view hides it: an object saved
+hidden (an opening's aperture, a cut's tool) or one on a layer hidden itself or
+under a hidden parent. The report counts these in `omitted` as `hidden object`.
 Same-format 3DM/GLB requests validate and return original bytes without conversion.
 SKP/DWG same-format requests are also refused until a real validator exists.
 

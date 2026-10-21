@@ -30,14 +30,14 @@ _SUGGESTION_INSTRUCTIONS = (
 # studio_schema answers with that domain's pathPrefix, read when the work
 # actually turns to it.
 _MODELLING = chr(10).join([
-    "Use the bound project's Studio API in metres; plan points are (x, z) and 3D points (x, y, z), with Y up.",
+    "Use the bound project's Studio API in metres; plan points (x, z), +z north (3DM +Y, glTF -Z); 3D (x, y, z), Y up.",
     "Design tools prepare the project's runtime themselves; nobody needs to open a page first.",
     "The bodies below are complete for the ordinary case: send them as written. studio_schema is for a field not shown here",
     "or for correcting a refusal. The chat fills projectId; omit it.",
     "",
     "START: POST /api/project/modeling with body {} prepares an empty project once (an existing project keeps its model inputs)",
     "and answers the default base: {stateDigest, sourceStageRef, levels: [{levelId, elevation}], components: [{componentId,",
-    "parentComponentId}], elementCount}. Write the first script against it directly; no read first.",
+    "parentComponentId}], elementCount}. Write the first script against it; no read first.",
     "CURRENT MODEL: GET /api/construction/model gives stateDigest, levels, parameters and one entry per geometry id:",
     "form, bounds, cuts, cutBy, facets and the capabilities they unlock. Without ?run=<candidateId> it reads the default",
     "source; with it, send sourceRunId on writes. Keep sourceStageRef when provided. With elementCount > 0, read it before changing geometry.",
@@ -311,6 +311,8 @@ _GUIDES = {
         "Read GET /api/exports/capabilities for supported routes. Submission returns jobId/statusPath; poll that statusPath with GET, report queued/running progress, and only on succeeded return its downloadUrl as a Markdown link with warnings.",
         "On failed/interrupted report failureReason, never invent a file link. For SKP/DWG without an available verified executor, say 当前没有配置可用的执行器; never describe the format as permanently unsupported.",
         "Installed software does not establish conversion capability. The backend chooses providers; users do not need to choose software. Same-format validated delivery is not a conversion. Do not use awaitSeconds on exports.",
+        "AXES: the plan's +z is north, the 3DM's +Y and the GLB's -Z; the GLB, the 3DM and the Hub viewport agree, turned from Z-up to Y-up and never mirrored.",
+        "What the 3DM hides (the solid an opening or a cut removes, a hidden layer) is left out of a GLB or STL; the report counts it as omitted 'hidden object'. Say so with the warnings.",
     ]),
     "/api/render": chr(10).join([
         "RENDER: an AI render makes one new image from one exact registered source image (a PNG or JPEG page), up to the",

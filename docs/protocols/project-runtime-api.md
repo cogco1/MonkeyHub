@@ -415,8 +415,8 @@ drawn prisms and faces.
 
 Write vectors (`translation`, `axis`, `scale`, `origin`, push/pull `normal`, work-plane axes,
 loft sections) are the building-local modeling frame `[x, y, z]` with +y up; plan points are
-`[x, z]`. Candidate object and compare boxes are the export's Z-up CAD frame, `[x, z, y]` of
-the same point. A direct action's proposal summary states its vector and which way it goes
+`[x, z]` with +z north. Candidate object and compare boxes are the export's Z-up CAD frame, `[x, z, y]` of
+the same point, so the plan's +z is the 3DM's +Y and an exported GLB's -Z. A direct action's proposal summary states its vector and which way it goes
 (up or down, or horizontal along plan x or z) before anything runs.
 
 A modeling write whose `stateDigest` is not the selected source's is refused
