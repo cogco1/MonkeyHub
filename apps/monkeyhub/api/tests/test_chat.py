@@ -1507,24 +1507,25 @@ class ChatTests(unittest.TestCase):
                 patch.object(transport, "_request_json", side_effect=lambda *a, **k: json.loads(json.dumps(document))):
             first = tool_calls.call_tool(self.store.hub_url, session.id, "studio_schema", {"limit": 2})
             second = tool_calls.call_tool(self.store.hub_url, session.id, "studio_schema", {"offset": 2, "limit": 2})
-            self.assertEqual((first["total"], second["total"]), (3, 3))
+            # A document is registered from a chat attachment (gap 37), so its POST is allowed too.
+            self.assertEqual((first["total"], second["total"]), (4, 4))
             self.assertEqual(len(first["actions"]), 2)
-            self.assertEqual(len(second["actions"]), 1)
+            self.assertEqual(len(second["actions"]), 2)
             self.assertTrue(first.get("next"))
             self.assertFalse(second.get("next"))
             actions = {(row["method"], row["path"]) for row in first["actions"] + second["actions"]}
-            self.assertEqual(actions, {("GET", "/api/documents"), ("GET", "/api/drawings/model-view"),
-                                       ("POST", "/api/drawings/sheets")})
+            self.assertEqual(actions, {("GET", "/api/documents"), ("POST", "/api/documents"),
+                                       ("GET", "/api/drawings/model-view"), ("POST", "/api/drawings/sheets")})
             writes = tool_calls.call_tool(self.store.hub_url, session.id, "studio_schema", {"method": "POST"})
             self.assertEqual([(row["method"], row["path"]) for row in writes["actions"]],
-                             [("POST", "/api/drawings/sheets")])
+                             [("POST", "/api/documents"), ("POST", "/api/drawings/sheets")])
             # A route absent from this Runtime must not be advertised merely
             # because Hub permits it. Once Runtime supplies it, no second
             # hand-maintained capability list is needed.
             document["paths"]["/api/drawings/elevations"] = {"post": {"summary": "Make elevations"}}
             updated = tool_calls.call_tool(self.store.hub_url, session.id, "studio_schema", {"method": "POST"})
             self.assertEqual({row["path"] for row in updated["actions"]},
-                             {"/api/drawings/sheets", "/api/drawings/elevations"})
+                             {"/api/documents", "/api/drawings/sheets", "/api/drawings/elevations"})
             empty = tool_calls.call_tool(self.store.hub_url, session.id, "studio_schema", {"offset": 100})
             self.assertEqual(empty["actions"], [])
             self.assertFalse(empty.get("next"))
@@ -1573,11 +1574,14 @@ class ChatTests(unittest.TestCase):
                     self.assertEqual(failure.exception.error.code, "CHAT_ACTION_UNKNOWN")
                     self.assertIn("studio_schema", failure.exception.error.detail)
                     self.assertIn("/api/drawings/sheets", failure.exception.error.detail)
-                for path in ("/api/documents", "/api/visual-reviews"):
-                    with self.subTest(name=name, path=path), self.assertRaises(HubFailure) as failure:
-                        tool_calls.call_tool(self.store.hub_url, session.id, name, {"method": "POST", "path": path})
-                    self.assertEqual(failure.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
-                    self.assertIn("studio_schema", failure.exception.error.detail)
+                with self.subTest(name=name, path="/api/visual-reviews"), self.assertRaises(HubFailure) as failure:
+                    tool_calls.call_tool(self.store.hub_url, session.id, name, {"method": "POST", "path": "/api/visual-reviews"})
+                self.assertEqual(failure.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
+                self.assertIn("studio_schema", failure.exception.error.detail)
+            # A document is registered only from a chat attachment (gap 37): never from content the agent sends.
+            with self.assertRaises(HubFailure) as unattached:
+                tool_calls.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "POST", "path": "/api/documents"})
+            self.assertEqual(unattached.exception.error.code, "CHAT_DOCUMENT_INVALID")
             with self.assertRaises(HubFailure) as absent:
                 tool_calls.call_tool(self.store.hub_url, session.id, "studio_schema",
                                {"method": "POST", "path": "/api/drawings/section-perspectives"})
@@ -1822,7 +1826,8 @@ class ChatTests(unittest.TestCase):
             self.assertEqual(schema["summary"], "list drawings")
             # The visual review route is reached only through its own tool, which
             # holds the allowance; a request or schema path would go around it.
-            for method, path in (("POST", "/api/documents"), ("GET", "/api/documents/asset-1/bytes"),
+            # POST /api/documents takes a chat attachment only (gap 37; test_document_upload_chat).
+            for method, path in (("GET", "/api/documents/asset-1/bytes"),
                                  ("POST", "/api/drawings/plans/dimension-proposal"), ("POST", "/api/visual-reviews")):
                 for tool in ("studio_request", "studio_schema"):
                     with self.subTest(tool=tool, path=path), self.assertRaises(HubFailure) as refused:

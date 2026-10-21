@@ -7699,6 +7699,7 @@
         "POST /api/updates/check",
         "PUT /api/updates/settings",
         "GET /api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source",
+        "GET /api/chat/sessions/{session_id}/attachments/{attachment_id}/document-source",
         "GET /api/integrations",
         "ChatSuggestion via chat_present / ChatPresentationRequest; ChatPostRequest.suggestionSelection resolves one retained card into the existing native user-turn admission",
         "src/api/project-runtime/projectStore.ts: ProjectStore and projectStores, one ref-counted client store per open project fed by the Hub's one stream (#366), with each entity's last move (moved, movedAt) and each project's kept Studio events known by <stream>:<seq>; useProjectStore / useProjectRevision / useProjectMoved / useProjectStoreInstance / useRuntimeKey",

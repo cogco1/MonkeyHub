@@ -421,6 +421,16 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                 "type": "string", "format": "uuid",
                 "description": "Exact attachment ID from this conversation. Choose this OR projectRevision OR sourceArtifactId; Hub transfers the bytes.",
             }
+        if method == "POST" and parsed.path == "/api/documents":
+            # Gap 37: a chat registers one attachment it was given; the Hub moves the bytes.
+            reference = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+            schema = document["components"]["schemas"][reference.rsplit("/", 1)[-1]]
+            schema["properties"] = {"attachmentId": {
+                "type": "string", "format": "uuid",
+                "description": "Exact attachment ID from this conversation: a PNG, JPEG or PDF. Hub transfers the bytes "
+                               "and registers it as a project document, which a Board image can then name.",
+            }}
+            schema["required"] = ["attachmentId"]
         if method == "POST" and judgments._is_feedback(parsed.path):
             # Expose the Runtime's real schema, narrowed to the chat capability;
             # provenance is supplied by this adapter, never by the provider.
@@ -497,6 +507,13 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                 raise HubFailure(422, "CHAT_TOOL_INVALID", "The chat marks your cut-plan requests sourceKind=agent; "
                                  "only a person's own request in Drawings is human. Send it without sourceKind.")
             body["sourceKind"] = "agent"
+    if method == "POST" and parsed.path == "/api/documents":
+        if not isinstance(body, dict) or set(body) - {"projectId"} != {"attachmentId"}:
+            raise HubFailure(422, "CHAT_DOCUMENT_INVALID", "Register a document by its attachmentId alone: a PNG, JPEG or "
+                             "PDF from this conversation. The Hub transfers the bytes; send no file content.")
+        source = transport._request_json(hub, f"/api/chat/sessions/{projects._identifier(chat_id)}/attachments/"
+                                              f"{projects._identifier(body['attachmentId'])}/document-source")
+        body = {"projectId": session["projectId"], **source}
     if method == "POST" and parsed.path == "/api/exports" and isinstance(body, dict):
         attachment_id = body.pop("attachmentId", None)
         if attachment_id is not None:

@@ -19,6 +19,27 @@ from ..models import ChatDocument, ChatDocumentRef, ChatRenderContext, HubFailur
 _IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
 
+def document_source(attachment, path: Path) -> dict:
+    """A chat attachment as a project document's source (gap 37): a PNG, a JPEG or a PDF, judged by its bytes."""
+
+    import base64
+
+    data = path.read_bytes()
+    mime = attachment.mimeType
+    if mime in ("image/png", "image/jpeg"):
+        try:
+            _verify_image(data, mime)
+        except HubFailure as exc:
+            raise HubFailure(422, "CHAT_DOCUMENT_SOURCE_INVALID", f"{attachment.name} is not a valid {mime} image.") from exc
+    elif mime == "application/pdf":
+        if not data.startswith(b"%PDF-"):
+            raise HubFailure(422, "CHAT_DOCUMENT_SOURCE_INVALID", f"{attachment.name} is not a PDF.")
+    else:
+        raise HubFailure(422, "CHAT_DOCUMENT_SOURCE_INVALID",
+                         f"{attachment.name} is {mime}; only a PNG, JPEG or PDF attachment can become a project document.")
+    return {"fileName": attachment.name, "mimeType": mime, "contentBase64": base64.b64encode(data).decode("ascii")}
+
+
 def _verify_image(data: bytes, mime_type: str) -> None:
     from PIL import Image
     try:

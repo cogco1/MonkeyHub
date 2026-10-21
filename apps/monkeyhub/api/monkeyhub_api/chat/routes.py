@@ -124,6 +124,11 @@ def sessions_router(chats) -> APIRouter:
         return {"fileName": attachment.name, "attachmentId": attachment.id,
                 "contentBase64": base64.b64encode(path.read_bytes()).decode("ascii")}
 
+    @routes.get("/api/chat/sessions/{session_id}/attachments/{attachment_id}/document-source")
+    def read_chat_document_source(session_id: str, attachment_id: str):
+        """The attachment's bytes for POST /api/documents, when it is a PNG, a JPEG or a PDF (gap 37)."""
+        return media.document_source(*chats.attachment(session_id, attachment_id))
+
     @routes.get("/api/chat/sessions/{session_id}/attachments/{attachment_id}/read", response_model=ChatAttachmentContent)
     def read_chat_attachment_content(session_id: str, attachment_id: str, offset: int = Query(0, ge=0),
                                      limit: int = Query(32768, ge=1, le=65536), page: int = Query(1, ge=1)):

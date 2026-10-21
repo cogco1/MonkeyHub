@@ -290,6 +290,7 @@ _GUIDES = {
     ]),
     "/api/board": chr(10).join([
         "BOARD: GET /api/board reads the Board; PUT /api/board saves it. Board arranges document references; generated drawings are saved by their drawing API.",
+        "AN IMAGE OR PDF YOU WERE GIVEN: POST /api/documents {attachmentId} registers a PNG, JPEG or PDF attachment of this conversation as a project document; a Board image then names it.",
         "GET /api/documents lists registered drawings and pages (?runId=<runId> for one run's); GET /api/document-annotations reads page annotations and",
         "PUT /api/document-annotations saves them. Use their schemas for exact inputs. For page edits, read existing annotations and use",
         "baseRevisionSha256 with the exact run/asset/page/drawingRevisionRef.",
