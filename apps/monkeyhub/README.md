@@ -123,12 +123,19 @@ No StudioSettings object is created for the Hub. Choose an existing complete pro
 
 ### Show an external agent conversation in Hub
 
-Connect the external agent to the existing Hub stdio adapter, using the running Hub URL,
-an existing project folder, and that agent's actual stable session ID:
+Connect the external agent to the existing Hub stdio adapter, using an existing project folder and that
+agent's actual stable session ID:
 
 ```powershell
-python apps/monkeyhub/api/monkeyhub_api/chat/mcp_server.py --mcp --hub-url http://127.0.0.1:8790 --project-dir "<project folder>" --source-session-id "<source session id>" --title "Design review"
+python apps/monkeyhub/api/monkeyhub_api/chat/mcp_server.py --mcp --project-dir "<project folder>" --source-session-id "<source session id>" --title "Design review"
 ```
+
+Without `--hub-url` the adapter finds the running Hub for every call from `runtime/hub.json` under the Hub's
+runtime root (`%LOCALAPPDATA%\MonkeyHub`, or `--runtime-root`). The Hub writes that file once it listens (its URL,
+process id, managed instance id and start time) and removes it when it quits; the adapter trusts it only when the
+Hub's `/api/health` answers with the same process and instance, so a file a crashed Hub left is never used. The
+desktop shell picks a new port at every start, so a connection registered this way keeps working across Hub
+restarts, rebinding as below. `--hub-url http://127.0.0.1:<port>` still fixes one Hub.
 
 Without a project yet, leave out `--project-dir`: the connection then offers `project_create {name}`,
 which makes an empty project in the Hub's workspace and binds to it, and `presentation_bind {projectDir}`

@@ -5,7 +5,10 @@ each call through ``tool_calls``. A Hub conversation passes its chat id; an
 external host passes its project folder and source session instead and binds
 them with presentation_bind. An external host with no project yet passes its
 source session alone, and binds a project it makes with project_create, or an
-existing one it names to presentation_bind (gap 39).
+existing one it names to presentation_bind (gap 39). Without --hub-url it finds
+the Hub again for every call from runtime/hub.json under the Hub's runtime root,
+checked against the Hub's health, so a Hub restarted on a new port is found
+without restarting the connection (gap 44); the conversation is then rebound.
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ if __package__ in {None, ""}:
     sys.modules.setdefault("monkeyhub_api.chat.mcp_server", sys.modules[__name__])
 
 from .. import projects
+from ..app import locator
 from . import design_loop, guides, providers, studio_tool, tool_calls, transport
 
 from ..models import ChatPresentationBindRequest, ChatPresentationRequest, HubFailure
@@ -60,7 +64,15 @@ def _bound_source(hub: str, name: str, arguments: object, external: ChatPresenta
     return ChatPresentationBindRequest(projectDir=arguments["projectDir"], **source), None
 
 
-def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | None = None,
+def _hub_at(hub_url: str | None, runtime_root: str | None):
+    """The Hub a call goes to: the URL given, or the one runtime/hub.json names, looked up at each call."""
+
+    if hub_url:
+        return transport._url(hub_url)
+    return lambda: transport._url(locator.locate(runtime_root))
+
+
+def _mcp(hub_at, chat_id: str | None, external: ChatPresentationBindRequest | None = None,
          source: dict | None = None, *, design_loop_only: bool = False) -> None:
     """``design_loop_only`` lists only the design-loop tools (#185): a headless turn that revises the design.
 
@@ -246,6 +258,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
                 result = {"tools": tools}
             elif method == "tools/call":
                 try:
+                    hub = hub_at() if callable(hub_at) else hub_at
                     name, arguments = params.get("name", ""), params.get("arguments", {})
                     if reaching_out and name in ("presentation_bind", "project_create"):
                         external, project = _bound_source(hub, name, arguments, external, source)
@@ -317,7 +330,8 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mcp", action="store_true", required=True)
-    parser.add_argument("--hub-url", required=True)
+    parser.add_argument("--hub-url", help="The running Hub's URL; left out, runtime/hub.json names it at each call")
+    parser.add_argument("--runtime-root", help="Where to read runtime/hub.json; default %%LOCALAPPDATA%%/MonkeyHub")
     parser.add_argument("--chat-id")
     parser.add_argument("--project-dir")
     parser.add_argument("--source-session-id")
@@ -329,12 +343,12 @@ if __name__ == "__main__":
     if args.source_session_id and args.project_dir:
         external = ChatPresentationBindRequest(projectDir=args.project_dir, sourceSessionId=args.source_session_id,
                                                provider=args.provider, chatId=args.chat_id, title=args.title)
-        _mcp(transport._url(args.hub_url), args.chat_id, external, design_loop_only=args.design_loop)
+        _mcp(_hub_at(args.hub_url, args.runtime_root), args.chat_id, external, design_loop_only=args.design_loop)
     elif args.source_session_id:
-        _mcp(transport._url(args.hub_url), args.chat_id, None, {"sourceSessionId": args.source_session_id,
+        _mcp(_hub_at(args.hub_url, args.runtime_root), args.chat_id, None, {"sourceSessionId": args.source_session_id,
                                                                "provider": args.provider, "chatId": args.chat_id, "title": args.title})
     elif args.chat_id and not args.source_session_id and not args.project_dir:
-        _mcp(transport._url(args.hub_url), projects._identifier(args.chat_id), design_loop_only=args.design_loop)
+        _mcp(_hub_at(args.hub_url, args.runtime_root), projects._identifier(args.chat_id), design_loop_only=args.design_loop)
     else:
         parser.error("Use --chat-id for a Hub-owned conversation, or --source-session-id (with --project-dir, or without "
                      "one to make or name a project) for external presentation.")

@@ -7766,6 +7766,7 @@
         "apps/monkeyhub/api/monkeyhub_api/app/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
         "apps/monkeyhub/api/monkeyhub_api/app/main.py",
+        "apps/monkeyhub/api/monkeyhub_api/app/locator.py",
         "apps/monkeyhub/api/monkeyhub_api/models.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/models.py",
@@ -7885,6 +7886,7 @@
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
+        "apps/monkeyhub/api/tests/test_hub_locator.py",
         "apps/monkeyhub/api/tests/test_launch_hub.py",
         "apps/monkeyhub/api/tests/test_applications.py",
         "apps/monkeyhub/api/tests/test_settings.py",

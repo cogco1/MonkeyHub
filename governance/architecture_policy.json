@@ -266,6 +266,28 @@
       "reason": "Atomically notes, while the Hub closes, which of its children are still running (service, projectId, folder, busy) and its process id at runtime/closing.json under the nonproject Hub runtime root, for the desktop to name what a forced close would end (gap 24). No project data is written."
     },
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/app/locator.py",
+      "function": "write",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "replace"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Atomically notes where the running Hub listens (its local URL, process id, managed instance id and start time) at runtime/hub.json under the nonproject Hub runtime root, so a process the Hub did not start finds it after a restart on a new port (gap 44). No project data is written."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/app/locator.py",
+      "function": "remove",
+      "operations": [
+        "unlink"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Removes runtime/hub.json under the nonproject Hub runtime root when the Hub that wrote it quits normally, and only a file whose process id is its own (gap 44)."
+    },
+    {
       "path": "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
       "function": "_save",
       "operations": [
