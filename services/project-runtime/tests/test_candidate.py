@@ -1095,22 +1095,76 @@ class CandidateComponentRemovalTests(CandidateTestCase):
         self.assertEqual(self.repository.read_head(), self.before_head)
         self.assertEqual({path: path.read_bytes() for path in original}, original)
 
-    def test_deleting_only_the_last_panel_still_fails_strict_coverage(self) -> None:
+    def test_a_semantic_edit_removing_only_the_last_panel_still_fails_strict_coverage(self) -> None:
         source_id, state = self.source()
-        for endpoint in ("semantic", "delete"):
-            with self.subTest(endpoint=endpoint):
-                if endpoint == "semantic":
-                    _, job = self.remove(source_id, state, ["finish-a-panel"])
-                else:
-                    response = self.client.post("/api/proposals/delete", json={
-                        "sourceRunId": source_id, "stateDigest": state["stateDigest"], "elementId": "finish-a-panel",
-                    })
-                    self.assertEqual(response.status_code, 201, response.text)
-                    accepted = self.start(response.json()["proposalId"])
-                    job = self.finished(accepted["jobId"])
-                self.assertEqual(job["status"], "failed", job)
-                self.assertIn("no element and no declination", job["error"])
-                self.assertIn("finish-a", job["error"])
+        _, job = self.remove(source_id, state, ["finish-a-panel"])
+        self.assertEqual(job["status"], "failed", job)
+        self.assertIn("no element and no declination", job["error"])
+        self.assertIn("finish-a", job["error"])
+
+    def test_deleting_the_last_panel_in_the_view_takes_its_component_with_it(self) -> None:
+        # The view's Delete names an element; a component left without one is no object at all, so
+        # it goes too, as a construction delete() takes a shape's component with its body.
+        source_id, state = self.source()
+        response = self.client.post("/api/proposals/delete", json={
+            "sourceRunId": source_id, "stateDigest": state["stateDigest"], "elementId": "finish-a-panel",
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        body = response.json()
+        self.assertEqual(body["change"]["edits"]["removeEntityIds"], ["finish-a", "finish-a-panel"])
+        self.assertEqual(body["target"]["componentId"], "finish-a")
+        accepted = self.start(body["proposalId"])
+        job = self.finished(accepted["jobId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assertEqual(self.saved_seats(accepted["candidateId"])["seat-portico"]["owned_component_ids"],
+                         ["finish-b", "portico"])
+        after = self.client.get("/api/state", params={"run": accepted["candidateId"]}).json()
+        self.assertNotIn("finish-a", {row["componentId"] for row in after["elements"]})
+        self.assertIn("finish-b-panel", {row["elementId"] for row in after["elements"]})
+
+    def test_the_last_panel_is_refused_while_the_record_still_names_its_component(self) -> None:
+        source_id, state = self.source()
+        named = self.client.post("/api/proposals", json={
+            "sourceRunId": source_id, "stateDigest": state["stateDigest"],
+            "semanticEdit": {"summary": "The layer sits beside the portico.", "relations": [
+                {"relation_id": "rel-finish-a-beside-portico", "kind": "adjacent",
+                 "subject": "finish-a", "object": "portico"}]},
+        })
+        self.assertEqual(named.status_code, 201, named.text)
+        refused = self.client.post("/api/proposals/delete", json={
+            "sourceProposalId": named.json()["proposalId"], "stateDigest": state["stateDigest"],
+            "elementId": "finish-a-panel",
+        })
+        self.assertEqual(refused.status_code, 409, refused.text)
+        self.assertEqual(refused.json()["code"], "ELEMENT_HAS_DEPENDENTS")
+        self.assertIn("rel-finish-a-beside-portico", refused.json()["detail"])
+
+    def test_a_component_that_still_holds_a_component_stays_as_their_group(self) -> None:
+        source_id, state = self.source()
+        nested = self.client.post("/api/proposals", json={
+            "sourceRunId": source_id, "stateDigest": state["stateDigest"],
+            "semanticEdit": {"summary": "A trim under the layer.", "entities": [
+                {"entity_id": "finish-a-trim", "schema": "Component@1", "parent_id": "finish-a",
+                 "fields": {"semantic_kind": "roof", "intent": "trim", "source_refs": ["evidence:demo"]}},
+                {"entity_id": "finish-a-trim-panel", "schema": "Element@1", "parent_id": "finish-a-trim",
+                 "fields": {"component_id": "finish-a-trim", "producer": "prism",
+                            "references": {"base": {"level": "level-ground"}},
+                            "params": {"profile": [[10, 2], [11, 2], [11, 3], [10, 3]], "height": 0.1}},
+                 "basis_refs": ["evidence:demo"]}]},
+        })
+        self.assertEqual(nested.status_code, 201, nested.text)
+        response = self.client.post("/api/proposals/delete", json={
+            "sourceProposalId": nested.json()["proposalId"], "stateDigest": state["stateDigest"],
+            "elementId": "finish-a-panel",
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["change"]["edits"]["removeEntityIds"], ["finish-a-panel"])
+        accepted = self.start(response.json()["proposalId"])
+        job = self.finished(accepted["jobId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        after = self.client.get("/api/state", params={"run": accepted["candidateId"]}).json()
+        self.assertEqual({row["elementId"] for row in after["elements"] if row["componentId"].startswith("finish-a")},
+                         {"finish-a-trim-panel"})
 
     def test_a_missing_authored_root_is_not_treated_as_an_explicit_removal(self) -> None:
         path = self.repository.layout.resolve_relative(RUNNER_SEATS_PATH)
