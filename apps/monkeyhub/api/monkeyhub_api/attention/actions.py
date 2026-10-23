@@ -44,6 +44,8 @@ class ChatPort(Protocol):
 class HubPort(Protocol):
     def acknowledge_operation(self, project_id: str, project_dir: str, operation_id: str) -> object: ...
 
+    def conversation(self, project_id: str, project_dir: str) -> str: ...
+
     def apply_update(self) -> object: ...
 
 
@@ -235,8 +237,11 @@ def _send_message(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
     content = args.get("content") if isinstance(args.get("content"), str) and args.get("content") else run.note
     if not content or not content.strip():
         raise HubFailure(422, "ATTENTION_ACTION_INVALID", "Write the answer to send first.")
-    run.executor.chats.post(_text(args, "sessionId"), ChatPostRequest(projectId=run.item.projectId, content=content))
-    return _Done({"sessionId": args["sessionId"]})
+    # A card that names no conversation answers into the project's own attention conversation.
+    session = args.get("sessionId") if isinstance(args.get("sessionId"), str) and args.get("sessionId") \
+        else run.executor.hub.conversation(run.item.projectId, run.item.projectDir)
+    run.executor.chats.post(session, ChatPostRequest(projectId=run.item.projectId, content=content))
+    return _Done({"sessionId": session})
 
 
 def _update_apply(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
@@ -281,8 +286,9 @@ COMMANDS: dict[str, Command] = {
                                       needs=("sessionId", "permissionId")),
     "attention.answer_guess": Command(_answer_guess, takes=("sessionId", "messageId", "revision"),
                                       needs=("sessionId", "messageId", "revision")),
-    # content, or what the person writes on the card, is sent to sessionId as their message.
-    "chat.send_message": Command(_send_message, takes=("sessionId", "content"), needs=("sessionId",)),
+    # content, or what the person writes on the card, is sent as their message to sessionId, or
+    # without one to the project's attention conversation.
+    "chat.send_message": Command(_send_message, takes=("sessionId", "content")),
     "hub.update_apply": Command(_update_apply),
     # With operationId, the operation journal's acknowledge; without, the card is only put away.
     "attention.acknowledge": Command(_acknowledge, takes=("operationId",)),

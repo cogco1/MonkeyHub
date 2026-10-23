@@ -84,6 +84,9 @@ class FakeHub:
     def __init__(self):
         self.acknowledged, self.applied = [], 0
 
+    def conversation(self, project_id, project_dir):
+        return "c-attention"
+
     def acknowledge_operation(self, project_id, project_dir, operation_id):
         self.acknowledged.append(operation_id)
 
@@ -194,7 +197,6 @@ class AttentionExecutorTests(unittest.TestCase):
             {"opens": [{"commandId": "design.go_to_step", "args": {"runId": "run-x"}}]},
             # The guess cards' first draft: a sentence under another name, and no conversation to send it to.
             {"options": [option("go", "再调小一步", "chat.send_message", text="梁高再降 50")]},
-            {"options": [option("go", "再调小一步", "chat.send_message", content="梁高再降 50")]},
             {"options": [option("go", "换成它", "design.go_to_step")]},
         ):
             with self.assertRaises(HubFailure) as refused:
@@ -283,6 +285,13 @@ class AttentionExecutorTests(unittest.TestCase):
         self.assertEqual(self.store.get(question).state, "open")
         self.executor.resolve(question, "answer", note="保留，柱距不动")
         self.assertEqual(self.chats.posts[-1][1].content, "保留，柱距不动")
+
+        guess = self.card(AttentionDraft.model_validate({
+            "channel": "guess", "kind": "ask", "title": "Lower the beam again?", "dedupeKey": "rule:edit:beam-3",
+            "options": [option("go", "再调小一步", "chat.send_message", content="梁高再降 50")]}))
+        self.executor.resolve(guess, "go")
+        self.assertEqual((self.chats.posts[-1][0], self.chats.posts[-1][1].content), ("c-attention", "梁高再降 50"),
+                         "a card that names no conversation answers into the project's own")
 
     def test_notices_are_read_and_put_away(self):
         failed = self.card(AttentionDraft.model_validate({

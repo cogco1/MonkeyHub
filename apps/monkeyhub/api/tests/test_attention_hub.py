@@ -76,12 +76,26 @@ class FakeRuntimes:
 class FakeChats:
     def __init__(self, sessions: list[ChatDetail]):
         self.sessions = sessions
+        self.created = []
+
+    def providers(self):
+        return [SimpleNamespace(id="codex", available=False), SimpleNamespace(id="claude", available=True)]
+
+    def create(self, request):
+        self.created.append(request)
+        session = self.sessions[0].model_copy(update={"id": f"c-new-{len(self.created)}", "title": request.title,
+                                                      "provider": request.provider, "archived": False, "messages": []})
+        self.sessions.append(session)
+        return session
 
     def list(self, project_id=None, *, archived=False):
         return [row for row in self.sessions if project_id in (None, row.projectId)]
 
     def get(self, session_id):
         return next(row for row in self.sessions if row.id == session_id)
+
+    def presentation_token(self, session_id):
+        return f"token-{session_id}"
 
     def resolve_permission(self, session_id, permission_id, request):
         self.answered = (session_id, permission_id, request.optionId)
@@ -154,10 +168,13 @@ class AttentionHubTests(unittest.TestCase):
     def test_a_design_loop_question_is_a_card_until_the_architect_writes_again(self):
         chat = self.chats.sessions[0]
         chat.messages.insert(0, chat.messages[0].model_copy(update={"id": "u1", "role": "user", "permission": None}))
+        with self.assertRaises(HubFailure) as stranger:
+            self.hub.ask("c1", "u1", "西门廊要保留原来的柱距吗", "柱距和新楼梯冲突", token="guessed")
+        self.assertEqual((stranger.exception.status, stranger.exception.error.code), (403, "ATTENTION_QUESTION_UNBOUND"))
         with self.assertRaises(HubFailure) as unbound:
-            self.hub.ask("c1", "m1", "西门廊要保留原来的柱距吗", "柱距和新楼梯冲突")
+            self.hub.ask("c1", "m1", "西门廊要保留原来的柱距吗", "柱距和新楼梯冲突", token="token-c1")
         self.assertEqual(unbound.exception.error.code, "ATTENTION_QUESTION_UNBOUND")
-        card = self.hub.ask("c1", "u1", "西门廊要保留原来的柱距吗", "柱距和新楼梯冲突")
+        card = self.hub.ask("c1", "u1", "西门廊要保留原来的柱距吗", "柱距和新楼梯冲突", token="token-c1")
         self.assertEqual((card.dedupeKey, card.projectId), ("dlq:c1:u1", "thi-hemp"))
         self.hub.refresh(self.runtimes.runtime.runtime_id)
         self.assertEqual(self.store.get(card.id).state, "open")
@@ -179,6 +196,22 @@ class AttentionHubTests(unittest.TestCase):
         card, = self.store.items()
         self.assertEqual((card.projectId, card.dedupeKey), ("monkeyhub", "update:11230e0e1234-desktop"))
         self.assertIs(self.store.check.__name__, "check_card", "the Hub keeps only cards it runs as written")
+
+    def test_the_projects_attention_conversation_is_opened_once_and_kept(self):
+        settings = SimpleNamespace(chat_provider="codex", chat_model="gpt-x", language="zh-CN")
+        hub = AttentionHub(self.store, self.runtimes, self.chats, user_settings=lambda: settings)
+        first = hub.conversation("thi-hemp", self.project_dir)
+        self.assertEqual(hub.conversation("thi-hemp", self.project_dir), first, "answered again, not opened again")
+        made, = self.chats.created
+        self.assertEqual((made.provider, made.model, made.title), ("claude", None, "关注"),
+                         "the default provider was unavailable, so the first available one opens it")
+        self.assertEqual(self.store.conversation(self.project_dir), first)
+
+        next(row for row in self.chats.sessions if row.id == first).archived = True
+        settings.language = "en"
+        second = hub.conversation("thi-hemp", self.project_dir)
+        self.assertNotEqual(second, first, "an archived one is replaced")
+        self.assertEqual(self.chats.created[-1].title, "Attention")
 
     def test_the_hubs_events_bring_cards_up_to_date_and_say_so(self):
         seen = []
