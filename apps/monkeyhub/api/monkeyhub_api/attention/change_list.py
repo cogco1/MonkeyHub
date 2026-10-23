@@ -198,7 +198,10 @@ def approval(card_id: str, change_list: ChangeList, words: Sequence[str]) -> dic
     one passage) quotes the whole passage, and ``clauses`` holds the parts the
     items cite, for showing. A passage that also lies inside another line is
     quoted with its line breaks; one longer than RAW_LANGUAGE_LIMIT is quoted
-    by its cited clauses instead; only when no span names it alone is
+    by its cited clauses widened by neighbouring clauses, one before and one
+    after in turn, starting before, since what qualifies a clause usually
+    comes before it, as far as fits; only
+    when no span names it alone is
     ``feedbackQuote`` None, binding the whole message, which may then be at
     most RAW_LANGUAGE_LIMIT characters.
 
@@ -223,7 +226,8 @@ def approval(card_id: str, change_list: ChangeList, words: Sequence[str]) -> dic
         clauses = list(dict.fromkeys(sources[n][1] for n in members))
         quote = _quote(lines, index, content)
         if quote is not None and len(quote.strip("\n")) > RAW_LANGUAGE_LIMIT:
-            quote = clauses[0] if len(clauses) == 1 and content.count(clauses[0]) == 1 else None
+            quote = _around(line, clauses, RAW_LANGUAGE_LIMIT)
+            quote = quote if quote is not None and content.count(quote) == 1 else None
         quotes.append({"items": members, "feedbackQuote": quote, "clauses": clauses})
     if any(row["feedbackQuote"] is None for row in quotes) and len(content) > RAW_LANGUAGE_LIMIT:
         raise ValueError(f"The approved words are {len(content)} characters and one item can only bind them all; "
@@ -241,6 +245,37 @@ def _quote(lines: Sequence[str], index: int, content: str) -> str | None:
         if content.count(candidate) == 1:
             return candidate
     return None
+
+
+def _around(passage: str, cited: Sequence[str], limit: int) -> str | None:
+    """The cited clauses of a passage widened by whole neighbouring clauses, before and after in turn, up to limit."""
+
+    spans = [(match.start(), match.end()) for match in _CLAUSE.finditer(passage) if match.group().strip()]
+    covered: list[int] = []
+    for wanted in {_plain(text) for text in cited}:
+        for first in range(len(spans)):
+            for last in range(first, len(spans)):
+                piece = _plain(passage[spans[first][0]:spans[last][1]])
+                if piece == wanted:
+                    covered += [first, last]
+                if len(piece) >= len(wanted):
+                    break
+    if not covered:
+        return None
+    low, high = min(covered), max(covered)
+
+    def text(lo: int, hi: int) -> str:
+        return passage[spans[lo][0]:spans[hi][1]].strip()
+
+    if len(text(low, high)) > limit:
+        return None
+    before = True
+    while True:
+        steps = ((low - 1, high), (low, high + 1)) if before else ((low, high + 1), (low - 1, high))
+        fits = [(lo, hi) for lo, hi in steps if 0 <= lo and hi < len(spans) and len(text(lo, hi)) <= limit]
+        if not fits:
+            return text(low, high)
+        (low, high), before = fits[0], not before
 
 
 def _said(note: str, words: Sequence[str]) -> bool:

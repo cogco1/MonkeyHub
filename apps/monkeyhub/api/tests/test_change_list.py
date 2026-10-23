@@ -166,9 +166,15 @@ class ApprovalTests(unittest.TestCase):
         self.assertEqual(both["content"], "楼板只留一层胶合板，龙骨和面层不要")
         self.assertEqual(both["quotes"], [{"items": [1, 2], "feedbackQuote": "楼板只留一层胶合板，龙骨和面层不要",
                                            "clauses": ["楼板只留一层胶合板", "龙骨和面层不要"]}])
-        long = "除了外墙，" + "墙面要统一" * 450 + "，其它都刷白"
+        filler = "，".join(f"第{n}面墙另议" for n in range(300))
+        long = f"{filler}。除了外墙，其它都刷白，门框保留原色。{filler}"
         [group] = approval("att_x", items("其它都刷白"), [long])["quotes"]
-        self.assertEqual(group["feedbackQuote"], "其它都刷白", "a passage past the design loop's limit is quoted by its clause")
+        quote = group["feedbackQuote"]
+        self.assertLessEqual(len(quote), 2000, "a passage past the design loop's limit is quoted in part")
+        self.assertIn("除了外墙，其它都刷白，门框保留原色", quote, "with the clauses around the cited one")
+        self.assertIn(quote, long)
+        self.assertGreater(len(quote), 1000, "widened on both sides towards the limit, not just the sentence")
+        self.assertFalse(quote.startswith("，") or quote.endswith("，"), "whole clauses, as written")
         self.assertEqual(approval("att_x", change_list(item3={"keep": False}), WORDS)["items"], [1])
         with self.assertRaises(ValueError):
             approval("att_x", change_list(item1={"keep": False}, item3={"keep": False}), WORDS)
