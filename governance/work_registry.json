@@ -84,6 +84,42 @@
         "tools/tests/test_state_file_command.py"
       ],
       "depends_on": []
+    },
+    {
+      "id": "GH-300",
+      "lanes": [
+        {
+          "id": "command-tree",
+          "status": "active",
+          "branch": "claude/300-command-tree",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-command-tree",
+          "base_ref": "cc8f54e20546c73a1e1e1763a5001a8495c48675",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Ctrl+K and the Hub's shortcuts read the command tree generated from governance/module_registry.json capabilities (ui.commands); the shell-level groups come first, the Runtime-side groups follow on this lane. Not merged before the paper relay ends.",
+          "modules": [
+            "hub.shell",
+            "project_runtime.intent",
+            "tools.governance.devctl"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/scripts/check-generated.mjs",
+            "apps/monkeyhub/web/scripts/command-tree.mjs",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/HubMenu.tsx",
+            "apps/monkeyhub/web/src/features/commands/",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/src/main.tsx",
+            "apps/monkeyhub/web/test/commandPalette.browser.mjs",
+            "apps/monkeyhub/web/test/commandPalette.test.ts",
+            "apps/monkeyhub/web/test/commandTree.test.ts",
+            "services/project-runtime/src/project_runtime/application/capability.py",
+            "tools/governance/devctl.py"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
