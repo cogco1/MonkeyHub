@@ -1,6 +1,7 @@
 """A card's answer runs as the person's own request, once, and can be taken back while the project still stands there."""
 
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 import re
 import sys
@@ -18,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
-from monkeyhub_api.attention.actions import COMMANDS, AttentionExecutor, action_router, check_card
+from monkeyhub_api.attention.actions import COMMANDS, OPENS, AttentionExecutor, action_router, check_card
 from monkeyhub_api.attention.models import COMMAND_ID, AttentionDraft
 from monkeyhub_api.attention.store import AttentionStore
 from monkeyhub_api.models import HubFailure
@@ -107,6 +108,18 @@ def ab_card(study="s1", recommend=None):
     return AttentionDraft.model_validate(card)
 
 
+class CommandTreeTests(unittest.TestCase):
+    def test_what_a_card_may_open_is_what_the_command_tree_marks_as_opening(self):
+        registry = json.loads((ROOT / "governance" / "module_registry.json").read_text(encoding="utf-8"))
+        commands = {command["id"]: command for capability in registry.get("capabilities", ())
+                    for command in (capability.get("ui") or {}).get("commands", ())}
+        self.assertEqual({key for key, command in commands.items() if command.get("opens")} - OPENS, set(),
+                         "every command the tree marks as opening may be opened from a card")
+        self.assertEqual({key for key in OPENS & set(commands) if not commands[key].get("opens")}, set())
+        self.assertEqual({key for key in set(COMMANDS) & set(commands) if commands[key].get("opens")}, set(),
+                         "an answer is never a command that only opens something")
+
+
 class AttentionExecutorTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -179,6 +192,10 @@ class AttentionExecutorTests(unittest.TestCase):
             {"options": [restart]},
             {"options": [option("go", "重置", "board.reset_canvas")]},
             {"opens": [{"commandId": "design.go_to_step", "args": {"runId": "run-x"}}]},
+            # The guess cards' first draft: a sentence under another name, and no conversation to send it to.
+            {"options": [option("go", "再调小一步", "chat.send_message", text="梁高再降 50")]},
+            {"options": [option("go", "再调小一步", "chat.send_message", content="梁高再降 50")]},
+            {"options": [option("go", "换成它", "design.go_to_step")]},
         ):
             with self.assertRaises(HubFailure) as refused:
                 store.upsert("thi-hemp", self.project_dir, AttentionDraft.model_validate({

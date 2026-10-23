@@ -259,20 +259,33 @@ class Command:
     # Whether the executor itself can take it back: only these may be marked
     # undoable on a card, and only these run in "all as recommended".
     undoable: bool = False
+    # The arguments a card may bind, and those it must: a card that names
+    # another, or leaves one out, is refused when it is written, not clicked.
+    takes: tuple[str, ...] = ()
+    needs: tuple[str, ...] = ()
 
 
 # The answers a card can carry, by command id. Every one is a command of the
 # command tree; the Hub refuses a card's answer that is not here.
 COMMANDS: dict[str, Command] = {
-    "design.go_to_step": Command(_go_to_step, undoable=True),
-    "candidate.review.archive": Command(_review("archive", "candidate.restore"), undoable=True),
-    "candidate.restore": Command(_review("restore", "candidate.review.archive"), undoable=True),
-    "candidate.combine": Command(_combine),
-    "chat.answer_permission": Command(_answer_permission),
-    "attention.answer_guess": Command(_answer_guess),
-    "chat.send_message": Command(_send_message),
+    # Continue onto runId (on branchId, or the line the run was recorded on).
+    "design.go_to_step": Command(_go_to_step, undoable=True, takes=("runId", "branchId"), needs=("runId",)),
+    "candidate.review.archive": Command(_review("archive", "candidate.restore"), undoable=True,
+                                        takes=("runIds",), needs=("runIds",)),
+    "candidate.restore": Command(_review("restore", "candidate.review.archive"), undoable=True,
+                                 takes=("runIds",), needs=("runIds",)),
+    # A new run from runIds (the head first, then the result).
+    "candidate.combine": Command(_combine, takes=("runIds",), needs=("runIds",)),
+    # optionId null cancels the request, as the conversation's own Cancel does.
+    "chat.answer_permission": Command(_answer_permission, takes=("sessionId", "permissionId", "optionId"),
+                                      needs=("sessionId", "permissionId")),
+    "attention.answer_guess": Command(_answer_guess, takes=("sessionId", "messageId", "revision"),
+                                      needs=("sessionId", "messageId", "revision")),
+    # content, or what the person writes on the card, is sent to sessionId as their message.
+    "chat.send_message": Command(_send_message, takes=("sessionId", "content"), needs=("sessionId",)),
     "hub.update_apply": Command(_update_apply),
-    "attention.acknowledge": Command(_acknowledge),
+    # With operationId, the operation journal's acknowledge; without, the card is only put away.
+    "attention.acknowledge": Command(_acknowledge, takes=("operationId",)),
 }
 # Commands a card may offer to open: they show something and change nothing.
 OPENS: frozenset[str] = frozenset({"chat.open_conversation", "candidate.compare", "board.open_frame"})
@@ -295,6 +308,12 @@ def check_card(draft: AttentionDraft) -> None:
         if option.undoable and not command.undoable:
             raise HubFailure(422, "ATTENTION_CARD_INVALID",
                              f"{option.action.commandId} cannot be taken back, so its answer is not undoable.")
+        unknown = sorted(set(option.action.args) - set(command.takes))
+        missing = [name for name in command.needs if option.action.args.get(name) in (None, "", [])]
+        if unknown or missing:
+            raise HubFailure(422, "ATTENTION_CARD_INVALID", f"{option.action.commandId} takes "
+                             f"{', '.join(command.takes) or 'no arguments'} and needs {', '.join(command.needs) or 'none'}"
+                             f"; this answer {'names ' + ', '.join(unknown) if unknown else 'leaves out ' + ', '.join(missing)}.")
     for command in draft.opens:
         if command.commandId not in OPENS:
             raise HubFailure(422, "ATTENTION_CARD_INVALID", f"{command.commandId} does more than open something.")
