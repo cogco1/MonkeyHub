@@ -73,7 +73,9 @@ try {
           });
           return <div style={{ display: "grid", gridTemplateRows: "auto 1fr", height: "100vh" }}>
             <div><input aria-label="fixture field" /><button type="button" data-command="project.create.new">fixture standing entry</button>
-              <button type="button" data-command="fixture.standing_only">fixture entry without a handler</button></div>
+              <button type="button" data-command="fixture.standing_only">fixture entry without a handler</button>
+              <button type="button" role="menuitem" aria-disabled="true" data-command="project.archive.export">fixture unavailable menu item</button>
+              <button type="button" disabled data-command="project.create.add_existing">fixture disabled button</button></div>
             {modeling ? <Modeling /> : <Board expectedProjectId=${JSON.stringify(projectId)}
               onSubmit={() => { throw new Error("Unexpected design handoff"); }} onSketch={() => { throw new Error("Unexpected sketch handoff"); }} />}
           </div>;
@@ -152,6 +154,8 @@ try {
       assert.equal(await first.locator(".command-palette__label").textContent(), text.createLabel, `${label}: best match first`);
       await input.press("Enter");
       await palette.waitFor({ state: "detached" });
+      // The palette closes first and the command runs right after, once focus is free.
+      await page.waitForFunction(() => window.__ran.length > 0);
       assert.deepEqual(await ran(), ["project.create.new"], `${label}: Enter ran the command`);
 
       // A command that cannot run here is listed greyed, with why; Enter does nothing.
@@ -171,7 +175,7 @@ try {
       if (shots) await page.screenshot({ path: path.join(shots, `palette-ask-${language}-${theme}-${width}.png`) });
       await input.press("Enter");
       await palette.waitFor({ state: "detached" });
-      assert.ok((await ran()).includes(`ask:${text.ask}`), `${label}: the words went to the conversation`);
+      await page.waitForFunction((words) => window.__ran.includes(`ask:${words}`), text.ask);
 
       // An empty palette leads with what was used last.
       await page.keyboard.press("Control+K");
@@ -192,10 +196,14 @@ try {
       await palette.waitFor();
       await page.keyboard.press("Escape");
 
-      // A standing entry that names its command is counted beside the palette's uses.
+      // A standing entry that names its command is counted beside the palette's uses; one that cannot act now is not.
+      await page.getByText("fixture unavailable menu item").click({ force: true });
+      await page.getByText("fixture disabled button").click({ force: true });
       await page.getByText("fixture standing entry").click();
       const usage = await page.evaluate(() => JSON.parse(localStorage.getItem("monkeyhub.commands.usage@1")));
       assert.deepEqual(usage.counts["project.create.new"], { palette: 1, button: 1 }, `${label}: counts by how the command was reached`);
+      assert.equal(usage.counts["project.archive.export"], undefined, `${label}: an aria-disabled menu item is not a use`);
+      assert.equal(usage.counts["project.create.add_existing"], undefined, `${label}: a disabled button is not a use`);
       assert.ok(!JSON.stringify(usage).includes(text.ask), `${label}: what was typed is not stored`);
 
       // A command with no handler but a standing entry on screen is pointed at, not pressed.
