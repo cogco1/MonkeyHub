@@ -117,18 +117,22 @@ const shoot = async (page, name) => { if (shots) await page.screenshot({ path: p
 const style = (page, value, family) => page.evaluate(([value, family]) => {
   document.documentElement.dataset.uiStyle = value; document.documentElement.dataset.uiFamily = family; }, [value, family]);
 const look = process.env.ATTENTION_SHELL_STYLE ?? null;
+/** Open the shell once the saved preferences have arrived and been applied, then put on the preview style. */
+const open = async (page) => {
+  const settled = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/settings/user");
+  await page.goto(`${origin}/?shell=attention`);
+  await settled;
+  await page.waitForFunction((theme) => document.documentElement.dataset.theme === theme && document.querySelector(".attention-shell"), preferredTheme);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  if (look) await style(page, look, look);
+};
 try {
   // Desktop.
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage(); page.setDefaultTimeout(15_000);
   page.on("pageerror", (error) => errors.push(error.message));
   await page.route((url) => url.pathname.startsWith("/api/"), route);
-  await page.goto(`${origin}/?shell=attention`);
-  const shell = page.locator(".attention-shell");
-  await shell.waitFor();
-  // The saved preferences arrive after the first paint and set the style again; a preview style goes on after them.
-  await page.waitForFunction((theme) => document.documentElement.dataset.theme === theme, preferredTheme);
-  if (look) await style(page, look, look);
+  await open(page);
   assert.equal(await page.locator(".chat-shell").count(), 0, "the workbench layout is not drawn");
   // The projects column: Attention with what waits on the architect, each project and its latest conversations.
   const attentionRow = page.locator(".attention-shell__row--attention");
@@ -182,9 +186,7 @@ try {
   const darkPage = await dark.newPage(); darkPage.setDefaultTimeout(15_000);
   darkPage.on("pageerror", (error) => errors.push(error.message));
   await darkPage.route((url) => url.pathname.startsWith("/api/"), route);
-  await darkPage.goto(`${origin}/?shell=attention`);
-  await darkPage.waitForFunction(() => document.documentElement.dataset.theme === "dark" && document.querySelector(".attention-shell"));
-  if (look) await style(darkPage, look, look);
+  await open(darkPage);
   await darkPage.locator(".attention-shell__row--attention .attention-shell__count").waitFor();
   await shoot(darkPage, "attention-desktop-dark");
   await dark.close();
@@ -196,9 +198,7 @@ try {
     const small = await phone.newPage(); small.setDefaultTimeout(15_000);
     small.on("pageerror", (error) => errors.push(error.message));
     await small.route((url) => url.pathname.startsWith("/api/"), route);
-    await small.goto(`${origin}/?shell=attention`);
-    await small.waitForFunction((colour) => document.documentElement.dataset.theme === colour && document.querySelector(".attention-shell"), colour);
-    if (look) await style(small, look, look);
+    await open(small);
     assert.ok(await small.locator(".attention-shell__left").isHidden(), `${colour}: the projects column folds away`);
     assert.ok(await small.locator(".attention-shell .chat-composer").isVisible(), `${colour}: the composer stays`);
     const width = await small.evaluate(() => document.documentElement.scrollWidth);
