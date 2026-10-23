@@ -279,6 +279,10 @@ class ConstructionOpeningDto(BaseModel):
     width: float | None = Field(description="metres across; null when stated another way")
     sill: float | None = Field(description="metres from the host's base up to its bottom; null when stated another way")
     head: float | None = Field(description="metres from the host's base up to its top; null when stated another way")
+    parameters: dict[str, str] = Field(default_factory=dict, description="the parameter each of along, width, sill "
+                                       "and head is read from, when one states it: change the opening through it")
+    part: str | None = Field(default=None, description="the part that hosts it, when the geometry id has several; "
+                                                       "a door or window is added only to a geometry id of one part")
 
 
 class ConstructionLineDto(BaseModel):
@@ -309,11 +313,15 @@ class ConstructionEntityDto(BaseModel):
         description="the material each of its parts states of its own, by part id; empty when none does")
     capabilities: list[ConstructionCapabilityDto] = Field(description="what its facets allow, where its geometry "
                                                                       "can take it")
-    openings: list[ConstructionOpeningDto] = Field(description="the doors and windows it hosts, when it is one part")
+    openings: list[ConstructionOpeningDto] = Field(description="the doors and windows its parts host")
     along_line: ConstructionLineDto | None = Field(
         alias="alongLine",
         description="where the along of a door or window on it is measured, when its capabilities include "
                     "hosted-opening and its shape can take one; null otherwise")
+    made_from: list[str] = Field(alias="madeFrom", default_factory=list,
+                                 description="the declared parameters its parts are made from, through any derived ones")
+    not_script_editable: list[str] = Field(alias="notScriptEditable", default_factory=list,
+                                           description="its parts a script cannot edit: change them through madeFrom")
 
 
 class ConstructionModelDto(BaseModel):
@@ -332,6 +340,10 @@ class ConstructionModelDto(BaseModel):
     record_digest: str = Field(alias="recordDigest")
     levels: list[ConstructionLevelDto]
     parameters: list[ConstructionParameterValueDto]
+    declared_parameters: list[str] = Field(
+        alias="declaredParameters", default_factory=list,
+        description="the parameters a change sets; every other one is derived from these, and a value alone does not "
+                    "change it")
     entities: list[ConstructionEntityDto]
 
 
