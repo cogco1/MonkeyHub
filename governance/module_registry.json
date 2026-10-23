@@ -7301,7 +7301,7 @@
         "the designLoop application setting (legacy | advisory | enforced, default legacy; a saved off reads as legacy) passed to each Project Runtime it starts; legacy keeps the chat's tools, guide and error words as they were; advisory adds GET /api/revisions/context and two lines naming the problem lists; enforced offers POST /api/revisions with the user's message and words bound, the guide that names it and a Claude chat without Bash; the chat never sends confirmed",
         "the design-loop tools (design_read, design_submit, design_ask, design_report_limitation) over studio_request and POST /api/revisions: a repair limit per answered user message (MONKEYHUB_REPAIR_BUDGET, default 3), earlier attempts on the same base superseded, the turn's loop state at the launcher's MONKEYHUB_DESIGN_LOOP_STATE file, the Stop hook that holds a turn open until a change landed, the architect was asked or a limitation was reported (at most three times), the --design-loop connection that lists only those tools, and cli_profile for whoever starts such a turn",
         "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
-        "the change list an agent proposes from Board marks: its items (marks, the architect's words, the reading, components touched and kept, unsure, extra, ticked), checked against the Runtime's mark readings and the record's catalogue; an unsure item becomes a which-one question card and only ticked sure items are handed back to the conversation"
+        "the change list an agent proposes from Board marks: its items (marks, the architect's words, the reading, components touched and kept, unsure, extra, ticked), checked against the Runtime's mark readings (an item citing an unclear mark is unsure; only an extra may touch what no cited mark lies on); an unsure item becomes a which-one question card, and the approval of ticked sure items names the card and items and carries only the architect's words"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -7431,7 +7431,7 @@
         "ChangeList",
         "check_against",
         "unsure_cards",
-        "handoff_message",
+        "approval",
         "applies_without_asking"
       ],
       "invariants": [

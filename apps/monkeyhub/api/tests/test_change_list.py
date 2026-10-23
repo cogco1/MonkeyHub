@@ -2,8 +2,9 @@
 
 The readings are the Runtime's (``MarkReading.to_dict``) for the floor-section
 case: a circle round the upper layers names the finish and two joists, one
-mark sits on blank paper. The list and its question cards go through the
-attention store in memory.
+mark only touches the plywood and the finish at its rim, one sits on blank
+paper. The list and its question cards go through the attention store in
+memory, without the executor's check of which commands it runs.
 """
 
 from datetime import datetime, timezone
@@ -21,22 +22,26 @@ source_roots.put_first(ROOT)
 from pydantic import ValidationError
 
 from monkeyhub_api.attention.change_list import (
-    ChangeList, applies_without_asking, check_against, handoff_message, unsure_cards,
+    ChangeList, applies_without_asking, approval, check_against, unsure_cards,
 )
 from monkeyhub_api.attention.store import AttentionStore
+
+CATALOG = ["finish", "joist-1", "joist-2", "plywood", "skirting"]
 
 
 def hit(element: str | None, *, component: str = "floor", target: bool = True, share: float = 0.3,
         borderline: bool = False) -> dict:
     return {"componentId": component, "elementId": element, "objectIds": [f"obj-{element or component}"],
-            "coverage": 0.9 if target else 0.4, "share": share, "target": target, "borderline": borderline}
+            "coverage": 0.9 if target else 0.04, "share": share, "central": target, "target": target,
+            "borderline": borderline}
 
 
 READINGS = [
     {"markId": "m-upper", "kind": "circle", "zone": "area", "ambiguous": False, "reason": None,
      "hits": [hit("finish", share=0.5), hit("joist-1"), hit("joist-2")]},
     {"markId": "m-edge", "kind": "circle", "zone": "area", "ambiguous": True, "reason": "partial",
-     "hits": [hit("plywood", target=False, share=0.5, borderline=True), hit("finish", target=False, share=0.4)]},
+     "hits": [hit("plywood", target=False, share=0.5, borderline=True),
+              hit("finish", target=False, share=0.4, borderline=True)]},
     {"markId": "m-blank", "kind": "circle", "zone": "area", "ambiguous": True, "reason": "nothing", "hits": []},
 ]
 
@@ -44,12 +49,13 @@ READINGS = [
 def change_list(**changes) -> ChangeList:
     items = [
         {"n": 1, "markIds": ["m-upper"], "note": "楼板只留一层胶合板，龙骨和面层不要",
-         "understanding": "删掉面层和两根龙骨", "targets": ["finish", "joist-1", "joist-2"], "protected": ["plywood"],
+         "understanding": "Remove the finish and both joists", "understandingZh": "删掉面层和两根龙骨",
+         "targets": ["finish", "joist-1", "joist-2"], "protected": ["plywood"],
          "crop": {"kind": "crop", "frameId": "frame-cc", "markIds": ["m-upper"]}},
-        {"n": 2, "markIds": ["m-edge"], "note": "这里也薄一点", "understanding": "不确定指胶合板还是面层",
+        {"n": 2, "markIds": ["m-edge"], "note": "这里也薄一点", "understanding": "Plywood or finish, not sure which",
          "unsure": True},
-        {"n": 3, "markIds": [], "note": "楼板只留一层胶合板，龙骨和面层不要", "understanding": "踢脚板随面层一起删",
-         "targets": ["skirting"], "extra": True},
+        {"n": 3, "markIds": [], "note": "楼板只留一层胶合板，龙骨和面层不要",
+         "understanding": "The skirting goes with the finish", "targets": ["skirting"], "extra": True},
     ]
     for n, fields in changes.items():
         items[int(n.removeprefix("item")) - 1].update(fields)
@@ -57,17 +63,22 @@ def change_list(**changes) -> ChangeList:
                                       "items": items})
 
 
-class ChangeListTests(unittest.TestCase):
-    def test_a_list_the_marks_bear_out_has_no_problems(self) -> None:
-        self.assertEqual(check_against(change_list(), READINGS, catalog=["skirting"]), [])
+class CheckTests(unittest.TestCase):
+    def test_a_list_the_marks_and_the_record_bear_out_has_no_problems(self) -> None:
+        self.assertEqual(check_against(change_list(), READINGS, CATALOG), [])
 
-    def test_a_component_no_mark_lies_on_and_the_record_lacks_is_named(self) -> None:
-        [problem] = check_against(change_list(item1={"targets": ["finish", "wall-east"]}), READINGS, ["skirting"])
-        self.assertIn("Item 1 touches wall-east", problem)
-        [problem] = check_against(change_list(), READINGS)
-        self.assertIn("skirting", problem, "an extra by name needs the record to hold it")
-        [problem] = check_against(change_list(item1={"markIds": ["m-gone"]}), READINGS, ["skirting", "finish",
-                                                                                         "joist-1", "joist-2"])
+    def test_only_an_extra_may_touch_what_no_cited_mark_lies_on(self) -> None:
+        [problem] = check_against(change_list(item1={"targets": ["finish", "skirting"]}), READINGS, CATALOG)
+        self.assertIn("Item 1 touches skirting", problem)
+        self.assertIn("an extra", problem)
+        [problem] = check_against(change_list(item3={"targets": ["wall-east"]}), READINGS, CATALOG)
+        self.assertIn("record does not hold", problem, "an extra still names something the record holds")
+
+    def test_a_sure_item_cannot_cite_a_mark_that_was_not_read_clearly(self) -> None:
+        [problem] = check_against(change_list(item2={"unsure": False, "targets": ["plywood"]}), READINGS, CATALOG)
+        self.assertIn("Item 2 cites m-edge", problem)
+        self.assertIn("unsure", problem)
+        [problem] = check_against(change_list(item1={"markIds": ["m-gone"], "extra": True}), READINGS, CATALOG)
         self.assertIn("m-gone", problem)
 
     def test_items_say_what_they_touch_unless_unsure_and_never_both_change_and_keep(self) -> None:
@@ -80,42 +91,48 @@ class ChangeListTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ChangeList.model_validate({"items": [{**change_list().items[0].model_dump(), "n": 2}]})
 
-    def test_an_unsure_item_becomes_a_question_whose_answers_are_what_its_marks_lie_on(self) -> None:
-        [card] = unsure_cards("att_" + "0" * 32, change_list(), READINGS)
-        self.assertEqual((card.channel, card.kind, card.dedupeKey), ("decide", "choice", "unsure:att_" + "0" * 32 + ":2"))
-        self.assertEqual(card.title, "第 2 条你指的是哪个构件？")
-        self.assertEqual(card.summary, "你写的：这里也薄一点")
-        self.assertEqual([option.label for option in card.options], ["plywood", "finish"], "borderline first")
-        self.assertEqual(card.options[0].action.args, {"cardId": "att_" + "0" * 32, "n": 2, "target": "plywood"})
+
+class QuestionTests(unittest.TestCase):
+    def test_an_unsure_item_asks_which_part_with_the_parts_under_its_marks(self) -> None:
+        card_id = "att_" + "0" * 32
+        [card] = unsure_cards(card_id, change_list(), READINGS, labels={"plywood": "Plywood deck"})
+        self.assertEqual((card.channel, card.kind, card.dedupeKey), ("decide", "choice", f"unsure:{card_id}:2"))
+        self.assertEqual((card.title, card.titleZh), ("Which part did you mean in item 2?", "第 2 条你指的是哪个构件？"))
+        self.assertEqual(card.summaryZh, "你写的：这里也薄一点")
+        self.assertEqual([option.label for option in card.options], ["Plywood deck", "finish", "Say it in words"])
+        self.assertEqual(card.options[0].action.args, {"cardId": card_id, "n": 2, "target": "plywood"})
+        self.assertEqual((card.options[-1].action.commandId, card.options[-1].action.args), ("chat.send_message", {}))
         self.assertEqual(card.source.markIds, ["m-edge"])
         self.assertEqual(unsure_cards("att_x", change_list(item2={"keep": False}), READINGS), [],
                          "an unticked item asks nothing")
 
-    def test_a_mark_on_blank_paper_still_asks_with_no_answers_to_pick(self) -> None:
+    def test_a_mark_on_blank_paper_can_still_be_answered_in_words(self) -> None:
         [card] = unsure_cards("att_x", change_list(item2={"markIds": ["m-blank"]}), READINGS)
-        self.assertEqual(card.options, [])
-
-    def test_the_handoff_carries_the_ticked_sure_items_with_the_architects_words(self) -> None:
-        message = handoff_message(change_list(item3={"keep": False}))
-        self.assertEqual(message.splitlines(), [
-            "按这份清单改（只改勾选的条目）：",
-            "1. 删掉面层和两根龙骨（构件：finish、joist-1、joist-2；不动：plywood）。原话：「楼板只留一层胶合板，龙骨和面层不要」",
-        ])
-        with self.assertRaises(ValueError):
-            handoff_message(change_list(item1={"keep": False}, item3={"keep": False}))
-
-    def test_small_sure_lists_apply_first_and_anything_else_is_shown_first(self) -> None:
-        self.assertFalse(applies_without_asking(change_list()), "an unsure item is ticked")
-        self.assertTrue(applies_without_asking(change_list(item2={"keep": False})))
-        many = change_list(item1={"targets": ["finish", "joist-1", "joist-2", "joist-3", "joist-4"]},
-                           item2={"keep": False})
-        self.assertFalse(applies_without_asking(many), "six components")
+        self.assertEqual([option.id for option in card.options], ["say"])
 
     def test_question_cards_live_in_the_attention_store(self) -> None:
         store = AttentionStore(None, clock=lambda: datetime(2026, 10, 23, 9, 0, tzinfo=timezone.utc))
         [card] = unsure_cards("att_x", change_list(), READINGS)
         item = store.upsert("demo-project", "C:/projects/demo-project", card)
         self.assertEqual((item.state, item.channel), ("open", "decide"))
+
+
+class ApprovalTests(unittest.TestCase):
+    def test_the_approval_names_the_card_and_items_and_carries_only_the_architects_words(self) -> None:
+        self.assertEqual(approval("att_x", change_list()), {
+            "cardId": "att_x", "items": [1, 3], "rawLanguage": ["楼板只留一层胶合板，龙骨和面层不要"]})
+        self.assertEqual(approval("att_x", change_list(item3={"keep": False}))["items"], [1])
+        with self.assertRaises(ValueError):
+            approval("att_x", change_list(item1={"keep": False}, item3={"keep": False}))
+
+    def test_small_sure_lists_borne_out_by_their_marks_apply_first(self) -> None:
+        self.assertFalse(applies_without_asking(change_list(), READINGS, CATALOG), "an unsure item is ticked")
+        self.assertTrue(applies_without_asking(change_list(item2={"keep": False}), READINGS, CATALOG))
+        many = change_list(item1={"targets": ["finish", "joist-1", "joist-2", "joist-3", "joist-4"], "extra": True},
+                           item2={"keep": False})
+        self.assertFalse(applies_without_asking(many, READINGS, CATALOG + ["joist-3", "joist-4"]), "six components")
+        stray = change_list(item1={"targets": ["finish", "skirting"]}, item2={"keep": False})
+        self.assertFalse(applies_without_asking(stray, READINGS, CATALOG), "what the marks do not bear out is shown")
 
 
 if __name__ == "__main__":
