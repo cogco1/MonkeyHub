@@ -12,8 +12,9 @@ Whether an item is sure is not only the agent's word: an item citing a mark
 the Runtime could not read clearly must say it is unsure, and a component no
 cited mark lies on may be touched only by an item marked as an extra (the
 skirting beside the circled floor), and only when the record holds it. An
-item's note is the architect's only when it appears, exactly as written, in
-the text the Hub kept with those marks; a reworded note is refused.
+item's note is the architect's only when it is whole clauses of the text the
+Hub kept with those marks, exactly as written; a reworded note, or one cut out
+of a clause, is refused.
 
 This module holds the list, checks it against the readings it must agree with,
 writes the question cards for unsure items and the approval that hands the
@@ -23,6 +24,7 @@ travels as the person's. It runs nothing itself.
 """
 
 from collections.abc import Iterable, Mapping, Sequence
+import re
 
 from pydantic import Field, model_validator
 
@@ -36,6 +38,9 @@ MAX_CHOICES = 3
 SMALL_CHANGE = 5
 #: The most raw language the design loop binds to one submission (CHAT_FEEDBACK_TOO_LONG beyond it).
 RAW_LANGUAGE_LIMIT = 2000
+#: What ends a clause of the architect's text; a note is whole clauses of it.
+_ENDS = "。！？；，,.;!?\n\r"
+_CLAUSE = re.compile(f"[^{re.escape(_ENDS)}]+")
 
 
 class ChangeListItem(_Record):
@@ -86,7 +91,7 @@ def check_against(change_list: ChangeList, readings: Sequence[Mapping], words: S
     ``readings`` are the Runtime's mark readings (``MarkReading.to_dict``);
     ``words`` the architect's own text for this frame as the Hub keeps it (the
     text selected with the marks on Board, or the feedback they sent), never
-    the agent's. Each item's note appears in them exactly as written. An item
+    the agent's. Each item's note is whole clauses of them, as written. An item
     may cite only marks that were read. A sure item citing a mark read as
     ambiguous must be marked unsure. A component an item touches must be one
     its marks lie on, unless the item is an extra, which may name a component
@@ -196,9 +201,9 @@ def approval(card_id: str, change_list: ChangeList, words: Sequence[str]) -> dic
     takes up to RAW_LANGUAGE_LIMIT characters; a longer one is refused here.
 
     Approving the list is not an answer to any condition: a submission that
-    comes back needing a question is still asked. A note that is not in
-    ``words`` as written (the architect's own text for this frame) is never
-    sent as theirs: the approval is refused.
+    comes back needing a question is still asked. A note that is not whole
+    clauses of ``words`` as written (the architect's own text for this frame)
+    is never sent as theirs: the approval is refused.
     """
 
     approved = [item for item in change_list.items if item.keep and not item.unsure]
@@ -230,10 +235,30 @@ def _quote(lines: Sequence[str], index: int, content: str) -> str | None:
 
 
 def _said(note: str, words: Sequence[str]) -> bool:
-    """Whether a note is the architect's: it appears, exactly as written, in their own text."""
+    """Whether a note is the architect's: one of their clauses, or neighbouring clauses, exactly as written.
 
-    text = note.strip()
-    return bool(text) and any(text in said for said in words)
+    A clause ends at 。！？；，,.;!? or a line break. A note that is only part of
+    a clause is not theirs: 「龙骨和面层」 cut from 「龙骨和面层不要」 says the
+    opposite. Runs of spaces count as one; the punctuation at either end of the
+    note does not count.
+    """
+
+    wanted = _plain(note)
+    return bool(wanted) and any(wanted == _plain(said[start:end])
+                                for said in words for start, end in _runs(said))
+
+
+def _runs(text: str) -> Iterable[tuple[int, int]]:
+    """Every run of whole neighbouring clauses in a text, as (start, end) offsets."""
+
+    clauses = [(match.start(), match.end()) for match in _CLAUSE.finditer(text) if match.group().strip()]
+    for first, (start, _) in enumerate(clauses):
+        for _, end in clauses[first:]:
+            yield start, end
+
+
+def _plain(text: str) -> str:
+    return " ".join(text.split()).strip(_ENDS)
 
 
 def _short(text: str, limit: int) -> str:

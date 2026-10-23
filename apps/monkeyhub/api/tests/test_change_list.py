@@ -85,8 +85,20 @@ class CheckTests(unittest.TestCase):
             approval("att_x", reworded, WORDS)
         self.assertFalse(applies_without_asking(change_list(item1={"note": "楼板只保留胶合板"}, item2={"keep": False}),
                                                 READINGS, WORDS, CATALOG))
-        part = change_list(item1={"note": "龙骨和面层不要"})
-        self.assertEqual(check_against(part, READINGS, WORDS, CATALOG), [], "a part of what they wrote, as written")
+        for note in ("龙骨和面层不要", "楼板只留一层胶合板", "楼板只留一层胶合板，龙骨和面层不要。", " 龙骨和面层不要 "):
+            with self.subTest(note=note):
+                self.assertEqual(check_against(change_list(item1={"note": note}), READINGS, WORDS, CATALOG), [],
+                                 "whole clauses of what they wrote, as written")
+
+    def test_a_note_cut_out_of_a_clause_is_not_the_architects(self) -> None:
+        # Cut from 「龙骨和面层不要」 or 「踢脚板不要去掉」, these say the opposite of what was written.
+        for note, words in (("龙骨和面层", WORDS), ("去掉", ["踢脚板不要去掉"]), ("板", WORDS),
+                            ("胶合板，龙骨", WORDS)):
+            with self.subTest(note=note):
+                problems = check_against(change_list(item1={"note": note}), READINGS, words, CATALOG)
+                self.assertEqual(len([problem for problem in problems if problem.startswith("Item 1's words")]), 1)
+                with self.assertRaises(ValueError):
+                    approval("att_x", change_list(item1={"note": note}, item3={"keep": False}), words)
 
     def test_only_an_extra_may_touch_what_no_cited_mark_lies_on(self) -> None:
         [problem] = check_against(change_list(item1={"targets": ["finish", "skirting"]}), READINGS, WORDS, CATALOG)
