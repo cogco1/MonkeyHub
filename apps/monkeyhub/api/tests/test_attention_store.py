@@ -245,9 +245,12 @@ class AttentionStoreTests(unittest.TestCase):
         self.assertEqual(store.items(), [])
 
     def test_a_projects_attention_conversation_is_kept(self):
+        heard = []
+        self.store.subscribe(lambda project_id, project_dir, ids: heard.append(ids))
         self.assertIsNone(self.store.conversation(self.project_dir))
         self.store.set_conversation("thi-hemp", self.project_dir, "c-attention")
         self.assertEqual(self.open_store().conversation(self.project_dir), "c-attention")
+        self.assertEqual(heard, [], "listeners hear of cards, and no card changed")
 
     def test_only_a_card_in_the_queue_can_be_put_off(self):
         card = self.store.upsert("thi-hemp", self.project_dir, ab_draft()).id
