@@ -21,7 +21,7 @@ from pydantic import ValidationError
 
 from monkeyhub_api.attention.models import AttentionDraft, Resolution
 from monkeyhub_api.attention.routes import attention_router
-from monkeyhub_api.attention.store import RETAIN_CLOSED, AttentionStore, runtime_id
+from monkeyhub_api.attention.store import HUB_PROJECT_ID, RETAIN_CLOSED, AttentionStore, runtime_id
 from monkeyhub_api.models import HubFailure
 
 
@@ -70,7 +70,7 @@ class AttentionStoreTests(unittest.TestCase):
 
     def test_one_thing_to_look_at_is_one_card(self):
         heard = []
-        self.store.subscribe(lambda project_dir, ids: heard.append(ids))
+        self.store.subscribe(lambda project_id, project_dir, ids: heard.append(ids))
         first = self.store.upsert("thi-hemp", self.project_dir, ab_draft())
         again = self.store.upsert("thi-hemp", self.project_dir, ab_draft())
         self.assertEqual(first.id, again.id)
@@ -174,6 +174,76 @@ class AttentionStoreTests(unittest.TestCase):
         self.assertEqual(third.state, "open")
         self.assertEqual(third.history[-1].by, "machine")
 
+    def test_a_card_its_source_asks_for_again_comes_back(self):
+        card = self.store.upsert("thi-hemp", self.project_dir, ab_draft()).id
+        self.store.reconcile("thi-hemp", self.project_dir, "ab:", [])  # one read without it
+        self.assertEqual(self.store.get(card).state, "superseded")
+        self.store.reconcile("thi-hemp", self.project_dir, "ab:", [ab_draft()])
+        back = self.store.get(card)
+        self.assertEqual(back.state, "open")
+        self.assertEqual(back.history[-1].note, "Its source asks again.")
+
+    def test_an_answered_card_keeps_its_undo_when_a_new_question_comes(self):
+        card = self.store.upsert("thi-hemp", self.project_dir, ab_draft()).id
+        self.store.begin(card, "b")
+        self.store.settle(card, Resolution(optionId="b", by="person", at=self.clock.now.isoformat(), undo={
+            "action": {"commandId": "design.go_to_step", "args": {"runId": "run-a"}}}))
+        self.assertEqual(self.store.upsert("thi-hemp", self.project_dir, ab_draft()).id, card, "the same question")
+        third = self.store.upsert("thi-hemp", self.project_dir, ab_draft(runs=("run-a", "run-c")))
+        self.assertNotEqual(third.id, card)
+        self.assertEqual(third.state, "open")
+        kept = self.store.get(card)
+        self.assertEqual((kept.state, kept.resolution.undo.action.args), ("done", {"runId": "run-a"}))
+        self.assertEqual(self.open_store().upsert("thi-hemp", self.project_dir, ab_draft(runs=("run-a", "run-c"))).id,
+                         third.id, "after a restart the newer card answers for the key")
+
+    def test_a_card_being_carried_out_keeps_its_content(self):
+        card = self.store.upsert("thi-hemp", self.project_dir, ab_draft()).id
+        self.store.begin(card, "b")
+        self.store.reconcile("thi-hemp", self.project_dir, "ab:", [ab_draft(runs=("run-x", "run-y"))])
+        self.assertEqual(self.store.get(card).options[1].action.args, {"runId": "run-b"})
+        self.store.reconcile("thi-hemp", self.project_dir, "ab:", [])
+        self.assertEqual(self.store.get(card).state, "working")
+
+    def test_an_answer_a_restart_cut_short_asks_again_with_what_was_seen(self):
+        card = self.store.upsert("thi-hemp", self.project_dir, ab_draft()).id
+        until = self.clock.now + timedelta(hours=3)
+        self.store.later(card, until=until)
+        self.store.begin(card, "b")
+        self.store.progress(card, {"previousRunId": "run-v16"})
+        restarted = self.open_store().get(card)
+        self.assertEqual((restarted.state, restarted.snoozedUntil), ("later", until.isoformat()))
+        self.assertEqual(restarted.history[-2].facts, {"previousRunId": "run-v16"})
+        self.assertIn("Hub stopped", restarted.history[-1].note)
+
+        self.assertEqual(self.store.release(card, "worker unavailable").snoozedUntil, until.isoformat(),
+                         "a failed answer keeps the time it was put off until")
+        with self.assertRaises(HubFailure):
+            self.store.progress(card, {"x": 1})
+
+    def test_the_summary_names_unreadable_projects_and_keeps_the_hub_apart(self):
+        self.store.upsert("thi-hemp", self.project_dir, ab_draft())
+        self.store.upsert(HUB_PROJECT_ID, str(self.runtime_root), AttentionDraft.model_validate({
+            "channel": "decide", "kind": "choice", "title": "Version 0.1.990 is ready", "dedupeKey": "update:v1"}))
+        broken = self.runtime_root / "attention" / f"{runtime_id('housing', self.project_dir + '-h')}.json"
+        broken.write_text("{", encoding="utf-8")
+        summary = self.open_store().summary()
+        self.assertEqual([row.projectId for row in summary.projects], ["thi-hemp"])
+        self.assertEqual((summary.hub.projectId, summary.hub.open, summary.open), (HUB_PROJECT_ID, 1, 2))
+        self.assertEqual(summary.invalid, [broken.stem])
+
+    def test_the_executor_refuses_a_card_before_it_is_kept(self):
+        def check(draft):
+            if any(option.undoable for option in draft.options):
+                raise HubFailure(422, "ATTENTION_CARD_INVALID", "no")
+
+        store = AttentionStore(None, clock=self.clock, check=check)
+        with self.assertRaises(HubFailure):
+            store.upsert("thi-hemp", self.project_dir, ab_draft())
+        with self.assertRaises(HubFailure):
+            store.reconcile("thi-hemp", self.project_dir, "rule:", [rule_draft()])
+        self.assertEqual(store.items(), [])
+
     def test_only_a_card_in_the_queue_can_be_put_off(self):
         card = self.store.upsert("thi-hemp", self.project_dir, ab_draft()).id
         self.store.dismiss(card)
@@ -212,7 +282,7 @@ class AttentionStoreTests(unittest.TestCase):
     def test_a_failed_save_changes_nothing(self):
         card = self.store.upsert("thi-hemp", self.project_dir, ab_draft()).id
         heard = []
-        self.store.subscribe(lambda project_dir, ids: heard.append(ids))
+        self.store.subscribe(lambda project_id, project_dir, ids: heard.append(ids))
         blocked = self.runtime_root / "blocked"
         blocked.write_text("not a directory", encoding="utf-8")
         self.store.root = blocked / "attention"
