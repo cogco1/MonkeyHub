@@ -106,7 +106,8 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     updates = DesktopUpdates(source_root, settings.runtime_root / "updates",
                              managed=settings.managed_instance_id is not None, busy=update_busy)
     # What waits for the architect across projects (#300), kept beside the operation journal.
-    attention = AttentionHub(AttentionStore(settings.runtime_root / "attention"), runtimes, chats, updates)
+    attention = AttentionHub(AttentionStore(settings.runtime_root / "attention"), runtimes, chats, updates,
+                             hub_dir=str(settings.runtime_root))
 
     @asynccontextmanager
     async def lifespan(app):
