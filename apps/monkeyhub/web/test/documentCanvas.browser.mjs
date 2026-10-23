@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 import { workspaceFixture } from "./workspaceFixture.mjs";
+import { cmd } from "./commandLocator.mjs";
 
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repoRoot = path.resolve(webRoot, "../../..");
@@ -153,11 +154,11 @@ async function openBoard() {
   await page.goto(`${appUrl}/?view=board&embedded=tool&lang=zh-CN`, { waitUntil: "domcontentloaded" });
   await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
   await page.locator(".monkeyboard-canvas canvas").first().waitFor();
-  await page.getByRole("button", { name: "项目资料", exact: true }).click();
+  await cmd(page, "board.add_document_page.toggle_list").click();
 }
 async function openBoardPage(fileName) {
   const source = page.locator(".monkeyboard-source").filter({ has: page.getByRole("heading", { name: fileName, exact: true }) });
-  await source.locator(".monkeyboard-source-link").click();
+  await cmd(source, "view.open_document.page").click();
   await page.locator('.document-workspace input[type="file"]').waitFor({ state: "attached" });
   assert.equal(new URL(page.url()).searchParams.get("view"), "board", "The page opens within the current Board workspace");
 }
@@ -189,7 +190,7 @@ async function until(read, accepts, label) {
   } while (Date.now() < end);
   assert.fail(`${label}: ${JSON.stringify(last)}`);
 }
-const tool = (name) => page.locator(".document-tools").getByRole("button", { name, exact: true });
+const tool = (id) => cmd(page.locator(".document-tools"), id);
 const count = () => page.locator("[data-saved-ink] [data-stroke-id]").count();
 const paths = () => page.locator("[data-saved-ink] [data-stroke-id]").evaluateAll((nodes) => nodes.map((node) => ({
   id: node.dataset.strokeId, d: node.getAttribute("d"), width: node.getAttribute("stroke-width"),
@@ -197,7 +198,7 @@ const paths = () => page.locator("[data-saved-ink] [data-stroke-id]").evaluateAl
 async function ready(width, height) {
   if (width && height) await page.waitForFunction(([w, h]) => document.querySelector(".document-page__ink")?.getAttribute("viewBox") === `0 0 ${w} ${h}`, [width, height]);
   await page.locator('.document-viewport[data-ready="true"]').waitFor();
-  await until(() => tool("画笔").isEnabled(), Boolean, "page annotation state loaded");
+  await until(() => tool("view.markup_tools.freehand").isEnabled(), Boolean, "page annotation state loaded");
 }
 async function rect() {
   const box = await page.locator(".document-page").boundingBox();
@@ -319,7 +320,7 @@ try {
   });
 
   await step("single points, short strokes and curves persist page coordinates and SVG geometry", async () => {
-    await tool("画笔").click();
+    await tool("view.markup_tools.freehand").click();
     await draw([[0.15, 0.18]]);
     const shortStart = await coords([0.3, 0.18]);
     await page.mouse.move(...shortStart); await page.mouse.down();
@@ -362,7 +363,7 @@ try {
     assert.deepEqual(await paths(), page0Paths);
     await page.setViewportSize({ width: 1650, height: 1080 });
     assert.deepEqual(await paths(), page0Paths);
-    await tool("适合窗口").click();
+    await tool("view.canvas.fit").click();
     await ready(400, 300);
   });
 
@@ -404,9 +405,9 @@ try {
   await step("CropBox and 90-degree page rotation use a separate 500-by-600 ink surface", async () => {
     await selectPage(1, 500, 600);
     assert.equal(await count(), 0);
-    await tool("直线").click(); await draw([[0.2, 0.3], [0.8, 0.3]]);
-    await tool("箭头").click(); await draw([[0.2, 0.5], [0.7, 0.65]]);
-    await tool("圈选").click(); await draw([[0.25, 0.72], [0.55, 0.9]]);
+    await tool("view.markup_tools.line").click(); await draw([[0.2, 0.3], [0.8, 0.3]]);
+    await tool("view.markup_tools.arrow").click(); await draw([[0.2, 0.5], [0.7, 0.65]]);
+    await tool("view.markup_tools.circle").click(); await draw([[0.25, 0.72], [0.55, 0.9]]);
     page1Snapshot = await saved(1, 3);
     assert.deepEqual(page1Snapshot.annotations.map((mark) => mark.kind), ["line", "arrow", "circle"]);
     const first = page1Snapshot.annotations[0];
@@ -421,22 +422,22 @@ try {
   });
 
   await step("eraser fast sweep deletes one whole stroke and one Undo/Redo restores/deletes it", async () => {
-    await tool("橡皮擦").click();
-    assert.equal(await tool("橡皮擦").getAttribute("aria-pressed"), "true");
-    assert.equal(await tool("画笔").getAttribute("aria-pressed"), "false");
+    await tool("view.markup_tools.eraser").click();
+    assert.equal(await tool("view.markup_tools.eraser").getAttribute("aria-pressed"), "true");
+    assert.equal(await tool("view.markup_tools.freehand").getAttribute("aria-pressed"), "false");
     await draw([[0.5, 0.22], [0.5, 0.38]], { expectedCount: 2 });
     const remaining = await saved(1, 2);
     assert.deepEqual(remaining.annotations.map((mark) => mark.id), page1Snapshot.annotations.slice(1).map((mark) => mark.id));
-    await tool("撤销").click(); await until(count, (value) => value === 3, "single undo restores erased stroke");
+    await tool("view.markup_tools.undo").click(); await until(count, (value) => value === 3, "single undo restores erased stroke");
     assert.deepEqual((await saved(1, 3)).annotations, page1Snapshot.annotations);
-    await tool("重做").click(); await until(count, (value) => value === 2, "single redo repeats erase");
+    await tool("view.markup_tools.redo").click(); await until(count, (value) => value === 2, "single redo repeats erase");
     await saved(1, 2);
-    await tool("撤销").click(); await until(count, (value) => value === 3, "restored page for subsequent checks");
+    await tool("view.markup_tools.undo").click(); await until(count, (value) => value === 3, "restored page for subsequent checks");
     await saved(1, 3);
   });
 
   await step("pointercancel discards the live stroke and capture commits an outside-page release", async () => {
-    await tool("画笔").click();
+    await tool("view.markup_tools.freehand").click();
     await page.evaluate(() => document.querySelector(".document-viewport").addEventListener("pointerdown", (event) => { window.__documentTestPointerId = event.pointerId; }, { once: true }));
     const start = await coords([0.12, 0.12]);
     await page.mouse.move(...start); await page.mouse.down(); await page.mouse.move(start[0] + 12, start[1] + 8);
@@ -480,7 +481,7 @@ try {
     await until(() => modelChoice.locator("option").evaluateAll(options => options.map(option => option.value)),
       options => options.includes(key), "the exact retained model is available to link");
     await modelChoice.selectOption(key);
-    await page.getByRole("button", { name: "关联所选模型", exact: true }).click();
+    await cmd(page, "document.model_source.link").click();
     await page.locator('.document-model-source[data-model-source-status="ready"]').waitFor();
     // GH-302: there is no Save button; the comment saves itself after its typing pause.
     assert.equal(await page.getByRole("button", { name: "保存本页", exact: true }).count(), 0);
@@ -489,7 +490,7 @@ try {
     page1Snapshot = await until(() => snapshot(1), (value) => value.comment === comment, "comment autosaved");
     if (screenshotPath) await page.screenshot({ path: screenshotPath, fullPage: true });
     const intentResponse = page.waitForResponse((response) => response.url().endsWith("/api/intents") && response.request().method() === "POST");
-    await page.getByRole("button", { name: "提交本页意见", exact: true }).click();
+    await cmd(page, "markup.hand_to_ai.submit_page_note").click();
     const response = await intentResponse;
     assert.equal(response.status(), 422, "The deterministic provider asks for the absent model target");
     const result = await response.json();
@@ -519,17 +520,17 @@ try {
     const comments = await until(async () => (await context.request.get(`${apiUrl}/api/document-comments?runId=${runId}`)).json(),
       (result) => result.comments.some((item) => item.utterance === comment), "submitted comment retained");
     assert.deepEqual(comments.comments.find((item) => item.utterance === comment).documentAnnotations, [submittedRef]);
-    await page.locator(".document-submitted summary").click();
+    await cmd(page, "view.handled.submitted_notes").click();
     const article = page.locator(".document-submitted article").filter({ hasText: comment });
-    await article.getByRole("button").click();
+    await cmd(article, "view.handled.view_page").click();
     await page.locator(".document-review-banner").waitFor();
     await page.locator('.document-viewport[data-ready="true"]').waitFor();
     await page.locator(".document-save-state").filter({ hasText: "已保存" }).waitFor();
     await until(count, (value) => value === page1Snapshot.annotations.length, "historical annotation snapshot loaded");
-    assert.equal(await tool("画笔").isDisabled(), true);
+    assert.equal(await tool("view.markup_tools.freehand").isDisabled(), true);
     assert.equal(await page.locator("#document-comment").inputValue(), comment);
     assert.deepEqual((await paths()).map((path) => path.id), page1Snapshot.annotations.map((mark) => mark.id));
-    await page.getByRole("button", { name: "返回当前批注", exact: true }).click();
+    await cmd(page, "view.markup_tools.return_to_edit").click();
     await ready(400, 300);
   });
 
@@ -542,13 +543,13 @@ try {
     await selectPage(1, 500, 600);
     assert.equal(await page.locator("#document-comment").inputValue(), comment);
     assert.deepEqual((await paths()).map((path) => path.id), page1Snapshot.annotations.map((mark) => mark.id));
-    await page.locator(".document-submitted summary").click();
-    await page.locator(".document-submitted article").filter({ hasText: comment }).getByRole("button").click();
+    await cmd(page, "view.handled.submitted_notes").click();
+    await cmd(page.locator(".document-submitted article").filter({ hasText: comment }), "view.handled.view_page").click();
     await page.locator(".document-review-banner").waitFor();
     await page.locator(".document-save-state").filter({ hasText: "已保存" }).waitFor();
     await until(count, (value) => value === page1Snapshot.annotations.length, "reopened historical annotation snapshot loaded");
-    assert.equal(await tool("画笔").isDisabled(), true);
-    await page.getByRole("button", { name: "返回当前批注", exact: true }).click();
+    assert.equal(await tool("view.markup_tools.freehand").isDisabled(), true);
+    await cmd(page, "view.markup_tools.return_to_edit").click();
     await ready(400, 300);
   });
 
