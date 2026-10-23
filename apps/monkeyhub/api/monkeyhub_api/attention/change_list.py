@@ -11,7 +11,9 @@ own question, "which one did you mean?".
 Whether an item is sure is not only the agent's word: an item citing a mark
 the Runtime could not read clearly must say it is unsure, and a component no
 cited mark lies on may be touched only by an item marked as an extra (the
-skirting beside the circled floor), and only when the record holds it.
+skirting beside the circled floor), and only when the record holds it. An
+item's note is the architect's only when it appears, exactly as written, in
+the text the Hub kept with those marks; a reworded note is refused.
 
 This module holds the list, checks it against the readings it must agree with,
 writes the question cards for unsure items and the approval that hands the
@@ -75,13 +77,16 @@ class ChangeList(_Record):
         return self
 
 
-def check_against(change_list: ChangeList, readings: Sequence[Mapping],
+def check_against(change_list: ChangeList, readings: Sequence[Mapping], words: Sequence[str],
                   catalog: Iterable[str] = ()) -> list[str]:
-    """What in the list the marks and the record do not bear out; empty when everything does.
+    """What in the list the marks, the architect's words and the record do not bear out; empty when all do.
 
-    ``readings`` are the Runtime's mark readings (``MarkReading.to_dict``).
-    An item may cite only marks that were read. A sure item citing a mark read
-    as ambiguous must be marked unsure. A component an item touches must be one
+    ``readings`` are the Runtime's mark readings (``MarkReading.to_dict``);
+    ``words`` the architect's own text for this frame as the Hub keeps it (the
+    text selected with the marks on Board, or the feedback they sent), never
+    the agent's. Each item's note appears in them exactly as written. An item
+    may cite only marks that were read. A sure item citing a mark read as
+    ambiguous must be marked unsure. A component an item touches must be one
     its marks lie on, unless the item is an extra, which may name a component
     the record's catalogue holds.
     """
@@ -90,6 +95,9 @@ def check_against(change_list: ChangeList, readings: Sequence[Mapping],
     known = set(catalog)
     problems = []
     for item in change_list.items:
+        if not _said(item.note, words):
+            problems.append(f"Item {item.n}'s words are not the architect's as written with these marks: "
+                            f"{item.note!r}.")
         unknown = [mark for mark in item.markIds if mark not in read]
         if unknown:
             problems.append(f"Item {item.n} cites marks that were not read: {', '.join(unknown)}.")
@@ -155,20 +163,21 @@ def unsure_cards(card_id: str, change_list: ChangeList, readings: Sequence[Mappi
     return cards
 
 
-def applies_without_asking(change_list: ChangeList, readings: Sequence[Mapping], catalog: Iterable[str] = ()) -> bool:
+def applies_without_asking(change_list: ChangeList, readings: Sequence[Mapping], words: Sequence[str],
+                           catalog: Iterable[str] = ()) -> bool:
     """Whether the ticked items may be applied first and offered undo.
 
-    Only a list its marks and the record bear out (``check_against``), with
-    nothing unsure ticked, touching at most SMALL_CHANGE components.
+    Only a list its marks, words and the record bear out (``check_against``),
+    with nothing unsure ticked, touching at most SMALL_CHANGE components.
     """
 
     kept = [item for item in change_list.items if item.keep]
     touched = {target for item in kept for target in item.targets}
     return (bool(kept) and not any(item.unsure for item in kept) and len(touched) <= SMALL_CHANGE
-            and not check_against(change_list, readings, catalog))
+            and not check_against(change_list, readings, words, catalog))
 
 
-def approval(card_id: str, change_list: ChangeList) -> dict:
+def approval(card_id: str, change_list: ChangeList, words: Sequence[str]) -> dict:
     """The person's approval of the ticked, sure items, as the message the Hub sends in their name.
 
     ``content`` is the message's text: the architect's own words from Board,
@@ -182,17 +191,29 @@ def approval(card_id: str, change_list: ChangeList) -> dict:
     cannot be quoted alone (``feedbackQuote`` None) and binds the whole message.
 
     Approving the list is not an answer to any condition: a submission that
-    comes back needing a question is still asked.
+    comes back needing a question is still asked. A note that is not in
+    ``words`` as written (the architect's own text for this frame) is never
+    sent as theirs: the approval is refused.
     """
 
     approved = [item for item in change_list.items if item.keep and not item.unsure]
     if not approved:
         raise ValueError("No ticked item is sure enough to build.")
+    unsaid = [item.n for item in approved if not _said(item.note, words)]
+    if unsaid:
+        raise ValueError(f"Items {unsaid} carry words the architect did not write with these marks.")
     lines = list(dict.fromkeys(item.note.strip() for item in approved))
     content = "\n".join(lines)
     quotes = [{"items": [item.n for item in approved if item.note.strip() == line],
                "feedbackQuote": line if content.count(line) == 1 else None} for line in lines]
     return {"cardId": card_id, "items": [item.n for item in approved], "content": content, "quotes": quotes}
+
+
+def _said(note: str, words: Sequence[str]) -> bool:
+    """Whether a note is the architect's: it appears, exactly as written, in their own text."""
+
+    text = note.strip()
+    return bool(text) and any(text in said for said in words)
 
 
 def _short(text: str, limit: int) -> str:

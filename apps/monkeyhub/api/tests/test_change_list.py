@@ -27,6 +27,8 @@ from monkeyhub_api.attention.change_list import (
 from monkeyhub_api.attention.store import AttentionStore
 
 CATALOG = ["finish", "joist-1", "joist-2", "plywood", "skirting"]
+# What the architect wrote with the marks on Board, as the Hub kept it.
+WORDS = ["楼板只留一层胶合板，龙骨和面层不要", "这里也薄一点"]
 
 
 def hit(element: str | None, *, component: str = "floor", target: bool = True, share: float = 0.3,
@@ -65,20 +67,31 @@ def change_list(**changes) -> ChangeList:
 
 class CheckTests(unittest.TestCase):
     def test_a_list_the_marks_and_the_record_bear_out_has_no_problems(self) -> None:
-        self.assertEqual(check_against(change_list(), READINGS, CATALOG), [])
+        self.assertEqual(check_against(change_list(), READINGS, WORDS, CATALOG), [])
+
+    def test_a_note_is_the_architects_only_as_they_wrote_it(self) -> None:
+        reworded = change_list(item1={"note": "楼板只保留胶合板"})
+        [problem] = check_against(reworded, READINGS, WORDS, CATALOG)
+        self.assertIn("Item 1's words are not the architect's", problem)
+        with self.assertRaises(ValueError):
+            approval("att_x", reworded, WORDS)
+        self.assertFalse(applies_without_asking(change_list(item1={"note": "楼板只保留胶合板"}, item2={"keep": False}),
+                                                READINGS, WORDS, CATALOG))
+        part = change_list(item1={"note": "龙骨和面层不要"})
+        self.assertEqual(check_against(part, READINGS, WORDS, CATALOG), [], "a part of what they wrote, as written")
 
     def test_only_an_extra_may_touch_what_no_cited_mark_lies_on(self) -> None:
-        [problem] = check_against(change_list(item1={"targets": ["finish", "skirting"]}), READINGS, CATALOG)
+        [problem] = check_against(change_list(item1={"targets": ["finish", "skirting"]}), READINGS, WORDS, CATALOG)
         self.assertIn("Item 1 touches skirting", problem)
         self.assertIn("an extra", problem)
-        [problem] = check_against(change_list(item3={"targets": ["wall-east"]}), READINGS, CATALOG)
+        [problem] = check_against(change_list(item3={"targets": ["wall-east"]}), READINGS, WORDS, CATALOG)
         self.assertIn("record does not hold", problem, "an extra still names something the record holds")
 
     def test_a_sure_item_cannot_cite_a_mark_that_was_not_read_clearly(self) -> None:
-        [problem] = check_against(change_list(item2={"unsure": False, "targets": ["plywood"]}), READINGS, CATALOG)
+        [problem] = check_against(change_list(item2={"unsure": False, "targets": ["plywood"]}), READINGS, WORDS, CATALOG)
         self.assertIn("Item 2 cites m-edge", problem)
         self.assertIn("unsure", problem)
-        [problem] = check_against(change_list(item1={"markIds": ["m-gone"], "extra": True}), READINGS, CATALOG)
+        [problem] = check_against(change_list(item1={"markIds": ["m-gone"], "extra": True}), READINGS, WORDS, CATALOG)
         self.assertIn("m-gone", problem)
 
     def test_items_say_what_they_touch_unless_unsure_and_never_both_change_and_keep(self) -> None:
@@ -119,31 +132,31 @@ class QuestionTests(unittest.TestCase):
 
 class ApprovalTests(unittest.TestCase):
     def test_the_approval_is_the_architects_words_and_items_sharing_words_are_one_submission(self) -> None:
-        self.assertEqual(approval("att_x", change_list()), {
+        self.assertEqual(approval("att_x", change_list(), WORDS), {
             "cardId": "att_x", "items": [1, 3], "content": "楼板只留一层胶合板，龙骨和面层不要",
             "quotes": [{"items": [1, 3], "feedbackQuote": "楼板只留一层胶合板，龙骨和面层不要"}]})
-        self.assertEqual(approval("att_x", change_list(item3={"keep": False}))["items"], [1])
+        self.assertEqual(approval("att_x", change_list(item3={"keep": False}), WORDS)["items"], [1])
         with self.assertRaises(ValueError):
-            approval("att_x", change_list(item1={"keep": False}, item3={"keep": False}))
+            approval("att_x", change_list(item1={"keep": False}, item3={"keep": False}), WORDS)
 
     def test_words_found_inside_another_line_cannot_be_quoted_alone(self) -> None:
         listed = change_list(item2={"unsure": False, "markIds": ["m-upper"], "targets": ["finish"],
                                     "note": "薄一点"},
                              item3={"note": "踢脚板也再薄一点"})
-        result = approval("att_x", listed)
+        result = approval("att_x", listed, ["楼板只留一层胶合板，龙骨和面层不要", "薄一点", "踢脚板也再薄一点"])
         self.assertEqual(result["content"].splitlines(), ["楼板只留一层胶合板，龙骨和面层不要", "薄一点", "踢脚板也再薄一点"])
         self.assertEqual([(row["items"], row["feedbackQuote"]) for row in result["quotes"]],
                          [([1], "楼板只留一层胶合板，龙骨和面层不要"), ([2], None), ([3], "踢脚板也再薄一点")])
         self.assertNotIn("Remove", result["content"], "the agent's reading never travels as the person's words")
 
     def test_small_sure_lists_borne_out_by_their_marks_apply_first(self) -> None:
-        self.assertFalse(applies_without_asking(change_list(), READINGS, CATALOG), "an unsure item is ticked")
-        self.assertTrue(applies_without_asking(change_list(item2={"keep": False}), READINGS, CATALOG))
+        self.assertFalse(applies_without_asking(change_list(), READINGS, WORDS, CATALOG), "an unsure item is ticked")
+        self.assertTrue(applies_without_asking(change_list(item2={"keep": False}), READINGS, WORDS, CATALOG))
         many = change_list(item1={"targets": ["finish", "joist-1", "joist-2", "joist-3", "joist-4"], "extra": True},
                            item2={"keep": False})
-        self.assertFalse(applies_without_asking(many, READINGS, CATALOG + ["joist-3", "joist-4"]), "six components")
+        self.assertFalse(applies_without_asking(many, READINGS, WORDS, CATALOG + ["joist-3", "joist-4"]), "six components")
         stray = change_list(item1={"targets": ["finish", "skirting"]}, item2={"keep": False})
-        self.assertFalse(applies_without_asking(stray, READINGS, CATALOG), "what the marks do not bear out is shown")
+        self.assertFalse(applies_without_asking(stray, READINGS, WORDS, CATALOG), "what the marks do not bear out is shown")
 
 
 if __name__ == "__main__":
