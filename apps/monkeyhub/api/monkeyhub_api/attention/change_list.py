@@ -205,6 +205,10 @@ def approval(card_id: str, change_list: ChangeList, words: Sequence[str]) -> dic
     ``feedbackQuote`` None, binding the whole message, which may then be at
     most RAW_LANGUAGE_LIMIT characters.
 
+    A passage may also hold the words of an item that was not ticked; the
+    message is still the person's current message, so only ``items`` are
+    built and nothing else in the text is taken as a request.
+
     Approving the list is not an answer to any condition: a submission that
     comes back needing a question is still asked. A note that is not whole
     clauses of ``words`` as written (the architect's own text for this frame)
