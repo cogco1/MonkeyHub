@@ -121,12 +121,14 @@
           "handoff": "Three-channel convergence, segment 5 (guess): the edit log read from retained candidate changes (5-1), the first guess rule and its suppressions on the attention store (5-2, stacked on GH-300/attention-store), and skill grants by access scope (5-3, after the skill runner reaches main).",
           "modules": [
             "hub.shell",
-            "project_runtime.intent"
+            "project_runtime.intent",
+            "project_runtime.skills"
           ],
           "write_scope": [
             "apps/monkeyhub/api/monkeyhub_api/attention/rules.py",
             "apps/monkeyhub/api/tests/test_attention_rules.py",
-            "services/project-runtime/src/project_runtime/application/edit_log.py"
+            "services/project-runtime/src/project_runtime/application/edit_log.py",
+            "services/project-runtime/src/project_runtime/application/skill_access.py"
           ],
           "depends_on": []
         }
