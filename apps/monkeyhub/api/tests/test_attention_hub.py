@@ -44,6 +44,7 @@ class FakeRuntimes:
         self.current = {"runId": "run-v16", "branchId": "main"}
         self.forwarded: list[tuple] = []
         self.acknowledged: list[str] = []
+        self.sources: list[str | None] = []
 
     def open(self, project_id, project_dir):
         return self.runtime
@@ -56,8 +57,9 @@ class FakeRuntimes:
     def acknowledge(self, runtime, operation_id):
         self.acknowledged.append(operation_id)
 
-    def forward(self, runtime, path, method, body, headers):
+    def forward(self, runtime, path, method, body, headers, *, source=None):
         self.forwarded.append((method, path, json.loads(body) if body else None, dict(headers)))
+        self.sources.append(source)
         if path == "/api/worktrees":
             if self.graph is None:
                 raise HubFailure(503, "WORKER_UNAVAILABLE", "The project's Studio is not ready.")
@@ -118,6 +120,7 @@ class AttentionHubTests(unittest.TestCase):
         self.assertEqual((method, path, body), ("PUT", "/api/working-draft", {"runId": "run-b"}))
         self.assertEqual(headers["idempotency-key"], "0b8f2b49-6f4e-4d6a-9d36-3c1b5a1e2f10")
         self.assertNotIn("x-monkey-chat", headers)
+        self.assertEqual(self.runtimes.sources[-1], "attention", "the journal says it was a card's answer")
         with self.assertRaises(HubFailure) as refused:
             self.hub.studio("thi-hemp", self.project_dir, "POST", "/api/candidate-reviews", {})
         self.assertEqual((refused.exception.status, refused.exception.error.code), (409, "CANDIDATE_REVIEW_INVALID"))
@@ -179,6 +182,23 @@ class AttentionHubTests(unittest.TestCase):
         self.assertEqual(seen[0]["runtimeId"], self.runtimes.runtime.runtime_id)
         self.assertEqual([item.dedupeKey for item in self.store.items()], ["perm:c1:p1"])
 
+
+
+class AttentionCompositionTests(unittest.TestCase):
+    def test_the_hub_serves_the_queue_from_its_own_runtime_root(self):
+        from fastapi.testclient import TestClient
+        from monkeyhub_api.app.composition import HubSettings, create_app
+
+        with tempfile.TemporaryDirectory() as root:
+            app = create_app(HubSettings(runtime_root=Path(root)))
+            self.assertEqual(app.state.attention.store.root, Path(root) / "attention")
+            client = TestClient(app, base_url="http://127.0.0.1:8790")
+            self.assertEqual(client.get("/api/attention/summary").json(),
+                             {"projects": [], "open": 0, "later": 0, "working": 0})
+            self.assertEqual(client.post("/api/attention/att_missing/resolve", json={"optionId": "a"}).json()["code"],
+                             "ATTENTION_NOT_FOUND")
+            paths = app.openapi()["paths"]
+            self.assertTrue({"/api/attention", "/api/attention/{item_id}/undo", "/api/attention/questions"} <= set(paths))
 
 if __name__ == "__main__":
     unittest.main()

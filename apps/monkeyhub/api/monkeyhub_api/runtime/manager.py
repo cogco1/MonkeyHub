@@ -923,7 +923,7 @@ class ProjectRuntimeManager:
         return worker
 
     def forward(self, runtime: ProjectRuntime, path: str, method: str, body: bytes,
-                headers: dict[str, str]) -> HttpResult:
+                headers: dict[str, str], *, source: str | None = None) -> HttpResult:
         parsed = urlsplit(path)
         if parsed.scheme or parsed.netloc or parsed.fragment or not (parsed.path.startswith("/api/") or parsed.path == "/openapi.json") or ".." in parsed.path.split("/"):
             raise HubFailure(422, "STUDIO_PATH_INVALID", "Only the bound Studio API can be called.")
@@ -957,7 +957,7 @@ class ProjectRuntimeManager:
                         raise HubFailure(409, "CANDIDATE_NOT_THIS_CHATS", "The Agent withdraws only a result it made in this chat: "
                                          + ", ".join(map(str, foreign)) + " was not. Only the architect's words can reject another result.")
             admission, fresh = runtime.operations.admit(operation_id, method, path, body,
-                retained=runtime.retained, source="chat" if session_id else "studio", session_id=session_id)
+                retained=runtime.retained, source="chat" if session_id else source or "studio", session_id=session_id)
             if not fresh:
                 if not admission.finished.wait(10):
                     raise HubFailure(409, "OPERATION_RUNNING", "The same operation is still running. Read its runtime status; it has not been submitted again.")

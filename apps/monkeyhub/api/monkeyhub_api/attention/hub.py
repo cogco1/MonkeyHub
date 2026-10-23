@@ -60,8 +60,10 @@ class AttentionHub:
         headers = {"content-type": "application/json"}
         if operation_id is not None:
             headers["idempotency-key"] = operation_id
+        # A person's request all the same; the journal says it was a card's answer.
         result = self.runtimes.forward(runtime, path, method,
-                                       b"" if body is None else json.dumps(body).encode("utf-8"), headers)
+                                       b"" if body is None else json.dumps(body).encode("utf-8"), headers,
+                                       source="attention")
         answer = result.json()
         if result.status >= 400:
             raise HubFailure(result.status, str(answer.get("code") or "STUDIO_REQUEST_FAILED"),

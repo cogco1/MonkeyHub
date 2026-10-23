@@ -189,6 +189,14 @@ def call(hub: str, chat_id: str, name: str, arguments: Mapping[str, Any]) -> dic
         held["asked"] = {"question": arguments["question"], "reason": arguments["reason"],
                          "refs": list(arguments.get("refs") or ())}
         _write_state(held)
+        from . import transport
+
+        try:
+            # The question also waits in the architect's queue (#300), answered back into this conversation.
+            transport._request_json(hub, "/api/attention/questions", "POST", {
+                "sessionId": chat_id, "messageId": held["messageId"], **held["asked"]}, timeout=10)
+        except (HubFailure, OSError, TimeoutError, ValueError):
+            pass  # The reply still carries the question; only its card is missing.
         return {"recorded": "asked", "note": "Put this question to the architect in your reply, in their words, and end "
                 "the turn; nothing more is changed until they answer."}
     if name == "design_report_limitation":
