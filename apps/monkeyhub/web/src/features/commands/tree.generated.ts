@@ -418,7 +418,7 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
-      "id": "view.settings",
+      "id": "view.settings.open",
       "group": "shell.pages",
       "label": {
         "en": "Settings",
@@ -437,7 +437,7 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
-      "id": "view.design_tree",
+      "id": "view.design_tree.open",
       "group": "shell.pages",
       "label": {
         "en": "Design tree",
@@ -479,7 +479,7 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
-      "id": "view.render",
+      "id": "view.render.open",
       "group": "shell.pages",
       "label": {
         "en": "Render",
@@ -500,7 +500,7 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
-      "id": "view.usage",
+      "id": "view.usage.open",
       "group": "shell.pages",
       "label": {
         "en": "Usage",
@@ -727,7 +727,7 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
-      "id": "fab.prepare_parts",
+      "id": "fab.prepare_parts.open",
       "group": "fab.print",
       "label": {
         "en": "Fabrication",

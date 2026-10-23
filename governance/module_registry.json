@@ -651,7 +651,7 @@
         "channel": "side",
         "commands": [
           {
-            "id": "view.settings",
+            "id": "view.settings.open",
             "label": "Settings",
             "label_zh": "设置",
             "entries": [
@@ -660,7 +660,7 @@
             ]
           },
           {
-            "id": "view.design_tree",
+            "id": "view.design_tree.open",
             "label": "Design tree",
             "label_zh": "状态树",
             "aliases": [
@@ -684,7 +684,7 @@
             ]
           },
           {
-            "id": "view.render",
+            "id": "view.render.open",
             "label": "Render",
             "label_zh": "渲染",
             "aliases": [
@@ -696,7 +696,7 @@
             ]
           },
           {
-            "id": "view.usage",
+            "id": "view.usage.open",
             "label": "Usage",
             "label_zh": "用量",
             "aliases": [
@@ -947,7 +947,7 @@
         "channel": "side",
         "commands": [
           {
-            "id": "fab.prepare_parts",
+            "id": "fab.prepare_parts.open",
             "label": "Fabrication",
             "label_zh": "制作",
             "aliases": [

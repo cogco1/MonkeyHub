@@ -192,11 +192,11 @@ const shellWords = {
 const tools: { id: AppId; label: "model" | "drawing" | "board" | "render" | "publish" | "fab" | "monitor" | "tree"; icon: string; group: "workspace" | "tools" | null; command?: string }[] = [
   { id: "monkeyarch", label: "model", icon: "cube", group: "workspace", command: "view.tab.modeling" },
   { id: "monkeyboard", label: "board", icon: "board", group: "workspace", command: "view.tab.board" },
-  { id: "tree", label: "tree", icon: "tree", group: "workspace", command: "view.design_tree" },
+  { id: "tree", label: "tree", icon: "tree", group: "workspace", command: "view.design_tree.open" },
   { id: "drawing", label: "drawing", icon: "drawing", group: "tools", command: "view.drawings" },
-  { id: "monkeyrender", label: "render", icon: "render", group: "tools", command: "view.render" },
-  { id: "monkeyfab", label: "fab", icon: "fab", group: "tools", command: "fab.prepare_parts" },
-  { id: "monkeymonitor", label: "monitor", icon: "chart", group: "tools", command: "view.usage" },
+  { id: "monkeyrender", label: "render", icon: "render", group: "tools", command: "view.render.open" },
+  { id: "monkeyfab", label: "fab", icon: "fab", group: "tools", command: "fab.prepare_parts.open" },
+  { id: "monkeymonitor", label: "monitor", icon: "chart", group: "tools", command: "view.usage.open" },
   { id: "publish", label: "publish", icon: "board", group: null },
 ];
 const railGroups = [{ id: "workspace", caption: "railSurfaces" }, { id: "tools", caption: "railTools" }] as const;
@@ -1983,12 +1983,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     "view.side_panel": { run: () => setPanel(!panel) },
     "view.tab.board": needsProject(() => openTool("monkeyboard")),
     "view.tab.modeling": needsProject(() => openTool("monkeyarch")),
-    "view.settings": { run: openSettings },
-    "view.design_tree": needsProject(() => openTool("tree")),
+    "view.settings.open": { run: openSettings },
+    "view.design_tree.open": needsProject(() => openTool("tree")),
     "view.drawings": needsProject(() => openTool("drawing")),
-    "view.render": needsProject(() => openTool("monkeyrender")),
-    "view.usage": { run: () => openTool("monkeymonitor") },
-    "fab.prepare_parts": { run: () => openTool("monkeyfab") },
+    "view.render.open": needsProject(() => openTool("monkeyrender")),
+    "view.usage.open": { run: () => openTool("monkeymonitor") },
+    "fab.prepare_parts.open": { run: () => openTool("monkeyfab") },
     "hub.update_check": { run: openSoftwareUpdate },
     ...(onAppearance ? Object.fromEntries([
       ...(["system", "dark", "light"] as const).map((theme) => [`preference.appearance.theme_${theme}`, { run: () => onAppearance({ theme }) }]),
@@ -2020,7 +2020,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       { kind: "command", id: "export", label: mw.exportArchive, disabled: !project, command: "project.archive.export", onSelect: openArchiveExport },
       { kind: "command", id: "restore", label: mw.restoreArchive, command: "project.archive.restore", onSelect: openArchiveRestore },
       { kind: "separator", id: "hub" },
-      { kind: "command", id: "settings", label: mw.settings, command: "view.settings", onSelect: openSettings },
+      { kind: "command", id: "settings", label: mw.settings, command: "view.settings.open", onSelect: openSettings },
     ] },
     { id: "edit", label: mw.edit, items: [
       { kind: "command", id: "undo", label: mw.undo, hint: "Ctrl+Z", onSelect: () => editFocused("undo") },
