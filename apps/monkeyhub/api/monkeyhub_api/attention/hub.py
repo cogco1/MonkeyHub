@@ -27,7 +27,6 @@ from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.requests import Request
 
-from .. import projects
 from ..models import ChatCreateRequest, ChatDetail, HubFailure
 from ..runtime.workers import project_key
 from ..settings.store import read_user_settings
@@ -85,25 +84,26 @@ class AttentionHub:
     def acknowledge_operation(self, project_id: str, project_dir: str, operation_id: str):
         return self.runtimes.acknowledge(self.runtimes.open(project_id, project_dir), operation_id)
 
-    def conversation(self, project_id: str | None, project_dir: str) -> str:
+    def conversation(self, project_dir: str) -> str:
         """The project's own attention conversation, opened the first time it is needed.
 
         The one kept for the project is answered while it still exists and is
         not archived; otherwise a new one is opened with the person's default
         provider and model, titled in their language, and kept. Opening it sends
-        nothing: the Agent runs only on the first message.
+        nothing: the Agent runs only on the first message. The chat store
+        verifies the project folder when it opens one, and names its project.
         """
 
         with self._conversation_lock:
-            if project_id is None:
-                project_id, project_dir = projects._project(project_dir)
             kept = self.store.conversation(project_dir)
             if kept is not None:
                 try:
                     if not self.chats.get(kept).archived:
                         return kept
-                except HubFailure:
-                    pass  # Removed since: a new one is opened.
+                except HubFailure as exc:
+                    # Only a conversation that is gone is replaced; any other failure is the caller's to read.
+                    if exc.error.code != "CHAT_NOT_FOUND":
+                        raise
             settings = self._user_settings()
             available = [row.id for row in self.chats.providers() if row.available]
             provider = settings.chat_provider if settings.chat_provider in available else next(iter(available), None)
@@ -273,7 +273,7 @@ def hub_router(attention: AttentionHub) -> APIRouter:
     def attention_conversation(body: AttentionConversationRequest) -> AttentionConversation:
         """Where the new shell's input and answers that name no conversation go; opened on first need."""
 
-        return AttentionConversation(sessionId=attention.conversation(None, body.projectDir))
+        return AttentionConversation(sessionId=attention.conversation(body.projectDir))
 
     @routes.post("/api/attention/questions", response_model=AttentionItem, status_code=201)
     def attention_question(request: Request, body: AttentionQuestionRequest) -> AttentionItem:

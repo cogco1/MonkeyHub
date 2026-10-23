@@ -84,7 +84,7 @@ class FakeHub:
     def __init__(self):
         self.acknowledged, self.applied = [], 0
 
-    def conversation(self, project_id, project_dir):
+    def conversation(self, project_dir):
         return "c-attention"
 
     def acknowledge_operation(self, project_id, project_dir, operation_id):

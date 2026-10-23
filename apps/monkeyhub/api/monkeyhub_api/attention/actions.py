@@ -44,7 +44,7 @@ class ChatPort(Protocol):
 class HubPort(Protocol):
     def acknowledge_operation(self, project_id: str, project_dir: str, operation_id: str) -> object: ...
 
-    def conversation(self, project_id: str, project_dir: str) -> str: ...
+    def conversation(self, project_dir: str) -> str: ...
 
     def apply_update(self) -> object: ...
 
@@ -239,7 +239,7 @@ def _send_message(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
         raise HubFailure(422, "ATTENTION_ACTION_INVALID", "Write the answer to send first.")
     # A card that names no conversation answers into the project's own attention conversation.
     session = args.get("sessionId") if isinstance(args.get("sessionId"), str) and args.get("sessionId") \
-        else run.executor.hub.conversation(run.item.projectId, run.item.projectDir)
+        else run.executor.hub.conversation(run.item.projectDir)
     run.executor.chats.post(session, ChatPostRequest(projectId=run.item.projectId, content=content))
     return _Done({"sessionId": session})
 
