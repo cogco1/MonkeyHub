@@ -19,9 +19,10 @@ const projectId = "command-palette-fixture";
 const board = { projectId, title: "Review board", elements: [], seenDocuments: [], revisionSha256: "b".repeat(64) };
 const words = {
   "zh-CN": { create: "新建项目", createLabel: "新建项目…", drawings: "图纸", reason: "先打开一个项目", ask: "楼梯怎么画", askRow: "让 AI 做：楼梯怎么画",
-    recent: "最近用过", other: "在模型里改", opens: "在建模里" },
+    recent: "最近用过", other: "在模型里改", opens: "在建模里", standing: "只有按钮的功能", locate: "在页面上指给你" },
   en: { create: "new project", createLabel: "New project…", drawings: "drawings", reason: "Open a project first", ask: "how to draw stairs",
-    askRow: "Ask the AI: how to draw stairs", recent: "Recently used", other: "change in model", opens: "Opens Modeling" },
+    askRow: "Ask the AI: how to draw stairs", recent: "Recently used", other: "change in model", opens: "Opens Modeling",
+    standing: "button only function", locate: "Points to it on the page" },
 };
 const escaped = [];
 let vite, browser;
@@ -53,7 +54,9 @@ try {
         const reason = (zh) => zh ? ${JSON.stringify(words["zh-CN"].reason)} : ${JSON.stringify(words.en.reason)};
         const tree = { groups: [...COMMAND_TREE.groups], commands: [...COMMAND_TREE.commands, { id: "fixture.modeling_change", group: "shell.pages",
           label: { en: ${JSON.stringify(words.en.other)}, "zh-CN": ${JSON.stringify(words["zh-CN"].other)} }, terms: [], surface: "modeling",
-          section: "modeling", channel: "side", place: null, shortcut: null, entries: [] }] };
+          section: "modeling", channel: "side", place: null, shortcut: null, entries: [], args: [] }, { id: "fixture.standing_only", group: "shell.pages",
+          label: { en: ${JSON.stringify(words.en.standing)}, "zh-CN": ${JSON.stringify(words["zh-CN"].standing)} }, terms: [], surface: "hub",
+          section: "shell", channel: "side", place: null, shortcut: null, entries: [], args: [] }] };
         function Modeling() {
           useCommandActions({ "fixture.modeling_change": { run: () => window.__ran.push("fixture.modeling_change") } });
           return <p className="fixture-modeling">Modeling</p>;
@@ -69,7 +72,8 @@ try {
             [openSurfaceAction("modeling")]: { run: () => setModeling(true) },
           });
           return <div style={{ display: "grid", gridTemplateRows: "auto 1fr", height: "100vh" }}>
-            <div><input aria-label="fixture field" /><button type="button" data-command="project.create.new">fixture standing entry</button></div>
+            <div><input aria-label="fixture field" /><button type="button" data-command="project.create.new">fixture standing entry</button>
+              <button type="button" data-command="fixture.standing_only">fixture entry without a handler</button></div>
             {modeling ? <Modeling /> : <Board expectedProjectId=${JSON.stringify(projectId)}
               onSubmit={() => { throw new Error("Unexpected design handoff"); }} onSketch={() => { throw new Error("Unexpected sketch handoff"); }} />}
           </div>;
@@ -103,6 +107,10 @@ try {
     const errors = [];
     let saves = 0;
     page.on("pageerror", (error) => errors.push(error.message));
+    // Chrome reports Excalidraw's unload listener as a policy violation; everything else logged as an error fails.
+    page.on("console", (message) => {
+      if (message.type() === "error" && !message.text().startsWith("Permissions policy violation: unload")) errors.push(message.text());
+    });
     await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
       const request = route.request(), url = new URL(request.url());
       if (request.method() === "GET" && url.pathname === "/api/board") return route.fulfill({ json: board });
@@ -189,6 +197,14 @@ try {
       const usage = await page.evaluate(() => JSON.parse(localStorage.getItem("monkeyhub.commands.usage@1")));
       assert.deepEqual(usage.counts["project.create.new"], { palette: 1, button: 1 }, `${label}: counts by how the command was reached`);
       assert.ok(!JSON.stringify(usage).includes(text.ask), `${label}: what was typed is not stored`);
+
+      // A command with no handler but a standing entry on screen is pointed at, not pressed.
+      await page.keyboard.press("Control+K");
+      await input.fill(text.standing);
+      assert.equal(await palette.locator("[role=option]").first().locator(".command-palette__meta").textContent(), text.locate);
+      await input.press("Enter");
+      await page.waitForFunction(() => document.activeElement?.getAttribute("data-command") === "fixture.standing_only"
+        && document.activeElement.classList.contains("command-located"));
 
       // A command on a surface that is not open opens it, then runs once the surface is there.
       await page.keyboard.press("Control+K");

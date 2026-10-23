@@ -32,6 +32,8 @@ export const openSurfaceAction = (surface: string) => `surface.open:${surface}`;
 export type CommandState =
   | { kind: "ready" }
   | { kind: "opens"; surface: string }
+  /** No handler, but its standing entry (data-command) is on screen: running it points there. */
+  | { kind: "locate" }
   | { kind: "unavailable"; reason: string | null };
 
 interface CommandsValue {
@@ -45,15 +47,33 @@ interface CommandsValue {
 
 const CommandsContext = createContext<CommandsValue | null>(null);
 
-/** How long a command waits for the surface it opened to register its action. */
+/** How long a command waits for the surface it opened to register its action or show its entry. */
 const PENDING_MS = 8000;
+const LOOK_MS = 150;
 
 const storage = () => { try { return window.localStorage; } catch { return null; } };
+
+/** The command's standing entry, when one is on screen. */
+function entryOf(id: string): HTMLElement | null {
+  const element = document.querySelector<HTMLElement>(`[data-command="${CSS.escape(id)}"]`);
+  return element && element.getClientRects().length ? element : null;
+}
+
+/** Bring a standing entry into view, focus it and mark it for a moment, without pressing it. */
+function pointAt(element: HTMLElement): void {
+  element.scrollIntoView({ block: "nearest", inline: "nearest" });
+  element.focus({ preventScroll: true });
+  element.classList.remove("command-located");
+  void element.offsetWidth;
+  element.classList.add("command-located");
+  window.setTimeout(() => element.classList.remove("command-located"), 1800);
+}
 
 export function CommandProvider({ children, tree = COMMAND_TREE }: { children: ReactNode; tree?: CommandTree }) {
   const { language } = usePreferences();
   const handlers = useRef(new Map<string, CommandHandler>());
   const pending = useRef<{ action: string; input: CommandInput; until: number } | null>(null);
+  const looking = useRef<number | null>(null);
   const [version, setVersion] = useState(0);
   const [open, setOpen] = useState(false);
   const [usage, setUsage] = useState(() => readUsage(storage()));
@@ -67,6 +87,7 @@ export function CommandProvider({ children, tree = COMMAND_TREE }: { children: R
     const waiting = pending.current;
     if (waiting && waiting.action === action) {
       pending.current = null;
+      if (looking.current !== null) { window.clearInterval(looking.current); looking.current = null; }
       if (Date.now() <= waiting.until && (handler.available?.() ?? true) === true) void handler.run(waiting.input);
     }
     return () => {
@@ -81,6 +102,7 @@ export function CommandProvider({ children, tree = COMMAND_TREE }: { children: R
       const available = handler.available?.() ?? true;
       return available === true ? { kind: "ready" } : { kind: "unavailable", reason: available };
     }
+    if (entryOf(command.id)) return { kind: "locate" };
     if (command.surface !== "hub" && handlers.current.has(openSurfaceAction(command.surface))) return { kind: "opens", surface: command.surface };
     return { kind: "unavailable", reason: null };
   }, [version]);
@@ -95,7 +117,21 @@ export function CommandProvider({ children, tree = COMMAND_TREE }: { children: R
       void handlers.current.get(command.id)!.run(input);
       return true;
     }
-    pending.current = { action: command.id, input, until: Date.now() + PENDING_MS };
+    if (state.kind === "locate") {
+      pointAt(entryOf(command.id)!);
+      return true;
+    }
+    // Open the surface; the command runs when the surface registers it, or its entry is pointed at once shown.
+    const until = Date.now() + PENDING_MS;
+    pending.current = { action: command.id, input, until };
+    if (looking.current !== null) window.clearInterval(looking.current);
+    looking.current = window.setInterval(() => {
+      const entry = pending.current?.action === command.id ? entryOf(command.id) : null;
+      if (entry || Date.now() > until || pending.current?.action !== command.id) {
+        window.clearInterval(looking.current!); looking.current = null;
+        if (entry) { pending.current = null; pointAt(entry); }
+      }
+    }, LOOK_MS);
     void handlers.current.get(openSurfaceAction(command.surface))!.run({});
     return true;
   }, [byId, stateOf]);
@@ -137,7 +173,7 @@ export function CommandProvider({ children, tree = COMMAND_TREE }: { children: R
     {children}
     {open && <CommandPalette language={language} onClose={() => setOpen(false)}
       askAI={(handlers.current.get(ASK_AI_ACTION)?.available?.() ?? handlers.current.has(ASK_AI_ACTION)) === true
-        ? (text) => { setOpen(false); void handlers.current.get(ASK_AI_ACTION)!.run({ text }); } : null} />}
+        ? (text) => { setOpen(false); window.setTimeout(() => void handlers.current.get(ASK_AI_ACTION)?.run({ text }), 0); } : null} />}
   </CommandsContext.Provider>;
 }
 

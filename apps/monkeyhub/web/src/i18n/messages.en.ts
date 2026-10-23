@@ -1293,6 +1293,7 @@ export const messagesEn = {
   "commands.askAI": "Ask the AI: {text}",
   "commands.opens": "Opens {surface}",
   "commands.unavailable": "Not available here",
+  "commands.locate": "Points to it on the page",
   "commands.noEarlierChat": "There is no earlier conversation to go back to.",
   "commands.noLaterChat": "There is no later conversation to go forward to.",
   "commands.keys": "↑ ↓ choose · Enter run · Esc close",

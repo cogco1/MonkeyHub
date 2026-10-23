@@ -193,6 +193,27 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳5",
         "壳26"
+      ],
+      "args": []
+    },
+    {
+      "id": "chat.open_conversation",
+      "group": "chat.conversation",
+      "label": {
+        "en": "Open conversation",
+        "zh-CN": "打开对话"
+      },
+      "terms": [],
+      "surface": "hub",
+      "section": "shell",
+      "channel": "front",
+      "place": null,
+      "shortcut": null,
+      "entries": [
+        "壳33"
+      ],
+      "args": [
+        "sessionId"
       ]
     },
     {
@@ -211,7 +232,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳6",
         "壳28"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "project.create.add_existing",
@@ -232,7 +254,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳7",
         "壳31"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "project.archive.export",
@@ -253,7 +276,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳10",
         "壳107"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "project.archive.restore",
@@ -271,7 +295,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳11",
         "壳108"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "view.conversation_history.back",
@@ -288,7 +313,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳1"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "view.conversation_history.forward",
@@ -305,7 +331,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳2"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "view.left_column.toggle",
@@ -325,7 +352,8 @@ export const COMMAND_TREE: CommandTree = {
         "壳20",
         "壳27",
         "壳41"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "view.side_panel",
@@ -343,7 +371,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳21",
         "壳99"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "view.tab.board",
@@ -363,7 +392,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": "Alt+2",
       "entries": [
         "壳92"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "view.tab.modeling",
@@ -384,7 +414,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": "Alt+3",
       "entries": [
         "壳91"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "view.settings",
@@ -402,7 +433,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳13",
         "壳38"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "view.design_tree",
@@ -422,7 +454,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳93"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "view.drawings",
@@ -442,7 +475,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳94"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "view.render",
@@ -462,7 +496,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳95"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "view.usage",
@@ -484,7 +519,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳35",
         "壳97"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "preference.appearance.theme_system",
@@ -501,7 +537,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳22"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "preference.appearance.theme_dark",
@@ -521,7 +558,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳22"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "preference.appearance.theme_light",
@@ -541,7 +579,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳22"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "preference.appearance.style_classic",
@@ -558,7 +597,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳23"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "preference.appearance.style_quiet",
@@ -575,7 +615,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳23"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "preference.appearance.style_titleblock",
@@ -592,7 +633,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳23"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "preference.appearance.style_night",
@@ -609,7 +651,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳23"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "preference.appearance.size_compact",
@@ -626,7 +669,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳24"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "preference.appearance.size_normal",
@@ -643,7 +687,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳24"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "preference.appearance.size_large",
@@ -660,7 +705,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳24"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "hub.update_check",
@@ -677,7 +723,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳25"
-      ]
+      ],
+      "args": []
     },
     {
       "id": "fab.prepare_parts",
@@ -697,7 +744,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳96"
-      ]
+      ],
+      "args": []
     }
   ]
 };

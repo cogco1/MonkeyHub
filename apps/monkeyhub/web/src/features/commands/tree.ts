@@ -41,6 +41,8 @@ export interface Command {
   readonly shortcut: string | null;
   /** The entry-audit numbers this command answers for (e.g. 模18). */
   readonly entries: readonly string[];
+  /** Arguments a run needs (a card or a generated row supplies them); a command that needs any is not listed bare. */
+  readonly args: readonly string[];
 }
 
 export interface CommandTree {

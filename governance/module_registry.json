@@ -380,6 +380,17 @@
               "壳5",
               "壳26"
             ]
+          },
+          {
+            "id": "chat.open_conversation",
+            "label": "Open conversation",
+            "label_zh": "打开对话",
+            "args": [
+              "sessionId"
+            ],
+            "entries": [
+              "壳33"
+            ]
           }
         ]
       },

@@ -8,7 +8,7 @@ import { readUsage, recordUse, RECENT_KEPT, timesUsed, USAGE_KEY } from "../src/
 
 const command = (id: string, en: string, zh: string, more: Partial<Command> = {}): Command => ({
   id, group: more.group ?? "model.export", label: { en, "zh-CN": zh }, terms: [], surface: "modeling",
-  section: "modeling", channel: "side", place: null, shortcut: null, entries: [], ...more,
+  section: "modeling", channel: "side", place: null, shortcut: null, entries: [], args: [], ...more,
 });
 const tree: CommandTree = {
   groups: [
@@ -22,6 +22,7 @@ const tree: CommandTree = {
     command("model.export_stl", "Export STL", "导出 STL"),
     command("drawing.plan_new", "New section plan", "新建剖切平面", { group: "drawing.plan", section: "drawings" }),
     command("view.reference_model", "Reference model", "参考模型", { group: "model.export", channel: "background" }),
+    command("chat.open_conversation", "Open conversation", "打开对话", { group: "model.export", args: ["sessionId"] }),
   ],
 };
 const ids = (ranked: ReturnType<typeof rankCommands>) => ranked.map((row) => row.command.id);
@@ -58,6 +59,11 @@ test("every part has to match, and the shown label outranks the rest", () => {
 test("a background command is the machine's, so the palette never offers it", () => {
   assert.equal(ids(rankCommands(tree, "参考", "zh-CN")).length, 0);
   assert.ok(!ids(rankCommands(tree, "", "zh-CN")).includes("view.reference_model"));
+});
+
+test("a command that needs arguments is not offered bare", () => {
+  assert.equal(ids(rankCommands(tree, "打开对话", "zh-CN")).length, 0);
+  assert.ok(!ids(rankCommands(tree, "", "en")).includes("chat.open_conversation"));
 });
 
 test("an empty palette leads with what was used last, then the tree in order", () => {

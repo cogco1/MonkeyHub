@@ -1256,6 +1256,7 @@ export const messagesZhCN = {
   "commands.askAI": "让 AI 做：{text}",
   "commands.opens": "在{surface}里",
   "commands.unavailable": "这里用不了",
+  "commands.locate": "在页面上指给你",
   "commands.noEarlierChat": "前面没有对话了。",
   "commands.noLaterChat": "后面没有对话了。",
   "commands.keys": "↑ ↓ 选择 · Enter 运行 · Esc 关闭",

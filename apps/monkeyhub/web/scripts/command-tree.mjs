@@ -56,6 +56,7 @@ export function commandTree(registry) {
         place: entry.place ?? null,
         shortcut: entry.shortcut ?? null,
         entries: strings(entry.entries, `${where}.entries`),
+        args: strings(entry.args, `${where}.args`),
       });
     }
   }

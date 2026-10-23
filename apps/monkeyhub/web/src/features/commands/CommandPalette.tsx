@@ -48,10 +48,18 @@ export function CommandPalette({ language, onClose, askAI }: {
     const ranked = rankCommands(tree, query, language, usage.recent).slice(0, SHOWN);
     const out: Row[] = [];
     if (!query.trim()) {
+      // Recent first, then one heading per advanced-tools section, in the sections' order.
+      const order = (section: string) => { const index = (SECTIONS as readonly string[]).indexOf(section); return index < 0 ? SECTIONS.length : index; };
+      const recent = ranked.filter((row) => row.recent);
+      const rest = ranked.filter((row) => !row.recent).map((row, index) => ({ ...row, index }))
+        .sort((a, b) => order(a.command.section) - order(b.command.section) || a.index - b.index);
       let heading: string | null = null;
-      for (const { command, recent } of ranked) {
-        const label = recent ? t("commands.recent") : sectionLabel(t, command.section);
-        if (label !== heading) { out.push({ kind: "heading", key: `h:${label}`, label }); heading = label; }
+      for (const { command, recent: isRecent } of [...recent, ...rest]) {
+        const key = isRecent ? "recent" : command.section;
+        if (key !== heading) {
+          out.push({ kind: "heading", key: `h:${key}`, label: isRecent ? t("commands.recent") : sectionLabel(t, command.section) });
+          heading = key;
+        }
         out.push({ kind: "command", key: command.id, command, state: stateOf(command) });
       }
     } else {
@@ -74,7 +82,8 @@ export function CommandPalette({ language, onClose, askAI }: {
     if (row.kind === "ask") { askAI?.(row.text); return; }
     if (row.kind !== "command" || row.state.kind === "unavailable") return;
     onClose();
-    run(row.command.id, "palette");
+    // Run once the palette is gone: while a modal dialog is open nothing else can take focus.
+    window.setTimeout(() => run(row.command.id, "palette"), 0);
   };
   const onKey = (event: KeyboardEvent<HTMLInputElement>) => {
     const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
@@ -88,6 +97,7 @@ export function CommandPalette({ language, onClose, askAI }: {
   };
   const optionId = (key: string) => `command-option-${key.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
   const stateText = (state: CommandState) => state.kind === "opens" ? t("commands.opens", { surface: surfaceLabel(t, state.surface) })
+    : state.kind === "locate" ? t("commands.locate")
     : state.kind === "unavailable" ? state.reason ?? t("commands.unavailable") : null;
 
   return <dialog ref={dialog} className="command-palette" aria-label={t("commands.palette")}

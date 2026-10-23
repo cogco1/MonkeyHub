@@ -1968,6 +1968,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     drawings: "drawing", render: "monkeyrender", fabrication: "monkeyfab", usage: "monkeymonitor" };
   useCommandActions({
     "chat.new_conversation": { run: startChat },
+    "chat.open_conversation": { run: ({ args }) => {
+      const target = sessions.find((item) => item.id === args?.sessionId);
+      if (target) selectChat(target);
+    } },
     [ASK_AI_ACTION]: { run: ({ text }) => askAgent(text ?? ""), available: () => (projectDir && !archived && !external ? true : t.projectRequired) },
     "project.create.new": { run: openNewProject },
     "project.create.add_existing": { run: openAddProject },

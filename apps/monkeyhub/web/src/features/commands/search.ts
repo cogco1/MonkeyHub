@@ -33,9 +33,12 @@ export function queryParts(query: string): string[] {
   return fold(query).split(/[\s　,，、;；·]+/).filter(Boolean);
 }
 
-/** Commands the palette offers at all: background ones are the machine's to do. */
+/**
+ * Commands the palette offers at all: background ones are the machine's to do, and one that
+ * needs arguments is run from where they are known (a card, a row generated per conversation).
+ */
 export function searchable(tree: CommandTree): Command[] {
-  return tree.commands.filter((command) => command.channel !== "background");
+  return tree.commands.filter((command) => command.channel !== "background" && !command.args.length);
 }
 
 function scorePart(part: string, command: Command, group: CommandGroup | null, language: Language): number {
