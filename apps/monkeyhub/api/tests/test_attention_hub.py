@@ -209,7 +209,8 @@ class AttentionCompositionTests(unittest.TestCase):
             self.assertEqual(app.state.attention.store.root, Path(root) / "attention")
             client = TestClient(app, base_url="http://127.0.0.1:8790")
             self.assertEqual(client.get("/api/attention/summary").json(),
-                             {"projects": [], "open": 0, "later": 0, "working": 0})
+                             {"projects": [], "hub": None, "open": 0, "later": 0, "working": 0, "invalid": []})
+            self.assertEqual(app.state.attention.hub_dir, str(Path(root)))
             self.assertEqual(client.post("/api/attention/att_missing/resolve", json={"optionId": "a"}).json()["code"],
                              "ATTENTION_NOT_FOUND")
             paths = app.openapi()["paths"]
