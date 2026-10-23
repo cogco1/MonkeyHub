@@ -169,18 +169,30 @@ def applies_without_asking(change_list: ChangeList, readings: Sequence[Mapping],
 
 
 def approval(card_id: str, change_list: ChangeList) -> dict:
-    """The person's approval of the ticked, sure items: the card, the item numbers and their own words.
+    """The person's approval of the ticked, sure items, as the message the Hub sends in their name.
 
-    The agent reads what each item means from the card; the approval carries
-    no text the agent wrote, so the architect's words are the only language
-    bound to the change.
+    ``content`` is the message's text: the architect's own words from Board,
+    one line per distinct sentence, as written, and nothing else; ``cardId``
+    and ``items`` travel in the message's structured fields, and the agent
+    reads what each item means from the card. The design loop binds a
+    submission to this message and, through ``feedbackQuote``, to the words of
+    the items it builds, so ``quotes`` groups the items by their words: one
+    submission per group, quoting ``feedbackQuote``. Items that share their
+    words share a group. A group whose words also lie inside another line
+    cannot be quoted alone (``feedbackQuote`` None) and binds the whole message.
+
+    Approving the list is not an answer to any condition: a submission that
+    comes back needing a question is still asked.
     """
 
     approved = [item for item in change_list.items if item.keep and not item.unsure]
     if not approved:
         raise ValueError("No ticked item is sure enough to build.")
-    return {"cardId": card_id, "items": [item.n for item in approved],
-            "rawLanguage": list(dict.fromkeys(item.note for item in approved))}
+    lines = list(dict.fromkeys(item.note.strip() for item in approved))
+    content = "\n".join(lines)
+    quotes = [{"items": [item.n for item in approved if item.note.strip() == line],
+               "feedbackQuote": line if content.count(line) == 1 else None} for line in lines]
+    return {"cardId": card_id, "items": [item.n for item in approved], "content": content, "quotes": quotes}
 
 
 def _short(text: str, limit: int) -> str:

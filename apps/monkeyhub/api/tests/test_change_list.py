@@ -118,12 +118,23 @@ class QuestionTests(unittest.TestCase):
 
 
 class ApprovalTests(unittest.TestCase):
-    def test_the_approval_names_the_card_and_items_and_carries_only_the_architects_words(self) -> None:
+    def test_the_approval_is_the_architects_words_and_items_sharing_words_are_one_submission(self) -> None:
         self.assertEqual(approval("att_x", change_list()), {
-            "cardId": "att_x", "items": [1, 3], "rawLanguage": ["楼板只留一层胶合板，龙骨和面层不要"]})
+            "cardId": "att_x", "items": [1, 3], "content": "楼板只留一层胶合板，龙骨和面层不要",
+            "quotes": [{"items": [1, 3], "feedbackQuote": "楼板只留一层胶合板，龙骨和面层不要"}]})
         self.assertEqual(approval("att_x", change_list(item3={"keep": False}))["items"], [1])
         with self.assertRaises(ValueError):
             approval("att_x", change_list(item1={"keep": False}, item3={"keep": False}))
+
+    def test_words_found_inside_another_line_cannot_be_quoted_alone(self) -> None:
+        listed = change_list(item2={"unsure": False, "markIds": ["m-upper"], "targets": ["finish"],
+                                    "note": "薄一点"},
+                             item3={"note": "踢脚板也再薄一点"})
+        result = approval("att_x", listed)
+        self.assertEqual(result["content"].splitlines(), ["楼板只留一层胶合板，龙骨和面层不要", "薄一点", "踢脚板也再薄一点"])
+        self.assertEqual([(row["items"], row["feedbackQuote"]) for row in result["quotes"]],
+                         [([1], "楼板只留一层胶合板，龙骨和面层不要"), ([2], None), ([3], "踢脚板也再薄一点")])
+        self.assertNotIn("Remove", result["content"], "the agent's reading never travels as the person's words")
 
     def test_small_sure_lists_borne_out_by_their_marks_apply_first(self) -> None:
         self.assertFalse(applies_without_asking(change_list(), READINGS, CATALOG), "an unsure item is ticked")
