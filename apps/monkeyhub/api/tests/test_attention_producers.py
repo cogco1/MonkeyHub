@@ -21,7 +21,7 @@ from monkeyhub_api.runtime.models import OperationRecord
 from monkeyhub_api.updates.models import UpdateStatus
 
 NOW = datetime(2026, 10, 23, 9, 0, tzinfo=timezone.utc)
-OPENS = {producers.OPEN_CONVERSATION, producers.COMPARE}
+OPENED = {producers.OPEN_CONVERSATION, producers.COMPARE}
 
 
 def line(run, **fields):
@@ -191,7 +191,7 @@ class EveryButtonIsKnownTests(unittest.TestCase):
         self.assertEqual({option.action.commandId for card in cards for option in card.options} - set(COMMANDS), set())
         for card in cards:
             check_card(card)  # what a producer writes, the executor runs as written
-        self.assertEqual({command.commandId for card in cards for command in card.opens} - OPENS, set())
+        self.assertEqual({command.commandId for card in cards for command in card.opens} - OPENED, set())
 
 
 if __name__ == "__main__":

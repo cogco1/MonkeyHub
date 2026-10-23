@@ -293,8 +293,20 @@ COMMANDS: dict[str, Command] = {
     # With operationId, the operation journal's acknowledge; without, the card is only put away.
     "attention.acknowledge": Command(_acknowledge, takes=("operationId",)),
 }
+@dataclass(frozen=True)
+class Opening:
+    """A command a card may offer to open, and the arguments it takes and needs."""
+
+    takes: tuple[str, ...]
+    needs: tuple[str, ...]
+
+
 # Commands a card may offer to open: they show something and change nothing.
-OPENS: frozenset[str] = frozenset({"chat.open_conversation", "candidate.compare", "board.open_frame"})
+OPENS: dict[str, Opening] = {
+    "chat.open_conversation": Opening(takes=("sessionId",), needs=("sessionId",)),
+    "candidate.compare": Opening(takes=("runIds",), needs=("runIds",)),
+    "board.open_frame": Opening(takes=("frameId",), needs=("frameId",)),
+}
 
 
 def refuse_unknown(option: AttentionOption) -> None:
@@ -314,15 +326,21 @@ def check_card(draft: AttentionDraft) -> None:
         if option.undoable and not command.undoable:
             raise HubFailure(422, "ATTENTION_CARD_INVALID",
                              f"{option.action.commandId} cannot be taken back, so its answer is not undoable.")
-        unknown = sorted(set(option.action.args) - set(command.takes))
-        missing = [name for name in command.needs if option.action.args.get(name) in (None, "", [])]
-        if unknown or missing:
-            raise HubFailure(422, "ATTENTION_CARD_INVALID", f"{option.action.commandId} takes "
-                             f"{', '.join(command.takes) or 'no arguments'} and needs {', '.join(command.needs) or 'none'}"
-                             f"; this answer {'names ' + ', '.join(unknown) if unknown else 'leaves out ' + ', '.join(missing)}.")
+        _bound(option.action, command.takes, command.needs)
     for command in draft.opens:
-        if command.commandId not in OPENS:
+        opening = OPENS.get(command.commandId)
+        if opening is None:
             raise HubFailure(422, "ATTENTION_CARD_INVALID", f"{command.commandId} does more than open something.")
+        _bound(command, opening.takes, opening.needs)
+
+
+def _bound(command: CommandRef, takes: tuple[str, ...], needs: tuple[str, ...]) -> None:
+    unknown = sorted(set(command.args) - set(takes))
+    missing = [name for name in needs if command.args.get(name) in (None, "", [])]
+    if unknown or missing:
+        raise HubFailure(422, "ATTENTION_CARD_INVALID", f"{command.commandId} takes "
+                         f"{', '.join(takes) or 'no arguments'} and needs {', '.join(needs) or 'none'}; this card "
+                         f"{'names ' + ', '.join(unknown) if unknown else 'leaves out ' + ', '.join(missing)}.")
 
 
 class AttentionExecutor:
