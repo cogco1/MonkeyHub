@@ -27,8 +27,10 @@ from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.requests import Request
 
-from ..models import ChatDetail, HubFailure
+from .. import projects
+from ..models import ChatCreateRequest, ChatDetail, HubFailure
 from ..runtime.workers import project_key
+from ..settings.store import read_user_settings
 from . import producers
 from .actions import AttentionExecutor, check_card
 from .models import AttentionItem
@@ -48,8 +50,11 @@ class AttentionHub:
     """The executor's ports on the Hub, and the producers run on the Hub's events."""
 
     def __init__(self, store: AttentionStore, runtimes, chats, updates=None, *, hub_dir: str | None = None,
+                 user_settings: Callable[[], Any] = read_user_settings,
                  clock: Callable[[], datetime] | None = None):
         self.store, self.runtimes, self.chats, self.updates = store, runtimes, chats, updates
+        self._user_settings = user_settings
+        self._conversation_lock = threading.Lock()
         # The Hub's own scope for cards about itself: its runtime root.
         self.hub_dir = hub_dir
         # Every card the Hub keeps runs as written, or is refused before it is kept.
@@ -79,6 +84,38 @@ class AttentionHub:
 
     def acknowledge_operation(self, project_id: str, project_dir: str, operation_id: str):
         return self.runtimes.acknowledge(self.runtimes.open(project_id, project_dir), operation_id)
+
+    def conversation(self, project_id: str | None, project_dir: str) -> str:
+        """The project's own attention conversation, opened the first time it is needed.
+
+        The one kept for the project is answered while it still exists and is
+        not archived; otherwise a new one is opened with the person's default
+        provider and model, titled in their language, and kept. Opening it sends
+        nothing: the Agent runs only on the first message.
+        """
+
+        with self._conversation_lock:
+            if project_id is None:
+                project_id, project_dir = projects._project(project_dir)
+            kept = self.store.conversation(project_dir)
+            if kept is not None:
+                try:
+                    if not self.chats.get(kept).archived:
+                        return kept
+                except HubFailure:
+                    pass  # Removed since: a new one is opened.
+            settings = self._user_settings()
+            available = [row.id for row in self.chats.providers() if row.available]
+            provider = settings.chat_provider if settings.chat_provider in available else next(iter(available), None)
+            if provider is None:
+                raise HubFailure(503, "CHAT_PROVIDER_UNAVAILABLE",
+                                 "No conversation provider is available to open this project's attention conversation.")
+            session = self.chats.create(ChatCreateRequest(
+                projectDir=project_dir, provider=provider,
+                model=settings.chat_model if provider == settings.chat_provider else None,
+                title="Attention" if settings.language == "en" else "关注"))
+            self.store.set_conversation(session.projectId, session.projectDir, session.id)
+            return session.id
 
     def apply_update(self):
         if self.updates is None:
@@ -207,6 +244,15 @@ class AttentionHub:
                         continue  # A card that cannot be saved now is written on the project's next event.
 
 
+class AttentionConversationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    projectDir: str = Field(min_length=1)
+
+
+class AttentionConversation(BaseModel):
+    sessionId: str
+
+
 class AttentionQuestionRequest(BaseModel):
     """What a design-loop turn asked the architect (design_ask), for the user message it answers."""
 
@@ -218,8 +264,16 @@ class AttentionQuestionRequest(BaseModel):
     refs: list[Annotated[str, Field(min_length=1, max_length=400)]] = Field(default_factory=list, max_length=20)
 
 
-def question_router(attention: AttentionHub) -> APIRouter:
+def hub_router(attention: AttentionHub) -> APIRouter:
+    """The project's attention conversation, and the questions a conversation's own tools put to its architect."""
+
     routes = APIRouter()
+
+    @routes.post("/api/attention/conversation", response_model=AttentionConversation)
+    def attention_conversation(body: AttentionConversationRequest) -> AttentionConversation:
+        """Where the new shell's input and answers that name no conversation go; opened on first need."""
+
+        return AttentionConversation(sessionId=attention.conversation(None, body.projectDir))
 
     @routes.post("/api/attention/questions", response_model=AttentionItem, status_code=201)
     def attention_question(request: Request, body: AttentionQuestionRequest) -> AttentionItem:
