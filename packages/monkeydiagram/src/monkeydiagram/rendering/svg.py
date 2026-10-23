@@ -1171,7 +1171,7 @@ _PAINT = ("stroke-width", "stroke-dasharray", "stroke", "fill", "fill-rule")
 
 def _svg_marks(root):
     """Every polyline and polygon in document order: (is polygon, object id, points, stroke width, dash array,
-    and the stroke, fill and fill rule it inherits)."""
+    the stroke, fill and fill rule it inherits, and its component)."""
 
     found = []
 
@@ -1190,7 +1190,8 @@ def _svg_marks(root):
             except (ValueError, IndexError) as exc:
                 kind = "polygon" if element.tag == _POLYGON else "polyline"
                 raise DrawingSvgError(f"an SVG {kind} has invalid points or stroke") from exc
-            found.append((element.tag == _POLYGON, element.get("data-object"), points, width, dashes, paint))
+            found.append((element.tag == _POLYGON, element.get("data-object"), points, width, dashes, paint,
+                          element.get("data-component")))
         for child in element:
             walk(child, paint)
 
@@ -1287,7 +1288,8 @@ class DrawingMark:
 
     ``group`` is the role group it sits in (``visible``, ``hidden``,
     ``section``, ``section-hatch``); ``grey`` is its stroke (polyline) or fill
-    (polygon) level, 0 black to 255 white.
+    (polygon) level, 0 black to 255 white; ``component`` is the object's
+    ``data-component`` when the drawing names one.
     """
 
     polygon: bool
@@ -1297,6 +1299,22 @@ class DrawingMark:
     stroke_mm: float
     dash_mm: tuple[float, ...]
     grey: int
+    component: str | None = None
+
+
+def _paper_marks(root, view_box, paper_mm) -> tuple[DrawingMark, ...]:
+    (min_x, min_y, width, height), (width_mm, height_mm) = view_box, paper_mm
+    sx, sy = width_mm / width, height_mm / height
+    marks = []
+    for is_polygon, object_id, points, stroke_width, dashes, paint, component in _svg_marks(root):
+        level = _grey(paint.get("fill", "#000") if is_polygon else paint.get("stroke", "#000"),
+                      "fill" if is_polygon else "stroke")
+        if level is None:
+            continue
+        marks.append(DrawingMark(is_polygon, paint.get("group"), object_id,
+                                 tuple(((x - min_x) * sx, (y - min_y) * sy) for x, y in points),
+                                 stroke_width * sx, tuple(v * sx for v in dashes), level, component))
+    return tuple(marks)
 
 
 def svg_paper_marks(svg: bytes) -> tuple[tuple[float, float], tuple[DrawingMark, ...]]:
@@ -1307,20 +1325,22 @@ def svg_paper_marks(svg: bytes) -> tuple[tuple[float, float], tuple[DrawingMark,
     is refused rather than placed without it.
     """
 
-    root, (min_x, min_y, width, height), (width_mm, height_mm) = _parse_svg(svg)
+    root, view_box, paper_mm = _parse_svg(svg)
     if any(True for _ in root.iter(f"{{{SVG_NS}}}text")):
         raise DrawingSvgError("the SVG carries dimension text, which paper marks do not place")
-    sx, sy = width_mm / width, height_mm / height
-    marks = []
-    for is_polygon, object_id, points, stroke_width, dashes, paint in _svg_marks(root):
-        level = _grey(paint.get("fill", "#000") if is_polygon else paint.get("stroke", "#000"),
-                      "fill" if is_polygon else "stroke")
-        if level is None:
-            continue
-        marks.append(DrawingMark(is_polygon, paint.get("group"), object_id,
-                                 tuple(((x - min_x) * sx, (y - min_y) * sy) for x, y in points),
-                                 stroke_width * sx, tuple(v * sx for v in dashes), level))
-    return (width_mm, height_mm), tuple(marks)
+    return paper_mm, _paper_marks(root, view_box, paper_mm)
+
+
+def svg_object_marks(svg: bytes) -> tuple[tuple[float, float], tuple[DrawingMark, ...]]:
+    """The paper size and the object-named marks of one ``drawing_svg`` document, in paper millimetres.
+
+    What a mark drawn over the printed drawing lies on: each carries its
+    object and, when the drawing names one, its component.  Dimension text
+    names no object, so a dimensioned drawing is read too and its text left out.
+    """
+
+    root, view_box, paper_mm = _parse_svg(svg)
+    return paper_mm, tuple(mark for mark in _paper_marks(root, view_box, paper_mm) if mark.object_id)
 
 
 def render_svg_png(svg: bytes, *, dots_per_inch: int = 150) -> bytes:
@@ -1354,7 +1374,7 @@ def render_svg_png(svg: bytes, *, dots_per_inch: int = 150) -> bytes:
     scale_y = pixels_y * supersample / height
     image = Image.new("L", (pixels_x * supersample, pixels_y * supersample), 255)
     draw = ImageDraw.Draw(image)
-    for is_polygon, _, points, stroke_width, dashes, paint in _svg_marks(root):
+    for is_polygon, _, points, stroke_width, dashes, paint, _ in _svg_marks(root):
         if is_polygon:
             if paint.get("fill-rule") != "evenodd" or paint.get("stroke") != "none":
                 raise DrawingSvgError("an SVG polygon is drawn only as an even-odd fill without stroke")
@@ -1409,6 +1429,7 @@ __all__ = [
     "dimension_placement_fits",
     "dressing_assets",
     "render_svg_png",
+    "svg_object_marks",
     "svg_objects",
     "svg_paper_marks",
 ]

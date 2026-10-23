@@ -102,6 +102,7 @@
             "project_runtime.intent"
           ],
           "write_scope": [
+            "packages/monkeydiagram/src/monkeydiagram/rendering/marks.py",
             "packages/monkeydiagram/src/monkeydiagram/rendering/svg.py",
             "services/project-runtime/src/project_runtime/application/markup.py"
           ],
