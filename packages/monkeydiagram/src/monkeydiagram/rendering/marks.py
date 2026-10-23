@@ -1,4 +1,4 @@
-"""What a drawn page shows under a mark: each object's ink inside the mark and inside the mark's frame.
+"""What a drawn page shows under a mark: each object's ink inside the mark, inside its core, and on the whole page.
 
 The page is what was drawn, never a re-projection: a drawing's own marks as
 ``svg_object_marks`` reads them back (placed at their paper position on a
@@ -11,14 +11,18 @@ A mark is a zone on the page, by the tool that drew it:
 - ``stroke``: the band within ``reach`` of an open line;
 - ``tip``: the disc within ``reach`` of a point (an arrow's head).
 
+A zone's core is the zone drawn in by ``CORE`` of the radius of the largest
+circle it holds: the part of a circle no layer only grazing its rim reaches.
 For each object the zone touches this module measures its line length and the
 area it bounds (poché, and the shapes its closed polylines outline) inside the
-zone and inside the zone's frame: the smallest rectangle round the zone at any
-angle. Comparing the two says whether the object runs through the mark or is
-only grazed by it, whatever it does beyond. For a tip it measures nearness,
-and the innermost shape the tip lies in counts as under it. What the measures
-mean for the design is the caller's question; this module knows no record,
-component tree or project, and the same page and mark give the same numbers.
+zone, inside the core and on the whole page. A layer that runs through the
+middle of a circle reaches the core although it continues far beyond the
+circle; one that crosses only its rim does not. For a tip it measures
+nearness, and the innermost shape the tip lies in counts as under it.
+
+What the measures mean for the design is the caller's question; this module
+knows no record, component tree or project, and the same page and mark give
+the same numbers.
 """
 
 from __future__ import annotations
@@ -43,6 +47,12 @@ POINT_ZONE = "point"
 
 #: A freehand stroke whose ends lie within this share of its extent closes its outline.
 CLOSING_GAP = 0.2
+#: The core is the zone drawn in by this share of the radius of the largest circle it holds.
+CORE = 0.35
+#: Role groups ``drawing_svg`` writes that are not ink a mark lies on: lines hidden behind others, and the
+#: hatch strokes inside a cut, whose material is the cut's own area.
+NOT_INK = ("hidden",)
+AREA_ONLY = ("section-hatch",)
 
 Point2 = tuple[float, float]
 
@@ -63,27 +73,32 @@ class ObjectInk:
 
 @dataclass(frozen=True, slots=True)
 class InkUnderMark:
-    """One object's ink inside a mark's zone and inside its frame, and how near a tip is to it (1 on it, 0 out of reach).
+    """One object's ink inside a mark's zone, inside its core and on the whole page, and how near a tip is to it.
 
     ``object_id`` is None for ink that names no single object (an ID colour
-    standing for a layer or a material).
+    standing for a layer or a material). ``nearness`` is 1 on the tip, 0 out
+    of reach.
     """
 
     object_id: str | None
     component: str | None
     line_in: float = 0.0
-    line_framed: float = 0.0
+    line_core: float = 0.0
+    line_total: float = 0.0
     area_in: float = 0.0
-    area_framed: float = 0.0
+    area_core: float = 0.0
+    area_total: float = 0.0
     nearness: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
 class MarkInk:
-    """The zone a mark stands for, its area, and the ink under it, object by object in page order."""
+    """The zone a mark stands for, its area, its core's area and inner radius, and the ink under it in page order."""
 
     zone: str
     zone_area: float
+    core_area: float
+    core_radius: float
     objects: tuple[InkUnderMark, ...]
 
 
@@ -91,13 +106,15 @@ def page_ink(marks: Iterable[DrawingMark], *, place: Point2 = (0.0, 0.0)) -> tup
     """A drawing's object-named marks (``svg_object_marks``) as ink, placed at ``place`` on the page.
 
     A drawing that is its own page is placed at the origin; a sheet places
-    each view at its own paper position. Marks naming no object are left out.
+    each view at its own paper position. Marks naming no object are left out,
+    and so are hidden lines and hatch strokes (``NOT_INK``, ``AREA_ONLY``): a
+    mark lies on what the drawing shows, and a cut is its area, not its hatch.
     """
 
     dx, dy = place
     grouped: dict[str, list] = {}
     for mark in marks:
-        if not mark.object_id:
+        if not mark.object_id or mark.group in NOT_INK or (mark.group in AREA_ONLY and not mark.polygon):
             continue
         row = grouped.setdefault(mark.object_id, [mark.component, [], []])
         row[0] = row[0] if row[0] is not None else mark.component
@@ -112,8 +129,8 @@ def ink_under_mark(points: Sequence[Point2], tool: str, reach: float, ink: Seque
     zone_kind, zone, tip = _zone(points, tool, reach)
     drawn = [(row, _lines(row.lines), _body(row)) for row in ink]
     if zone_kind == POINT_ZONE:
-        return MarkInk(zone_kind, zone.area, tuple(_near_tip(tip, reach, drawn)))
-    frame = zone.minimum_rotated_rectangle
+        return MarkInk(zone_kind, zone.area, 0.0, 0.0, tuple(_near_tip(tip, reach, drawn)))
+    core, radius = _core(zone)
     found = []
     for row, lines, body in drawn:
         if not any(part is not None and zone.intersects(part) for part in (lines, body)):
@@ -121,11 +138,13 @@ def ink_under_mark(points: Sequence[Point2], tool: str, reach: float, ink: Seque
         found.append(InkUnderMark(
             row.object_id, row.component,
             line_in=zone.intersection(lines).length if lines is not None else 0.0,
-            line_framed=frame.intersection(lines).length if lines is not None else 0.0,
+            line_core=core.intersection(lines).length if lines is not None and not core.is_empty else 0.0,
+            line_total=lines.length if lines is not None else 0.0,
             area_in=zone.intersection(body).area if body is not None else 0.0,
-            area_framed=frame.intersection(body).area if body is not None else 0.0,
+            area_core=core.intersection(body).area if body is not None and not core.is_empty else 0.0,
+            area_total=body.area if body is not None else 0.0,
         ))
-    return MarkInk(zone_kind, zone.area, tuple(found))
+    return MarkInk(zone_kind, zone.area, core.area, radius * (1 - CORE), tuple(found))
 
 
 def id_image_under_marks(marks: Sequence[tuple[Sequence[Point2], str, float]], id_png: bytes,
@@ -154,8 +173,11 @@ def id_image_under_marks(marks: Sequence[tuple[Sequence[Point2], str, float]], i
         except (KeyError, ValueError) as exc:
             raise PageMarkError("an ID legend row needs a #RRGGBB color") from exc
         named[colour] = str(row["key"]) if row.get("objects", 1) == 1 else None
+    totals = {colour: int((packed == colour).sum()) for colour in named}
 
     def counts(zone) -> tuple[int, dict[int, int]]:
+        if zone.is_empty:
+            return 0, {colour: 0 for colour in named}
         mask = _mask(zone, width, height)
         inside = packed[mask]
         return int(mask.sum()), {colour: int((inside == colour).sum()) for colour in named}
@@ -163,18 +185,19 @@ def id_image_under_marks(marks: Sequence[tuple[Sequence[Point2], str, float]], i
     found = []
     for points, tool, reach in marks:
         zone_kind, zone, _ = _zone(points, tool, reach)
+        core, radius = (zone, 0.0) if zone_kind == POINT_ZONE else _core(zone)
         zone_pixels, inside = counts(zone)
+        core_pixels, in_core = counts(core) if zone_kind != POINT_ZONE else (0, {colour: 0 for colour in named})
         objects = []
         if zone_pixels and sum(inside.values()) >= blank * zone_pixels:
-            _, framed = counts(zone.minimum_rotated_rectangle)
             for colour, count in inside.items():
                 if count:
                     object_id = named[colour]
                     objects.append(InkUnderMark(
                         object_id, None if object_id is None else components.get(object_id),
-                        area_in=float(count), area_framed=float(framed[colour]),
+                        area_in=float(count), area_core=float(in_core[colour]), area_total=float(totals[colour]),
                         nearness=count / zone_pixels if zone_kind == POINT_ZONE else 0.0))
-        found.append(MarkInk(zone_kind, float(zone_pixels), tuple(objects)))
+        found.append(MarkInk(zone_kind, float(zone_pixels), float(core_pixels), radius * (1 - CORE), tuple(objects)))
     return tuple(found)
 
 
@@ -199,6 +222,15 @@ def _zone(points: Sequence[Point2], tool: str, reach: float):
             return AREA_ZONE, area, None
     stroke = LineString(points) if len(points) >= 2 else Point(points[0])
     return STROKE_ZONE, stroke.buffer(reach), None
+
+
+def _core(zone):
+    """The zone drawn in by CORE of the radius of the largest circle it holds, and that radius."""
+
+    from shapely import maximum_inscribed_circle
+
+    radius = max((maximum_inscribed_circle(part).length for part in getattr(zone, "geoms", [zone])), default=0.0)
+    return zone.buffer(-CORE * radius), radius
 
 
 def _returns(points: Sequence[Point2]) -> bool:
@@ -260,6 +292,8 @@ def _mask(zone, width: int, height: int):
     image = Image.new("1", (width, height), 0)
     draw = ImageDraw.Draw(image)
     for part in getattr(zone, "geoms", [zone]):
+        if part.is_empty or not hasattr(part, "exterior"):
+            continue
         draw.polygon(list(part.exterior.coords), fill=1)
         for hole in part.interiors:
             draw.polygon(list(hole.coords), fill=0)
@@ -268,6 +302,7 @@ def _mask(zone, width: int, height: int):
 
 __all__ = [
     "AREA_ZONE",
+    "CORE",
     "FREEHAND",
     "InkUnderMark",
     "MarkInk",

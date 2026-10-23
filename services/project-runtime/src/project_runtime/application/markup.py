@@ -12,21 +12,23 @@ model view's object-ID image. A circle, a closed polyline and a freehand
 stroke that returns to its start enclose an area; another line covers the ink
 within its pen's reach; an arrow points with its tip. Each object is then
 answered for by the record (``subjects_of``: the component its drawing names,
-and the element among that component's own rows), and two numbers score each
-component or element:
+and the element among that component's own rows), and each component or
+element is scored:
 
-- ``coverage``: how much of it within the mark's frame (the smallest
-  rectangle round the mark) lies inside the mark. A layer running through a
-  circle counts as circled although it continues far beyond it; an object
-  whose corner the circle grazes does not.
+- ``central``: it reaches the mark's core, the middle of the mark no layer
+  only grazing its rim reaches. A layer running through the middle of a circle
+  is central although it continues far beyond it; one crossing only the rim,
+  or an object whose corner the circle grazes, is not.
+- ``coverage``: how much of all of it on the page lies inside the mark
+  (circled whole is 1).
 - ``share``: how much of what is inside the mark is its own (for an arrow, how
   much nearer the tip it is than the others).
 
-A subject circled for most of it within the frame, or holding most of the
-mark, is a target; one the mark half covers is borderline. A mark with no
+A central subject, or one circled almost whole, is a target; one only in the
+mark's rim is borderline when it holds a fair part of the mark. A mark with no
 target, or with a borderline subject beside its targets, is ambiguous and says
 why: nothing is drawn there, what is drawn names no component of this record,
-it only touches several things, or something else is half in it. Which of
+it only touches several things, or something else lies at its rim. Which of
 several things the architect meant is their question to answer, not this
 module's. No model call and no write; the same page and marks give the same
 reading.
@@ -45,12 +47,15 @@ from .gestures import ARROW, CIRCLE, POLYLINE, TEXT, DocumentGesture
 from .pick import element_of_object
 from .projection import StateProjection
 
-#: Coverage at or above which a subject counts as circled.
-ENCLOSED = 0.6
-#: Coverage at or above which a subject not circled is borderline, when it also holds BORDERLINE_SHARE of the mark.
+#: Coverage at or above which a subject counts as circled whole, wherever in the mark it lies.
+ENCLOSED = 0.8
+#: A subject is central when this share of the core's area is its own, or its lines run this many core radii in it.
+CORE_AREA = 0.02
+CORE_LINE = 0.2
+#: A subject in the mark that is not a target is borderline with this share of the mark, or this coverage.
+BORDERLINE_SHARE = 0.1
 BORDERLINE = 0.3
-BORDERLINE_SHARE = 0.2
-#: Share of a mark at or above which a subject counts as what the mark is on.
+#: Share of an arrow's weight at or above which a subject counts as what it points at.
 DOMINANT = 0.6
 #: An open stroke reaches this many of its own widths, and at least MIN_REACH of the page's shorter side.
 STROKE_REACH = 3.0
@@ -88,10 +93,12 @@ class MarkHit:
     share: float
     target: bool
     borderline: bool = False
+    central: bool = False
 
     def to_dict(self) -> dict:
         return {"componentId": self.component_id, "elementId": self.element_id, "objectIds": list(self.object_ids),
-                "coverage": self.coverage, "share": self.share, "target": self.target, "borderline": self.borderline}
+                "coverage": self.coverage, "share": self.share, "central": self.central, "target": self.target,
+                "borderline": self.borderline}
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,9 +201,9 @@ def _reading(gesture: DocumentGesture, ink: MarkInk, identify: Identify) -> Mark
     """The ink under one mark gathered per subject, scored, and the targets chosen.
 
     An arrow scores by nearness only and chooses at most the one subject most
-    of the weight is on. Any other mark also takes every subject circled for
-    ENCLOSED of it within the mark's frame; a subject's coverage is by the
-    area it bounds when it bounds any inside the mark, else by its lines.
+    of the weight is on. Any other mark takes every subject that reaches its
+    core or that it circles whole; a subject's coverage is by the area it
+    bounds when it bounds any inside the mark, else by its lines.
     """
 
     if not ink.objects:
@@ -209,31 +216,37 @@ def _reading(gesture: DocumentGesture, ink: MarkInk, identify: Identify) -> Mark
         subject = None if row.object_id is None else identify(row.object_id, row.component)
         if subject is None:
             continue
-        sums = gathered.setdefault(subject, [[], 0.0, 0.0, 0.0, 0.0, 0.0])
+        sums = gathered.setdefault(subject, [[], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         sums[0].append(row.object_id)
-        for index, value in enumerate((row.line_in, row.line_framed, row.area_in, row.area_framed, row.nearness), 1):
+        for index, value in enumerate((row.line_in, row.line_core, row.line_total, row.area_in, row.area_core,
+                                       row.area_total, row.nearness), 1):
             sums[index] += value
     if not gathered:
         return MarkReading(gesture.id, gesture.kind, ink.zone, (), UNBOUND)
     scored = []
-    for subject, (object_ids, line_in, line_framed, area_in, area_framed, nearness) in gathered.items():
+    for subject, (object_ids, line_in, line_core, line_total, area_in, area_core, area_total,
+                  nearness) in gathered.items():
         if area_in > 0:
-            coverage = area_in / area_framed if area_framed else 1.0
+            coverage = area_in / area_total if area_total else 1.0
         else:
-            coverage = line_in / line_framed if line_framed else 0.0
+            coverage = line_in / line_total if line_total else 0.0
+        central = not pointing and ink.core_area > 0 and (
+            area_core >= CORE_AREA * ink.core_area or line_core >= CORE_LINE * ink.core_radius)
         if pointing:
             share = nearness / nearness_all if nearness_all else 0.0
         else:
             share = max(line_in / line_in_all if line_in_all else 0.0,
                         area_in / ink.zone_area if ink.zone_area else 0.0)
-        scored.append((subject, tuple(sorted(object_ids)), round(min(coverage, 1.0), 4), round(min(share, 1.0), 4)))
+        scored.append((subject, tuple(sorted(object_ids)), round(min(coverage, 1.0), 4), round(min(share, 1.0), 4),
+                       central))
     scored.sort(key=lambda row: (-row[3], -row[2], row[0].component_id, row[0].element_id or ""))
-    top = scored[0][0] if scored[0][3] >= DOMINANT else None
+    top = scored[0][0] if pointing and scored[0][3] >= DOMINANT else None
     hits = []
-    for subject, object_ids, coverage, share in scored:
-        target = subject == top or (not pointing and coverage >= ENCLOSED)
-        borderline = not target and not pointing and coverage >= BORDERLINE and share >= BORDERLINE_SHARE
-        hits.append(MarkHit(subject.component_id, subject.element_id, object_ids, coverage, share, target, borderline))
+    for subject, object_ids, coverage, share, central in scored:
+        target = subject == top or (not pointing and (central or coverage >= ENCLOSED))
+        borderline = not target and not pointing and (share >= BORDERLINE_SHARE or coverage >= BORDERLINE)
+        hits.append(MarkHit(subject.component_id, subject.element_id, object_ids, coverage, share, target,
+                            borderline, central))
     hits.sort(key=lambda hit: (not hit.target, not hit.borderline))
     if not any(hit.target for hit in hits):
         reason = PARTIAL
@@ -246,6 +259,7 @@ def _reading(gesture: DocumentGesture, ink: MarkInk, identify: Identify) -> Mark
 
 __all__ = [
     "BORDERLINE_HIT",
+    "CORE_AREA",
     "DOMINANT",
     "ENCLOSED",
     "MarkHit",

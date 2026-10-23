@@ -7,7 +7,7 @@ import math
 import unittest
 
 from monkeydiagram.rendering.marks import (
-    AREA_ZONE, FREEHAND, OUTLINE, POINT_ZONE, STROKE, STROKE_ZONE, TIP, ObjectInk, PageMarkError,
+    AREA_ZONE, CORE, FREEHAND, OUTLINE, POINT_ZONE, STROKE, STROKE_ZONE, TIP, ObjectInk, PageMarkError,
     id_image_under_marks, ink_under_mark, page_ink,
 )
 from monkeydiagram.rendering.svg import DrawingMark
@@ -27,19 +27,23 @@ class InkUnderMarkTests(unittest.TestCase):
     def by_object(self, ink):
         return {row.object_id: row for row in ink.objects}
 
-    def test_a_band_through_a_circle_fills_its_frame_although_it_runs_on_beyond_it(self) -> None:
+    def test_a_band_through_a_circle_reaches_its_core_although_it_runs_on_beyond_it(self) -> None:
         ink = ink_under_mark(circle(10, 11, 4), OUTLINE, 0.1, INK)
         self.assertEqual(ink.zone, AREA_ZONE)
+        self.assertAlmostEqual(ink.core_radius, 4 * (1 - CORE), delta=0.05)
         [band] = ink.objects
         self.assertEqual(band.object_id, "obj-band")
-        self.assertGreater(band.area_in / band.area_framed, 0.9)
+        self.assertGreater(band.area_core, 0)
         self.assertLess(band.area_in, 40 / 2, "only the part of the 20 x 2 band inside the circle")
-        self.assertGreater(band.line_in, 0)
+        self.assertEqual((band.area_total, band.line_total), (40.0, 44.0))
+        self.assertGreater(band.line_core, 0)
 
-    def test_a_grazed_corner_is_a_small_part_of_what_the_frame_holds(self) -> None:
-        ink = ink_under_mark(circle(36, 10, 3), OUTLINE, 0.1, INK)
-        [square] = ink.objects
-        self.assertLess(square.area_in / square.area_framed, 0.6)
+    def test_a_band_at_the_rim_and_a_grazed_corner_stay_out_of_the_core(self) -> None:
+        [band] = ink_under_mark(circle(10, 15, 4), OUTLINE, 0.1, INK).objects
+        self.assertGreater(band.area_in, 0)
+        self.assertEqual((band.area_core, band.line_core), (0.0, 0.0))
+        [square] = ink_under_mark(circle(36, 10, 3), OUTLINE, 0.1, INK).objects
+        self.assertEqual(square.area_core, 0.0)
 
     def test_an_open_line_without_area_is_measured_by_its_length(self) -> None:
         ink = ink_under_mark([(32, 20), (38, 20)], STROKE, 0.5, INK)
@@ -75,6 +79,16 @@ class InkUnderMarkTests(unittest.TestCase):
         self.assertEqual((row.object_id, row.component), ("obj-a", "wall"))
         self.assertEqual(row.lines, (((10.0, 20.0), (11.0, 20.0)),))
         self.assertEqual(row.regions, (((10.0, 20.0), (11.0, 20.0), (11.0, 21.0)),))
+
+    def test_page_ink_leaves_out_hidden_lines_and_hatch_strokes(self) -> None:
+        marks = (DrawingMark(False, "hidden", "obj-behind", ((0, 0), (1, 0)), 0.13, (0.2, 0.1), 0),
+                 DrawingMark(False, "section-hatch", "obj-cut", ((0, 0), (1, 1)), 0.1, (), 0),
+                 DrawingMark(True, "section-hatch", "obj-cut", ((0, 0), (1, 0), (1, 1)), 0.0, (), 0),
+                 DrawingMark(False, "section", "obj-cut", ((0, 0), (1, 0), (1, 1), (0, 0)), 0.35, (), 0))
+        [cut] = page_ink(marks)
+        self.assertEqual(cut.object_id, "obj-cut")
+        self.assertEqual(cut.lines, (((0, 0), (1, 0), (1, 1), (0, 0)),), "the cut line, not its hatch")
+        self.assertEqual(len(cut.regions), 1, "the poché is the cut's area")
 
 
 class IdImageTests(unittest.TestCase):

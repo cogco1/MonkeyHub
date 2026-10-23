@@ -16,7 +16,9 @@ import math
 import unittest
 
 from monkeycad.backends.occt.projection import OcctDrawingPolyline
-from monkeydiagram.rendering.marks import AREA_ZONE as AREA, POINT_ZONE as POINT, STROKE_ZONE as STROKE, page_ink
+from monkeydiagram.rendering.marks import (
+    AREA_ZONE as AREA, POINT_ZONE as POINT, STROKE_ZONE as STROKE, ObjectInk, page_ink,
+)
 from monkeydiagram.rendering.svg import drawing_svg, svg_object_marks
 
 from project_runtime.application.gestures import DocumentGesture
@@ -96,8 +98,22 @@ class DrawingMarkTests(unittest.TestCase):
         [reading] = self.read(circle("across", 95, 70, 20))
         self.assertEqual(subjects(reading), {"finish", "joist-2"})
         finish = next(hit for hit in reading.hits if hit.element_id == "finish")
-        self.assertGreaterEqual(finish.coverage, 0.6)
-        self.assertLess(finish.share, 0.6, "it is circled, not merely the biggest thing there")
+        self.assertTrue(finish.central, "it runs through the middle of the circle")
+        self.assertLess(finish.coverage, 0.2, "although most of it lies outside")
+
+    def test_of_layers_through_one_circle_those_through_its_middle_are_meant_and_those_at_its_rim_are_asked(self) -> None:
+        # Five long layers through a circle of radius 10, from 0.85 of the radius below its centre to 0.85 above.
+        page = (100.0, 100.0)
+        layers = [ObjectInk(f"obj-{d}", "floor", lines=(((0.0, 50.0 + d), (100.0, 50.0 + d)),))
+                  for d in (-8.5, -4.0, 0.0, 4.0, 8.5)]
+        identify = lambda object_id, component: Subject(component, object_id)  # noqa: E731
+        [reading] = read_marks([circle("ring", 50, 50, 10, page=page)], layers, page, identify)
+        self.assertEqual(subjects(reading), {"obj--4.0", "obj-0.0", "obj-4.0"})
+        self.assertEqual({hit.element_id for hit in reading.hits if hit.borderline}, {"obj--8.5", "obj-8.5"})
+        self.assertEqual(reading.reason, BORDERLINE_HIT)
+        filled = ObjectInk("obj-wall", "wall", regions=(((0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)),))
+        [reading] = read_marks([circle("ring", 50, 50, 10, page=page)], [filled], page, identify)
+        self.assertEqual(subjects(reading), {"obj-wall"}, "a body filling the circle is meant")
 
     def test_a_closed_outline_is_an_area_and_reads_the_same_way(self) -> None:
         [reading] = self.read(outline("box", 20, 50, 180, 93))
@@ -122,13 +138,14 @@ class DrawingMarkTests(unittest.TestCase):
         self.assertEqual(subjects(reading, targets_only=False), {"finish", "plywood"})
         self.assertTrue(all(hit.share < 0.6 and hit.coverage < 0.6 for hit in reading.hits))
 
-    def test_a_layer_half_in_the_circle_beside_a_circled_one_is_borderline(self) -> None:
-        [reading] = self.read(circle("big", 65, 75, 24))
+    def test_layers_at_the_rim_beside_a_meant_joist_are_borderline(self) -> None:
+        [reading] = self.read(circle("rim", 95, 77, 20))
         self.assertTrue(reading.ambiguous)
         self.assertEqual(reading.reason, BORDERLINE_HIT)
-        self.assertEqual(subjects(reading), {"finish"})
-        [plywood] = [hit for hit in reading.hits if hit.element_id == "plywood"]
-        self.assertTrue(plywood.borderline and not plywood.target)
+        self.assertEqual(subjects(reading), {"joist-2"})
+        rim = {hit.element_id for hit in reading.hits if hit.borderline}
+        self.assertEqual(rim, {"finish", "plywood"})
+        self.assertTrue(all(not hit.central for hit in reading.hits if hit.borderline))
 
     def test_a_circle_on_the_joint_of_two_things_names_both(self) -> None:
         # Centred where joist-1's top corner meets the finish's underside.
@@ -189,8 +206,8 @@ class DrawingMarkTests(unittest.TestCase):
                                               "ambiguous": True, "reason": NOTHING})
         targets = first[0].to_dict()["hits"]
         self.assertTrue(all(row["target"] for row in targets[:4]))
-        self.assertEqual(set(targets[0]), {"componentId", "elementId", "objectIds", "coverage", "share", "target",
-                                           "borderline"})
+        self.assertEqual(set(targets[0]), {"componentId", "elementId", "objectIds", "coverage", "share", "central",
+                                           "target", "borderline"})
 
 
 class SubjectTests(unittest.TestCase):
