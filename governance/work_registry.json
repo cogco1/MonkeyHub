@@ -173,6 +173,7 @@
             "apps/monkeyhub/web/test/modelSync.browser.mjs",
             "apps/monkeyhub/web/test/modelingOpen.browser.mjs",
             "apps/monkeyhub/web/test/presentationStyle.browser.mjs",
+            "apps/monkeyhub/web/test/proposalCard.test.ts",
             "apps/monkeyhub/web/test/publishWorkspace.browser.mjs",
             "apps/monkeyhub/web/test/pushPull.browser.mjs",
             "apps/monkeyhub/web/test/recipeTransfer.browser.mjs",
