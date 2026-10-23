@@ -23,7 +23,7 @@ from ..models import HubFailure
 from ..runtime.workers import project_key
 from .models import (
     CLOSED, DRAFT_FIELDS, PENDING, UNSETTLED, Actor, AttentionDraft, AttentionItem, AttentionState,
-    AttentionSummary, ProjectAttentionCount, StateChange, Suppression,
+    AttentionSummary, ProjectAttentionCount, Resolution, StateChange, Suppression,
 )
 
 # Every unsettled card stays; of those already closed, the newest this many.
@@ -206,7 +206,7 @@ class AttentionStore:
     def later(self, item_id: str, *, until: datetime | None = None) -> AttentionItem:
         """Put a card off: it stops counting, and comes back at ``until`` if one is given."""
 
-        return self._person(item_id, "later", {"open", "review"}, until=until)
+        return self._handle(item_id, "later", {"open", "review"}, until=until)
 
     def dismiss(self, item_id: str, *, days: int | None = None) -> AttentionItem:
         """Set a card aside, for ``days`` if given. A rule's card also quiets its rule for that target."""
@@ -220,7 +220,7 @@ class AttentionStore:
                     until=(now + timedelta(days=days or RULE_QUIET_DAYS)).isoformat()))
 
         until = None if days is None else self._clock() + timedelta(days=days)
-        return self._person(item_id, "dismissed", {"open", "review", "later"}, until=until, also=quiet)
+        return self._handle(item_id, "dismissed", {"open", "review", "later"}, until=until, also=quiet)
 
     def reopen(self, item_id: str) -> AttentionItem:
         """Bring back a card that was put off or set aside, and let its rule speak again."""
@@ -229,12 +229,46 @@ class AttentionStore:
             project.suppressions = [row for row in project.suppressions
                                     if (row.ruleId, row.targetRef) != (item.source.ruleId, item.source.targetRef)]
 
-        return self._person(item_id, None, {"later", "dismissed"}, also=unquiet)
+        return self._handle(item_id, _opened, {"later", "dismissed"}, also=unquiet)
+
+    # Carrying out an answer: the executor's bookkeeping ----------------------
+
+    def begin(self, item_id: str, option_id: str, *, by: Actor = "person") -> AttentionItem:
+        """Mark a card as being carried out with one of its answers; a second click then finds it working."""
+
+        return self._handle(item_id, "working", {"open", "review", "later"}, by=by, option_id=option_id)
+
+    def settle(self, item_id: str, resolution: Resolution) -> AttentionItem:
+        """The answer was carried out: the card is done, with what was chosen and how to take it back."""
+
+        def record(project: _Project, item: AttentionItem, now: datetime) -> None:
+            item.resolution = resolution.model_copy(deep=True)
+
+        return self._handle(item_id, "done", {"working"}, by=resolution.by, option_id=resolution.optionId,
+                            also=record)
+
+    def release(self, item_id: str, note: str) -> AttentionItem:
+        """The answer could not be carried out: the card goes back to where it was, saying why."""
+
+        def before(item: AttentionItem) -> AttentionState:
+            started = next((row for row in reversed(item.history) if row.to == "working"), None)
+            return started.from_ if started is not None and started.from_ in {"open", "review", "later"}                 else _opened(item)
+
+        return self._handle(item_id, before, {"working"}, by="machine", note=note)
+
+    def undone(self, item_id: str, *, by: Actor = "person", note: str | None = None) -> AttentionItem:
+        """A handled card's answer was taken back: the card asks again."""
+
+        def forget(project: _Project, item: AttentionItem, now: datetime) -> None:
+            item.resolution = None
+
+        return self._handle(item_id, _opened, {"done"}, by=by, note=note, also=forget)
 
     # Internals ---------------------------------------------------------------
 
-    def _person(self, item_id: str, to: AttentionState | None, allowed: set[str], *,
-                until: datetime | None = None,
+    def _handle(self, item_id: str, to: AttentionState | Callable[[AttentionItem], AttentionState],
+                allowed: set[str], *, by: Actor = "person", until: datetime | None = None,
+                option_id: str | None = None, note: str | None = None,
                 also: Callable[[_Project, AttentionItem, datetime], None] | None = None) -> AttentionItem:
         with self._locked():
             project = self._holding(item_id)
@@ -244,7 +278,7 @@ class AttentionStore:
                 raise HubFailure(409, "ATTENTION_STATE", f"This card is {shown.state}; that cannot be done to it now.")
 
             def apply(now: datetime) -> list[str]:
-                self._move(item, to or _opened(item), "person", now,
+                self._move(item, to(item) if callable(to) else to, by, now, note=note, option_id=option_id,
                            snoozed_until=until.isoformat() if until else None)
                 if also is not None:
                     also(project, item, now)

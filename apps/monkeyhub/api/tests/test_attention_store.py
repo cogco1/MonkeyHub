@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from monkeyhub_api.attention.models import AttentionDraft
+from monkeyhub_api.attention.models import AttentionDraft, Resolution
 from monkeyhub_api.attention.routes import attention_router
 from monkeyhub_api.attention.store import RETAIN_CLOSED, AttentionStore, runtime_id
 from monkeyhub_api.models import HubFailure
@@ -183,6 +183,31 @@ class AttentionStoreTests(unittest.TestCase):
         with self.assertRaises(HubFailure) as missing:
             self.store.get("att_" + "0" * 32)
         self.assertEqual(missing.exception.error.code, "ATTENTION_NOT_FOUND")
+
+    def test_an_answer_is_carried_out_once_and_can_be_taken_back(self):
+        card = self.store.upsert("thi-hemp", self.project_dir, ab_draft()).id
+        self.store.later(card)
+        self.assertEqual(self.store.begin(card, "b").state, "working")
+        with self.assertRaises(HubFailure, msg="a second click finds it working"):
+            self.store.begin(card, "a")
+        self.assertEqual(self.store.summary().working, 1)
+        self.assertEqual(self.store.release(card, "工作区还有没记录的修改").state, "later",
+                         "a failed answer leaves the card where it was")
+
+        self.store.begin(card, "b")
+        undo = {"action": {"commandId": "design.go_to_step", "args": {"runId": "run-a"}},
+                "precondition": {"currentRunId": "run-b"}}
+        done = self.store.settle(card, Resolution(optionId="b", by="person", at=self.clock.now.isoformat(),
+                                                  receipt={"runId": "run-b"}, undo=undo))
+        self.assertEqual((done.state, done.resolution.optionId), ("done", "b"))
+        self.assertEqual(self.open_store().get(card).resolution.undo.action.args, {"runId": "run-a"})
+        self.assertEqual([(row.to, row.optionId) for row in done.history[-2:]], [("working", "b"), ("done", "b")])
+
+        again = self.store.undone(card, note="回到 V16")
+        self.assertEqual((again.state, again.resolution), ("open", None))
+        self.assertEqual(again.history[-1].note, "回到 V16")
+        with self.assertRaises(HubFailure):
+            self.store.undone(card)
 
     def test_a_failed_save_changes_nothing(self):
         card = self.store.upsert("thi-hemp", self.project_dir, ab_draft()).id
