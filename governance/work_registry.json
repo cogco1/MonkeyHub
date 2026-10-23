@@ -109,6 +109,26 @@
             "docs/architecture/repository-layout.md"
           ],
           "depends_on": []
+        },
+        {
+          "id": "executor",
+          "status": "active",
+          "branch": "claude/300-attention-executor",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-attention-executor",
+          "base_ref": "0f1bbf3613a69593e3811dfb1047348d4029bb15",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Step 1-2 of the three-channel shell, on top of GH-300/attention-store: the executor that runs a card's answer as the person (Continue and its undo, archive and restore, combine, permission and suggestion answers, a reply to the conversation, update, acknowledge) and the producers v1 as pure functions (results, permissions, suggestions, design-loop questions, operations, updates). Calling them from the Hub's events waits for GH-185 to release runtime/* and chat/*.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/attention/actions.py",
+            "apps/monkeyhub/api/monkeyhub_api/attention/producers.py",
+            "apps/monkeyhub/api/tests/test_attention_executor.py",
+            "apps/monkeyhub/api/tests/test_attention_producers.py"
+          ],
+          "depends_on": []
         }
       ]
     }
