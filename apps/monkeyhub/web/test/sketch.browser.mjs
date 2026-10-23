@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 import rhino3dm from "rhino3dm";
+import { cmd } from "./commandLocator.mjs";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
 const cacheDir = await mkdtemp(path.join(tmpdir(), "studio-sketch-axes-"));
@@ -243,7 +244,7 @@ try {
   const start = await project([0, 0, 0]), lineEnd = await project([3, 0, 0]), bend = await project([3, 2, 0]);
   const drawingInput = page.locator(".sketch-entry input");
   await page.keyboard.press("l");
-  assert.equal(await page.getByRole("button", { name: "Line", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal(await cmd(page, "draft.tools.line").getAttribute("aria-pressed"), "true");
   await page.mouse.click(...start);
   await page.mouse.move(...lineEnd);
   await drawingInput.fill("3"); await drawingInput.press("Enter");
@@ -293,8 +294,8 @@ try {
   assert.ok(Math.abs(openArc.profile[16][1] + 0.75) < 1e-6);
   assert.notDeepEqual(openArc.profile[0], openArc.profile.at(-1));
 
-  await page.getByRole("button", { name: "More tools", exact: true }).click();
-  await page.getByRole("button", { name: "Freehand", exact: true }).click();
+  await cmd(page, "view.menu.model_tools_more").click();
+  await cmd(page, "draft.tools.freehand").click();
   await page.mouse.move(...start); await page.mouse.down();
   await page.mouse.move(...await project([1, 0.5, 0]), { steps: 5 });
   await page.mouse.move(...await project([2, -0.5, 0]), { steps: 5 });
@@ -335,10 +336,10 @@ try {
   await page.mouse.move(...start); await page.mouse.down();
   await page.mouse.move(...lineEnd); await page.keyboard.press("Escape"); await page.mouse.up();
   assert.equal(await page.evaluate(() => window.submitted.length), 3);
-  await page.getByRole("button", { name: "Line", exact: true }).click();
+  await cmd(page, "draft.tools.line").click();
   await page.mouse.click(...start); await page.mouse.move(...lineEnd);
-  await page.getByRole("button", { name: "More tools", exact: true }).click();
-  await page.getByRole("button", { name: "2-point arc", exact: true }).click();
+  await cmd(page, "view.menu.model_tools_more").click();
+  await cmd(page, "draft.tools.arc").click();
   assert.equal(await page.evaluate(() => window.previewGroup?.parent === null), true);
   assert.equal(await page.evaluate(() => window.submitted.length), 3);
   await page.mouse.click(...start); await page.mouse.click(...lineEnd);
@@ -346,21 +347,21 @@ try {
   await page.mouse.move(...arcCrown); await page.mouse.click(...arcCrown);
   await page.waitForFunction(() => window.submitted.length === 4);
   assert.equal(await page.evaluate(() => window.submitted[3].closed), false, "a third click finishes the open arc");
-  await page.getByRole("button", { name: "Line", exact: true }).click();
+  await cmd(page, "draft.tools.line").click();
   await page.mouse.click(...start); await page.mouse.dblclick(...lineEnd);
   await page.waitForFunction(() => window.submitted.length === 5);
   assert.equal(await page.evaluate(() => window.submitted[4].profile.length), 2, "double-click ends one line without adding another start or duplicate point");
-  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await cmd(page, "draft.tools.select").click();
   await page.evaluate(() => { window.submitted = []; window.submissionCurrent = []; });
   console.log("PASS open Line / signed 2-point arc / held Freehand: exact numbers, no implicit face, zero pointer React commits, one completion and cancellation");
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await cmd(page, "draft.tools.rectangle").click();
   const anchor = await page.evaluate(() => window.projectPoint([0, 0, 0]));
   const corner = await page.evaluate(() => window.projectPoint([3, 2, 0]));
   await page.evaluate(() => { window.previewBounds = null; });
   await page.mouse.click(...anchor);
   await page.waitForFunction(() => document.querySelector(".stage-sketch")?.dataset.phase === "profile");
-  assert.equal(await page.getByRole("button", { name: "Undo model", exact: true }).isDisabled(), true);
-  assert.equal(await page.getByRole("button", { name: "Redo model", exact: true }).isDisabled(), true);
+  assert.equal(await cmd(page, "draft.tools.undo").isDisabled(), true);
+  assert.equal(await cmd(page, "draft.tools.redo").isDisabled(), true);
   await page.mouse.move(...corner);
   await page.waitForFunction(() => window.previewBounds !== null);
   const burstFrames = async (point, frames = 20) => page.evaluate(async ({ point, frames }) => {
@@ -421,8 +422,8 @@ try {
   }, top);
   await page.waitForFunction(() => window.submitted.length === 1);
   assert.equal(await page.evaluate(() => window.previewGroup.disposals), 6, "completion disposes three geometries/materials once");
-  assert.equal(await page.getByRole("button", { name: "Undo model", exact: true }).isDisabled(), false);
-  assert.equal(await page.getByRole("button", { name: "Redo model", exact: true }).isDisabled(), false);
+  assert.equal(await cmd(page, "draft.tools.undo").isDisabled(), false);
+  assert.equal(await cmd(page, "draft.tools.redo").isDisabled(), false);
   const [action] = await page.evaluate(() => window.submitted);
   const expectedProfile = [[0, 0], [3, 0], [3, 2], [0, 2]];
   action.profile.forEach((point, index) => point.forEach((value, axis) =>
@@ -437,7 +438,7 @@ try {
   await page.keyboard.press("Space");
   await page.waitForFunction(() => document.querySelector(".stage-sketch") === null);
   await page.keyboard.press("c");
-  await page.getByRole("button", { name: "Circle", exact: true }).waitFor();
+  await cmd(page, "draft.tools.circle").waitFor();
   const circleCenter = await page.evaluate(() => window.projectPoint([4, 0, 0]));
   const circleEdge = await page.evaluate(() => window.projectPoint([5.5, 0, 0]));
   await page.mouse.click(...circleCenter);
@@ -481,9 +482,9 @@ try {
   assert.equal(polygon.height, 1.5);
 
   // A vertical rectangle remains local 2D plus its explicit world frame.
-  await page.getByRole("button", { name: "More tools", exact: true }).click();
+  await cmd(page, "view.menu.model_tools_more").click();
   await page.getByRole("combobox", { name: "Drawing plane" }).selectOption("xz");
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await cmd(page, "draft.tools.rectangle").click();
   const verticalCorner = await page.evaluate(() => window.projectPoint([2, 0, 3]));
   await page.mouse.click(...anchor);
   await page.mouse.move(...verticalCorner);
@@ -519,10 +520,10 @@ try {
   await page.evaluate(() => { window.viewport.current.snapOnModel = window.originalSnap; });
   await page.keyboard.press("Space");
   for (const key of ["p", "m", "q", "s"]) await page.keyboard.press(key);
-  await page.getByRole("button", { name: "Copy", exact: true }).click();
+  await cmd(page, "draft.tools.copy").click();
   assert.deepEqual(await page.evaluate(() => window.toolChanges.filter((tool) => tool !== "select").slice(-5)), ["pushPull", "move", "rotate", "scale", "copy"]);
-  assert.equal(await page.getByRole("button", { name: "Undo model", exact: true }).isEnabled(), true);
-  assert.equal(await page.getByRole("button", { name: "Redo model", exact: true }).isEnabled(), true);
+  assert.equal(await cmd(page, "draft.tools.undo").isEnabled(), true);
+  assert.equal(await cmd(page, "draft.tools.redo").isEnabled(), true);
   await page.keyboard.press("r");
   await page.mouse.click(...anchor);
   await page.waitForFunction(() => document.querySelector(".stage-sketch")?.dataset.phase === "profile");
@@ -549,7 +550,7 @@ try {
   });
   assert.deepEqual(cancel, { lateCalls: 0, parent: false, disposals: 6, submissions: 5 });
 
-  await page.getByRole("button", { name: "More tools", exact: true }).click();
+  await cmd(page, "view.menu.model_tools_more").click();
   await page.getByRole("combobox", { name: "Drawing plane" }).selectOption("xy");
   const startPoint = await page.evaluate(() => window.projectPoint([0, 0, 0]));
   await page.mouse.click(...startPoint);
@@ -597,11 +598,11 @@ try {
   await page.keyboard.up("Shift");
   // Tool and plane changes also cancel the pending frame before clearing.
   for (const change of ["tool", "plane"]) {
-    if (change === "plane") await page.getByRole("button", { name: "More tools", exact: true }).click();
+    if (change === "plane") await cmd(page, "view.menu.model_tools_more").click();
     await page.mouse.move(...negativeCorner);
     const result = await page.evaluate(async (change) => {
       window.moveBurst([[650, 400]]);
-      if (change === "tool") document.querySelector('button[aria-label="Circle"]').click();
+      if (change === "tool") document.querySelector('[data-command="draft.tools.circle"]').click();
       else {
         const select = document.querySelector('select[aria-label="Drawing plane"]');
         select.value = "yz";
@@ -649,9 +650,9 @@ try {
 
   // Measure the real pointer -> snap -> RAF -> preview path on loaded meshes.
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "More tools", exact: true }).click();
+  await cmd(page, "view.menu.model_tools_more").click();
   await page.getByRole("combobox", { name: "Drawing plane" }).selectOption("xy");
-  await page.getByRole("button", { name: "Line", exact: true }).click();
+  await cmd(page, "draft.tools.line").click();
   await page.mouse.click(...await project([0, 0, 0]));
   await page.mouse.move(...await project([2, 1, 0]));
   await page.evaluate(async () => {
@@ -663,7 +664,7 @@ try {
   assert.deepEqual(await page.evaluate(() => ({ tool: window.interaction.sketch.tool, phase: window.interaction.sketch.phase,
     anchor: window.interaction.sketch.anchor, press: window.interaction.press, preview: window.previewSpec })),
     { tool: "line", phase: "idle", anchor: null, press: null, preview: null }, "source replacement invalidates the old path and its scheduled paint");
-  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await cmd(page, "draft.tools.select").click();
   const hoverPoint = await page.evaluate(() => window.projectPoint([31, 29, 0]));
   await page.mouse.move(...hoverPoint);
   await page.waitForFunction(() => window.hoverGroup?.visible);
@@ -768,13 +769,13 @@ try {
   const cancelledHover = await page.evaluate(async (point) => {
     const canvas = document.querySelector("canvas");
     canvas.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: point[0], clientY: point[1] }));
-    document.querySelector('button[aria-label="Rectangle"]').click();
+    document.querySelector('[data-command="draft.tools.rectangle"]').click();
     const renders = window.hoverRenders;
     await new Promise(requestAnimationFrame);
     return { late: window.hoverRenders - renders, visible: window.hoverGroup.visible, phase: window.interaction.phase };
   }, hoverPoint);
   assert.deepEqual(cancelledHover, { late: 0, visible: false, phase: "armed" });
-  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await cmd(page, "draft.tools.select").click();
   await page.mouse.move(hoverPoint[0] + 0.2, hoverPoint[1]);
   await page.waitForFunction(() => window.hoverGroup.visible);
   await page.evaluate(() => window.viewport.current.setLayerVisibility(0, false));
@@ -823,7 +824,7 @@ try {
   });
   assert.deepEqual(draftLifecycle, { marked:1,restoredMaterials:true,same:true,updated:true,hiddenDuring:[false,false],
     sourceRestored:[true,false],detached:true,disposed:12,remaining:0,stale:0,lineSurface:false });
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await cmd(page, "draft.tools.rectangle").click();
   const buildingAnchor = await page.evaluate(() => window.projectPoint([27, 27, 0]));
   const buildingCorner = await page.evaluate(() => window.projectPoint([31, 29, 0]));
   await page.mouse.click(...buildingAnchor);

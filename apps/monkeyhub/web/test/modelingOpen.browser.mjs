@@ -25,6 +25,7 @@ import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 import { createProjectWorkspaceFixture } from "./projectWorkspaceFixture.mjs";
 import { workspaceFixture } from "./workspaceFixture.mjs";
+import { cmd } from "./commandLocator.mjs";
 
 const webRoot = path.resolve(process.env.MODELING_OPEN_WEB_ROOT ?? fileURLToPath(new URL("..", import.meta.url)));
 const latency = Number(process.env.MODELING_OPEN_LATENCY_MS ?? 200);
@@ -150,10 +151,10 @@ try {
   assert.equal(await page.locator(".editing-base__notice", { hasText: STALE }).count(), 1, "the reason is said once");
   assert.equal(await page.locator(".refusal__card").count(), 0, "a stale base is not refused");
   assert.equal(await page.getByRole("button", { name: "Retry", exact: true }).count(), 0, "nothing about a stale base is transient");
-  const rectangle = page.getByRole("button", { name: "Rectangle", exact: true });
+  const rectangle = cmd(page, "draft.tools.rectangle");
   await rectangle.click();
   assert.equal(await rectangle.getAttribute("aria-pressed"), "false", "no drawing tool arms on a read-only view");
-  assert.equal(await page.getByRole("button", { name: "Select", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal(await cmd(page, "draft.tools.select").getAttribute("aria-pressed"), "true");
   const cameraAt = () => page.evaluate(() => window.readRuntime?.()?.camera?.position?.toArray().map((value) => value.toFixed(3)).join());
   const orbit = await cameraAt();
   const canvas = await page.locator(".viewport-canvas").first().boundingBox();
@@ -170,7 +171,7 @@ try {
   assert.deepEqual(writes().slice(writesBefore), [], "opening and inspecting the view writes nothing");
   assert.deepEqual(draft.current, position("m-old"), "the saved position is kept");
   const readsBefore = fixture.requests.length;
-  await page.getByRole("button", { name: "Return to default editing base", exact: true }).click();
+  await cmd(page, "design.go_to_step.default_base").click();
   await page.locator(".editing-base__notice", { hasText: STALE }).waitFor({ state: "detached" });
   assert.equal(draft.current?.runId, "m-s1", "only the explicit return moves the saved position, to the head Stage");
   const stateReads = fixture.requests.slice(readsBefore).filter((row) => row.name === "/api/state");
@@ -182,7 +183,7 @@ try {
   await page.goto(`${origin}/?lang=en`);
   await page.locator(".refusal__card").waitFor();
   assert.equal(await page.locator(".refusal__title").innerText(), "Could not reopen the selected editing version");
-  assert.equal(await page.locator(".refusal__card").getByRole("button", { name: "Retry", exact: true }).count(), 1);
+  assert.equal(await cmd(page.locator(".refusal__card"), "model.open.retry").count(), 1);
   assert.deepEqual(errors, []);
   console.log("Stale published base: read-only view, reason once, continue from the default base; broken run still refused PASS");
   if (unexpected.length) console.log(JSON.stringify({ unserved: [...new Set(unexpected)] }));

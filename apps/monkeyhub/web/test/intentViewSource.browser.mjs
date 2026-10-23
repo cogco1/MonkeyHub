@@ -1,4 +1,5 @@
 import { workspaceFixture } from "./workspaceFixture.mjs";
+import { cmd } from "./commandLocator.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer as createHttpServer } from "node:http";
@@ -103,10 +104,10 @@ async function until(read, accepts, message, timeout = 30_000) {
 }
 async function step(name, action) { phase = name; await action(); passed.push(name); console.log(`PASS ${name}`); }
 function versionButton(option) {
-  return page.locator(`[data-working-copy="${group.groupId}"]`).getByRole("button", { name: new RegExp(`^View ${option.label}`), includeHidden: true });
+  return cmd(page.locator(`[data-working-copy="${group.groupId}"]`), "view.old_results.open", { arg: option.id, includeHidden: true });
 }
 async function openVersions() {
-  const button = page.locator(".stage__versions-toggle");
+  const button = cmd(page.locator(".project-bar"), "design.go_to_step.versions", { includeHidden: true });
   if (await button.getAttribute("aria-expanded") !== "true") await button.click();
 }
 // Observe the real mounted App state; the retired Settings/Composer launcher
@@ -140,10 +141,9 @@ async function viewState() {
 async function openDocument() {
   await page.getByTestId("workspace-board").click();
   await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
-  const button = page.getByRole("button", { name: "Project documents", exact: true });
+  const button = cmd(page, "board.add_document_page.toggle_list");
   if (await button.getAttribute("aria-expanded") !== "true") await button.click();
-  await page.locator(".monkeyboard-source").filter({ hasText: "edit-page.png" })
-    .getByRole("button", { name: "Open in MonkeyDiagram", exact: true }).click();
+  await cmd(page.locator(".monkeyboard-source").filter({ hasText: "edit-page.png" }), "view.open_document.page").click();
   await page.locator('.document-viewport[data-ready="true"]').waitFor();
   assert.equal(await page.getByLabel("Source document", { exact: true }).inputValue(), documentSha);
 }
@@ -170,7 +170,7 @@ async function sendText(utterance, clarification = false, expectedToken = null) 
   heldIntent = held;
   if (await page.locator(".composer input").count()) {
     await page.locator(".composer input").fill(utterance);
-    await page.locator(".composer button[type=submit]").click();
+    await cmd(page.locator(".composer"), "candidate.modify_existing.propose").click();
   } else {
     await page.evaluate((text) => { void window.__intentViewSource.propose(text); }, utterance);
   }
@@ -400,7 +400,7 @@ try {
     await view(optionB);
     assert.equal(group.selectedOptionId, "A"); assert.deepEqual(selections, []);
     assert.equal(await editingBase().getAttribute("data-source-match"), "different");
-    await page.locator(".stage__versions-toggle").click();
+    await cmd(page.locator(".project-bar"), "design.go_to_step.versions").click();
     assert.equal(await page.locator("#stage-versions-panel").count(), 0);
     for (const width of [1440, 800, 390]) {
       await page.setViewportSize({ width, height: 900 });
@@ -415,11 +415,11 @@ try {
       });
       assert.ok(layout.left >= 0 && layout.right <= width + 1 && layout.bottom <= 900 && !layout.overflow && !layout.overlap,
         `Source context must remain visible without covering modeling controls: ${JSON.stringify(layout)}`);
-      assert.equal(await editingBase().getByRole("button", { name: "Continue from here", exact: true }).isVisible(), true);
+      assert.equal(await cmd(editingBase(), "design.go_to_step.continue").isVisible(), true);
       await page.screenshot({ path: path.join(screenshots, `context-${width}.png`) });
     }
     await page.setViewportSize({ width: 1440, height: 900 });
-    await editingBase().getByRole("button", { name: "Continue from here", exact: true }).click();
+    await cmd(editingBase(), "design.go_to_step.continue").click();
     await until(() => editingBase().getAttribute("data-source-match"), (value) => value === "same", "Continue B did not bind B");
     await ready(optionB); assert.equal(group.selectedOptionId, "B"); assert.equal(selections.length, 1);
   });
@@ -485,15 +485,15 @@ try {
     await openDocument();
     assert.equal(await page.locator(".document-model-source").getAttribute("data-model-source-status"), "ready");
     await page.locator("#document-comment").fill("Apply the drawing annotation to B");
-    await page.locator(".document-references summary").click();
+    await cmd(page.locator(".document-references"), "view.disclosure.document_references").click();
     await page.locator(".document-reference").first().locator('input[type="checkbox"]').first().check();
     await page.locator(".document-reference input[type=text]").fill("Use this page for alignment");
     await page.evaluate(() => { window.__intentViewCalls = []; });
     const rendersBeforeDocument = await page.evaluate(() => window.__documentVisualRenders);
-    await page.getByRole("button", { name: "Submit page note", exact: true }).click();
+    await cmd(page, "markup.hand_to_ai.submit_page_note").click();
     await until(() => comments.length, (count) => count === 1, "The document POST did not reach the real client");
     await page.getByText("Which height should the blue drawing mark use?", { exact: true }).waitFor();
-    await until(() => page.getByRole("button", { name: "Submit page note", exact: true }).isEnabled(), Boolean, "The saved-page exchange did not finish");
+    await until(() => cmd(page, "markup.hand_to_ai.submit_page_note").isEnabled(), Boolean, "The saved-page exchange did not finish");
     const documentIntent = intents.at(-1);
     assert.equal(documentIntent.documentVisuals.length, 2);
     assert.deepEqual(documentIntent.modelSource, sourceB);
@@ -573,11 +573,11 @@ try {
     const delayed = { requested: deferred(), release: deferred(), token: crossRunToken };
     heldDocument = delayed;
     await page.locator("#document-comment").fill("Check B's marked height while I inspect C");
-    await page.getByRole("button", { name: "Submit page note", exact: true }).click();
+    await cmd(page, "markup.hand_to_ai.submit_page_note").click();
     await Promise.race([delayed.requested.promise, sleep(12_000).then(() => assert.fail("The document request was not held"))]);
     await page.getByTestId("workspace-arch").click();
     await openVersions();
-    await page.locator(".vcard__export").filter({ hasText: "option-C.3dm" }).click();
+    await cmd(page, "view.old_results.open", { arg: sourceC.assetSha256 }).click();
     await until(snapshot, (value) => value.fileName === "option-C.3dm" && !value.loading,
       "The cross-run C model was not accepted by the actual viewer");
     assert.equal(group.selectedOptionId, "B");
@@ -592,7 +592,7 @@ try {
     assert.deepEqual([...new Set(await inactiveNotes.evaluateAll((nodes) => nodes.map((node) => node.dataset.inactiveReason)))], ["viewing"]);
     assert.equal(await inactiveNotes.first().innerText(), "This proposal applies to the editing base, not to the version on screen. " +
       "Return to the editing base to apply it, or continue from here and propose again.");
-    assert.equal(await page.locator(".card--proposal").first().getByRole("button", { name: "Apply", exact: true }).isDisabled(), true,
+    assert.equal(await cmd(page.locator(".card--proposal").first(), "candidate.modify_existing.apply").isDisabled(), true,
       "Viewing C keeps B's proposals disabled");
     await until(() => frameReads.at(-1), (run) => run === sourceC.runId,
       "The open document must recalibrate tracing against the displayed cross-run C frame");
@@ -605,7 +605,7 @@ try {
     assert.deepEqual(await viewState(), beforeQuestion);
     assert.deepEqual(await page.evaluate(() => window.__intentViewCalls), [], "B's late document question must not paint C");
     await page.locator(".composer input").fill("The drawing's height should be 0.2");
-    assert.equal(await page.locator(".composer button[type=submit]").isEnabled(), true,
+    assert.equal(await cmd(page.locator(".composer"), "candidate.modify_existing.propose").isEnabled(), true,
       "The document continuation must enable the actual Composer despite the cross-run viewport");
     const readCount = () => requests.filter((row) => row.method === "GET" && row.path.startsWith("/api/document")).length;
     const readsBefore = readCount(), rendersBefore = await page.evaluate(() => window.__documentVisualRenders);
@@ -627,7 +627,7 @@ try {
     // Keep the document question open, then explicitly change just the asset
     // SHA within the original run/state. The old B token must not migrate to A.
     await view(optionA);
-    await editingBase().getByRole("button", { name: "Continue from here", exact: true }).click();
+    await cmd(editingBase(), "design.go_to_step.continue").click();
     await until(() => editingBase().getAttribute("data-source-match"), (value) => value === "same", "Continue A did not finish");
     await ready(optionA);
     assert.equal(group.selectedOptionId, "A"); assert.equal(selections.length, 2);
@@ -642,8 +642,8 @@ try {
   await step("switching local files starts fresh Undo/Redo without restoring another file's camera or hits", async () => {
     // The picker also takes .skp now; the .3dm path is what this step exercises.
     const localInput = page.locator('input[type="file"][accept*=".3dm"]');
-    const undo = page.locator(".viewtools").getByRole("button", { name: "Undo mark", exact: true });
-    const redo = page.locator(".viewtools").getByRole("button", { name: "Redo", exact: true });
+    const undo = cmd(page.locator(".viewtools"), "view.markup_tools.undo");
+    const redo = cmd(page.locator(".viewtools"), "view.markup_tools.redo");
     const modelRequests = () => requests.filter((row) => row.path === "/api/model-annotations").length;
     const requestsBefore = modelRequests();
     const currentInk = () => page.evaluate(() => window.__modelInkSnapshot);
@@ -657,10 +657,10 @@ try {
     const drawLine = async () => {
       // #352: tracing paper is in the tools' own More.
       if (await page.locator("#annotation-tools").count() === 0) {
-        await page.locator('button[aria-controls="model-tools-more"]').click();
-        await page.locator('button[aria-controls="annotation-tools"]').click();
+        await cmd(page, "view.menu.model_tools_more").click();
+        await cmd(page, "view.markup_tools.tracing_paper").click();
       }
-      await page.locator("#annotation-tools").getByRole("button", { name: "╱ Line", exact: true }).click();
+      await cmd(page.locator("#annotation-tools"), "view.markup_tools.line").click();
       const overlay = page.locator('canvas.annotate[data-armed="true"]');
       const box = await overlay.boundingBox(); assert.ok(box);
       await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.5);
@@ -688,9 +688,9 @@ try {
     await redo.click(); assert.deepEqual(await currentInk(), [second], "Redo restores only the current file's full stroke snapshot");
     assert.equal((await currentInk()).some((ink) => ink.id === first.id), false);
     // #577: 清空批注 takes every mark at once, and one Undo brings them all back.
-    const clearAll = page.locator("#annotation-tools").getByRole("button", { name: "Clear annotations", exact: true });
+    const clearAll = cmd(page.locator("#annotation-tools"), "markup.clear");
     if (await page.locator('canvas.annotate[data-armed="true"]').count() === 0) {
-      await page.locator("#annotation-tools").getByRole("button", { name: "╱ Line", exact: true }).click();
+      await cmd(page.locator("#annotation-tools"), "view.markup_tools.line").click();
     }
     const paper = await page.locator('canvas.annotate[data-armed="true"]').boundingBox(); assert.ok(paper);
     await page.mouse.move(paper.x + paper.width * 0.4, paper.y + paper.height * 0.3);
