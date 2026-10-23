@@ -23,6 +23,7 @@ from monkeyhub_api.attention.store import AttentionStore, runtime_id
 from monkeyhub_api.models import ChatDetail, HubFailure
 from monkeyhub_api.runtime.models import OperationRecord
 from monkeyhub_api.runtime.worker_http import HttpResult
+from monkeyhub_api.updates.models import UpdateStatus
 
 NOW = datetime(2026, 10, 23, 9, 0, tzinfo=timezone.utc)
 
@@ -161,6 +162,20 @@ class AttentionHubTests(unittest.TestCase):
         chat.messages.append(chat.messages[0].model_copy(update={"id": "u2"}))
         self.hub.refresh(self.runtimes.runtime.runtime_id)
         self.assertEqual(self.store.get(card.id).state, "superseded")
+
+    def test_a_prepared_update_waits_in_the_hubs_own_scope(self):
+        status = UpdateStatus.model_validate({
+            "currentVersion": "0.1.980", "currentRevision": None, "mode": "local", "state": "ready", "canApply": True,
+            "prepared": {"targetVersion": "11230e0e1234-desktop", "targetRevision": "a" * 40, "changedBytes": 1,
+                         "changedFiles": 1, "removedFiles": 0, "reusedFiles": 0}})
+        updates = SimpleNamespace(status=lambda: status, apply=lambda: None)
+        hub = AttentionHub(self.store, self.runtimes, self.chats, updates, hub_dir=self.project_dir + "-hub")
+        hub.refresh_hub()
+        summary = self.store.summary()
+        self.assertEqual((summary.hub.open, summary.projects), (1, []))
+        card, = self.store.items()
+        self.assertEqual((card.projectId, card.dedupeKey), ("monkeyhub", "update:11230e0e1234-desktop"))
+        self.assertIs(self.store.check.__name__, "check_card", "the Hub keeps only cards it runs as written")
 
     def test_the_hubs_events_bring_cards_up_to_date_and_say_so(self):
         seen = []

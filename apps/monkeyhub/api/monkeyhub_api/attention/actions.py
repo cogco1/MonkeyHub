@@ -1,8 +1,9 @@
 """Carrying out the answer a person chose on a card, as that person, and taking it back.
 
 Every answer is one command of the command tree, and the executor knows a fixed
-set of them (``COMMANDS``); a card naming any other is refused before anything
-runs. A project change goes through the Hub's own forward without a chat
+set of them (``COMMANDS``), each with whether it can be taken back; a command
+that only opens something is one of ``OPENS``. ``check_card`` holds every card
+to that before the store keeps it, whoever wrote the card. A project change goes through the Hub's own forward without a chat
 header, so the Runtime reads it as the person's click and the operation journal
 admits it like any other. Chat answers go to the chat store, Hub actions to the
 Hub. The machine never answers for a person here: "all as recommended" runs only
@@ -21,7 +22,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..models import ChatPermissionRequest, ChatPostRequest, ChatSuggestionSelection, HubFailure
 from .models import (
-    Actor, ArgValue, AttentionDraft, AttentionItem, AttentionOption, AttentionSource, CommandRef, Resolution, UndoSpec,
+    CLOSED, UNSETTLED, Actor, ArgValue, AttentionDraft, AttentionItem, AttentionOption, AttentionSource, CommandRef,
+    Resolution, UndoSpec,
 )
 from .store import AttentionStore
 
@@ -96,6 +98,8 @@ class _Run:
     precondition: Mapping[str, ArgValue] = field(default_factory=dict)
     # What the person wrote on the card with this answer.
     note: str | None = None
+    # Taking an answer back rather than carrying one out.
+    undoing: bool = False
     sent: int = 0
 
     def studio(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> dict:
@@ -128,18 +132,40 @@ def _runs(args: Mapping[str, ArgValue]) -> list[str]:
     return value
 
 
+def _continued(previous: str | None, branch: object, target: str) -> _Done:
+    # A head that no entry named is not put back: returning there is another act.
+    undo = None if not previous or previous == target else UndoSpec(
+        action=CommandRef(commandId="design.go_to_step", args={"runId": previous, "branchId": branch}),
+        precondition={"currentRunId": target})
+    return _Done({"runId": target, "previousRunId": previous}, undo)
+
+
 def _go_to_step(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
-    """Continue onto an exact run, compare-and-swapped against the position read just before (continueUndo.ts)."""
+    """Continue onto an exact run, compare-and-swapped against the position read just before (continueUndo.ts).
+
+    Current already on the run means an earlier attempt landed before the Hub
+    could record it: it is done, with the undo that attempt saw, and nothing is
+    written again.
+    """
 
     target, branch = _text(args, "runId"), args.get("branchId")
     for attempt in range(1, 4):
         position = run.studio("GET", "/api/working-draft")
         current = position.get("current") or {}
+        if current.get("runId") == target:
+            if run.undoing:
+                return _Done()
+            seen = next((step.facts for step in reversed(run.item.history)
+                         if step.to == "working" and step.facts.get("targetRunId") == target), {})
+            return _continued(seen.get("previousRunId"), seen.get("previousBranchId"), target)
         if "currentRunId" in run.precondition and current.get("runId") != run.precondition["currentRunId"]:
             raise _Moved(current.get("runId"))
         if position.get("localDraft"):
             raise HubFailure(409, "DESIGN_TREE_UNSYNCED_EDITS",
                              "This project has model edits that are not recorded yet; record them, then choose again.")
+        if not run.undoing:
+            run.executor.store.progress(run.item.id, {"targetRunId": target, "previousRunId": current.get("runId"),
+                                                      "previousBranchId": current.get("branchId")})
         try:
             run.studio("PUT", "/api/working-draft", {
                 "projectId": run.item.projectId, "runId": target,
@@ -149,13 +175,7 @@ def _go_to_step(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
             if exc.error.code != "WORKING_DRAFT_STALE" or attempt == 3:
                 raise
             continue
-        previous = current.get("runId")
-        # A head that no entry named is not put back: returning there is another act.
-        undo = None if not previous or previous == target else UndoSpec(
-            action=CommandRef(commandId="design.go_to_step",
-                              args={"runId": previous, "branchId": current.get("branchId")}),
-            precondition={"currentRunId": target})
-        return _Done({"runId": target, "previousRunId": previous}, undo)
+        return _continued(current.get("runId"), current.get("branchId"), target)
     raise AssertionError("unreachable")
 
 
@@ -167,15 +187,21 @@ def _review(action: Literal["archive", "restore"], reverse: str) -> Callable[[_R
                 run.studio("POST", "/api/candidate-reviews", {
                     "projectId": run.item.projectId, "subjectKind": "candidate", "subjectRef": run_id, "action": action})
                 done.append(run_id)
-        except HubFailure:
+        except HubFailure as exc:
             # All of them or none: put back the ones already judged before reporting.
+            stuck = []
             for run_id in done:
                 try:
                     run.studio("POST", "/api/candidate-reviews", {
                         "projectId": run.item.projectId, "subjectKind": "candidate", "subjectRef": run_id,
                         "action": "restore" if action == "archive" else "archive"})
                 except HubFailure:
-                    pass
+                    stuck.append(run_id)
+            if stuck:
+                run.executor.partly_done(run.item, stuck, archived=action == "archive")
+                raise HubFailure(409, "ATTENTION_PARTLY_DONE", (
+                    f"{exc.error.code}: {exc.error.detail} These could not be put back and stay "
+                    f"{'archived' if action == 'archive' else 'restored'}: {', '.join(stuck)}.")[:1200]) from exc
             raise
         return _Done({"runIds": runs}, UndoSpec(action=CommandRef(commandId=reverse, args={"runIds": runs})))
     return review
@@ -227,25 +253,51 @@ def _acknowledge(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
     return _Done(undo=UndoSpec(action=CommandRef(commandId="attention.reopen")))
 
 
+@dataclass(frozen=True)
+class Command:
+    run: Callable[[_Run, Mapping[str, ArgValue]], _Done]
+    # Whether the executor itself can take it back: only these may be marked
+    # undoable on a card, and only these run in "all as recommended".
+    undoable: bool = False
+
+
 # The answers a card can carry, by command id. Every one is a command of the
 # command tree; the Hub refuses a card's answer that is not here.
-COMMANDS: dict[str, Callable[[_Run, Mapping[str, ArgValue]], _Done]] = {
-    "design.go_to_step": _go_to_step,
-    "candidate.review.archive": _review("archive", "candidate.restore"),
-    "candidate.restore": _review("restore", "candidate.review.archive"),
-    "candidate.combine": _combine,
-    "chat.answer_permission": _answer_permission,
-    "attention.answer_guess": _answer_guess,
-    "chat.send_message": _send_message,
-    "hub.update_apply": _update_apply,
-    "attention.acknowledge": _acknowledge,
+COMMANDS: dict[str, Command] = {
+    "design.go_to_step": Command(_go_to_step, undoable=True),
+    "candidate.review.archive": Command(_review("archive", "candidate.restore"), undoable=True),
+    "candidate.restore": Command(_review("restore", "candidate.review.archive"), undoable=True),
+    "candidate.combine": Command(_combine),
+    "chat.answer_permission": Command(_answer_permission),
+    "attention.answer_guess": Command(_answer_guess),
+    "chat.send_message": Command(_send_message),
+    "hub.update_apply": Command(_update_apply),
+    "attention.acknowledge": Command(_acknowledge),
 }
+# Commands a card may offer to open: they show something and change nothing.
+OPENS: frozenset[str] = frozenset({"chat.open_conversation", "candidate.compare", "board.open_frame"})
 
 
 def refuse_unknown(option: AttentionOption) -> None:
     if option.action.commandId not in COMMANDS:
         raise HubFailure(422, "ATTENTION_ACTION_UNKNOWN",
                          f"{option.action.commandId} is not an answer a card can carry.")
+
+
+def check_card(draft: AttentionDraft) -> None:
+    """Refuse a card whose buttons would do other than they say: the store's check, for every writer."""
+
+    for option in draft.options:
+        command = COMMANDS.get(option.action.commandId)
+        if command is None:
+            raise HubFailure(422, "ATTENTION_CARD_INVALID",
+                             f"{option.action.commandId} is not an answer a card can carry.")
+        if option.undoable and not command.undoable:
+            raise HubFailure(422, "ATTENTION_CARD_INVALID",
+                             f"{option.action.commandId} cannot be taken back, so its answer is not undoable.")
+    for command in draft.opens:
+        if command.commandId not in OPENS:
+            raise HubFailure(422, "ATTENTION_CARD_INVALID", f"{command.commandId} does more than open something.")
 
 
 class AttentionExecutor:
@@ -283,7 +335,7 @@ class AttentionExecutor:
             attempt = sum(row.to == "working" for row in started.history)
             run = _Run(self, started, f"att:{item_id}:{option_id}:{attempt}", note=note)
             try:
-                done = COMMANDS[option.action.commandId](run, option.action.args)
+                done = COMMANDS[option.action.commandId].run(run, option.action.args)
             except HubFailure as exc:
                 self.store.release(item_id, f"{exc.error.code}: {exc.error.detail}"[:400])
                 raise
@@ -316,10 +368,10 @@ class AttentionExecutor:
                 return AttentionActionResult(item=self.store.undone(item_id, by=by))
             if undo.action.commandId not in COMMANDS:
                 raise HubFailure(409, "ATTENTION_NOT_UNDOABLE", "This card's handling cannot be taken back.")
-            undone = sum(row.from_ == "done" for row in item.history)
-            run = _Run(self, item, f"att:{item_id}:undo:{undone + 1}", precondition=undo.precondition)
+            attempt = sum(row.from_ == "done" for row in item.history) + 1
+            run = _Run(self, item, f"att:{item_id}:undo:{attempt}", precondition=undo.precondition, undoing=True)
             try:
-                COMMANDS[undo.action.commandId](run, undo.action.args)
+                COMMANDS[undo.action.commandId].run(run, undo.action.args)
             except _Moved as moved:
                 return AttentionActionResult(item=item, followUp=self._ask_back(item, undo, moved.current))
             return AttentionActionResult(item=self.store.undone(item_id, by=by, note="Taken back."))
@@ -328,15 +380,45 @@ class AttentionExecutor:
 
     def _ask_back(self, item: AttentionItem, undo: UndoSpec, current: str | None) -> AttentionItem:
         previous = undo.action.args.get("runId")
+        # Each undo asks on its own card: an earlier one may already be answered.
+        asked = sum(card.dedupeKey.startswith(f"undo:{item.id}:") for card in self.store.items(
+            item.projectDir, states=UNSETTLED | CLOSED))
         return self.store.upsert(item.projectId, item.projectDir, AttentionDraft(
-            channel="decide", kind="choice", title="当前方案已经又变了，还要回到之前那一版吗？",
-            summary="撤销时当前方案已经不是这张卡换上的那一版，所以没有直接撤。",
+            channel="decide", kind="choice",
+            title="The current design has changed again. Go back to the earlier version anyway?",
+            titleZh="当前方案已经又变了，还要回到之前那一版吗？",
+            summary="When you undid this, the current design was no longer the version this card switched to, "
+                    "so nothing was undone.",
+            summaryZh="撤销时当前方案已经不是这张卡换上的那一版，所以没有直接撤。",
             source=AttentionSource(runIds=[run for run in (previous, current) if isinstance(run, str)]),
-            dedupeKey=f"undo:{item.id}",
+            dedupeKey=f"undo:{item.id}:{asked + 1}",
             options=[
-                AttentionOption(id="back", label="回到之前那一版", consequence="当前方案换回这张卡处理之前的那一版",
-                                action=undo.action, undoable=True),
-                AttentionOption(id="keep", label="不用了", consequence="当前方案保持现在这样",
+                AttentionOption(id="back", label="Go back", labelZh="回到之前那一版",
+                                consequence="The current design becomes the version before this card",
+                                consequenceZh="当前方案换回这张卡处理之前的那一版", action=undo.action, undoable=True),
+                AttentionOption(id="keep", label="Keep it", labelZh="不用了",
+                                consequence="The current design stays as it is", consequenceZh="当前方案保持现在这样",
+                                action=CommandRef(commandId="attention.acknowledge")),
+            ]))
+
+    def partly_done(self, item: AttentionItem, runs: list[str], *, archived: bool) -> AttentionItem:
+        """An all-or-none review that could not be put back: a card lists what was left, and offers to finish it."""
+
+        reverse = "candidate.restore" if archived else "candidate.review.archive"
+        state, state_zh = ("archived", "归档") if archived else ("restored", "找回")
+        return self.store.upsert(item.projectId, item.projectDir, AttentionDraft(
+            channel="decide", kind="choice",
+            title=f"{len(runs)} results stayed {state} although the card was not carried out",
+            titleZh=f"卡片没有做成，但这 {len(runs)} 个结果已经{state_zh}了",
+            summary=", ".join(runs)[:400], source=AttentionSource(runIds=runs),
+            dedupeKey=f"partly:{item.id}:{','.join(sorted(runs))}",
+            options=[
+                AttentionOption(id="back", label="Put them back", labelZh="放回去",
+                                consequence=f"These results are {'restored' if archived else 'archived'} again",
+                                consequenceZh=f"这几个结果{'找回' if archived else '归档'}，回到原样",
+                                action=CommandRef(commandId=reverse, args={"runIds": runs}), undoable=True),
+                AttentionOption(id="keep", label="Leave them", labelZh="就这样",
+                                consequence=f"They stay {state}", consequenceZh=f"它们保持{state_zh}",
                                 action=CommandRef(commandId="attention.acknowledge")),
             ]))
 
@@ -352,7 +434,9 @@ class AttentionExecutor:
                                and row.id == item.recommendation.optionId), None)
                 if option is None:
                     raise HubFailure(409, "ATTENTION_NO_RECOMMENDATION", "This card recommends nothing.")
-                if not option.undoable:
+                # The executor's own table says what can be taken back, never the card.
+                command = COMMANDS.get(option.action.commandId)
+                if command is None or not command.undoable or not option.undoable:
                     raise HubFailure(409, "ATTENTION_NOT_UNDOABLE", "Its recommended answer cannot be taken back.")
                 items.append(self.resolve(item_id, option.id, by="bulk", receipt={"bulkId": bulk_id}).item)
             except HubFailure as exc:
