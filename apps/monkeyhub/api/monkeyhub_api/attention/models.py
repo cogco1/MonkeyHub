@@ -7,6 +7,10 @@ store turns a draft into an ``AttentionItem`` and keeps its state. Every button
 on a card is one command of the command tree (``governance/module_registry.json``,
 ``capabilities[].ui.commands``) with its bound arguments; a card never carries a
 request of its own.
+
+Text a person reads comes in the command tree's two languages: the plain field
+in English and its ``…Zh`` sibling in Chinese, which falls back to the English
+one when a writer gives only that.
 """
 
 from typing import Literal
@@ -60,8 +64,10 @@ class AttentionOption(_Record):
     """One answer on a card: what it is called, what it will do, and the command that does it."""
 
     id: str = Field(pattern=r"^[A-Za-z0-9_.:-]+$", max_length=40)
-    label: str = Field(min_length=1, max_length=20)
-    consequence: str = Field(min_length=1, max_length=60)
+    label: str = Field(min_length=1, max_length=40)
+    labelZh: str | None = Field(default=None, min_length=1, max_length=20)
+    consequence: str = Field(min_length=1, max_length=120)
+    consequenceZh: str | None = Field(default=None, min_length=1, max_length=60)
     action: CommandRef
     undoable: bool = False
     recommended: bool = False
@@ -94,14 +100,17 @@ class AttentionMedia(_Record):
     frameId: str | None = None
     markIds: list[str] = Field(default_factory=list)
     caption: str | None = Field(default=None, max_length=160)
+    captionZh: str | None = Field(default=None, max_length=160)
 
 
 class EvidenceRow(_Record):
     """One line of evidence: what changed, what the checks say, what it costs."""
 
     key: str = Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=40)
-    label: str = Field(min_length=1, max_length=20)
+    label: str = Field(min_length=1, max_length=40)
+    labelZh: str | None = Field(default=None, min_length=1, max_length=20)
     text: str = Field(min_length=1, max_length=240)
+    textZh: str | None = Field(default=None, min_length=1, max_length=240)
     status: Literal["ok", "warn", "unknown"] = "unknown"
     refs: list[str] = Field(default_factory=list)
 
@@ -111,6 +120,7 @@ class Recommendation(_Record):
 
     optionId: str
     reason: str = Field(min_length=1, max_length=240)
+    reasonZh: str | None = Field(default=None, min_length=1, max_length=240)
     basis: list[str] = Field(default_factory=list)
 
 
@@ -141,6 +151,9 @@ class StateChange(_Record):
     at: str
     optionId: str | None = None
     note: str | None = Field(default=None, max_length=400)
+    # What the executor saw while carrying the answer out, kept on its working
+    # step so that an answer a restart cut short can be finished or put back.
+    facts: dict[str, ArgValue] = Field(default_factory=dict)
 
 
 class AttentionDraft(_Record):
@@ -149,7 +162,9 @@ class AttentionDraft(_Record):
     channel: AttentionChannel
     kind: AttentionKind
     title: str = Field(min_length=1, max_length=160)
+    titleZh: str | None = Field(default=None, min_length=1, max_length=160)
     summary: str | None = Field(default=None, max_length=400)
+    summaryZh: str | None = Field(default=None, max_length=400)
     source: AttentionSource = Field(default_factory=AttentionSource)
     dedupeKey: str = Field(min_length=1, max_length=240)
     media: list[AttentionMedia] = Field(default_factory=list)
@@ -213,9 +228,14 @@ class ProjectAttentionCount(BaseModel):
 
 class AttentionSummary(BaseModel):
     projects: list[ProjectAttentionCount]
+    hub: ProjectAttentionCount | None = Field(default=None, description=(
+        "Cards about the Hub itself, such as a prepared update: counted in the totals and shown in the queue, "
+        "never as a project row."))
     open: int
     later: int
     working: int
+    invalid: list[str] = Field(default_factory=list, description=(
+        "Runtime ids of projects whose saved cards could not be read; none of their cards are counted."))
 
 
 class AttentionDismissRequest(BaseModel):

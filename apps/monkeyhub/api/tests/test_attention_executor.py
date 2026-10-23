@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
-from monkeyhub_api.attention.actions import COMMANDS, AttentionExecutor, action_router
+from monkeyhub_api.attention.actions import COMMANDS, AttentionExecutor, action_router, check_card
 from monkeyhub_api.attention.models import COMMAND_ID, AttentionDraft
 from monkeyhub_api.attention.store import AttentionStore
 from monkeyhub_api.models import HubFailure
@@ -35,6 +35,7 @@ class FakeStudio:
         self.local_draft = None
         self.reviews: dict[str, str] = {}
         self.missing: set[str] = set()
+        self.unrestorable: set[str] = set()
         self.stale_once = False
         self.calls: list[tuple] = []
 
@@ -55,6 +56,8 @@ class FakeStudio:
         if path == "/api/candidate-reviews":
             if body["subjectRef"] in self.missing:
                 raise HubFailure(404, "CANDIDATE_NOT_FOUND", "The reviewed Candidate is not retained in this project.")
+            if body["subjectRef"] in self.unrestorable and body["action"] == "restore":
+                raise HubFailure(503, "WORKER_UNAVAILABLE", "The project's Studio is not ready.")
             self.reviews[body["subjectRef"]] = "archived" if body["action"] == "archive" else "unreviewed"
             return {"disposition": self.reviews[body["subjectRef"]]}
         if path == "/api/candidates/combine":
@@ -145,10 +148,51 @@ class AttentionExecutorTests(unittest.TestCase):
         asked = self.executor.undo(card)
         self.assertEqual(len(self.studio.writes()), writes, "nothing is forced back")
         self.assertEqual(asked.item.state, "done")
-        self.assertEqual(asked.followUp.dedupeKey, f"undo:{card}")
+        self.assertEqual(asked.followUp.dedupeKey, f"undo:{card}:1")
         self.assertEqual([row.id for row in asked.followUp.options], ["back", "keep"])
-        self.executor.resolve(asked.followUp.id, "back")
+        self.executor.resolve(asked.followUp.id, "keep")
+        again = self.executor.undo(card)
+        self.assertNotEqual(again.followUp.id, asked.followUp.id, "a second undo asks on a card of its own")
+        self.assertEqual(again.followUp.state, "open")
+        self.executor.resolve(again.followUp.id, "back")
         self.assertEqual(self.studio.current["runId"], "run-v16")
+
+    def test_an_answer_a_restart_cut_short_is_finished_without_writing_again(self):
+        card = self.card(ab_card())
+        self.store.begin(card, "b")
+        self.store.progress(card, {"targetRunId": "run-b-s1", "previousRunId": "run-v16", "previousBranchId": "main"})
+        self.studio.current = {"runId": "run-b-s1", "branchId": None}  # the PUT landed, the Hub stopped
+        restarted = AttentionStore(self.store.root)
+        executor = AttentionExecutor(restarted, studio=self.studio, chats=self.chats, hub=self.hub)
+        self.assertEqual(restarted.get(card).state, "open")
+        writes = len(self.studio.writes())
+        done = executor.resolve(card, "b").item
+        self.assertEqual(len(self.studio.writes()), writes, "nothing is written again")
+        self.assertEqual(done.resolution.undo.action.args, {"runId": "run-v16", "branchId": "main"})
+        executor.undo(card)
+        self.assertEqual(self.studio.current["runId"], "run-v16")
+
+    def test_a_card_is_held_to_what_its_buttons_do(self):
+        store = AttentionStore(None, check=check_card)
+        restart = option("go", "重启", "hub.update_apply", undoable=True)
+        for draft in (
+            {"options": [restart]},
+            {"options": [option("go", "重置", "board.reset_canvas")]},
+            {"opens": [{"commandId": "design.go_to_step", "args": {"runId": "run-x"}}]},
+        ):
+            with self.assertRaises(HubFailure) as refused:
+                store.upsert("thi-hemp", self.project_dir, AttentionDraft.model_validate({
+                    "channel": "decide", "kind": "choice", "title": "t", "dedupeKey": "x:1", **draft}))
+            self.assertEqual(refused.exception.error.code, "ATTENTION_CARD_INVALID")
+        self.assertEqual(store.items(), [])
+
+        # A card written past the check still cannot make "all as recommended" restart the Hub.
+        unchecked = self.card(AttentionDraft.model_validate({
+            "channel": "decide", "kind": "choice", "title": "t", "dedupeKey": "x:2",
+            "options": [{**restart, "recommended": True}], "recommendation": {"optionId": "go", "reason": "r"}}))
+        result = self.executor.bulk([unchecked])
+        self.assertEqual([(row.id, row.code) for row in result.skipped], [(unchecked, "ATTENTION_NOT_UNDOABLE")])
+        self.assertEqual(self.hub.applied, 0)
 
     def test_unrecorded_edits_hold_a_continue_back(self):
         card = self.card(ab_card())
@@ -179,7 +223,17 @@ class AttentionExecutorTests(unittest.TestCase):
         self.assertEqual(self.studio.reviews, {"run-a": "unreviewed"}, "the first one was put back")
         self.assertEqual(self.store.get(card).state, "open")
 
-        self.studio.missing = set()
+        self.studio.missing = {"run-b"}
+        self.studio.unrestorable = {"run-a"}
+        with self.assertRaises(HubFailure) as partly:
+            self.executor.resolve(card, "archive")
+        self.assertEqual(partly.exception.error.code, "ATTENTION_PARTLY_DONE")
+        self.assertIn("run-a", partly.exception.error.detail)
+        left = next(item for item in self.store.items() if item.dedupeKey.startswith("partly:"))
+        self.assertEqual(left.options[0].action.args, {"runIds": ["run-a"]})
+        self.assertIn("ATTENTION_PARTLY_DONE", self.store.get(card).history[-1].note)
+
+        self.studio.missing, self.studio.unrestorable = set(), set()
         self.executor.resolve(card, "archive")
         self.assertEqual(self.studio.reviews, {"run-a": "archived", "run-b": "archived"})
         self.executor.undo(card)
@@ -241,6 +295,8 @@ class AttentionExecutorTests(unittest.TestCase):
             self.executor.resolve(card, "nope")
         self.assertEqual(missing.exception.error.code, "ATTENTION_OPTION_UNKNOWN")
         self.assertTrue(all(re.fullmatch(COMMAND_ID, command) for command in COMMANDS))
+        self.assertEqual({command for command, row in COMMANDS.items() if row.undoable},
+                         {"design.go_to_step", "candidate.review.archive", "candidate.restore"})
 
     def test_all_as_recommended_runs_once_and_is_taken_back_together(self):
         first = self.card(ab_card("s1", recommend="b"))

@@ -14,7 +14,7 @@ from tools.dev import source_roots  # noqa: E402 - this checkout's tools, found 
 source_roots.put_first(ROOT)
 
 from monkeyhub_api.attention import producers
-from monkeyhub_api.attention.actions import COMMANDS
+from monkeyhub_api.attention.actions import COMMANDS, check_card
 from monkeyhub_api.attention.store import AttentionStore
 from monkeyhub_api.models import ChatDetail
 from monkeyhub_api.runtime.models import OperationRecord
@@ -66,9 +66,30 @@ class ResultProducerTests(unittest.TestCase):
                                                     line("run-d", reconcile="conflict")), now=NOW)
         self.assertEqual([row.id for row in combine.options], ["combine", "switch", "keep", "archive"])
         self.assertEqual(combine.options[0].action.args, {"runIds": ["run-v16", "run-c"]})
+        self.assertIn("东入口加宽", combine.titleZh)
         self.assertIn("东入口加宽", combine.title)
         self.assertEqual([row.id for row in conflict.options], ["switch", "keep", "archive"])
-        self.assertIn("同一处", conflict.summary)
+        self.assertIn("同一处", conflict.summaryZh)
+        self.assertIn("same part", conflict.summary)
+
+    def test_a_result_already_answered_for_is_not_asked_about_alone(self):
+        after = graph(line("run-a", studyId="s1", admission="admitted"), line("run-b", studyId="s1"), head="run-a")
+        self.assertEqual([card.dedupeKey for card in producers.results(after, now=NOW)], ["result:run:run-b"])
+        self.assertEqual(producers.results(after, now=NOW, handled={"run-a", "run-b"}), [],
+                         "B was on the A/B card the person answered")
+        third = graph(line("run-b", studyId="s1"), line("run-c", studyId="s1"), head="run-a")
+        card, = producers.results(third, now=NOW, handled={"run-a", "run-b"})
+        self.assertEqual(card.source.runIds, ["run-b", "run-c"], "compared again with a new one")
+
+    def test_a_large_study_shows_its_newest_and_archives_them_all(self):
+        lines = [line(f"run-{n}", studyId="s1", updatedAt=(NOW - timedelta(minutes=10 - n)).isoformat())
+                 for n in range(8)]
+        card, = producers.results(graph(*lines), now=NOW)
+        self.assertEqual([row.id for row in card.options], ["a", "b", "c", "d", "e", "f", "archive"])
+        self.assertEqual(card.options[0].action.args["runId"], "run-2", "the newest six, oldest of them first")
+        self.assertEqual(len(card.options[-1].action.args["runIds"]), 8)
+        self.assertIn("6", card.titleZh)
+        self.assertIn("8", card.title)
 
     def test_decided_results_ask_nothing_and_old_ones_are_offered_for_archiving(self):
         cards = producers.results(graph(
@@ -105,7 +126,8 @@ class ConversationProducerTests(unittest.TestCase):
         self.assertEqual(len(cards), 1)
         card = cards[0]
         self.assertEqual(card.dedupeKey, "perm:c1:p1")
-        self.assertEqual([row.label for row in card.options], ["允许这一次", "一直拒绝", "Something new and q…"])
+        self.assertEqual([row.labelZh for row in card.options], ["允许这一次", "一直拒绝", "Something new and q…"])
+        self.assertEqual([row.label for row in card.options][:2], ["Allow once", "Always reject"])
         self.assertEqual(card.options[0].action.args, {"sessionId": "c1", "permissionId": "p1", "optionId": "allow"})
         self.assertEqual(card.opens[0].args, {"sessionId": "c1"})
 
@@ -140,7 +162,7 @@ class HubProducerTests(unittest.TestCase):
             self.record("o4", "needs_recovery", recoverable=False, sessionId="c1"),
             self.record("o5", "completed")])
         self.assertEqual([card.dedupeKey for card in cards], ["op:o1:failed", "op:o4:needs_recovery"])
-        self.assertEqual(cards[0].title, "改模型没有完成")
+        self.assertEqual((cards[0].title, cards[0].titleZh), ("The model change did not finish", "改模型没有完成"))
         self.assertEqual(cards[0].options[0].action.args, {"operationId": "o1"})
         self.assertEqual(cards[1].opens[0].args, {"sessionId": "c1"})
 
@@ -150,7 +172,7 @@ class HubProducerTests(unittest.TestCase):
             "prepared": {"targetVersion": "11230e0e1234-desktop", "targetRevision": "a" * 40, "changedBytes": 1,
                          "changedFiles": 1, "removedFiles": 0, "reusedFiles": 0, "releaseVersion": "0.1.990"}})
         card, = producers.updates(ready)
-        self.assertEqual((card.title, card.options[0].action.commandId), ("新版本 0.1.990 已经准备好", "hub.update_apply"))
+        self.assertEqual((card.titleZh, card.options[0].action.commandId), ("新版本 0.1.990 已经准备好", "hub.update_apply"))
         self.assertEqual(producers.updates(ready.model_copy(update={"state": "idle"})), [])
 
 
@@ -167,6 +189,8 @@ class EveryButtonIsKnownTests(unittest.TestCase):
                                                    source="retained", status="failed")]),
         ]
         self.assertEqual({option.action.commandId for card in cards for option in card.options} - set(COMMANDS), set())
+        for card in cards:
+            check_card(card)  # what a producer writes, the executor runs as written
         self.assertEqual({command.commandId for card in cards for command in card.opens} - OPENS, set())
 
 

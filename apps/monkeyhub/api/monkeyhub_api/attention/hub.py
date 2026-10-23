@@ -28,9 +28,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..models import ChatDetail, HubFailure
 from ..runtime.workers import project_key
 from . import producers
-from .actions import AttentionExecutor
+from .actions import AttentionExecutor, check_card
 from .models import AttentionItem
-from .store import AttentionStore, runtime_id
+from .store import HUB_PROJECT_ID, AttentionStore, runtime_id
 
 # How long a project's events must stay quiet before its cards are read again.
 SETTLE_S = 0.5
@@ -38,14 +38,21 @@ SETTLE_S = 0.5
 RECENT_CHATS = 12
 # The Hub's own events about the queue, which never prompt a read of it.
 CHANGED = "attention/changed"
+# How often the Hub's own cards (a prepared update) are read again.
+HUB_EVERY_S = 60.0
 
 
 class AttentionHub:
     """The executor's ports on the Hub, and the producers run on the Hub's events."""
 
-    def __init__(self, store: AttentionStore, runtimes, chats, updates=None, *,
+    def __init__(self, store: AttentionStore, runtimes, chats, updates=None, *, hub_dir: str | None = None,
                  clock: Callable[[], datetime] | None = None):
         self.store, self.runtimes, self.chats, self.updates = store, runtimes, chats, updates
+        # The Hub's own scope for cards about itself: its runtime root.
+        self.hub_dir = hub_dir
+        # Every card the Hub keeps runs as written, or is refused before it is kept.
+        if store.check is None:
+            store.check = check_card
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self.executor = AttentionExecutor(store, studio=self.studio, chats=chats, hub=self, clock=self._clock)
         store.subscribe(self._changed)
@@ -96,7 +103,18 @@ class AttentionHub:
         self._answered(project_id, project_dir, sessions)
         graph = self._graph(runtime)
         if graph is not None:
-            self.store.reconcile(project_id, project_dir, producers.RESULTS, producers.results(graph, now=self._clock()))
+            # A result a person answered for on a card is not asked about again on its own.
+            handled = {run for card in self.store.items(project_dir, states=["done", "dismissed"])
+                       if card.dedupeKey.startswith(producers.RESULTS) for run in card.source.runIds}
+            self.store.reconcile(project_id, project_dir, producers.RESULTS,
+                                 producers.results(graph, now=self._clock(), handled=handled))
+
+    def refresh_hub(self) -> None:
+        """The Hub's own cards: a prepared update, queued for every project's architect alike."""
+
+        if self.updates is not None and self.hub_dir is not None:
+            self.store.reconcile(HUB_PROJECT_ID, self.hub_dir, producers.UPDATES,
+                                 producers.updates(self.updates.status()))
 
     def ask(self, session_id: str, message_id: str, question: str, reason: str,
             refs: Iterable[str] = ()) -> AttentionItem:
@@ -159,8 +177,15 @@ class AttentionHub:
 
     def _follow(self) -> None:
         dirty: dict[str, float] = {}
+        hub_due = 0.0
         with self.runtimes.events.subscribe() as (_, inbox):
             while not self._stop.is_set():
+                if time.monotonic() >= hub_due:
+                    hub_due = time.monotonic() + HUB_EVERY_S
+                    try:
+                        self.refresh_hub()
+                    except HubFailure:
+                        pass  # Read again on the next round.
                 try:
                     event = inbox.get(True, SETTLE_S / 2)
                 except queue.Empty:
