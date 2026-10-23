@@ -31,8 +31,8 @@ def edit(before: float, after: float, target: str = "entity:portico-cornice", fi
             "after": after, "delta": after - before, "direction": (after > before) - (after < before)}
 
 
-def step(run_id: str, *edits: dict) -> dict:
-    return {"runId": run_id, "sourceRunId": None, "kind": "set_scalar", "request": None, "edits": list(edits)}
+def step(run_id: str, *edits: dict, request: str | None = "make the cornice thinner") -> dict:
+    return {"runId": run_id, "sourceRunId": None, "kind": "set_scalar", "request": request, "edits": list(edits)}
 
 
 def thinner_three_times() -> list[dict]:
@@ -48,12 +48,15 @@ class GuessTests(unittest.TestCase):
         self.assertEqual((card.channel, card.kind, card.dedupeKey), ("guess", "ask", PREFIX + CORNICE))
         self.assertEqual((card.source.ruleId, card.source.targetRef), (SAME_DIRECTION, CORNICE))
         self.assertEqual(card.source.runIds, ["run-2", "run-4", "run-5"])
-        self.assertEqual(card.title, "连着 3 次把 portico-cornice（portico） 的 height 调小了，还要再调小吗？")
+        self.assertEqual(card.title, "You made the height of portico-cornice smaller 3 times running: smaller again?")
+        self.assertEqual(card.titleZh, "连着 3 次把 portico-cornice 的高度 调小了，还要再调小吗？")
         self.assertIn("0.3 → 0.25 → 0.2 → 0.15", card.summary)
+        self.assertIn("0.3 → 0.25 → 0.2 → 0.15", card.summaryZh)
         again, back = card.options
         self.assertEqual((again.id, again.action.commandId), ("again", "chat.send_message"))
-        self.assertEqual(again.action.args["content"], "把 portico-cornice 的 params.height 从 0.15 再调小到 0.1")
-        self.assertEqual(back.action.args["content"], "把 portico-cornice 的 params.height 改回 0.3")
+        self.assertEqual((again.label, again.labelZh), ("Make it smaller again", "再调小一步"))
+        self.assertEqual(again.action.args, {"content": "Change params.height of portico-cornice from 0.15 to 0.1"})
+        self.assertEqual(back.action.args, {"content": "Change params.height of portico-cornice back to 0.3"})
         self.assertIsNone(card.recommendation, "a repeated direction is a reason to ask, not to prefer an answer")
         self.assertFalse(any(option.recommended for option in card.options))
 
@@ -80,7 +83,32 @@ class GuessTests(unittest.TestCase):
         cards = guesses(widths, [], NOW)
         self.assertEqual([card.source.targetRef for card in cards],
                          ["entity:portico-cornice#params.height", "entity:portico-cornice#params.width"])
-        self.assertIn("调大", cards[1].title)
+        self.assertIn("调大", cards[1].titleZh)
+        self.assertIn("larger", cards[1].title)
+
+    def test_only_steps_asked_in_words_count(self) -> None:
+        dragged = [{**row, "request": None} for row in thinner_three_times()]
+        self.assertEqual(guesses(dragged, [], NOW), [], "three drags are modeling, not a pattern to ask about")
+        mixed = thinner_three_times()
+        mixed[1] = {**mixed[1], "request": "  "}
+        self.assertEqual(guesses(mixed, [], NOW), [])
+
+    def test_point_coordinates_are_never_a_field_it_asks_about(self) -> None:
+        vertices = [step(f"run-{n}", edit(x, x + 0.5, field="params.profile[1][0]")) for n, x in ((5, 5.0), (4, 4.5), (3, 4.0))]
+        self.assertEqual(guesses(vertices, [], NOW), [])
+
+    def test_going_on_is_not_offered_past_zero(self) -> None:
+        down = [step("run-5", edit(0.02, 0.01)), step("run-4", edit(0.03, 0.02)), step("run-3", edit(0.04, 0.03))]
+        [card] = guesses(down, [], NOW)
+        self.assertEqual([option.id for option in card.options], ["back"])
+        signed = [step(f"run-{n}", edit(v, v - 1.0, field="params.offset")) for n, v in ((5, 0.5), (4, 1.5), (3, 2.5))]
+        [card] = guesses(signed, [], NOW)
+        self.assertEqual([option.id for option in card.options], ["again", "back"], "a value that was never all positive")
+
+    def test_names_come_from_the_catalogue_when_it_has_them(self) -> None:
+        [card] = guesses(thinner_three_times(), [], NOW, labels={"portico-cornice": "Cornice"})
+        self.assertEqual(card.titleZh, "连着 3 次把 Cornice 的高度 调小了，还要再调小吗？")
+        self.assertIn("portico-cornice", card.options[0].action.args["content"], "the agent is told the id")
 
 
 class RefreshTests(unittest.TestCase):

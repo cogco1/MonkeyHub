@@ -135,6 +135,14 @@ class EditLogTests(unittest.TestCase):
         self.assertEqual((edit.field, edit.before, edit.after), ("params.height", 0.2, 0.15))
         self.assertEqual(steps[0].to_dict()["edits"][0]["direction"], -1)
 
+    def test_a_combined_run_is_one_step_and_the_log_goes_on_along_its_source(self) -> None:
+        line = self.line()
+        # A combination retains its change like any candidate, naming the results it folded in.
+        line.deltas["run-004"]["combined_candidate_ids"] = ["run-side"]
+        steps = edit_log(line, "run-005")
+        self.assertEqual([step.run_id for step in steps], ["run-005", "run-004", "run-003", "run-002"])
+        self.assertEqual(steps[1].source_run_id, "run-003", "the combined result is its own line, not this one")
+
     def test_the_limit_counts_steps_and_is_bounded(self) -> None:
         self.assertEqual(len(edit_log(self.line(), "run-005", limit=2)), 2)
         for limit in (0, 501, True, 2.5):
