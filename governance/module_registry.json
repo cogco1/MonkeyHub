@@ -5691,7 +5691,8 @@
         "skill_versions",
         "access_added",
         "access_within",
-        "describe_added"
+        "describe_added",
+        "describe_added_zh"
       ],
       "depends_on": [
         "project_runtime.binding",
