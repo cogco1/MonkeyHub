@@ -308,6 +308,7 @@
   --tab-gap: 4px;
   --nav-on-bg: var(--ink);
   --nav-on-ink: var(--ground);
+  --nav-on-icon: var(--ground);
   --side-tab-size: calc(13px * var(--font-scale, 1));
   --shell-gap: 12px;
   --pane-radius: 16px;

@@ -18,7 +18,7 @@ const cacheDir = await mkdtemp(path.join(tmpdir(), "interface-styles-"));
 const shots = process.env.INTERFACE_STYLE_SHOTS ? path.resolve(process.env.INTERFACE_STYLE_SHOTS) : null;
 const HOOKS = ["--control-radius", "--control-bg", "--control-border", "--primary-bg", "--primary-ink", "--card-bg", "--card-border",
   "--card-radius", "--card-pad", "--card-title-size", "--tab-on-bg", "--tab-on-ink", "--tab-on-mark", "--tab-radius", "--tab-pad", "--tab-h",
-  "--nav-on-bg", "--nav-on-ink", "--shell-gap", "--pane-radius", "--composer-bg", "--composer-radius", "--toast-bg", "--toast-ink", "--toast-radius"];
+  "--nav-on-bg", "--nav-on-ink", "--nav-on-icon", "--shell-gap", "--pane-radius", "--composer-bg", "--composer-radius", "--toast-bg", "--toast-ink", "--toast-radius"];
 const escaped = [];
 let vite, browser;
 const http = createHttpServer();
@@ -57,7 +57,7 @@ try {
               summary={<p>你在 V16 的建模草稿里删了 4 根斜撑，删完的这一版记成 B。</p>}
               actions={<><button type="button" className="btn btn--primary">比较并决定</button><button type="button" className="btn">稍后决定</button></>} />
             <div style={{ display: "grid", gap: 2, maxWidth: 260, padding: 8, borderRadius: 12, background: "var(--panel)" }}>
-              <button type="button" className="chat-thread" aria-current="page" data-probe="current">Thi Hemp 墙身节点</button>
+              <button type="button" className="chat-thread" aria-current="page" data-probe="current"><span className="chat-thread__dot" data-status="idle" /><span className="chat-thread__title">Thi Hemp 墙身节点</span></button>
               <button type="button" className="chat-thread">Housing 13 户</button>
             </div>
             <form className="chat-composer" data-probe="composer" onSubmit={(event) => event.preventDefault()}>
@@ -113,7 +113,7 @@ try {
         return {
           style: root.dataset.uiStyle, family: root.dataset.uiFamily,
           hooks: Object.fromEntries(hooks.map((hook) => [hook, rootStyle.getPropertyValue(hook).trim()])),
-          tokens: { panel: colour("--panel"), panel2: colour("--panel-2"), ground: colour("--ground"), ink: colour("--ink"), accent: colour("--accent"),
+          tokens: { panel: colour("--panel"), panel2: colour("--panel-2"), ground: colour("--ground"), ink: colour("--ink"), accent: colour("--accent"), faint: colour("--faint"),
             radiusSm: rootStyle.getPropertyValue("--radius-sm").trim(), radiusLg: rootStyle.getPropertyValue("--radius-lg").trim() },
           button: { radius: css("[data-probe=button]").borderTopLeftRadius, background: css("[data-probe=button]").backgroundColor },
           primary: { background: css("[data-probe=primary]").backgroundColor },
@@ -121,7 +121,7 @@ try {
             titleSize: css(".chat-card__title").fontSize, titleWeight: css(".chat-card__title").fontWeight },
           tab: { background: tab.backgroundColor, colour: tab.color, mark: tab.boxShadow, radius: tab.borderTopLeftRadius },
           radio: { background: radio.backgroundColor, mark: radio.boxShadow },
-          current: { background: css("[data-probe=current]").backgroundColor },
+          current: { background: css("[data-probe=current]").backgroundColor, dot: css("[data-probe=current] .chat-thread__dot").backgroundColor },
           composer: { radius: css("[data-probe=composer]").borderTopLeftRadius, background: css("[data-probe=composer]").backgroundColor },
           toast: { radius: css("[data-probe=toast]").borderTopLeftRadius, background: css("[data-probe=toast]").backgroundColor,
             edge: css("[data-probe=toast]").borderLeftWidth },
@@ -140,6 +140,7 @@ try {
         assert.ok(seen.tab.mark.includes("inset"), `${label}: a chosen tab is underlined`);
         assert.ok(seen.radio.mark.includes("inset"), `${label}: the chosen mode is underlined`);
         assert.equal(seen.current.background, seen.tokens.panel2, `${label}: current conversation`);
+        assert.equal(seen.current.dot, seen.tokens.faint, `${label}: its status mark`);
         assert.equal(seen.composer.background, seen.tokens.panel2, `${label}: composer`);
         assert.equal(seen.toast.background, seen.tokens.ground, `${label}: notice`);
         // The instrument rules reach their three styles through the family.
@@ -155,6 +156,7 @@ try {
         assert.deepEqual([seen.tab.background, seen.tab.colour, seen.tab.mark, seen.tab.radius], [seen.tokens.ink, seen.tokens.ground, "none", "999px"], `${label}: chosen tab`);
         assert.deepEqual([seen.radio.background, seen.radio.mark], [seen.tokens.ink, "none"], `${label}: chosen mode`);
         assert.equal(seen.current.background, seen.tokens.ink, `${label}: current conversation reads reversed`);
+        assert.equal(seen.current.dot, seen.tokens.ground, `${label}: its status mark reads on the reversed row`);
         assert.deepEqual([seen.composer.radius, seen.composer.background], ["22px", seen.tokens.panel], `${label}: composer`);
         assert.deepEqual([seen.toast.radius, seen.toast.background, seen.toast.edge], ["999px", seen.tokens.ink, "1px"], `${label}: notice`);
         assert.notEqual(seen.tokens.ground, theme === "dark" ? "rgb(236, 238, 241)" : "rgb(16, 18, 21)", `${label}: the theme's own ground`);
