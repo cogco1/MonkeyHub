@@ -6,8 +6,9 @@ moved) and writes nothing but guess cards. The first rule,
 ``edit.same_direction``: within the line's last five steps one element field
 or parameter was changed three times the same way and never the other way, so
 the card asks whether to go on. Its answers send a sentence to the project's
-conversation as the person (``chat.send_message``); the change itself is the
-agent's to make there, under the usual checks. No answer is recommended: a
+conversation as the person (``chat.send_message`` with its ``content``; the
+executor sends it to the project's attention conversation); the change itself
+is the agent's to make there, under the usual checks. No answer is recommended: a
 repeated direction is a reason to ask, not grounds to prefer one answer.
 
 A person who sets a card aside quiets this rule for that field
@@ -100,9 +101,9 @@ def _card(target: str, moves: list) -> AttentionDraft:
                               refs=[ref])],
         options=[
             AttentionOption(id="again", label=f"再{way}一步", consequence=f"在对话里请 AI 改到 {_number(next_at)}",
-                            action=CommandRef(commandId="chat.send_message", args={"text": again})),
+                            action=CommandRef(commandId="chat.send_message", args={"content": again})),
             AttentionOption(id="back", label="改回最初", consequence=f"在对话里请 AI 改回 {_number(start)}",
-                            action=CommandRef(commandId="chat.send_message", args={"text": back})),
+                            action=CommandRef(commandId="chat.send_message", args={"content": back})),
         ],
     )
 

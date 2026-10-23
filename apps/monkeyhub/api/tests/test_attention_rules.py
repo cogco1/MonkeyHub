@@ -52,8 +52,8 @@ class GuessTests(unittest.TestCase):
         self.assertIn("0.3 → 0.25 → 0.2 → 0.15", card.summary)
         again, back = card.options
         self.assertEqual((again.id, again.action.commandId), ("again", "chat.send_message"))
-        self.assertEqual(again.action.args["text"], "把 portico-cornice 的 params.height 从 0.15 再调小到 0.1")
-        self.assertEqual(back.action.args["text"], "把 portico-cornice 的 params.height 改回 0.3")
+        self.assertEqual(again.action.args["content"], "把 portico-cornice 的 params.height 从 0.15 再调小到 0.1")
+        self.assertEqual(back.action.args["content"], "把 portico-cornice 的 params.height 改回 0.3")
         self.assertIsNone(card.recommendation, "a repeated direction is a reason to ask, not to prefer an answer")
         self.assertFalse(any(option.recommended for option in card.options))
 
