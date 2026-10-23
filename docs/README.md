@@ -31,6 +31,7 @@ are [GitHub Issues](https://github.com/cogco1/MonkeyHub/issues); who owns which 
 
 - [vision.md](product/vision.md) — the ArchFlow vision, in Chinese with an English statement.
 - [roadmap.md](product/roadmap.md) — the MVP: ingestion first, then Model → Board → AI Render → Publish, change propagation, and Meeting → Work → Report; acceptance and non-goals.
+- [workshop-readiness.md](product/workshop-readiness.md) — what a five-day design workshop needs from MonkeyHub (#668), in Chinese: the P0 and P1 work with modules, acceptance and order.
 
 **protocols/** — contracts another program relies on.
 

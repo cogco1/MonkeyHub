@@ -88,6 +88,29 @@
         "tools/tests/test_state_file_command.py"
       ],
       "depends_on": []
+    },
+    {
+      "id": "GH-668",
+      "lanes": [
+        {
+          "id": "plan",
+          "status": "active",
+          "branch": "claude/668-workshop-plan",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-668-workshop-plan",
+          "base_ref": "cc8f54e20546c73a1e1e1763a5001a8495c48675",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Workshop readiness plan in docs/product (P0 then P1, modules, acceptance, order); each item gets its own Issue after review. The version line is the GH-668/line lane.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "docs/README.md",
+            "docs/product/workshop-readiness.md"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
