@@ -154,7 +154,21 @@ class ApprovalTests(unittest.TestCase):
     def test_the_approval_is_the_architects_words_and_items_sharing_words_are_one_submission(self) -> None:
         self.assertEqual(approval("att_x", change_list(), WORDS), {
             "cardId": "att_x", "items": [1, 3], "content": "楼板只留一层胶合板，龙骨和面层不要",
-            "quotes": [{"items": [1, 3], "feedbackQuote": "楼板只留一层胶合板，龙骨和面层不要"}]})
+            "quotes": [{"items": [1, 3], "feedbackQuote": "楼板只留一层胶合板，龙骨和面层不要",
+                        "clauses": ["楼板只留一层胶合板，龙骨和面层不要"]}]})
+
+    def test_a_clause_is_bound_inside_the_whole_passage_that_qualifies_it(self) -> None:
+        result = approval("att_x", items("其它都刷白"), ["除了外墙，其它都刷白"])
+        self.assertEqual(result["content"], "除了外墙，其它都刷白", "the exception travels with the clause")
+        [group] = result["quotes"]
+        self.assertEqual((group["feedbackQuote"], group["clauses"]), ("除了外墙，其它都刷白", ["其它都刷白"]))
+        both = approval("att_x", items("楼板只留一层胶合板", "龙骨和面层不要"), WORDS)
+        self.assertEqual(both["content"], "楼板只留一层胶合板，龙骨和面层不要")
+        self.assertEqual(both["quotes"], [{"items": [1, 2], "feedbackQuote": "楼板只留一层胶合板，龙骨和面层不要",
+                                           "clauses": ["楼板只留一层胶合板", "龙骨和面层不要"]}])
+        long = "除了外墙，" + "墙面要统一" * 450 + "，其它都刷白"
+        [group] = approval("att_x", items("其它都刷白"), [long])["quotes"]
+        self.assertEqual(group["feedbackQuote"], "其它都刷白", "a passage past the design loop's limit is quoted by its clause")
         self.assertEqual(approval("att_x", change_list(item3={"keep": False}), WORDS)["items"], [1])
         with self.assertRaises(ValueError):
             approval("att_x", change_list(item1={"keep": False}, item3={"keep": False}), WORDS)

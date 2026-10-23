@@ -188,17 +188,19 @@ def approval(card_id: str, change_list: ChangeList, words: Sequence[str]) -> dic
     """The person's approval of the ticked, sure items, as the message the Hub sends in their name.
 
     ``content`` is the message's text: the architect's own words from Board,
-    one line per distinct sentence, as written, and nothing else; ``cardId``
-    and ``items`` travel in the message's structured fields, and the agent
-    reads what each item means from the card. The design loop binds a
-    submission to this message and, through ``feedbackQuote``, to the words of
-    the items it builds, so ``quotes`` groups the items by their words: one
-    submission per group, quoting ``feedbackQuote``, which occurs exactly once
-    in the text. Items that share their words share a group and one line. A
-    line that also lies inside another (门 inside 前门加宽) is quoted with its
-    line breaks, the whole line; only when even that is not unique is
-    ``feedbackQuote`` None, binding the whole message, which the design loop
-    takes up to RAW_LANGUAGE_LIMIT characters; a longer one is refused here.
+    nothing else. Each line is a whole passage they wrote (one entry of
+    ``words``) that an approved item's note was taken from, so a clause keeps
+    what qualifies it: 「其它都刷白」 travels inside 「除了外墙，其它都刷白」.
+    ``cardId`` and ``items`` travel in the message's structured fields, and the
+    agent reads what each item means from the card. The design loop binds a
+    submission to this message and records as raw language exactly the span
+    ``feedbackQuote`` names, so each group of ``quotes`` (the items taken from
+    one passage) quotes the whole passage, and ``clauses`` holds the parts the
+    items cite, for showing. A passage that also lies inside another line is
+    quoted with its line breaks; one longer than RAW_LANGUAGE_LIMIT is quoted
+    by its cited clauses instead; only when no span names it alone is
+    ``feedbackQuote`` None, binding the whole message, which may then be at
+    most RAW_LANGUAGE_LIMIT characters.
 
     Approving the list is not an answer to any condition: a submission that
     comes back needing a question is still asked. A note that is not whole
@@ -209,13 +211,20 @@ def approval(card_id: str, change_list: ChangeList, words: Sequence[str]) -> dic
     approved = [item for item in change_list.items if item.keep and not item.unsure]
     if not approved:
         raise ValueError("No ticked item is sure enough to build.")
-    unsaid = [item.n for item in approved if not _said(item.note, words)]
+    sources = {item.n: _source(item.note, words) for item in approved}
+    unsaid = [n for n, found in sources.items() if found is None]
     if unsaid:
         raise ValueError(f"Items {unsaid} carry words the architect did not write with these marks.")
-    lines = list(dict.fromkeys(item.note.strip() for item in approved))
+    lines = list(dict.fromkeys(passage for passage, _ in sources.values()))
     content = "\n".join(lines)
-    quotes = [{"items": [item.n for item in approved if item.note.strip() == line],
-               "feedbackQuote": _quote(lines, index, content)} for index, line in enumerate(lines)]
+    quotes = []
+    for index, line in enumerate(lines):
+        members = [item.n for item in approved if sources[item.n][0] == line]
+        clauses = list(dict.fromkeys(sources[n][1] for n in members))
+        quote = _quote(lines, index, content)
+        if quote is not None and len(quote.strip("\n")) > RAW_LANGUAGE_LIMIT:
+            quote = clauses[0] if len(clauses) == 1 and content.count(clauses[0]) == 1 else None
+        quotes.append({"items": members, "feedbackQuote": quote, "clauses": clauses})
     if any(row["feedbackQuote"] is None for row in quotes) and len(content) > RAW_LANGUAGE_LIMIT:
         raise ValueError(f"The approved words are {len(content)} characters and one item can only bind them all; "
                          f"approve fewer items at once (at most {RAW_LANGUAGE_LIMIT} characters).")
@@ -243,9 +252,20 @@ def _said(note: str, words: Sequence[str]) -> bool:
     note does not count.
     """
 
+    return _source(note, words) is not None
+
+
+def _source(note: str, words: Sequence[str]) -> tuple[str, str] | None:
+    """The passage of ``words`` a note is whole clauses of, and those clauses as written there; or None."""
+
     wanted = _plain(note)
-    return bool(wanted) and any(wanted == _plain(said[start:end])
-                                for said in words for start, end in _runs(said))
+    if not wanted:
+        return None
+    for said in words:
+        for start, end in _runs(said):
+            if wanted == _plain(said[start:end]):
+                return said.strip(), said[start:end].strip()
+    return None
 
 
 def _runs(text: str) -> Iterable[tuple[int, int]]:
