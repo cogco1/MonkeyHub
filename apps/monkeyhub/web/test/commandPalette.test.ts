@@ -7,22 +7,23 @@ import { hubMayTake, keyName, normalizeShortcut, PALETTE_SHORTCUT, shortcutOf, t
 import { readUsage, recordUse, RECENT_KEPT, timesUsed, USAGE_KEY } from "../src/features/commands/usage.ts";
 
 const command = (id: string, en: string, zh: string, more: Partial<Command> = {}): Command => ({
-  id, group: more.group ?? "model.export", label: { en, "zh-CN": zh }, terms: [], surface: "modeling",
-  section: "modeling", channel: "side", place: null, shortcut: null, entries: [], args: [], ...more,
+  id, capability: more.capability ?? "model.export", label: { en, "zh-CN": zh }, terms: [], surface: "modeling",
+  group: "modeling", channel: "side", tier: "basic", place: null, when: [], shortcut: null, entries: [], args: [], ...more,
 });
+const capability = (id: string, en: string, zh: string, terms: string[]) =>
+  ({ id, owner: "project_runtime.documents", kind: "output", status: "PRODUCTION", host: "runtime", purpose: { en, "zh-CN": zh }, terms });
 const tree: CommandTree = {
-  groups: [
-    { id: "model.export", owner: "project_runtime.documents", kind: "output", status: "PRODUCTION",
-      purpose: { en: "Export the model", "zh-CN": "导出模型" }, terms: ["export the model", "导出模型", "download"] },
-    { id: "drawing.plan", owner: "project_runtime.documents", kind: "output", status: "PRODUCTION",
-      purpose: { en: "Cut a plan", "zh-CN": "出平面" }, terms: ["floor plan", "平面图"] },
+  capabilities: [
+    capability("model.export", "Export the model", "导出模型", ["export the model", "导出模型", "download"]),
+    capability("drawing.plan", "Cut a plan", "出平面", ["floor plan", "平面图"]),
   ],
   commands: [
     command("model.export_3dm", "Export editable 3DM", "导出可编辑 3dm", { terms: ["rhino"] }),
     command("model.export_stl", "Export STL", "导出 STL"),
-    command("drawing.plan_new", "New section plan", "新建剖切平面", { group: "drawing.plan", section: "drawings" }),
-    command("view.reference_model", "Reference model", "参考模型", { group: "model.export", channel: "background" }),
-    command("chat.open_conversation", "Open conversation", "打开对话", { group: "model.export", args: ["sessionId"] }),
+    command("drawing.plan_new", "New section plan", "新建剖切平面", { capability: "drawing.plan", group: "drawings" }),
+    command("view.reference_model", "Reference model", "参考模型", { channel: "background" }),
+    command("chat.open_conversation", "Open conversation", "打开对话", { args: ["sessionId"] }),
+    command("view.runtime_port", "Project service port", "项目服务端口", { tier: "developer" }),
   ],
 };
 const ids = (ranked: ReturnType<typeof rankCommands>) => ranked.map((row) => row.command.id);
@@ -35,13 +36,12 @@ test("a query part matches the label in either language, the terms or the id", (
   assert.deepEqual(ids(rankCommands(tree, "plan_new", "en")), ["drawing.plan_new"], "the id");
 });
 
-test("a group's goals speak for its command only when it has one", () => {
+test("a capability's goals speak for its command only when it has one", () => {
   const pages: CommandTree = {
-    groups: [{ id: "shell.pages", owner: "hub.shell", kind: "shell", status: "PRODUCTION",
-      purpose: { en: "Open a page", "zh-CN": "打开整页" }, terms: ["open drawings", "打开图纸", "see usage"] }],
+    capabilities: [capability("shell.pages", "Open a page", "打开整页", ["open drawings", "打开图纸", "see usage"])],
     commands: [
-      command("view.drawings", "Drawings", "图纸", { group: "shell.pages" }),
-      command("view.usage", "Usage", "用量", { group: "shell.pages" }),
+      command("view.drawings", "Drawings", "图纸", { capability: "shell.pages" }),
+      command("view.usage.open", "Usage", "用量", { capability: "shell.pages" }),
     ],
   };
   assert.deepEqual(ids(rankCommands(pages, "drawings", "en")), ["view.drawings"]);
@@ -64,6 +64,11 @@ test("a background command is the machine's, so the palette never offers it", ()
 test("a command that needs arguments is not offered bare", () => {
   assert.equal(ids(rankCommands(tree, "打开对话", "zh-CN")).length, 0);
   assert.ok(!ids(rankCommands(tree, "", "en")).includes("chat.open_conversation"));
+});
+
+test("a developer command waits for developer mode", () => {
+  assert.deepEqual(ids(rankCommands(tree, "端口", "zh-CN")), []);
+  assert.deepEqual(ids(rankCommands(tree, "端口", "zh-CN", [], true)), ["view.runtime_port"]);
 });
 
 test("an empty palette leads with what was used last, then the tree in order", () => {

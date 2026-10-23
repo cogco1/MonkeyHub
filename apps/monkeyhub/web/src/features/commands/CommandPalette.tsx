@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { useT, type TFunction } from "../../i18n/useT";
+import { usePreferences } from "../settings/preferences";
 import type { MessageKey } from "../../i18n/messages.en";
 import { useCommands, type CommandState } from "./CommandProvider";
 import { rankCommands, type Language } from "./search";
@@ -15,12 +16,13 @@ type Row =
   | { kind: "command"; key: string; command: Command; state: CommandState }
   | { kind: "ask"; key: string; text: string };
 
-const SECTIONS = ["shell", "settings", "project_bar", "modeling", "board", "layout", "document", "drawings", "render",
+/** The advanced tools' twelve groups, in the order they are listed. */
+const GROUPS = ["shell", "settings", "project_bar", "modeling", "board", "layout", "document", "drawings", "render",
   "design_tree", "fabrication", "usage"] as const;
-const SURFACES = ["hub", ...SECTIONS.filter((section) => section !== "shell" && section !== "settings" && section !== "project_bar")] as const;
+const SURFACES = ["hub", ...GROUPS.filter((group) => group !== "shell" && group !== "settings" && group !== "project_bar")] as const;
 
-function sectionLabel(t: TFunction, section: string): string {
-  return (SECTIONS as readonly string[]).includes(section) ? t(`commands.section.${section}` as MessageKey) : section;
+function groupLabel(t: TFunction, group: string): string {
+  return (GROUPS as readonly string[]).includes(group) ? t(`commands.group.${group}` as MessageKey) : group;
 }
 function surfaceLabel(t: TFunction, surface: string): string {
   return (SURFACES as readonly string[]).includes(surface) ? t(`commands.surface.${surface}` as MessageKey) : surface;
@@ -34,6 +36,7 @@ export function CommandPalette({ language, onClose, askAI }: {
 }) {
   const t = useT();
   const { tree, usage, run, stateOf } = useCommands();
+  const { developerMode } = usePreferences();
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -45,19 +48,19 @@ export function CommandPalette({ language, onClose, askAI }: {
   }, []);
 
   const rows = useMemo<Row[]>(() => {
-    const ranked = rankCommands(tree, query, language, usage.recent).slice(0, SHOWN);
+    const ranked = rankCommands(tree, query, language, usage.recent, developerMode).slice(0, SHOWN);
     const out: Row[] = [];
     if (!query.trim()) {
-      // Recent first, then one heading per advanced-tools section, in the sections' order.
-      const order = (section: string) => { const index = (SECTIONS as readonly string[]).indexOf(section); return index < 0 ? SECTIONS.length : index; };
+      // Recent first, then one heading per advanced-tools group, in the groups' order.
+      const order = (group: string) => { const index = (GROUPS as readonly string[]).indexOf(group); return index < 0 ? GROUPS.length : index; };
       const recent = ranked.filter((row) => row.recent);
       const rest = ranked.filter((row) => !row.recent).map((row, index) => ({ ...row, index }))
-        .sort((a, b) => order(a.command.section) - order(b.command.section) || a.index - b.index);
+        .sort((a, b) => order(a.command.group) - order(b.command.group) || a.index - b.index);
       let heading: string | null = null;
       for (const { command, recent: isRecent } of [...recent, ...rest]) {
-        const key = isRecent ? "recent" : command.section;
+        const key = isRecent ? "recent" : command.group;
         if (key !== heading) {
-          out.push({ kind: "heading", key: `h:${key}`, label: isRecent ? t("commands.recent") : sectionLabel(t, command.section) });
+          out.push({ kind: "heading", key: `h:${key}`, label: isRecent ? t("commands.recent") : groupLabel(t, command.group) });
           heading = key;
         }
         out.push({ kind: "command", key: command.id, command, state: stateOf(command) });
@@ -67,7 +70,7 @@ export function CommandPalette({ language, onClose, askAI }: {
     }
     if (askAI && query.trim()) out.push({ kind: "ask", key: "ask", text: query.trim() });
     return out;
-  }, [tree, query, language, usage.recent, stateOf, askAI, t]);
+  }, [tree, query, language, usage.recent, developerMode, stateOf, askAI, t]);
   const choices = rows.filter((row) => row.kind !== "heading");
   const current = choices[Math.min(active, choices.length - 1)];
 
@@ -121,7 +124,7 @@ export function CommandPalette({ language, onClose, askAI }: {
             aria-disabled={row.state.kind === "unavailable" || undefined} className="command-palette__row"
             onMouseMove={() => setActive(choices.indexOf(row))} onClick={() => choose(row)}>
             <span className="command-palette__label">{row.command.label[language]}</span>
-            <span className="command-palette__meta">{note ?? (query.trim() ? sectionLabel(t, row.command.section) : "")}</span>
+            <span className="command-palette__meta">{note ?? (query.trim() ? groupLabel(t, row.command.group) : "")}</span>
             {row.command.shortcut && <kbd className="command-palette__key">{row.command.shortcut}</kbd>}
           </div>;
         })}

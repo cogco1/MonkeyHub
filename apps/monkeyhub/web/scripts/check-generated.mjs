@@ -37,5 +37,3 @@ for (const [schemas, client] of [[".generated/project-runtime", "src/api/project
 }
 if (drift.length) { console.error("Generated API drift:", drift.join("\n")); process.exit(1); }
 console.log(write ? "Generated Hub and project-runtime clients." : "Both API clients match their schemas.");
-// The command tree is the module registry's view for Ctrl+K; it drifts the same way a client does.
-run(process.execPath, [resolve(web, "scripts/command-tree.mjs"), ...(write ? [] : ["--check"])]);

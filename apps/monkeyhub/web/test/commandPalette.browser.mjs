@@ -52,11 +52,11 @@ try {
         window.__ran = [];
         window.__boardHelpers = { convertToExcalidrawElements, CaptureUpdateAction };
         const reason = (zh) => zh ? ${JSON.stringify(words["zh-CN"].reason)} : ${JSON.stringify(words.en.reason)};
-        const tree = { groups: [...COMMAND_TREE.groups], commands: [...COMMAND_TREE.commands, { id: "fixture.modeling_change", group: "shell.pages",
-          label: { en: ${JSON.stringify(words.en.other)}, "zh-CN": ${JSON.stringify(words["zh-CN"].other)} }, terms: [], surface: "modeling",
-          section: "modeling", channel: "side", place: null, shortcut: null, entries: [], args: [] }, { id: "fixture.standing_only", group: "shell.pages",
-          label: { en: ${JSON.stringify(words.en.standing)}, "zh-CN": ${JSON.stringify(words["zh-CN"].standing)} }, terms: [], surface: "hub",
-          section: "shell", channel: "side", place: null, shortcut: null, entries: [], args: [] }] };
+        const fixture = { terms: [], channel: "side", tier: "basic", place: null, when: [], shortcut: null, entries: [], args: [] };
+        const tree = { capabilities: [...COMMAND_TREE.capabilities], commands: [...COMMAND_TREE.commands, { ...fixture, id: "fixture.modeling_change", capability: "shell.pages",
+          label: { en: ${JSON.stringify(words.en.other)}, "zh-CN": ${JSON.stringify(words["zh-CN"].other)} }, surface: "modeling", group: "modeling" },
+          { ...fixture, id: "fixture.standing_only", capability: "shell.pages",
+          label: { en: ${JSON.stringify(words.en.standing)}, "zh-CN": ${JSON.stringify(words["zh-CN"].standing)} }, surface: "hub", group: "shell" }] };
         function Modeling() {
           useCommandActions({ "fixture.modeling_change": { run: () => window.__ran.push("fixture.modeling_change") } });
           return <p className="fixture-modeling">Modeling</p>;

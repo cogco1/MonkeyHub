@@ -7,12 +7,12 @@
  * capability stays with the capability index (`project_runtime.application.capability`).
  * So here every space-separated part of the query has to appear somewhere in the
  * command — its label in either language, its own terms or its id — and a hit in the label
- * counts for more than a hit in the terms. A group's goals speak for its command only when
- * the group has one: a group of several commands lists every sibling's goal, and would
+ * counts for more than a hit in the terms. A capability's goals speak for its command only
+ * when it has one: a capability with several commands lists every sibling's goal, and would
  * otherwise make each of them match the others' names.
  */
 
-import type { Command, CommandGroup, CommandTree } from "./tree";
+import type { Command, CommandCapability, CommandTree } from "./tree";
 
 export type Language = "en" | "zh-CN";
 
@@ -34,14 +34,16 @@ export function queryParts(query: string): string[] {
 }
 
 /**
- * Commands the palette offers at all: background ones are the machine's to do, and one that
- * needs arguments is run from where they are known (a card, a row generated per conversation).
+ * Commands the palette offers at all: background ones are the machine's to do, one that
+ * needs arguments is run from where they are known (a card, a row generated per
+ * conversation), and developer ones wait for developer mode.
  */
-export function searchable(tree: CommandTree): Command[] {
-  return tree.commands.filter((command) => command.channel !== "background" && !command.args.length);
+export function searchable(tree: CommandTree, developer = false): Command[] {
+  return tree.commands.filter((command) => command.channel !== "background" && !command.args.length
+    && (developer || command.tier !== "developer"));
 }
 
-function scorePart(part: string, command: Command, group: CommandGroup | null, language: Language): number {
+function scorePart(part: string, command: Command, capability: CommandCapability | null, language: Language): number {
   const shown = fold(command.label[language]);
   const other = fold(command.label[language === "en" ? "zh-CN" : "en"]);
   if (shown.startsWith(part)) return 8;
@@ -49,8 +51,8 @@ function scorePart(part: string, command: Command, group: CommandGroup | null, l
   if (other.startsWith(part)) return 5;
   if (other.includes(part)) return 4;
   if (command.terms.some((term) => fold(term).includes(part))) return 3;
-  if (group?.terms.some((term) => fold(term).includes(part))) return 2;
-  if (fold(command.id).includes(part) || fold(command.group).includes(part)) return 1;
+  if (capability?.terms.some((term) => fold(term).includes(part))) return 2;
+  if (fold(command.id).includes(part) || fold(command.capability).includes(part)) return 1;
   return 0;
 }
 
@@ -60,12 +62,12 @@ function scorePart(part: string, command: Command, group: CommandGroup | null, l
  * command wins a tie.
  */
 export function rankCommands(
-  tree: CommandTree, query: string, language: Language, recent: readonly string[] = [],
+  tree: CommandTree, query: string, language: Language, recent: readonly string[] = [], developer = false,
 ): RankedCommand[] {
   const size = new Map<string, number>();
-  for (const command of tree.commands) size.set(command.group, (size.get(command.group) ?? 0) + 1);
-  const groups = new Map(tree.groups.filter((group) => size.get(group.id) === 1).map((group) => [group.id, group]));
-  const commands = searchable(tree);
+  for (const command of tree.commands) size.set(command.capability, (size.get(command.capability) ?? 0) + 1);
+  const single = new Map(tree.capabilities.filter((capability) => size.get(capability.id) === 1).map((capability) => [capability.id, capability]));
+  const commands = searchable(tree, developer);
   const recency = new Map(recent.map((id, index) => [id, index]));
   const parts = queryParts(query);
   if (!parts.length) {
@@ -81,7 +83,7 @@ export function rankCommands(
   commands.forEach((command, order) => {
     let score = 0;
     for (const part of parts) {
-      const hit = scorePart(part, command, groups.get(command.group) ?? null, language);
+      const hit = scorePart(part, command, single.get(command.capability) ?? null, language);
       if (!hit) { score = 0; break; }
       score += hit;
     }

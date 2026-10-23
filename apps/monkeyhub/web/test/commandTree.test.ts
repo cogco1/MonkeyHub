@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { normalizeShortcut, PALETTE_SHORTCUT } from "../src/features/commands/keys.ts";
 import { COMMAND_TREE } from "../src/features/commands/tree.generated.ts";
-// @ts-expect-error -- a plain .mjs module without declarations
-import { render } from "../scripts/command-tree.mjs";
+
+// Ids, labels and staleness against the registry are archcheck's (COMMAND_ID, COMMAND_TREE_STALE);
+// these are the things only the web knows: its surfaces, its groups and the keys already taken.
 
 const ID = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/;
-const SECTIONS = new Set(["shell", "settings", "project_bar", "modeling", "board", "layout", "document", "drawings", "render",
+const GROUPS = new Set(["shell", "settings", "project_bar", "modeling", "board", "layout", "document", "drawings", "render",
   "design_tree", "fabrication", "usage"]);
-const SURFACES = new Set(["hub", ...[...SECTIONS].filter((section) => !["shell", "settings", "project_bar"].includes(section))]);
+const SURFACES = new Set(["hub", ...[...GROUPS].filter((group) => !["shell", "settings", "project_bar"].includes(group))]);
 
 // Keys the browser, Rhino 8, the Board's Excalidraw, Windows and the input method already use
 // (02 常用操作提速, "避开了哪些键"). Ctrl+K is taken from Excalidraw on purpose (ADR-014 point 6).
@@ -24,26 +24,20 @@ const RESERVED = new Set([
   "Shift+1", "Shift+2", "Shift+3", "Ctrl+Space", "Ctrl+.", "Shift+Space", "Ctrl+Esc", "Ctrl+Shift+Esc",
 ]);
 
-test("the committed tree is the registry's current view", () => {
-  const registry = JSON.parse(readFileSync(new URL("../../../../governance/module_registry.json", import.meta.url), "utf8"));
-  const committed = readFileSync(new URL("../src/features/commands/tree.generated.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
-  assert.equal(committed, render(registry), "run `npm run api:generate`");
-});
-
-test("every command has one well-formed id, a group, a section and a surface the palette knows", () => {
-  const groups = new Set(COMMAND_TREE.groups.map((group) => group.id));
+test("every command has one well-formed id, a capability, and a group and surface the palette knows", () => {
+  const capabilities = new Set(COMMAND_TREE.capabilities.map((capability) => capability.id));
   const seen = new Set<string>();
   for (const command of COMMAND_TREE.commands) {
     assert.match(command.id, ID, command.id);
     assert.ok(!seen.has(command.id), `${command.id} is registered twice`);
     seen.add(command.id);
-    assert.ok(groups.has(command.group), `${command.id}: group ${command.group}`);
-    assert.ok(SECTIONS.has(command.section), `${command.id}: section ${command.section}`);
+    assert.ok(capabilities.has(command.capability), `${command.id}: capability ${command.capability}`);
+    assert.ok(GROUPS.has(command.group), `${command.id}: group ${command.group}`);
     assert.ok(SURFACES.has(command.surface), `${command.id}: surface ${command.surface}`);
     assert.ok(command.label.en.trim() && command.label["zh-CN"].trim(), `${command.id}: both labels`);
     assert.notEqual(command.label.en, command.label["zh-CN"], `${command.id}: the Chinese label is not the English one`);
   }
-  for (const group of COMMAND_TREE.groups) assert.match(group.id, ID, group.id);
+  for (const capability of COMMAND_TREE.capabilities) assert.match(capability.id, ID, capability.id);
 });
 
 test("a shortcut has a modifier, is the only one of its kind, and stays clear of keys already taken", () => {

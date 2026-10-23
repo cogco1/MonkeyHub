@@ -366,7 +366,8 @@
       ],
       "ui": {
         "surface": "hub",
-        "section": "shell",
+        "group": "shell",
+        "tier": "basic",
         "channel": "front",
         "commands": [
           {
@@ -448,7 +449,8 @@
       ],
       "ui": {
         "surface": "hub",
-        "section": "shell",
+        "group": "shell",
+        "tier": "basic",
         "channel": "side",
         "commands": [
           {
@@ -537,7 +539,8 @@
       "missing": [],
       "ui": {
         "surface": "hub",
-        "section": "shell",
+        "group": "shell",
+        "tier": "basic",
         "channel": "front",
         "commands": [
           {
@@ -647,7 +650,8 @@
       "missing": [],
       "ui": {
         "surface": "hub",
-        "section": "shell",
+        "group": "shell",
+        "tier": "basic",
         "channel": "side",
         "commands": [
           {
@@ -755,7 +759,8 @@
       "missing": [],
       "ui": {
         "surface": "hub",
-        "section": "settings",
+        "group": "settings",
+        "tier": "basic",
         "channel": "side",
         "commands": [
           {
@@ -887,7 +892,8 @@
       "missing": [],
       "ui": {
         "surface": "hub",
-        "section": "settings",
+        "group": "settings",
+        "tier": "basic",
         "channel": "side",
         "commands": [
           {
@@ -943,7 +949,8 @@
       ],
       "ui": {
         "surface": "hub",
-        "section": "fabrication",
+        "group": "fabrication",
+        "tier": "basic",
         "channel": "side",
         "commands": [
           {
@@ -6672,7 +6679,8 @@
         "the Finding shape and the JSON/text report and exit code",
         "the placement checks over the paths Git tracks (#553): the entries directly under each directory directory_entries lists (the Hub web source root, the docs categories), test files that test_file_patterns names only under test_roots, and the first-level directories of each Python package under packages/<name>/src/ and services/<name>/src/ against subpackages",
         "the file-ownership check over the paths Git tracks (#559): every Python file under checked_source_roots, outside the test suites and import_only_source_roots, held by exactly one module's files, listed directly or through a listed directory; a file no module holds is reported with its nearest plausible owner and a file two modules hold with both, while a package's __init__.py may go unheld",
-        "Validating the live work registry (ArchFlowDevelopmentRegistry@3): GitHub Issue claims only, claimed directly or through lanes, with checkout, base, contributor, paths and dependencies; reporting competing live path and checkout claims; checking each commit against the claim it names in its own registry, and reading commits made before #358 by their card-era rules"
+        "Validating the live work registry (ArchFlowDevelopmentRegistry@3): GitHub Issue claims only, claimed directly or through lanes, with checkout, base, contributor, paths and dependencies; reporting competing live path and checkout claims; checking each commit against the claim it names in its own registry, and reading commits made before #358 by their card-era rules",
+        "the command tree's checks over the registry's capability commands (COMMAND_ID, COMMAND_FIELD, COMMAND_PLACE, COMMAND_TREE_STALE) and the one renderer of its web view, render_command_tree"
       ],
       "does_not_own": [
         "the policy content - governance/architecture_policy.json",
@@ -6729,7 +6737,8 @@
         "tools/tests/test_archcheck_github_claims.py",
         "tools/tests/test_archcheck_paths.py",
         "tools/tests/test_archcheck_dependencies.py",
-        "tools/tests/test_archcheck_ownership.py"
+        "tools/tests/test_archcheck_ownership.py",
+        "tools/tests/test_archcheck_command_tree.py"
       ],
       "notes": "Architecture checks parse source without importing application code; scope behavior is verified with disposable Git repositories."
     },
@@ -6742,7 +6751,8 @@
         "rendering docs/architecture/system-map.md and docs/architecture/semantic-registry.md, including the stage-ladder table generated from PHASE_LADDER and the facets table with each added key's reason",
         "Exact-id or ranked keyword module lookup with paged contract sections, dependencies, registered source paths and tests; ambiguous queries return bounded candidates",
         "Capability lookup over the same registry: exact id or goal words in either language, paged entry sections, and the sentence a no-hit answers with",
-        "Read-only work lookup by exact claim, GH-<issue> or GH-<issue>/<lane>, showing the Issue link, branch/worktree/base/contributor/modules/paths/dependencies/handoff/blocked reason and findings from tools.governance.archcheck"
+        "Read-only work lookup by exact claim, GH-<issue> or GH-<issue>/<lane>, showing the Issue link, branch/worktree/base/contributor/modules/paths/dependencies/handoff/blocked reason and findings from tools.governance.archcheck",
+        "render-map writes the web command tree (apps/monkeyhub/web/src/features/commands/tree.generated.ts) beside the system and semantic maps"
       ],
       "does_not_own": [
         "architecture boundary enforcement - tools.governance.archcheck",
@@ -7927,7 +7937,7 @@
         "Component information in Modeling (#549): topic-agnostic MonkeyHubComponentInfo@1 datasets (docs/protocols/component-info.md), each kept on its own Board card under customData.componentInfo, checked and imported or replaced by dataset id on the Board through its save queue, read while Modeling shows a model once per Board revision, and shown in one closable card for a picked component only when the pick and the dataset's appliesTo (project, run, state digest) match the exact version on screen; datasets for another version are listed, never shown, and a click makes no request and writes nothing",
         "the designLoop application setting (legacy | advisory | enforced, default legacy; a saved off reads as legacy) passed to each Project Runtime it starts; legacy keeps the chat's tools, guide and error words as they were; advisory adds GET /api/revisions/context and two lines naming the problem lists; enforced offers POST /api/revisions with the user's message and words bound, the guide that names it and a Claude chat without Bash; the chat never sends confirmed",
         "the design-loop tools (design_read, design_submit, design_ask, design_report_limitation) over studio_request and POST /api/revisions: a repair limit per answered user message (MONKEYHUB_REPAIR_BUDGET, default 3), earlier attempts on the same base superseded, the turn's loop state at the launcher's MONKEYHUB_DESIGN_LOOP_STATE file, the Stop hook that holds a turn open until a change landed, the architect was asked or a limitation was reported (at most three times), the --design-loop connection that lists only those tools, and cli_profile for whoever starts such a turn",
-        "The command palette (Ctrl+K), the Hub's own shortcuts and the local use counts (src/features/commands): a view of the module registry's capability commands rendered by scripts/command-tree.mjs, whose handlers the surface performing each command registers by its id; no second command list"
+        "The command palette (Ctrl+K), the Hub's own shortcuts and the local use counts (src/features/commands): it reads tree.generated.ts, the view of the module registry's capability commands that devctl render-map writes, and runs a command through the handler the surface performing it registers under its id; no second command list"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -8050,7 +8060,7 @@
         "design_loop.cli_profile",
         "design_loop.stop_decision",
         "mcp_server --design-loop",
-        "src/features/commands/CommandProvider.tsx: CommandProvider, useCommandActions(id → handler), useCommands; tree.generated.ts: COMMAND_TREE"
+        "src/features/commands/CommandProvider.tsx: CommandProvider, useCommandActions(command id → handler), useCommands; tree.generated.ts: COMMAND_TREE"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -8223,8 +8233,7 @@
         "apps/monkeyhub/web/src/features/componentInfo/",
         "apps/monkeyhub/web/src/features/designTree/DesignTreeCleaned.tsx",
         "apps/monkeyhub/api/monkeyhub_api/chat/design_loop.py",
-        "apps/monkeyhub/web/src/features/commands/",
-        "apps/monkeyhub/web/scripts/command-tree.mjs"
+        "apps/monkeyhub/web/src/features/commands/"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
