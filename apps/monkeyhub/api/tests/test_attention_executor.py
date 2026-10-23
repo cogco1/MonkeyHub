@@ -116,9 +116,9 @@ class CommandTreeTests(unittest.TestCase):
         registry = json.loads((ROOT / "governance" / "module_registry.json").read_text(encoding="utf-8"))
         commands = {command["id"]: command for capability in registry.get("capabilities", ())
                     for command in (capability.get("ui") or {}).get("commands", ())}
-        self.assertEqual({key for key, command in commands.items() if command.get("opens")} - OPENS, set(),
+        self.assertEqual({key for key, command in commands.items() if command.get("opens")} - set(OPENS), set(),
                          "every command the tree marks as opening may be opened from a card")
-        self.assertEqual({key for key in OPENS & set(commands) if not commands[key].get("opens")}, set())
+        self.assertEqual({key for key in set(OPENS) & set(commands) if not commands[key].get("opens")}, set())
         self.assertEqual({key for key in set(COMMANDS) & set(commands) if commands[key].get("opens")}, set(),
                          "an answer is never a command that only opens something")
 
@@ -195,6 +195,8 @@ class AttentionExecutorTests(unittest.TestCase):
             {"options": [restart]},
             {"options": [option("go", "重置", "board.reset_canvas")]},
             {"opens": [{"commandId": "design.go_to_step", "args": {"runId": "run-x"}}]},
+            {"opens": [{"commandId": "candidate.compare", "args": {}}]},
+            {"opens": [{"commandId": "chat.open_conversation", "args": {"sessionId": "c1", "messageId": "m1"}}]},
             # The guess cards' first draft: a sentence under another name, and no conversation to send it to.
             {"options": [option("go", "再调小一步", "chat.send_message", text="梁高再降 50")]},
             {"options": [option("go", "换成它", "design.go_to_step")]},
