@@ -1578,7 +1578,13 @@
       "menu": 8,
       "rail": 6,
       "sidebar_top": 3,
-      "panel": 10
+      "panel": 10,
+      "left_column": 4,
+      "center_tabs": 3,
+      "side_panel": 6,
+      "card": 4,
+      "status_line": 2,
+      "composer": 2
     },
     "baseline": {
       "apps/monkeyhub/web/src/ChatMessageContent.tsx": 3,
