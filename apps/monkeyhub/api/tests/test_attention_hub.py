@@ -77,6 +77,7 @@ class FakeChats:
     def __init__(self, sessions: list[ChatDetail]):
         self.sessions = sessions
         self.created = []
+        self.failing: set[str] = set()
 
     def providers(self):
         return [SimpleNamespace(id="codex", available=False), SimpleNamespace(id="claude", available=True)]
@@ -92,7 +93,12 @@ class FakeChats:
         return [row for row in self.sessions if project_id in (None, row.projectId)]
 
     def get(self, session_id):
-        return next(row for row in self.sessions if row.id == session_id)
+        if session_id in self.failing:
+            raise HubFailure(503, "CHAT_STORE_UNAVAILABLE", "The chats could not be read.")
+        found = next((row for row in self.sessions if row.id == session_id), None)
+        if found is None:
+            raise HubFailure(404, "CHAT_NOT_FOUND", "This chat does not exist.")
+        return found
 
     def presentation_token(self, session_id):
         return f"token-{session_id}"
@@ -200,18 +206,26 @@ class AttentionHubTests(unittest.TestCase):
     def test_the_projects_attention_conversation_is_opened_once_and_kept(self):
         settings = SimpleNamespace(chat_provider="codex", chat_model="gpt-x", language="zh-CN")
         hub = AttentionHub(self.store, self.runtimes, self.chats, user_settings=lambda: settings)
-        first = hub.conversation("thi-hemp", self.project_dir)
-        self.assertEqual(hub.conversation("thi-hemp", self.project_dir), first, "answered again, not opened again")
+        first = hub.conversation(self.project_dir)
+        self.assertEqual(hub.conversation(self.project_dir), first, "answered again, not opened again")
         made, = self.chats.created
         self.assertEqual((made.provider, made.model, made.title), ("claude", None, "关注"),
                          "the default provider was unavailable, so the first available one opens it")
         self.assertEqual(self.store.conversation(self.project_dir), first)
 
+        self.chats.failing = {first}
+        with self.assertRaises(HubFailure, msg="a passing failure does not replace the conversation"):
+            hub.conversation(self.project_dir)
+        self.assertEqual(len(self.chats.created), 1)
+        self.chats.failing = set()
+
         next(row for row in self.chats.sessions if row.id == first).archived = True
         settings.language = "en"
-        second = hub.conversation("thi-hemp", self.project_dir)
+        second = hub.conversation(self.project_dir)
         self.assertNotEqual(second, first, "an archived one is replaced")
         self.assertEqual(self.chats.created[-1].title, "Attention")
+        self.chats.sessions = [row for row in self.chats.sessions if row.id != second]
+        self.assertNotIn(hub.conversation(self.project_dir), {first, second}, "so is one that is gone")
 
     def test_the_hubs_events_bring_cards_up_to_date_and_say_so(self):
         seen = []
