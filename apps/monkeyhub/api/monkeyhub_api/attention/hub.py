@@ -18,12 +18,14 @@ from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime, timezone
 import json
 import queue
+import secrets
 import threading
 import time
 from typing import Annotated, Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.requests import Request
 
 from ..models import ChatDetail, HubFailure
 from ..runtime.workers import project_key
@@ -115,9 +117,16 @@ class AttentionHub:
                                  producers.updates(self.updates.status()))
 
     def ask(self, session_id: str, message_id: str, question: str, reason: str,
-            refs: Iterable[str] = ()) -> AttentionItem:
-        """A design-loop turn asked the architect: one card per user message, answered back into its conversation."""
+            refs: Iterable[str] = (), *, token: str) -> AttentionItem:
+        """A design-loop turn asked the architect: one card per user message, answered back into its conversation.
 
+        Only the conversation's own tool server asks: it holds the token the
+        Hub gave that conversation's CLI (``MONKEYHUB_PRESENTATION_TOKEN``), as
+        a presentation tool does.
+        """
+
+        if not token or not secrets.compare_digest(self.chats.presentation_token(session_id), token):
+            raise HubFailure(403, "ATTENTION_QUESTION_UNBOUND", "Only this conversation's own tools can ask its architect.")
         session = self.chats.get(session_id)
         if not any(row.id == message_id and row.role == "user" for row in session.messages):
             raise HubFailure(409, "ATTENTION_QUESTION_UNBOUND", "The question names no message the architect sent here.")
@@ -213,9 +222,13 @@ def question_router(attention: AttentionHub) -> APIRouter:
     routes = APIRouter()
 
     @routes.post("/api/attention/questions", response_model=AttentionItem, status_code=201)
-    def attention_question(body: AttentionQuestionRequest) -> AttentionItem:
+    def attention_question(request: Request, body: AttentionQuestionRequest) -> AttentionItem:
         """Called by the conversation's tool server when design_ask records a question."""
 
-        return attention.ask(body.sessionId, body.messageId, body.question, body.reason, body.refs)
+        if request.client is None or request.client.host not in {"127.0.0.1", "::1"}:
+            raise HubFailure(403, "LOCAL_PRESENTER_REQUIRED", "The conversation's tools must connect from this machine.")
+        authorization = request.headers.get("authorization", "")
+        token = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else ""
+        return attention.ask(body.sessionId, body.messageId, body.question, body.reason, body.refs, token=token)
 
     return routes

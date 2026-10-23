@@ -81,6 +81,9 @@ class FakeChats:
     def get(self, session_id):
         return next(row for row in self.sessions if row.id == session_id)
 
+    def presentation_token(self, session_id):
+        return f"token-{session_id}"
+
     def resolve_permission(self, session_id, permission_id, request):
         self.answered = (session_id, permission_id, request.optionId)
 
@@ -151,10 +154,13 @@ class AttentionHubTests(unittest.TestCase):
     def test_a_design_loop_question_is_a_card_until_the_architect_writes_again(self):
         chat = self.chats.sessions[0]
         chat.messages.insert(0, chat.messages[0].model_copy(update={"id": "u1", "role": "user", "permission": None}))
+        with self.assertRaises(HubFailure) as stranger:
+            self.hub.ask("c1", "u1", "西门廊要保留原来的柱距吗", "柱距和新楼梯冲突", token="guessed")
+        self.assertEqual((stranger.exception.status, stranger.exception.error.code), (403, "ATTENTION_QUESTION_UNBOUND"))
         with self.assertRaises(HubFailure) as unbound:
-            self.hub.ask("c1", "m1", "西门廊要保留原来的柱距吗", "柱距和新楼梯冲突")
+            self.hub.ask("c1", "m1", "西门廊要保留原来的柱距吗", "柱距和新楼梯冲突", token="token-c1")
         self.assertEqual(unbound.exception.error.code, "ATTENTION_QUESTION_UNBOUND")
-        card = self.hub.ask("c1", "u1", "西门廊要保留原来的柱距吗", "柱距和新楼梯冲突")
+        card = self.hub.ask("c1", "u1", "西门廊要保留原来的柱距吗", "柱距和新楼梯冲突", token="token-c1")
         self.assertEqual((card.dedupeKey, card.projectId), ("dlq:c1:u1", "thi-hemp"))
         self.hub.refresh(self.runtimes.runtime.runtime_id)
         self.assertEqual(self.store.get(card.id).state, "open")
