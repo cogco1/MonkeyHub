@@ -7282,7 +7282,7 @@
         "the designLoop application setting (legacy | advisory | enforced, default legacy; a saved off reads as legacy) passed to each Project Runtime it starts; legacy keeps the chat's tools, guide and error words as they were; advisory adds GET /api/revisions/context and two lines naming the problem lists; enforced offers POST /api/revisions with the user's message and words bound, the guide that names it and a Claude chat without Bash; the chat never sends confirmed",
         "the design-loop tools (design_read, design_submit, design_ask, design_report_limitation) over studio_request and POST /api/revisions: a repair limit per answered user message (MONKEYHUB_REPAIR_BUDGET, default 3), earlier attempts on the same base superseded, the turn's loop state at the launcher's MONKEYHUB_DESIGN_LOOP_STATE file, the Stop hook that holds a turn open until a change landed, the architect was asked or a limitation was reported (at most three times), the --design-loop connection that lists only those tools, and cli_profile for whoever starts such a turn",
         "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
-        "Carrying out a card's answer as the person who chose it (#300, attention/actions.py): Continue onto a run and its undo, archiving and restoring candidates, combining a result with the head, answering a conversation's permission or suggestion, sending the person's reply to the conversation, applying a prepared update and reading a notice; \"all as recommended\" with one undo. The producers (attention/producers.py) that write results, permissions, suggestions, design-loop questions, failed operations and updates as cards."
+        "Carrying out a card's answer as the person who chose it (#300, attention/actions.py): Continue onto a run and its undo, archiving and restoring candidates, combining a result with the head, answering a conversation's permission or suggestion, sending the person's reply to the conversation, applying a prepared update and reading a notice; \"all as recommended\" with one undo. The producers (attention/producers.py) that write results, permissions, suggestions, design-loop questions, failed operations and updates as cards. AttentionHub (attention/hub.py) gives the executor its ports on the Hub (the runtime forward, the chat store, the updater), reconciles a project's cards a moment after its events settle, and publishes attention/changed under the project's runtime id."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -7410,7 +7410,8 @@
         "AttentionDraft",
         "AttentionItem",
         "AttentionExecutor",
-        "COMMANDS"
+        "COMMANDS",
+        "AttentionHub"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -7590,6 +7591,7 @@
         "apps/monkeyhub/api/monkeyhub_api/attention/store.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/actions.py",
+        "apps/monkeyhub/api/monkeyhub_api/attention/hub.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/producers.py"
       ],
       "tests": [
@@ -7654,6 +7656,7 @@
         "apps/monkeyhub/api/tests/test_design_loop.py",
         "apps/monkeyhub/api/tests/test_attention_store.py",
         "apps/monkeyhub/api/tests/test_attention_executor.py",
+        "apps/monkeyhub/api/tests/test_attention_hub.py",
         "apps/monkeyhub/api/tests/test_attention_producers.py"
       ],
       "depends_on": [

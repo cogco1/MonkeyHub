@@ -124,8 +124,10 @@
           ],
           "write_scope": [
             "apps/monkeyhub/api/monkeyhub_api/attention/actions.py",
+            "apps/monkeyhub/api/monkeyhub_api/attention/hub.py",
             "apps/monkeyhub/api/monkeyhub_api/attention/producers.py",
             "apps/monkeyhub/api/tests/test_attention_executor.py",
+            "apps/monkeyhub/api/tests/test_attention_hub.py",
             "apps/monkeyhub/api/tests/test_attention_producers.py"
           ],
           "depends_on": []

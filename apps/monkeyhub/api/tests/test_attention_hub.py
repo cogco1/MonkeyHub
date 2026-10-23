@@ -1,0 +1,169 @@
+"""Joined to the Hub, a card's answer is the person's own request, and the Hub's events bring the cards up to date."""
+
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import sys
+import tempfile
+import time
+from types import SimpleNamespace
+import unittest
+
+ROOT = Path(__file__).resolve().parents[4]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from tools.dev import source_roots  # noqa: E402 - this checkout's tools, found above
+
+source_roots.put_first(ROOT)
+
+from project_runtime.events import StudioEvents
+
+from monkeyhub_api.attention.hub import AttentionHub
+from monkeyhub_api.attention.store import AttentionStore, runtime_id
+from monkeyhub_api.models import ChatDetail, HubFailure
+from monkeyhub_api.runtime.models import OperationRecord
+from monkeyhub_api.runtime.worker_http import HttpResult
+
+NOW = datetime(2026, 10, 23, 9, 0, tzinfo=timezone.utc)
+
+
+def answer(status: int, value: dict) -> HttpResult:
+    return HttpResult(status, json.dumps(value).encode("utf-8"), {"content-type": "application/json"})
+
+
+class FakeRuntimes:
+    """The parts of ProjectRuntimeManager the queue uses."""
+
+    def __init__(self, project_dir: str):
+        self.events = StudioEvents(buffer_size=64)
+        self.runtime = SimpleNamespace(project_id="thi-hemp", project_dir=project_dir,
+                                       runtime_id=runtime_id("thi-hemp", project_dir),
+                                       operations=SimpleNamespace(records=lambda: list(self.records)))
+        self.records: list[OperationRecord] = []
+        self.graph: dict | None = None
+        self.current = {"runId": "run-v16", "branchId": "main"}
+        self.forwarded: list[tuple] = []
+        self.acknowledged: list[str] = []
+
+    def open(self, project_id, project_dir):
+        return self.runtime
+
+    def get(self, key, project_id=None):
+        if key != self.runtime.runtime_id:
+            raise HubFailure(404, "RUNTIME_NOT_FOUND", "Open the project's runtime first.")
+        return self.runtime
+
+    def acknowledge(self, runtime, operation_id):
+        self.acknowledged.append(operation_id)
+
+    def forward(self, runtime, path, method, body, headers):
+        self.forwarded.append((method, path, json.loads(body) if body else None, dict(headers)))
+        if path == "/api/worktrees":
+            if self.graph is None:
+                raise HubFailure(503, "WORKER_UNAVAILABLE", "The project's Studio is not ready.")
+            return answer(200, self.graph)
+        if path == "/api/working-draft" and method == "GET":
+            return answer(200, {"projectId": "thi-hemp", "revisionSha256": "rev-0", "current": self.current})
+        if path == "/api/working-draft" and method == "PUT":
+            self.current = {"runId": json.loads(body)["runId"], "branchId": None}
+            return answer(200, {"projectId": "thi-hemp"})
+        return answer(409, {"code": "CANDIDATE_REVIEW_INVALID", "detail": "Choose an exact Candidate."})
+
+
+class FakeChats:
+    def __init__(self, sessions: list[ChatDetail]):
+        self.sessions = sessions
+
+    def list(self, project_id=None, *, archived=False):
+        return [row for row in self.sessions if project_id in (None, row.projectId)]
+
+    def get(self, session_id):
+        return next(row for row in self.sessions if row.id == session_id)
+
+    def resolve_permission(self, session_id, permission_id, request):
+        self.answered = (session_id, permission_id, request.optionId)
+
+    def post(self, session_id, request):
+        self.posted = (session_id, request)
+
+
+def waiting_chat(project_dir: str) -> ChatDetail:
+    return ChatDetail.model_validate({
+        "id": "c1", "projectId": "thi-hemp", "projectDir": project_dir, "title": "改楼板", "provider": "claude",
+        "status": "running", "createdAt": NOW.isoformat(), "updatedAt": NOW.isoformat(), "attention": "permission",
+        "messages": [{"id": "m1", "role": "tool", "content": "", "createdAt": NOW.isoformat(), "permission": {
+            "id": "p1", "title": "写入 runs/", "options": [{"optionId": "allow", "name": "Allow", "kind": "allow_once"}]}}]})
+
+
+def result_line(run: str) -> dict:
+    return {"kind": "result", "runId": run, "status": "ready", "admission": "none", "relation": "diverged",
+            "reconcile": "unknown", "studyId": "s1", "updatedAt": NOW.isoformat()}
+
+
+class AttentionHubTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.project_dir = str(Path(temporary.name) / "thi-hemp")
+        Path(self.project_dir).mkdir()
+        self.store = AttentionStore(Path(temporary.name) / "attention")
+        self.runtimes = FakeRuntimes(self.project_dir)
+        self.chats = FakeChats([waiting_chat(self.project_dir)])
+        self.hub = AttentionHub(self.store, self.runtimes, self.chats, clock=lambda: NOW)
+
+    def test_a_project_answer_is_the_persons_own_request(self):
+        self.hub.studio("thi-hemp", self.project_dir, "PUT", "/api/working-draft", {"runId": "run-b"},
+                        operation_id="0b8f2b49-6f4e-4d6a-9d36-3c1b5a1e2f10")
+        method, path, body, headers = self.runtimes.forwarded[-1]
+        self.assertEqual((method, path, body), ("PUT", "/api/working-draft", {"runId": "run-b"}))
+        self.assertEqual(headers["idempotency-key"], "0b8f2b49-6f4e-4d6a-9d36-3c1b5a1e2f10")
+        self.assertNotIn("x-monkey-chat", headers)
+        with self.assertRaises(HubFailure) as refused:
+            self.hub.studio("thi-hemp", self.project_dir, "POST", "/api/candidate-reviews", {})
+        self.assertEqual((refused.exception.status, refused.exception.error.code), (409, "CANDIDATE_REVIEW_INVALID"))
+
+    def test_a_refresh_writes_what_the_hub_has_as_cards(self):
+        self.runtimes.records = [OperationRecord(operationId="o1", projectId="thi-hemp", kind="POST /api/revisions",
+                                                 source="studio", status="failed", reason="构件 seat 缺少面")]
+        self.runtimes.graph = {"head": {"runId": "run-v16"}, "lines": [result_line("run-a"), result_line("run-b")]}
+        self.hub.refresh(self.runtimes.runtime.runtime_id)
+        keys = sorted(item.dedupeKey for item in self.store.items())
+        self.assertEqual(keys, ["op:o1:failed", "perm:c1:p1", "result:study:s1"])
+
+        # A Studio that stopped says nothing about results: their cards stay as they were.
+        self.runtimes.graph = None
+        self.chats.sessions = []
+        self.hub.refresh(self.runtimes.runtime.runtime_id)
+        self.assertEqual(sorted(item.dedupeKey for item in self.store.items()), ["op:o1:failed", "result:study:s1"])
+        self.hub.refresh("not-open")  # a project that is not open is left alone
+
+    def test_answers_run_through_the_hub(self):
+        self.runtimes.graph = {"head": {"runId": "run-v16"}, "lines": [result_line("run-a"), result_line("run-b")]}
+        self.hub.refresh(self.runtimes.runtime.runtime_id)
+        card = next(item for item in self.store.items() if item.kind == "ab")
+        self.hub.executor.resolve(card.id, "b")
+        self.assertEqual(self.runtimes.current["runId"], "run-b")
+        permission = next(item for item in self.store.items() if item.dedupeKey == "perm:c1:p1")
+        self.hub.executor.resolve(permission.id, "o0")
+        self.assertEqual(self.chats.answered, ("c1", "p1", "allow"))
+
+    def test_the_hubs_events_bring_cards_up_to_date_and_say_so(self):
+        seen = []
+        self.hub.start()
+        self.addCleanup(self.hub.stop)
+        with self.runtimes.events.subscribe() as (_, inbox):
+            self.runtimes.events.publish(event={"kind": "operation/failed", "runtimeId": self.runtimes.runtime.runtime_id})
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and not seen:
+                try:
+                    event = inbox.get(True, 0.2)
+                except Exception:
+                    continue
+                if event["kind"] == "attention/changed":
+                    seen.append(event)
+        self.assertEqual(seen[0]["runtimeId"], self.runtimes.runtime.runtime_id)
+        self.assertEqual([item.dedupeKey for item in self.store.items()], ["perm:c1:p1"])
+
+
+if __name__ == "__main__":
+    unittest.main()
