@@ -31,7 +31,7 @@ RETAIN_CLOSED = 500
 # A rule card set aside without a number of days stays quiet this long.
 RULE_QUIET_DAYS = 7
 
-Listener = Callable[[str, tuple[str, ...]], None]
+Listener = Callable[[str, str, tuple[str, ...]], None]
 
 
 def runtime_id(project_id: str, project_dir: str) -> str:
@@ -76,10 +76,10 @@ class AttentionStore:
         self._projects: dict[str, _Project] | None = None
         self._invalid: set[str] = set()
         self._listeners: list[Listener] = []
-        self._pending: list[tuple[str, tuple[str, ...]]] = []
+        self._pending: list[tuple[str, str, tuple[str, ...]]] = []
 
     def subscribe(self, listener: Listener) -> None:
-        """Call ``listener(project_dir, ids)`` after each saved change."""
+        """Call ``listener(project_id, project_dir, ids)`` after each saved change."""
 
         self._listeners.append(listener)
 
@@ -92,9 +92,9 @@ class AttentionStore:
         finally:
             with self._lock:
                 pending, self._pending = self._pending, []
-            for project_dir, ids in pending:
+            for project_id, project_dir, ids in pending:
                 for listener in self._listeners:
-                    listener(project_dir, ids)
+                    listener(project_id, project_dir, ids)
 
     # Reading -------------------------------------------------------------
 
@@ -350,7 +350,7 @@ class AttentionStore:
             except HubFailure:
                 project.__dict__.update(before.__dict__)
                 raise
-            self._pending.append((project.project_dir, tuple(changed)))
+            self._pending.append((project.project_id, project.project_dir, tuple(changed)))
         return [item for item in changed if item in project.items]
 
     def _all(self) -> dict[str, _Project]:
