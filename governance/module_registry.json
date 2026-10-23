@@ -5082,7 +5082,8 @@
         "candidate admission: one CandidateAdmission@1 per closed loop (a task, one worktree of it, or one person's act) in the fixed explicit studio-admissions P036 run, written only through the completion gate Stage acceptance shares, with the boundary's actor, the stated task, Study and bound message, each result's outcome, pinned model, receipt and superseded attempts",
         "the Candidate Pool read for the Design Tree: admitted Candidates and their Studies from admission records and from legacy facts that already prove admission (a committed Stage's run, a retained Exploration's non-base option, an accepted episode's produced run), with lineage-derived continuedFrom and acceptedStageRef and Working Head membership",
         "the attributable, revisioned rejection, archival/restoration and endorsement of an exact retained Candidate or Stage; this changes no design position",
-        "the one-call revision (revise over RevisionPorts, POST /api/revisions): base, keep decisions protected, a touched rejected option, conditions in reach that no check can verify, the build, the read-back and comparison, validation, admission and Continue, in that order, answered as landed, admitted, problems, needs_question or refused; every step is an existing route or function"
+        "the one-call revision (revise over RevisionPorts, POST /api/revisions): base, keep decisions protected, a touched rejected option, conditions in reach that no check can verify, the build, the read-back and comparison, validation, admission and Continue, in that order, answered as landed, admitted, problems, needs_question or refused; every step is an existing route or function",
+        "the edit log: each retained candidate change along a run's line read again against its exact source record, as element and parameter edits with numeric before, after and direction, and gathered per field; a reading, never a new record"
       ],
       "does_not_own": [
         "running the proposal - project_runtime.candidate",
@@ -5312,7 +5313,11 @@
         "RevisionOutcomeDto",
         "require_design_loop",
         "GET /api/revisions/context",
-        "revision_context"
+        "revision_context",
+        "edit_log",
+        "edits_between",
+        "by_target",
+        "EditStep"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -5456,7 +5461,8 @@
         "services/project-runtime/tests/test_recipe_export.py",
         "tools/tests/test_export_drawing_recipe.py",
         "services/project-runtime/tests/test_indexed_reads.py",
-        "services/project-runtime/tests/test_revision_transaction.py"
+        "services/project-runtime/tests/test_revision_transaction.py",
+        "services/project-runtime/tests/test_edit_log.py"
       ],
       "notes": "ADR-001's record, section 2.1, makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -5496,7 +5502,8 @@
         "services/project-runtime/src/project_runtime/application/visual_reviews.py",
         "tools/benchmarks/benchmark_visual_observation.py",
         "tools/project/export_drawing_recipe.py",
-        "services/project-runtime/src/project_runtime/application/revision_transaction.py"
+        "services/project-runtime/src/project_runtime/application/revision_transaction.py",
+        "services/project-runtime/src/project_runtime/application/edit_log.py"
       ]
     },
     {
