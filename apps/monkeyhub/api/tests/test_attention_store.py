@@ -70,7 +70,7 @@ class AttentionStoreTests(unittest.TestCase):
 
     def test_one_thing_to_look_at_is_one_card(self):
         heard = []
-        self.store.subscribe(lambda project_dir, ids: heard.append(ids))
+        self.store.subscribe(lambda project_id, project_dir, ids: heard.append(ids))
         first = self.store.upsert("thi-hemp", self.project_dir, ab_draft())
         again = self.store.upsert("thi-hemp", self.project_dir, ab_draft())
         self.assertEqual(first.id, again.id)
@@ -212,7 +212,7 @@ class AttentionStoreTests(unittest.TestCase):
     def test_a_failed_save_changes_nothing(self):
         card = self.store.upsert("thi-hemp", self.project_dir, ab_draft()).id
         heard = []
-        self.store.subscribe(lambda project_dir, ids: heard.append(ids))
+        self.store.subscribe(lambda project_id, project_dir, ids: heard.append(ids))
         blocked = self.runtime_root / "blocked"
         blocked.write_text("not a directory", encoding="utf-8")
         self.store.root = blocked / "attention"
