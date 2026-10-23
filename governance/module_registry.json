@@ -7581,7 +7581,10 @@
         "apps/monkeyhub/web/src/features/componentInfo/",
         "apps/monkeyhub/web/src/features/designTree/DesignTreeCleaned.tsx",
         "apps/monkeyhub/api/monkeyhub_api/chat/design_loop.py",
-        "apps/monkeyhub/api/monkeyhub_api/attention/"
+        "apps/monkeyhub/api/monkeyhub_api/attention/__init__.py",
+        "apps/monkeyhub/api/monkeyhub_api/attention/models.py",
+        "apps/monkeyhub/api/monkeyhub_api/attention/store.py",
+        "apps/monkeyhub/api/monkeyhub_api/attention/routes.py"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
