@@ -39,7 +39,8 @@ export type CommandState =
 interface CommandsValue {
   register(action: string, handler: CommandHandler): () => void;
   run(id: string, source: UseSource, input?: CommandInput): boolean;
-  stateOf(command: Command): CommandState;
+  /** `onScreen` is the set of commands whose standing entry is shown, read once by the caller; without it the page is read. */
+  stateOf(command: Command, onScreen?: ReadonlySet<string>): CommandState;
   openPalette(): void;
   tree: CommandTree;
   usage: CommandUsage;
@@ -57,6 +58,21 @@ const storage = () => { try { return window.localStorage; } catch { return null;
 function entryOf(id: string): HTMLElement | null {
   const element = document.querySelector<HTMLElement>(`[data-command="${CSS.escape(id)}"]`);
   return element && element.getClientRects().length ? element : null;
+}
+
+/** Every command with a standing entry on screen, in one pass over the page. */
+export function entriesOnScreen(): Set<string> {
+  const ids = new Set<string>();
+  for (const element of document.querySelectorAll<HTMLElement>("[data-command]")) {
+    const id = element.getAttribute("data-command");
+    if (id && element.getClientRects().length) ids.add(id);
+  }
+  return ids;
+}
+
+/** An entry that cannot act now (disabled, or marked aria-disabled as menu items are) is not a use. */
+function inactive(entry: Element): boolean {
+  return (entry as HTMLButtonElement).disabled === true || entry.closest('[aria-disabled="true"]') !== null;
 }
 
 /** Bring a standing entry into view, focus it and mark it for a moment, without pressing it. */
@@ -96,13 +112,13 @@ export function CommandProvider({ children, tree = COMMAND_TREE }: { children: R
   }, []);
 
   // `version` is a dependency only so the states are read again when a surface registers or leaves.
-  const stateOf = useCallback((command: Command): CommandState => {
+  const stateOf = useCallback((command: Command, onScreen?: ReadonlySet<string>): CommandState => {
     const handler = handlers.current.get(command.id);
     if (handler) {
       const available = handler.available?.() ?? true;
       return available === true ? { kind: "ready" } : { kind: "unavailable", reason: available };
     }
-    if (entryOf(command.id)) return { kind: "locate" };
+    if (onScreen ? onScreen.has(command.id) : entryOf(command.id)) return { kind: "locate" };
     if (command.surface !== "hub" && handlers.current.has(openSurfaceAction(command.surface))) return { kind: "opens", surface: command.surface };
     return { kind: "unavailable", reason: null };
   }, [version]);
@@ -129,7 +145,8 @@ export function CommandProvider({ children, tree = COMMAND_TREE }: { children: R
       const entry = pending.current?.action === command.id ? entryOf(command.id) : null;
       if (entry || Date.now() > until || pending.current?.action !== command.id) {
         window.clearInterval(looking.current!); looking.current = null;
-        if (entry) { pending.current = null; pointAt(entry); }
+        if (pending.current?.action === command.id) pending.current = null;
+        if (entry) pointAt(entry);
       }
     }, LOOK_MS);
     void handlers.current.get(openSurfaceAction(command.surface))!.run({});
@@ -141,7 +158,7 @@ export function CommandProvider({ children, tree = COMMAND_TREE }: { children: R
     const onClick = (event: MouseEvent) => {
       const entry = (event.target as Element | null)?.closest?.("[data-command]");
       const id = entry?.getAttribute("data-command");
-      if (!id || !byId.has(id) || (entry instanceof HTMLButtonElement && entry.disabled)) return;
+      if (!entry || !id || !byId.has(id) || inactive(entry)) return;
       setUsage(recordUse(storage(), id, "button"));
     };
     window.addEventListener("click", onClick, true);

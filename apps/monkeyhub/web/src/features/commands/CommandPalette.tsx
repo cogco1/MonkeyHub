@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { useT, type TFunction } from "../../i18n/useT";
 import { usePreferences } from "../settings/preferences";
 import type { MessageKey } from "../../i18n/messages.en";
-import { useCommands, type CommandState } from "./CommandProvider";
+import { entriesOnScreen, useCommands, type CommandState } from "./CommandProvider";
 import { rankCommands, type Language } from "./search";
 import type { Command } from "./tree";
 import "./commands.css";
@@ -41,6 +41,8 @@ export function CommandPalette({ language, onClose, askAI }: {
   const [active, setActive] = useState(0);
   const dialog = useRef<HTMLDialogElement>(null);
   const list = useRef<HTMLDivElement>(null);
+  // Which standing entries are on screen is read once, as the palette opens, not per keystroke and command.
+  const [onScreen] = useState(entriesOnScreen);
 
   useEffect(() => {
     const element = dialog.current;
@@ -63,14 +65,14 @@ export function CommandPalette({ language, onClose, askAI }: {
           out.push({ kind: "heading", key: `h:${key}`, label: isRecent ? t("commands.recent") : groupLabel(t, command.group) });
           heading = key;
         }
-        out.push({ kind: "command", key: command.id, command, state: stateOf(command) });
+        out.push({ kind: "command", key: command.id, command, state: stateOf(command, onScreen) });
       }
     } else {
-      for (const { command } of ranked) out.push({ kind: "command", key: command.id, command, state: stateOf(command) });
+      for (const { command } of ranked) out.push({ kind: "command", key: command.id, command, state: stateOf(command, onScreen) });
     }
     if (askAI && query.trim()) out.push({ kind: "ask", key: "ask", text: query.trim() });
     return out;
-  }, [tree, query, language, usage.recent, developerMode, stateOf, askAI, t]);
+  }, [tree, query, language, usage.recent, developerMode, stateOf, onScreen, askAI, t]);
   const choices = rows.filter((row) => row.kind !== "heading");
   const current = choices[Math.min(active, choices.length - 1)];
 
