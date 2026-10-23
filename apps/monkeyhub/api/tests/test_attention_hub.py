@@ -147,6 +147,21 @@ class AttentionHubTests(unittest.TestCase):
         self.hub.executor.resolve(permission.id, "o0")
         self.assertEqual(self.chats.answered, ("c1", "p1", "allow"))
 
+    def test_a_design_loop_question_is_a_card_until_the_architect_writes_again(self):
+        chat = self.chats.sessions[0]
+        chat.messages.insert(0, chat.messages[0].model_copy(update={"id": "u1", "role": "user", "permission": None}))
+        with self.assertRaises(HubFailure) as unbound:
+            self.hub.ask("c1", "m1", "西门廊要保留原来的柱距吗", "柱距和新楼梯冲突")
+        self.assertEqual(unbound.exception.error.code, "ATTENTION_QUESTION_UNBOUND")
+        card = self.hub.ask("c1", "u1", "西门廊要保留原来的柱距吗", "柱距和新楼梯冲突")
+        self.assertEqual((card.dedupeKey, card.projectId), ("dlq:c1:u1", "thi-hemp"))
+        self.hub.refresh(self.runtimes.runtime.runtime_id)
+        self.assertEqual(self.store.get(card.id).state, "open")
+
+        chat.messages.append(chat.messages[0].model_copy(update={"id": "u2"}))
+        self.hub.refresh(self.runtimes.runtime.runtime_id)
+        self.assertEqual(self.store.get(card.id).state, "superseded")
+
     def test_the_hubs_events_bring_cards_up_to_date_and_say_so(self):
         seen = []
         self.hub.start()

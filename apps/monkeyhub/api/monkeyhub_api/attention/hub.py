@@ -7,9 +7,11 @@ admits it; a chat answer goes to the ``ChatStore``; an update to the Hub's
 updater. It follows the Hub's event stream and, a moment after a project's
 events settle, reconciles every producer's cards for that project from what the
 Hub has: the operation journal, the project's conversations and, while its
-Studio is running, its Worktree Graph. A change to the queue is published on the
-same stream as ``attention/changed`` under the project's runtime id, so every
-page reads the queue again.
+Studio is running, its Worktree Graph. A design-loop turn that asks the
+architect a question says so itself (``POST /api/attention/questions``): its
+tools run in the conversation's own tool server, not in the Hub. A change to
+the queue is published on the same stream as ``attention/changed`` under the
+project's runtime id, so every page reads the queue again.
 """
 
 from collections.abc import Callable, Iterable, Mapping
@@ -18,12 +20,16 @@ import json
 import queue
 import threading
 import time
-from typing import Any
+from typing import Annotated, Any
+
+from fastapi import APIRouter
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..models import ChatDetail, HubFailure
 from ..runtime.workers import project_key
 from . import producers
 from .actions import AttentionExecutor
+from .models import AttentionItem
 from .store import AttentionStore, runtime_id
 
 # How long a project's events must stay quiet before its cards are read again.
@@ -38,11 +44,8 @@ class AttentionHub:
     """The executor's ports on the Hub, and the producers run on the Hub's events."""
 
     def __init__(self, store: AttentionStore, runtimes, chats, updates=None, *,
-                 questions: Callable[[str], Iterable[producers.AskedQuestion]] | None = None,
                  clock: Callable[[], datetime] | None = None):
         self.store, self.runtimes, self.chats, self.updates = store, runtimes, chats, updates
-        # The design loop's open questions for one conversation, once it says them.
-        self.questions = questions
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self.executor = AttentionExecutor(store, studio=self.studio, chats=chats, hub=self, clock=self._clock)
         store.subscribe(self._changed)
@@ -88,12 +91,30 @@ class AttentionHub:
         sessions = self._sessions(project_id, project_dir)
         self.store.reconcile(project_id, project_dir, producers.PERMISSIONS, producers.permissions(sessions))
         self.store.reconcile(project_id, project_dir, producers.SUGGESTIONS, producers.suggestions(sessions))
-        if self.questions is not None:
-            asked = [row for session in sessions for row in self.questions(session.id)]
-            self.store.reconcile(project_id, project_dir, producers.QUESTIONS, producers.questions(asked))
+        self._answered(project_id, project_dir, sessions)
         graph = self._graph(runtime)
         if graph is not None:
             self.store.reconcile(project_id, project_dir, producers.RESULTS, producers.results(graph, now=self._clock()))
+
+    def ask(self, session_id: str, message_id: str, question: str, reason: str,
+            refs: Iterable[str] = ()) -> AttentionItem:
+        """A design-loop turn asked the architect: one card per user message, answered back into its conversation."""
+
+        session = self.chats.get(session_id)
+        if not any(row.id == message_id and row.role == "user" for row in session.messages):
+            raise HubFailure(409, "ATTENTION_QUESTION_UNBOUND", "The question names no message the architect sent here.")
+        draft, = producers.questions([producers.AskedQuestion(session_id, message_id, question, reason, tuple(refs))])
+        return self.store.upsert(session.projectId, session.projectDir, draft)
+
+    def _answered(self, project_id: str, project_dir: str, sessions: list[ChatDetail]) -> None:
+        # A question is answered once its conversation has a newer message from the architect.
+        latest = {session.id: next((row.id for row in reversed(session.messages) if row.role == "user"), None)
+                  for session in sessions}
+        for card in self.store.items(project_dir, states=["open", "later"]):
+            asked = card.source.chatSessionId
+            if (card.dedupeKey.startswith(producers.QUESTIONS) and asked in latest
+                    and latest[asked] != card.source.chatMessageId):
+                self.store.retire(project_id, project_dir, card.dedupeKey, note="The conversation moved on.")
 
     def _sessions(self, project_id: str, project_dir: str) -> list[ChatDetail]:
         key = project_key(project_dir)
@@ -150,3 +171,26 @@ class AttentionHub:
                         self.refresh(key)
                     except HubFailure:
                         continue  # A card that cannot be saved now is written on the project's next event.
+
+
+class AttentionQuestionRequest(BaseModel):
+    """What a design-loop turn asked the architect (design_ask), for the user message it answers."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    sessionId: str = Field(min_length=1)
+    messageId: str = Field(min_length=1)
+    question: str = Field(min_length=1, max_length=2000)
+    reason: str = Field(min_length=1, max_length=2000)
+    refs: list[Annotated[str, Field(min_length=1, max_length=400)]] = Field(default_factory=list, max_length=20)
+
+
+def question_router(attention: AttentionHub) -> APIRouter:
+    routes = APIRouter()
+
+    @routes.post("/api/attention/questions", response_model=AttentionItem, status_code=201)
+    def attention_question(body: AttentionQuestionRequest) -> AttentionItem:
+        """Called by the conversation's tool server when design_ask records a question."""
+
+        return attention.ask(body.sessionId, body.messageId, body.question, body.reason, body.refs)
+
+    return routes
