@@ -173,10 +173,10 @@ class AttentionStore:
 
             def apply(now: datetime) -> list[str]:
                 project.conversation = session_id
-                return [session_id]
+                return []  # No card changed; the project's file still has to be saved.
 
             if project.conversation != session_id:
-                self._change(project, apply)
+                self._change(project, apply, save=True)
 
     # Producers -------------------------------------------------------------
 
@@ -407,18 +407,23 @@ class AttentionStore:
         self._woken(shown, now)
         return shown
 
-    def _change(self, project: _Project, apply: Callable[[datetime], list[str]]) -> list[str]:
-        """Apply one change and save it; on a failed save nothing changed, in memory or on disk."""
+    def _change(self, project: _Project, apply: Callable[[datetime], list[str]], *, save: bool = False) -> list[str]:
+        """Apply one change and save it; on a failed save nothing changed, in memory or on disk.
+
+        ``apply`` returns the ids of the cards it changed, which listeners
+        hear; ``save`` keeps a change to the project's own fields as well.
+        """
 
         before = copy.deepcopy(project)
         now = self._clock()
         changed = list(dict.fromkeys([*self._wake(project, now), *apply(now)]))
-        if changed:
+        if changed or save:
             try:
                 self._save(project, now)
             except HubFailure:
                 project.__dict__.update(before.__dict__)
                 raise
+        if changed:
             self._pending.append((project.project_id, project.project_dir, tuple(changed)))
         return [item for item in changed if item in project.items]
 
