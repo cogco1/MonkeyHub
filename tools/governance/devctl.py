@@ -104,7 +104,7 @@ def _capability_lookup(query: str, *, section: str | None, limit: int, offset: i
         return result
     result["matched"] = list(evidence[0][1])
     entry = matches[0]
-    detail = {k: entry[k] for k in ("capability_id", "owner", "execution_owner", "kind", "status",
+    detail = {k: entry[k] for k in ("capability_id", "owner", "execution_owner", "host", "kind", "status",
                                     "purpose", "purpose_zh", "inputs_ref", "estimated_cost",
                                     "status_note") if k in entry}
     omitted = {}

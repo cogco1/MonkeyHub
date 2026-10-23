@@ -1,0 +1,22 @@
+/* Ctrl+K. Variables only, so every interface style draws it. */
+.command-palette{position:fixed;inset:12vh auto auto 50%;transform:translateX(-50%);margin:0;padding:0;width:min(640px,calc(100vw - 32px));
+  max-height:min(560px,76dvh);border:1px solid var(--line);border-radius:10px;background:var(--ground);color:var(--ink);box-shadow:var(--shadow);overflow:hidden}
+.command-palette::backdrop{background:#0008}
+.command-palette[open]{display:block}
+.command-palette__box{display:flex;flex-direction:column;max-height:inherit}
+.command-palette__input{flex:none;width:100%;min-height:48px;padding:0 16px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;
+  color:var(--ink);font:inherit;font-size:calc(var(--text-ui) + 1px)}
+.command-palette__input:focus-visible{outline:none;box-shadow:inset 0 -2px var(--accent)}
+.command-palette__list{flex:1;min-height:0;overflow:auto;padding:6px 0}
+.command-palette__heading{padding:10px 16px 4px;color:var(--muted);font-size:var(--text-caption);font-weight:600}
+.command-palette__row{display:flex;align-items:center;gap:12px;min-height:40px;padding:6px 16px 6px 14px;border-left:2px solid transparent;cursor:pointer}
+.command-palette__row[aria-selected=true]{background:var(--panel-2);border-left-color:var(--accent)}
+.command-palette__row[aria-disabled=true]{cursor:default}
+.command-palette__row[aria-disabled=true] .command-palette__label{color:var(--faint)}
+.command-palette__label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.command-palette__meta{flex:none;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:var(--text-caption)}
+.command-palette__key{flex:none;padding:1px 6px;border:1px solid var(--line);border-radius:4px;color:var(--muted);font:var(--text-caption)/1.5 var(--font-mono)}
+.command-palette__row--ask .command-palette__label{color:var(--accent)}
+.command-palette__empty{padding:14px 16px;color:var(--muted)}
+.command-palette__foot{flex:none;padding:8px 16px;border-top:1px solid var(--line);color:var(--faint);font-size:var(--text-caption)}
+@media(max-width:600px){.command-palette{inset:8px auto auto 50%;max-height:calc(100dvh - 16px)}.command-palette__row{min-height:44px}.command-palette__foot{display:none}}

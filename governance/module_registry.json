@@ -319,6 +319,640 @@
         "services/project-runtime/tests/test_capabilities.py"
       ],
       "status_note": "The operation is the existing set-datum action of POST /api/proposals/elevation; it is described here so a goal finds it."
+    },
+    {
+      "capability_id": "chat.conversation",
+      "owner": "hub.shell",
+      "execution_owner": "hub.shell",
+      "host": "hub",
+      "kind": "manage",
+      "status": "PRODUCTION",
+      "purpose": "Start, open, continue and archive a project's conversations with the Agent, and send it a message.",
+      "purpose_zh": "开始、打开、继续和归档这个项目和代理的对话，给代理发消息。",
+      "goals": [
+        "start a new conversation",
+        "send a message to the agent",
+        "open a conversation",
+        "archive a conversation",
+        "新对话",
+        "给 AI 发消息",
+        "打开对话",
+        "归档对话"
+      ],
+      "aliases": [
+        "new chat",
+        "talk to the agent",
+        "新建对话",
+        "聊天"
+      ],
+      "requires": [
+        "an open project, for a new conversation"
+      ],
+      "entrypoints": [
+        "GET /api/chat/sessions",
+        "POST /api/chat/sessions",
+        "GET /api/chat/sessions/{session_id}",
+        "POST /api/chat/sessions/{session_id}/messages",
+        "POST /api/chat/sessions/{session_id}/stop",
+        "PUT /api/chat/sessions/{session_id}/archive"
+      ],
+      "works": [
+        "a new conversation in the open project",
+        "a message sent into a running turn",
+        "archiving a conversation and bringing it back"
+      ],
+      "missing": [
+        "importing a conversation started in Codex"
+      ],
+      "ui": {
+        "surface": "hub",
+        "section": "shell",
+        "channel": "front",
+        "commands": [
+          {
+            "id": "chat.new_conversation",
+            "label": "New conversation",
+            "label_zh": "新对话",
+            "aliases": [
+              "new chat"
+            ],
+            "entries": [
+              "壳5",
+              "壳26"
+            ]
+          }
+        ]
+      },
+      "tests": [
+        "apps/monkeyhub/api/tests/test_chat.py",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+      ]
+    },
+    {
+      "capability_id": "project.manage",
+      "owner": "hub.shell",
+      "execution_owner": "hub.shell",
+      "host": "hub",
+      "kind": "manage",
+      "status": "PRODUCTION",
+      "purpose": "Create a project or add an existing project folder to the Hub, open it, and export or restore a project archive.",
+      "purpose_zh": "新建项目或把已有项目文件夹加进 Hub、打开项目，导出和恢复项目归档。",
+      "goals": [
+        "create a new project",
+        "add an existing project",
+        "open a project",
+        "export a project archive",
+        "restore a project archive",
+        "新建项目",
+        "添加已有项目",
+        "打开项目",
+        "导出项目归档",
+        "恢复项目归档"
+      ],
+      "aliases": [
+        "new project",
+        "back up the project",
+        "project archive",
+        "备份项目",
+        "项目归档"
+      ],
+      "requires": [
+        "a folder for a new or added project",
+        "an open project, for an archive export"
+      ],
+      "entrypoints": [
+        "GET /api/chat/projects",
+        "POST /api/chat/projects",
+        "POST /api/runtime/projects/open",
+        "POST /api/project/archive/export",
+        "POST /api/project/archive/restore"
+      ],
+      "works": [
+        "a new empty project in the workspace folder",
+        "adding a project folder that already exists",
+        "an archive of one project that restores into another folder"
+      ],
+      "missing": [
+        "sharing a project with a team"
+      ],
+      "ui": {
+        "surface": "hub",
+        "section": "shell",
+        "channel": "side",
+        "commands": [
+          {
+            "id": "project.create.new",
+            "label": "New project…",
+            "label_zh": "新建项目…",
+            "entries": [
+              "壳6",
+              "壳28"
+            ]
+          },
+          {
+            "id": "project.create.add_existing",
+            "label": "Add existing project…",
+            "label_zh": "添加已有项目…",
+            "aliases": [
+              "open folder",
+              "打开文件夹"
+            ],
+            "entries": [
+              "壳7",
+              "壳31"
+            ]
+          },
+          {
+            "id": "project.archive.export",
+            "label": "Export project archive…",
+            "label_zh": "导出项目归档…",
+            "aliases": [
+              "backup",
+              "备份"
+            ],
+            "entries": [
+              "壳10",
+              "壳107"
+            ]
+          },
+          {
+            "id": "project.archive.restore",
+            "label": "Restore project archive…",
+            "label_zh": "恢复项目归档…",
+            "entries": [
+              "壳11",
+              "壳108"
+            ]
+          }
+        ]
+      },
+      "tests": [
+        "apps/monkeyhub/api/tests/test_project_archive.py",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+      ]
+    },
+    {
+      "capability_id": "shell.layout",
+      "owner": "hub.shell",
+      "execution_owner": "hub.shell",
+      "host": "hub",
+      "kind": "shell",
+      "status": "PRODUCTION",
+      "purpose": "Arrange the Hub window: the projects column, the tools panel, the way back through conversations, and the workspace in front.",
+      "purpose_zh": "安排 Hub 窗口：项目栏、工具面板、对话前后翻、前面显示哪个工作面。",
+      "goals": [
+        "hide the projects column",
+        "show the tools panel",
+        "go back to the previous conversation",
+        "switch to the Board",
+        "switch to Modeling",
+        "收起项目栏",
+        "打开工具面板",
+        "回到上一个对话",
+        "切到画板",
+        "切到建模"
+      ],
+      "aliases": [
+        "sidebar",
+        "workspace tab",
+        "侧栏",
+        "工作面"
+      ],
+      "requires": [],
+      "entrypoints": [],
+      "works": [
+        "each layout change the menu row and the rail make today"
+      ],
+      "missing": [],
+      "ui": {
+        "surface": "hub",
+        "section": "shell",
+        "channel": "front",
+        "commands": [
+          {
+            "id": "view.conversation_history.back",
+            "label": "Previous conversation",
+            "label_zh": "上一个对话",
+            "entries": [
+              "壳1"
+            ]
+          },
+          {
+            "id": "view.conversation_history.forward",
+            "label": "Next conversation",
+            "label_zh": "下一个对话",
+            "entries": [
+              "壳2"
+            ]
+          },
+          {
+            "id": "view.left_column.toggle",
+            "label": "Show or hide projects",
+            "label_zh": "展开或收起项目栏",
+            "entries": [
+              "壳3",
+              "壳20",
+              "壳27",
+              "壳41"
+            ]
+          },
+          {
+            "id": "view.side_panel",
+            "label": "Show or hide the tools panel",
+            "label_zh": "展开或收起工具面板",
+            "channel": "side",
+            "entries": [
+              "壳21",
+              "壳99"
+            ]
+          },
+          {
+            "id": "view.tab.board",
+            "label": "Board",
+            "label_zh": "画板",
+            "aliases": [
+              "whiteboard",
+              "白板"
+            ],
+            "shortcut": "Alt+2",
+            "entries": [
+              "壳92"
+            ]
+          },
+          {
+            "id": "view.tab.modeling",
+            "label": "Modeling",
+            "label_zh": "建模",
+            "aliases": [
+              "model",
+              "3d",
+              "模型"
+            ],
+            "shortcut": "Alt+3",
+            "entries": [
+              "壳91"
+            ]
+          }
+        ]
+      },
+      "tests": [
+        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+      ]
+    },
+    {
+      "capability_id": "shell.pages",
+      "owner": "hub.shell",
+      "execution_owner": "hub.shell",
+      "host": "hub",
+      "kind": "shell",
+      "status": "PRODUCTION",
+      "purpose": "Open one of the Hub's whole pages: Settings, the Design tree, Drawings, Render or Usage.",
+      "purpose_zh": "打开 Hub 的整页：设置、状态树、图纸、渲染、用量。",
+      "goals": [
+        "open settings",
+        "open the design tree",
+        "open drawings",
+        "open render",
+        "see usage",
+        "打开设置",
+        "打开状态树",
+        "打开图纸",
+        "打开渲染",
+        "看用量"
+      ],
+      "aliases": [
+        "preferences",
+        "token usage",
+        "偏好",
+        "用了多少"
+      ],
+      "requires": [
+        "an open project, for the Design tree, Drawings and Render"
+      ],
+      "entrypoints": [],
+      "works": [
+        "each page the rail and the settings button open today"
+      ],
+      "missing": [],
+      "ui": {
+        "surface": "hub",
+        "section": "shell",
+        "channel": "side",
+        "commands": [
+          {
+            "id": "view.settings",
+            "label": "Settings",
+            "label_zh": "设置",
+            "entries": [
+              "壳13",
+              "壳38"
+            ]
+          },
+          {
+            "id": "view.design_tree",
+            "label": "Design tree",
+            "label_zh": "状态树",
+            "aliases": [
+              "versions",
+              "版本"
+            ],
+            "entries": [
+              "壳93"
+            ]
+          },
+          {
+            "id": "view.drawings",
+            "label": "Drawings",
+            "label_zh": "图纸",
+            "aliases": [
+              "plans",
+              "出图"
+            ],
+            "entries": [
+              "壳94"
+            ]
+          },
+          {
+            "id": "view.render",
+            "label": "Render",
+            "label_zh": "渲染",
+            "aliases": [
+              "rendering",
+              "效果图"
+            ],
+            "entries": [
+              "壳95"
+            ]
+          },
+          {
+            "id": "view.usage",
+            "label": "Usage",
+            "label_zh": "用量",
+            "aliases": [
+              "tokens",
+              "cost",
+              "花费"
+            ],
+            "entries": [
+              "壳35",
+              "壳97"
+            ]
+          }
+        ]
+      },
+      "tests": [
+        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+      ]
+    },
+    {
+      "capability_id": "preference.settings",
+      "owner": "hub.shell",
+      "execution_owner": "hub.shell",
+      "host": "hub",
+      "kind": "manage",
+      "status": "PRODUCTION",
+      "purpose": "Change this person's Hub preferences: theme, interface style and text size from anywhere; providers and folders in Settings.",
+      "purpose_zh": "改这个人的 Hub 偏好：主题、界面风格、字号随处能改，模型服务和文件夹在设置里改。",
+      "goals": [
+        "switch to dark mode",
+        "switch to light mode",
+        "change the interface style",
+        "make the text larger",
+        "切换深色",
+        "切换浅色",
+        "换界面风格",
+        "字号调大"
+      ],
+      "aliases": [
+        "theme",
+        "appearance",
+        "font size",
+        "主题",
+        "外观",
+        "字号"
+      ],
+      "requires": [],
+      "entrypoints": [
+        "GET /api/settings/user",
+        "PUT /api/settings/user",
+        "GET /api/settings/apps",
+        "PUT /api/settings/apps"
+      ],
+      "works": [
+        "theme, interface style and text size, saved for this person"
+      ],
+      "missing": [],
+      "ui": {
+        "surface": "hub",
+        "section": "settings",
+        "channel": "side",
+        "commands": [
+          {
+            "id": "preference.appearance.theme_system",
+            "label": "Theme: match system",
+            "label_zh": "主题：跟随系统",
+            "entries": [
+              "壳22"
+            ]
+          },
+          {
+            "id": "preference.appearance.theme_dark",
+            "label": "Theme: dark",
+            "label_zh": "主题：深色",
+            "aliases": [
+              "dark mode",
+              "深色模式"
+            ],
+            "entries": [
+              "壳22"
+            ]
+          },
+          {
+            "id": "preference.appearance.theme_light",
+            "label": "Theme: light",
+            "label_zh": "主题：浅色",
+            "aliases": [
+              "light mode",
+              "浅色模式"
+            ],
+            "entries": [
+              "壳22"
+            ]
+          },
+          {
+            "id": "preference.appearance.style_classic",
+            "label": "Interface style: Classic",
+            "label_zh": "界面风格：经典",
+            "entries": [
+              "壳23"
+            ]
+          },
+          {
+            "id": "preference.appearance.style_quiet",
+            "label": "Interface style: Quiet",
+            "label_zh": "界面风格：静默仪表",
+            "entries": [
+              "壳23"
+            ]
+          },
+          {
+            "id": "preference.appearance.style_titleblock",
+            "label": "Interface style: Title block",
+            "label_zh": "界面风格：图签",
+            "entries": [
+              "壳23"
+            ]
+          },
+          {
+            "id": "preference.appearance.style_night",
+            "label": "Interface style: Night",
+            "label_zh": "界面风格：夜航",
+            "entries": [
+              "壳23"
+            ]
+          },
+          {
+            "id": "preference.appearance.size_compact",
+            "label": "Text size: compact",
+            "label_zh": "字号：紧凑",
+            "entries": [
+              "壳24"
+            ]
+          },
+          {
+            "id": "preference.appearance.size_normal",
+            "label": "Text size: standard",
+            "label_zh": "字号：标准",
+            "entries": [
+              "壳24"
+            ]
+          },
+          {
+            "id": "preference.appearance.size_large",
+            "label": "Text size: large",
+            "label_zh": "字号：大",
+            "entries": [
+              "壳24"
+            ]
+          }
+        ]
+      },
+      "tests": [
+        "apps/monkeyhub/api/tests/test_settings.py",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+      ]
+    },
+    {
+      "capability_id": "hub.update",
+      "owner": "hub.shell",
+      "execution_owner": "hub.shell",
+      "host": "hub",
+      "kind": "manage",
+      "status": "PRODUCTION",
+      "purpose": "Check for a newer MonkeyHub, download it and switch to it on the next start.",
+      "purpose_zh": "检查有没有新版 MonkeyHub，下载好，下次启动时换上。",
+      "goals": [
+        "check for updates",
+        "update monkeyhub",
+        "检查更新",
+        "更新软件"
+      ],
+      "aliases": [
+        "new version",
+        "upgrade",
+        "新版本",
+        "升级"
+      ],
+      "requires": [],
+      "entrypoints": [
+        "GET /api/updates/status",
+        "POST /api/updates/check",
+        "POST /api/updates/prepare",
+        "POST /api/updates/apply"
+      ],
+      "works": [
+        "checking, downloading and installing on the next start"
+      ],
+      "missing": [],
+      "ui": {
+        "surface": "hub",
+        "section": "settings",
+        "channel": "side",
+        "commands": [
+          {
+            "id": "hub.update_check",
+            "label": "Check for updates…",
+            "label_zh": "检查更新…",
+            "entries": [
+              "壳25"
+            ]
+          }
+        ]
+      },
+      "tests": [
+        "apps/monkeyhub/api/tests/test_updates.py"
+      ]
+    },
+    {
+      "capability_id": "fab.print",
+      "owner": "monkeyfab",
+      "execution_owner": "monkeyfab",
+      "host": "hub",
+      "kind": "output",
+      "status": "PARTIAL",
+      "purpose": "Prepare closed print meshes from the model and send an already sliced job to a Bambu printer.",
+      "purpose_zh": "从模型准备能打印的封闭网格，把已经切片的任务发给拓竹打印机。",
+      "goals": [
+        "prepare parts for 3d printing",
+        "send to the printer",
+        "准备 3D 打印",
+        "发给打印机"
+      ],
+      "aliases": [
+        "3d print",
+        "fabrication",
+        "打印",
+        "制作"
+      ],
+      "requires": [
+        "a model export to prepare from",
+        "a printer profile, to send"
+      ],
+      "entrypoints": [
+        "GET /api/fab/profiles",
+        "POST /api/fab/prepare",
+        "POST /api/fab/send"
+      ],
+      "works": [
+        "closed meshes for the parts of one model",
+        "uploading a job sliced elsewhere"
+      ],
+      "missing": [
+        "slicing inside the Hub"
+      ],
+      "ui": {
+        "surface": "hub",
+        "section": "fabrication",
+        "channel": "side",
+        "commands": [
+          {
+            "id": "fab.prepare_parts",
+            "label": "Fabrication",
+            "label_zh": "制作",
+            "aliases": [
+              "3d print",
+              "打印"
+            ],
+            "entries": [
+              "壳96"
+            ]
+          }
+        ]
+      },
+      "tests": [
+        "apps/monkeyhub/api/tests/test_monkeyfab.py",
+        "packages/monkeyfab/tests/test_cli.py"
+      ]
     }
   ],
   "modules": [
@@ -5061,7 +5695,7 @@
         "Compiling scalar/component numeric actions or a complete design request; the StateRecord dependency closure remains private while model-facing facts expose only requested controls and relevant design consequences; at most two exact-reference supplements preserve writable targets and the original checkpoint",
         "Preflight text-section budget estimates and response-schema/request-scope checks before the existing proposal compiler; repeated JSON subschemas are shared without changing their accepted values",
         "Offline context-size benchmark using the same request preparation with an in-memory provider capture, with tokenizer identity or an explicit heuristic and no inference call",
-        "the capability index served to agents: reading the registered capability entries beside this installation, matching a goal in either language, and saying what a no-hit means",
+        "the capability index served to agents: reading the registered capability entries this Runtime performs (no host, or host runtime) beside this installation, matching a goal in either language, and saying what a no-hit means",
         "describing one capability against the bound projection: the exact base, the target's movable numbers as the catalog decided them, the refs a keep clause may name, and the next request with this project's base already in it",
         "Preparing a read-only ContextPack@1 from an explicit exact source and selected component/element, reusing the existing context compiler, preflight and capability description before a native agent starts",
         "performing a registered capability by assembling its request and calling the existing proposal and candidate routes; it holds no capability state, grants no authority those routes do not, and accepts or issues nothing",
@@ -5456,7 +6090,8 @@
         "services/project-runtime/tests/test_recipe_export.py",
         "tools/tests/test_export_drawing_recipe.py",
         "services/project-runtime/tests/test_indexed_reads.py",
-        "services/project-runtime/tests/test_revision_transaction.py"
+        "services/project-runtime/tests/test_revision_transaction.py",
+        "tests/integration/test_capability_registry.py"
       ],
       "notes": "ADR-001's record, section 2.1, makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -7280,7 +7915,8 @@
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
         "Component information in Modeling (#549): topic-agnostic MonkeyHubComponentInfo@1 datasets (docs/protocols/component-info.md), each kept on its own Board card under customData.componentInfo, checked and imported or replaced by dataset id on the Board through its save queue, read while Modeling shows a model once per Board revision, and shown in one closable card for a picked component only when the pick and the dataset's appliesTo (project, run, state digest) match the exact version on screen; datasets for another version are listed, never shown, and a click makes no request and writes nothing",
         "the designLoop application setting (legacy | advisory | enforced, default legacy; a saved off reads as legacy) passed to each Project Runtime it starts; legacy keeps the chat's tools, guide and error words as they were; advisory adds GET /api/revisions/context and two lines naming the problem lists; enforced offers POST /api/revisions with the user's message and words bound, the guide that names it and a Claude chat without Bash; the chat never sends confirmed",
-        "the design-loop tools (design_read, design_submit, design_ask, design_report_limitation) over studio_request and POST /api/revisions: a repair limit per answered user message (MONKEYHUB_REPAIR_BUDGET, default 3), earlier attempts on the same base superseded, the turn's loop state at the launcher's MONKEYHUB_DESIGN_LOOP_STATE file, the Stop hook that holds a turn open until a change landed, the architect was asked or a limitation was reported (at most three times), the --design-loop connection that lists only those tools, and cli_profile for whoever starts such a turn"
+        "the design-loop tools (design_read, design_submit, design_ask, design_report_limitation) over studio_request and POST /api/revisions: a repair limit per answered user message (MONKEYHUB_REPAIR_BUDGET, default 3), earlier attempts on the same base superseded, the turn's loop state at the launcher's MONKEYHUB_DESIGN_LOOP_STATE file, the Stop hook that holds a turn open until a change landed, the architect was asked or a limitation was reported (at most three times), the --design-loop connection that lists only those tools, and cli_profile for whoever starts such a turn",
+        "The command palette (Ctrl+K), the Hub's own shortcuts and the local use counts (src/features/commands): a view of the module registry's capability commands rendered by scripts/command-tree.mjs, whose handlers the surface performing each command registers by its id; no second command list"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -7402,7 +8038,8 @@
         "design_loop.call",
         "design_loop.cli_profile",
         "design_loop.stop_decision",
-        "mcp_server --design-loop"
+        "mcp_server --design-loop",
+        "src/features/commands/CommandProvider.tsx: CommandProvider, useCommandActions(id → handler), useCommands; tree.generated.ts: COMMAND_TREE"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -7574,7 +8211,9 @@
         "apps/monkeyhub/web/src/ChatSuggestionCard.css",
         "apps/monkeyhub/web/src/features/componentInfo/",
         "apps/monkeyhub/web/src/features/designTree/DesignTreeCleaned.tsx",
-        "apps/monkeyhub/api/monkeyhub_api/chat/design_loop.py"
+        "apps/monkeyhub/api/monkeyhub_api/chat/design_loop.py",
+        "apps/monkeyhub/web/src/features/commands/",
+        "apps/monkeyhub/web/scripts/command-tree.mjs"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -7635,7 +8274,10 @@
         "apps/monkeyhub/web/test/componentInfo.test.ts",
         "apps/monkeyhub/web/test/workspaceWidth.test.ts",
         "apps/monkeyhub/api/tests/test_design_loop_setting.py",
-        "apps/monkeyhub/api/tests/test_design_loop.py"
+        "apps/monkeyhub/api/tests/test_design_loop.py",
+        "apps/monkeyhub/web/test/commandPalette.test.ts",
+        "apps/monkeyhub/web/test/commandTree.test.ts",
+        "apps/monkeyhub/web/test/commandPalette.browser.mjs"
       ],
       "depends_on": [
         "archflow.contracts.canonical",

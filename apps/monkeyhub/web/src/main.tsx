@@ -10,6 +10,7 @@ import { applicationSettingsApiSettingsAppsGet, chatProviderLoginApiChatProvider
 import "./styles.css";
 import { FabPage } from "./FabPage";
 import { ChatShell, type HubSettings } from "./ChatShell";
+import { CommandProvider } from "./features/commands/CommandProvider";
 import { AttentionHost } from "./notifications/AttentionHost";
 
 type AppId = AppStatus["appId"];
@@ -592,10 +593,10 @@ function App() {
       <ErrorMessage issue={libraryIssue ? null : launchIssue ?? launchInvalid} language={preferences.language} />
     </> }],
   };
-  return <UserPreferencesProvider appearance={preferences}><ChatShell preferences={preferences} configuredProject={savedLaunch?.projectDir ?? null} settings={settings}
+  return <UserPreferencesProvider appearance={preferences}><CommandProvider><ChatShell preferences={preferences} configuredProject={savedLaunch?.projectDir ?? null} settings={settings}
     settingsDirty={appearanceDirty || launchDirty || settingsSaving || busyServices.size > 0}
     defaults={{ provider: savedChatDefaults.chatProvider ?? "codex", model: savedChatDefaults.chatModel }}
-    workspace={workspace} apps={statusIssue ? null : apps} onRuntimeEvent={runtimeNews} onAppearance={changeAppearance} />{attention}</UserPreferencesProvider>;
+    workspace={workspace} apps={statusIssue ? null : apps} onRuntimeEvent={runtimeNews} onAppearance={changeAppearance} />{attention}</CommandProvider></UserPreferencesProvider>;
 }
 const root = document.getElementById("root");
 if (!root) throw new Error("MonkeyHub root is missing.");
