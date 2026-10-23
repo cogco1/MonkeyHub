@@ -18,6 +18,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 import { workspaceFixture } from "./workspaceFixture.mjs";
+import { cmd } from "./commandLocator.mjs";
 
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repoRoot = path.resolve(webRoot, "../../..");
@@ -186,13 +187,13 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   await savedWhere((value) => active(value, "image").length === 1, "The registered drawing's first page was not received");
 
   // Place the second page as well, so the double click has to name the exact one.
-  await page.getByRole("button", { name: "Project documents", exact: true }).click();
+  await cmd(page, "board.add_document_page.toggle_list").click();
   await page.getByLabel("board-pages.pdf Page", { exact: true }).selectOption({ label: "Page 2 / 2" });
-  await page.getByRole("button", { name: "Add page", exact: true }).click();
+  await cmd(page, "board.add_document_page.add").click();
   const placed = await savedWhere((value) => active(value, "image").length === 2, "The second page was not added");
   const secondElement = active(placed, "image").find((element) => element.customData.sourceDocument.pageIndex === 1);
   assert.deepEqual(secondElement.customData.sourceDocument, secondPage);
-  await page.getByRole("button", { name: "Hide project documents", exact: true }).click();
+  await cmd(page, "board.add_document_page.close_list").click();
 
   // Adding a page fits it on screen; zoom in on it and select it there.
   await page.locator(".excalidraw .zoom-in-button").click();
@@ -244,7 +245,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   }
   assert.equal(saved.annotations.length, 1, "The mark drawn in the editor was not saved");
   await page.locator(".document-save-state").filter({ hasText: /^Saved$/ }).waitFor();
-  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await cmd(page, "view.tab.board").click();
 
   await page.locator(".monkeyboard-canvas canvas").first().waitFor();
   const written = requests.filter((request) => request.method === "PUT" && request.path === "/api/document-annotations");
@@ -310,7 +311,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
     "A board whose last save was refused is not written again behind the operator");
   // The canvas is untouched by the refusal: the mark saves once the write is accepted.
   faults["/api/board"] = false;
-  await boardAlert.getByRole("button", { name: "Retry", exact: true }).click();
+  await cmd(boardAlert, "board.save.retry").click();
   const afterRetry = await savedWhere((value) => savedMarks(value) === 1, "The mark drawn during a refused save was lost");
   assert.deepEqual(active(afterRetry, "image").map((element) => element.customData.sourceDocument),
     active(beforeRefusal, "image").map((element) => element.customData.sourceDocument));
@@ -335,7 +336,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   await page.locator(".document-error").waitFor();
   assert.equal(await strokes(), strokesBefore + 1, "The refused stroke stays on the page");
   const refusedPageWrites = writes("/api/document-annotations");
-  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await cmd(page, "view.tab.board").click();
   for (let attempt = 0; attempt < 100 && writes("/api/document-annotations") === refusedPageWrites; attempt++) await delay(100);
   assert.ok(writes("/api/document-annotations") > refusedPageWrites, "Leaving writes the page rather than skipping it");
   await delay(500);
@@ -365,7 +366,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   const viewport = page.locator(".viewport-canvas");
   await viewport.waitFor();
   const viewportBox = await viewport.boundingBox();
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await cmd(page, "draft.tools.rectangle").click();
   // The ground plane, wherever this project's camera put it; the idle card sits
   // in the middle of the viewport and is not part of it.
   const sketchValue = page.locator(".sketch-entry__value input");
@@ -380,7 +381,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   // waits for the architect's own later Record (#302 renames Sync).
   const syncStatus = page.locator(".model-tools__sync-status");
   const autosaved = syncStatus.filter({ hasText: /^Unrecorded edits · saved automatically$/ });
-  const syncButton = page.getByRole("button", { name: "Record", exact: true });
+  const syncButton = cmd(page, "draft.record.save");
   const localDraft = async () => (await call("GET", "/api/working-draft")).localDraft;
   await autosaved.waitFor();
   const drawn = await localDraft();
@@ -399,10 +400,10 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   const keptDraft = await localDraft();
   assert.deepEqual([keptDraft?.source, keptDraft?.commands], [drawn.source, drawn.commands], "Board visits keep the saved drawing as it was");
   assert.equal(await syncButton.isEnabled(), true, "The kept drawing still waits for a later Sync");
-  assert.equal(await page.getByRole("button", { name: "Undo model", exact: true }).isEnabled(), true);
+  assert.equal(await cmd(page, "draft.tools.undo").isEnabled(), true);
 
   // Undo still belongs to the same local draft after the workspace round trip.
-  await page.getByRole("button", { name: "Undo model", exact: true }).click();
+  await cmd(page, "draft.tools.undo").click();
   await syncStatus.waitFor({ state: "hidden" });
   // Record is shown only while edits are unrecorded (SS-5), so nothing left means no Record at all.
   await syncButton.waitFor({ state: "hidden" });
@@ -418,20 +419,20 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
 
   // Another page of this same retained document changes the editor's explicit source,
   // while reopening the previous page reads back marks saved while it was hidden.
-  await page.getByRole("button", { name: "Project documents", exact: true }).click();
+  await cmd(page, "board.add_document_page.toggle_list").click();
   await page.getByLabel("board-pages.pdf Page", { exact: true }).selectOption({ label: "Page 1 / 2" });
-  await page.locator(".monkeyboard-source-link").click();
+  await cmd(page.locator("#monkeyboard-project-documents"), "view.open_document.page").click();
   await page.locator('.document-viewport[aria-label="Annotation canvas, page 1"][data-ready=true]').waitFor();
   assert.equal(await page.getByLabel("Page", { exact: true }).inputValue(), "0");
   assert.equal(await page.locator(".document-page__ink [data-stroke-id]").count(), 0);
-  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await cmd(page, "view.tab.board").click();
   const previousPage = await pageAnnotations(1);
   const extra = { id: "board-feedback-return", kind: "line", points: [[0.1, 0.1], [0.7, 0.2]], color: "#ff0000", lineWidth: 0.004 };
   await call("PUT", "/api/document-annotations", { projectId: project.projectId, runId: secondPage.runId,
     assetSha256: secondPage.assetSha256, drawingRevisionRef: secondPage.revisionRef, pageIndex: 1,
     baseRevisionSha256: previousPage.revisionSha256, annotations: [...previousPage.annotations, extra], comment: previousPage.comment });
   await page.getByLabel("board-pages.pdf Page", { exact: true }).selectOption({ label: "Page 2 / 2" });
-  await page.locator(".monkeyboard-source-link").click();
+  await cmd(page.locator("#monkeyboard-project-documents"), "view.open_document.page").click();
   await page.locator('.document-viewport[aria-label="Annotation canvas, page 2"][data-ready=true]').waitFor();
   await page.locator('.document-page__ink [data-stroke-id="board-feedback-return"]').waitFor();
   assert.equal(await page.getByLabel("Page", { exact: true }).inputValue(), "1");
@@ -448,7 +449,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
     await page.locator(".monkeyboard-canvas canvas").first().waitFor();
     await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
     await page.evaluate(() => { window.__boardCanvas = document.querySelector(".monkeyboard-canvas canvas"); });
-    await page.getByRole("button", { name: "Project documents", exact: true }).click();
+    await cmd(page, "board.add_document_page.toggle_list").click();
     await page.getByLabel("board-pages.pdf Page", { exact: true }).selectOption({ label: "Page 2 / 2" });
   }
   const assertExactPage = async () => {
@@ -471,12 +472,12 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
       const boardBefore = await board(), beforeOpen = requests.length;
       const boardZoom = await zoomText();
       const boardUrl = page.url();
-      await page.locator(".monkeyboard-source-link").click();
+      await cmd(page.locator("#monkeyboard-project-documents"), "view.open_document.page").click();
       await assertExactPage();
       assertStateBlocked();
       const comment = `Page two remains editable while 3D recovery is ${mode}.`;
       await page.getByLabel("Comment on this page", { exact: true }).fill(comment);
-      await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+      await cmd(page, "view.tab.board").click();
       await page.locator(".monkeyboard-canvas canvas").first().waitFor();
       assertStateBlocked();
       const secondAfter = await pageAnnotations(1);
@@ -532,7 +533,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   });
   const beforeUnavailable = requests.length;
   const retainedPages = [await pageAnnotations(0), await pageAnnotations(1)];
-  await page.locator(".monkeyboard-source-link").click();
+  await cmd(page.locator("#monkeyboard-project-documents"), "view.open_document.page").click();
   const unavailableMessage = "The linked document page is unavailable. Select a source or page.";
   const unavailableAlert = page.locator('.document-empty [role="alert"]');
   await unavailableAlert.waitFor();
@@ -544,7 +545,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   assert.equal(await page.locator(".document-viewport, .document-page__raster").count(), 0, "No other page substitutes for the unavailable one");
   assert.deepEqual(requests.slice(beforeUnavailable).filter((entry) => entry.path === "/api/document-annotations"), [],
     "An unavailable page neither loads another page's annotations nor writes a substitute");
-  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await cmd(page, "view.tab.board").click();
   await page.locator(".monkeyboard-canvas canvas").first().waitFor();
   assert.equal(await page.evaluate(() => window.__boardCanvas === document.querySelector(".monkeyboard-canvas canvas")), true);
   assert.deepEqual([await pageAnnotations(0), await pageAnnotations(1)], retainedPages);
