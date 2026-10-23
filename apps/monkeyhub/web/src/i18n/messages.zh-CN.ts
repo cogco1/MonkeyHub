@@ -1288,7 +1288,7 @@ export const messagesZhCN = {
   "shell.search": "搜索功能：导出、剖切、设置…",
   "shell.views": "视图",
   "shell.view.attention": "关注",
-  "shell.view.board": "Board",
+  "shell.view.board": "画板",
   "shell.view.model": "模型",
   "shell.noProjects": "还没有项目。",
   "shell.needs": "{count} 项需要你",

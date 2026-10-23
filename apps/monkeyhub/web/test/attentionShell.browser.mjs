@@ -145,11 +145,11 @@ try {
   await page.locator(".attention-shell__drawer").getByText("我把 V16 的楼板改成只留一层胶合板。").waitFor();
 
   // Board and Model are the same open surfaces as the workbench's; Alt+1 returns to Attention.
-  await page.locator(".attention-shell__tabs .menu-tab").filter({ hasText: "Board" }).click();
+  await page.locator(".attention-shell__tabs .menu-tab").filter({ hasText: "画板" }).click();
   await page.locator(".attention-shell__surfaces .chat-project-workspace:not([hidden])").waitFor();
   await page.locator(".attention-shell__surfaces .monkeyboard-canvas canvas").last().waitFor();
   await page.waitForFunction(() => !document.querySelector(".attention-shell__surfaces .boot"));
-  assert.equal(await page.locator(".menu-tab[aria-pressed=true]").textContent(), "Board");
+  assert.equal(await page.locator(".menu-tab[aria-pressed=true]").textContent(), "画板");
   assert.ok(await page.locator(".attention-shell__queue").isHidden());
   await shoot(page, "attention-board-desktop-light");
   await page.locator("body").click({ position: { x: 700, y: 870 } }).catch(() => undefined);
