@@ -7280,7 +7280,8 @@
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
         "Component information in Modeling (#549): topic-agnostic MonkeyHubComponentInfo@1 datasets (docs/protocols/component-info.md), each kept on its own Board card under customData.componentInfo, checked and imported or replaced by dataset id on the Board through its save queue, read while Modeling shows a model once per Board revision, and shown in one closable card for a picked component only when the pick and the dataset's appliesTo (project, run, state digest) match the exact version on screen; datasets for another version are listed, never shown, and a click makes no request and writes nothing",
         "the designLoop application setting (legacy | advisory | enforced, default legacy; a saved off reads as legacy) passed to each Project Runtime it starts; legacy keeps the chat's tools, guide and error words as they were; advisory adds GET /api/revisions/context and two lines naming the problem lists; enforced offers POST /api/revisions with the user's message and words bound, the guide that names it and a Claude chat without Bash; the chat never sends confirmed",
-        "the design-loop tools (design_read, design_submit, design_ask, design_report_limitation) over studio_request and POST /api/revisions: a repair limit per answered user message (MONKEYHUB_REPAIR_BUDGET, default 3), earlier attempts on the same base superseded, the turn's loop state at the launcher's MONKEYHUB_DESIGN_LOOP_STATE file, the Stop hook that holds a turn open until a change landed, the architect was asked or a limitation was reported (at most three times), the --design-loop connection that lists only those tools, and cli_profile for whoever starts such a turn"
+        "the design-loop tools (design_read, design_submit, design_ask, design_report_limitation) over studio_request and POST /api/revisions: a repair limit per answered user message (MONKEYHUB_REPAIR_BUDGET, default 3), earlier attempts on the same base superseded, the turn's loop state at the launcher's MONKEYHUB_DESIGN_LOOP_STATE file, the Stop hook that holds a turn open until a change landed, the architect was asked or a limitation was reported (at most three times), the --design-loop connection that lists only those tools, and cli_profile for whoever starts such a turn",
+        "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -7309,7 +7310,8 @@
         "Typed project/session metadata for the owned Monitor Codex source connection",
         "Minimal operation admission journal at runtime/operations/<runtimeId>.json under the explicit Hub runtime root; signatures, admission times, recovery observations and dismissed notices (each with the status it read) only, with no request bodies or canonical results",
         "External conversation deep link and process-local presentation capability; retained final results/media, transient progress and exact project document readback",
-        "Prepared sibling application version, nonproject update transaction status and last-check record under runtime/updates, the desktop entry switched at a normal quit, and health-verified desktop restart, next-start completion or startup rollback"
+        "Prepared sibling application version, nonproject update transaction status and last-check record under runtime/updates, the desktop entry switched at a normal quit, and health-verified desktop restart, next-start completion or startup rollback",
+        "Attention queue at attention/<runtimeId>.json under the explicit Hub runtime root: cards, their handling history and quieted rules; every unsettled card is kept and the newest 500 closed ones; rows a newer Hub wrote are kept as they were."
       ],
       "public_api": [
         "create_app",
@@ -7402,7 +7404,10 @@
         "design_loop.call",
         "design_loop.cli_profile",
         "design_loop.stop_decision",
-        "mcp_server --design-loop"
+        "mcp_server --design-loop",
+        "AttentionStore",
+        "AttentionDraft",
+        "AttentionItem"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -7451,7 +7456,8 @@
         "Hub application launch choices do not replace user appearance or provider preferences, and never write project state",
         "Beside a project workspace the projects list folds to its icons unless pinned (#283): the pin is UserSettingsDto.sidebarPinned, written only while pinned so a version older than it still reads the file; the folding, Focus and the conversation's width are this window's view state and reach no Project Runtime or project",
         "the design-loop tools never call a Runtime of their own: each read and each change goes through studio_request and its bindings; a submission past the repair limit is refused before anything is sent",
-        "every request the Hub forwards for a chat carries X-Monkey-Agent with that chat and the worker identity; a person's request through the Hub carries neither; a revision's journal row ends as its outcome says (landed, admitted and built complete, problems fail, a question or refusal is refused) and a revision that lost its answer is never completed from its build alone"
+        "every request the Hub forwards for a chat carries X-Monkey-Agent with that chat and the worker identity; a person's request through the Hub carries neither; a revision's journal row ends as its outcome says (landed, admitted and built complete, problems fail, a question or refusal is refused) and a revision that lost its answer is never completed from its build alone",
+        "A card's state is a person's handling of it, never a design fact: the attention store writes only attention/<runtimeId>.json under the Hub runtime root and never a project. One dedupeKey is one card; a closed card opens again only when its facts or its answers change. Every button on a card is one command of the command tree with bound arguments, never a request of its own."
       ],
       "files": [
         "apps/monkeyhub/api/monkeyhub_api/__init__.py",
@@ -7574,7 +7580,8 @@
         "apps/monkeyhub/web/src/ChatSuggestionCard.css",
         "apps/monkeyhub/web/src/features/componentInfo/",
         "apps/monkeyhub/web/src/features/designTree/DesignTreeCleaned.tsx",
-        "apps/monkeyhub/api/monkeyhub_api/chat/design_loop.py"
+        "apps/monkeyhub/api/monkeyhub_api/chat/design_loop.py",
+        "apps/monkeyhub/api/monkeyhub_api/attention/"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -7635,7 +7642,8 @@
         "apps/monkeyhub/web/test/componentInfo.test.ts",
         "apps/monkeyhub/web/test/workspaceWidth.test.ts",
         "apps/monkeyhub/api/tests/test_design_loop_setting.py",
-        "apps/monkeyhub/api/tests/test_design_loop.py"
+        "apps/monkeyhub/api/tests/test_design_loop.py",
+        "apps/monkeyhub/api/tests/test_attention_store.py"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
