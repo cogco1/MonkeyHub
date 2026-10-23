@@ -2396,6 +2396,179 @@ def check_changed_scopes(
             )
 
 
+# Interface entries (#300). Every control a person clicks renders a command of
+# the tree above and names it with data-command; a test or the palette reaches
+# it by that id. The controls that did not yet, counted per file in the
+# policy's ui_entries.baseline, may only become fewer (D-2 empties it). Each
+# standing place holds at most its budget of commands (ADR-014).
+UI_ENTRY_ROLE = re.compile(r"""\brole\s*=\s*\{?\s*["'](?:menuitem|menuitemcheckbox|menuitemradio)["']""")
+UI_ENTRY_CLICK = re.compile(r"\bonClick\s*=")
+UI_ENTRY_COMMAND = re.compile(r"\bdata-command\s*=")
+JSX_OPENING = re.compile(r"<([A-Za-z][\w.]*)")
+
+
+def _ui_entries_policy(policy: dict[str, Any]) -> dict[str, Any] | None:
+    """The policy's ui_entries block, validated, or None when the policy has none."""
+
+    block = policy.get("ui_entries")
+    if block is None:
+        return None
+    if not isinstance(block, dict):
+        raise ArchitecturePolicyError("ui_entries must be an object")
+    for field in ("source_roots", "wrappers"):
+        values = block.get(field)
+        if not isinstance(values, list) or not all(isinstance(value, str) and value for value in values):
+            raise ArchitecturePolicyError(f"ui_entries.{field} must be a list of non-empty text")
+    for field in ("baseline", "budgets"):
+        counts = block.get(field)
+        if not isinstance(counts, dict) or not all(
+            isinstance(key, str) and key and isinstance(value, int) and not isinstance(value, bool) and value >= 0
+            for key, value in counts.items()
+        ):
+            raise ArchitecturePolicyError(f"ui_entries.{field} must map text to a count of zero or more")
+    return block
+
+
+def _jsx_openings(text: str) -> Iterator[tuple[int, str, str]]:
+    """Each JSX opening element as (line, tag, the text between the tag name and its closing '>').
+
+    Braces, quoted attribute values and template literals are skipped, so a '>' inside
+    ``onClick={() => …}`` or ``title="a > b"`` does not end the element.
+    """
+
+    for match in JSX_OPENING.finditer(text):
+        start = match.start()
+        if start and (text[start - 1].isalnum() or text[start - 1] in "_$"):
+            continue
+        depth, quote, index = 0, "", match.end()
+        while index < len(text):
+            char = text[index]
+            if quote:
+                if char == "\\":
+                    index += 1
+                elif char == quote:
+                    quote = ""
+            elif char in "\"'`":
+                quote = char
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+            elif char == ">" and depth == 0 and text[index - 1] != "=":
+                break
+            index += 1
+        yield text.count("\n", 0, start) + 1, match.group(1), text[match.end():index]
+
+
+def unregistered_ui_entries(text: str, wrappers: Iterable[str] = ()) -> list[int]:
+    """Lines of the controls in one source file that run an action but name no command.
+
+    A control is a ``<button>`` (or a wrapper component that renders one) with an
+    ``onClick``, or any element whose role is a menu item; it is registered when it carries
+    ``data-command``.
+    """
+
+    clickable = {"button", *wrappers}
+    lines = []
+    for line, tag, attributes in _jsx_openings(text):
+        acts = tag in clickable and UI_ENTRY_CLICK.search(attributes) or UI_ENTRY_ROLE.search(attributes)
+        if acts and not UI_ENTRY_COMMAND.search(attributes):
+            lines.append(line)
+    return lines
+
+
+def _ui_entry_counts(root: Path, block: dict[str, Any]) -> dict[str, list[int]]:
+    found: dict[str, list[int]] = {}
+    for source_root in block["source_roots"]:
+        base = root / source_root
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*.tsx")):
+            if any(part in NOT_SOURCE_DIRECTORIES for part in path.relative_to(base).parts):
+                continue
+            lines = unregistered_ui_entries(path.read_text(encoding="utf-8"), block["wrappers"])
+            if lines:
+                found[path.relative_to(root).as_posix()] = lines
+    return found
+
+
+def _place_kind(place: str) -> str:
+    return place.split(":", 1)[0]
+
+
+def check_ui_entries(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding]:
+    """Controls name their command, the unnamed ones stay within the baseline, places within budget.
+
+    UI_ENTRY_UNREGISTERED: a file has more unnamed controls than ui_entries.baseline allows
+    it (a file the baseline does not list allows none). UI_ENTRY_BASELINE: the baseline
+    allows more than the file has, or names a file that is gone; lower it, so a control
+    once named cannot quietly lose its id. UI_ENTRY_BUDGET: the commands of the tree that
+    stand in one place of one surface (``place`` is ``<kind>`` or ``<kind>:<name>``) exceed
+    the budget of that kind of place, or the kind has no budget.
+    """
+
+    block = _ui_entries_policy(policy)
+    if block is None:
+        return
+    for source_root in block["source_roots"]:
+        if not (root / source_root).is_dir():
+            yield PolicyFinding(ARCHITECTURE_POLICY, 1, "UI_ENTRY_BASELINE", f"ui_entries.source_roots names {source_root}, which does not exist")
+    found = _ui_entry_counts(root, block)
+    baseline: dict[str, int] = block["baseline"]
+    for relative, lines in sorted(found.items()):
+        allowed = baseline.get(relative, 0)
+        if len(lines) > allowed:
+            shown = ", ".join(str(line) for line in lines[:12]) + (" …" if len(lines) > 12 else "")
+            yield PolicyFinding(relative, lines[0], "UI_ENTRY_UNREGISTERED",
+                                f"{len(lines)} controls run an action without data-command, the baseline allows {allowed} "
+                                f"(lines {shown}); give a new control the id of the command it renders")
+    for relative, allowed in sorted(baseline.items()):
+        count = len(found.get(relative, ()))
+        if not (root / relative).is_file():
+            yield PolicyFinding(ARCHITECTURE_POLICY, 1, "UI_ENTRY_BASELINE", f"ui_entries.baseline names {relative}, which does not exist; remove it")
+        elif count < allowed:
+            yield PolicyFinding(ARCHITECTURE_POLICY, 1, "UI_ENTRY_BASELINE",
+                                f"ui_entries.baseline allows {relative} {allowed} unnamed controls, it has {count}; lower the baseline to {count}")
+    registry_path = root / "governance" / "module_registry.json"
+    if not registry_path.is_file():
+        return
+    budgets: dict[str, int] = block["budgets"]
+    standing: Counter[tuple[str, str]] = Counter()
+    for command in command_tree(json.loads(registry_path.read_text(encoding="utf-8")))["commands"]:
+        if isinstance(command["place"], str) and command["place"]:
+            standing[(str(command["surface"]), command["place"])] += 1
+    for (surface, place), count in sorted(standing.items()):
+        kind = _place_kind(place)
+        if kind not in budgets:
+            yield PolicyFinding("governance/module_registry.json", 1, "UI_ENTRY_BUDGET",
+                                f"{surface}: place {place!r} has no budget; add its kind to ui_entries.budgets (ADR-014)")
+        elif count > budgets[kind]:
+            yield PolicyFinding("governance/module_registry.json", 1, "UI_ENTRY_BUDGET",
+                                f"{surface}: {count} commands stand in {place}, its budget is {budgets[kind]}; retire or fold one in the same change")
+
+
+def check_changed_ui_baseline(root: Path, base: str, policy_path: str = ARCHITECTURE_POLICY) -> Iterator[PolicyFinding]:
+    """The baseline of unnamed controls never grows across a branch (UI_ENTRY_BASELINE).
+
+    Compared at the merge base and at HEAD, so lowering it in one commit and raising it
+    again in a later one is still caught; a file the base did not list may not be added.
+    """
+
+    merge_base = _git(root, "merge-base", base, "HEAD").strip()
+    before, after = _git_json(root, merge_base, policy_path), _git_json(root, "HEAD", policy_path)
+    if after is None or not isinstance(after.get("ui_entries"), dict):
+        return
+    old = (before or {}).get("ui_entries")
+    old_counts = old.get("baseline", {}) if isinstance(old, dict) else None
+    if old_counts is None:
+        return
+    for relative, count in sorted((after["ui_entries"].get("baseline") or {}).items()):
+        if isinstance(count, int) and count > old_counts.get(relative, 0):
+            yield PolicyFinding(policy_path, 1, "UI_ENTRY_BASELINE",
+                                f"ui_entries.baseline raises {relative} from {old_counts.get(relative, 0)} to {count}; "
+                                "give the new control its data-command instead")
+
+
 def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
     """Check the tree under ``root``, which must be a Git checkout.
 
@@ -2415,6 +2588,7 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
     findings.extend(check_placement(root, policy))
     findings.extend(check_registry(root, policy))
     findings.extend(check_command_tree(root))
+    findings.extend(check_ui_entries(root, policy))
     findings.extend(check_file_owners(root, policy))
     findings.extend(check_scopes(root, policy, load_work_registry(root)))
     imported: set[str] = set()
@@ -2496,6 +2670,7 @@ def main(argv: list[str] | None = None) -> int:
                             root, args.changed, relative_policy
                         )
                     )
+                    | set(check_changed_ui_baseline(root, args.changed, relative_policy))
                 )
             )
             checked = 0
