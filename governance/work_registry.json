@@ -131,6 +131,7 @@
             "apps/monkeyhub/web/src/i18n/messages.en.ts",
             "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
             "apps/monkeyhub/web/src/main.tsx",
+            "apps/monkeyhub/web/src/notifications/AttentionHost.tsx",
             "apps/monkeyhub/web/test/attentionShell.browser.mjs",
             "apps/monkeyhub/web/test/attentionShell.test.ts",
             "apps/monkeyhub/web/test/commandPalette.browser.mjs",
