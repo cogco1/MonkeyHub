@@ -6,7 +6,7 @@
 .attention-shell__top,.attention-shell__left,.attention-shell__side{background:var(--panel);border-radius:var(--pane-radius,0px);box-shadow:var(--pane-ring,none)}
 .attention-shell__top{grid-column:1/-1;display:flex;align-items:center;gap:4px;min-width:0;padding:0 8px;border-bottom:1px solid var(--pane-edge,var(--line))}
 .attention-shell__left-toggle{display:none}
-.attention-shell__search{display:flex;align-items:center;gap:8px;width:min(420px,100%);min-height:30px;margin-left:8px;padding:0 10px;border:1px solid var(--line);
+.attention-shell__search{display:flex;flex:0 1 420px;align-items:center;gap:8px;min-width:0;min-height:30px;margin-left:8px;padding:0 10px;border:1px solid var(--line);
   border-radius:var(--control-radius,var(--radius-sm));background:var(--ground);color:var(--muted);font:inherit;font-size:var(--text-ui);cursor:pointer}
 .attention-shell__search svg{width:16px;height:16px;flex:none}
 .attention-shell__search span{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
