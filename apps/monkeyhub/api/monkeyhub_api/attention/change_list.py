@@ -34,6 +34,8 @@ MAX_CHOICES = 3
 #: A list touching at most this many components, sure and borne out by its marks, may be applied first and
 #: offered undo (decision 5 of the three-channel plan); anything larger is shown as A/B first.
 SMALL_CHANGE = 5
+#: The most raw language the design loop binds to one submission (CHAT_FEEDBACK_TOO_LONG beyond it).
+RAW_LANGUAGE_LIMIT = 2000
 
 
 class ChangeListItem(_Record):
@@ -186,9 +188,12 @@ def approval(card_id: str, change_list: ChangeList, words: Sequence[str]) -> dic
     reads what each item means from the card. The design loop binds a
     submission to this message and, through ``feedbackQuote``, to the words of
     the items it builds, so ``quotes`` groups the items by their words: one
-    submission per group, quoting ``feedbackQuote``. Items that share their
-    words share a group. A group whose words also lie inside another line
-    cannot be quoted alone (``feedbackQuote`` None) and binds the whole message.
+    submission per group, quoting ``feedbackQuote``, which occurs exactly once
+    in the text. Items that share their words share a group and one line. A
+    line that also lies inside another (门 inside 前门加宽) is quoted with its
+    line breaks, the whole line; only when even that is not unique is
+    ``feedbackQuote`` None, binding the whole message, which the design loop
+    takes up to RAW_LANGUAGE_LIMIT characters; a longer one is refused here.
 
     Approving the list is not an answer to any condition: a submission that
     comes back needing a question is still asked. A note that is not in
@@ -205,8 +210,23 @@ def approval(card_id: str, change_list: ChangeList, words: Sequence[str]) -> dic
     lines = list(dict.fromkeys(item.note.strip() for item in approved))
     content = "\n".join(lines)
     quotes = [{"items": [item.n for item in approved if item.note.strip() == line],
-               "feedbackQuote": line if content.count(line) == 1 else None} for line in lines]
+               "feedbackQuote": _quote(lines, index, content)} for index, line in enumerate(lines)]
+    if any(row["feedbackQuote"] is None for row in quotes) and len(content) > RAW_LANGUAGE_LIMIT:
+        raise ValueError(f"The approved words are {len(content)} characters and one item can only bind them all; "
+                         f"approve fewer items at once (at most {RAW_LANGUAGE_LIMIT} characters).")
     return {"cardId": card_id, "items": [item.n for item in approved], "content": content, "quotes": quotes}
+
+
+def _quote(lines: Sequence[str], index: int, content: str) -> str | None:
+    """The shortest span naming this line alone: the line, else the line with its line breaks, else None."""
+
+    line = lines[index]
+    before = "\n" if index > 0 else ""
+    after = "\n" if index < len(lines) - 1 else ""
+    for candidate in dict.fromkeys((line, before + line + after)):
+        if content.count(candidate) == 1:
+            return candidate
+    return None
 
 
 def _said(note: str, words: Sequence[str]) -> bool:

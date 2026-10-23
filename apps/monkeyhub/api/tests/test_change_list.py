@@ -65,6 +65,14 @@ def change_list(**changes) -> ChangeList:
                                       "items": items})
 
 
+def items(*notes: str) -> ChangeList:
+    """A sure list, one item per note, each touching the finish its mark lies on."""
+
+    return ChangeList.model_validate({"items": [
+        {"n": n, "markIds": ["m-upper"], "note": note, "understanding": "as written", "targets": ["finish"]}
+        for n, note in enumerate(notes, start=1)]})
+
+
 class CheckTests(unittest.TestCase):
     def test_a_list_the_marks_and_the_record_bear_out_has_no_problems(self) -> None:
         self.assertEqual(check_against(change_list(), READINGS, WORDS, CATALOG), [])
@@ -139,15 +147,31 @@ class ApprovalTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             approval("att_x", change_list(item1={"keep": False}, item3={"keep": False}), WORDS)
 
-    def test_words_found_inside_another_line_cannot_be_quoted_alone(self) -> None:
+    def test_words_found_inside_another_line_are_quoted_as_their_whole_line(self) -> None:
         listed = change_list(item2={"unsure": False, "markIds": ["m-upper"], "targets": ["finish"],
                                     "note": "薄一点"},
                              item3={"note": "踢脚板也再薄一点"})
         result = approval("att_x", listed, ["楼板只留一层胶合板，龙骨和面层不要", "薄一点", "踢脚板也再薄一点"])
         self.assertEqual(result["content"].splitlines(), ["楼板只留一层胶合板，龙骨和面层不要", "薄一点", "踢脚板也再薄一点"])
         self.assertEqual([(row["items"], row["feedbackQuote"]) for row in result["quotes"]],
-                         [([1], "楼板只留一层胶合板，龙骨和面层不要"), ([2], None), ([3], "踢脚板也再薄一点")])
+                         [([1], "楼板只留一层胶合板，龙骨和面层不要"), ([2], "\n薄一点\n"), ([3], "踢脚板也再薄一点")])
+        self.assertTrue(all(result["content"].count(row["feedbackQuote"]) == 1 for row in result["quotes"]))
         self.assertNotIn("Remove", result["content"], "the agent's reading never travels as the person's words")
+        for first, second, quote in (("门", "前门加宽", "门\n"), ("前门加宽", "门", "\n门")):
+            with self.subTest(first=first):
+                pair = approval("att_x", items(first, second), [first, second])
+                quoted = dict(zip((first, second), (row["feedbackQuote"] for row in pair["quotes"])))
+                self.assertEqual(quoted["门"], quote)
+                self.assertEqual(pair["content"].count(quote), 1)
+
+    def test_words_that_bind_the_whole_message_fit_the_design_loops_limit(self) -> None:
+        # "门" leads, and the next line ends in "门" too: no span names the first line alone.
+        notes = ["门", "后门", "窗", *(f"{n}" * 400 for n in "一二三四五")]
+        result = approval("att_x", items(*notes[:3]), notes)
+        self.assertIsNone(result["quotes"][0]["feedbackQuote"])
+        with self.assertRaises(ValueError) as caught:
+            approval("att_x", items(*notes), notes)
+        self.assertIn("2000", str(caught.exception))
 
     def test_small_sure_lists_borne_out_by_their_marks_apply_first(self) -> None:
         self.assertFalse(applies_without_asking(change_list(), READINGS, WORDS, CATALOG), "an unsure item is ticked")
