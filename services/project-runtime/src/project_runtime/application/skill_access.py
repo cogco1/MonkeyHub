@@ -47,12 +47,13 @@ Resolve = Callable[[str], str]
 
 
 def access_added(requested: Mapping[str, Any] | None, granted: Mapping[str, Any] | None, *,
-                 resolve: Resolve | None = None) -> dict[str, Any]:
+                 resolve: Resolve | None) -> dict[str, Any]:
     """What ``requested`` asks for beyond ``granted``: ``{}`` when it stays within it.
 
     ``resolve`` turns a declared folder into the folder the runner will hold
-    the script to (``os.path.realpath`` where the skill runs); without it the
-    folders are compared as written, ``.`` steps removed.
+    the script to (``os.path.realpath`` where the skill runs). It is always
+    named: None compares the folders as written, ``.`` steps removed, which
+    only describes a declaration; deciding goes through ``access_within``.
     """
 
     requested, granted = requested or {}, granted or {}
@@ -68,9 +69,16 @@ def access_added(requested: Mapping[str, Any] | None, granted: Mapping[str, Any]
 
 
 def access_within(requested: Mapping[str, Any] | None, granted: Mapping[str, Any] | None, *,
-                  resolve: Resolve | None = None) -> bool:
-    """Whether a version declaring ``requested`` may run on a grant that allowed ``granted``."""
+                  resolve: Resolve) -> bool:
+    """Whether a version declaring ``requested`` may run on a grant that allowed ``granted``, without asking.
 
+    Deciding not to ask follows links as the runner will: ``resolve`` is
+    required, so a link out of an allowed folder cannot be let through by
+    a caller that forgot it.
+    """
+
+    if not callable(resolve):
+        raise TypeError("access_within decides whether to ask again, so it resolves folders as the runner does")
     return not access_added(requested, granted, resolve=resolve)
 
 
