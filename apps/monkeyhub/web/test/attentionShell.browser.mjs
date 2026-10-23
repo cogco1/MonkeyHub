@@ -126,6 +126,8 @@ try {
   await page.goto(`${origin}/?shell=attention`);
   const shell = page.locator(".attention-shell");
   await shell.waitFor();
+  // The saved preferences arrive after the first paint and set the style again; a preview style goes on after them.
+  await page.waitForFunction((theme) => document.documentElement.dataset.theme === theme, preferredTheme);
   if (look) await style(page, look, look);
   assert.equal(await page.locator(".chat-shell").count(), 0, "the workbench layout is not drawn");
   // The projects column: Attention with what waits on the architect, each project and its latest conversations.
