@@ -6,6 +6,16 @@ export function isTheme(value) { return value === "dark" || value === "light" ||
 export function isFontScale(value) { return value === 0.9 || value === 1 || value === 1.1; }
 export function isUiStyle(value) { return value === "classic" || value === "quiet" || value === "titleblock" || value === "night"; }
 
+/**
+ * Component rules key on the family, not on each style: Quiet instrument, Title block and
+ * Night flight share the instrument rules; Classic and Critique Table (board, drawn by
+ * base.css and offered once the settings accept it) are their own. A new style joins a
+ * family here and needs no selector list edited.
+ */
+export function uiFamily(style) {
+  return style === "quiet" || style === "titleblock" || style === "night" ? "instrument" : style === "board" ? "board" : "classic";
+}
+
 export function resolveAppearance(value, fallback = DEFAULT_APPEARANCE) {
   return {
     language: isLanguage(value?.language) ? value.language : fallback.language,
@@ -32,6 +42,7 @@ export function applyAppearance(preferences) {
   document.documentElement.dataset.theme = appearance.theme;
   document.documentElement.style.setProperty("--font-scale", String(appearance.fontScale));
   document.documentElement.dataset.uiStyle = appearance.uiStyle;
+  document.documentElement.dataset.uiFamily = uiFamily(appearance.uiStyle);
 }
 
 export function applicationUrl(url, preferences) {

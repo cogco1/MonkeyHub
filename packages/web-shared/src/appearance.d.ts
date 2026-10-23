@@ -3,6 +3,8 @@ export type ThemePreference = "dark" | "light" | "system";
 export type FontScale = 0.9 | 1 | 1.1;
 /** How the interface is drawn (#328); classic is the original look. */
 export type UiStyle = "classic" | "quiet" | "titleblock" | "night";
+/** The styles the component rules tell apart: data-ui-family on the root. */
+export type UiFamily = "classic" | "instrument" | "board";
 export interface AppearancePreferences {
   readonly language: Language;
   readonly theme: ThemePreference;
@@ -15,6 +17,7 @@ export function isLanguage(value: unknown): value is Language;
 export function isTheme(value: unknown): value is ThemePreference;
 export function isFontScale(value: unknown): value is FontScale;
 export function isUiStyle(value: unknown): value is UiStyle;
+export function uiFamily(style: string | undefined): UiFamily;
 export function resolveAppearance(value: unknown, fallback?: AppearancePreferences): AppearancePreferences;
 export function appearanceFromSearch(search: string, fallback?: AppearancePreferences): AppearancePreferences;
 export function applyAppearance(preferences: AppearancePreferences): void;

@@ -74,7 +74,7 @@ code {
 
 /* #328: in the instrument styles a Chinese label drops the tracking meant for
    Latin capitals and reads at the caption size. */
-:where([data-ui-style="quiet"], [data-ui-style="titleblock"], [data-ui-style="night"]) .label:lang(zh) {
+:where([data-ui-family="instrument"]) .label:lang(zh) {
   font-size: var(--text-caption);
   letter-spacing: 0;
 }

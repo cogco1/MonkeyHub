@@ -7280,7 +7280,8 @@
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
         "Component information in Modeling (#549): topic-agnostic MonkeyHubComponentInfo@1 datasets (docs/protocols/component-info.md), each kept on its own Board card under customData.componentInfo, checked and imported or replaced by dataset id on the Board through its save queue, read while Modeling shows a model once per Board revision, and shown in one closable card for a picked component only when the pick and the dataset's appliesTo (project, run, state digest) match the exact version on screen; datasets for another version are listed, never shown, and a click makes no request and writes nothing",
         "the designLoop application setting (legacy | advisory | enforced, default legacy; a saved off reads as legacy) passed to each Project Runtime it starts; legacy keeps the chat's tools, guide and error words as they were; advisory adds GET /api/revisions/context and two lines naming the problem lists; enforced offers POST /api/revisions with the user's message and words bound, the guide that names it and a Claude chat without Bash; the chat never sends confirmed",
-        "the design-loop tools (design_read, design_submit, design_ask, design_report_limitation) over studio_request and POST /api/revisions: a repair limit per answered user message (MONKEYHUB_REPAIR_BUDGET, default 3), earlier attempts on the same base superseded, the turn's loop state at the launcher's MONKEYHUB_DESIGN_LOOP_STATE file, the Stop hook that holds a turn open until a change landed, the architect was asked or a limitation was reported (at most three times), the --design-loop connection that lists only those tools, and cli_profile for whoever starts such a turn"
+        "the design-loop tools (design_read, design_submit, design_ask, design_report_limitation) over studio_request and POST /api/revisions: a repair limit per answered user message (MONKEYHUB_REPAIR_BUDGET, default 3), earlier attempts on the same base superseded, the turn's loop state at the launcher's MONKEYHUB_DESIGN_LOOP_STATE file, the Stop hook that holds a turn open until a change landed, the architect was asked or a limitation was reported (at most three times), the --design-loop connection that lists only those tools, and cli_profile for whoever starts such a turn",
+        "The interface styles' component hooks: shared controls, cards, view tabs, the current conversation row, the composer and notices read var(--hook, their own value); only Critique Table (board) sets the hooks, and component rules key on data-ui-family (classic, instrument, board)"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -7371,10 +7372,10 @@
         "GET /api/chat/usage-sources",
         "ChatStore.usage_sources",
         "WorkerSupervisor.verified_origins",
-        "packages/web-shared/src/appearance.js: DEFAULT_APPEARANCE, isLanguage, isTheme, isFontScale, resolveAppearance, appearanceFromSearch, applyAppearance and applicationUrl",
+        "packages/web-shared/src/appearance.js: DEFAULT_APPEARANCE, isLanguage, isTheme, isFontScale, isUiStyle, uiFamily, resolveAppearance, appearanceFromSearch, applyAppearance (data-ui-style and data-ui-family on the root) and applicationUrl",
         "packages/web-shared/src/i18n.js: translateMessage",
         "packages/web-shared/src/browserTranslator.js: prepareEnglishToChinese, translateEnglishToChinese and subscribeToEnglishToChineseReadiness",
-        "packages/web-shared/src/base.css: appearance tokens and base controls",
+        "packages/web-shared/src/base.css: appearance tokens, the Critique Table (board) style with its component hooks, and base controls",
         "ProjectRuntimeProvider / useStudio / useConnection: project-bound client and protocol identity",
         "ProjectWorkspace: Arch/Board/Design tree navigation, exact Board page visit and candidate preview without editing-base change; Drawing mounts explicit recipe export, file inspection and confirmed import via RecipeTransfer; comparisonRequest {candidateRunId, requestId} / onComparisonClose and the Design tree Compare open one read-only before/after against the exact retained base, once per request id: ids only grow, and null withdraws a requested comparison, loading or shown, without onComparisonClose; onRenderChatRequest passes a Board image discussion naming this workspace's own project to the host conversation composer, which sends nothing until the architect sends; a request naming another project, or one the composer shown cannot take, is refused back to the Board's dialog as a BoardRenderError",
         "studio_request POST /api/board/export: one registered clean-source page as a native MCP PNG image; studio_schema exposes the existing export request",
@@ -7635,7 +7636,9 @@
         "apps/monkeyhub/web/test/componentInfo.test.ts",
         "apps/monkeyhub/web/test/workspaceWidth.test.ts",
         "apps/monkeyhub/api/tests/test_design_loop_setting.py",
-        "apps/monkeyhub/api/tests/test_design_loop.py"
+        "apps/monkeyhub/api/tests/test_design_loop.py",
+        "apps/monkeyhub/web/test/appearance.test.ts",
+        "apps/monkeyhub/web/test/interfaceStyles.browser.mjs"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
