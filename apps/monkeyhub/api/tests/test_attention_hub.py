@@ -247,7 +247,8 @@ class AttentionCompositionTests(unittest.TestCase):
             self.assertEqual(client.post("/api/attention/att_missing/resolve", json={"optionId": "a"}).json()["code"],
                              "ATTENTION_NOT_FOUND")
             paths = app.openapi()["paths"]
-            self.assertTrue({"/api/attention", "/api/attention/{item_id}/undo", "/api/attention/questions"} <= set(paths))
+            self.assertTrue({"/api/attention", "/api/attention/{item_id}/undo", "/api/attention/questions",
+                             "/api/attention/conversation"} <= set(paths))
 
 if __name__ == "__main__":
     unittest.main()

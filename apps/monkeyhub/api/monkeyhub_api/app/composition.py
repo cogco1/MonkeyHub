@@ -29,7 +29,7 @@ from project_runtime.errors import StudioError
 
 from .. import project_archive
 from ..attention.actions import action_router
-from ..attention.hub import AttentionHub, question_router
+from ..attention.hub import AttentionHub, hub_router
 from ..attention.routes import attention_router
 from ..attention.store import AttentionStore
 from ..chat.routes import projects_router, providers_router, sessions_router
@@ -305,7 +305,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     app.include_router(runtime_router(runtimes))
     app.include_router(attention_router(attention.store))
     app.include_router(action_router(attention.executor))
-    app.include_router(question_router(attention))
+    app.include_router(hub_router(attention))
     app.include_router(preferences_router, prefix="/api")
     if settings.hub_web_dir is not None:
         if not (settings.hub_web_dir / "index.html").is_file():
