@@ -96,11 +96,10 @@
           "base_ref": "cc8f54e20546c73a1e1e1763a5001a8495c48675",
           "contributor": "Claude",
           "reviewer": null,
-          "handoff": "Ctrl+K and the Hub's shortcuts read the command tree devctl render-map writes from governance/module_registry.json capabilities (ui.commands); the shell-level capabilities come first, the Runtime-side ones follow on this lane. Draft only during the paper freeze: nothing merges into main until the relay ends and the coordinator says so.",
+          "handoff": "Ctrl+K and the Hub's shortcuts read the command tree devctl render-map writes from governance/module_registry.json capabilities (ui.commands); the shell-level capabilities come first, the Runtime-side ones follow on this lane. Draft only during the paper freeze: nothing merges into main until the relay ends and the coordinator says so. archcheck.py passes to GH-300/entry-ci; a later command-tree check is asked for there.",
           "modules": [
             "hub.shell",
             "project_runtime.intent",
-            "tools.governance.archcheck",
             "tools.governance.devctl"
           ],
           "write_scope": [
@@ -116,7 +115,6 @@
             "apps/monkeyhub/web/test/commandPalette.test.ts",
             "apps/monkeyhub/web/test/commandTree.test.ts",
             "services/project-runtime/src/project_runtime/application/capability.py",
-            "tools/governance/archcheck.py",
             "tools/governance/devctl.py"
           ],
           "depends_on": []
