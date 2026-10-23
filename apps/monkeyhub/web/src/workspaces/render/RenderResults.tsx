@@ -107,21 +107,21 @@ export default function RenderResults({ active, jobs, documents, selectedId, onS
   return <section className="render-results" aria-label={zh ? "渲染历史" : "Render history"}>
     <header className="render-toolbar">
       <strong>{zh ? "结果与历史" : "Results & history"}</strong>
-      {(["result", "source", "compare"] as const).map((mode) => <button key={mode} type="button" disabled={!job || (mode !== "result" && !source)}
+      {(["result", "source", "compare"] as const).map((mode) => <button data-command={`view.render.${mode}`} key={mode} type="button" disabled={!job || (mode !== "result" && !source)}
         aria-pressed={view === mode} onClick={() => setView(mode)}>{(zh ? { result: "结果", source: "来源", compare: "对比" }
           : { result: "Result", source: "Source", compare: "Compare" })[mode]}</button>)}
-      <button type="button" onClick={() => setZoom((value) => Math.max(.25, value / 1.25))} disabled={!image && !source} aria-label={zh ? "缩小" : "Zoom out"}>−</button>
-      <button type="button" onClick={() => { setZoom(1); setFit((value) => value + 1); }} disabled={!image && !source}>{zh ? "适应窗口" : "Fit"}</button>
-      <button type="button" onClick={() => setZoom((value) => Math.min(8, value * 1.25))} disabled={!image && !source} aria-label={zh ? "放大" : "Zoom in"}>+</button>
-      {resultImage.url && image && <a href={resultImage.url} download={image.fileName}>{zh ? "下载" : "Download"}</a>}
-      <button type="button" disabled={!image} onClick={() => { if (image) onBoard(pageSource(image, 0)); }}>{zh ? "送到画板" : "Send to Board"}</button>
+      <button data-command="view.render.zoom_out" type="button" onClick={() => setZoom((value) => Math.max(.25, value / 1.25))} disabled={!image && !source} aria-label={zh ? "缩小" : "Zoom out"}>−</button>
+      <button data-command="view.render.fit" type="button" onClick={() => { setZoom(1); setFit((value) => value + 1); }} disabled={!image && !source}>{zh ? "适应窗口" : "Fit"}</button>
+      <button data-command="view.render.zoom_in" type="button" onClick={() => setZoom((value) => Math.min(8, value * 1.25))} disabled={!image && !source} aria-label={zh ? "放大" : "Zoom in"}>+</button>
+      {resultImage.url && image && <a data-command="view.render.download" href={resultImage.url} download={image.fileName}>{zh ? "下载" : "Download"}</a>}
+      <button data-command="board.place_image" type="button" disabled={!image} onClick={() => { if (image) onBoard(pageSource(image, 0)); }}>{zh ? "送到画板" : "Send to Board"}</button>
     </header>
-    {error && <div className="render-error" role="alert">{error} <button type="button" onClick={() => setAttempt((value) => value + 1)}>{zh ? "重读图像" : "Reload image"}</button></div>}
+    {error && <div className="render-error" role="alert">{error} <button data-command="view.render.reload_image" type="button" onClick={() => setAttempt((value) => value + 1)}>{zh ? "重读图像" : "Reload image"}</button></div>}
     {!jobs.length ? <div className="render-empty"><h2>{zh ? "从一张已有设计图开始" : "Start with an existing design image"}</h2>
       <p>{zh ? "选择底图、参考图和视觉方向。每次生成的来源与结果独立保留。" : "Choose a source image, references and visual direction. Each generation retains its own source and result."}</p></div>
       : <div className="render-content">
         <aside className="render-list" aria-label={zh ? "生成记录" : "Generations"}>
-          {jobs.map((row) => <button type="button" key={row.jobId} aria-pressed={row.jobId === job?.jobId} onClick={() => onSelect(row.jobId)}>
+          {jobs.map((row) => <button data-command="view.render.select_job" data-command-arg={row.jobId} type="button" key={row.jobId} aria-pressed={row.jobId === job?.jobId} onClick={() => onSelect(row.jobId)}>
             {row.document && row.resultAvailable && <ImageThumbnail image={row.document} active={active} />}
             <span>{row.request?.direction ?? row.document?.fileName ?? "Native Render"}</span><small>{renderStatus(row.status, zh)}</small>
             <time dateTime={row.createdAt}>{new Date(row.createdAt).toLocaleString(language)}</time>
@@ -152,12 +152,12 @@ export default function RenderResults({ active, jobs, documents, selectedId, onS
                 : (zh ? "未关联模型" : "No model association")}</dd>
               {projection && <><dt>{zh ? "来源视图" : "Source view"}</dt><dd>{projection}</dd></>}
             </dl>
-            <button type="button" disabled={!job.request} onClick={() => onReuse(job)}>{zh ? "载入这次输入" : "Use these inputs"}</button>
-            {job.sourceState === "outdated" && job.request && <button type="button" onClick={() => onUpdateSource(job)}>{zh ? "使用更新来源" : "Use updated source"}</button>}
-            {saved && onShowInModeling && <button type="button" onClick={() => onShowInModeling(saved.camera)}>{t("render.savedView.show")}</button>}
-            {saved && onRecapture && <button type="button" disabled={!recaptureReady} onClick={() => onRecapture(job, saved)}>{t("render.savedView.recapture")}</button>}
+            <button data-command="view.render.reuse_inputs" type="button" disabled={!job.request} onClick={() => onReuse(job)}>{zh ? "载入这次输入" : "Use these inputs"}</button>
+            {job.sourceState === "outdated" && job.request && <button data-command="view.render.use_updated_source" type="button" onClick={() => onUpdateSource(job)}>{zh ? "使用更新来源" : "Use updated source"}</button>}
+            {saved && onShowInModeling && <button data-command="view.render.show_in_modeling" type="button" onClick={() => onShowInModeling(saved.camera)}>{t("render.savedView.show")}</button>}
+            {saved && onRecapture && <button data-command="view.render.recapture" type="button" disabled={!recaptureReady} onClick={() => onRecapture(job, saved)}>{t("render.savedView.recapture")}</button>}
             <span className="render-cost">{zh ? "费用：" : "Cost: "}{job.costUsd == null ? (zh ? "未知" : "Unknown") : `USD ${job.costUsd.toFixed(4)}`}</span>
-            <details><summary>{zh ? "来源与生成记录" : "Source & generation details"}</summary>
+            <details><summary data-command="view.disclosure.render_details">{zh ? "来源与生成记录" : "Source & generation details"}</summary>
               <pre>{JSON.stringify({ source: job.request?.source ?? null, references: job.request?.references ?? [], modelSource: modelSource ?? null,
                 sourceStageRef: source?.sourceStageRef ?? image?.sourceStageRef ?? null, sourceView: sourceView ?? null,
                 sourceState: job.sourceState, sourceStateReason: job.sourceStateReason, requestId: job.requestId, jobId: job.jobId,

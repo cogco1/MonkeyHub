@@ -58,10 +58,10 @@ export function SurfaceMenus({ label, active, children, end }: { label: string; 
 
 /** Parallel views or modes as words; the one showing is underlined. */
 export function MenuTabs<T extends string>({ label, value, options, onChange }: {
-  label: string; value: T; options: readonly { value: T; label: string }[]; onChange(value: T): void;
+  label: string; value: T; options: readonly { value: T; label: string; command?: string }[]; onChange(value: T): void;
 }) {
   return <div className="menu-tabs" role="group" aria-label={label}>
-    {options.map((option) => <button key={option.value} type="button" className="menu-tab" aria-pressed={option.value === value}
+    {options.map((option) => <button key={option.value} type="button" className="menu-tab" data-command={option.command} aria-pressed={option.value === value}
       onClick={() => onChange(option.value)}>{option.label}</button>)}
   </div>;
 }

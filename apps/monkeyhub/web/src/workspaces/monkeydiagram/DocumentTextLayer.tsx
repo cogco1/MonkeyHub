@@ -272,12 +272,12 @@ export function DocumentTextLayer({ annotations, width, height, scale, color, fo
             }} />
           <div className="document-text-editor__actions">
             <span>Ctrl+Enter</span>
-            <button type="button" onClick={() => cancelEditor(true)}>{t("document.text.cancel")}</button>
-            <button type="button" onClick={() => commitEditor()}>{t("document.text.finish")}</button>
+            <button data-command="view.markup_tools.text_cancel" type="button" onClick={() => cancelEditor(true)}>{t("document.text.cancel")}</button>
+            <button data-command="view.markup_tools.text_done" type="button" onClick={() => commitEditor()}>{t("document.text.finish")}</button>
           </div>
         </> : <>
-          <button type="button" onClick={() => selected && edit(selected)}>{t("document.text.edit")}</button>
-          <button type="button" onClick={() => selected && remove(selected.id)}>{t("document.text.delete")}</button>
+          <button data-command="view.markup_tools.text_edit" type="button" onClick={() => selected && edit(selected)}>{t("document.text.edit")}</button>
+          <button data-command="view.markup_tools.text_delete" type="button" onClick={() => selected && remove(selected.id)}>{t("document.text.delete")}</button>
         </>}
       </div>, layer.current?.closest(".document-workspace") ?? document.body,
     )}

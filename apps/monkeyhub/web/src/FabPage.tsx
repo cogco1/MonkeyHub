@@ -138,12 +138,12 @@ export function FabPage({ preferences, client, readResult }: Props) {
   // the step's form, and one status line for the printer profiles. The step not on screen keeps what was typed in it.
   return <div className="fab-view" ref={root}>
     <SurfaceBar label="MonkeyFab" end={working && <span role="status">{working}</span>}>
-      <MenuTabs label={t.views} value={view} onChange={(next) => setView(next)} options={[{ value: "prepare" as const, label: t.prepareTab }, { value: "send" as const, label: t.sendTab }]} />
+      <MenuTabs label={t.views} value={view} onChange={(next) => setView(next)} options={[{ value: "prepare" as const, label: t.prepareTab, command: "fab.prepare_parts.tab" }, { value: "send" as const, label: t.sendTab, command: "fab.send_to_printer.tab" }]} />
       <MenuSeparator />
-      <MenuCommand onClick={openDisplaySettings}>{t.settings}</MenuCommand>
+      <MenuCommand data-command="fab.prepare_parts.display_settings" onClick={openDisplaySettings}>{t.settings}</MenuCommand>
     </SurfaceBar>
     <div className="fab-scroll"><main className="hub fab-page"><h1 className="sr-only">MonkeyFab</h1>
-      {profileError ? <div className="error-message" role="alert"><p>{profileError}</p><button className="btn" type="button" onClick={() => setProfileAttempt((value) => value + 1)}>{t.retry}</button></div> : null}
+      {profileError ? <div className="error-message" role="alert"><p>{profileError}</p><button data-command="fab.profile.retry" className="btn" type="button" onClick={() => setProfileAttempt((value) => value + 1)}>{t.retry}</button></div> : null}
       <div className="fab-forms">
         <form className="app-card fab-form" onSubmit={(event) => void prepare(event)} aria-busy={busy === "prepare"} hidden={view !== "prepare"}>
           <h2 className="sr-only">{t.prepare}</h2><p className="help">{t.prepareHelp}</p>
@@ -152,8 +152,8 @@ export function FabPage({ preferences, client, readResult }: Props) {
             <label htmlFor="fab-printer">{t.printer}<select id="fab-printer" required value={printer} onChange={(event) => setPrinter(event.target.value)}>{Object.entries(profiles ?? {}).map(([key, profile]) => <option key={key} value={key}>{profile.label}</option>)}</select></label>
             {profiles?.[printer] ? <p className="help">{profiles[printer].usable_volume_mm.join(" × ")} mm</p> : null}
             <label htmlFor="fab-output">{t.output}<input id="fab-output" required value={output} onChange={(event) => setOutput(event.target.value)} placeholder="D:\prints\building-h2s" spellCheck={false} /></label>
-            <details className="advanced"><summary>{t.advanced}</summary><div className="form-grid"><label htmlFor="fab-xy">{t.xy}<input id="fab-xy" type="number" required min="0" step="any" value={xy} onChange={(event) => setXy(event.target.value)} /></label><label htmlFor="fab-z">{t.z}<input id="fab-z" type="number" required min="0" step="any" value={z} onChange={(event) => setZ(event.target.value)} /></label></div></details>
-            <div className="actions"><button className="btn btn--primary" type="submit">{busy === "prepare" ? t.preparing : t.prepareAction}</button></div>
+            <details className="advanced"><summary data-command="view.disclosure.fab_advanced">{t.advanced}</summary><div className="form-grid"><label htmlFor="fab-xy">{t.xy}<input id="fab-xy" type="number" required min="0" step="any" value={xy} onChange={(event) => setXy(event.target.value)} /></label><label htmlFor="fab-z">{t.z}<input id="fab-z" type="number" required min="0" step="any" value={z} onChange={(event) => setZ(event.target.value)} /></label></div></details>
+            <div className="actions"><button data-command="fab.prepare_parts.create" className="btn btn--primary" type="submit">{busy === "prepare" ? t.preparing : t.prepareAction}</button></div>
           </fieldset>
           {prepareError ? <div className="error-message" role="alert"><strong>{t.failed}</strong><p>{prepareError}</p></div> : null}
           {prepared ? <div className="fab-result" role="status"><h3>{t.prepared}</h3><code>{prepared.outputDir}</code><pre>{prepared.stdout}</pre><p className="help">{t.next}</p></div> : null}
@@ -163,8 +163,8 @@ export function FabPage({ preferences, client, readResult }: Props) {
           <fieldset disabled={busy !== null || profiles === null}><label htmlFor="fab-job">{t.job}<input id="fab-job" required value={job} onChange={(event) => setJob(event.target.value)} placeholder="D:\prints\building-h2s.gcode.3mf" spellCheck={false} /></label>
             <label htmlFor="fab-host">{t.host}<input id="fab-host" required value={host} onChange={(event) => setHost(event.target.value)} placeholder="192.168.1.50" spellCheck={false} autoComplete="off" /></label>
             <label htmlFor="fab-access">{t.access}<input id="fab-access" type="password" value={access} onChange={(event) => setAccess(event.target.value)} autoComplete="off" /></label><p className="help">{t.accessHelp}</p>
-            <details className="advanced"><summary>{t.sendOptions}</summary><label htmlFor="fab-remote">{t.remote}<input id="fab-remote" value={remote} onChange={(event) => setRemote(event.target.value)} placeholder="building-h2s-v2.gcode.3mf" spellCheck={false} /></label><p className="help">{t.remoteHelp}</p><label htmlFor="fab-timeout">{t.timeout}<input id="fab-timeout" type="number" required min="1" step="1" value={timeout} onChange={(event) => setTimeoutSeconds(event.target.value)} /></label></details>
-            <div className="actions"><button className="btn" type="submit" value="check">{busy === "check" ? t.checking : t.check}</button><button className="btn btn--primary" type="submit" value="send">{busy === "send" ? t.sending : t.sendAction}</button></div>
+            <details className="advanced"><summary data-command="view.disclosure.fab_send_options">{t.sendOptions}</summary><label htmlFor="fab-remote">{t.remote}<input id="fab-remote" value={remote} onChange={(event) => setRemote(event.target.value)} placeholder="building-h2s-v2.gcode.3mf" spellCheck={false} /></label><p className="help">{t.remoteHelp}</p><label htmlFor="fab-timeout">{t.timeout}<input id="fab-timeout" type="number" required min="1" step="1" value={timeout} onChange={(event) => setTimeoutSeconds(event.target.value)} /></label></details>
+            <div className="actions"><button data-command="fab.send_to_printer.check" className="btn" type="submit" value="check">{busy === "check" ? t.checking : t.check}</button><button data-command="fab.send_to_printer.send" className="btn btn--primary" type="submit" value="send">{busy === "send" ? t.sending : t.sendAction}</button></div>
           </fieldset>
           {sendError ? <div className="error-message" role="alert"><strong>{t.failed}</strong><p>{sendError}</p></div> : null}
           {sent ? <div className="fab-result" role="status"><h3>{sent.status === "uploaded" ? t.sent : t.checked}</h3><dl><dt>{t.target}</dt><dd>{sent.host}{sent.remote_path}</dd><dt>{t.size}</dt><dd>{sent.bytes.toLocaleString()} {t.bytes}</dd><dt>{t.plates}</dt><dd>{sent.plates.join(", ")}</dd></dl></div> : null}

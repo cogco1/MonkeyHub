@@ -53,7 +53,7 @@ export function QuestionCard({
         <div className="card__row chips">
           {expanded && <input aria-label="搜索澄清对象" placeholder="搜索对象" value={search} onChange={(event) => setSearch(event.target.value)} />}
           {shown.map((candidate) => (
-            <button
+            <button data-command="component.resolve_pick.choose" data-command-arg={candidate.ref}
               key={candidate.ref}
               type="button"
               className="chip"
@@ -67,13 +67,13 @@ export function QuestionCard({
               <span className="mono">{candidate.label}</span>
             </button>
           ))}
-          {candidates.length > 4 && <button type="button" className="btn btn--small" onClick={() => setExpanded((value) => !value)}>
+          {candidates.length > 4 && <button data-command="component.resolve_pick.expand" type="button" className="btn btn--small" onClick={() => setExpanded((value) => !value)}>
             {expanded ? "收起" : `查看全部 ${candidates.length} 项`}</button>}
         </div>
       )}
       {(error.question || error.acceptedForms.length > 0 || pending) && (
         <details className="card__row card__details">
-          <summary>{t("common.technicalDetails")}</summary>
+          <summary data-command="view.disclosure.technical_details">{t("common.technicalDetails")}</summary>
           {error.question && (
             <p className="quiet">
               <BilingualText source={error.detail} />
@@ -86,7 +86,7 @@ export function QuestionCard({
           )}
           <div className="chips">
             {error.acceptedForms.map((form) => (
-              <button
+              <button data-command="component.resolve_pick.reply" data-command-arg={form}
                 key={form}
                 type="button"
                 className="chip"

@@ -44,7 +44,7 @@ function SourceImage({ item, projectId }: { item: PublicationElementDto; project
     })().catch((cause) => { if (live) setError(asStudioApiError(cause).detail); });
     return () => { live = false; if (retainedUrl) URL.revokeObjectURL(retainedUrl); };
   }, [studio, projectId, key, retry]);
-  return url ? <img src={url} alt="" draggable={false} /> : <span className="publish-image-status">{error ? <button onPointerDown={(event) => event.stopPropagation()} onClick={() => setRetry((value) => value + 1)} title={error}>↻</button> : "…"}</span>;
+  return url ? <img src={url} alt="" draggable={false} /> : <span className="publish-image-status">{error ? <button data-command="view.layout.retry_image" onPointerDown={(event) => event.stopPropagation()} onClick={() => setRetry((value) => value + 1)} title={error}>↻</button> : "…"}</span>;
 }
 
 export default function PublishWorkspace({ projectId, active, refreshKey = 0, boardRequest = null }: { projectId: string; active: boolean; refreshKey?: number; boardRequest?: { revision: string; ids: string[]; requestId: string } | null }) {
@@ -196,7 +196,7 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
     ++readEpoch.current; queue.current?.discard(); queue.current = null; setDirty(false); setDraft(null);
     setError(null); setLayoutHint(""); setSaveError(null); setAttempt((value) => value + 1);
   };
-  if (!draft) return <section className="publish-workspace">{error ? <><ErrorPanel error={error} what="Publish" /><button onClick={() => setAttempt((value) => value + 1)}>{zh ? "重试" : "Retry"}</button></> : <p>{zh ? "正在读取排版…" : "Loading publication…"}</p>}</section>;
+  if (!draft) return <section className="publish-workspace">{error ? <><ErrorPanel error={error} what="Publish" /><button data-command="view.layout.retry_load" onClick={() => setAttempt((value) => value + 1)}>{zh ? "重试" : "Retry"}</button></> : <p>{zh ? "正在读取排版…" : "Loading publication…"}</p>}</section>;
   // A failed queued write also rejects the enclosing import/export operation.
   // Show its retained-draft recovery once, including for locally wrapped errors.
   const separateError = error && (error.code !== saveError?.code || error.status !== saveError?.status || error.detail !== saveError?.detail);
@@ -205,18 +205,18 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
     <SurfaceMenus label="Publish" active={active}
       end={<span className="publish-save-state" role="status">{saveError ? (zh ? "保存失败" : "Not saved") : saving ? (zh ? "正在保存…" : "Saving…") : dirty ? (zh ? "等待保存…" : "Waiting to save…") : (zh ? "已保存" : "Saved")}</span>}>
       <input className="surface-title publish-title" aria-label={zh ? "文件标题" : "Publication title"} value={draft.title} disabled={busy} onChange={(event) => change({ ...draft, title: event.target.value })} />
-      <MenuCommand disabled={busy || !draft.pages.length} onClick={() => void run(() => exportFile("pptx"))}>PPTX</MenuCommand>
-      <MenuCommand disabled={busy || !draft.pages.length} onClick={() => void run(() => exportFile("pdf"))}>PDF</MenuCommand>
+      <MenuCommand data-command="publication.export.pptx" disabled={busy || !draft.pages.length} onClick={() => void run(() => exportFile("pptx"))}>PPTX</MenuCommand>
+      <MenuCommand data-command="publication.export.pdf" disabled={busy || !draft.pages.length} onClick={() => void run(() => exportFile("pdf"))}>PDF</MenuCommand>
     </SurfaceMenus>
-    {saveError && <div className="publish-error"><ErrorPanel error={saveError} what="Publish" /><button disabled={busy || saving} onClick={() => void queue.current?.retry().then(() => { setError(null); setLayoutHint(""); setAttempt((value) => value + 1); }).catch(() => {})}>{zh ? "重试保存" : "Retry save"}</button><button disabled={busy || saving} onClick={reload}>{zh ? "重新读取" : "Reload"}</button></div>}
-    {separateError && <div className="publish-error"><ErrorPanel error={error} what="Publish" /><button disabled={busy || saving} onClick={reload}>{zh ? "重新读取" : "Reload"}</button></div>}
-    {layoutHint && <div role="alert" className="publish-error">{layoutHint}<button disabled={busy || saving} onClick={reload}>{zh ? "重新读取" : "Reload"}</button></div>}
+    {saveError && <div className="publish-error"><ErrorPanel error={saveError} what="Publish" /><button data-command="view.layout.retry_save" disabled={busy || saving} onClick={() => void queue.current?.retry().then(() => { setError(null); setLayoutHint(""); setAttempt((value) => value + 1); }).catch(() => {})}>{zh ? "重试保存" : "Retry save"}</button><button data-command="view.layout.reload" disabled={busy || saving} onClick={reload}>{zh ? "重新读取" : "Reload"}</button></div>}
+    {separateError && <div className="publish-error"><ErrorPanel error={error} what="Publish" /><button data-command="view.layout.reload" disabled={busy || saving} onClick={reload}>{zh ? "重新读取" : "Reload"}</button></div>}
+    {layoutHint && <div role="alert" className="publish-error">{layoutHint}<button data-command="view.layout.reload" disabled={busy || saving} onClick={reload}>{zh ? "重新读取" : "Reload"}</button></div>}
     <div className="publish-body">
       <aside className="publish-pages" aria-label={zh ? "页面顺序" : "Page order"}>
-        <button disabled={busy || draft.pages.length >= 60} onClick={addPage}>{zh ? "+ 添加页" : "+ Page"}</button>
-        {draft.pages.map((row, index) => <button key={row.id} aria-pressed={index === pageIndex} onClick={() => { setPageIndex(index); setSelected(null); }}>{index + 1}. {row.elements.find((element) => element.kind === "text")?.text?.slice(0, 22) || (zh ? "空白页" : "Blank page")}</button>)}
-        {page && <><button disabled={busy || pageIndex === 0} onClick={() => { const pages = [...draft.pages]; [pages[pageIndex - 1], pages[pageIndex]] = [pages[pageIndex], pages[pageIndex - 1]]; change({ ...draft, pages }); setPageIndex(pageIndex - 1); }}>{zh ? "上移一页" : "Move page up"}</button>
-          <button disabled={busy} onClick={() => { change({ ...draft, pages: draft.pages.filter((_, index) => index !== pageIndex) }); setPageIndex(Math.max(0, pageIndex - 1)); setSelected(null); }}>{zh ? "删除此页" : "Delete page"}</button></>}
+        <button data-command="view.layout.add_page" disabled={busy || draft.pages.length >= 60} onClick={addPage}>{zh ? "+ 添加页" : "+ Page"}</button>
+        {draft.pages.map((row, index) => <button data-command="view.layout.select_page" data-command-arg={row.id} key={row.id} aria-pressed={index === pageIndex} onClick={() => { setPageIndex(index); setSelected(null); }}>{index + 1}. {row.elements.find((element) => element.kind === "text")?.text?.slice(0, 22) || (zh ? "空白页" : "Blank page")}</button>)}
+        {page && <><button data-command="view.layout.move_page_up" disabled={busy || pageIndex === 0} onClick={() => { const pages = [...draft.pages]; [pages[pageIndex - 1], pages[pageIndex]] = [pages[pageIndex], pages[pageIndex - 1]]; change({ ...draft, pages }); setPageIndex(pageIndex - 1); }}>{zh ? "上移一页" : "Move page up"}</button>
+          <button data-command="view.layout.delete_page" disabled={busy} onClick={() => { change({ ...draft, pages: draft.pages.filter((_, index) => index !== pageIndex) }); setPageIndex(Math.max(0, pageIndex - 1)); setSelected(null); }}>{zh ? "删除此页" : "Delete page"}</button></>}
       </aside>
       <div className="publish-viewport" ref={viewport}>
         {!page ? <p className="publish-empty">{zh ? "添加页面，或在画板选择图纸后点击“放入汇报”。" : "Add a page, or select Board drawings and choose Add to Publish."}</p> : <div style={{ width: draft.spec.width! * scale, height: draft.spec.height! * scale }}>
@@ -234,10 +234,10 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
       <aside className="publish-properties">
         <fieldset disabled={busy || !page}>
           <legend>{zh ? "页面内容" : "Page content"}</legend>
-          <button onClick={() => addElement("text")}>{zh ? "添加文字" : "Add text"}</button>
+          <button data-command="view.layout.add_text" onClick={() => addElement("text")}>{zh ? "添加文字" : "Add text"}</button>
           <label>{zh ? "项目图纸 / 图片" : "Project drawing / image"}<select aria-label={zh ? "项目图纸 / 图片" : "Project drawing / image"} value={asset} onChange={(event) => setAsset(event.target.value)}><option value="">{zh ? "选择来源" : "Choose source"}</option>{documents.map((source) => <option value={documentKey(source)} key={documentKey(source)}>{source.fileName}</option>)}</select></label>
-          <button disabled={!asset} onClick={() => addElement("image")}>{zh ? "放入此页" : "Place on page"}</button>
-          <button onClick={() => {
+          <button data-command="view.layout.place_image" disabled={!asset} onClick={() => addElement("image")}>{zh ? "放入此页" : "Place on page"}</button>
+          <button data-command="view.layout.apply_layout" onClick={() => {
             if (!page) return;
             const margin = draft.spec.width! * .05, top = draft.spec.height! * .05, gap = draft.spec.height! * .025;
             const texts = page.elements.filter((element) => element.kind === "text");
@@ -264,16 +264,16 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
         {item && <fieldset disabled={busy}><legend>{zh ? "选中对象" : "Selected object"}</legend>
           {item.kind === "text" && <><label>{zh ? "文字" : "Text"}<textarea aria-label={zh ? "文字" : "Text"} value={item.text} onChange={(event) => updateItem({ text: event.target.value })} /></label><label>{zh ? "字号" : "Font size"}<input type="number" min="8" max="96" value={item.fontSize} onChange={(event) => updateItem({ fontSize: Number(event.target.value) })} /></label></>}
           <div className="publish-coordinates">{(["x", "y", "width", "height"] as const).map((field) => <label key={field}>{field}<input aria-label={field} type="number" value={Math.round(item[field])} onChange={(event) => updateItem({ [field]: Number(event.target.value) })} /></label>)}</div>
-          <button onClick={() => updateItem({ x: (draft.spec.width! - item.width) / 2 })}>{zh ? "水平居中" : "Center horizontally"}</button>
+          <button data-command="view.layout.center" onClick={() => updateItem({ x: (draft.spec.width! - item.width) / 2 })}>{zh ? "水平居中" : "Center horizontally"}</button>
           {item.source && <><label>{zh ? "来源页码" : "Source page"}<input type="number" min="1" value={item.source.pageIndex + 1} onChange={(event) => updateItem({ source: { ...item.source!, pageIndex: Number(event.target.value) - 1 } })} /></label><label><input type="checkbox" checked={item.frozen ?? false} onChange={(event) => updateItem({ frozen: event.target.checked })} />{zh ? "固定此来源版本" : "Freeze this source"}</label>
           <span title={draft.sources.find((source) => source.elementId === item.id)?.detail}>{(() => {
             const state = draft.sources.find((source) => source.elementId === item.id)?.status;
             return state ? zh ? { current: "当前来源", frozen: "已固定版本", stale: "来源有变化，需核对", missing: "来源不可用" }[state] : state : (zh ? "保存后核对来源" : "Save to check source");
           })()}</span>
-            {draft.sources.find((source) => source.elementId === item.id)?.replacement && <button onClick={() => updateItem({ source: draft.sources.find((source) => source.elementId === item.id)!.replacement!, frozen: false })}>{zh ? "更新此图来源" : "Update this image source"}</button>}
+            {draft.sources.find((source) => source.elementId === item.id)?.replacement && <button data-command="view.layout.update_source" onClick={() => updateItem({ source: draft.sources.find((source) => source.elementId === item.id)!.replacement!, frozen: false })}>{zh ? "更新此图来源" : "Update this image source"}</button>}
             <div className="publish-coordinates">{(zh ? ["裁左", "裁上", "裁右", "裁下"] : ["Crop left", "Crop top", "Crop right", "Crop bottom"]).map((label, index) => <label key={label}>{label} %<input aria-label={`${label} %`} type="number" min="0" max="95" value={Math.round((item.crop?.[index] ?? 0) * 100)} onChange={(event) => { const crop = [...(item.crop ?? [0, 0, 0, 0])] as [number, number, number, number]; crop[index] = Number(event.target.value) / 100; if (crop[0] + crop[2] < 1 && crop[1] + crop[3] < 1) updateItem({ crop }); }} /></label>)}</div>
           </>}
-          <button onClick={() => { change({ ...draft, pages: draft.pages.map((row, index) => index === pageIndex ? { ...row, elements: row.elements.filter((element) => element.id !== item.id) } : row) }); setSelected(null); }}>{zh ? "删除对象" : "Delete object"}</button>
+          <button data-command="view.layout.delete_object" onClick={() => { change({ ...draft, pages: draft.pages.map((row, index) => index === pageIndex ? { ...row, elements: row.elements.filter((element) => element.id !== item.id) } : row) }); setSelected(null); }}>{zh ? "删除对象" : "Delete object"}</button>
         </fieldset>}
       </aside>
     </div>

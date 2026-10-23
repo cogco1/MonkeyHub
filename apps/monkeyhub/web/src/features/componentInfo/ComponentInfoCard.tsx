@@ -141,14 +141,14 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-function CopyButton({ text, label, done, className = "btn btn--small" }: { text: () => string; label: string; done: string; className?: string }) {
+function CopyButton({ text, label, done, command, className = "btn btn--small" }: { text: () => string; label: string; done: string; command: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
     const timer = setTimeout(() => setCopied(false), 1500);
     return () => clearTimeout(timer);
   }, [copied]);
-  return <button type="button" className={className} onClick={() => { void copyText(text()).then(setCopied); }}>
+  return <button data-command={command} type="button" className={className} onClick={() => { void copyText(text()).then(setCopied); }}>
     {copied ? done : label}</button>;
 }
 
@@ -164,7 +164,7 @@ function useFold() {
  */
 function FoldToggle({ fold, label, t }: { fold: ReturnType<typeof useFold>; label?: string; t: CardWords }) {
   const name = t(fold.open ? "componentInfo.lessDetail" : "componentInfo.moreDetail");
-  return <button type="button" className="component-info__fold" aria-expanded={fold.open} aria-controls={fold.id}
+  return <button data-command="component.inspect.toggle_notes" type="button" className="component-info__fold" aria-expanded={fold.open} aria-controls={fold.id}
     aria-label={label ? undefined : name} title={name} onClick={fold.toggle}>
     {label}
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
@@ -198,7 +198,7 @@ function Field({ field, t }: { field: CardField; t: CardWords }) {
         {/* The desktop shell opens no address outside the Hub: a link is text to copy. */}
         {field.url && <span className="component-info__url">
           <span className="component-info__link">{field.url}</span>
-          <CopyButton text={() => field.url!} label={t("componentInfo.copyLink")} done={t("componentInfo.copied")}
+          <CopyButton command="component.inspect.copy_link" text={() => field.url!} label={t("componentInfo.copyLink")} done={t("componentInfo.copied")}
             className="btn btn--small component-info__link-copy" />
         </span>}
         {source && <span className="component-info__source">{t("componentInfo.source", { source })}</span>}
@@ -246,7 +246,7 @@ function Block({ block, heading, t }: { block: CardBlock; heading: boolean; t: C
 
 function Technical({ card, t }: { card: ComponentCard; t: CardWords }) {
   return <details className="component-info__technical">
-    <summary>{t("componentInfo.technical")}</summary>
+    <summary data-command="view.disclosure.technical_details">{t("componentInfo.technical")}</summary>
     <dl className="component-info__fields component-info__fields--technical">
       <div className="component-info__field"><dt>{t("componentInfo.componentId")}</dt><dd className="mono">{card.componentId}</dd></div>
       {card.elementId && <div className="component-info__field"><dt>{t("componentInfo.elementId")}</dt><dd className="mono">{card.elementId}</dd></div>}
@@ -301,8 +301,8 @@ export function ComponentInfoPanel({ subject, onClose }: { subject: ComponentInf
         <strong className="component-info__name" title={name}>{name}</strong>
       </div>
       <div className="component-info__actions">
-        {card && <CopyButton text={text} label={t("componentInfo.copy")} done={t("componentInfo.copied")} />}
-        <button type="button" className="btn btn--small" onClick={onClose}>{t("componentInfo.close")}</button>
+        {card && <CopyButton command="component.inspect.copy" text={text} label={t("componentInfo.copy")} done={t("componentInfo.copied")} />}
+        <button data-command="component.inspect.close" type="button" className="btn btn--small" onClick={onClose}>{t("componentInfo.close")}</button>
       </div>
     </div>
     <div className="component-info__body">

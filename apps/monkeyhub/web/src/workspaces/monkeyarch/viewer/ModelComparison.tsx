@@ -205,12 +205,12 @@ export default function ModelComparison({ projectId, candidateRunId, active, nam
 
   return <section ref={section} className="model-compare" aria-labelledby={headingId} data-phase={phase}>
     <SurfaceMenus label={t("modelCompare.menu")} active={active}>
-      <MenuCommand onClick={onReturn}><span aria-hidden="true">←</span> {backLabel}</MenuCommand>
+      <MenuCommand data-command="candidate.compare.back" onClick={onReturn}><span aria-hidden="true">←</span> {backLabel}</MenuCommand>
       {pair && <>
         <MenuSeparator />
-        <MenuCommand aria-pressed={linked} data-action="linked" onClick={toggleLinked}>{t("modelCompare.linked")}</MenuCommand>
-        <MenuCommand aria-pressed={outlineOn} data-action="outline" onClick={() => setOutlineOn((value) => !value)}>{t("modelCompare.outline")}</MenuCommand>
-        <MenuCommand disabled={!bothReady} onClick={fitBoth}>{t("modelCompare.fit")}</MenuCommand>
+        <MenuCommand data-command="candidate.compare.linked" aria-pressed={linked} data-action="linked" onClick={toggleLinked}>{t("modelCompare.linked")}</MenuCommand>
+        <MenuCommand data-command="candidate.compare.outline" aria-pressed={outlineOn} data-action="outline" onClick={() => setOutlineOn((value) => !value)}>{t("modelCompare.outline")}</MenuCommand>
+        <MenuCommand data-command="candidate.compare.fit" disabled={!bothReady} onClick={fitBoth}>{t("modelCompare.fit")}</MenuCommand>
       </>}
     </SurfaceMenus>
     <header className="model-compare__head">
@@ -222,8 +222,8 @@ export default function ModelComparison({ projectId, candidateRunId, active, nam
     {failure && <div className="model-compare__state model-compare__refusal" role="alert">
       <p>{failure}</p>
       <div className="model-compare__actions">
-        <button type="button" className="btn btn--small btn--primary" onClick={onReturn}>{backLabel}</button>
-        {resolution.status === "failed" && <button type="button" className="btn btn--small" onClick={() => setAttempt((value) => value + 1)}>{t("modelCompare.retry")}</button>}
+        <button data-command="candidate.compare.back" type="button" className="btn btn--small btn--primary" onClick={onReturn}>{backLabel}</button>
+        {resolution.status === "failed" && <button data-command="candidate.compare.retry" type="button" className="btn btn--small" onClick={() => setAttempt((value) => value + 1)}>{t("modelCompare.retry")}</button>}
       </div>
     </div>}
     {pair && <div className="model-compare__panes">
@@ -245,7 +245,7 @@ export default function ModelComparison({ projectId, candidateRunId, active, nam
     </div>}
     {pair && outlineOn && outlineNote && <p className="model-compare__note">{outlineNote}</p>}
     <details className="model-compare__details">
-      <summary>{t("modelCompare.details")}</summary>
+      <summary data-command="view.disclosure.technical_details">{t("modelCompare.details")}</summary>
       {pair && <p className="model-compare__summary">{counts !== null ? t("modelCompare.summary", { counts })
         : objects.status === "pending" ? t("modelCompare.summaryPending") : t("modelCompare.summaryUnavailable")}</p>}
       <dl>
@@ -268,7 +268,7 @@ export default function ModelComparison({ projectId, candidateRunId, active, nam
           <table>
             <thead><tr><th scope="col">{t("modelCompare.detail.object")}</th><th scope="col">{t("modelCompare.detail.status")}</th><th scope="col">{t("modelCompare.detail.component")}</th></tr></thead>
             <tbody>{objects.value.objects.map((object) => <tr key={`${object.seatId}:${object.name}`} data-status={object.status}>
-              <td><button type="button" className="model-compare__object" onClick={() => mark(object.name)}>{object.name}</button></td>
+              <td><button data-command="candidate.compare.mark_object" data-command-arg={object.name} type="button" className="model-compare__object" onClick={() => mark(object.name)}>{object.name}</button></td>
               <td>{statusWords.has(object.status) ? t(`modelCompare.status.${object.status}` as MessageKey) : object.status}</td>
               <td>{object.componentId ?? "—"}</td>
             </tr>)}</tbody>

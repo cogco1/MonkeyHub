@@ -102,30 +102,30 @@ export function VersionsStrip({
       const selected = row.runId === design.currentModelSource?.runId;
       return <div className="vcard" role="listitem" key={`${section}:${row.runId}`} data-working-draft={row.runId}>
         <div className="vcard__head"><strong>{label}</strong><time>{new Date(row.updatedAt).toLocaleString()}</time></div>
-        <div className="vcard__exports"><button className="btn btn--small" disabled={design.busy} aria-pressed={selected}
+        <div className="vcard__exports"><button data-command="design.go_to_step.continue" className="btn btn--small" disabled={design.busy} aria-pressed={selected}
           onClick={() => design.onRestoreDraft?.(row.runId)}>{t("stage.base.continue")}</button>
           {selected && branch && design.currentStageRef === branch.headStageRef &&
             !history?.stages.some((stage) => stage.modelSource.runId === row.runId) &&
-            <button className="btn btn--small" disabled={design.busy} onClick={() => design.onAccept(row.runId)}>{t("designTree.action.acceptNext")}</button>}
+            <button data-command="stage.accept.next" className="btn btn--small" disabled={design.busy} onClick={() => design.onAccept(row.runId)}>{t("designTree.action.acceptNext")}</button>}
         </div>
         {save && <form className="vcard__exports" onSubmit={(event) => { event.preventDefault(); design.onSaveDraft?.(row.runId, saveName.trim()); }}>
           <input aria-label={t("stage.historyPanel.milestoneName")} placeholder={t("stage.historyPanel.milestonePlaceholder")} value={saveName} onChange={(event) => setSaveName(event.target.value)} />
-          <button className="btn btn--small" disabled={design.busy}>{t("stage.historyPanel.saveMilestone")}</button>
+          <button data-command="design.go_to_step.save_milestone" className="btn btn--small" disabled={design.busy}>{t("stage.historyPanel.saveMilestone")}</button>
         </form>}
       </div>;
     };
     return <div className="versions" role="list" aria-label={t("stage.historyPanel.ariaLabel")}>
       {draft?.current && draftRow(draft.current, t("stage.historyPanel.currentDraft"), "current", true)}
       {draft?.saved?.map((row) => draftRow(row, row.label || t("stage.historyPanel.savedVersion"), "saved"))}
-      {draft && <details className="vcard"><summary>{t("stage.historyPanel.recoveryPoints", { count: (draft.recovery ?? []).length })}</summary>
+      {draft && <details className="vcard"><summary data-command="view.disclosure.recovery_points">{t("stage.historyPanel.recoveryPoints", { count: (draft.recovery ?? []).length })}</summary>
         <p className="quiet">{t("stage.historyPanel.recoveryHelp")}</p>
         {draft.recovery?.map((row) => draftRow(row, t("stage.historyPanel.recoveryPoint"), "recovery"))}
       </details>}
       {/* #302: Stages, lines, explorations and candidates are the Design Tree's; only the first Stage starts here. */}
       {onOpenTree ? <div className="vcard" data-design-tree-link>
         <div className="vcard__exports">
-          <button type="button" className="btn btn--small" onClick={onOpenTree}>{t("stage.tree.open")}</button>
-          {history?.branches.length === 0 && <button className="btn btn--small" disabled={design.busy || !design.currentModelSource}
+          <button data-command="view.design_tree.open" type="button" className="btn btn--small" onClick={onOpenTree}>{t("stage.tree.open")}</button>
+          {history?.branches.length === 0 && <button data-command="stage.accept.initial" className="btn btn--small" disabled={design.busy || !design.currentModelSource}
             onClick={design.onInitialize}>{t("designTree.action.accept", { stage: "S0" })}</button>}
         </div>{design.error && <p role="alert">{design.error}</p>}
       </div> : <>
@@ -133,28 +133,28 @@ export function VersionsStrip({
         {history && history.branches.length > 0 && <select aria-label={t("stage.historyPanel.branch")} value={history.branchId} disabled={design.busy}
           onChange={(event) => design.onBranch(event.target.value)}>{history.branches.map((item) =>
             <option key={item.branchId} value={item.branchId}>{item.branchId}</option>)}</select>}
-        {history?.branches.length === 0 && <button className="btn btn--small" disabled={design.busy || !design.currentModelSource}
+        {history?.branches.length === 0 && <button data-command="stage.accept.initial" className="btn btn--small" disabled={design.busy || !design.currentModelSource}
           onClick={design.onInitialize}>{t("designTree.action.accept", { stage: "S0" })}</button>}
       </div>{design.error && <p role="alert">{design.error}</p>}</div>
       {history?.stages.map((stage) => <div key={stage.stageRef} className="vcard" role="listitem" data-design-stage={stage.label}>
-        <div className="vcard__head"><button className="btn btn--small" disabled={design.busy} onClick={() => design.onStage(stage)}
+        <div className="vcard__head"><button data-command="design.go_to_step.stage" data-command-arg={stage.stageRef} className="btn btn--small" disabled={design.busy} onClick={() => design.onStage(stage)}
           aria-pressed={stage.stageRef === design.currentStageRef && stage.modelSource.runId === design.currentModelSource?.runId &&
             stage.modelSource.stateDigest === design.currentModelSource.stateDigest && stage.modelSource.assetSha256 === design.currentModelSource.assetSha256}>
           {stage.label}{stage.stageRef === branch?.headStageRef ? t("stage.historyPanel.currentCommit") : ""}</button>
-          <button className="btn btn--small" disabled={design.busy} onClick={() => { setForkStage(stage); setBranchName(""); }}>{t("stage.historyPanel.fork")}</button>
+          <button data-command="design.go_to_step.fork" className="btn btn--small" disabled={design.busy} onClick={() => { setForkStage(stage); setBranchName(""); }}>{t("stage.historyPanel.fork")}</button>
         </div>
       </div>)}
       {forkStage && <form className="vcard" onSubmit={(event) => { event.preventDefault(); if (branchName.trim()) design.onFork(forkStage, branchName.trim()); }}>
         <label>{t("stage.historyPanel.branchName", { stage: forkStage.label })} <input value={branchName} onChange={(event) => setBranchName(event.target.value)}
           pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,99}" required placeholder="alternate-layout" /></label>
-        <button className="btn btn--small" disabled={design.busy || !branchName.trim()}>{t("stage.historyPanel.createBranch")}</button>
-        <button type="button" className="btn btn--small" onClick={() => setForkStage(null)}>{t("stage.historyPanel.cancel")}</button>
+        <button data-command="design.go_to_step.create_branch" className="btn btn--small" disabled={design.busy || !branchName.trim()}>{t("stage.historyPanel.createBranch")}</button>
+        <button data-command="design.go_to_step.cancel_fork" type="button" className="btn btn--small" onClick={() => setForkStage(null)}>{t("stage.historyPanel.cancel")}</button>
       </form>}
       {workingCopies.map((copy) => <div key={copy.groupId} className="vcard" data-working-copy={copy.groupId}><strong>{t("stage.historyPanel.exploration", { label: copy.label })}</strong>
-        <div className="vcard__exports">{copy.options.map((option) => <button key={option.id} className="btn btn--small" disabled={design.busy}
+        <div className="vcard__exports">{copy.options.map((option) => <button data-command="design.go_to_step.candidate" data-command-arg={option.id} key={option.id} className="btn btn--small" disabled={design.busy}
           onClick={() => design.onCandidate(option.modelSource)}>{option.label}{copy.selectedOptionId === option.id ? " · ✓" : ""}</button>)}</div></div>)}
-      <details className="vcard"><summary>{t("stage.historyPanel.candidates")}</summary>
-      {design.candidates.length > 1 && <div className="vcard"><button className="btn btn--small"
+      <details className="vcard"><summary data-command="view.disclosure.candidates">{t("stage.historyPanel.candidates")}</summary>
+      {design.candidates.length > 1 && <div className="vcard"><button data-command="design.go_to_step.combine" className="btn btn--small"
         disabled={design.busy || selectedCandidates.length < 2 || selectedCandidates.some((candidate) => candidate.sourceStageRef !== commonSource)}
         onClick={() => design.onCombine(selectedCandidates.map((candidate) => candidate.modelSource.runId))}>{t("stage.historyPanel.combine")}</button>
         <span className="quiet">{t("stage.historyPanel.combineHelp")}</span></div>}
@@ -165,16 +165,16 @@ export function VersionsStrip({
           <div className="vcard__head"><label><input type="checkbox" aria-label={t("stage.historyPanel.combineCandidate", { label })} checked={combineIds.includes(modelSource.runId)}
             disabled={design.busy || (commonSource !== undefined && sourceStageRef !== commonSource && !combineIds.includes(modelSource.runId))}
             onChange={(event) => setCombineIds((current) => event.target.checked ? [...current, modelSource.runId] : current.filter((id) => id !== modelSource.runId))} />{t("stage.historyPanel.uncommitted")}</label><strong>{label}</strong></div>
-          <div className="vcard__exports"><button className="btn btn--small" aria-pressed={selected} disabled={design.busy}
+          <div className="vcard__exports"><button data-command="design.go_to_step.continue" className="btn btn--small" aria-pressed={selected} disabled={design.busy}
             onClick={() => design.onCandidate(modelSource)}>{t("stage.base.continue")}</button>
-            {selected && branch && <button className="btn btn--small" disabled={design.busy || design.currentStageRef !== branch.headStageRef}
+            {selected && branch && <button data-command="stage.accept.next" className="btn btn--small" disabled={design.busy || design.currentStageRef !== branch.headStageRef}
               onClick={() => design.onAccept(modelSource.runId)}>{t("designTree.action.acceptNext")}</button>}
             {selected && branch && design.currentStageRef !== branch.headStageRef && <span className="quiet">{t("stage.historyPanel.historicalCandidate")}</span>}
           </div></div>;
       })}
       </details>
       </>}
-      {legacy.length > 0 && <details className="vcard"><summary>{t("stage.historyPanel.legacy")}</summary>
+      {legacy.length > 0 && <details className="vcard"><summary data-command="view.old_results.toggle">{t("stage.historyPanel.legacy")}</summary>
         <VersionsStrip groups={legacy} loadingSha={loadingSha} loadedShas={loadedShas} loadedRunId={loadedRunId}
           onOpen={onOpen} onOpenRun={onOpenRun} onCompare={onCompare} />
       </details>}
@@ -197,7 +197,7 @@ export function VersionsStrip({
             {copy.options.map((option) => {
               const source = option.modelSource;
               const loaded = source.runId === loadedRunId && loadedShas.includes(source.assetSha256);
-              return <button type="button" key={option.id} className="btn btn--small vcard__export"
+              return <button data-command="view.old_results.open" data-command-arg={option.id} type="button" key={option.id} className="btn btn--small vcard__export"
                 aria-pressed={loaded} disabled={loadingSha !== null} onClick={() => onOpenWorkingOption?.(option)}
                 title={groups.find((group) => group.runId === source.runId)?.exports.find(({ artifact }) => artifact.sha256 === source.assetSha256)?.artifact.fileName}>
                 <ModelThumbnail source={source} />
@@ -271,7 +271,7 @@ export function VersionsStrip({
             </div>
             <div className="vcard__exports">
               {servable.length > 1 && (
-                <button
+                <button data-command="view.old_results.show_run"
                   type="button"
                   className="btn btn--small vcard__run"
                   aria-pressed={loaded && loadedShas.length > 1}
@@ -290,7 +290,7 @@ export function VersionsStrip({
                 const loadingThis =
                   loadingSha !== null && artifact.sha256 === loadingSha;
                 return (
-                  <button
+                  <button data-command="view.old_results.open" data-command-arg={artifact.artifactId}
                     key={artifact.artifactId}
                     type="button"
                     className={`btn btn--small vcard__export${artifact.available ? "" : " vcard__export--unavailable"}`}
@@ -315,7 +315,7 @@ export function VersionsStrip({
                   readback can still leave a readable file behind - that file
                   is not the delivery, so only a succeeded one is offered. */}
               {saves.filter(({ artifact }) => isWorkModel(artifact) && artifact.status === "succeeded").map(({ artifact }) => (
-                <a
+                <a data-command="model.export_3dm.save"
                   key={`work-model-${artifact.artifactId}`}
                   className="vcard__save"
                   data-work-model-save
@@ -327,7 +327,7 @@ export function VersionsStrip({
                 </a>
               ))}
               {developerMode && saves.filter(({ artifact }) => !(isWorkModel(artifact) && artifact.status === "succeeded")).map(({ artifact, seat }) => (
-                <a
+                <a data-command="view.old_results.save_file"
                   key={`save-${artifact.artifactId}`}
                   className="vcard__save"
                   href={connection.url(`/api/artifacts/${artifact.sha256}/bytes`)}
@@ -351,7 +351,7 @@ export function VersionsStrip({
                   </span>
                 ))}
               {comparable && firstAvailable && (
-                <button
+                <button data-command="candidate.compare.open"
                   type="button"
                   className="btn btn--small vcard__compare"
                   title={t("stage.versions.compareTitle")}

@@ -138,7 +138,7 @@ export function CandidateCard({
         </div>
       )}
       {(job.status === "failed" || candidate.status === "failed") && (
-        <div className="card__row"><button type="button" className="btn btn--small" onClick={onRetry}>{t("stage.base.retry")}</button></div>
+        <div className="card__row"><button data-command="candidate.review.retry" type="button" className="btn btn--small" onClick={onRetry}>{t("stage.base.retry")}</button></div>
       )}
       {candidate.status === "ready" && (
         <CandidateReadout
@@ -244,7 +244,7 @@ function CandidateReadout({
               // Only a 3dm goes to the viewer: the Rhino export, or the mesh
               // preview an in-process export writes beside its exact STEP.
               artifact.available && isViewable(artifact) ? (
-                <button
+                <button data-command="attention.decide.preview" data-command-arg={artifact.artifactId}
                   key={artifact.artifactId}
                   type="button"
                   className="btn"
@@ -308,7 +308,7 @@ function CandidateReadout({
         </div>
       )}
       {developerMode && <div className="card__row actions">
-        <button
+        <button data-command="view.evidence.open_receipts"
           type="button"
           className="btn btn--link"
           onClick={() => onEvidence("receipts", candidate.candidateId)}

@@ -181,7 +181,7 @@ function CapabilityRow({
         </span>
       )}
       {isEditable(capability) && (
-        <button
+        <button data-command="component.find.set_value" data-command-arg={capability.key}
           type="button"
           className="btn btn--link capability__set"
           aria-label={t("capability.setAria", { key: capability.key, value })}
@@ -224,7 +224,7 @@ export function CapabilityPanel({
         {view.kind === "rows" && (
           <span className="tree__chip">{t("tree.capabilities", { n: view.total })}</span>
         )}
-        <button
+        <button data-command="component.find.toggle_controls"
           type="button"
           className="btn btn--link capability__toggle"
           aria-expanded={open}
@@ -245,7 +245,7 @@ export function CapabilityPanel({
         <>
           <p className="capability__note">{t("capability.catalogMissing")}</p>
           <div className="capability__actions">
-            <button
+            <button data-command="component.find.declare_control"
               type="button"
               className="btn btn--link"
               onClick={() => onPrefill(`补充 ${view.componentId} 字段`)}

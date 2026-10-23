@@ -61,8 +61,8 @@ export default function ModelPreview({ active, readView, onModeling, onCapture, 
   }, [active, readView, onReady]);
   return <section className="render-model-preview" aria-label={zh ? "建模视角" : "Modeling view"}>
     <header><strong>{zh ? "建模视角 · 实时预览" : "Modeling view · Live preview"}</strong>
-      <div className="render-model-actions"><button type="button" onClick={onModeling}>{zh ? "前往建模调整视角" : "Adjust view in Modeling"}</button>
-        <button type="button" disabled={!active || !available || failed || Boolean(sourceIssue) || capturing} onClick={onCapture}>
+      <div className="render-model-actions"><button data-command="render.run.adjust_view" type="button" onClick={onModeling}>{zh ? "前往建模调整视角" : "Adjust view in Modeling"}</button>
+        <button data-command="render.run.capture_view" type="button" disabled={!active || !available || failed || Boolean(sourceIssue) || capturing} onClick={onCapture}>
           {capturing ? (zh ? "正在保存底图…" : "Saving source…") : (zh ? "使用当前视角作为底图" : "Use current view as source")}</button></div></header>
     <div ref={host} className="render-model-canvas" hidden={!available || failed} />
     {(!available || failed) && <p role="status">{failed

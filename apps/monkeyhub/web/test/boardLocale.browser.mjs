@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 import { workspaceFixture } from "./workspaceFixture.mjs";
+import { cmd } from "./commandLocator.mjs";
 
 // Real Board, save queue, preferences and Excalidraw. Only the fixture entry and
 // a read/write handle to Excalidraw's public API are injected; no component stub.
@@ -110,10 +111,10 @@ try {
       await page.locator(".monkeyboard-loading p").first().waitFor();
       equal(await page.locator(".monkeyboard-loading p").first().textContent(), expected[initial].loading, `${initial}: loading`);
       releaseLoad();
-      await page.locator(".monkeyboard-loading button").waitFor();
+      await cmd(page, "board.open.retry").waitFor();
       equal(await page.locator(".monkeyboard-loading p").first().textContent(), expected[initial].failed, `${initial}: load failure`);
-      equal(await page.locator(".monkeyboard-loading button").textContent(), expected[initial].retry, `${initial}: retry`);
-      await page.locator(".monkeyboard-loading button").click();
+      equal(await cmd(page, "board.open.retry").textContent(), expected[initial].retry, `${initial}: retry`);
+      await cmd(page, "board.open.retry").click();
       await page.waitForFunction(() => window.__boardApi && !document.querySelector(".monkeyboard-initializing"));
       await page.locator(".monkeyboard-title").fill("Unfinished review {count}");
       await page.evaluate(() => {
@@ -134,12 +135,12 @@ try {
         await page.waitForFunction((language) => document.documentElement.lang === language, language);
         const text = expected[language];
         equal(await page.locator(".monkeyboard-title").getAttribute("aria-label"), text.title, `${initial} → ${language}: title label`);
-        await page.locator(".monkeyboard-actions > summary").click();
-        equal(await page.locator(".monkeyboard-export > button").textContent(), text.export, `${initial} → ${language}: export`);
+        await cmd(page, "view.menu.board_more").click();
+        equal(await cmd(page, "board.export.run").textContent(), text.export, `${initial} → ${language}: export`);
         equal(await page.locator(".monkeyboard-export select").getAttribute("aria-label"), text.export, `${initial} → ${language}: export format label`);
-        await page.locator(".monkeyboard-export > button").click();
+        await cmd(page, "board.export.run").click();
         equal(await page.locator(".monkeyboard-alert").filter({ hasText: text.empty }).count(), 1, `${initial} → ${language}: empty export guidance`);
-        await page.locator(".monkeyboard-actions > summary").click();
+        await cmd(page, "view.menu.board_more").click();
         const unchanged = await page.evaluate(() => ({
           api: window.__boardApi === window.__retainedBoardApi,
           canvas: document.querySelector(".monkeyboard-canvas canvas") === window.__retainedCanvas,
@@ -153,8 +154,8 @@ try {
       assert.equal(board.title, "Retained review board", "The saved fixture stays unchanged");
       assert.ok(writes.some((write) => write.title === "Unfinished review {count}" && write.elements.some((element) => element.id === "unsaved-mark")), "Real save queue saw the title and mark");
 
-      await page.locator("button[aria-controls=monkeyboard-project-documents]").click();
-      await page.locator(".monkeyboard-source-update").click();
+      await cmd(page, "board.add_document_page.toggle_list").click();
+      await cmd(page.locator("#monkeyboard-project-documents"), "document.replace_page.open").click();
       const dialog = page.locator("dialog[open]");
       await dialog.waitFor();
       await dialog.locator("input[type=number]").fill("3");
@@ -166,11 +167,11 @@ try {
         equal(await dialog.locator("h2").textContent(), text.action, `${initial} → ${language}: replacement action`);
         equal(await dialog.locator("p").nth(1).textContent(), text.replacement, `${initial} → ${language}: replacement guidance`);
         equal(await dialog.locator("label").allTextContents(), [text.file, text.page], `${initial} → ${language}: replacement labels`);
-        equal(await dialog.locator("button").allTextContents(), [text.cancel, text.submit], `${initial} → ${language}: replacement controls`);
+        equal([await cmd(dialog, "view.dialog.close").textContent(), await cmd(dialog, "document.replace_page.submit").textContent()], [text.cancel, text.submit], `${initial} → ${language}: replacement controls`);
         assert.equal(await dialog.locator("input[type=number]").inputValue(), "3");
         assert.equal(await dialog.locator("input[type=file]").evaluate((element) => element.files[0].name), "replacement.png");
       }
-      await dialog.locator("button[type=button]").click();
+      await cmd(dialog, "view.dialog.close").click();
       assert.equal(await page.locator("dialog[open]").count(), 0);
       assert.equal(await page.evaluate(() => window.__boardApi === window.__retainedBoardApi), true);
       console.log(`PASS real Board lifecycle and unsaved content: ${initial} ↔ ${initial === "en" ? "zh-CN" : "en"}`);

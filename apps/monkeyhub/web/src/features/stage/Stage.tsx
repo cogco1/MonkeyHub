@@ -1301,7 +1301,7 @@ export function Stage({
   // where it was asked, beside the Continue that usually resolves it.
   const baseNotices = <>
     {baseNotice && <p className="editing-base__notice" role="alert">{baseNotice}</p>}
-    {baseRecord && <button type="button" className="btn btn--small btn--primary" disabled={baseRecord.busy}
+    {baseRecord && <button data-command="draft.record.continue" type="button" className="btn btn--small btn--primary" disabled={baseRecord.busy}
       onClick={baseRecord.onRecord}>{t(baseRecord.busy ? "stage.record.busy" : "stage.record.continue")}</button>}
     {baseNotSaved && <p className="editing-base__notice" role="status">{t("stage.base.notSaved")}</p>}
   </>;
@@ -1316,7 +1316,7 @@ export function Stage({
     <div className="editing-base" data-source-match={editingBaseRunId === null ? undefined : sameSource ? "same" : "different"}>
       {baseWords}
       {editingBaseRunId !== null && loadedRunId !== null && !sameSource && onContinue !== null && (
-        <button
+        <button data-command="design.go_to_step.continue"
           type="button"
           className="btn btn--small"
           disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading" || blend !== null}
@@ -1409,7 +1409,7 @@ export function Stage({
         modelAnnotations.saving || modelAnnotations.dirty ? "stage.annotations.saving" : "stage.annotations.saved")}</span>}
       {modelAnnotations.error && <>
         <ErrorPanel error={modelAnnotations.error} what="/api/model-annotations" />
-        <button type="button" className="btn btn--small" onClick={() => void (!modelAnnotations.ready || modelAnnotations.error?.status === 409
+        <button data-command="markup.marks.retry" type="button" className="btn btn--small" onClick={() => void (!modelAnnotations.ready || modelAnnotations.error?.status === 409
           ? modelAnnotations.reload() : modelAnnotations.save()).catch(() => undefined)}>
           {t(!modelAnnotations.ready || modelAnnotations.error.status === 409 ? "stage.annotations.reload" : "stage.annotations.retry")}
         </button>
@@ -1442,16 +1442,16 @@ export function Stage({
           : t("stage.tools.workModelTitle", { fileName: workModel.source?.fileName ?? "" }));
   // #352: Export, in the bar: the editable copy of the model on screen and, once made, its file.
   const exportMenu = workModel && <span ref={exportMenuElement} className="stage-menu">
-    <MenuCommand aria-expanded={barMenu === "export"} aria-controls="stage-export-menu" onClick={() => toggleBarMenu("export")}>
+    <MenuCommand data-command="view.menu.modeling_export" aria-expanded={barMenu === "export"} aria-controls="stage-export-menu" onClick={() => toggleBarMenu("export")}>
       {t("stage.menu.export")}</MenuCommand>
     {barMenu === "export" && <div ref={exportPanelElement} id="stage-export-menu" className="stage-menu__panel" role="group" aria-label={t("stage.menu.export")}>
       {/* The editable copy of what is on screen. It is made from that model's own exact STEP by the
           Rhino on this machine, so it is offered only when the picture is one delivery, and the
           title says which file - or why there is no single one to make. */}
-      <button type="button" data-work-model-export disabled={workModel.source === null || workModel.busy} title={workModelTitle ?? undefined}
+      <button data-command="model.export_3dm.editable" type="button" data-work-model-export disabled={workModel.source === null || workModel.busy} title={workModelTitle ?? undefined}
         onClick={workModel.onExport}>{workModel.busy ? t("stage.tools.workModelBusy") : t("stage.tools.workModel")}</button>
       {workModel.refusal !== null && <p className="stage-menu__note">{workModelTitle}</p>}
-      {workModel.exported?.sha256 && <a data-work-model-save href={connection.url(`/api/artifacts/${workModel.exported.sha256}/bytes`)}
+      {workModel.exported?.sha256 && <a data-command="model.export_3dm.save" data-work-model-save href={connection.url(`/api/artifacts/${workModel.exported.sha256}/bytes`)}
         download={workModel.exported.fileName} title={t("stage.versions.saveTitle", { fileName: workModel.exported.fileName })}>
         {t("stage.tools.workModelSave")}</a>}
       {workModel.error && <p className="stage-menu__note" role="alert" data-work-model-error>{workModel.error}</p>}
@@ -1466,14 +1466,14 @@ export function Stage({
     moreMenuElement.current?.querySelector<HTMLElement>('[aria-controls="stage-more-menu"]')?.focus();
   };
   const moreMenu = <span ref={moreMenuElement} className="stage-menu">
-    <MenuCommand aria-expanded={barMenu === "more"} aria-controls="stage-more-menu" onClick={() => toggleBarMenu("more")}>
+    <MenuCommand data-command="view.menu.modeling_more" aria-expanded={barMenu === "more"} aria-controls="stage-more-menu" onClick={() => toggleBarMenu("more")}>
       {t("stage.menu.more")}</MenuCommand>
     {barMenu === "more" && <div ref={morePanelElement} id="stage-more-menu" className="stage-menu__panel" role="group" aria-label={t("stage.menu.more")}>
       <div className="stage-menu__views">
-        {(["top", "front", "right", "iso", "perspective"] as const).map((view) => <button type="button" key={view}
+        {(["top", "front", "right", "iso", "perspective"] as const).map((view) => <button data-command={`view.model_camera.${view}`} type="button" key={view}
           onClick={() => viewportRef.current?.standardView(view)}>{t(`stage.view.${view}`)}</button>)}
       </div>
-      <button type="button" disabled={!model?.hasSelection} onClick={() => viewportRef.current?.fitSelection()}>{t("stage.tools.fitSelected")}</button>
+      <button data-command="view.model_camera.fit_selected" type="button" disabled={!model?.hasSelection} onClick={() => viewportRef.current?.fitSelection()}>{t("stage.tools.fitSelected")}</button>
       {/* How the model is painted: one choice, carried to the viewport as a prop so a
           remounted canvas opens in it too. The title says what the chosen look shows. */}
       <label className="stage-menu__field" title={t(`stage.display.${displayStyle}Title`)}>
@@ -1487,17 +1487,17 @@ export function Stage({
       <span className="stage-menu__sep" aria-hidden="true" />
       {/* One button, home: the reference run's exports when it left any, else the export the
           stage actually opened on - named for what it brings back, disabled only when there is nothing. */}
-      <button type="button" disabled={home === null} onClick={fromMore(onShowHome)} title={home === null ? t("stage.tools.homeUnavailable")
+      <button data-command="view.reference_model.show" type="button" disabled={home === null} onClick={fromMore(onShowHome)} title={home === null ? t("stage.tools.homeUnavailable")
         : home.kind === "reference" ? t("stage.tools.referenceShow", { runId: home.runId }) : t("stage.tools.homeShow", { runId: home.runId })}>
         {home?.kind === "fallback" ? t("stage.tools.home") : t("stage.tools.reference")}</button>
-      <button type="button" onClick={fromMore(onRequestFile)}>{t("stage.tools.open3dm")}</button>
-      <button type="button" disabled={loadedRunId === null || blend !== null || captureState === "busy"} onClick={fromMore(() => void onCapture())}
+      <button data-command="model.import_asset.open_file" type="button" onClick={fromMore(onRequestFile)}>{t("stage.tools.open3dm")}</button>
+      <button data-command="model.capture" type="button" disabled={loadedRunId === null || blend !== null || captureState === "busy"} onClick={fromMore(() => void onCapture())}
         title={loadedRunId === null ? t("stage.tools.screenshotUnavailable") : blend !== null ? t("stage.tools.screenshotBlendUnavailable") : t("stage.tools.screenshotTitle")}>
         {captureState === "busy" ? t("stage.tools.screenshotBusy") : t("stage.tools.screenshot")}</button>
-      <button type="button" onClick={fromMore(() => viewportRef.current?.clear())}>{t("stage.tools.clear")}</button>
+      <button data-command="view.model_display.clear" type="button" onClick={fromMore(() => viewportRef.current?.clear())}>{t("stage.tools.clear")}</button>
       {parameterLocks && <>
         <span className="stage-menu__sep" aria-hidden="true" />
-        <button type="button" aria-expanded={parameterLocksOpen} onClick={() => { chooseDrawingTool(null); setParameterLocksOpen(true); }}>
+        <button data-command="component.lock_params.open" type="button" aria-expanded={parameterLocksOpen} onClick={() => { chooseDrawingTool(null); setParameterLocksOpen(true); }}>
           {zh ? "参数锁" : "Parameter locks"}</button>
       </>}
     </div>}
@@ -1510,7 +1510,7 @@ export function Stage({
           starts from, Versions, the Design Tree, the commands on the editing base, then Export and More (#352). */}
       <SurfaceMenus label={t("stage.ariaLabel")} active={active}>
         {editingBaseRunId !== null && <><span className="stage-bar__model" title={editingLabel ?? undefined}>{editingLabel}</span><MenuSeparator /></>}
-        <MenuCommand className="stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel" onClick={toggleVersions}>
+        <MenuCommand data-command="design.go_to_step.versions" className="stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel" onClick={toggleVersions}>
           {t("stage.versions.open")}
           {!onOpenTree && <>
             <span className="quiet">{versionCount}</span>
@@ -1518,29 +1518,29 @@ export function Stage({
             {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
           </>}
         </MenuCommand>
-        {onOpenTree && <MenuCommand className="stage__tree-link" onClick={onOpenTree}>{t("stage.tree.open")}</MenuCommand>}
-        {explicitBase && <MenuCommand disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading"}
+        {onOpenTree && <MenuCommand data-command="view.design_tree.open" className="stage__tree-link" onClick={onOpenTree}>{t("stage.tree.open")}</MenuCommand>}
+        {explicitBase && <MenuCommand data-command="design.go_to_step.default_base" disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading"}
           onClick={onDefaultBase}>{t("stage.base.default")}</MenuCommand>}
-        {!onReturnToBoard && picked && onOpenBoard && <MenuCommand onClick={onOpenBoard}>{t("workspace.monkeyboard")}</MenuCommand>}
-        {!documentOpen && picked?.componentId && !infoOpen && <MenuCommand aria-controls="stage-component-info" onClick={openInfo}>
+        {!onReturnToBoard && picked && onOpenBoard && <MenuCommand data-command="view.tab.board" onClick={onOpenBoard}>{t("workspace.monkeyboard")}</MenuCommand>}
+        {!documentOpen && picked?.componentId && !infoOpen && <MenuCommand data-command="component.inspect.open" aria-controls="stage-component-info" onClick={openInfo}>
           {t("componentInfo.title")}</MenuCommand>}
         {exportMenu}
         {moreMenu}
       </SurfaceMenus>
       {onReturnToBoard && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
-        <button type="button" onClick={onReturnToBoard}>{t("workspace.monkeyboard")}</button>
+        <button data-command="view.tab.board" type="button" onClick={onReturnToBoard}>{t("workspace.monkeyboard")}</button>
       </div>}
       {(baseChoice || editingStatus) && <div className="stage-decision" role="group" aria-label={t("stage.base.label")}>
         {baseChoice && <div className="base-choice" role="group" aria-label={t("board.feedback.choice")}>
           {baseChoice.model !== null && <p className="base-choice__text">{t("board.feedback.otherBase", { model: baseChoice.model })}</p>}
           {baseChoice.notice && <p className="base-choice__text" role="alert">{baseChoice.notice}</p>}
           <div className="base-choice__actions">
-            {baseChoice.onRecord && <button type="button" className="btn btn--small btn--primary" disabled={baseChoice.busy}
+            {baseChoice.onRecord && <button data-command="draft.record.continue" type="button" className="btn btn--small btn--primary" disabled={baseChoice.busy}
               onClick={baseChoice.onRecord}>{t(baseChoice.recording ? "stage.record.busy" : "stage.record.continue")}</button>}
             {/* Only looking is the default: it is first, primary and focused. */}
-            <button type="button" className={`btn btn--small${baseChoice.onRecord ? "" : " btn--primary"}`} autoFocus disabled={baseChoice.busy}
+            <button data-command="design.go_to_step.view_only" type="button" className={`btn btn--small${baseChoice.onRecord ? "" : " btn--primary"}`} autoFocus disabled={baseChoice.busy}
               onClick={baseChoice.onView}>{t("board.feedback.viewOnly")}</button>
-            {!baseChoice.onRecord && <button type="button" className="btn btn--small" disabled={baseChoice.busy}
+            {!baseChoice.onRecord && <button data-command="design.go_to_step.continue" type="button" className="btn btn--small" disabled={baseChoice.busy}
               onClick={baseChoice.onContinue}>{t("stage.base.continue")}</button>}
           </div>
         </div>}
@@ -1585,21 +1585,21 @@ export function Stage({
               <h2>{t("stage.empty.title")}</h2>
               <p>{t(Boolean(onChatRequest) ? "stage.empty.bodyEmbedded" : "stage.empty.body")}</p>
               <div className="stage-empty__actions">
-                {home !== null && <button type="button" className="btn"
+                {home !== null && <button data-command="view.reference_model.show" type="button" className="btn"
                   title={home.kind === "reference" ? t("stage.tools.referenceShow", { runId: home.runId })
                       : t("stage.tools.homeShow", { runId: home.runId })}
                   onClick={onShowHome}>
                   {home?.kind === "fallback" ? t("stage.empty.openHome") : t("stage.empty.openReference")}
                 </button>}
-                {versionCount > 0 && <button type="button" className="btn"
+                {versionCount > 0 && <button data-command="design.go_to_step.versions" type="button" className="btn"
                   onClick={() => { onVersionsOpen?.(); setVersionsOpen(true); }}>
                   {t("stage.empty.chooseVersion", { count: versionCount })}
                 </button>}
-                {Boolean(onChatRequest) && <button type="button" className="btn"
+                {Boolean(onChatRequest) && <button data-command="view.chat_drawer.open" type="button" className="btn"
                   onClick={onChatRequest}>
                   {t("stage.empty.startInChat")}
                 </button>}
-                <button type="button" className="btn" onClick={onRequestFile}>{t("stage.empty.openLocal")}</button>
+                <button data-command="model.import_asset.open_file" type="button" className="btn" onClick={onRequestFile}>{t("stage.empty.openLocal")}</button>
               </div>
               <p className="stage-empty__hint">{t("stage.empty.hint")}</p>
             </div>
@@ -1984,7 +1984,7 @@ export function Stage({
                   ? <>{blend.candidateId} · {t("stage.blend.meshes", { count: blend.meshes })} · {t("stage.blend.afterTinted")}</>
                   : t("stage.blend.afterTinted")}
               </span>
-              <button type="button" className="btn btn--small" onClick={onEndBlend}>
+              <button data-command="candidate.compare.done" type="button" className="btn btn--small" onClick={onEndBlend}>
                 {t("stage.blend.done")}
               </button>
             </div>
@@ -1998,45 +1998,45 @@ export function Stage({
         <div ref={toolsElement} className="viewtools-wrap">
           <div ref={modelToolsElement} className="viewtools model-tools">
             <div className="model-tools__group" role="group" aria-label={zh ? "选择与绘制" : "Select and draw"}>
-            <ModelToolButton icon="select" label={t("stage.sketch.select")} shortcut="Space" aria-pressed={sketch.tool === null && !measuring && !model?.directTool && !tool && !eraser}
+            <ModelToolButton data-command="draft.tools.select" icon="select" label={t("stage.sketch.select")} shortcut="Space" aria-pressed={sketch.tool === null && !measuring && !model?.directTool && !tool && !eraser}
               onClick={() => chooseDrawingTool(null)} />
-            {onSketch && (["line", "rectangle", "circle"] as const).map((kind) => <ModelToolButton key={kind} icon={kind}
+            {onSketch && (["line", "rectangle", "circle"] as const).map((kind) => <ModelToolButton data-command={`draft.tools.${kind}`} key={kind} icon={kind}
               label={t(`stage.sketch.${kind}`)} shortcut={{ line: "L", rectangle: "R", circle: "C" }[kind]}
               aria-pressed={sketch.tool === kind}
               onClick={() => chooseDrawingTool(sketch.tool === kind ? null : kind)} />)}
             </div>
             <div className="model-tools__group" role="group" aria-label={zh ? "修改模型" : "Edit model"}>
-            {model?.onTool && (["pushPull", "move", "rotate", "scale", "copy"] as const).map((kind) => <ModelToolButton
+            {model?.onTool && (["pushPull", "move", "rotate", "scale", "copy"] as const).map((kind) => <ModelToolButton data-command={`draft.tools.${kind === "pushPull" ? "push_pull" : kind}`}
               key={kind} icon={kind} data-model-tool={kind} label={t(`stage.model.${kind}`)} shortcut={{ pushPull: "P", move: "M", rotate: "Q", scale: "S", copy: "" }[kind]}
               aria-pressed={model.directTool === kind} disabled={sketchBusy || (kind !== "pushPull" && !model.hasSelection)}
               onClick={() => { chooseDrawingTool(null); model.onTool?.(model.directTool === kind ? "select" : kind); }} />)}
             {model && <>
-              <ModelToolButton icon="undo" label={t("stage.model.undo")} disabled={!model.canUndo || sketchBusy || actionInProgress} shortcut="Ctrl+Z" onClick={model.onUndo} />
-              <ModelToolButton icon="redo" label={t("stage.model.redo")} disabled={!model.canRedo || sketchBusy || actionInProgress} shortcut="Ctrl+Shift+Z" onClick={model.onRedo} />
+              <ModelToolButton data-command="draft.tools.undo" icon="undo" label={t("stage.model.undo")} disabled={!model.canUndo || sketchBusy || actionInProgress} shortcut="Ctrl+Z" onClick={model.onUndo} />
+              <ModelToolButton data-command="draft.tools.redo" icon="redo" label={t("stage.model.redo")} disabled={!model.canRedo || sketchBusy || actionInProgress} shortcut="Ctrl+Shift+Z" onClick={model.onRedo} />
             </>}
             </div>
             <div className="model-tools__group" role="group" aria-label={zh ? "查看与批注" : "View and annotate"}>
-            <ModelToolButton icon="measure" label={t("stage.measure.label")} shortcut="T" aria-pressed={measuring}
+            <ModelToolButton data-command="draft.tools.measure" icon="measure" label={t("stage.measure.label")} shortcut="T" aria-pressed={measuring}
               onClick={() => measuring ? chooseDrawingTool(null) : chooseMeasure()} />
-            <ModelToolButton icon="fit" label={t("stage.tools.fit")} onClick={() => viewportRef.current?.fitView()} />
-            <ModelToolButton icon="front" label={t("stage.tools.front")} onClick={() => viewportRef.current?.frontView()} />
+            <ModelToolButton data-command="view.model_camera.fit" icon="fit" label={t("stage.tools.fit")} onClick={() => viewportRef.current?.fitView()} />
+            <ModelToolButton data-command="view.model_camera.front" icon="front" label={t("stage.tools.front")} onClick={() => viewportRef.current?.frontView()} />
             {/* #352: the palette's own More, last on its row: the less frequent drawing tools, tracing
                 paper and the drawing plane. It says whether it is open; its look also shows while it
                 holds what is in use - one of its tools, tracing paper or a drawing plane other than XY. */}
             <span ref={moreToolsElement} className="model-tools__more">
-              <ModelToolButton icon="more" label={t("stage.tools.more")} aria-expanded={moreToolsOpen} aria-controls="model-tools-more"
+              <ModelToolButton data-command="view.menu.model_tools_more" icon="more" label={t("stage.tools.more")} aria-expanded={moreToolsOpen} aria-controls="model-tools-more"
                 className={sketch.tool === "polygon" || sketch.tool === "arc" || sketch.tool === "freehand" || annotationToolsOpen || workPlaneName !== "xy"
                   ? "model-tool-button--holds" : undefined}
                 onClick={() => setMoreToolsOpen((open) => !open)} />
               {moreToolsOpen && <div ref={moreToolsPanelElement} id="model-tools-more" className="model-tools__flyout model-tools__flyout--more"
                 role="group" aria-label={t("stage.tools.more")}>
                 {onSketch && <>
-                  {(["polygon", "arc", "freehand"] as const).map((kind) => <ModelToolButton key={kind} icon={kind} showLabel
+                  {(["polygon", "arc", "freehand"] as const).map((kind) => <ModelToolButton data-command={`draft.tools.${kind}`} key={kind} icon={kind} showLabel
                     label={t(`stage.sketch.${kind}`)} shortcut={kind === "arc" ? "A" : undefined} aria-pressed={sketch.tool === kind}
                     onClick={() => chooseDrawingTool(sketch.tool === kind ? null : kind)} />)}
                   <span className="model-tools__more-sep" aria-hidden="true" />
                 </>}
-                <ModelToolButton icon="annotate" showLabel label={t("stage.tools.annotate")} aria-expanded={annotationToolsOpen} aria-controls="annotation-tools"
+                <ModelToolButton data-command="view.markup_tools.tracing_paper" icon="annotate" showLabel label={t("stage.tools.annotate")} aria-expanded={annotationToolsOpen} aria-controls="annotation-tools"
                   onClick={() => { setAnnotationToolsOpen((open) => !open); setBarMenu(null); setVersionsOpen(false); setParameterLocksOpen(false); setMoreToolsOpen(false); }} />
                 {onSketch && <span className="model-tools__more-sep" aria-hidden="true" />}
                 {onSketch && <label className="model-tools__more-plane">
@@ -2058,7 +2058,7 @@ export function Stage({
                 (#302) is outside the tools' row, so its coming and going moves none. */}
             {model?.sync && recordShown && <div ref={recordElement}
               className={`model-tools__group model-tools__sync${recordNamed ? "" : " model-tools__sync--status-only"}${recordAbove ? " model-tools__sync--above" : ""}`}>
-              {recordNamed && <ModelToolButton icon="sync" label={t("stage.sync.label")} showLabel
+              {recordNamed && <ModelToolButton data-command="draft.record.save" icon="sync" label={t("stage.sync.label")} showLabel
                 disabled={model.sync.busy} onClick={model.sync.onSync} />}
               <span className="model-tools__sync-status" role={model.sync.error ? "alert" : "status"}>
                 {model.sync.error ?? (model.sync.busy ? t("stage.sync.busy") : model.sync.autosave
@@ -2067,17 +2067,17 @@ export function Stage({
             </div>}
           </div>
           {annotationToolsOpen && <div id="annotation-tools" className="viewtools viewtools--panel" role="group" aria-label={t("stage.tools.annotate")}>
-            <ModelToolButton icon="erase" label={t("document.tool.eraser")} aria-pressed={eraser} disabled={!annotationsReady}
+            <ModelToolButton data-command="view.markup_tools.eraser" icon="erase" label={t("document.tool.eraser")} aria-pressed={eraser} disabled={!annotationsReady}
               onClick={() => { const next = !eraser; chooseDrawingTool(null); setAnnotationToolsOpen(true); setAnnotationCancel((value) => value + 1); setEraser(next); }} />
             {/* #577: the whole tracing paper in one undoable step, through the eraser's own path. */}
-            <ModelToolButton icon="clear" label={t("stage.tools.clear.label")} disabled={!annotationsReady || gestures.length === 0}
+            <ModelToolButton data-command="markup.clear" icon="clear" label={t("stage.tools.clear.label")} disabled={!annotationsReady || gestures.length === 0}
               onClick={() => { setAnnotationCancel((value) => value + 1); setEraser(false); onEraseGestures(gestures.map((_, index) => index)); }} />
-            <ModelToolButton icon="undo" label={t("stage.tools.undo.label")} disabled={!canUndoGesture} onClick={onUndoGesture} />
-            <ModelToolButton icon="redo" label={t("document.redo")} disabled={!canRedoGesture} onClick={onRedoGesture} />
-            {(tool !== null || eraser) && <ModelToolButton icon="close" label={t("stage.tools.cancel.label")}
+            <ModelToolButton data-command="view.markup_tools.undo" icon="undo" label={t("stage.tools.undo.label")} disabled={!canUndoGesture} onClick={onUndoGesture} />
+            <ModelToolButton data-command="view.markup_tools.redo" icon="redo" label={t("document.redo")} disabled={!canRedoGesture} onClick={onRedoGesture} />
+            {(tool !== null || eraser) && <ModelToolButton data-command="view.markup_tools.cancel" icon="close" label={t("stage.tools.cancel.label")}
               onClick={() => { setAnnotationCancel((value) => value + 1); setEraser(false); onTool(null); }} />}
             {GESTURE_TOOLS.map((item) => (
-              <button key={item.kind} type="button" disabled={!annotationsReady} title={t(item.titleKey)}
+              <button data-command={`view.markup_tools.${item.kind}`} key={item.kind} type="button" disabled={!annotationsReady} title={t(item.titleKey)}
                 aria-pressed={!eraser && tool === item.kind}
                 onClick={() => { setEraser(false); onTool(!eraser && tool === item.kind ? null : item.kind); }}>
                 {item.glyph} {t(item.labelKey)}
@@ -2086,18 +2086,18 @@ export function Stage({
             <span className="viewtools__sep" aria-hidden="true" />
             <span className="annotation-style" role="group" aria-label={t("stage.tools.colour")}>
               {ANNOTATION_COLOURS.map(({ value: color, ...names }) => (
-                <button key={color} type="button" className="annotation-style__colour" aria-label={names[language]} title={names[language]} aria-pressed={annotationStyle.color === color} onClick={() => setAnnotationStyle((current) => ({ ...current, color }))} style={{ "--annotation-colour": color } as CSSProperties} />
+                <button data-command="view.markup_tools.colour" data-command-arg={color} key={color} type="button" className="annotation-style__colour" aria-label={names[language]} title={names[language]} aria-pressed={annotationStyle.color === color} onClick={() => setAnnotationStyle((current) => ({ ...current, color }))} style={{ "--annotation-colour": color } as CSSProperties} />
               ))}
             </span>
             <span className="annotation-style" role="group" aria-label={t("stage.tools.lineWidth")}>
               {([2, 4, 6] as const).map((lineWidth) => (
-                <button key={lineWidth} type="button" className="annotation-style__width" aria-label={`${lineWidth}px`} aria-pressed={annotationStyle.lineWidth === lineWidth} onClick={() => setAnnotationStyle((current) => ({ ...current, lineWidth }))}><span style={{ height: lineWidth }} /></button>
+                <button data-command="view.markup_tools.line_width" data-command-arg={lineWidth} key={lineWidth} type="button" className="annotation-style__width" aria-label={`${lineWidth}px`} aria-pressed={annotationStyle.lineWidth === lineWidth} onClick={() => setAnnotationStyle((current) => ({ ...current, lineWidth }))}><span style={{ height: lineWidth }} /></button>
               ))}
             </span>
             {tool && activeTool && <span className="viewtools__hint quiet">{t("stage.tools.drawingHint", { tool: t(activeTool.labelKey) })}</span>}
             {tracingPaperReview && <>
               <span className="viewtools__sep" aria-hidden="true" />
-              <button type="button" disabled={!tracingPaperReview.enabled || tracingPaperReview.busy}
+              <button data-command="markup.hand_to_ai.send_review" type="button" disabled={!tracingPaperReview.enabled || tracingPaperReview.busy}
                 onClick={tracingPaperReview.onSend}>{t(tracingPaperReview.busy ? "stage.tracingPaper.sending" : "stage.tracingPaper.send")}</button>
               {tracingPaperReview.sent && <span className="quiet" role="status">{t("stage.tracingPaper.sent")}</span>}
               {tracingPaperReview.error && <span className="quiet" role="alert">{tracingPaperReview.error}</span>}
@@ -2198,14 +2198,14 @@ export function Stage({
                 </label>
               )}
               {sketch.phase === "profile" && sketch.tool !== "freehand" && !(sketch.tool === "arc" && sketch.hasChord) && <>
-                <button type="button" aria-pressed={sketch.axisLock === "x"} title={t("stage.sketch.axisHint")}
+                <button data-command="draft.tools.lock_x" type="button" aria-pressed={sketch.axisLock === "x"} title={t("stage.sketch.axisHint")}
                   onClick={() => showSketch({ ...interaction.current.sketch, axisLock: interaction.current.sketch.axisLock === "x" ? null : "x" })}>{t("stage.sketch.axisX")}</button>
-                <button type="button" aria-pressed={sketch.axisLock === "y"} title={t("stage.sketch.axisHint")}
+                <button data-command="draft.tools.lock_y" type="button" aria-pressed={sketch.axisLock === "y"} title={t("stage.sketch.axisHint")}
                   onClick={() => showSketch({ ...interaction.current.sketch, axisLock: interaction.current.sketch.axisLock === "y" ? null : "y" })}>{t("stage.sketch.axisY")}</button>
-                {sketch.tool === "polygon" && <button type="button" disabled={!sketch.canClose}
+                {sketch.tool === "polygon" && <button data-command="draft.tools.close_outline" type="button" disabled={!sketch.canClose}
                   onClick={closePolygon}>{t("stage.sketch.closePolygon")}</button>}
               </>}
-              {sketch.phase === "height" && <button type="button" disabled={sketchBusy} onClick={() => {
+              {sketch.phase === "height" && <button data-command="draft.tools.make_face" type="button" disabled={sketchBusy} onClick={() => {
                 showSketch({ ...interaction.current.sketch, height: 0 }); submitSketch(true);
               }}>{t("stage.sketch.makeFace")}</button>}
               <span className="quiet sketch-entry__hint">{t("stage.sketch.cancel")}</span>
@@ -2273,7 +2273,7 @@ export function Stage({
       {/* #337: Versions is an inspector docked at the canvas's right edge (over the canvas when narrow). */}
       {versionsOpen && <aside id="stage-versions-panel" className="stage-inspector stage__versions-panel" role="region" aria-label={t("stage.versions.ariaLabel")}>
         <div className="stage__versions-head"><strong>{t("stage.versions.ariaLabel")}</strong>
-          <button type="button" className="btn btn--small" onClick={() => setVersionsOpen(false)}>{t("stage.versions.close")}</button>
+          <button data-command="design.go_to_step.close_versions" type="button" className="btn btn--small" onClick={() => setVersionsOpen(false)}>{t("stage.versions.close")}</button>
         </div>
         <div className="stage__versions-session">{sessionStatus}</div>
         <VersionsStrip
@@ -2304,7 +2304,7 @@ export function Stage({
       </div>
       {/* #337 L5: what is picked, the drawing plane when it is not XY (#352), and which model the
           next edit starts from, as quiet words. */}
-      <StatusLine end={<>{quietBase}{developerMode && <button type="button" className="drawer-tab" onClick={() => onEvidence("honesty")}>
+      <StatusLine end={<>{quietBase}{developerMode && <button data-command="view.evidence.open" type="button" className="drawer-tab" onClick={() => onEvidence("honesty")}>
         {t("nav.evidence")}
         <span className="drawer-tab__count">
           {t(review.changes === 1 ? "stage.review.changeOne" : "stage.review.changeMany", { count: review.changes })}{" "}
