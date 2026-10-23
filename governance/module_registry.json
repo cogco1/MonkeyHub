@@ -7288,7 +7288,8 @@
         "Component information in Modeling (#549): topic-agnostic MonkeyHubComponentInfo@1 datasets (docs/protocols/component-info.md), each kept on its own Board card under customData.componentInfo, checked and imported or replaced by dataset id on the Board through its save queue, read while Modeling shows a model once per Board revision, and shown in one closable card for a picked component only when the pick and the dataset's appliesTo (project, run, state digest) match the exact version on screen; datasets for another version are listed, never shown, and a click makes no request and writes nothing",
         "the designLoop application setting (legacy | advisory | enforced, default legacy; a saved off reads as legacy) passed to each Project Runtime it starts; legacy keeps the chat's tools, guide and error words as they were; advisory adds GET /api/revisions/context and two lines naming the problem lists; enforced offers POST /api/revisions with the user's message and words bound, the guide that names it and a Claude chat without Bash; the chat never sends confirmed",
         "the design-loop tools (design_read, design_submit, design_ask, design_report_limitation) over studio_request and POST /api/revisions: a repair limit per answered user message (MONKEYHUB_REPAIR_BUDGET, default 3), earlier attempts on the same base superseded, the turn's loop state at the launcher's MONKEYHUB_DESIGN_LOOP_STATE file, the Stop hook that holds a turn open until a change landed, the architect was asked or a limitation was reported (at most three times), the --design-loop connection that lists only those tools, and cli_profile for whoever starts such a turn",
-        "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back."
+        "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
+        "guess rules over the Runtime's edit log: the same element field or parameter changed the same way three times within the line's last five steps becomes one ask card whose answers send a sentence to the project's conversation; a field a person set aside stays quiet until its suppression ends"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -7414,7 +7415,9 @@
         "mcp_server --design-loop",
         "AttentionStore",
         "AttentionDraft",
-        "AttentionItem"
+        "AttentionItem",
+        "guesses",
+        "refresh_guesses"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -7591,7 +7594,8 @@
         "apps/monkeyhub/api/monkeyhub_api/attention/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/models.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/store.py",
-        "apps/monkeyhub/api/monkeyhub_api/attention/routes.py"
+        "apps/monkeyhub/api/monkeyhub_api/attention/routes.py",
+        "apps/monkeyhub/api/monkeyhub_api/attention/rules.py"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -7653,7 +7657,8 @@
         "apps/monkeyhub/web/test/workspaceWidth.test.ts",
         "apps/monkeyhub/api/tests/test_design_loop_setting.py",
         "apps/monkeyhub/api/tests/test_design_loop.py",
-        "apps/monkeyhub/api/tests/test_attention_store.py"
+        "apps/monkeyhub/api/tests/test_attention_store.py",
+        "apps/monkeyhub/api/tests/test_attention_rules.py"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
