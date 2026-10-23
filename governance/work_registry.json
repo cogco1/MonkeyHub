@@ -89,6 +89,28 @@
       "id": "GH-300",
       "lanes": [
         {
+          "id": "attention-store",
+          "status": "active",
+          "branch": "claude/300-attention-store",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-attention-store",
+          "base_ref": "cc8f54e20546c73a1e1e1763a5001a8495c48675",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Step 1-1 of the three-channel shell: the Hub's attention queue (models, per-project store, state machine, read and handling routes). Routes, the attention/changed event and the snapshot counts are wired after GH-185 releases runtime/* and the generated clients.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/attention/__init__.py",
+            "apps/monkeyhub/api/monkeyhub_api/attention/models.py",
+            "apps/monkeyhub/api/monkeyhub_api/attention/routes.py",
+            "apps/monkeyhub/api/monkeyhub_api/attention/store.py",
+            "apps/monkeyhub/api/tests/test_attention_store.py",
+            "docs/architecture/repository-layout.md"
+          ],
+          "depends_on": []
+        },
+        {
           "id": "annotation",
           "status": "active",
           "branch": "claude/300-annotation",
