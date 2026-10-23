@@ -244,6 +244,11 @@ class AttentionStoreTests(unittest.TestCase):
             store.reconcile("thi-hemp", self.project_dir, "rule:", [rule_draft()])
         self.assertEqual(store.items(), [])
 
+    def test_a_projects_attention_conversation_is_kept(self):
+        self.assertIsNone(self.store.conversation(self.project_dir))
+        self.store.set_conversation("thi-hemp", self.project_dir, "c-attention")
+        self.assertEqual(self.open_store().conversation(self.project_dir), "c-attention")
+
     def test_only_a_card_in_the_queue_can_be_put_off(self):
         card = self.store.upsert("thi-hemp", self.project_dir, ab_draft()).id
         self.store.dismiss(card)

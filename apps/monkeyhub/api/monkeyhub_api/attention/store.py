@@ -69,6 +69,9 @@ class _Project:
     project_dir: str
     items: dict[str, AttentionItem] = field(default_factory=dict)
     suppressions: list[Suppression] = field(default_factory=list)
+    # The project's own "attention" conversation: where its queue's answers
+    # and the new shell's input go when no other conversation is named.
+    conversation: str | None = None
     # Saved rows this Hub cannot read, such as a card kind from a newer Hub:
     # written back as they were, never dropped.
     unread: list[dict] = field(default_factory=list)
@@ -157,6 +160,23 @@ class AttentionStore:
             now = self._clock()
             return [row.model_copy() for row in self._named(project_dir).suppressions
                     if datetime.fromisoformat(row.until) > now]
+
+    def conversation(self, project_dir: str) -> str | None:
+        """The chat session id kept as this project's attention conversation, if one was made."""
+
+        with self._locked():
+            return self._named(project_dir).conversation
+
+    def set_conversation(self, project_id: str, project_dir: str, session_id: str) -> None:
+        with self._locked():
+            project = self._project(project_id, project_dir)
+
+            def apply(now: datetime) -> list[str]:
+                project.conversation = session_id
+                return [session_id]
+
+            if project.conversation != session_id:
+                self._change(project, apply)
 
     # Producers -------------------------------------------------------------
 
@@ -460,6 +480,8 @@ class AttentionStore:
                            note="The Hub stopped before this answer finished; nothing more was tried.",
                            snoozed_until=item.snoozedUntil)
             project.items[item.id] = item
+        if isinstance(saved.get("conversationId"), str):
+            project.conversation = saved["conversationId"]
         for row in saved.get("suppressions", []):
             try:
                 project.suppressions.append(Suppression.model_validate(row))
@@ -480,6 +502,8 @@ class AttentionStore:
             "items": [*(item.model_dump(mode="json", by_alias=True) for item in project.items.values()), *project.unread],
             "suppressions": [row.model_dump(mode="json") for row in project.suppressions],
         }
+        if project.conversation is not None:
+            saved["conversationId"] = project.conversation
         path = self.root / f"{runtime_id(project.project_id, project.project_dir)}.json"
         temporary = path.with_suffix(".tmp")
         try:
