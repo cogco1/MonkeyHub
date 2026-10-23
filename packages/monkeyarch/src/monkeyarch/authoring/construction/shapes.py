@@ -22,6 +22,7 @@ from __future__ import annotations
 import copy
 import json
 import math
+import re
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import Any, Callable, Iterable
@@ -1524,8 +1525,12 @@ class World:
             element_id = identifier
         else:
             raise ShapeError(f"{short(identifier)} is {entity.schema} in this project, not geometry")
-        if self.resolved(element_id).get("producer") not in EDITABLE_PRODUCERS:
-            raise ShapeError(f"{short(element_id)} is not editable by a construction script")
+        producer = self.resolved(element_id).get("producer")
+        if producer not in EDITABLE_PRODUCERS:
+            made_of = sorted(set(re.findall(r'"@(\w+)"', json.dumps(self.entities[element_id].fields))))
+            raise ShapeError(f"{short(element_id)} ({producer}) is not editable by a construction script"
+                             + (f"; it is made from the parameters {short(', '.join(made_of), 200)}: change those"
+                                if made_of else ""))
         component = self.component_of(element_id)
         return element_id, component, self.geometry_id(element_id)
 

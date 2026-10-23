@@ -512,6 +512,18 @@ class ConstructionParametersTestCase(ConstructionTestCase):
                          ["block_depth", "block_height"])
         self.assertEqual(proposal["change"]["edits"]["entities"], [])
 
+    def test_a_value_alone_for_a_derived_parameter_is_refused_with_its_expression(self) -> None:
+        # Its expression would give the value back, so the change would change nothing.
+        body = self.construct('print("no shapes")', parameters=[{"key": "bay", "value": 3.0, "unit": "m"}], expect=422)
+        self.assertEqual(body["code"], "SEMANTIC_EDIT_INVALID")
+        self.assertIn("bay is derived: 2 * module (now 2.4)", body["detail"])
+        proposal = self.construct('print("no shapes")', parameters=[{"key": "bay", "value": 3.0, "unit": "m", "expr": None}])
+        [bay] = [row for row in proposal["change"]["edits"]["parameters"] if row["key"] == "bay"]
+        self.assertEqual((bay["value"], bay["expr"], bay["epistemic_status"]), (3.0, None, "declared"))
+        self.assertEqual(self.successor(proposal).parameter("span").value, 6.0, "what derives from it follows")
+        again = self.construct('print("no shapes")', parameters=[{"key": "bay", "value": 2.4, "unit": "m"}])
+        self.assertTrue(again["proposalId"], "its own value again is no change of it, and not refused")
+
     def test_a_parameter_the_record_refuses_is_not_a_script_line(self) -> None:
         body = self.construct('mass = extrude(rect(0, 0, 4, 4), 3)', parameters=[{"key": "block_height"}],
                               expect=422)

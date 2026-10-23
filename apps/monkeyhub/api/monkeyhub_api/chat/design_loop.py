@@ -60,8 +60,9 @@ GUIDE = chr(10).join([
     "hosted-opening {host, kind, along, width, ...}, elevation {action: 'set-datum', levelId, value} or",
     "proposal {semanticEdit}. It answers one outcome: landed (done), problems (nothing moved; correct the change",
     "and submit again), needs_question (nothing built; call design_ask with that question), refused (read again).",
-    "A condition no check can verify is the architect's to confirm, never yours; a kept target or a rejected option",
-    "is never changed from here. outside lists each change made outside MonkeyHub, newest file first, none in the",
+    "A condition no check can verify is the architect's to confirm, never yours; a rejected option, or a kept target",
+    "no checked condition states, is never changed from here. A keep a checked condition states is that condition:",
+    "submit the change, and MonkeyHub checks it on the built model and says what it measured. outside lists each change made outside MonkeyHub, newest file first, none in the",
     "design: name each with its amount and ask the architect whether to adopt it; a change that reaches one asks first.",
     "After {budget} changes with problems, ask or report a limitation instead of submitting again.",
 ])
