@@ -327,7 +327,6 @@ try {
     ["view.canvas.fit", "sketch.to_model.new_frame"], "More keeps Fit and New sketch frame");
   await bar.locator('[data-command-arg="board_more"]').click();
   await shoot(page, "attention-board-desktop-light");
-  await page.locator("body").click({ position: { x: 700, y: 870 } }).catch(() => undefined);
   await page.locator(".attention-shell__top").click({ position: { x: 1200, y: 20 } });
   await page.keyboard.press("Alt+1");
   await page.locator(".attention-shell__queue:not([hidden])").waitFor();
