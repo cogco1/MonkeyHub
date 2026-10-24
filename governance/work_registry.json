@@ -792,6 +792,27 @@
             "apps/monkeyhub/web/src/ChatShell.tsx",
             "apps/monkeyhub/web/test/attentionShell.browser.mjs"
           ]
+        },
+        {
+          "id": "sketch-close",
+          "status": "active",
+          "branch": "claude/300-b3-sketch-close",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-sketch-close",
+          "base_ref": "e8c2e1118a5aeae7b232b985d4c2a0a872bbfdef",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "User recording, item 3: clicking back on the first point closes a drawn outline (the closing point is dropped before it is sent, a double click's repeated corner too; a line that came back to its start is a flat face), and a request the API cannot read is reported for the shape it came closest to, not for every shape the route takes ('Extra inputs are not permitted' was the other shapes, not a version mismatch). Based on claude/300-batch3.",
+          "modules": [
+            "hub.shell",
+            "project_runtime.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/features/stage/sketch.ts",
+            "apps/monkeyhub/web/test/sketch.test.ts",
+            "services/project-runtime/src/project_runtime/main.py",
+            "services/project-runtime/tests/test_request_errors.py"
+          ],
+          "depends_on": []
         }
       ]
     }
