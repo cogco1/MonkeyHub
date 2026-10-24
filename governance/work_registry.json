@@ -312,6 +312,27 @@
             "tools/release/package_monkeyapps.py"
           ],
           "depends_on": []
+        },
+        {
+          "id": "b3-model-index",
+          "status": "active",
+          "branch": "claude/300-b3-model-index",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-model-index",
+          "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "第三批第 13 条「读快照不报错」: a model asset's native index is decoded once (at registration, in the background, or at its first read) and kept in the projection cache by its bytes.",
+          "modules": [
+            "project_runtime.documents"
+          ],
+          "write_scope": [
+            "services/project-runtime/src/project_runtime/application/artifacts.py",
+            "services/project-runtime/src/project_runtime/application/projections.py",
+            "services/project-runtime/src/project_runtime/application/drawings.py",
+            "services/project-runtime/src/project_runtime/api/routes/artifacts.py",
+            "services/project-runtime/tests/test_model_source_index.py"
+          ],
+          "depends_on": []
         }
       ]
     }

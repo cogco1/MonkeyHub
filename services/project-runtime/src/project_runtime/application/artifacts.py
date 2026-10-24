@@ -35,10 +35,12 @@ from __future__ import annotations
 
 import base64
 import binascii
+from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 import hashlib
 from io import BytesIO
+import json
 import math
 import os
 from pathlib import Path, PurePosixPath
@@ -52,6 +54,7 @@ from typing import Any, Callable, Iterable, Mapping, NamedTuple
 from PIL import Image, ImageOps
 # pypdf, PyMuPDF (fitz) and python-pptx load where a document is read or exported: about 0.2 s of a worker's start otherwise (#449).
 
+from archflow.contracts.canonical import canonical_json
 from archflow.project.record_kinds import (
     RUNNER_RUN_RECEIPT, SEAT_OCCT_EXECUTION, SEAT_RHINO_EXECUTION, STUDIO_SOURCE_DOCUMENT, STUDIO_MODEL_ASSET,
     STUDIO_DOCUMENT_MODEL_SOURCE,
@@ -1586,17 +1589,79 @@ def _attached_model(binding: ProjectBinding, run_id: str, asset_sha256: str) -> 
     return record
 
 
+# A page's bounds, as the index writes them onto a row.
+_BOUNDS = ("bounds", "bounds_space", "bounds_source", "bounds_error")
+# Indexes this process read from the projection cache, newest last: a page needs no second read of the blob.
+_KEPT_INDEXES: OrderedDict[str, dict[str, Any]] = OrderedDict()
+_KEPT_INDEXES_LOCK = threading.Lock()
+
+
+def _kept_index(projections, data: bytes, asset_sha256: str) -> dict[str, Any]:
+    """The model's whole index with every object's bounds, read from ``data`` once and kept by its bytes."""
+
+    from .projections import MODEL_INDEX, on_demand_spec
+
+    spec = on_demand_spec(MODEL_INDEX, {"runId": None, "assetSha256": asset_sha256}, {"bounds": "every object"})
+    with _KEPT_INDEXES_LOCK:
+        kept = _KEPT_INDEXES.get(spec.key)
+        if kept is not None:
+            _KEPT_INDEXES.move_to_end(spec.key)
+            return kept
+
+    def read():
+        index = inspect_three_dm_index(data, bounds_for=lambda ids: ids)
+        return {"json": canonical_json(index).encode("utf-8")}, {"objectCount": len(index["objects"])}
+
+    files, _, _ = projections.on_demand(spec, read)
+    index = json.loads(files["json"])
+    with _KEPT_INDEXES_LOCK:
+        _KEPT_INDEXES[spec.key] = index
+        while len(_KEPT_INDEXES) > 8:
+            _KEPT_INDEXES.popitem(last=False)
+    return index
+
+
+def model_index(data: bytes, asset_sha256: str, *, bounds_for, projections=None) -> dict[str, Any]:
+    """A model's native index (``inspect_three_dm_index``), from the projection cache when the runtime keeps one.
+
+    The cache holds every object's bounds; a row carries them only when
+    ``bounds_for`` names it, as the direct read writes them.
+    """
+
+    if projections is None:
+        return inspect_three_dm_index(data, bounds_for=bounds_for)
+    index = _kept_index(projections, data, asset_sha256)
+    rows = index["objects"]
+    wanted = frozenset(bounds_for(tuple(row["object_id"] for row in rows)) if callable(bounds_for) else bounds_for)
+    return {**index, "objects": [row if row["object_id"] in wanted else
+                                 {key: value for key, value in row.items() if key not in _BOUNDS} for row in rows]}
+
+
+def warm_model_index(binding: ProjectBinding, projections, run_id: str, asset_sha256: str) -> None:
+    """Read a just registered model's index into the projection cache, so its first page reads nothing more."""
+
+    try:
+        artifact = _attached_model(binding, run_id, asset_sha256)
+        data = artifact.path.read_bytes()
+        if hashlib.sha256(data).hexdigest() == asset_sha256:
+            _kept_index(projections, data, asset_sha256)
+    except (StudioError, OSError, ValueError, ThreeDmInspectionError):
+        pass  # The first read reads it then, and says what is wrong with it.
+
+
 @retained_sources
 def read_model_source_index(
     binding: ProjectBinding, run_id: str, asset_sha256: str, state_digest: str | None = None, *,
     object_ids: tuple[str, ...] = (), offset: int = 0, limit: int = 50, bounds: bool = False,
+    projections=None,
 ) -> dict[str, Any]:
     """Page native identities from exact retained bytes, without admitting an edit.
 
     A model bound to a design run is named by that run and its exact state. A
     model attached from outside the project has no design state and is named by
     its own run, ``studio-model-<assetSha256>``, alone. ``bounds`` adds each paged
-    object's bounds, read for that page only.
+    object's bounds, read for that page only. With ``projections``, the model is
+    decoded once per content and every later page is a lookup (``model_index``).
     """
 
     if offset < 0 or not 1 <= limit <= 200 or len(object_ids) > 200:
@@ -1628,7 +1693,7 @@ def read_model_source_index(
         return tuple(value for value in ids if not requested or value in requested)[offset:offset + limit]
 
     try:
-        index = inspect_three_dm_index(data, bounds_for=page_ids if bounds else ())
+        index = model_index(data, asset_sha256, bounds_for=page_ids if bounds else (), projections=projections)
     except ThreeDmInspectionError as exc:
         raise StudioError(422, "MODEL_INDEX_UNAVAILABLE", exc.message) from exc
     rows = index["objects"]

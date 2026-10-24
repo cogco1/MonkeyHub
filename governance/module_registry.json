@@ -10229,7 +10229,8 @@
         "view sheets through POST /api/drawings/sheets: same-source plans, vertical sections, elevations, axonometrics and section perspectives, each drawn or read back through its own generator from the sheet's one source (modelSource, Stage or unbound imported asset) and named in the sheet recipe by its exact revision, placed at its own scale where the caller put it, with default titles, subtitles and scale labels from each view's own frame and a section's cut line on a plan, as monkeydiagram.documentation.sheet_layout lays them out; front/right/top requests keep the review sheet's layout and defaults; every sheet is one paper scene retained as PDF, DXF, SVG and PNG beside each other in its source run and registered as its PDF, which names the other three files' digests; GET /api/drawings/{asset_sha256}/files/{file_format} reads a view revision's SVG/PNG, only by its revisionRef (DRAWING_REVISION_REQUIRED), or a sheet's four files, verified",
         "the state-carrying 3DM (#657), only while the design loop is enforced: POST /api/state-files/export seals an exact revision's model with its State Record and the project's active design decisions in the architect's words, read back like any export; POST /api/state-files/inspect reads such a file without retaining anything and answers the record and decisions its seal keeps, every change made outside MonkeyHub and one question awaiting the architect for each part it touched; POST /api/exports is unchanged in every tier",
         "the drawing pool (drawing_pool): worker processes, half the processors from one to four or MONKEY_DRAWING_WORKERS, started only by the serving process, solving elevations, axonometrics, section perspectives and cut plans while the Runtime answers other requests; and drawing_sources, retained_sources for elevations, section perspectives and cut plans: the project's write guard is held while the source is checked and from retention to registration (the source checked again under it), and given back while the view is solved; _document_source_lock is held only to look for a registered revision and to register a new one, which an identical request registered meanwhile answers instead",
-        "a native model's drawing source kept in the projection cache (drawing-source, _kept_source): what a drawing worker verified, without its shapes, keyed by the model's bytes, its registration and the reading code, so a restarted Runtime answers a registered drawing without reading the model again"
+        "a native model's drawing source kept in the projection cache (drawing-source, _kept_source): what a drawing worker verified, without its shapes, keyed by the model's bytes, its registration and the reading code, so a restarted Runtime answers a registered drawing without reading the model again",
+        "a model asset's native index kept by its bytes (model-index in the projection cache, model_index, warm_model_index): decoded once with every object's bounds when the model is registered or first read, so GET /api/model-assets/{sha}/index pages a lookup; a page carries bounds only when asked, as before"
       ],
       "does_not_own": [
         "producing the export or its receipt - monkeycad.execution and its backends, through monkeyarch.application.project_runner",
@@ -10363,7 +10364,9 @@
         "select_drawing_source",
         "tree_model_sources",
         "DrawingPool",
-        "drawing_sources"
+        "drawing_sources",
+        "model_index",
+        "warm_model_index"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
