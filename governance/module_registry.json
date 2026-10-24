@@ -6779,7 +6779,8 @@
         "rasterising that SVG's own polylines to a PNG at its physical size (render_svg_png), reading the object ids an SVG names (svg_objects), and reading its marks in paper mm with their role group, pen and grey for placement on a sheet (svg_paper_marks, DrawingMark; dimension text is refused, not dropped)",
         "even-odd section hatching and measured dimension strokes/native text with one embedded font; shared paper-placement bounds reject clipped dimensions",
         "data-component and data-material after data-object on every polyline and poché of an object the caller's semantics name; material-keyed hatch spacing and angle or solid even-odd poché polygons, and the beyond fade, all in paper mm from graphics.hatch.byMaterial and graphics.beyond",
-        "built-in person/tree plan SVG polylines and independent data-dressing groups, rendered through the same SVG-to-PNG path without architectural data-object identity"
+        "built-in person/tree plan SVG polylines and independent data-dressing groups, rendered through the same SVG-to-PNG path without architectural data-object identity",
+        "measuring what a drawn page shows under a mark: each object's lines and bounded area inside a circle, outline, stroke or arrow tip and inside the mark's frame, on a drawing's own marks or an object-ID image"
       ],
       "does_not_own": [
         "projecting geometry - monkeycad.occt (project_occt_lines)",
@@ -6816,7 +6817,13 @@
         "SVG_MEDIA_TYPE",
         "PNG_MEDIA_TYPE",
         "dimension_placement_fits",
-        "dressing_assets"
+        "dressing_assets",
+        "svg_object_marks",
+        "ink_under_mark",
+        "id_image_under_marks",
+        "page_ink",
+        "ObjectInk",
+        "MarkInk"
       ],
       "depends_on": [
         "monkeycad.occt"
@@ -6832,9 +6839,14 @@
       "status": "canonical",
       "tests": [
         "packages/monkeydiagram/tests/test_drawing_svg.py",
-        "packages/monkeydiagram/tests/test_drawing_elevation.py"
+        "packages/monkeydiagram/tests/test_drawing_elevation.py",
+        "packages/monkeydiagram/tests/test_page_marks.py"
       ],
-      "notes": "CREATE 2026-09-07 (A0 of docs/design/drawing-system.md): no owner serialised drawings; the PDF/DXF paper canvas in a teammate's worktree is a different output and stays out. Pillow renders the PNG (already installed with the Studio); no browser, image model or re-projection."
+      "notes": "CREATE 2026-09-07 (A0 of docs/design/drawing-system.md): no owner serialised drawings; the PDF/DXF paper canvas in a teammate's worktree is a different output and stays out. Pillow renders the PNG (already installed with the Studio); no browser, image model or re-projection.",
+      "files": [
+        "packages/monkeydiagram/src/monkeydiagram/rendering/svg.py",
+        "packages/monkeydiagram/src/monkeydiagram/rendering/marks.py"
+      ]
     },
     {
       "module_id": "monkeydiagram.projection.mesh_views",
@@ -11107,7 +11119,8 @@
         "candidate admission: one CandidateAdmission@1 per closed loop (a task, one worktree of it, or one person's act) in the fixed explicit studio-admissions P036 run, written only through the completion gate Stage acceptance shares, with the boundary's actor, the stated task, Study and bound message, each result's outcome, pinned model, receipt and superseded attempts",
         "the Candidate Pool read for the Design Tree: admitted Candidates and their Studies from admission records and from legacy facts that already prove admission (a committed Stage's run, a retained Exploration's non-base option, an accepted episode's produced run), with lineage-derived continuedFrom and acceptedStageRef and Working Head membership",
         "the attributable, revisioned rejection, archival/restoration and endorsement of an exact retained Candidate or Stage; this changes no design position",
-        "the one-call revision (revise over RevisionPorts, POST /api/revisions): base, keep decisions protected, a touched rejected option, conditions in reach that no check can verify, the build, the read-back and comparison, validation, admission and Continue, in that order, answered as landed, admitted, problems, needs_question or refused; every step is an existing route or function"
+        "the one-call revision (revise over RevisionPorts, POST /api/revisions): base, keep decisions protected, a touched rejected option, conditions in reach that no check can verify, the build, the read-back and comparison, validation, admission and Continue, in that order, answered as landed, admitted, problems, needs_question or refused; every step is an existing route or function",
+        "reading page marks (a circle, outline, stroke or arrow on a drawing or a model view's object-ID image) into the components and elements they cover, with how much of each lies in the mark and why a mark has no clear target, deterministically and without a model call or write"
       ],
       "does_not_own": [
         "running the proposal - project_runtime.candidate",
@@ -11337,7 +11350,13 @@
         "RevisionOutcomeDto",
         "require_design_loop",
         "GET /api/revisions/context",
-        "revision_context"
+        "revision_context",
+        "read_marks",
+        "read_id_image",
+        "subjects_of",
+        "MarkReading",
+        "read_model_marks",
+        "hit_subjects_of"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -11483,7 +11502,8 @@
         "tools/tests/test_export_drawing_recipe.py",
         "services/project-runtime/tests/test_indexed_reads.py",
         "services/project-runtime/tests/test_revision_transaction.py",
-        "tests/integration/test_capability_registry.py"
+        "tests/integration/test_capability_registry.py",
+        "services/project-runtime/tests/test_markup.py"
       ],
       "notes": "ADR-001's record, section 2.1, makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -11523,7 +11543,8 @@
         "services/project-runtime/src/project_runtime/application/visual_reviews.py",
         "tools/benchmarks/benchmark_visual_observation.py",
         "tools/project/export_drawing_recipe.py",
-        "services/project-runtime/src/project_runtime/application/revision_transaction.py"
+        "services/project-runtime/src/project_runtime/application/revision_transaction.py",
+        "services/project-runtime/src/project_runtime/application/markup.py"
       ]
     },
     {
@@ -13495,7 +13516,9 @@
         "The attention shell (?shell=attention, app/AttentionShell.tsx): the projects column with what waits on the architect, the Attention, Board and Model tabs over the open surfaces, the conversation drawer above the composer, the side panel with background and advanced tools, and the phone drawers; it places the nodes ChatShell's state builds and holds none of its own",
         "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
         "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
-        "Carrying out a card's answer as the person who chose it (#300, attention/actions.py): Continue onto a run and its undo, archiving and restoring candidates, combining a result with the head, answering a conversation's permission or suggestion, sending the person's reply to the conversation, applying a prepared update and reading a notice; \"all as recommended\" with one undo. The producers (attention/producers.py) that write results, permissions, suggestions, design-loop questions, failed operations and updates as cards. AttentionHub (attention/hub.py) gives the executor its ports on the Hub (the runtime forward, the chat store, the updater), reconciles a project's cards a moment after its events settle, and publishes attention/changed under the project's runtime id."
+        "Carrying out a card's answer as the person who chose it (#300, attention/actions.py): Continue onto a run and its undo, archiving and restoring candidates, combining a result with the head, answering a conversation's permission or suggestion, sending the person's reply to the conversation, applying a prepared update and reading a notice; \"all as recommended\" with one undo. The producers (attention/producers.py) that write results, permissions, suggestions, design-loop questions, failed operations and updates as cards. AttentionHub (attention/hub.py) gives the executor its ports on the Hub (the runtime forward, the chat store, the updater), reconciles a project's cards a moment after its events settle, and publishes attention/changed under the project's runtime id.",
+        "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
+        "the change list an agent proposes from Board marks: its items (marks, the architect's words, the reading, components touched and kept, unsure, extra, ticked), checked against the Runtime's mark readings (an item citing an unclear mark is unsure; only an extra may touch what no cited mark lies on); an unsure item becomes a which-one question card, and the approval of ticked sure items names the card and items and carries only the architect's words"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -13627,7 +13650,12 @@
         "COMMANDS",
         "AttentionHub",
         "check_card",
-        "OPENS"
+        "OPENS",
+        "ChangeList",
+        "check_against",
+        "unsure_cards",
+        "approval",
+        "applies_without_asking"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -13811,7 +13839,8 @@
         "apps/monkeyhub/api/monkeyhub_api/attention/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/actions.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/hub.py",
-        "apps/monkeyhub/api/monkeyhub_api/attention/producers.py"
+        "apps/monkeyhub/api/monkeyhub_api/attention/producers.py",
+        "apps/monkeyhub/api/monkeyhub_api/attention/change_list.py"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -13883,7 +13912,9 @@
         "apps/monkeyhub/api/tests/test_attention_store.py",
         "apps/monkeyhub/api/tests/test_attention_executor.py",
         "apps/monkeyhub/api/tests/test_attention_hub.py",
-        "apps/monkeyhub/api/tests/test_attention_producers.py"
+        "apps/monkeyhub/api/tests/test_attention_producers.py",
+        "apps/monkeyhub/api/tests/test_attention_store.py",
+        "apps/monkeyhub/api/tests/test_change_list.py"
       ],
       "depends_on": [
         "archflow.contracts.canonical",

@@ -581,6 +581,29 @@
             "services/project-runtime/src/project_runtime/jobs.py"
           ],
           "depends_on": []
+        },
+        {
+          "id": "annotation",
+          "status": "active",
+          "branch": "claude/300-annotation",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-annotation",
+          "base_ref": "cc8f54e20546c73a1e1e1763a5001a8495c48675",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Three-channel convergence, segment 3 (annotation): marks on a page read into the components they cover (3-2), then the change list built from those readings (3-3). Pure reading first; the markup route waits for board/view and camera passes on main, the change list for the attention store (GH-300/attention-store).",
+          "modules": [
+            "hub.shell",
+            "monkeydiagram.rendering.svg",
+            "project_runtime.intent"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/attention/change_list.py",
+            "apps/monkeyhub/api/tests/test_change_list.py",
+            "packages/monkeydiagram/src/monkeydiagram/rendering/marks.py",
+            "packages/monkeydiagram/src/monkeydiagram/rendering/svg.py",
+            "services/project-runtime/src/project_runtime/application/markup.py"
+          ],
+          "depends_on": []
         }
       ]
     }
