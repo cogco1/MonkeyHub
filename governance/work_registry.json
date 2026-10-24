@@ -1,30 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-300",
-      "lanes": [
-        {
-          "id": "srv",
-          "status": "active",
-          "branch": "claude/300-srv-hotfix",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-srv-hotfix",
-          "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": "Hotfix from the server acceptance walk (S01): the installed Hub's drawings stalled because the Project Runtime left a read waiting on the owner pipe its drawing workers share. Claimed, fixed and released in this branch. Also the two start-up causes behind the 0925 START_TIMEOUT (b3-repairs 02607387, 1484e618), at the coordinator's request.",
-          "modules": [
-            "project_runtime.shell"
-          ],
-          "write_scope": [
-            "services/project-runtime/src/project_runtime/main.py",
-            "services/project-runtime/tests/test_health.py",
-            "apps/monkeyhub/api/monkeyhub_api/runtime/workers.py",
-            "apps/monkeyhub/api/tests/test_workers.py"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
