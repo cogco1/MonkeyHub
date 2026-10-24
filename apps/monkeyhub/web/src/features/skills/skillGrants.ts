@@ -1,7 +1,7 @@
 /**
  * What the "What the AI may do" page holds (S-1), and the only things it does:
- * read what a person allowed skills to do on this computer, withdraw one, read
- * again. The grants are the Hub's own, kept beside its settings, so no project
+ * read what a person allowed skills to do on this computer and which installed
+ * skills cannot be used and why, withdraw a grant, read again. The grants are the Hub's own, kept beside its settings, so no project
  * is read and none has to be running.
  *
  * Kept apart from the view so each step can be exercised without a DOM.
@@ -9,14 +9,19 @@
 
 import { createClient } from "../../api/generated/client";
 import {
-  readSkillGrantsApiSettingsSkillGrantsGet, revokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePost,
-  type HubError, type SkillGrantDto,
+  readSkillGrantsApiSettingsSkillGrantsGet, readSkillProblemsApiSettingsSkillProblemsGet,
+  revokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePost,
+  type HubError, type SkillGrantDto, type SkillProblemDto,
 } from "../../api/generated";
 
 export type SkillGrant = SkillGrantDto;
+/** An installed skill that cannot be used right now: which, where it is, what kind of problem, the technical line. */
+export type SkillProblem = SkillProblemDto;
 
 export interface SkillGrantsApi {
   list(): Promise<readonly SkillGrant[]>;
+  /** The skills that cannot be used; a Hub that cannot say leaves the page without that section. */
+  problems(): Promise<readonly SkillProblem[]>;
   revoke(grantId: string): Promise<SkillGrant>;
 }
 
@@ -38,6 +43,7 @@ export function createSkillGrantsApi(baseUrl: string): SkillGrantsApi {
   const client = createClient({ baseUrl });
   return {
     list: async () => (await body<{ grants?: SkillGrant[] }>(readSkillGrantsApiSettingsSkillGrantsGet({ client }))).grants ?? [],
+    problems: () => body<SkillProblem[]>(readSkillProblemsApiSettingsSkillProblemsGet({ client })),
     revoke: (grantId) => body<SkillGrant>(revokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePost({ client, path: { grant_id: grantId } })),
   };
 }
@@ -45,6 +51,8 @@ export function createSkillGrantsApi(baseUrl: string): SkillGrantsApi {
 export interface GrantsState {
   /** Still in force first, each group newest first; null until read. */
   readonly grants: readonly SkillGrant[] | null;
+  /** The skills that cannot be used right now; null until read, or when the Hub could not say. */
+  readonly problems: readonly SkillProblem[] | null;
   readonly loading: boolean;
   readonly loadError: HubError | null;
   /** The grant being withdrawn. */
@@ -53,7 +61,7 @@ export interface GrantsState {
 }
 
 export const initialGrantsState: GrantsState = {
-  grants: null, loading: true, loadError: null, revoking: null, revokeError: null,
+  grants: null, problems: null, loading: true, loadError: null, revoking: null, revokeError: null,
 };
 
 type SetState = (update: (state: GrantsState) => GrantsState) => void;
@@ -83,8 +91,9 @@ export function grantsActions(api: SkillGrantsApi, setState: SetState): GrantsAc
   const load = async () => {
     setState((state) => ({ ...state, loading: true, loadError: null }));
     try {
-      const grants = [...await api.list()].sort(order);
-      setState((state) => ({ ...state, grants, loading: false }));
+      const [listed, problems] = await Promise.all([api.list(), api.problems().catch(() => null)]);
+      const grants = [...listed].sort(order);
+      setState((state) => ({ ...state, grants, problems, loading: false }));
     } catch (cause) {
       setState((state) => ({ ...state, loading: false, loadError: asHubError(cause) }));
     }

@@ -44,3 +44,4 @@
 .skills__package .skills__error{margin:6px 0 0;font-size:var(--text-caption)}
 .skills__package-foot{justify-content:flex-end}
 @media(max-width:900px){.skills__approve{min-height:44px}.skills__files summary{min-height:44px}.skills__agent-run{min-height:44px}.skills__package-foot .btn{min-height:44px}}
+.skills__problems{margin:0 0 16px}.skills__problems h3{margin:0 0 4px}.skills__problems .skills__row{border-color:var(--violated)}.skills__problems .skills__row p{margin:0 0 6px}

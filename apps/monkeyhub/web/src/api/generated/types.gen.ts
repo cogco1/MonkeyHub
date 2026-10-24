@@ -2620,6 +2620,42 @@ export type SkillGrantsDto = {
 };
 
 /**
+ * SkillProblemDto
+ *
+ * One installed skill that cannot be used: which, where it is, what is wrong (``kind``), and the technical line.
+ */
+export type SkillProblemDto = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Source
+     */
+    source: 'bundled' | 'user';
+    /**
+     * Folder
+     */
+    folder: string;
+    /**
+     * Kind
+     */
+    kind: 'unreadable' | 'name_differs' | 'entry_syntax' | 'missing_file';
+    /**
+     * File
+     */
+    file?: string | null;
+    /**
+     * Line
+     */
+    line?: number | null;
+    /**
+     * Detail
+     */
+    detail: string;
+};
+
+/**
  * SkillRefDto
  *
  * A skill as a grant names it: its name and the folder it is found in.
@@ -3450,6 +3486,24 @@ export type ReadSkillGrantsApiSettingsSkillGrantsGetResponses = {
 };
 
 export type ReadSkillGrantsApiSettingsSkillGrantsGetResponse = ReadSkillGrantsApiSettingsSkillGrantsGetResponses[keyof ReadSkillGrantsApiSettingsSkillGrantsGetResponses];
+
+export type ReadSkillProblemsApiSettingsSkillProblemsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/skill-problems';
+};
+
+export type ReadSkillProblemsApiSettingsSkillProblemsGetResponses = {
+    /**
+     * Response Read Skill Problems Api Settings Skill Problems Get
+     *
+     * Successful Response
+     */
+    200: Array<SkillProblemDto>;
+};
+
+export type ReadSkillProblemsApiSettingsSkillProblemsGetResponse = ReadSkillProblemsApiSettingsSkillProblemsGetResponses[keyof ReadSkillProblemsApiSettingsSkillProblemsGetResponses];
 
 export type RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostData = {
     body?: never;

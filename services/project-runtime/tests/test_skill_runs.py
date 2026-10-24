@@ -31,7 +31,7 @@ from PIL import Image
 from archflow.project.record_kinds import (STUDIO_SKILL_APPROVAL, STUDIO_SKILL_REVOCATION, STUDIO_SKILL_RUN,
                                            require_registered)
 from archflow.project.repository import FilesystemProjectRepository
-from project_runtime.application import artifacts, skill_access, skill_library, skills
+from project_runtime.application import artifacts, skill_access, skill_library, skill_runs, skills
 from project_runtime.binding import bound_project
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
@@ -94,7 +94,7 @@ class SkillRunTest(unittest.TestCase):
     # ---- the folder, the grants file, a run ----
 
     def install(self, script: str = SCRIPT, *, access: dict | None = None, entry: str | None = "scripts/run.py",
-                root: Path | None = None) -> str:
+                root: Path | None = None, manifest: dict | None = None) -> str:
         """Put the site-palette package in a skill folder, as a person does; its code hash."""
 
         folder = (root or self.user) / "site-palette"
@@ -104,6 +104,8 @@ class SkillRunTest(unittest.TestCase):
             spec["entry"] = entry
         if access is not None:
             spec["access"] = access
+        if manifest is not None:
+            spec["manifest"] = manifest
         (folder / "skill.json").write_text(json.dumps(spec), encoding="utf-8")
         (folder / "SKILL.md").write_text("Run on one registered image.\n", encoding="utf-8")
         (folder / "scripts" / "run.py").write_text(script, encoding="utf-8")
@@ -473,6 +475,99 @@ with open(os.path.join(args.outputs, "kept.csv"), "w", encoding="utf-8") as out:
         self.assertEqual((record["status"], record["failureCode"]), ("failed", "SKILL_RUN_FAILED"))
         self.assertIn("the image is too dark", record["failureReason"])
         self.assertEqual(record.get("outputs"), None, "a failed run registers no outputs")
+        self.assertEqual((record["failureNext"], record["failureNextWords"].startswith("Change the input or parameter")),
+                         ("fix_input", True), "a failure says what to do about it")
+
+    # ---- a skill that returns nothing, or not what it says it returns ----
+
+    MANIFEST = {"inputs": ["image: 一张登记过的图片", "params: share，默认 0.5"],
+                "outputs": ["copy.png: 原图的副本", "result.csv: 颜色和占比", "<name>_extra.png: 只有给了 extra 才有",
+                            "run.json: 本次运行的标识"], "permissions": []}
+
+    def test_a_run_that_wrote_no_file_is_a_failure_not_a_success(self):
+        # Before: the script printed, exited 0, and the run counted as succeeded with nothing to use.
+        self.install(HEADER + 'print("all done")\n')
+        record = self.run_skill(inputs={})
+        self.assertEqual((record["status"], record["failureCode"]), ("failed", "SKILL_OUTPUT_MISSING"), record)
+        self.assertIn("all done", record["failureReason"], "the failure carries what the skill last said")
+        self.assertEqual((record["failureNext"], record.get("outputs")), ("stop", None))
+
+    def test_the_files_a_manifest_names_are_checked_without_taking_a_run_away(self):
+        self.install(manifest=self.MANIFEST)
+        passed = self.run_skill()
+        self.assertEqual((passed["status"], passed["verification"]), (
+            "succeeded", {"status": "passed", "declared": ["copy.png", "result.csv", "run.json"], "missing": []}),
+            "a placeholder name (<name>_extra.png) names no one file, so it is not asked for")
+        # The script now forgets result.csv: its other files are still kept, and the record says what is missing.
+        forgetful = SCRIPT.replace('with open(os.path.join(args.outputs, "result.csv"), "w", encoding="utf-8", newline="") as out:\n    out.write("hex,share\\n#6E7565,%s\\n" % params.get("share", 0.5))\n', "")
+        self.assertNotEqual(forgetful, SCRIPT)
+        self.install(forgetful, manifest=self.MANIFEST)
+        partial = self.run_skill()
+        self.assertEqual((partial["status"], partial["verification"]["status"], partial["verification"]["missing"]),
+                         ("succeeded", "failed", ["result.csv"]))
+        self.assertEqual(sorted(row["name"] for row in partial["outputs"]), ["copy.png", "run.json"])
+        # A manifest that names no file by a plain name leaves the check inconclusive, not failed.
+        self.install()
+        self.assertEqual(self.run_skill()["verification"]["status"], "inconclusive")
+
+    def test_a_missing_input_is_named_instead_of_a_bare_key_error(self):
+        self.install(manifest=self.MANIFEST)
+        record = self.run_skill(inputs={})
+        self.assertEqual((record["status"], record["failureCode"], record["failureNext"]),
+                         ("failed", "SKILL_INPUT_MISSING", "fix_input"), record)
+        self.assertIn("needs the input 'image' (一张登记过的图片)", record["failureReason"])
+        self.assertIn("this request gave no inputs", record["failureReason"])
+        # Without a manifest line for it the failure stays the script's own words.
+        self.install()
+        self.assertEqual(self.run_skill(inputs={})["failureCode"], "SKILL_RUN_FAILED")
+
+    def test_the_words_of_a_manifest_line_are_read_the_way_the_shipped_skills_write_them(self):
+        manifest = {"inputs": [
+            "model: 项目内已登记的模型资产（3dm）", "mesh（代替 model）: 本机网格文件 .glb", "params: style 取 params/<style>.json",
+            "<名称>: Hub 视图图纸（kind drawing）", "site: 项目内已登记的场地模型：含地块曲线"],
+            "outputs": ["blender-<style>.png: 渲染结果", "merged.3dm: 单位 Feet", "merge_report.json：变换和数量",
+                        "<pdf_name>: 一个多页 PDF", "summary.json: 每张图的输入"]}
+        self.assertEqual(skill_runs.declared_inputs(manifest), {
+            "model": "项目内已登记的模型资产（3dm）", "mesh": "本机网格文件 .glb", "site": "项目内已登记的场地模型：含地块曲线"})
+        self.assertEqual(skill_runs.declared_outputs(manifest), ["merged.3dm", "merge_report.json", "summary.json"])
+        self.assertEqual(skill_runs.declared_outputs(None), [])
+        self.assertEqual(skill_runs.verify_outputs(manifest, ["sub/summary.json", "merged.3dm"])["missing"], ["merge_report.json"],
+                         "a declared file counts when it is under any subfolder")
+
+    # ---- what to do after a failure ----
+
+    def test_every_refusal_and_failure_says_what_to_do_next(self):
+        refused = self.start(status=404, inputs={}, parameters={})
+        self.assertEqual(refused["code"], "SKILL_NOT_INSTALLED")
+        self.assertIn("Next (ask_person)", refused["detail"])
+        self.install(access={"programs": ["blender"]})
+        needed = self.start(status=403, inputs={})
+        self.assertEqual(needed["code"], "SKILL_ACCESS_NEEDED")
+        self.assertIn("Next (ask_person)", needed["detail"])
+        self.assertEqual({code: step for code, (step, _) in skill_runs.NEXT_STEPS.items()}["SKILL_REPEATED_FAILURE"], "stop")
+        self.assertEqual(skill_runs.next_step("A_CODE_NOBODY_KNEW")[0], "stop", "an unknown failure stops rather than retries")
+        for code, (step, words) in skill_runs.NEXT_STEPS.items():
+            self.assertIn(step, ("fix_input", "ask_person", "stop"), code)
+            self.assertTrue(words.endswith("."), code)
+
+    def test_an_agent_is_not_given_a_third_run_of_the_request_that_failed_twice(self):
+        self.install()
+        fails = {"parameters": {"fail": True}, "agentRun": True}
+        for _ in range(2):
+            self.assertEqual(self.run_skill(**fails)["status"], "failed")
+        third = self.start(status=409, **fails)
+        self.assertEqual(third["code"], "SKILL_REPEATED_FAILURE")
+        self.assertIn("failed twice with exactly this request (SKILL_RUN_FAILED)", third["detail"])
+        self.assertIn("Next (stop)", third["detail"])
+        self.assertEqual(len(self.skill_runs()), 2, "the refused one made no run")
+        # Another request, a person's own run, changed code, or time passing each allow it again.
+        self.assertEqual(self.run_skill(parameters={"fail": True, "other": 1}, agentRun=True)["status"], "failed")
+        self.assertEqual(self.run_skill(parameters={"fail": True})["status"], "failed", "a person's run is not stopped")
+        with patch.object(skill_runs, "REPEAT_WINDOW_S", 0.0):
+            self.assertEqual(self.run_skill(**fails)["status"], "failed")
+        self.install(SCRIPT + "# the person fixed it\n")
+        self.assertEqual(self.run_skill(agentRun=True, parameters={"fail": True})["status"], "failed")
+        self.assertEqual(self.run_skill(agentRun=True)["status"], "succeeded")
 
 
 if __name__ == "__main__":

@@ -1972,9 +1972,20 @@ export const readSkillApiSkillsSkillIdGet = <ThrowOnError extends boolean = fals
  * Start the installed skill on project inputs as a background job; read it at statusPath.
  *
  * Refused before anything runs with SKILL_NOT_INSTALLED, SKILL_NOT_RUNNABLE,
- * SKILL_CHANGED or SKILL_ACCESS_NEEDED (what a person still has to allow). A
+ * SKILL_CHANGED, SKILL_ACCESS_NEEDED (what a person still has to allow) or
+ * SKILL_REPEATED_FAILURE (an Agent's exact request that just failed twice). A
  * run that tries what it did not declare fails with SKILL_PERMISSION_NEEDED
- * and names what it tried.
+ * and names what it tried; one that writes no file fails with
+ * SKILL_OUTPUT_MISSING; one that lacks an input its manifest names fails with
+ * SKILL_INPUT_MISSING.
+ *
+ * Every refusal and every failed run says what to do next (``Next (fix_input |
+ * ask_person | stop)`` in the refusal, ``failureNext`` and ``failureNextWords``
+ * in the run): change the request, tell the person, or stop and say what
+ * happened; never run the same request again. A run that succeeded carries
+ * ``verification``: ``passed`` or ``failed`` against the files its manifest says
+ * it writes (``missing`` names the ones that are not there; the outputs it did
+ * write are kept) or ``inconclusive`` when the manifest names none.
  */
 export const runSkillApiSkillsSkillIdRunPost = <ThrowOnError extends boolean = false>(options: Options<RunSkillApiSkillsSkillIdRunPostData, ThrowOnError>): RequestResult<RunSkillApiSkillsSkillIdRunPostResponses, RunSkillApiSkillsSkillIdRunPostErrors, ThrowOnError> => (options.client ?? client).post<RunSkillApiSkillsSkillIdRunPostResponses, RunSkillApiSkillsSkillIdRunPostErrors, ThrowOnError>({
     url: '/api/skills/{skill_id}/run',

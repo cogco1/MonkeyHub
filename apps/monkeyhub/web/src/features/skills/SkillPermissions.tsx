@@ -1,7 +1,9 @@
 /**
  * Settings › What the AI may do (S-1): the Hub-wide choice of how a chat's AI
- * runs a skill, then everything a person allowed skills to do on this computer,
- * for which skills, how and when, and Withdraw on what still holds. The grants
+ * runs a skill, the skills that cannot be used right now (which, what is wrong,
+ * who can fix it, in plain words), then everything a person allowed skills to
+ * do on this computer, for which skills, how and when, and Withdraw on what
+ * still holds. The grants
  * are the Hub's own, so the page shows without a project and while a project is
  * busy. Only this page withdraws a grant; a chat's question gives one.
  */
@@ -13,7 +15,7 @@ import { usePreferences } from "../settings/preferences";
 import { AccessList } from "./SkillAccess";
 import {
   createSkillGrantsApi, grantsActions, grantStatus, initialGrantsState,
-  type GrantsActions, type GrantsState, type SkillGrant, type SkillGrantsApi,
+  type GrantsActions, type GrantsState, type SkillGrant, type SkillGrantsApi, type SkillProblem,
 } from "./skillGrants";
 import {
   createHubSettingsApi, initialRunSettingState, runSettingActions, SKILL_AGENT_RUN_CHOICES,
@@ -22,6 +24,11 @@ import {
 import "./skills.css";
 
 const STATUS_KEYS = { active: "skills.grants.status.active", used: "skills.grants.status.used", revoked: "skills.grants.status.revoked" } as const;
+const PROBLEM_KEYS = {
+  entry_syntax: "skills.problems.kind.entry_syntax", missing_file: "skills.problems.kind.missing_file",
+  name_differs: "skills.problems.kind.name_differs", unreadable: "skills.problems.kind.unreadable",
+} as const;
+const WHO_KEYS = { user: "skills.problems.who.user", bundled: "skills.problems.who.bundled" } as const;
 const METHOD_KEYS = { card: "skills.grants.method.card", settings: "skills.grants.method.settings", migrated: "skills.grants.method.migrated" } as const;
 
 /** The page as Settings shows it, reading the Hub at this window's origin unless given an API. */
@@ -68,7 +75,7 @@ export function SkillGrantsView({ state, actions, runChoice }: {
 }) {
   const t = useT();
   const { language } = usePreferences();
-  const { grants, loading, loadError } = state;
+  const { grants, problems, loading, loadError } = state;
   const when = (value: string) => {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? value
@@ -77,6 +84,7 @@ export function SkillGrantsView({ state, actions, runChoice }: {
   return <div className="skills skill-grants">
     <h2>{t("skills.grants.title")}</h2>
     {runChoice}
+    {problems && problems.length > 0 && <SkillProblems problems={problems} t={t} />}
     <p className="settings-intro">{t("skills.grants.intro")}</p>
     {loading && !grants && <p className="chat-muted" role="status">{t("skills.grants.loading")}</p>}
     {loadError && <div className="skills__error" role="alert">
@@ -88,6 +96,21 @@ export function SkillGrantsView({ state, actions, runChoice }: {
       {grants.map((grant) => <GrantRow key={grant.grantId} grant={grant} state={state} actions={actions} when={when} t={t} />)}
     </ul>}
   </div>;
+}
+
+/** Which skills cannot be used and why, in a sentence each, then who can fix it; the technical line sits under it. */
+function SkillProblems({ problems, t }: { problems: readonly SkillProblem[]; t: TFunction }) {
+  return <section className="skills__problems" role="alert" aria-labelledby="skills-problems-heading">
+    <h3 id="skills-problems-heading">{t("skills.problems.title", { count: problems.length })}</h3>
+    <p className="chat-muted">{t("skills.problems.intro")}</p>
+    <ul className="skills__list">
+      {problems.map((problem) => <li key={`${problem.source}/${problem.name}`} className="skills__row" data-problem={problem.kind}>
+        <p>{t(PROBLEM_KEYS[problem.kind], { name: problem.name, file: problem.file ?? "", line: problem.line ?? 0 })}</p>
+        <p>{t(WHO_KEYS[problem.source], { folder: problem.folder })}</p>
+        <p className="chat-muted"><code>{problem.detail}</code></p>
+      </li>)}
+    </ul>
+  </section>;
 }
 
 function scopeText(grant: SkillGrant, t: TFunction): string {

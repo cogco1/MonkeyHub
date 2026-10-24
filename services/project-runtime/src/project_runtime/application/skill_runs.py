@@ -91,6 +91,142 @@ PIP_PYTHON_ENV = "MONKEYHUB_SKILL_PIP_PYTHON"
 
 Runner = Callable[..., subprocess.CompletedProcess]
 
+# What whoever reads a failure does next, by its code: change the request ("fix_input"), tell the person what only they
+# can give or allow ("ask_person"), or stop and say what happened ("stop"). A refusal says it after its own words; a
+# failed run's record carries it as failureNext and failureNextWords.
+NEXT_STEPS = {
+    "SKILL_INPUT_MISSING": ("fix_input", "Give the input named above and run it again; do not run it again as it was."),
+    "SKILL_RUN_INVALID": ("fix_input", "Change the request as the message says and run it again."),
+    "SKILL_INPUT_TOO_LARGE": ("fix_input", "Give a smaller input and run it again."),
+    "SKILL_OUTPUT_INVALID": ("fix_input", "Strip path separators and '..' from any name taken from the parameters and run it again."),
+    "SKILL_RUN_FAILED": ("fix_input", "Change the input or parameter the message points to and run it again; the same request is not run a third time."),
+    "SKILL_CHANGED": ("fix_input", "Read the skill again, then run it."),
+    "SKILL_PERMISSION_NEEDED": ("ask_person", "Tell the person what it tried; a person allows it in the Hub, or the skill's access is corrected. Do not run it again."),
+    "SKILL_ACCESS_NEEDED": ("ask_person", "A person allows what it needs; ask once for all of it. Do not run it again until they have."),
+    "SKILL_PACKAGES_FAILED": ("ask_person", "Tell the person which package could not be installed; do not run it again."),
+    "SKILL_PACKAGES_UNAVAILABLE": ("ask_person", "Tell the person a Python with pip is needed; do not run it again."),
+    "SKILL_PACKAGES_TIMEOUT": ("ask_person", "Tell the person the packages did not install in time; do not run it again."),
+    "SKILL_NOT_INSTALLED": ("ask_person", "Tell the person the skill folder is missing; the skill is installed by putting its folder in the skill folder."),
+    "SKILL_PACKAGE_INVALID": ("ask_person", "Tell the person what is wrong with the skill's folder; it runs again once they fix it."),
+    "SKILL_INVALID": ("ask_person", "Tell the person what is wrong with the skill's folder; it runs again once they fix it."),
+    "SKILL_NOT_RUNNABLE": ("stop", "This skill has no script to run; follow its instructions by hand instead."),
+    "SKILL_CREDENTIALS_REFUSED": ("stop", "No grant allows this. Do not run it again; a skill that needs a provider asks the Hub to call it."),
+    "SKILL_OUTPUT_MISSING": ("stop", "The skill produced nothing. Do not run it again as it was; tell the person which skill and what it printed."),
+    "SKILL_RUN_TIMEOUT": ("stop", "Do not run it again as it was; tell the person it took too long."),
+    "SKILL_REPEATED_FAILURE": ("stop", "Change the input or parameters, or tell the person; do not run this exact request again."),
+}
+DEFAULT_NEXT = ("stop", "Do not run it again as it was; tell the person what failed.")
+# The same request that failed twice in a row is not run a third time by an Agent within this long.
+REPEAT_WINDOW_S = 30 * 60.0
+REPEATED_FAILURES = 2
+
+
+def next_step(code: str) -> tuple[str, str]:
+    """What to do after a failure with this code: (fix_input | ask_person | stop, in words)."""
+
+    return NEXT_STEPS.get(code, DEFAULT_NEXT)
+
+
+def _with_next(refusal: StudioError) -> StudioError:
+    """A refusal that says, after its own words, what to do next."""
+
+    step, words = next_step(refusal.code)
+    if "Next:" not in refusal.detail:
+        refusal.detail = f"{refusal.detail} Next ({step}): {words}"
+    return refusal
+
+
+def _failure_fields(code: str) -> dict[str, str]:
+    step, words = next_step(code)
+    return {"failureNext": step, "failureNextWords": words}
+
+
+def declared_inputs(manifest: Mapping[str, Any] | None) -> dict[str, str]:
+    """The inputs a skill's manifest names, by input name, each with its description.
+
+    A manifest line reads "name: what it is"; a name may be followed by a note in brackets before the colon.
+    ``params`` is not an input.
+    """
+
+    found: dict[str, str] = {}
+    for item in (manifest or {}).get("inputs") or ():
+        named = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*)[^:：]*[:：](.*)", str(item), re.S)
+        if named and named.group(1) != "params":
+            found.setdefault(named.group(1), named.group(2).strip())
+    return found
+
+
+def declared_outputs(manifest: Mapping[str, Any] | None) -> list[str]:
+    """The file names a skill's manifest says every run writes: a line "name.ext: what it is" with no placeholder in the name."""
+
+    names = []
+    for item in (manifest or {}).get("outputs") or ():
+        head = re.split(r"[:：]", str(item), maxsplit=1)[0].strip()
+        if OUTPUT_PART.fullmatch(head) and "." in head:
+            names.append(head)
+    return list(dict.fromkeys(names))
+
+
+def verify_outputs(manifest: Mapping[str, Any] | None, written: list[str]) -> dict[str, Any]:
+    """Whether the files a run wrote are the ones its manifest says it writes: passed, failed or inconclusive.
+
+    Inconclusive when the manifest names no file without a placeholder. The run's own status does not change: its
+    outputs are kept, and the record says which declared file is not among them.
+    """
+
+    declared = declared_outputs(manifest)
+    if not declared:
+        return {"status": "inconclusive", "declared": [], "missing": []}
+    have = set(written) | {name.rsplit("/", 1)[-1] for name in written}
+    missing = [name for name in declared if name not in have]
+    return {"status": "failed" if missing else "passed", "declared": declared, "missing": missing}
+
+
+def _missing_input(manifest: Mapping[str, Any] | None, given: Mapping[str, Any], stderr: str) -> tuple[str, str] | None:
+    """The input a failed run needed and was not given, when its error names it (KeyError: 'image'), else None."""
+
+    for name, description in declared_inputs(manifest).items():
+        if name not in given and re.search(rf"KeyError: ['\"]{re.escape(name)}['\"]", stderr):
+            return name, description
+    return None
+
+
+def request_digest(skill: skill_library.InstalledSkill, inputs: Mapping[str, Mapping[str, Any]],
+                   parameters: Mapping[str, Any]) -> str:
+    """One request's identity: the skill's code, its inputs and its parameters; a local file counts by its size and time."""
+
+    given = {}
+    for name, ref in sorted(inputs.items()):
+        ref = dict(ref)
+        if ref.get("kind") == "file":
+            try:
+                status = os.stat(str(ref.get("path") or ""))
+                ref |= {"size": status.st_size, "modified": status.st_mtime_ns}
+            except OSError:
+                pass
+        given[name] = ref
+    return hashlib.sha256(json.dumps({"skillId": skill.skill_id, "code": skill.code_sha256, "inputs": given,
+                                      "parameters": dict(parameters)}, sort_keys=True, ensure_ascii=False,
+                                     default=str).encode("utf-8")).hexdigest()
+
+
+def _refuse_repeat(binding: ProjectBinding, skill_id: str, digest: str, now: datetime) -> None:
+    """Refuse an Agent's run of the exact request that has just failed twice in a row."""
+
+    same = [row for row in list_skill_runs(binding, skill_id) if row.get("requestDigest") == digest]
+    last = same[-REPEATED_FAILURES:]
+    if len(last) < REPEATED_FAILURES or any(row.get("status") != "failed" for row in last):
+        return
+    try:
+        newest = datetime.fromisoformat(str(last[-1].get("updatedAt")))
+    except ValueError:
+        return
+    if (now - newest).total_seconds() > REPEAT_WINDOW_S:
+        return
+    codes = ", ".join(dict.fromkeys(str(row.get("failureCode")) for row in last))
+    raise StudioError(409, "SKILL_REPEATED_FAILURE",
+                      f"{skill_id} has just failed twice with exactly this request ({codes}); it is not run a third time.")
+
 
 def _invalid(message: str) -> StudioError:
     return StudioError(422, "SKILL_RUN_INVALID", message)
@@ -537,18 +673,24 @@ def submit_skill_run(binding: ProjectBinding, jobs, skill_id: str, *, version: i
     """
 
     run_command = subprocess.run if runner is None else runner
-    skill = _installed(skill_id)
-    current = skills.latest_version(binding, skill.skill_id)
-    if version is not None and (current is None or current.version != version
-                                or not skills.same_content(current, skill.content)):
-        raise StudioError(409, "SKILL_CHANGED",
-                          f"{skill_id} in the {skill.source} skill folder is not version {version} of this project any more. "
-                          "Read it again before running it.")
-    grant = allowed(binding, skill, grant_id=grant_id, now=now)
+    try:
+        skill = _installed(skill_id)
+        current = skills.latest_version(binding, skill.skill_id)
+        if version is not None and (current is None or current.version != version
+                                    or not skills.same_content(current, skill.content)):
+            raise StudioError(409, "SKILL_CHANGED",
+                              f"{skill_id} in the {skill.source} skill folder is not version {version} of this project any more. "
+                              "Read it again before running it.")
+        grant = allowed(binding, skill, grant_id=grant_id, now=now)
+        parameters_text = json.dumps(dict(parameters), ensure_ascii=False, sort_keys=True)
+        if len(parameters_text.encode("utf-8")) > MAX_PARAMETERS_BYTES:
+            raise _invalid(f"Parameters are at most {MAX_PARAMETERS_BYTES // 1024} KiB of JSON.")
+        digest = request_digest(skill, inputs, parameters)
+        if agent:
+            _refuse_repeat(binding, skill.skill_id, digest, now or datetime.now(timezone.utc))
+    except StudioError as refusal:
+        raise _with_next(refusal)
     row = skill_library.retain(binding, skill, attribution=attribution)
-    parameters_text = json.dumps(dict(parameters), ensure_ascii=False, sort_keys=True)
-    if len(parameters_text.encode("utf-8")) > MAX_PARAMETERS_BYTES:
-        raise _invalid(f"Parameters are at most {MAX_PARAMETERS_BYTES // 1024} KiB of JSON.")
     run_id = RUN_PREFIX + uuid.uuid4().hex[:12]
     try:
         run = binding.repository.create_run(run_id)
@@ -558,6 +700,7 @@ def submit_skill_run(binding: ProjectBinding, jobs, skill_id: str, *, version: i
         "schema": RUN_SCHEMA, "projectId": binding.project_id, "runId": run_id, "status": "queued",
         "skillId": row.skill_id, "version": row.version, "skillVersionRef": row.ref, "codeSha256": row.code_sha256,
         "entry": row.entry, "access": row.access, "grant": grant, "parameters": json.loads(parameters_text),
+        "requestDigest": digest,
         "requestedBy": {"actorId": attribution.actor_id, "authenticated": attribution.authenticated,
                         "origin": attribution.origin, "agent": agent},
         "submittedAt": _now(), "updatedAt": _now(), "statusPath": f"/api/skills/runs/{run_id}",
@@ -571,7 +714,7 @@ def submit_skill_run(binding: ProjectBinding, jobs, skill_id: str, *, version: i
         jobs.submit(candidate_id=run_id, proposal_id=run_id, work=work, kind="skill-run")
     except Exception as exc:
         _retain(binding, run, queued | {"status": "failed", "updatedAt": _now(), "failureCode": "SKILL_RUN_NOT_STARTED",
-                                        "failureReason": str(exc)[:500]})
+                                        "failureReason": str(exc)[:500], **_failure_fields("SKILL_RUN_NOT_STARTED")})
         raise
     return {"runId": run_id, "status": "queued", "statusPath": queued["statusPath"], "grant": queued["grant"]}
 
@@ -588,13 +731,15 @@ def _execute(binding: ProjectBinding, run, row: skills.SkillVersion, queued: dic
     try:
         result = _run_once(binding, run, row, current, inputs, python=python, runner=runner, timeout_s=timeout_s)
     except StudioError as exc:
-        failed = current | {"status": "failed", "updatedAt": _now(), "failureCode": exc.code, "failureReason": exc.detail}
+        failed = current | {"status": "failed", "updatedAt": _now(), "failureCode": exc.code, "failureReason": exc.detail,
+                            **_failure_fields(exc.code)}
         failed |= getattr(exc, "run_details", {})
         _retain(binding, run, failed)
         raise
     except Exception as exc:
         _retain(binding, run, current | {"status": "failed", "updatedAt": _now(), "failureCode": "SKILL_RUN_FAILED",
-                                         "failureReason": f"{type(exc).__name__}: {exc}"[:1500]})
+                                         "failureReason": f"{type(exc).__name__}: {exc}"[:1500],
+                                         **_failure_fields("SKILL_RUN_FAILED")})
         raise
     _retain(binding, run, current | result | {"status": "succeeded", "updatedAt": _now()})
 
@@ -666,6 +811,10 @@ def _run_once(binding: ProjectBinding, run, row: skills.SkillVersion, current: d
                                       f"{row.skill_id} version {row.version} tried what it was not granted: "
                                       + "; ".join(f"{item.get('category')} {item.get('detail')}" for item in denied[:5])
                                       + ". Declare it in the skill's access, and a person allows it in the Hub.")
+            elif (lacking := _missing_input(row.payload.get("manifest"), inputs, _tail(finished.stderr))) is not None:
+                failure = StudioError(422, "SKILL_INPUT_MISSING",
+                                      f"{row.skill_id} version {row.version} needs the input '{lacking[0]}' ({lacking[1][:160]}), "
+                                      f"and this request gave {', '.join(sorted(inputs)) or 'no inputs'}.")
             else:
                 failure = StudioError(422, "SKILL_RUN_FAILED",
                                       f"{row.skill_id} version {row.version} exited with {finished.returncode}: "
@@ -674,7 +823,15 @@ def _run_once(binding: ProjectBinding, run, row: skills.SkillVersion, current: d
             raise failure
         # Registered while the run's folder still exists: it is removed only
         # after every output is in the project.
-        return details | {"outputs": _retain_outputs(binding, run, _read_outputs(outputs_dir))}
+        written = _read_outputs(outputs_dir)
+        if not written:
+            failure = StudioError(422, "SKILL_OUTPUT_MISSING",
+                                  f"{row.skill_id} version {row.version} finished without writing a single file to its outputs. "
+                                  "Its last words: " + (_tail(finished.stdout).strip()[-400:] or "none") + ".")
+            failure.run_details = details
+            raise failure
+        return details | {"outputs": _retain_outputs(binding, run, written),
+                          "verification": verify_outputs(row.payload.get("manifest"), [name for name, _ in written])}
 
 
 # The program that holds a skill to its grant. It runs in the skill's Python,
