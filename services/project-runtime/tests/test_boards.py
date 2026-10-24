@@ -197,6 +197,24 @@ class BoardTests(unittest.TestCase):
             text = [pixels.getpixel((x, y)) for x in range(250, 370) for y in range(250, 280)]
             self.assertTrue(any(b > r + 60 for r, _, b in text), "the note's blue text is drawn")
 
+    def test_a_sentence_typed_inside_a_sketch_is_told_as_that_shapes_note(self) -> None:
+        # The person double-clicks a sketch's rectangle and writes in it: Excalidraw binds that text to the shape.
+        self.save(body([
+            {"id": "frame", "type": "frame", "x": 0, "y": 0, "width": 500, "height": 400, "name": "草图"},
+            {"id": "room", "type": "rectangle", "x": 50, "y": 50, "width": 200, "height": 120, "frameId": "frame",
+             "boundElements": [{"id": "label", "type": "text"}]},
+            {"id": "label", "type": "text", "x": 80, "y": 90, "width": 140, "height": 30, "text": "共享厨房", "fontSize": 20,
+             "frameId": "frame", "containerId": "room"},
+            {"id": "free", "type": "text", "x": 300, "y": 300, "width": 80, "height": 30, "text": "门厅", "fontSize": 20, "frameId": "frame"},
+        ]))
+        view = self.client.post("/api/board/view", json={"projectId": PROJECT_ID, "frameId": "frame", "maxEdge": 400}).json()
+        marks = {row["id"]: row for row in view["annotations"]}
+        self.assertEqual(marks["room"]["note"], "共享厨房", "the shape says what was written in it")
+        self.assertEqual(marks["label"]["containerId"], "room", "and the text says whose it is")
+        self.assertNotIn("note", marks["free"])
+        self.assertNotIn("containerId", marks["free"], "a sentence on the board that is bound to nothing stays a free text")
+        self.assertNotIn("note", marks["frame"] if "frame" in marks else {})
+
     def test_a_board_region_is_read_and_a_bad_request_is_refused(self) -> None:
         empty = self.client.post("/api/board/view", json={"projectId": PROJECT_ID})
         self.assertEqual((empty.status_code, empty.json()["code"]), (422, "BOARD_EMPTY"))
