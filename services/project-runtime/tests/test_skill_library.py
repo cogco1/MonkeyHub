@@ -145,6 +145,20 @@ class SkillLibraryTest(unittest.TestCase):
         write_package(self.user / "typo-skill")
         self.assertIsNotNone(skill_library.installed().find("typo-skill").content)
 
+    def test_a_script_saved_with_a_byte_order_mark_is_a_usable_package_and_stays_as_it_was_written(self):
+        # Windows editors write one at the start of a UTF-8 file; Python runs such a file, and so can the package.
+        write_package(self.user / "bom-skill")
+        script = self.user / "bom-skill" / "scripts" / "run.py"
+        script.write_bytes(b"\xef\xbb\xbf" + RUN.encode("utf-8"))
+        found = skill_library.installed().find("bom-skill")
+        self.assertIsNone(found.error, "a byte order mark is not a syntax error")
+        self.assertIsNotNone(found.content)
+        self.assertTrue(found.content["files"]["scripts/run.py"].startswith("\ufeff"), "the file is kept exactly as written")
+        # A mark does not hide a real mistake.
+        script.write_bytes(b"\xef\xbb\xbfdef run(:\n    pass\n")
+        broken = skill_library.installed().find("bom-skill")
+        self.assertEqual((broken.error["kind"], broken.error["line"]), ("entry_syntax", 1))
+
     def test_an_invalid_package_is_listed_with_why_and_runs_nothing(self):
         write_package(self.user / "bad-name")
         (self.user / "bad-name" / "skill.json").write_text(json.dumps({"name": "Bad Name", "description": "x"}),
