@@ -18,6 +18,7 @@ from project_runtime.jobs import Job
 from project_runtime.application.projection import project_state
 from project_runtime import status
 from project_runtime.main import create_app
+from project_runtime.errors import StudioError
 from project_runtime.settings import StudioSettings
 from project_runtime.status import worktree_graph
 from project_runtime.application import working_draft
@@ -274,6 +275,29 @@ class HeadLineTests(AdmissionFixture):
         response = self.client.post("/api/working-draft/save", json={
             "projectId": PROJECT_ID, "runId": run_id, "baseRevisionSha256": position["revisionSha256"], "label": label})
         self.assertEqual(response.status_code, 200, response.text)
+
+    def test_a_candidate_the_architect_archived_says_so_until_it_is_restored(self):
+        made = self.result(height=2.2)
+        self.assertEqual(self.results(self.graph())[made]["review"], "unreviewed")
+        self.admit({"runId": made, "outcome": "admitted", "label": "B"})
+        for action, review in (("archive", "archived"), ("restore", "unreviewed")):
+            response = self.client.post("/api/candidate-reviews", json={
+                "projectId": PROJECT_ID, "subjectKind": "candidate", "subjectRef": made, "action": action})
+            self.assertEqual(response.status_code, 201, response.text)
+            self.assertEqual(self.results(self.graph())[made]["review"], review)
+        # Only a Candidate is reviewed: a run nobody admitted cannot be archived, and stays unreviewed.
+        other = self.result(height=2.4)
+        refused = self.client.post("/api/candidate-reviews", json={
+            "projectId": PROJECT_ID, "subjectKind": "candidate", "subjectRef": other, "action": "archive"})
+        self.assertEqual(refused.json()["code"], "CANDIDATE_NOT_FOUND")
+        self.assertEqual(self.results(self.graph())[other]["review"], "unreviewed")
+
+        # One broken review record never turns an archived Candidate back into one nobody reviewed.
+        with mock.patch.object(status, "review_judgements", side_effect=StudioError(
+                409, "CANDIDATE_REVIEW_CONFLICT", "A candidate review has competing or incomplete revisions.")):
+            graph = self.graph()
+        self.assertEqual({line["review"] for line in self.results(graph).values()}, {"unknown"})
+        self.assertTrue(any("Candidate reviews could not be read" in warning for warning in graph["warnings"]))
 
     def line_with_two_drafts(self) -> tuple[str, str, str, str, tuple[str, str]]:
         """A → B → C → D: two drafts were built on B before C, also built on B, was continued."""

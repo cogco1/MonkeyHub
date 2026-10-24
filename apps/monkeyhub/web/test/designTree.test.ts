@@ -13,6 +13,7 @@ type Hit = typeof import("../src/features/canvas/sceneHit.ts");
 type Words = typeof import("../src/features/designTree/words.ts");
 type Undo = typeof import("../src/features/designTree/continueUndo.ts");
 type Previews = typeof import("../src/features/designTree/previews.ts");
+type Errors = typeof import("../src/api/project-runtime/error.ts");
 
 async function harness(t: TestContext) {
   const vite = await createServer({
@@ -29,6 +30,7 @@ async function harness(t: TestContext) {
     ...await vite.ssrLoadModule("/src/features/designTree/words.ts") as Words,
     ...await vite.ssrLoadModule("/src/features/designTree/continueUndo.ts") as Undo,
     ...await vite.ssrLoadModule("/src/features/designTree/previews.ts") as Previews,
+    ...await vite.ssrLoadModule("/src/api/project-runtime/error.ts") as Errors,
   };
 }
 
@@ -37,6 +39,30 @@ const translator = (catalog: Readonly<Record<string, string>>) => (key: string, 
   catalog[key]!.replace(/\{(\w+)\}/g, (placeholder, name: string) => name in parameters ? String(parameters[name]) : placeholder);
 
 type Api = Awaited<ReturnType<typeof harness>>;
+
+/**
+ * The Runtime's working-position routes over one fixture, as the client answers them: a refusal is the
+ * StudioApiError the client throws. `writes` keeps each Switch and Undo body that went through.
+ */
+function runtimeOf(api: Api, fixture: ReturnType<Api["createDesignTreeFixture"]>) {
+  const writes: unknown[] = [];
+  const answer = async <T>(body: unknown, work: () => T): Promise<T> => {
+    try {
+      const result = work();
+      writes.push(body);
+      return result;
+    } catch (cause) {
+      if (cause instanceof api.FixtureRefusal) throw new api.StudioApiError({ status: cause.status, code: cause.code, detail: cause.message });
+      throw cause;
+    }
+  };
+  return {
+    writes,
+    async workingDraft() { return fixture.workingDraft(); },
+    switchWorkingDesign: (body: Parameters<typeof fixture.switchWorkingDesign>[0]) => answer(body, () => fixture.switchWorkingDesign(body)),
+    undoWorkingDesign: (body: Parameters<typeof fixture.undoWorkingDesign>[0]) => answer(body, () => fixture.undoWorkingDesign(body)),
+  };
+}
 type Tree = ReturnType<Api["buildGrowthTree"]>;
 type Drawing = ReturnType<Api["layoutGrowthTree"]>;
 
@@ -212,29 +238,28 @@ test("Accept after Continue adds the next Stage on the trunk, from the option ch
   assert.deepEqual(planarProblems(tree, api.layoutGrowthTree(tree)), []);
 });
 
-test("Undo is the same Continue write, onto the exact Current the Continue replaced", async (t) => {
+test("Continue is the Runtime's Switch, and its Undo puts back the exact Current it replaced", async (t) => {
   const api = await harness(t);
   const project = "riverside-library";
   const fixture = api.createDesignTreeFixture();
+  const runtime = runtimeOf(api, fixture);
   const before = api.buildGrowthTree(sourceOf(fixture));
-  // Continue from Massing D as the tree does: read the position, write against its revision.
-  const read = fixture.workingDraft();
-  const request = api.continueRequest(project, { runId: "run-massing-d", branchId: null }, read);
-  assert.deepEqual(request, { projectId: project, runId: "run-massing-d", baseRevisionSha256: "rev-0001", branchId: null });
-  fixture.selectWorkingDraft(request);
-  // The previous Current is recorded from the position that write replaced, before it.
-  const undo = api.continueUndo(read, "run-massing-d");
+  // Continue from Massing D as the tree does: read the position, switch against its revision.
+  const undo = await api.switchHead(runtime, project, { runId: "run-massing-d", branchId: null });
+  assert.deepEqual(runtime.writes.at(-1), { projectId: project, runId: "run-massing-d", baseRevisionSha256: "rev-0001", branchId: null });
+  // The Switch names the Current it replaced: the previous run and its line.
   assert.deepEqual(undo, { runId: "run-s2-layout", branchId: "main", continued: "run-massing-d" });
   assert.deepEqual(api.buildGrowthTree(sourceOf(fixture)).trunk.map((id) => fixture.state.stages.some((stage) => id === `stage:${stage.ref}`) ? "stage" : id),
     ["stage", "candidate:run-massing-d", "current"]);
-  const back = api.undoRequest(project, undo!, fixture.workingDraft());
-  assert.deepEqual(back, { projectId: project, runId: "run-s2-layout", baseRevisionSha256: "rev-0002", branchId: "main" },
-    "the same request shape, the previous run and its line, against the position as read now");
-  fixture.selectWorkingDraft(back!);
+  assert.equal(await api.undoSwitch(runtime, project, undo!), "undone");
+  assert.deepEqual(runtime.writes.at(-1), { projectId: project, previous: { runId: "run-s2-layout", branchId: "main" }, continued: "run-massing-d" });
   assert.equal(fixture.state.head, "run-s2-layout");
   assert.equal(fixture.workingSource().head!.origin, "working-position");
   assert.deepEqual(api.buildGrowthTree(sourceOf(fixture)).trunk, before.trunk, "the trunk is back where it was");
-  // The previous Current's own line goes with it.
+  const revision = fixture.state.revision;
+  assert.equal(await api.undoSwitch(runtime, project, undo!), "undone", "an Undo already written is done");
+  assert.equal(fixture.state.revision, revision, "and writes nothing");
+  // A move made elsewhere offers the Undo its position names; the previous Current's own line goes with it.
   assert.deepEqual(api.continueUndo({ projectId: project, revisionSha256: "rev-x",
     current: { runId: "run-s1-alt", branchId: "line-2", updatedAt: "2026-09-25T00:00:00Z" } }, "run-massing-d"),
   { runId: "run-s1-alt", branchId: "line-2", continued: "run-massing-d" });
@@ -249,17 +274,24 @@ test("no Undo rather than a guess: a line-head Current, a Continue that moved no
   assert.equal(fixture.workingDraft().current, null);
   assert.equal(fixture.workingSource().head!.origin, "branch-head");
   assert.equal(api.continueUndo(fixture.workingDraft(), "run-massing-d"), null, "a Stage head is not a working draft");
+  assert.equal(await api.switchHead(runtimeOf(api, fixture), project, { runId: "run-massing-d", branchId: null }), null,
+    "the Switch from there offers no Undo either");
   // A Continue onto the run Current already stands on changed nothing.
   const same = api.createDesignTreeFixture();
   assert.equal(api.continueUndo(same.workingDraft(), "run-s2-layout"), null);
   // Once Current moves on from the continued run, Undo puts nothing back.
   const moved = api.createDesignTreeFixture();
-  const read = moved.workingDraft();
-  moved.selectWorkingDraft(api.continueRequest(project, { runId: "run-massing-d", branchId: null }, read));
-  const undo = api.continueUndo(read, "run-massing-d")!;
-  assert.ok(api.undoRequest(project, undo, moved.workingDraft()), "right after the Continue it applies");
+  const runtime = runtimeOf(api, moved);
+  const undo = (await api.switchHead(runtime, project, { runId: "run-massing-d", branchId: null }))!;
   moved.selectWorkingDraft({ projectId: project, runId: "run-massing-e", baseRevisionSha256: moved.workingDraft().revisionSha256 ?? null });
-  assert.equal(api.undoRequest(project, undo, moved.workingDraft()), null, "another write moved Current since");
+  assert.equal(await api.undoSwitch(runtime, project, undo), "moved-on", "another write moved Current since");
+  assert.equal(moved.state.head, "run-massing-e");
+  // Unrecorded Modeling edits refuse a Continue in the Runtime.
+  moved.state.localDraft = { source: { projectId: project, stateDigest: "d".repeat(64), sourceRunId: "run-massing-e", sourceStageRef: null },
+    commands: [], attempt: null, updatedAt: "2026-09-25T22:00:00Z" };
+  await assert.rejects(api.switchHead(runtime, project, { runId: "run-massing-d", branchId: null }),
+    (error: { code?: string }) => error.code === api.DESIGN_TREE_UNSYNCED);
+  assert.equal(moved.state.head, "run-massing-e", "nothing moved");
 });
 
 test("the toasts and an Undo refusal read in both languages", async (t) => {
@@ -946,24 +978,22 @@ test("opened, the steps stand on the trunk oldest first, and the superseded draf
   assert.equal(api.buildGrowthTree(sourceOf(fixture)).nodes.get("pending:running:job-roof")!.parent, "current");
 });
 
-test("returning to an earlier step is the existing Continue, and its Undo puts the line back", async (t) => {
+test("returning to an earlier step is the Runtime's Switch, and its Undo puts the line back", async (t) => {
   const api = await harness(t);
   const project = "riverside-library";
   const fixture = api.createDesignTreeFixture(api.unadmittedLineFacts());
   const before = api.buildGrowthTree(sourceOf(fixture), false, { steps: true });
   const target = before.nodes.get("step:run-v2")!;
-  const read = fixture.workingDraft();
-  const request = api.continueRequest(project, { runId: target.runId!, branchId: null }, read);
-  assert.deepEqual(request, { projectId: project, runId: "run-v2", baseRevisionSha256: "rev-0001", branchId: null });
-  fixture.selectWorkingDraft(request);
+  const runtime = runtimeOf(api, fixture);
+  const undo = (await api.switchHead(runtime, project, { runId: target.runId!, branchId: null }))!;
+  assert.deepEqual(runtime.writes.at(-1), { projectId: project, runId: "run-v2", baseRevisionSha256: "rev-0001", branchId: null });
   const returned = api.buildGrowthTree(sourceOf(fixture), false, { steps: true });
   assert.deepEqual(returned.trunk, ["origin", "step:run-site-massing", "step:run-v1", "current"], "Current is V2; its line is shorter");
   assert.equal(returned.drafts.count, 0, "built on V2, the drafts continue Current now: nothing is superseded");
   assert.deepEqual(sourceOf(fixture).worktrees.lines.filter((line) => line.kind === "result").map((line) => line.relation),
     ["ahead", "ahead", "ahead", "ahead"], "the later steps and the drafts are all retained, ahead of Current");
-  const undo = api.continueUndo(read, "run-v2")!;
   assert.deepEqual(undo, { runId: "run-v3-materials", branchId: null, continued: "run-v2" });
-  fixture.selectWorkingDraft(api.undoRequest(project, undo, fixture.workingDraft())!);
+  assert.equal(await api.undoSwitch(runtime, project, undo), "undone");
   assert.deepEqual(api.buildGrowthTree(sourceOf(fixture), false, { steps: true }).trunk, before.trunk, "Undo puts the line back");
   // One earlier step is simply drawn: there is nothing to fold.
   fixture.selectWorkingDraft({ projectId: project, runId: "run-v1", baseRevisionSha256: fixture.workingDraft().revisionSha256 ?? null });
@@ -1115,8 +1145,7 @@ test("#575 rule 4: after a return, the line Current left stays after it, faintly
   const api = await harness(t);
   const project = "riverside-library";
   const fixture = api.createDesignTreeFixture(api.landedChangesFacts());
-  const read = fixture.workingDraft();
-  fixture.selectWorkingDraft(api.continueRequest(project, { runId: "run-roof", branchId: null }, read));
+  await api.switchHead(runtimeOf(api, fixture), project, { runId: "run-roof", branchId: null });
   const source = sourceOf(fixture);
   assert.deepEqual(source.worktrees.later.map((step) => [step.runId, step.baseRunId]), [["run-glazing", "run-roof"], ["run-materials", "run-glazing"]]);
   const tree = api.buildGrowthTree(source);

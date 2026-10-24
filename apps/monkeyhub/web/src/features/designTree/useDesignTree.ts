@@ -2,9 +2,9 @@
  * One project's Design Tree: its retained facts, read together, and the
  * actions that change them through the routes that already own them.
  *
- * Continue is the existing working-position write (`PUT /api/working-draft`,
- * the path `changeEditingBase` takes); its Undo is the same write onto the
- * Current it replaced (continueUndo.ts). Accept as next Stage is the existing
+ * Continue is the Runtime's Switch (`POST /api/working-design/switch`); its
+ * Undo puts back the Current it replaced (`POST /api/working-design/undo`,
+ * continueUndo.ts). Accept as next Stage is the existing
  * `POST /api/candidates/{id}/accept`, on the Working Head only. Restore brings
  * a superseded draft the project cleaned back from its trash
  * (`POST /api/trash/restore`, #575). View changes nothing here. Each act that changed the design confirms itself in a toast
@@ -24,9 +24,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { asStudioApiError, StudioApiError, type StudioClient } from "../../api/project-runtime/client";
 import { useProjectMoved, useProjectStoreInstance, useRuntimeKey } from "../../api/project-runtime/ProjectRuntimeContext";
 import { movedAt, projectStores, type ProjectStoreState } from "../../api/project-runtime/projectStore";
-import type { DesignHistoryDto, WorkingDraftDto, WorkingDraftSelectionDto, WorktreeGraphDto } from "../../api/project-runtime/generated";
+import type { DesignHistoryDto, WorktreeGraphDto } from "../../api/project-runtime/generated";
 import type { DesignTreeSource } from "./contract";
-import { continueRequest, continueUndo, DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED, undoRequest, type ContinueUndo,
+import { DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED, switchHead, undoSwitch, type ContinueUndo,
   type HeadTarget } from "./continueUndo";
 import { buildGrowthTree, continuable, type GrowthTree, type TreeFolds, type TreeNode } from "./model";
 
@@ -122,31 +122,6 @@ export interface DesignTreeData {
 
 const projectChanged = () => new StudioApiError({ status: 0, code: "EDITING_PROJECT_CHANGED",
   detail: "The design tree belongs to another project. Reconnect this project's runtime before continuing." });
-
-/**
- * The one Continue write, from the working position as read now. Modeling's
- * unrecorded edits hold it back; a write that lost a race with another window
- * or an autosave reads again, up to three times. Resolves to the position it
- * wrote over, which names the Current it replaced.
- */
-async function moveHead(studio: StudioClient, projectId: string,
-  request: (position: WorkingDraftDto) => WorkingDraftSelectionDto): Promise<WorkingDraftDto> {
-  for (let attempt = 1; ; attempt += 1) {
-    const position = await studio.workingDraft();
-    if (position.projectId !== projectId) throw projectChanged();
-    if (position.localDraft) {
-      throw new StudioApiError({ status: 0, code: DESIGN_TREE_UNSYNCED, detail: "Unsynced model edits are retained on the current source." });
-    }
-    const body = request(position);
-    try {
-      await studio.selectWorkingDraft(body);
-      return position;
-    } catch (cause) {
-      // Another window or an autosave moved the position between the read and this write.
-      if (asStudioApiError(cause).code !== "WORKING_DRAFT_STALE" || attempt >= 3) throw cause;
-    }
-  }
-}
 
 /** Sources that read every line's history, and those whose Worktree Graph answered before their working source was asked for. */
 const wholeSources = new WeakSet<DesignTreeSource>();
@@ -396,9 +371,8 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
     if (!canContinue || !projectId || !node?.runId || !continuable(node)) return Promise.resolve(false);
     const target: HeadTarget = { runId: node.runId, branchId: node.kind === "stage" ? node.stage!.branchId : null };
     return run({ kind: "continue", node: nodeId }, async () => {
-      const replaced = await moveHead(studio, projectId, (position) => continueRequest(projectId, target, position));
-      // The previous Current is what this write replaced: recorded before it, from the position it read.
-      const undo = continueUndo(replaced, target.runId);
+      // The Runtime refuses it while Modeling holds unrecorded edits, and names the Current it replaced.
+      const undo = await switchHead(studio, projectId, target);
       return { outcome: { kind: "continued", node: nodeId }, toast: { kind: "continued", node, undo: undo !== null, refusal: null }, undo,
         moved: target.runId };
     });
@@ -436,13 +410,13 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
     const last = undoable.current;
     if (!last || !canContinue || !projectId) return Promise.resolve(false);
     return run({ kind: "undo" }, async () => {
-      await moveHead(studio, projectId, (position) => {
-        const request = undoRequest(projectId, last, position);
-        if (!request) {
-          throw new StudioApiError({ status: 0, code: DESIGN_TREE_UNDO_MOVED, detail: "Current moved on after the Continue; nothing was undone." });
-        }
-        return request;
-      });
+      const outcome = await undoSwitch(studio, projectId, last);
+      if (outcome === "moved-on") {
+        throw new StudioApiError({ status: 0, code: DESIGN_TREE_UNDO_MOVED, detail: "Current moved on after the Continue; nothing was undone." });
+      }
+      if (outcome === "unsynced") {
+        throw new StudioApiError({ status: 0, code: DESIGN_TREE_UNSYNCED, detail: "Unsynced model edits are retained on the current source." });
+      }
       return { outcome: null, toast: { kind: "undone" }, undo: null, moved: last.runId };
     });
   }, [canContinue, projectId, run, studio]);

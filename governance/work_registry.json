@@ -408,6 +408,57 @@
             "tools/tests/test_archcheck_ui_entries.py"
           ],
           "depends_on": []
+        },
+        {
+          "id": "review-moves",
+          "status": "active",
+          "branch": "claude/300-review-moves",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-review-moves",
+          "base_ref": "bc41a4caecb79198c2b1ea15b755a59169e33617",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Step 1-3 of the three-channel shell: the Worktree Graph says each result's review disposition (unreviewed, rejected, archived), so the attention producers stop asking about an archived result, and GET /api/working-design/moves lists the Continue events newest first for the history page (2-6). The regenerated project-runtime client waits for GH-185 to release it.",
+          "modules": [
+            "project_runtime.binding",
+            "project_runtime.candidate"
+          ],
+          "write_scope": [
+            "services/project-runtime/src/project_runtime/api/dto/runtime.py",
+            "services/project-runtime/src/project_runtime/api/routes/__init__.py",
+            "services/project-runtime/src/project_runtime/status.py"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "history",
+          "status": "active",
+          "branch": "claude/300-history",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-history",
+          "base_ref": "97a1eb2fa712a4a098002dafb7c404936a33bdf3",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "2-6 on top of GH-300/review-moves (#693) and GH-300/shell-tests: POST /api/working-design/switch and /undo in the Runtime (the web page and the attention executor share them; continueUndo.ts becomes a thin shell), and the history page's content (features/designHistory/) that the shell's side panel mounts. Stage rows follow decision 7's recommendation. GH-300/review-moves hands over the working-design route, its DTOs and the working-draft application here; whichever merges second reconciles the claims.",
+          "modules": [
+            "project_runtime.binding",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/api/project-runtime/client.ts",
+            "apps/monkeyhub/web/src/app/workingHead.ts",
+            "apps/monkeyhub/web/src/features/designHistory/",
+            "apps/monkeyhub/web/src/features/designTree/continueUndo.ts",
+            "apps/monkeyhub/web/src/features/designTree/fixture.ts",
+            "apps/monkeyhub/web/src/features/designTree/useDesignTree.ts",
+            "apps/monkeyhub/web/test/designTree.test.ts",
+            "apps/monkeyhub/web/test/historyPage.browser.mjs",
+            "apps/monkeyhub/web/test/historyRows.test.ts",
+            "apps/monkeyhub/web/test/workingCopy.browser.mjs",
+            "apps/monkeyhub/web/test/workingHead.test.ts",
+            "services/project-runtime/src/project_runtime/api/dto/working_draft.py",
+            "services/project-runtime/src/project_runtime/api/routes/working_design.py",
+            "services/project-runtime/src/project_runtime/application/working_draft.py"
+          ],
+          "depends_on": []
         }
       ]
     }

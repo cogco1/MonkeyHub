@@ -34,6 +34,7 @@ from . import (
     synchronization,
     validation,
     working_draft,
+    working_design,
 )
 
 router = APIRouter()
@@ -66,5 +67,6 @@ router.include_router(validation.router)
 router.include_router(events.router)
 router.include_router(synchronization.router)
 router.include_router(working_draft.router)
+router.include_router(working_design.router)
 
 __all__ = ["router"]
