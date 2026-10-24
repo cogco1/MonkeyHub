@@ -1,4 +1,5 @@
 import { workspaceFixture } from "./workspaceFixture.mjs";
+import { cmd, waitForCommandLabel } from "./commandLocator.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer as createHttpServer } from "node:http";
@@ -175,7 +176,7 @@ async function reportedLoad(artifact, status) {
 }
 /** Open the view tools if a step has since opened the panel that closes them. #352: they are the bar's More. */
 async function openViewTools() {
-  const toggle = page.locator('button[aria-controls="stage-more-menu"]');
+  const toggle = cmd(page, "view.menu.toggle", { arg: "modeling_more", includeHidden: true });
   if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
 }
 
@@ -189,10 +190,10 @@ async function openDrawingFromBoard(drawing, pageIndex = 0) {
 
 /** Open the versions panel if a step has since opened the tools that close it. */
 async function openVersions() {
-  const toggle = page.locator('button[aria-controls="stage-versions-panel"]');
+  const toggle = cmd(page.locator(".project-bar"), "design.go_to_step.versions", { includeHidden: true });
   if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
-  const retained = page.locator('#stage-versions-panel details').filter({ has: page.getByText("Candidates and existing history", { exact: true }) });
-  if (await retained.count() && await retained.getAttribute("open") === null) await retained.locator("summary").click();
+  const retained = page.locator('#stage-versions-panel details').filter({ has: cmd(page, "view.disclosure.toggle", { arg: "candidates", includeHidden: true }) });
+  if (await retained.count() && await retained.getAttribute("open") === null) await cmd(retained, "view.disclosure.toggle", { arg: "candidates" }).click();
 }
 
 async function rendered(id, fileName = `${id}.3dm`) {
@@ -211,7 +212,7 @@ async function diagnosticRendered(candidate) {
 }
 /** The architect's explicit "Continue from here" on the model on screen. */
 async function continueFromViewed(runId) {
-  await page.locator(".stage-decision .editing-base").getByRole("button", { name: "Continue from here", exact: true }).click();
+  await cmd(page.locator(".stage-decision .editing-base"), "design.go_to_step.continue").click();
   await until(snapshot, (value) => value.editingRunId === runId && !value.changingBase, `Continue did not make ${runId} the editing base`);
 }
 /**
@@ -221,7 +222,9 @@ async function continueFromViewed(runId) {
 async function stageAsBase(stage, label, runId) {
   const before = await snapshot(), writes = requests.filter((row) => row.method !== "GET" && !row.name.startsWith("/api/events/")).length;
   await openVersions();
-  await page.locator(`[data-design-stage="${stage}"]`).getByRole("button", { name: label, exact: true }).click();
+  const stageButton = cmd(page.locator(`[data-design-stage="${stage}"]`), "design.go_to_step.stage");
+  await waitForCommandLabel(stageButton, label);
+  await stageButton.click();
   await rendered(runId);
   const viewed = await snapshot();
   assert.equal(requests.filter((row) => row.method !== "GET" && !row.name.startsWith("/api/events/")).length, writes,
@@ -576,9 +579,9 @@ try {
     const NOT_SAVED = "This editing choice could not be saved in this browser; it applies to this tab only.";
     const footer = () => page.locator(".editing-base");
     const notices = () => footer().locator(".editing-base__notice").allInnerTexts();
-    const continueButton = () => footer().getByRole("button", { name: "Continue from here", exact: true });
-    const undoButton = () => page.getByRole("button", { name: "Undo model", exact: true });
-    const rectangle = () => page.locator('button[data-tool-icon="rectangle"]');
+    const continueButton = () => cmd(footer(), "design.go_to_step.continue");
+    const undoButton = () => cmd(page, "draft.tools.undo");
+    const rectangle = () => cmd(page, "draft.tools.rectangle");
     const baseWrites = () => requests.filter((row) => row.method === "PUT" && row.name === "/api/working-draft");
     const storedBases = () => page.evaluate(() => JSON.parse(localStorage.getItem("archflow-studio.user-preferences")).editingBases);
     const settled = (runId) => until(snapshot, (value) => value.editingRunId === runId && !value.changingBase,
@@ -609,10 +612,10 @@ try {
       await shown(VIEW_ONLY, "The drawing tool's refusal is not beside Continue");
       assert.equal(await rectangle().getAttribute("aria-pressed"), "false", "A drawing tool must not arm on a viewed candidate");
       await page.keyboard.press("l"); await page.keyboard.press("c");
-      for (const icon of ["line", "circle"]) assert.equal(await page.locator(`button[data-tool-icon="${icon}"]`).getAttribute("aria-pressed"), "false");
-      await page.locator('button[data-model-tool="pushPull"]').click();
+      for (const icon of ["line", "circle"]) assert.equal(await cmd(page, `draft.tools.${icon}`).getAttribute("aria-pressed"), "false");
+      await cmd(page, "draft.tools.push_pull").click();
       await page.keyboard.press("m");
-      for (const tool of ["pushPull", "move"]) assert.equal(await page.locator(`button[data-model-tool="${tool}"]`).getAttribute("aria-pressed"), "false");
+      for (const tool of ["push_pull", "move"]) assert.equal(await cmd(page, `draft.tools.${tool}`).getAttribute("aria-pressed"), "false");
       await page.evaluate(() => window.__candidatePreview.pick({ objectName: "fixture-floor", object: { parent: null }, userStrings: {} }));
       await until(snapshot, (value) => value.picked === "fixture-floor", "Picking on a viewed model must stay available");
       await page.keyboard.press("Delete");
@@ -699,14 +702,15 @@ try {
     // #302: the refusal above offers one click that records the edits and asks for the same Continue again.
     await step("Record edits and continue records the draft from its own base, then retries the refused Continue", async () => {
       const sync = nextDelete = prepare("view-base-sync");
-      const record = footer().getByRole("button", { name: "Record edits and continue", exact: true });
+      const record = cmd(footer(), "draft.record.continue");
       await record.waitFor();
       if (screenshots) {
         await page.screenshot({ path: path.join(screenshots, "record-and-continue.png") });
         // The same refusal and offer in Chinese, asked for again so the notice is in Chinese too.
         await page.evaluate(() => window.__workspaceFixture.setLanguage("zh-CN"));
-        await footer().getByRole("button", { name: "从这里继续", exact: true }).click();
-        await footer().getByRole("button", { name: "记录修改并继续", exact: true }).waitFor();
+        await waitForCommandLabel(cmd(footer(), "design.go_to_step.continue"), "从这里继续");
+        await cmd(footer(), "design.go_to_step.continue").click();
+        await waitForCommandLabel(cmd(footer(), "draft.record.continue"), "记录修改并继续");
         await page.screenshot({ path: path.join(screenshots, "record-and-continue-zh.png") });
         await page.evaluate(() => window.__workspaceFixture.setLanguage("en"));
         await continueButton().click();
@@ -756,7 +760,7 @@ try {
       await page.evaluate(() => window.__candidatePreview.edit({ kind: "delete", elementId: "fixture-floor" }));
       await until(() => workingDraft.localDraft?.commands?.length ?? 0, (count) => count === 1, "The local edit was not kept in the working draft");
       const sync = nextDelete = prepare("view-base-adopted-sync");
-      await page.getByRole("button", { name: "Record", exact: true }).click();
+      await cmd(page, "draft.record.save").click();
       await until(() => requests.findLast((row) => row.name === "/api/proposals/delete"), (row) => row?.body.sourceRunId === c1.candidateId,
         "Sync did not submit from the architect's base");
       await until(snapshot, (value) => value.runs[sync.candidateId]?.job.status === "ready", "Sync did not start its candidate");
@@ -785,7 +789,7 @@ try {
     };
     const syncWhileLooking = async (id, base) => {
       const sync = nextDelete = prepare(id);
-      await page.getByRole("button", { name: "Record", exact: true }).click();
+      await cmd(page, "draft.record.save").click();
       await until(() => requests.findLast((row) => row.name === "/api/proposals/delete"), (row) => row?.body.sourceRunId === base,
         "Sync did not submit from the architect's base");
       await until(snapshot, (value) => value.runs[sync.candidateId]?.job.status === "ready", "Sync did not start its candidate");
@@ -918,7 +922,7 @@ try {
     // Opening a chat result only shows it; editing it follows the explicit Continue.
     const notice = () => page.locator(".stage-decision .editing-base .editing-base__notice");
     const continueFromView = async (runId) => {
-      await page.locator(".stage-decision .editing-base").getByRole("button", { name: "Continue from here", exact: true }).click();
+      await cmd(page.locator(".stage-decision .editing-base"), "design.go_to_step.continue").click();
       await until(snapshot, value => value.editingRunId === runId && !value.changingBase, "Continue did not make the viewed candidate the editing base");
     };
 
@@ -926,12 +930,12 @@ try {
       const value = delivery("delivery-continue"); await open(value);
       const before = await snapshot();
       assert.notEqual(before.editingRunId, value.native.runId, "Opening a chat result only shows it");
-      const rectangle = page.locator('button[data-tool-icon="rectangle"]');
+      const rectangle = cmd(page, "draft.tools.rectangle");
       await rectangle.click();
       await until(() => notice().allInnerTexts(), texts => texts.includes(VIEW_ONLY), "The refusal was not shown beside Continue");
       assert.equal(await rectangle.getAttribute("aria-pressed"), "false", "A drawing tool must not arm on a viewed candidate");
       await page.keyboard.press("p");
-      assert.equal(await page.locator('button[data-model-tool="pushPull"]').getAttribute("aria-pressed"), "false");
+      assert.equal(await cmd(page, "draft.tools.push_pull").getAttribute("aria-pressed"), "false");
       const refused = await page.evaluate(() => {
         try { window.__candidatePreview.edit({ kind: "delete", elementId: "fixture-floor" }); return null; }
         catch (error) { return error.message; }
@@ -946,7 +950,7 @@ try {
       await page.keyboard.press("Escape");
       await edit();
       const sync = nextDelete = prepare("delivery-continue-sync");
-      await page.getByRole("button", { name: "Record", exact: true }).click();
+      await cmd(page, "draft.record.save").click();
       const submitted = await until(() => requests.findLast(row => row.name === "/api/proposals/delete"), Boolean, "Sync did not submit its edit");
       assert.equal(submitted.body.sourceRunId, value.native.runId, "Sync is based on the continued run");
       assert.equal(submitted.body.stateDigest, stateDigest(value.native.runId));
@@ -1252,8 +1256,8 @@ try {
 
   await step("S0 requires one explicit confirmation and cold reopen restores the committed head", async () => {
     assert.equal(stages.size, 0);
-    assert.equal(await page.getByText("Existing models and past runs · not yet assigned to a Stage", { exact: true }).count(), 1);
-    await page.getByRole("button", { name: "Accept as S0", exact: true }).click();
+    assert.equal(await cmd(page, "view.old_results.toggle", { includeHidden: true }).count(), 1);
+    await cmd(page, "stage.accept.initial").click();
     await until(snapshot, (value) => value.history?.stages.length === 1, "S0 was not confirmed");
     s0 = [...stages.values()][0];
     assert.deepEqual(s0.modelSource, currentHome.modelSource);
@@ -1270,7 +1274,7 @@ try {
     await stageAsBase("S0", "S0 · Current commit", currentHome.runId);
     const continueReadStart = requests.length;
     await openVersions();
-    await page.locator('[data-preview-candidate="history-a"]').getByRole("button", { name: "Continue from here", exact: true }).click();
+    await cmd(page.locator('[data-preview-candidate="history-a"]'), "design.go_to_step.continue").click();
     await rendered(historyA.candidateId);
     await until(snapshot, (value) => value.editingRunId === historyA.candidateId && !value.changingBase,
       "Continuing the retained candidate did not finish switching its editing context");
@@ -1286,7 +1290,7 @@ try {
   });
 
   await step("failed acceptance preserves the preview; successful acceptance appends S1 on main", async () => {
-    const accept = page.getByRole("button", { name: "Accept as next Stage", exact: true });
+    const accept = cmd(page, "stage.accept.next");
     await accept.waitFor(); acceptFailure = true; await accept.click();
     await until(snapshot, (value) => value.historyError?.includes("Candidate kept"), "Acceptance failure was hidden");
     await rendered(historyA.candidateId); assert.equal(stages.size, 1);
@@ -1320,17 +1324,17 @@ try {
     if (process.env.BOARD_NOTE_SCREENSHOTS) {
       await mkdir(process.env.BOARD_NOTE_SCREENSHOTS, { recursive: true });
       const versionsPanel = page.locator("#stage-versions-panel");
-      if (await versionsPanel.count()) await versionsPanel.getByRole("button", { name: "Close", exact: true }).click();
+      if (await versionsPanel.count()) await cmd(versionsPanel, "design.go_to_step.close_versions").click();
       await page.evaluate(() => window.__workspaceFixture.setLanguage("zh-CN"));
-      await page.getByRole("group", { name: "画板意见针对的模型版本", exact: true }).getByRole("button", { name: "只查看", exact: true }).waitFor();
+      await waitForCommandLabel(cmd(page.getByRole("group", { name: "画板意见针对的模型版本", exact: true }), "design.go_to_step.view_only"), "只查看");
       await page.screenshot({ path: path.join(process.env.BOARD_NOTE_SCREENSHOTS, "board-note-asks-zh.png") });
       await page.evaluate(() => window.__workspaceFixture.setLanguage("en"));
-      await choice.getByRole("button", { name: "View only", exact: true }).waitFor();
+      await waitForCommandLabel(cmd(choice, "design.go_to_step.view_only"), "View only");
     }
     await delay(200);
     assert.equal((await snapshot()).editingRunId, before.editingRunId, "Asking moves nothing");
     assert.equal(intentCount(), intents, "Nothing is submitted before the architect chooses");
-    await choice.getByRole("button", { name: "View only", exact: true }).click();
+    await cmd(choice, "design.go_to_step.view_only").click();
     await rendered(currentHome.runId);
     await choice.waitFor({ state: "detached" });
     const after = await snapshot();
@@ -1342,7 +1346,7 @@ try {
 
   await step("Continue from here on a Board note makes its model the base, submits it, and a Stage restores the base", async () => {
     const choice = await sendBoardNote("Close the west porch");
-    await choice.getByRole("button", { name: "Continue from here", exact: true }).click();
+    await cmd(choice, "design.go_to_step.continue").click();
     await until(snapshot, (value) => value.editingRunId === currentHome.runId && value.sourceStageRef === s0.stageRef && !value.changingBase,
       "Continue from here did not make the note's model the editing base");
     const intent = await until(() => requests.findLast((row) => row.name === "/api/intents" && row.body.utterance === "Close the west porch"),
@@ -1374,9 +1378,9 @@ try {
     assert.equal(intent.body.sourceRunId, currentHome.runId); assert.equal(intent.body.sourceStageRef, s0.stageRef);
     assert.equal(branches.size, 1);
     await openVersions();
-    await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "New branch from here" }).click();
+    await cmd(page.locator('[data-design-stage="S0"]'), "design.go_to_step.fork").click();
     await page.getByPlaceholder("alternate-layout").fill("alternate");
-    await page.getByRole("button", { name: "Create branch", exact: true }).click();
+    await cmd(page, "design.go_to_step.create_branch").click();
     await until(snapshot, (value) => value.history?.branchId === "alternate", "Named branch was not selected");
     assert.equal(branches.get("main").headStageRef, s1.stageRef);
     assert.equal(branches.get("alternate").headStageRef, s0.stageRef);
@@ -1425,7 +1429,7 @@ try {
     const checkB = page.locator('[data-preview-candidate="history-b"] input[type="checkbox"]');
     const checkC = page.locator('[data-preview-candidate="history-c"] input[type="checkbox"]');
     const checkOtherStage = page.locator('[data-preview-candidate="history-other-stage"] input[type="checkbox"]');
-    const combine = page.getByRole("button", { name: "Combine selected candidates and preview", exact: true });
+    const combine = cmd(page, "design.go_to_step.combine");
     await checkOtherStage.check();
     assert.equal(await checkB.isDisabled(), true, "Candidates from S0 cannot join a selected candidate from S1");
     assert.equal(await checkC.isDisabled(), true);
@@ -1465,15 +1469,15 @@ try {
       const before = await state();
       const requestStart = requests.length;
       // #352: the view tools are the bar's More; tracing paper is in the tools' own More.
-      for (const [selector, panel, label, opener] of [
-        ['button[aria-controls="stage-more-menu"]', '#stage-more-menu', 'View tools'],
-        ['button[aria-controls="annotation-tools"]', '#annotation-tools', 'Tracing Paper', 'button[aria-controls="model-tools-more"]'],
-        ['button[data-tool-icon="select"]', null, 'Select'],
+      for (const [[command, arg], panel, label, opener] of [
+        [['view.menu.toggle', 'modeling_more'], '#stage-more-menu', 'View tools'],
+        [['view.markup_tools.tracing_paper'], '#annotation-tools', 'Tracing Paper', ['view.menu.toggle', 'model_tools_more']],
+        [['draft.tools.select'], null, 'Select'],
       ]) {
         await openVersions();
         await page.locator('#stage-versions-panel').waitFor();
-        if (opener) await page.locator(opener).click();
-        const button = page.locator(selector);
+        if (opener) await cmd(page, opener[0], { arg: opener[1] }).click();
+        const button = cmd(page, command, { arg });
         await assertReachable(button, label);
         const separation = await page.evaluate(() => {
           const history = document.querySelector('#stage-versions-panel').getBoundingClientRect();
@@ -1492,7 +1496,7 @@ try {
         assert.deepEqual(await state(), before, `${label} changed camera or source at ${size.width}px`);
       }
       await openVersions();
-      const close = page.locator('#stage-versions-panel').getByRole('button', { name: 'Close', exact: true });
+      const close = cmd(page.locator('#stage-versions-panel'), 'design.go_to_step.close_versions');
       await assertReachable(close, 'Close versions');
       await close.click();
       assert.equal(await page.locator('#stage-versions-panel').count(), 0);
@@ -1511,13 +1515,13 @@ try {
     assert.equal(await page.getByRole("button", { name: "Generate elevation", exact: true }).count(), 0);
     assert.equal(await page.getByRole("combobox", { name: "Elevation direction", exact: true }).count(), 0);
     assert.equal(await page.locator(".stage-drawing-error").count(), 0);
-    for (const view of ["Top", "Front", "Right", "Isometric", "Perspective"]) {
-      assert.equal(await viewTools.getByRole("button", { name: view, exact: true }).count(), 1,
+    for (const [view, camera] of [["Top", "top"], ["Front", "front"], ["Right", "right"], ["Isometric", "iso"], ["Perspective", "perspective"]]) {
+      assert.equal(await cmd(viewTools, `view.model_camera.${camera}`).count(), 1,
                    `${view} must remain a standard camera view`);
     }
-    await viewTools.getByRole("button", { name: "Fit selected", exact: true }).waitFor();
+    await cmd(viewTools, "view.model_camera.fit_selected").waitFor();
     const requestStart = requests.length;
-    await viewTools.getByRole("button", { name: "Isometric", exact: true }).click();
+    await cmd(viewTools, "view.model_camera.iso").click();
     assert.deepEqual(requests.slice(requestStart).filter((row) => row.method !== "GET" && !row.name.startsWith("/api/events/")).map((row) => row.name), [],
                      "A standard camera view must not submit project changes");
     await rendered(historyA.candidateId);
@@ -1544,18 +1548,18 @@ try {
     await until(async () => page.locator(".document-error").count(), (value) => value > 0, "Autosave failure did not remain visible");
     // Viewing S0 saves and moves nothing (#302); Continue from here is the switch the failed save refuses.
     await openVersions();
-    await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0", exact: true }).click();
+    await cmd(page.locator('[data-design-stage="S0"]'), "design.go_to_step.stage").click();
     await rendered(currentHome.runId);
     assert.equal((await snapshot()).editingRunId, historyA.candidateId);
     // Dismiss the overlay before reaching the drawing's autosave error; a longer retained history may cover it.
-    await page.locator("#stage-versions-panel").getByRole("button", { name: "Close", exact: true }).click();
-    await page.locator(".stage-decision .editing-base").getByRole("button", { name: "Continue from here", exact: true }).click();
+    await cmd(page.locator("#stage-versions-panel"), "design.go_to_step.close_versions").click();
+    await cmd(page.locator(".stage-decision .editing-base"), "design.go_to_step.continue").click();
     await delay(150);
     assert.equal((await snapshot()).editingRunId, historyA.candidateId, "A drawing that could not be saved keeps the editing base");
     assert.equal((await snapshot()).documentView.revisionRef, lastDrawing.revisionRef);
     assert.equal(await page.locator("#document-comment").inputValue(), "Keep the terrace line.");
     annotationFailure = false;
-    await page.locator(".document-error button").first().click();
+    await cmd(page.locator(".document-error"), "view.notice.retry", { arg: "document_save" }).first().click();
     await until(async () => page.locator(".document-error").count(), (value) => value === 0, "Retry did not save the retained draft");
     await continueFromViewed(currentHome.runId);
     assert.equal((await snapshot()).documentView.runId, currentHome.runId);
@@ -1609,7 +1613,8 @@ try {
     await openVersions();
     await view(alternate);
     await openVersions();
-    const stageButton = page.locator('[data-design-stage="S1"]').getByRole("button", { name: "S1 · Current commit", exact: true });
+    const stageButton = cmd(page.locator('[data-design-stage="S1"]'), "design.go_to_step.stage");
+    await waitForCommandLabel(stageButton, "S1 · Current commit");
     assert.equal(await stageButton.getAttribute("aria-pressed"), "false", "Sharing the Stage run is insufficient to claim its pinned model is shown");
     await page.evaluate(() => window.__candidatePreview.changeBase(null)); await rendered(pinned.runId);
     assert.deepEqual((await snapshot()).loadedModelSource, pinned.modelSource);
@@ -1618,8 +1623,8 @@ try {
     assert.deepEqual((await snapshot()).editingModelSource, pinned.modelSource);
     await until(async () => page.locator('[data-preview-candidate="history-a"]').count(), (value) => value === 0,
       "Other files from an accepted candidate run must not become new candidates");
-    const legacy = page.locator("details").filter({ has: page.getByText("Existing models and past runs · not yet assigned to a Stage", { exact: true }) });
-    await legacy.locator("summary").first().click();
+    const legacy = page.locator("details").filter({ has: cmd(page, "view.old_results.toggle", { includeHidden: true }) });
+    await cmd(legacy, "view.old_results.toggle").first().click();
     assert.ok(await legacy.getByText(ungrouped.fileName, { exact: true }).count() > 0,
       "An ungrouped file sharing an accepted Stage's run must remain available as a legacy model");
   });
@@ -1666,7 +1671,7 @@ try {
     await until(() => [...annotations.values()].some((item) => item.drawingRevisionRef === newer.revisionRef && item.comment === "Separate newer drawing note."), Boolean, "The new drawing draft was not saved separately");
     await picker.selectOption(older.revisionRef);
     await until(async () => page.locator("#document-comment").inputValue(), (value) => value === "Keep the older drawing note.", "Returning to the old revision lost its own note");
-    await page.getByRole("button", { name: "Submit page note", exact: true }).click();
+    await cmd(page, "markup.hand_to_ai.submit_page_note").click();
     await until(() => requests.findLast((row) => row.name === "/api/intents" && row.body?.utterance === "Keep the older drawing note."), Boolean, "The old drawing never reached the real App intent boundary");
     const sent = requests.findLast((row) => row.name === "/api/intents").body;
     assert.deepEqual(sent.modelSource, source);
@@ -1853,12 +1858,12 @@ try {
         { key: "width", value: 12, unit: "m", expr: null, inputs: [], epistemicStatus: "authored", lockAuthority: null },
       ]);
       await page.reload({ waitUntil: "domcontentloaded" }); await rendered(currentHome.runId);
-      await openViewTools(); await page.getByRole("button", { name: "Parameter locks", exact: true }).click();
+      await openViewTools(); await cmd(page, "component.lock_params.open").click();
       let panel = page.getByRole("region", { name: "Parameter locks", exact: true });
-      assert.equal(await panel.getByRole("button", { name: "Lock selected", exact: true }).isDisabled(), true);
+      assert.equal(await cmd(panel, "component.lock_params.lock").isDisabled(), true);
       await panel.getByRole("checkbox", { name: /height/ }).check();
       const candidate = nextLockCandidate = prepare("parameter-locked");
-      await panel.getByRole("button", { name: "Lock selected", exact: true }).click();
+      await cmd(panel, "component.lock_params.lock").click();
       await until(snapshot, value => value.runs[candidate.candidateId]?.job.status === "ready", "Lock action did not start the retained candidate");
       const request = requests.findLast(row => row.name === "/api/proposals/parameter-locks");
       assert.deepEqual(request.body.parameterKeys, ["height"]);
@@ -1867,13 +1872,13 @@ try {
       await continueFromViewed(candidate.candidateId);
       assert.equal(stages.size, 1);
       await page.reload({ waitUntil: "domcontentloaded" }); await rendered(candidate.candidateId);
-      await openViewTools(); await page.getByRole("button", { name: "Parameter locks", exact: true }).click();
+      await openViewTools(); await cmd(page, "component.lock_params.open").click();
       panel = page.getByRole("region", { name: "Parameter locks", exact: true });
       assert.match(await panel.locator("label").filter({ hasText: "height" }).innerText(), /height\s+3\.6 m\s+Locked/);
       assert.match(await panel.locator("label").filter({ hasText: "width" }).innerText(), /Editable/);
       await panel.getByRole("checkbox", { name: /height/ }).check();
       const unlocked = nextLockCandidate = prepare("parameter-unlocked");
-      await panel.getByRole("button", { name: "Unlock selected", exact: true }).click();
+      await cmd(panel, "component.lock_params.unlock").click();
       await until(snapshot, value => value.runs[unlocked.candidateId]?.job.status === "ready", "Unlock action did not start the retained candidate");
       await complete(unlocked); await diagnosticRendered(unlocked);
       await continueFromViewed(unlocked.candidateId);
@@ -1882,11 +1887,11 @@ try {
     });
 
     await step("a delayed lock proposal cannot start a candidate after changing the editing base", async () => {
-      await openViewTools(); await page.getByRole("button", { name: "Parameter locks", exact: true }).click();
+      await openViewTools(); await cmd(page, "component.lock_params.open").click();
       const panel = page.getByRole("region", { name: "Parameter locks", exact: true });
       await panel.getByRole("checkbox", { name: /height/ }).check();
       lockProposalGate = deferred(); const candidate = nextLockCandidate = prepare("parameter-stale");
-      await panel.getByRole("button", { name: "Lock selected", exact: true }).click();
+      await cmd(panel, "component.lock_params.lock").click();
       await until(() => lockProposalGate.requested, Boolean, "Lock proposal was not submitted");
       await page.evaluate(run => window.__candidatePreview.changeBase(run), currentHome.runId);
       await until(snapshot, value => value.editingRunId === currentHome.runId && !value.changingBase, "Base did not change during the held lock proposal");
@@ -1898,37 +1903,37 @@ try {
 
     await step("unresolved, browsed and local models cannot change the editing base's parameter locks", async () => {
       await view(currentHome);
-      await openViewTools(); await page.getByRole("button", { name: "Parameter locks", exact: true }).click();
+      await openViewTools(); await cmd(page, "component.lock_params.open").click();
       const panel = page.getByRole("region", { name: "Parameter locks", exact: true });
       await page.keyboard.press("Escape");
       assert.equal(await panel.count(), 0);
-      await page.getByRole("button", { name: "Parameter locks", exact: true }).click();
+      await cmd(page, "component.lock_params.open").click();
       await panel.getByRole("checkbox", { name: /height/ }).check();
       const requestCount = requests.filter(row => row.name === "/api/proposals/parameter-locks").length;
       const alternative = makeArtifact("parameter-lock-other"); allArtifacts.push(alternative);
       const held = deferred(); stateGates.set(alternative.runId, held);
       await view(alternative);
-      assert.equal(await panel.getByRole("button", { name: "Lock selected", exact: true }).isDisabled(), true);
+      assert.equal(await cmd(panel, "component.lock_params.lock").isDisabled(), true);
       held.resolve(); stateGates.delete(alternative.runId);
       await view(currentHome);
-      await until(() => panel.getByRole("button", { name: "Lock selected", exact: true }).isEnabled(), Boolean, "Returning to the edit base did not re-enable locking");
+      await until(() => cmd(panel, "component.lock_params.lock").isEnabled(), Boolean, "Returning to the edit base did not re-enable locking");
       await page.evaluate(bytes => {
         const transfer = new DataTransfer(); transfer.items.add(new File([new Uint8Array(bytes)], "local-parameters.3dm"));
         document.querySelector(".viewport-host").dispatchEvent(new DragEvent("drop", { bubbles: true, dataTransfer: transfer }));
       }, [...models.get(currentHome.sha256)]);
       await until(snapshot, value => value.status === "ready" && value.loadedRunId === `model-upload-${currentHome.sha256}`,
         "Local model was not displayed");
-      assert.equal(await panel.getByRole("button", { name: "Lock selected", exact: true }).isDisabled(), true);
+      assert.equal(await cmd(panel, "component.lock_params.lock").isDisabled(), true);
       assert.equal(requests.filter(row => row.name === "/api/proposals/parameter-locks").length, requestCount);
       await view(currentHome);
     });
 
     await step("a delayed lock proposal stays cancelled after browsing away and back to the same base", async () => {
-      await openViewTools(); await page.getByRole("button", { name: "Parameter locks", exact: true }).click();
+      await openViewTools(); await cmd(page, "component.lock_params.open").click();
       const panel = page.getByRole("region", { name: "Parameter locks", exact: true });
       await panel.getByRole("checkbox", { name: /height/ }).check();
       lockProposalGate = deferred(); const candidate = nextLockCandidate = prepare("parameter-returned-view");
-      await panel.getByRole("button", { name: "Lock selected", exact: true }).click();
+      await cmd(panel, "component.lock_params.lock").click();
       await until(() => lockProposalGate.requested, Boolean, "Lock proposal was not submitted");
       await view(allArtifacts.find(row => row.runId === "parameter-lock-other"));
       await view(currentHome);

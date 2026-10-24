@@ -85,7 +85,7 @@ export function VerdictCard({
             error={validation.error}
             what={`GET /api/candidates/${candidateId}/validation`}
           />
-          <button type="button" className="btn btn--small" onClick={onRetry}>{t("stage.base.retry")}</button>
+          <button data-command="view.notice.retry" data-command-arg="verdict" type="button" className="btn btn--small" onClick={onRetry}>{t("stage.base.retry")}</button>
         </div>
       </article>
     );
@@ -197,7 +197,7 @@ export function VerdictCard({
         <span className="quiet">
           {t("verdict.serverSource")}
         </span>
-        <button
+        <button data-command="view.evidence.open_receipts"
           type="button"
           className="btn btn--link"
           onClick={() => onEvidence("receipts", candidateId)}
