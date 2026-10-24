@@ -403,7 +403,7 @@ try {
     return stack && rail && stack.right <= rail.left;
   });
   await clear("rail only");
-  await page.locator(".attention-shell__rail-item").filter({ hasText: "后台" }).click();
+  await page.getByRole("button", { name: "展开后台" }).click();
   // Ctrl+K from the top row's search; it opens a side page by its command, as the rail does.
   // The rail shows what has something in it (the background, while it runs); with a page open it lists them all.
   assert.deepEqual(await page.locator(".attention-shell__rail-item").evaluateAll((items) => items.map((item) => item.getAttribute("data-command"))),

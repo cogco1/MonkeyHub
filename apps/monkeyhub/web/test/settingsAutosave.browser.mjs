@@ -59,6 +59,8 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 // 2-3c: the new shell is the default; these passes are the old one's, the way back (attentionShell.browser.mjs has the new).
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+// The look and shell switches are a developer's (S01): this pass tests them, so it opens in developer mode.
+await page.addInitScript(() => localStorage.setItem("archflow-studio.user-preferences", JSON.stringify({ version: 1, developer: { mode: true, eventStream: true } })));
 await page.addInitScript(() => localStorage.setItem("monkeyhub.shell", "workbench"));
 page.setDefaultTimeout(12000);
 page.on("pageerror", (error) => errors.push(error.message));
