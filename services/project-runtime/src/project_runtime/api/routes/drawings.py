@@ -14,10 +14,11 @@ from ...application.drawings import (
     generate_sheet, material_view, model_view,
 )
 from ...application.drawing_corrections import drawing_corrections
+from ...application.drawing_diagrams import generate_diagram
 from ...application.drawing_plans import generate_plan, plan_status, plan_dimension_choices, dimension_proposal, plan_vector
 from ..dto.artifacts import ModelSourceDto, SourceDocumentDto, document_dto, model_source_from
 from ..dto.drawings import (
-    DrawingCorrectionsDto, DrawingFileFormat, DrawingStylesDto, ElevationDrawingDto, ElevationRequestDto, ModelViewDisplay,
+    DiagramRequestDto, DrawingCorrectionsDto, DrawingFileFormat, DrawingStylesDto, ElevationDrawingDto, ElevationRequestDto, ModelViewDisplay,
     ModelViewDto, ModelViewLegendDto, ModelViewName, SheetRequestDto, SheetViewDto,
     PlanDrawingDto, PlanRequestDto, PlanStatusRequestDto, PlanStatusDto,
     PlanDimensionChoicesDto, PlanDimensionProposalRequestDto, PlanVectorDto, SectionPerspectiveDrawingDto,
@@ -202,6 +203,21 @@ def read_drawing_styles() -> DrawingStylesDto:
     from monkeydiagram.documentation.styles import list_drawing_styles
 
     return DrawingStylesDto(styles=list_drawing_styles())
+
+
+@router.post("/drawings/diagrams", response_model=SourceDocumentDto, response_model_by_alias=True, status_code=201)
+def create_diagram(request: Request, payload: DiagramRequestDto) -> SourceDocumentDto:
+    """A diagram drawn from data, with no model (gap 38), registered as a sheet: its PDF in the documents list and its
+    SVG, DXF and PNG through GET /api/drawings/{assetSha256}/files/{format}. Its viewRecipe keeps the checked spec, its
+    specSha256, board "on-request" (it reaches the Board by hand) and warnings, such as an edge that runs through a node
+    it does not join. DIAGRAM_INVALID names what is wrong by its path in the spec; DRAWING_KIND_CHANGED a drawing id
+    that names another kind of drawing; DRAWING_FONT_UNAVAILABLE Chinese text with no font that draws it.
+    """
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
+    return document_dto(generate_diagram(binding, kind=payload.kind, spec=payload.spec, drawing_id=payload.drawing_id,
+                                         style_id=payload.style_id, title=payload.title, subtitle=payload.subtitle or ""))
 
 
 @router.post("/drawings/sheets", response_model=SourceDocumentDto, response_model_by_alias=True, status_code=201)

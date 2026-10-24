@@ -1,4 +1,5 @@
-import { useConnection } from "../../api/project-runtime/ProjectRuntimeContext";
+import { useConnection, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import { pageSource, type PageSource } from "../../workspaces/monkeyboard/boardScene";
 /**
  * The model, and the few facts that sit over it.
  *
@@ -30,6 +31,10 @@ import {
   type Vec3,
   type ModelSnap,
 } from "../../workspaces/monkeyarch/viewer/ThreeDmViewport";
+
+/** The live section's directions and the coordinate each cuts (G5). */
+type SectionAxis = "z" | "x" | "y";
+const SECTION_AXES: Record<SectionAxis, 0 | 1 | 2> = { x: 0, y: 1, z: 2 };
 import { Annotate, GESTURE_TOOLS, type AnnotationStyle, type GestureTool } from "../../workspaces/monkeyarch/Annotate";
 import { VersionsStrip, type VersionGroup, type DesignHistoryControls } from "./VersionsStrip";
 import { DocumentCanvas, type DocumentViewContext } from "../../workspaces/monkeydiagram/DocumentCanvas";
@@ -206,6 +211,7 @@ function sketchControls(state: SketchState) {
 export function Stage({
   active = true,
   onOpenBoard,
+  onBoard,
   onChatRequest,
   onOpenTree,
   viewportRef,
@@ -462,6 +468,8 @@ export function Stage({
   /** A host page already shows the workspace entries and the project's position. */
   active?: boolean;
   onOpenBoard?: () => void;
+  /** Open the Board on one registered page, placing it there if it is not yet. */
+  onBoard?: (source: PageSource) => void;
   onChatRequest?: () => void;
 }) {
   const t = useT();
@@ -490,6 +498,54 @@ export function Stage({
   // canvas opens in it; a refreshed page opens in the style chosen last (#562).
   const [displayStyle, setDisplayStyle] = useState<ModelDisplayStyle>(() => rememberedDisplayStyle());
   const chooseDisplayStyle = (style: ModelDisplayStyle) => { setDisplayStyle(style); rememberDisplayStyle(style); };
+  // G5: a live cutting plane, a look only: which way it cuts, where, and which side stays drawn.
+  const [section, setSection] = useState<{ axis: SectionAxis; at: number; flip: boolean } | null>(null);
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    if (!section) { viewport.section(null); return; }
+    const index = SECTION_AXES[section.axis];
+    // A plan cut keeps what is below it, a vertical cut the side its axis points to; Flip keeps the other.
+    const normal: Vec3 = [0, 0, 0];
+    normal[index] = (section.axis === "z" ? -1 : 1) * (section.flip ? -1 : 1);
+    const origin: Vec3 = [0, 0, 0];
+    origin[index] = section.at;
+    viewport.section({ origin, normal });
+  }, [section]);
+  // G5 step 3: the live cut drawn exactly by the drawing route, which leaves it off the Board until "Put on Board".
+  const studio = useStudio();
+  const [sectionDrawing, setSectionDrawing] = useState<{ state: "busy" } | { state: "drawn"; page: PageSource; fileName: string }
+    | { state: "failed"; detail: string } | null>(null);
+  useEffect(() => { setSectionDrawing(null); }, [section?.axis, section?.at, section?.flip, viewedModelSource?.runId]);
+  const drawSection = async () => {
+    if (!section || !documentProjectId || !viewedModelSource) {
+      setSectionDrawing({ state: "failed", detail: t("stage.section.drawUnavailable") });
+      return;
+    }
+    const index = SECTION_AXES[section.axis];
+    // The plan route's normal points from the kept side to the side the viewer stands on.
+    const normal: Vec3 = [0, 0, 0];
+    normal[index] = section.flip ? 1 : -1;
+    const origin: Vec3 = [0, 0, 0];
+    origin[index] = section.at;
+    setSectionDrawing({ state: "busy" });
+    try {
+      const drawn = await studio.drawingPlan({
+        projectId: documentProjectId, modelSource: viewedModelSource, sourceKind: "human", board: "on-request",
+        ...(section.axis === "z" ? { cutHeight: section.at } : { section: { origin, normal } }) });
+      setSectionDrawing({ state: "drawn", page: pageSource(drawn, drawn.pages[0]?.pageIndex ?? 0), fileName: drawn.fileName });
+    } catch (error) {
+      setSectionDrawing({ state: "failed", detail: error instanceof Error ? error.message : String(error) });
+    }
+  };
+  const chooseSection = (axis: SectionAxis | "off") => {
+    if (axis === "off") { setSection(null); return; }
+    // A new direction starts through the middle of the model.
+    const bounds = viewportRef.current?.bounds();
+    const index = SECTION_AXES[axis];
+    const middle = bounds ? Number(((bounds.min[index] + bounds.max[index]) / 2).toFixed(3)) : 0;
+    setSection((current) => current?.axis === axis ? current : { axis, at: middle, flip: false });
+  };
   const [parameterLocksOpen, setParameterLocksOpen] = useState(false);
   // #352: the palette's own More: the less frequent drawing tools, tracing paper and the drawing plane.
   const [moreToolsOpen, setMoreToolsOpen] = useState(false);
@@ -1489,6 +1545,32 @@ export function Stage({
             {t(`stage.display.${style}`)}</option>)}
         </select>
       </label>}
+      {!bar.frontOnly && <>
+        {/* G5: a live cut for looking; the exact section is still drawn by the drawing routes. */}
+        <label className="stage-menu__field" title={t("stage.section.title")}>
+          <span>{t("stage.section.label")}</span>
+          <select data-section-axis value={section?.axis ?? "off"} onChange={(event) => chooseSection(event.target.value as SectionAxis | "off")}>
+            {(["off", "z", "x", "y"] as const).map((axis) => <option key={axis} value={axis}>{t(`stage.section.${axis}`)}</option>)}
+          </select>
+        </label>
+        {section && <label className="stage-menu__field">
+          <span>{t("stage.section.at")}</span>
+          <input type="number" data-section-at step="any" value={section.at}
+            onChange={(event) => { const at = Number(event.target.value); if (event.target.value !== "" && Number.isFinite(at)) setSection({ ...section, at }); }} />
+        </label>}
+        {section && <label className="stage-menu__field">
+          <span>{t("stage.section.flip")}</span>
+          <input type="checkbox" data-section-flip checked={section.flip} onChange={(event) => setSection({ ...section, flip: event.target.checked })} />
+        </label>}
+        {section && <button data-command="drawing.live_section.draw" type="button" data-section-draw disabled={sectionDrawing?.state === "busy" || !viewedModelSource}
+          title={section.axis === "z" ? t("stage.section.drawPlanTitle") : t("stage.section.drawSectionTitle")}
+          onClick={() => void drawSection()}>{sectionDrawing?.state === "busy" ? t("stage.section.drawing") : t("stage.section.draw")}</button>}
+        {sectionDrawing?.state === "drawn" && <p className="stage-menu__note" data-section-drawn>
+          {t("stage.section.drawn", { fileName: sectionDrawing.fileName })}
+          {onBoard && <button data-command="drawing.live_section.place_on_board" type="button" data-section-board onClick={() => onBoard(sectionDrawing.page)}>{t("stage.section.toBoard")}</button>}
+        </p>}
+        {sectionDrawing?.state === "failed" && <p className="stage-menu__note" role="alert">{sectionDrawing.detail}</p>}
+      </>}
       <span className="stage-menu__sep" aria-hidden="true" />
       {/* One button, home: the reference run's exports when it left any, else the export the
           stage actually opened on - named for what it brings back, disabled only when there is nothing. */}
@@ -1515,25 +1597,25 @@ export function Stage({
           starts from, Versions, the Design Tree, the commands on the editing base, then Export and More (#352). */}
       <SurfaceMenus label={t("stage.ariaLabel")} active={active}>
         {editingBaseRunId !== null && <><span className="stage-bar__model" title={editingLabel ?? undefined}>{editingLabel}</span><MenuSeparator /></>}
-        <MenuCommand data-command="design.go_to_step.versions" className="stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel" onClick={toggleVersions}>
+        {!documentOpen && <MenuCommand data-command="design.go_to_step.versions" className="stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel" onClick={toggleVersions}>
           {t("stage.versions.open")}
           {!onOpenTree && <>
             <span className="quiet">{versionCount}</span>
             {!documentOpen && hasModel && contextLabel && <span className="stage__versions-current"><span className="quiet">{t("stage.context.viewing")} </span>{contextLabel}</span>}
             {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
           </>}
-        </MenuCommand>
-        {onOpenTree && <MenuCommand data-command="view.design_tree.open" className="stage__tree-link" onClick={onOpenTree}>{t("stage.tree.open")}</MenuCommand>}
+        </MenuCommand>}
+        {!documentOpen && onOpenTree && <MenuCommand data-command="view.design_tree.open" className="stage__tree-link" onClick={onOpenTree}>{t("stage.tree.open")}</MenuCommand>}
         {explicitBase && <MenuCommand data-command="design.go_to_step.default_base" disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading"}
           onClick={onDefaultBase}>{t("stage.base.default")}</MenuCommand>}
         {!onReturnToBoard && picked && onOpenBoard && <MenuCommand data-command="view.tab.board" onClick={onOpenBoard}>{t("workspace.monkeyboard")}</MenuCommand>}
         {!documentOpen && picked?.componentId && !infoOpen && <MenuCommand data-command="component.inspect.open" aria-controls="stage-component-info" onClick={openInfo}>
           {t("componentInfo.title")}</MenuCommand>}
-        {exportMenu}
-        {moreMenu}
+        {!documentOpen && exportMenu}
+        {!documentOpen && moreMenu}
       </SurfaceMenus>
       {onReturnToBoard && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
-        <button data-command="view.tab.board" type="button" onClick={onReturnToBoard}>{t("workspace.monkeyboard")}</button>
+        <button data-command="view.tab.board" type="button" onClick={onReturnToBoard}>{t("workspace.returnToBoard")}</button>
       </div>}
       {(baseChoice || editingStatus) && <div className="stage-decision" role="group" aria-label={t("stage.base.label")}>
         {baseChoice && <InlineDecision className="base-choice" compact label={t("board.feedback.choice")}

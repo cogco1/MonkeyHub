@@ -104,7 +104,7 @@ def is_vertical_section(recipe) -> bool:
 
 #: The kinds of drawing a drawing id can name, as a refusal says them.
 DRAWING_KINDS = {CUT_PLAN_KIND: "cut plan", ELEVATION_KIND: "elevation", SECTION_PERSPECTIVE_KIND: "section perspective",
-                 "review-sheet": "review sheet", "view-sheet": "view sheet"}
+                 "review-sheet": "review sheet", "view-sheet": "view sheet", "diagram": "diagram"}
 
 
 def refuse_other_kind(binding: ProjectBinding, drawing_id: str, kind: str, what: str) -> None:
@@ -530,6 +530,20 @@ def draw_model_view(
     return draw_loaded_view(load_model_view(binding, model_source), view=view, size_px=size_px, png_text=png_text)
 
 
+def drawn_object_ids(verified: VerifiedElevationSource) -> tuple[str, ...]:
+    """The objects a model view draws: every physical object but those the source saved hidden.
+
+    A cut's tool and an opening's aperture volume stay in the model hidden, as
+    evidence of what was removed; the cut plans and elevations already leave
+    them out, and a view that drew them showed a hole as the box that made it
+    (gap 42). Hidden as the exports read it (gap 31): what the source marks
+    not visible.
+    """
+
+    hidden = inspection_witness_ids(verified.receipt)
+    return tuple(object_id for object_id in verified.physical_object_ids if object_id not in hidden)
+
+
 def _draw_view(binding, source, receipt, view, *, size_px, png_text, started, verified=None,
                fills=None) -> ModelViewDrawing:
     """Draw one view: the axonometric, or any view given ``fills``, from the mesh; the elevations by the exact solve.
@@ -543,7 +557,8 @@ def _draw_view(binding, source, receipt, view, *, size_px, png_text, started, ve
     try:
         if verified is None:
             verified = read_elevation_source(binding.repository, source)
-        recipe = _elevation_view(receipt, view, hidden_lines=False, scale_denominator=1)
+        drawn_ids = drawn_object_ids(verified)
+        recipe = _elevation_view(receipt, view, hidden_lines=False, scale_denominator=1, object_ids=drawn_ids)
         loaded = perf_counter()
         if view == "axon" or fills is not None:
             meshes, recipe = _view_meshes(verified, receipt, recipe, size_px)
@@ -558,7 +573,7 @@ def _draw_view(binding, source, receipt, view, *, size_px, png_text, started, ve
         scale = max(1, ceil(max(u1 - u0, v1 - v0) * mm_per_unit * 150 / (25.4 * (size_px - 1))))
         recipe = replace(recipe, scale_denominator=scale, linear_deflection=0.1 / mm_per_unit)
         projected = project_model_axis_elevation(
-            verified.entries, object_ids=verified.physical_object_ids, view=recipe, unit=verified.length_unit,
+            verified.entries, object_ids=drawn_ids, view=recipe, unit=verified.length_unit,
         )
     except (DrawingElevationError, MeshViewError) as exc:
         raise StudioError(409, "DRAWING_SOURCE_INVALID", str(exc)) from exc
@@ -576,7 +591,7 @@ def _view_meshes(verified: VerifiedElevationSource, receipt, recipe: ElevationVi
     again at the narrower frame's pixel size.
     """
 
-    meshes, skipped = triangulate(verified.entries, verified.physical_object_ids,
+    meshes, skipped = triangulate(verified.entries, drawn_object_ids(verified),
                                   linear_deflection=pixel_size(recipe.crop_uv, size_px) * AXON_CHORD_PX)
     if not meshes:
         raise MeshViewError("the model has no surfaces to draw")
@@ -645,7 +660,7 @@ def material_view(binding: ProjectBinding, *, model_source: ModelSource, view: s
         verified = kept[0] if kept else read_elevation_source(binding.repository, source)
     except DrawingElevationError as exc:
         raise StudioError(409, "DRAWING_SOURCE_INVALID", str(exc)) from exc
-    worn = _worn_materials(binding, model_source, source, verified.physical_object_ids)
+    worn = _worn_materials(binding, model_source, source, drawn_object_ids(verified))
     fills = {object_id: None if material["color"] is None else tuple(bytes.fromhex(material["color"][1:]))
              for object_id, material in worn.items()}
     drawn = _draw_view(binding, source, receipt, view, size_px=MODEL_VIEW_MAX_EDGE, png_text=None, started=started,
@@ -1038,7 +1053,7 @@ def _drawn_sheet(binding, monitor, run_id, verified, frames, selected, layout, r
 SHEET_FILES = (("pdf", "application/pdf"), ("dxf", "application/dxf"), ("svg", SVG_MEDIA_TYPE), ("png", PNG_MEDIA_TYPE))
 #: The PDF metadata naming the digests of the sheet's DXF, SVG and PNG.
 SHEET_FILE_DIGESTS = "/ArchFlowSheetFiles"
-SHEET_KINDS = ("review-sheet", "view-sheet")
+SHEET_KINDS = ("review-sheet", "view-sheet", "diagram")  # a diagram's files are kept as a sheet's (gap 38)
 
 
 def _sheet_files(canvas, recipe_json: str) -> dict[str, bytes]:

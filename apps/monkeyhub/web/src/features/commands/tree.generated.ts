@@ -5896,6 +5896,45 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
+      "id": "drawing.live_section.draw",
+      "capability": "model.view",
+      "label": {
+        "en": "Draw this section",
+        "zh-CN": "出这张剖面"
+      },
+      "terms": [
+        "section from the cut",
+        "剖切出图"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "drawing.live_section.place_on_board",
+      "capability": "model.view",
+      "label": {
+        "en": "Put the section on Board",
+        "zh-CN": "剖面放到 Board"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
       "id": "view.reference_model.show",
       "capability": "model.view",
       "label": {

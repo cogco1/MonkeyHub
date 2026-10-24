@@ -262,7 +262,7 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
                   drawing_id=None, file_name=None, previous_revision_ref=None, cut_height=None, bottom=None, scale_denominator=None,
                   crop_uv=None, cut_line_mm=None, visible_line_mm=None, hatch_spacing_mm=None, hatch=None, beyond=None,
                   hidden_object_ids=None, dimensions=None, dressing=None, dressing_operations=None, follow=None, source_asset=None,
-                  section=None, depth=None, length_unit=None):
+                  section=None, depth=None, length_unit=None, board=None):
     """One cut-plan revision, or the retained one an identical request already made.
 
     ``section`` (a plan line and kept side, or a plane) makes it a vertical
@@ -342,6 +342,10 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
         # it to follow the Working Head again (#271); without a choice, it follows.
         if follow == "frozen" or (follow is None and old.get("follow") == "frozen"):
             recipe["follow"] = "frozen"
+        # A drawing asked for from the viewport's live section waits for a person's "Put on Board" (G5), and its
+        # later revisions keep waiting, as they keep their follow choice.
+        if board == "on-request" or (board is None and old.get("board") == "on-request"):
+            recipe["board"] = "on-request"
         if dressing is not None or "dressing" in old or dressing_operations is not None:
             recipe["dressing"] = deepcopy(dressing if dressing is not None else old.get("dressing", []))
             if dressing_operations is not None:

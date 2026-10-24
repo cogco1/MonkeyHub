@@ -22,6 +22,7 @@ from .. import projects
 from . import design_loop, judgments, media, preparation, studio_tool, transport, visual_review
 
 from ..models import ChatPresentationRequest, HubFailure
+from ..runtime.workers import project_key
 
 
 # The proposal routes that answer a Proposal the client has just authored; its
@@ -314,7 +315,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "continue: true beside method/path lands the one result POST "
                          "/api/admissions admits; a Continue on its own is PUT /api/working-draft.")
     if "operationId" in arguments and (name != "studio_request" or method == "GET" or (
-            method == "POST" and parsed.path in {"/api/board/export", "/api/drawings/plans/status"})):
+            method == "POST" and parsed.path in {"/api/board/export", "/api/board/view", "/api/drawings/plans/status"})):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "operationId identifies a Studio mutation request.")
     if "awaitSeconds" in arguments and name != "studio_request":
         # Only one tool can wait for anything. Quietly dropping the option here
@@ -420,6 +421,16 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                 "type": "string", "format": "uuid",
                 "description": "Exact attachment ID from this conversation. Choose this OR projectRevision OR sourceArtifactId; Hub transfers the bytes.",
             }
+        if method == "POST" and parsed.path == "/api/documents":
+            # Gap 37: a chat registers one attachment it was given; the Hub moves the bytes.
+            reference = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+            schema = document["components"]["schemas"][reference.rsplit("/", 1)[-1]]
+            schema["properties"] = {"attachmentId": {
+                "type": "string", "format": "uuid",
+                "description": "Exact attachment ID from this conversation: a PNG, JPEG or PDF. Hub transfers the bytes "
+                               "and registers it as a project document, which a Board image can then name.",
+            }}
+            schema["required"] = ["attachmentId"]
         if method == "POST" and judgments._is_feedback(parsed.path):
             # Expose the Runtime's real schema, narrowed to the chat capability;
             # provenance is supplied by this adapter, never by the provider.
@@ -482,7 +493,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         body = dict(body)
         if body.get("projectId", session["projectId"]) != session["projectId"]:
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "A tool cannot select another project.")
-        if parsed.path in {"/api/proposals", "/api/board/export", "/api/project/modeling", "/api/render/jobs"}:
+        if parsed.path in {"/api/proposals", "/api/board/export", "/api/board/view", "/api/project/modeling", "/api/render/jobs"}:
             body["projectId"] = session["projectId"]
         if method == "POST" and _SKILL_RUN.fullmatch(parsed.path):
             body = _agent_skill_run(hub, chat_id, base, parsed.path, body, _PERMISSION_WAIT_S)
@@ -496,6 +507,13 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                 raise HubFailure(422, "CHAT_TOOL_INVALID", "The chat marks your cut-plan requests sourceKind=agent; "
                                  "only a person's own request in Drawings is human. Send it without sourceKind.")
             body["sourceKind"] = "agent"
+    if method == "POST" and parsed.path == "/api/documents":
+        if not isinstance(body, dict) or set(body) - {"projectId"} != {"attachmentId"}:
+            raise HubFailure(422, "CHAT_DOCUMENT_INVALID", "Register a document by its attachmentId alone: a PNG, JPEG or "
+                             "PDF from this conversation. The Hub transfers the bytes; send no file content.")
+        source = transport._request_json(hub, f"/api/chat/sessions/{projects._identifier(chat_id)}/attachments/"
+                                              f"{projects._identifier(body['attachmentId'])}/document-source")
+        body = {"projectId": session["projectId"], **source}
     if method == "POST" and parsed.path == "/api/exports" and isinstance(body, dict):
         attachment_id = body.pop("attachmentId", None)
         if attachment_id is not None:
@@ -528,6 +546,10 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         if parsed.query:
             raise HubFailure(422, "CHAT_TOOL_INVALID", "The registered page read takes its source in the body, without query parameters.")
         return studio_tool._read_drawing_page(base, body)
+    if method == "POST" and parsed.path == "/api/board/view":
+        if parsed.query:
+            raise HubFailure(422, "CHAT_TOOL_INVALID", "The Board read takes its frame or region in the body, without query parameters.")
+        return studio_tool._read_board_view(base, body)
     if method == "POST" and parsed.path == "/api/render/jobs":
         # Before admission: a provider this Runtime does not offer takes nothing.
         studio_tool._render_provider_available(base, body)
@@ -536,7 +558,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         comparison = {"sourceRunId": proposal.get("sourceRunId")}
     if method in {"POST", "PUT"} and parsed.path not in studio_tool._POST_READS:
         from uuid import uuid5, NAMESPACE_URL
-        runtime_id = str(uuid5(NAMESPACE_URL, f"{session['projectId']}:{os.path.normcase(str(Path(session['projectDir']).resolve()))}"))
+        runtime_id = str(uuid5(NAMESPACE_URL, f"{session['projectId']}:{project_key(session['projectDir'])}"))
         operation_id = arguments.get("operationId") or str(uuid4())
         try:
             operation_id = str(UUID(operation_id))

@@ -3409,6 +3409,38 @@ export type ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdMo
     200: unknown;
 };
 
+export type ReadChatDocumentSourceApiChatSessionsSessionIdAttachmentsAttachmentIdDocumentSourceGetData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+        /**
+         * Attachment Id
+         */
+        attachment_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/attachments/{attachment_id}/document-source';
+};
+
+export type ReadChatDocumentSourceApiChatSessionsSessionIdAttachmentsAttachmentIdDocumentSourceGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadChatDocumentSourceApiChatSessionsSessionIdAttachmentsAttachmentIdDocumentSourceGetError = ReadChatDocumentSourceApiChatSessionsSessionIdAttachmentsAttachmentIdDocumentSourceGetErrors[keyof ReadChatDocumentSourceApiChatSessionsSessionIdAttachmentsAttachmentIdDocumentSourceGetErrors];
+
+export type ReadChatDocumentSourceApiChatSessionsSessionIdAttachmentsAttachmentIdDocumentSourceGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetData = {
     body?: never;
     path: {

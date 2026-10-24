@@ -162,25 +162,6 @@ def _write_skill(folder: Path, row: skills.SkillVersion) -> None:
 # The view kind an elevation's registration states at its top level: its frame
 # keys lie flat there, as its retained receipt has them, where a cut plan keeps
 # them under "frame".
-ELEVATION_VIEW_KIND = "model-axis-elevation"
-
-
-def skill_view_recipe(recipe: Mapping[str, Any] | None) -> dict | None:
-    """A drawing's view as a skill reads it: the frame always under "frame", as a cut plan keeps it.
-
-    An elevation's record keeps origin, right, up, look, crop_uv, scale and the
-    rest flat, because they are the receipt it is checked against; its flat
-    keys stay and the same values are given again under "frame".
-    """
-
-    if recipe is None:
-        return None
-    recipe = dict(recipe)
-    if "frame" not in recipe and recipe.get("kind") == ELEVATION_VIEW_KIND:
-        recipe["frame"] = {key: value for key, value in recipe.items() if key not in ("sourceAsset", "follow")}
-    return recipe
-
-
 def _drawing_entry(document) -> dict:
     """The drawing's registration as the documents list states it: what a skill needs to place its lines."""
 
@@ -189,7 +170,7 @@ def _drawing_entry(document) -> dict:
             "fileName": document.file_name, "drawingId": document.drawing_id, "generatedAt": document.generated_at,
             "modelSource": None if source is None else {"runId": source.run_id, "stateDigest": source.state_digest,
                                                        "assetSha256": source.asset_sha256},
-            "sourceStageRef": document.source_stage_ref, "viewRecipe": skill_view_recipe(document.view_recipe),
+            "sourceStageRef": document.source_stage_ref, "viewRecipe": artifacts.view_recipe_with_frame(document.view_recipe),
             "pages": [{"pageIndex": page.page_index, "width": page.width, "height": page.height} for page in document.pages]}
 
 

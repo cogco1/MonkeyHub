@@ -67,7 +67,7 @@ const menuWords = {
     sidebar: "侧栏", tools: "工具面板", theme: "主题", system: "跟随系统", dark: "深色", light: "浅色",
     uiStyle: "界面风格", classic: "经典", quiet: "静默仪表", titleblock: "图签", night: "夜航",
     size: "字号", compact: "紧凑", normal: "标准", large: "大",
-    update: "检查更新…",
+    update: "软件更新…",
   },
   en: {
     menus: "Menus", back: "Back to the previous conversation", forward: "Forward to the next conversation",
@@ -77,7 +77,7 @@ const menuWords = {
     sidebar: "Sidebar", tools: "Tools panel", theme: "Theme", system: "Match system", dark: "Dark", light: "Light",
     uiStyle: "Interface style", classic: "Classic", quiet: "Quiet instrument", titleblock: "Title block", night: "Night flight",
     size: "Text size", compact: "Compact", normal: "Standard", large: "Large",
-    update: "Check for updates…",
+    update: "Software update…",
   },
 } as const;
 // followHead: the tab was restored on a cold start, not opened to inspect that exact
@@ -2215,11 +2215,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             if (!command) return null;
             return <div className="chat-route" role="group" aria-label={w.routeSays(command.label[preferences.language])}>
               <p className="chat-route__says">{w.routeSays(command.label[preferences.language])}</p>
-              <button type="button" className="btn btn--primary chat-route__run" data-command-view onClick={() => {
+              <button data-command={command.id} type="button" className="btn btn--primary chat-route__run" onClick={() => {
                 if (commands.run(routed.id, "composer")) setDrafts((value) => ({ ...value, [draftKey]: "" }));
                 setRouted(null);
               }}>{w.routeRun}</button>
-              <button type="button" className="btn chat-route__send" onClick={() => { sendAsWritten.current = true; void send(); }}>{w.routeSend}</button>
+              <button data-command="chat.composer.send" type="button" className="btn chat-route__send" onClick={() => { sendAsWritten.current = true; void send(); }}>{w.routeSend}</button>
             </div>;
           })()}
           {/* DC-9: what this message will change, and DC-5: a New topic chosen from the + menu, as one removable chip. */}

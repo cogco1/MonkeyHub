@@ -651,6 +651,30 @@ export type BoardExportRequestDto = {
 };
 
 /**
+ * BoardRegionDto
+ *
+ * A rectangle of the board in scene coordinates.
+ */
+export type BoardRegionDto = {
+    /**
+     * X
+     */
+    x: number;
+    /**
+     * Y
+     */
+    y: number;
+    /**
+     * Width
+     */
+    width: number;
+    /**
+     * Height
+     */
+    height: number;
+};
+
+/**
  * BoardRequestDto
  */
 export type BoardRequestDto = {
@@ -676,6 +700,126 @@ export type BoardRequestDto = {
      * Seendocuments
      */
     seenDocuments: Array<string>;
+};
+
+/**
+ * BoardViewDto
+ *
+ * A region of the board as drawn (pages under marks) and every mark in it, with where it lies on each page.
+ */
+export type BoardViewDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string | null;
+    /**
+     * Frame
+     */
+    frame: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Frames
+     *
+     * Every frame on the board: id, name and box.
+     */
+    frames: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Region
+     *
+     * The drawn region: x, y, width, height in scene coordinates.
+     */
+    region: {
+        [key: string]: number;
+    };
+    /**
+     * Scale
+     *
+     * Image pixels per scene unit.
+     */
+    scale: number;
+    image: BoardViewImageDto;
+    /**
+     * Pages
+     *
+     * Registered pages in the region; tracingPaper marks a tracing-paper snapshot.
+     */
+    pages: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Annotations
+     *
+     * Marks in the region in scene order: type, colours, box, updatedAt, frameId, text, and onPages (each page it lies over, the shared part as page fractions x0..x1, y0..y1 from the top left).
+     */
+    annotations: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Annotationcount
+     *
+     * All marks in the region; at most 2,000 are listed.
+     */
+    annotationCount: number;
+};
+
+/**
+ * BoardViewImageDto
+ */
+export type BoardViewImageDto = {
+    /**
+     * Mimetype
+     */
+    mimeType: 'image/png';
+    /**
+     * Width
+     */
+    width: number;
+    /**
+     * Height
+     */
+    height: number;
+    /**
+     * Sha256
+     */
+    sha256: string;
+    /**
+     * Data
+     *
+     * The PNG, base64.
+     */
+    data: string;
+};
+
+/**
+ * BoardViewRequestDto
+ *
+ * One frame (by element id) or region of the board to draw and list; neither is the whole scene.
+ */
+export type BoardViewRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Frameid
+     */
+    frameId?: string | null;
+    region?: BoardRegionDto | null;
+    /**
+     * Maxedge
+     */
+    maxEdge?: number;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256?: string | null;
 };
 
 /**
@@ -874,6 +1018,10 @@ export type CameraPassRequestDto = {
      * Sourcestageref
      */
     sourceStageRef?: string | null;
+    /**
+     * Cut the model at a live section plane first, as the Modeling viewport does; a saved view's own cut applies when none is given. Its outline is drawn as lines; its cut faces are not filled.
+     */
+    clip?: SectionClipDto | null;
 };
 
 /**
@@ -3839,6 +3987,52 @@ export type DesignStudyDto = {
 };
 
 /**
+ * DiagramRequestDto
+ *
+ * A diagram drawn from data (gap 38): a network, a section schematic or a timeline; no model.
+ */
+export type DiagramRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Drawingid
+     *
+     * names the diagram's revisions: the same id with a changed spec registers a new document and keeps the earlier one; the same request again returns the same document
+     */
+    drawingId: string;
+    /**
+     * Kind
+     *
+     * network: nodes at stated places joined by edges, such as a plan's zones and routes; section: spans, shapes and moves at one scale in x and height; timeline: lanes across a time axis with segments and events
+     */
+    kind: 'network' | 'section' | 'timeline';
+    /**
+     * Spec
+     *
+     * network: {nodes: [{id, label, sublabel?, group?, at: [x, y] (the centre, y down the page), size?: [w, h], shape?: box|ellipse, ref?}], groups?: [{id, label, tone: grey|lavender|sand|sage|rose|sky|white}], edges?: [{from, to (a node id or a point [x, y]), line?: main|loop|return|branch, style?: solid|dashed|dotted, arrow?: end|both|none, label?, mark? (short text in a circle), via?: [[x, y], ...], route?: orthogonal|straight}], lines?: {main|loop|return|branch: legend label}, notes?: [{at, text, tone?}], north?: degrees, scale?: {length, label}}; leave every node's at out and the nodes are laid out in columns along the edges, groups together, every edge then joining two nodes, with no via, notes or scale. section: {axis: {x: [min, max], y: [min, max], ticks?: {x?, y?}, unit?, xLabel?}, ground?: {y, label?}, spans: [{id, label?, x0, x1, y0, y1, tone?, floors?: [y, ...], floorStyle?: solid|dashed, labelAt?: inside|above|below, ref?}], shapes?: [{kind: polygon (points) | ellipse (at, size) | marker (at), tone?, line?}], moves?: [{from, to, line?, style?, arrow?, label?}], notes?}, y up. timeline: {axis: {start, end, step?, unit?}, lanes: [{id, label}], segments?: [{lane, start, end, label?, colour? (a tone or #rrggbb)}], events?: [{lane, at, label?, mark?: diamond|circle|tick, colour?}]}. Places are in the author's own units, scaled to the sheet
+     */
+    spec: {
+        [key: string]: unknown;
+    };
+    /**
+     * Styleid
+     *
+     * diagram-colour: low-saturation group tones and lines coloured by kind; diagram-mono: black lines, no fills, for print
+     */
+    styleId?: 'diagram-colour' | 'diagram-mono';
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Subtitle
+     */
+    subtitle?: string | null;
+};
+
+/**
  * DocumentAnnotationRefDto
  *
  * One exact saved page revision to accompany a written design request.
@@ -5773,6 +5967,10 @@ export type HeadEntryDto = {
  * HostedOpeningRequestDto
  *
  * A door or a window on geometry whose meaning is architectural.role = wall, against one exact state.
+ *
+ * Without ``opening`` it makes a new one and needs kind, along, width, sill and head. With ``opening``, the id of
+ * one the host has (the model view lists a host's openings), it changes that one: the fields sent replace its
+ * own, the rest stay. With ``opening`` and ``remove: true`` and nothing else, that opening and its family go.
  */
 export type HostedOpeningRequestDto = {
     /**
@@ -5822,33 +6020,45 @@ export type HostedOpeningRequestDto = {
      */
     host: string;
     /**
+     * Opening
+     *
+     * an opening the host has, by the id the model view lists, to change or remove; left out, a new opening is made
+     */
+    opening?: string | null;
+    /**
+     * Remove
+     *
+     * with opening and nothing else: remove that opening and its family
+     */
+    remove?: boolean;
+    /**
      * Kind
      */
-    kind: 'door' | 'window';
+    kind?: 'door' | 'window' | null;
     /**
      * Along
      *
      * metres from the host's alongLine.start toward its alongLine.end (as the model view gives them) to the centre of the opening
      */
-    along: number;
+    along?: number | null;
     /**
      * Width
      *
      * metres across the opening
      */
-    width: number;
+    width?: number | null;
     /**
      * Sill
      *
      * metres from the host's base up to the bottom of the opening; 0 for a door
      */
-    sill: number;
+    sill?: number | null;
     /**
      * Head
      *
      * metres from the host's base up to the top of the opening
      */
-    head: number;
+    head?: number | null;
     /**
      * Shape
      *
@@ -5864,7 +6074,7 @@ export type HostedOpeningRequestDto = {
     /**
      * Family
      *
-     * the family that fills the opening, in metres: a window takes frame_width, frame_depth, frame_projection, glazing_thickness and glazing_offset; a door takes frame_width, frame_depth, frame_projection, leaf_thickness, leaf_offset, leaf_count (1 or 2), leaf_gap, clearance_bottom and clearance_top. Left out, the opening is an empty passage with no frame or leaf
+     * the family that fills the opening, in metres: a window takes frame_width, frame_depth and glazing_thickness (each > 0); a door takes frame_width, frame_depth, leaf_thickness (each > 0) and leaf_count (1 or 2). frame_projection, glazing_offset, leaf_offset, leaf_gap, clearance_bottom and clearance_top are 0 when left out: flush with the host's face, no gap. Left out, the opening is an empty passage with no frame or leaf
      */
     family?: {
         [key: string]: number | number;
@@ -7569,7 +7779,7 @@ export type ModelExportRequest = {
     /**
      * Targetformat
      */
-    targetFormat: '3dm' | 'skp' | 'glb' | 'dwg' | 'stl';
+    targetFormat: '3dm' | 'skp' | 'glb' | 'dwg' | 'stl' | 'obj' | 'fbx';
     projectRevision?: ProjectRevision | null;
     /**
      * Sourceartifactid
@@ -8837,6 +9047,12 @@ export type PlanDrawingDto = {
      */
     follow?: 'live' | 'frozen' | null;
     /**
+     * Board
+     *
+     * on-request: the Board does not place this drawing by itself, only when a person asks (the Modeling viewport's live section draws so). Omitted keeps the previous revision's; a new drawing is automatic.
+     */
+    board?: 'automatic' | 'on-request' | null;
+    /**
      * Reason
      *
      * Why this revision is asked for, in the asker's own words, such as the correction an agent was given; omit it for a direct edit. Retained with the revision beside who asked, never in its recipe.
@@ -9155,6 +9371,12 @@ export type PlanRequestDto = {
      * live follows the project's Working Head; frozen keeps this drawing on its chosen source until it is rebuilt. Omitted keeps the previous revision's choice; a new drawing is live.
      */
     follow?: 'live' | 'frozen' | null;
+    /**
+     * Board
+     *
+     * on-request: the Board does not place this drawing by itself, only when a person asks (the Modeling viewport's live section draws so). Omitted keeps the previous revision's; a new drawing is automatic.
+     */
+    board?: 'automatic' | 'on-request' | null;
     /**
      * Reason
      *
@@ -10516,6 +10738,35 @@ export type PushPullRequestDto = {
 };
 
 /**
+ * QuantitiesRequestDto
+ *
+ * One exact model, as the drawing routes select it, and whether the answer is JSON or CSV.
+ */
+export type QuantitiesRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    modelSource?: ModelSourceDto | null;
+    /**
+     * Sourceasset
+     *
+     * {runId, assetSha256} of an imported or snapshot model
+     */
+    sourceAsset?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Format
+     */
+    format?: 'json' | 'csv';
+};
+
+/**
  * RecipeBindingRequestDto
  *
  * The project recipe: paper-space values a new drawing starts from.
@@ -11175,6 +11426,10 @@ export type RenderViewSourceRequestDto = {
      * Pngbase64
      */
     pngBase64: string;
+    /**
+     * The live section the view was cut at, kept in its recipe so a camera pass of it is cut the same way.
+     */
+    clip?: SectionClipDto | null;
 };
 
 /**
@@ -11819,6 +12074,30 @@ export type SectionCameraDto = {
      * Default eye only: height above the lowest cut point, in the source model unit (default 1.6 m).
      */
     eyeHeight?: number | null;
+};
+
+/**
+ * SectionClipDto
+ *
+ * A live section plane (G5): a point on it and the normal toward the side that stays drawn, in the model's frame.
+ */
+export type SectionClipDto = {
+    /**
+     * Origin
+     */
+    origin: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Normal
+     */
+    normal: [
+        number,
+        number,
+        number
+    ];
 };
 
 /**
@@ -17462,6 +17741,41 @@ export type UpdateBoardApiBoardPutResponses = {
 
 export type UpdateBoardApiBoardPutResponse = UpdateBoardApiBoardPutResponses[keyof UpdateBoardApiBoardPutResponses];
 
+export type ViewBoardApiBoardViewPostData = {
+    body: BoardViewRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/board/view';
+};
+
+export type ViewBoardApiBoardViewPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ViewBoardApiBoardViewPostError = ViewBoardApiBoardViewPostErrors[keyof ViewBoardApiBoardViewPostErrors];
+
+export type ViewBoardApiBoardViewPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: BoardViewDto;
+};
+
+export type ViewBoardApiBoardViewPostResponse = ViewBoardApiBoardViewPostResponses[keyof ViewBoardApiBoardViewPostResponses];
+
 export type ExportBoardApiBoardExportPostData = {
     body: BoardExportRequestDto;
     headers?: {
@@ -18197,6 +18511,41 @@ export type ReadDrawingStylesApiDrawingsStylesGetResponses = {
 };
 
 export type ReadDrawingStylesApiDrawingsStylesGetResponse = ReadDrawingStylesApiDrawingsStylesGetResponses[keyof ReadDrawingStylesApiDrawingsStylesGetResponses];
+
+export type CreateDiagramApiDrawingsDiagramsPostData = {
+    body: DiagramRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/drawings/diagrams';
+};
+
+export type CreateDiagramApiDrawingsDiagramsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateDiagramApiDrawingsDiagramsPostError = CreateDiagramApiDrawingsDiagramsPostErrors[keyof CreateDiagramApiDrawingsDiagramsPostErrors];
+
+export type CreateDiagramApiDrawingsDiagramsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SourceDocumentDto;
+};
+
+export type CreateDiagramApiDrawingsDiagramsPostResponse = CreateDiagramApiDrawingsDiagramsPostResponses[keyof CreateDiagramApiDrawingsDiagramsPostResponses];
 
 export type CreateSheetApiDrawingsSheetsPostData = {
     body: SheetRequestDto;
@@ -19002,6 +19351,39 @@ export type ReadConstructionModelApiConstructionModelGetResponses = {
 
 export type ReadConstructionModelApiConstructionModelGetResponse = ReadConstructionModelApiConstructionModelGetResponses[keyof ReadConstructionModelApiConstructionModelGetResponses];
 
+export type ReadQuantitiesApiQuantitiesPostData = {
+    body: QuantitiesRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/quantities';
+};
+
+export type ReadQuantitiesApiQuantitiesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadQuantitiesApiQuantitiesPostError = ReadQuantitiesApiQuantitiesPostErrors[keyof ReadQuantitiesApiQuantitiesPostErrors];
+
+export type ReadQuantitiesApiQuantitiesPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type CreateConstructionProposalApiProposalsConstructionPostData = {
     body: ConstructionRequestDto;
     headers?: {
@@ -19090,6 +19472,10 @@ export type CreateHostedOpeningProposalApiProposalsHostedOpeningPostData = {
 };
 
 export type CreateHostedOpeningProposalApiProposalsHostedOpeningPostErrors = {
+    /**
+     * OPENING_UNKNOWN: the host has no opening by that id; the sentence names the ones it has
+     */
+    404: ConstructionRefusalDto;
     /**
      * ENRICHMENT_REQUIRED names the facet to add first; STALE_BASE a request made against another state
      */

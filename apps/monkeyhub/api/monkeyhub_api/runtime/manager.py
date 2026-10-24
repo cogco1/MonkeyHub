@@ -41,7 +41,10 @@ from ..models import HubError, HubFailure
 from .models import HubRuntimeDto, OperationRecord, ProjectRuntimeDto, WorkerStatus
 from .operations import _ACTIVE, _CANDIDATE_REQUEST, _PROPOSAL_CANDIDATE, OperationManager
 from .worker_http import HttpResult, _WorkerEvents, request_http
-from .workers import project_key
+from .workers import earlier_project_keys, project_key
+
+# How long a request waits for a project's Studio it started itself (gap 18).
+_STUDIO_START_WAIT_S = 45.0
 
 
 _IDLE_RETAINED_REFRESH_S = 30
@@ -360,8 +363,13 @@ class ProjectRuntimeManager:
             runtime = self._projects.get(runtime_id)
             if runtime is None:
                 binding = ProjectBinding.unconfigured(Path(actual_dir), project_id=actual_id)
+                journals = self.applications.runtime_root / "runtime/operations"
                 operations = OperationManager(actual_id, project_dir=actual_dir,
-                    journal_path=self.applications.runtime_root / "runtime/operations" / f"{runtime_id}.json")
+                    journal_path=journals / f"{runtime_id}.json")
+                # Gap 26: the journal an earlier Hub kept under this folder's
+                # prefixed spelling joins this one, instead of being left behind.
+                operations.merge(journals / f"{uuid5(NAMESPACE_URL, f'{actual_id}:{earlier}')}.json"
+                                 for earlier in earlier_project_keys(actual_dir))
                 runtime = ProjectRuntime(runtime_id, actual_id, actual_dir, operations, binding)
                 self._projects[runtime_id] = runtime
             runtime.binding_signature = signature
@@ -918,9 +926,42 @@ class ProjectRuntimeManager:
         if runtime.state != "open":
             raise HubFailure(409, "RUNTIME_CLOSED", "This project runtime is closed.")
         worker = next(iter(self.applications.worker_snapshots(project_dir=runtime.project_dir)), None)
+        if worker is None:
+            # Gap 18: nothing has started this open project's Studio since the
+            # Hub started (after a restart, the first request is often a page's):
+            # start it now and wait a bounded time, rather than refuse as if it
+            # had crashed.
+            worker = self._start_studio(runtime)
+        if (worker is not None and worker.state == "unavailable" and worker.desired_state == "running"
+                and worker.process_id is not None and worker.url and worker.error is not None
+                and worker.error.code == "SERVICE_UNAVAILABLE"):
+            # Gap 25: a verified, running Studio that only misses its health
+            # probes (busy in native code) is asked anyway; the forward keeps
+            # its own time limit and nothing is replayed.
+            return worker
         if worker is None or worker.state not in {"ready", "busy"} or not worker.healthy or not worker.url:
-            raise HubFailure(503, "WORKER_UNAVAILABLE", "The project's Studio is not ready. Recover a crashed worker explicitly before continuing.")
+            if worker is not None and worker.state == "crashed":
+                detail = "The project's Studio stopped unexpectedly. Recover it explicitly before continuing."
+            elif worker is None or worker.state in {"starting", "recovering"}:
+                detail = "The project's Studio is starting. Try again in a moment."
+            else:
+                detail = "The project's Studio is not ready. Recover a crashed worker explicitly before continuing."
+            raise HubFailure(503, "WORKER_UNAVAILABLE", detail)
         return worker
+
+    def _start_studio(self, runtime: ProjectRuntime, wait_s: float = _STUDIO_START_WAIT_S):
+        """Start an open project's Studio that no one has started, and wait up to ``wait_s`` for it."""
+
+        try:
+            self.applications.start("monkeyarch", project_dir=runtime.project_dir)
+        except HubFailure:
+            return None
+        deadline = time.monotonic() + wait_s
+        while True:
+            worker = next(iter(self.applications.worker_snapshots(project_dir=runtime.project_dir)), None)
+            if worker is None or worker.state in {"ready", "busy", "crashed"} or time.monotonic() >= deadline:
+                return worker
+            time.sleep(0.2)
 
     def forward(self, runtime: ProjectRuntime, path: str, method: str, body: bytes,
                 headers: dict[str, str]) -> HttpResult:

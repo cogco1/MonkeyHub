@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import test from "node:test";
 
-import { Box3, BufferGeometry, Float32BufferAttribute, Line, LineBasicMaterial, LineLoop, LineSegments, BoxGeometry, Color, Group, Matrix3, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Raycaster, Sphere, Texture, Vector2, Vector3 } from "three";
+import { Box3, BufferGeometry, Float32BufferAttribute, Line, LineBasicMaterial, LineLoop, LineSegments, BoxGeometry, Color, Group, Matrix3, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Plane, Raycaster, Sphere, Texture, Vector2, Vector3 } from "three";
 
 import {
   captureModelAppearance,
@@ -376,8 +376,44 @@ function curvePickingViewport(scale: number[], rotation: number[]) {
   )) + "; return draftIdFor;")();
   const hitAt = productionCallback("../src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx", "hitAt",
     { runtimeRef: { current: runtime }, rayAt, raycastCurve, Line, Matrix3, isDisplayed, draftIdFor });
-  return { model, parent, line, mesh, rayAt, hitAt };
+  return { model, parent, line, mesh, rayAt, hitAt, runtime: runtime as typeof runtime & { section?: Plane | null } };
 }
+
+test("a pick on the side a live section cuts away hits nothing (G5)", () => {
+  const h = curvePickingViewport([1, 1, 1], [0, 0, 0]);
+  assert.equal(h.hitAt(400, 404)?.mesh, h.line, "uncut, the curve is picked");
+  // A plan cut at z = -1 keeps what is below it: the curve at z = 0 is cut away.
+  h.runtime.section = new Plane().setFromNormalAndCoplanarPoint(new Vector3(0, 0, -1), new Vector3(0, 0, -1));
+  assert.equal(h.hitAt(400, 404), null);
+  // Kept on the other side, it is picked again.
+  h.runtime.section = new Plane().setFromNormalAndCoplanarPoint(new Vector3(0, 0, 1), new Vector3(0, 0, -1));
+  assert.equal(h.hitAt(400, 404)?.mesh, h.line);
+  h.line.geometry.dispose(); h.line.material.dispose(); h.mesh.geometry.dispose(); h.mesh.material.dispose();
+});
+
+test("a live section gives the model's materials one clipping plane and takes it off again (G5)", () => {
+  const source = readFileSync(new URL("../src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx", import.meta.url), "utf8");
+  const clipModel = new Function(stripTypeScriptTypes(source.slice(
+    source.indexOf("function clipModel"), source.indexOf("function placeSun"),
+  )) + "; return clipModel;")();
+  const plain = new MeshStandardMaterial(), pair = [new MeshBasicMaterial(), new MeshBasicMaterial()];
+  const model = new Group();
+  model.add(new Mesh(new BoxGeometry(1, 1, 1), plain), new Mesh(new BoxGeometry(1, 1, 1), pair));
+  const edges = new Group(), edgeMaterial = new LineBasicMaterial();
+  edges.add(new Line(new BufferGeometry(), edgeMaterial));
+  const planes = [new Plane(new Vector3(0, 0, -1), 0.5)];
+  const runtime = { model, secondary: null, ghost: null, outline: null, styleEdges: { group: edges },
+    section: planes[0], sectionPlanes: planes, sectionApplied: false };
+  clipModel(runtime);
+  for (const material of [plain, ...pair, edgeMaterial]) assert.equal(material.clippingPlanes, planes);
+  const version = plain.version;
+  clipModel(runtime);
+  assert.equal(plain.version, version, "a material already holding the cut is left as it is");
+  runtime.section = null;
+  clipModel(runtime);
+  for (const material of [plain, ...pair, edgeMaterial]) assert.equal(material.clippingPlanes, null);
+  assert.equal(runtime.sectionApplied, false);
+});
 
 test("curve picking keeps its eight-pixel reach under scaled and rotated instance parents", () => {
   for (const scale of [[1, 1, 1], [0.1, 0.1, 0.1], [0.01, 0.01, 0.01], [0.01, 0.2, 1.5], [-0.1, 0.3, 0.01]]) {

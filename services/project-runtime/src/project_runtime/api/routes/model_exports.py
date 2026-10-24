@@ -29,7 +29,7 @@ class ProjectRevision(ExportDTO):
 
 
 class ModelExportRequest(ExportDTO):
-    target_format: Literal["3dm", "skp", "glb", "dwg", "stl"] = Field(alias="targetFormat")
+    target_format: Literal["3dm", "skp", "glb", "dwg", "stl", "obj", "fbx"] = Field(alias="targetFormat")
     project_revision: ProjectRevision | None = Field(None, alias="projectRevision")
     source_artifact_id: str | None = Field(None, alias="sourceArtifactId", pattern=r"^[a-f0-9]{64}$")
     upload: ModelUpload | None = None
