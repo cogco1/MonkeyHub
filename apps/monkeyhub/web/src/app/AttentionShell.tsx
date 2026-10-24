@@ -234,7 +234,7 @@ export function AttentionShell(props: AttentionShellProps) {
               <h2>{queue.available === null ? t("shell.queueReading") : attentionCount ? t("shell.queueCount", { count: attentionCount }) : t("shell.queueEmpty")}</h2>
               {!queue.available && <p>{t("shell.queueHint")}</p>}
             </div>
-            {backgroundCount > 0 && <button type="button" className="attention-overview__tile" onClick={() => open("background")}>
+            {backgroundCount > 0 && <button data-command="view.background.toggle" type="button" className="attention-overview__tile" onClick={() => open("background")}>
               <span>{t("shell.overview.background")}</span>
               <b>{props.background.running ? t("shell.overview.running", { count: props.background.running }) : t("shell.overview.queued", { count: props.background.queued })}</b>
               <small>{props.overview?.wait ?? (props.background.running && props.background.queued ? t("shell.overview.queued", { count: props.background.queued }) : "")}</small>
