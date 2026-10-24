@@ -1,4 +1,27 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-300",
+      "lanes": [
+        {
+          "id": "srv",
+          "status": "active",
+          "branch": "claude/srv",
+          "worktree": "",
+          "base_ref": "",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Claimed in the copy the batch carries; the original commit named this lane without claiming it.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
