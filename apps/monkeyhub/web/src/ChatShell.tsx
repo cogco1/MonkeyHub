@@ -1451,7 +1451,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     finally { setModelBusy(false); }
   };
   const stop = async () => {
-    if (!chatId || actionLock.current) return;
+    // A workspace being opened (a reload reopens the saved ones) holds the lock too; stopping the turn does not wait for it.
+    if (!chatId || (actionLock.current && !openingRef.current)) return;
     try { setChat(await request<ChatDetail>(`/api/chat/sessions/${chatId}/stop`, {})); }
     catch (cause) { setError(asFailure(cause)); }
   };

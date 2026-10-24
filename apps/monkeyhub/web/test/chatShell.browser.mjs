@@ -3101,12 +3101,22 @@ try {
 
   // The existing conversation keeps the connection it was created with.
   await page.locator(".chat-connection").filter({ hasText: "Codex CLI" }).waitFor();
-  await page.reload();
+  // The reload reopens the saved workspaces; Stop reaches the conversation while one is still opening.
+  let releaseReopen;
+  runtimeOpenGate = new Promise((resolve) => { releaseReopen = resolve; });
+  const reopenHeld = new Promise((resolve) => { runtimeOpenCaptured = resolve; });
+  await Promise.all([reopenHeld, page.reload()]);
   await page.locator(".chat-connection").filter({ hasText: "Codex CLI" }).waitFor();
-
-  // A new conversation takes the new default; the old one is untouched.
+  await page.locator('.chat-rail__tool[aria-busy="true"]').waitFor();
+  const beforeStop = writes.length;
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await page.getByRole("button", { name: "Send", exact: true }).waitFor();
+  assert.ok(writes.slice(beforeStop).some(([method, pathname]) => method === "POST" && pathname.endsWith("/stop")),
+    "Stop is sent while a workspace reopens");
+  releaseReopen();
+  await page.waitForFunction(() => !document.querySelector('.chat-rail__tool[aria-busy="true"]'));
+
+  // A new conversation takes the new default; the old one is untouched.
 
   // This conversation picks its own model: saved for it, not for everyone.
   const picker = page.locator("#chat-model");
