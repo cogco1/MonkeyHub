@@ -88,28 +88,6 @@
         "tools/tests/test_state_file_command.py"
       ],
       "depends_on": []
-    },
-    {
-      "id": "GH-300",
-      "lanes": [
-        {
-          "id": "stop-restore",
-          "status": "active",
-          "branch": "claude/300-stop-restore",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-stop-restore",
-          "base_ref": "f6136b0b1b646099a6e281c979e23d2ea905ce07",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": "Stop reaches the conversation while a reload is reopening the saved workspaces: opening a workspace holds the action lock, and stop() returned silently on it. Draft only during the paper freeze: nothing merges into main until the relay ends and the coordinator says so.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/src/ChatShell.tsx",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs"
-          ]
-        }
-      ]
     }
   ]
 }
