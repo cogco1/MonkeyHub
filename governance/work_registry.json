@@ -698,6 +698,26 @@
             "docs/architecture/system-map.md"
           ],
           "depends_on": []
+        },
+        {
+          "id": "front-minimal",
+          "status": "active",
+          "branch": "claude/300-b3-front-minimal",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-front-minimal",
+          "base_ref": "d64d6bb8b",
+          "contributor": "Claude",
+          "reviewer": null,
+          "depends_on": [],
+          "handoff": "20 前台只剩草图、体块和少量语义描述: the right rail shows only the background while it runs, the composer's target and model lines stay out of the way until used (batch 3, from claude/300-batch3).",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/app/AttentionShell.tsx",
+            "apps/monkeyhub/web/src/app/attentionShell.css",
+            "apps/monkeyhub/web/test/attentionShell.browser.mjs"
+          ]
         }
       ]
     }

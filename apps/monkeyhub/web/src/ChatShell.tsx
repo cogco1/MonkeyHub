@@ -2365,7 +2365,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           })()}
           {/* DC-9: what this message will change, and DC-5: a New topic chosen from the + menu, as one removable chip. */}
           <div className="chat-composer__context">
-            {project && <p className="chat-target" id="chat-target" data-viewing={Boolean(position?.viewing)} data-read-only={Boolean(staleBase)}>
+            {project && <p className="chat-target" id="chat-target" data-viewing={Boolean(position?.viewing)} data-read-only={Boolean(staleBase)}
+              data-default={!position?.viewing && !staleBase && !imageTurn && !chatId && !freshChat && contextMode !== "project" ? true : undefined}>
               {/* 2-3a: which conversation the message goes to, said before it goes. */}
               {attentionLayout && <span className="chat-target__to">{w.sendTo(chatId ? (chat?.id === chatId ? chat.title : sessions.find((item) => item.id === chatId)?.title) ?? w.sendToAttention
                 : freshChat ? w.sendToNew : w.sendToAttention)}</span>}
@@ -2406,7 +2407,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             { key: "topic", label: w.newTopic, detail: busy ? t.actionPending : running ? t.contextRunning : designContext ? w.newTopicDetail : contextUnavailable, checked: contextMode === "project",
               disabled: busy || running || (!designContext && contextMode !== "project" && !recordContext),
               onSelect: () => { setContextModes((value) => ({ ...value, [draftKey]: value[draftKey] === "project" ? "continue" : "project" })); input.current?.focus(); } },
-          ]} /><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
+          ]} /><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}
+            data-default={customModel === null && !chosenModel && availableProvider?.available !== false ? true : undefined}>
             <span className="chat-connection__name">{providers.find((item) => item.id === connection.provider)?.label ?? connection.provider}</span>
             <label className="sr-only" htmlFor="chat-model">{t.modelLabel}</label>
             <select data-command="preference.chat_model.choose" id="chat-model" className="chat-connection__model" value={customModel !== null ? "__custom__" : chosenModel ?? ""} disabled={running || modelBusy || busy}

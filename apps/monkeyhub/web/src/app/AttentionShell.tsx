@@ -304,13 +304,15 @@ export function AttentionShell(props: AttentionShellProps) {
             : <p className="attention-shell__empty">{t(`shell.side.${side}.empty` as MessageKey)}</p>}
         </div>
       </div>}
-      <div className="attention-shell__rail" role="toolbar" aria-orientation="vertical" aria-label={t("shell.side")}>
-        {SIDE_PAGES.map((page) => <button key={page} type="button" className="attention-shell__rail-item" aria-pressed={side === page}
+      {/* 20 前台只剩草图、体块和少量语义描述: the rail shows the background while there is work in it; the other pages are
+          one Ctrl K away (their commands), and the open panel's own tabs switch between them. Nothing to show, no rail. */}
+      {(backgroundCount > 0 || side !== null) && <div className="attention-shell__rail" role="toolbar" aria-orientation="vertical" aria-label={t("shell.side")}>
+        {SIDE_PAGES.filter((page) => side !== null || (page === "background" && backgroundCount > 0)).map((page) => <button key={page} type="button" className="attention-shell__rail-item" aria-pressed={side === page}
           data-command={SIDE_COMMANDS[page]} onClick={() => open(page)}>
           <Icon name={page === "background" ? "tasks" : page === "history" ? "tree" : page === "handled" ? "archive" : page === "ignored" ? "restore" : "display"} />
           <span>{pageLabel(page)}</span>{page === "background" && backgroundCount > 0 && <span className="attention-shell__count">{backgroundCount}</span>}
         </button>)}
-      </div>
+      </div>}
     </aside>
     {side && <button type="button" className="attention-shell__scrim attention-shell__scrim--side" aria-label={t("shell.closeSide")} onClick={() => setSide(null)} />}
     {props.dialogs}
