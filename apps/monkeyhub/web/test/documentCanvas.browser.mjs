@@ -475,15 +475,14 @@ try {
   const comment = `检查旋转裁切页上的箭头与入口标记 ${nonce}`;
   let submittedRef;
   await step("page comment and intent submit the exact persisted document revision without 3D gestures", async () => {
-    // Current product requires an explicit link to the exact editing source.
-    // The fixture retains that source; selecting it does not invoke a provider.
-    const modelChoice = page.getByRole("combobox", { name: "选择模型", exact: true });
-    const key = JSON.stringify([modelSource.runId, modelSource.stateDigest, modelSource.assetSha256]);
-    await until(() => modelChoice.locator("option").evaluateAll(options => options.map(option => option.value)),
-      options => options.includes(key), "the exact retained model is available to link");
-    await modelChoice.selectOption(key);
-    await cmd(page, "document.model_source.link").click();
+    // The upload was linked to the model being edited when it arrived: there is nothing to choose, and the row
+    // says so. The link is retained in the project, not only on screen.
     await page.locator('.document-model-source[data-model-source-status="ready"]').waitFor();
+    assert.equal(await page.getByRole("combobox", { name: "选择模型", exact: true }).count(), 0, "no model to choose for an uploaded file");
+    assert.match(await page.locator(".document-model-source__description").textContent(), /已关联/);
+    const linked = (await apiCall("GET", `/api/documents?runId=${encodeURIComponent(runId)}`)).documents.find((item) => item.assetSha256 === assetSha);
+    assert.deepEqual(linked.modelSource, modelSource, "the uploaded file is retained as linked to the model being edited");
+    assert.deepEqual(linked.modelSourceHistory, []);
     // GH-302: there is no Save button; the comment saves itself after its typing pause.
     assert.equal(await page.getByRole("button", { name: "保存本页", exact: true }).count(), 0);
     await page.locator("#document-comment").fill(comment);
