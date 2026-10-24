@@ -147,6 +147,7 @@
           ],
           "write_scope": [
             "apps/monkeyhub/api/monkeyhub_api/chat/acp_grants.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/acp_session.py",
             "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
             "apps/monkeyhub/api/monkeyhub_api/settings/routes.py",
             "apps/monkeyhub/api/monkeyhub_api/settings/skill_problems.py",
