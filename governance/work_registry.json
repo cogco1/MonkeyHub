@@ -174,6 +174,7 @@
           "write_scope": [
             "apps/monkeyhub/web/src/FabPage.tsx",
             "apps/monkeyhub/web/src/MonitorPage.tsx",
+            "apps/monkeyhub/web/src/app/App.tsx",
             "apps/monkeyhub/web/src/app/ErrorBoundary.tsx",
             "apps/monkeyhub/web/src/features/chrome/SurfaceChrome.tsx",
             "apps/monkeyhub/web/src/features/componentInfo/ComponentInfoCard.tsx",
@@ -194,6 +195,7 @@
             "apps/monkeyhub/web/src/features/evidence/EvidenceDrawer.tsx",
             "apps/monkeyhub/web/src/features/stage/ElevationPanel.tsx",
             "apps/monkeyhub/web/src/features/stage/ModelEditPanel.tsx",
+            "apps/monkeyhub/web/src/features/stage/VersionsStrip.tsx",
             "apps/monkeyhub/web/src/features/stage/tools.ts",
             "apps/monkeyhub/web/src/workspaces/monkeyarch/Annotate.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeyarch/gestureTools.ts",
@@ -270,12 +272,10 @@
             "hub.shell"
           ],
           "write_scope": [
-            "apps/monkeyhub/web/src/app/App.tsx",
             "apps/monkeyhub/web/src/features/designTree/DesignTreeBar.tsx",
             "apps/monkeyhub/web/src/features/designTree/DesignTreeDetails.tsx",
             "apps/monkeyhub/web/src/features/stage/ParameterLocksPanel.tsx",
             "apps/monkeyhub/web/src/features/stage/Stage.tsx",
-            "apps/monkeyhub/web/src/features/stage/VersionsStrip.tsx",
             "apps/monkeyhub/web/src/notifications/cards/InlineDecision.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentTracingPanel.tsx",
