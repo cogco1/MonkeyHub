@@ -452,6 +452,24 @@ class JobKindTests(QueueTestCase):
         other = to_dto({"seq": 2, "at": "now", "type": "validation.computed"}).model_dump(by_alias=True)
         self.assertIsNone(other["steps"], "an event that is not a job's has no steps")
 
+    def test_a_job_whose_steps_cannot_be_settled_still_ends_with_its_own_reason(self) -> None:
+        class Refusing(Recorder):
+            def publish(self, *, event: dict) -> None:
+                if event["type"] == "job.step" and event["step_state"] == "skipped":
+                    raise RuntimeError("the event sink is gone")
+                super().publish(event=event)
+
+        registry = JobRegistry(Refusing(), max_workers=1)
+        self.addCleanup(registry.shutdown)
+
+        def work() -> None:
+            report_step("generate", "running")
+            raise ValueError("seat pack missing")
+
+        job = registry.submit(candidate_id="c-unsettled", proposal_id="p-1", work=work)
+        self.assertTrue(wait_until(lambda: registry.get(job.job_id).status == "failed"))
+        self.assertEqual(registry.get(job.job_id).error, "seat pack missing")
+
     def test_a_job_whose_event_cannot_be_published_still_gives_its_lane_back(self) -> None:
         class Refusing(Recorder):
             def publish(self, *, event: dict) -> None:

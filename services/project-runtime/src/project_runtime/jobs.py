@@ -433,7 +433,10 @@ class JobRegistry:
                 failure = None
             finally:
                 _CURRENT.reset(current)
-            self._settle_steps(job_id, failed=failure is not None)
+            try:
+                self._settle_steps(job_id, failed=failure is not None)
+            except Exception:  # noqa: BLE001 - the job still ends, with its own reason
+                _LOG.warning("The steps of job %s could not be settled", job_id, exc_info=True)
             if failure is not None:
                 # The runner's own sentence goes on the job verbatim; an exception
                 # with no message would otherwise arrive as an empty string nobody
