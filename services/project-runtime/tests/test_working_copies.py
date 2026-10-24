@@ -348,10 +348,12 @@ class WorkingCopyTests(unittest.TestCase):
             refs = self.repository.list_json(run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id))
             return [ref for ref in refs if ref.record_kind == STUDIO_DOCUMENT_MODEL_SOURCE]
 
+        self.assertFalse(upload.json()["modelSourceChangeable"], "nothing to change before there is a link")
         first = self.client.put(url, json=body(self.a))
         self.assertEqual(first.status_code, 200, first.text)
         self.assertEqual((first.json()["modelSource"], first.json()["modelSourceHistory"]), (self.a, []),
                          "changing the link of an unlinked document is its first link")
+        self.assertTrue(first.json()["modelSourceChangeable"], "a file the person brought in and linked may be linked again")
         self.assertEqual(self.client.put(url, json=body(self.a)).json(), first.json())
         self.assertEqual(len(link_records()), 1, "linking to the model it already has writes nothing")
 
@@ -382,6 +384,32 @@ class WorkingCopyTests(unittest.TestCase):
             self.assertEqual(reopened.get("/api/documents", params={"runId": REFERENCE_RUN_ID}).json()["documents"], [back.json()])
         # The one-time link keeps refusing another model; only the change does that.
         self.assertEqual(self.client.post(url, json=body(self.b)).status_code, 409)
+
+    def test_nothing_the_hub_made_from_one_model_is_linked_to_another(self) -> None:
+        binding = bound_project(self.client.app.state)
+
+        def put(sha: str, source: dict):
+            return self.client.put(f"/api/documents/{sha}/model-source",
+                                   json={"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "modelSource": source})
+
+        # A camera pass picture (ID, line, depth) has no drawing id and no revision: it carries its view recipe.
+        made = save_document(binding, REFERENCE_RUN_ID, "camera 1 id.png", "image/png", base64.b64encode(image_bytes(color="green")).decode(),
+                             ModelSource.from_dict(self.a), view_recipe={"kind": "camera-pass", "pass": "id", "passId": "pass-1"})
+        # The same picture of a model that is an imported asset has no model link at all, and is not linked by a person either.
+        frozen = save_document(binding, REFERENCE_RUN_ID, "camera 2 id.png", "image/png", base64.b64encode(image_bytes(color="cyan")).decode(),
+                               None, view_recipe={"kind": "camera-pass", "pass": "id", "passId": "pass-2", "sourceAsset": {"runId": "x"}})
+        # A document registered with its model, as a caller said it, by the upload route.
+        registered = self.client.post("/api/documents", json={
+            "projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "fileName": "registered.png", "mimeType": "image/png",
+            "contentBase64": base64.b64encode(image_bytes(color="orange")).decode(), "modelSource": self.a}).json()
+        for sha in (made.asset_sha256, frozen.asset_sha256, registered["assetSha256"]):
+            with self.subTest(sha=sha[:8]):
+                refused = put(sha, self.b)
+                self.assertEqual((refused.status_code, refused.json()["code"]), (409, "DOCUMENT_SOURCE_IMMUTABLE"), refused.text)
+        listed = {row["assetSha256"]: row for row in self.client.get("/api/documents", params={"runId": REFERENCE_RUN_ID}).json()["documents"]}
+        self.assertEqual(listed[made.asset_sha256]["modelSource"], self.a, "and it still says the model it was made from")
+        self.assertEqual([listed[sha]["modelSourceChangeable"] for sha in (made.asset_sha256, frozen.asset_sha256, registered["assetSha256"])],
+                         [False, False, False], "the interface is told, so it offers no way to change it")
 
     def test_a_drawing_made_from_a_model_keeps_that_model_and_a_retried_upload_does_not_conflict(self) -> None:
         binding = bound_project(self.client.app.state)

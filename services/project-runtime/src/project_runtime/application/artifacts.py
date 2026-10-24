@@ -288,6 +288,9 @@ class SourceDocument:
     # The models it was linked to before the current one, oldest first. Each
     # re-link keeps the record of the one it replaced (nothing is overwritten).
     model_source_history: tuple[ModelSourceBinding, ...] = ()
+    # The document was registered with its model: whoever made it said which model it is of, and that is not the
+    # person's to change. A document linked afterwards (an upload, an import) has the link in a record of its own.
+    linked_at_registration: bool = False
     drawing_id: str | None = None
     revision_ref: str | None = None
     source_stage_ref: str | None = None
@@ -427,6 +430,7 @@ def _read_run_documents(binding: ProjectBinding, run_id: str) -> tuple[SourceDoc
             pages=tuple(DocumentPage(**page) for page in payload["pages"]),
             model_source=ModelSource.from_dict(payload["modelSource"]) if payload.get("modelSource") else None,
             model_source_binding_ref=ref.uri if payload.get("modelSource") else None,
+            linked_at_registration=bool(payload.get("modelSource")),
             drawing_id=payload.get("drawingId"), revision_ref=payload.get("revisionRef"),
             source_stage_ref=payload.get("sourceStageRef"), view_recipe=payload.get("viewRecipe"),
             generated_at=payload.get("generatedAt"),
@@ -442,7 +446,7 @@ def _read_run_documents(binding: ProjectBinding, run_id: str) -> tuple[SourceDoc
             if previous.model_source is not None and previous.model_source != document.model_source:
                 raise StudioError(409, "DOCUMENT_SOURCE_CONFLICT", "This document has competing model associations; its pages remain retained.")
             if previous.model_source is None:
-                documents[key] = replace(previous, model_source=document.model_source,
+                documents[key] = replace(previous, model_source=document.model_source, linked_at_registration=True,
                                                            model_source_binding_ref=document.model_source_binding_ref)
     links: dict[str, list[tuple[str, ModelSource, Mapping[str, Any]]]] = {}
     for ref in binding.record_refs(run_id, kind=STUDIO_DOCUMENT_MODEL_SOURCE):
@@ -845,6 +849,24 @@ def bind_document_model_source(
         return next(row for row in list_documents(binding, run_id) if row.asset_sha256 == asset_sha256)
 
 
+def made_by_the_hub(document: SourceDocument) -> bool:
+    """A document made from one model, whose model is therefore not the person's to change.
+
+    A drawing, an ID, line or depth picture, a render or a capture carries what it was made from (a drawing id, a
+    revision, a view recipe, a Stage, a generation time); a document registered with its model has that model from
+    whoever made it. Its pixels belong to that model.
+    """
+
+    made = (document.drawing_id, document.revision_ref, document.view_recipe, document.source_stage_ref, document.generated_at)
+    return document.linked_at_registration or any(fact is not None for fact in made)
+
+
+def model_source_changeable(document: SourceDocument) -> bool:
+    """Whether the person may point this document at another model: one they brought in and linked themselves."""
+
+    return document.model_source is not None and not made_by_the_hub(document)
+
+
 @retained_sources
 def rebind_document_model_source(
     binding: ProjectBinding, run_id: str, asset_sha256: str, source: ModelSource, *, attribution: ActorAttribution,
@@ -861,8 +883,12 @@ def rebind_document_model_source(
     require_model_source(binding, source)
     with _document_source_lock:
         document, _ = document_bytes(binding, run_id, asset_sha256)
-        if document.revision_ref is not None or document.drawing_id is not None:
-            raise StudioError(409, "DOCUMENT_SOURCE_IMMUTABLE", "A drawing made from a model keeps that model.")
+        # The rule is read from the runs, never from an index row: a write never trusts one.
+        document = next(row for row in list_documents(binding, run_id)
+                        if row.asset_sha256 == asset_sha256 and row.revision_ref == document.revision_ref)
+        if made_by_the_hub(document):
+            raise StudioError(409, "DOCUMENT_SOURCE_IMMUTABLE",
+                              "A drawing or a picture made from a model, and a document registered with its model, keep that model.")
         if document.model_source is None:
             return bind_document_model_source(binding, run_id, asset_sha256, source)
         if document.model_source == source:

@@ -125,13 +125,13 @@ const overrides={
  bindDocumentModelSource:async(projectId,runId,sha,modelSource)=>{
   metrics.bindings.push({projectId,runId,sha,modelSource:structuredClone(modelSource)});
   if(metrics.holdBinding)await new Promise(resolve=>{metrics.releaseBinding=resolve});
-  source={...source,modelSource:structuredClone(modelSource),modelSourceBindingRef:'binding-1'};
+  source={...source,modelSource:structuredClone(modelSource),modelSourceBindingRef:'binding-1',modelSourceChangeable:true};
   return structuredClone(source);
  },
  changeDocumentModelSource:async(projectId,runId,sha,modelSource)=>{
   metrics.changes.push({projectId,runId,sha,modelSource:structuredClone(modelSource)});
   const previous=source.modelSource;
-  source={...source,modelSource:structuredClone(modelSource),modelSourceBindingRef:'binding-'+(metrics.changes.length+1),
+  source={...source,modelSource:structuredClone(modelSource),modelSourceChangeable:true,modelSourceBindingRef:'binding-'+(metrics.changes.length+1),
    modelSourceHistory:[...(source.modelSourceHistory??[]),{modelSource:structuredClone(previous),bindingRef:source.modelSourceBindingRef,boundAt:null,actorId:null}]};
   return structuredClone(source);
  },
