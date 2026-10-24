@@ -12,6 +12,7 @@ from tools.governance.archcheck import (
     check_changed_ui_baseline,
     check_command_tree,
     check_ui_entries,
+    command_tree,
     render_command_tree,
     unregistered_ui_entries,
 )
@@ -251,6 +252,15 @@ class CommandUiTests(unittest.TestCase):
         self.assertEqual(self._codes(_ui_command("chat.composer.stop", in_place="yes")), ["COMMAND_UI"])
         self.assertEqual(self._codes(_ui_command("chat.composer.stop", in_place=True, place="composer")), ["COMMAND_UI"])
         self.assertEqual(self._codes(_ui_command("chat.composer.stop", in_place=True, shortcut="Esc")), ["COMMAND_UI"])
+
+    def test_the_tree_flags_only_the_commands_that_act_in_place(self):
+        capability = {"capability_id": "chat.composer", "owner": "hub.shell", "purpose": "Write.", "purpose_zh": "写。",
+                      "ui": {"surface": "hub", "commands": [_ui_command("chat.composer.stop", in_place=True),
+                                                            _ui_command("chat.composer.send", in_place=False, place="composer"),
+                                                            _ui_command("chat.composer.attach")]}}
+        commands = command_tree({"capabilities": [capability]})["commands"]
+        self.assertEqual([command.get("inPlace") for command in commands], [True, None, None])
+        self.assertNotIn("inPlace", commands[1])
 
 if __name__ == "__main__":
     unittest.main()
