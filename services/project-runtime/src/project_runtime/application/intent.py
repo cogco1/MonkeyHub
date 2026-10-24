@@ -634,6 +634,35 @@ def _levels_left_above(record, rows, context, *, threshold: float, factor: float
             f"{risen} higher against the compressed work.")
 
 
+def _held_by(entities, component_id: str) -> bool:
+    # What a component holds, as a delete counts it: an entity under it, or an element it owns.
+    return any(item.parent_id == component_id
+               or (item.schema == "Element@1" and (item.fields.get("component_id") or item.parent_id) == component_id)
+               for item in entities)
+
+
+def _emptied_components(record, written, removed) -> tuple[str, ...]:
+    """Components that held something before an edit and would hold nothing after it, its parents in turn.
+
+    A root component (no parent) is never one of them, and neither is a
+    component the edit itself writes.
+    """
+
+    rewritten = {entity.entity_id: entity for entity in written}
+    before = list(record.entities)
+    after = [rewritten.get(entity.entity_id, entity) for entity in before if entity.entity_id not in set(removed)]
+    after += [entity for entity in written if entity.entity_id not in {item.entity_id for item in before}]
+    emptied: list[str] = []
+    while True:
+        found = [entity.entity_id for entity in after
+                 if entity.schema == "Component@1" and entity.parent_id is not None and entity.entity_id not in rewritten
+                 and _held_by(before, entity.entity_id) and not _held_by(after, entity.entity_id)]
+        if not found:
+            return tuple(sorted(emptied))
+        emptied += found
+        after = [entity for entity in after if entity.entity_id not in set(found)]
+
+
 def delete_element_proposal(
     projection: StateProjection,
     *,
@@ -868,6 +897,14 @@ def component_edit_proposal(
             ("removeRelationIds", "remove_relation_ids"),
         ):
             removed[internal] = ref_set(edit[wire], wire)
+        # A component the edit leaves holding nothing is no object, and a candidate refuses it (strict coverage):
+        # it goes with the last of what it held, as a delete takes it, and the summary says so (#300).
+        emptied = _emptied_components(record, entities, removed["remove_entity_ids"])
+        if emptied:
+            removed["remove_entity_ids"] = tuple(sorted(set(removed["remove_entity_ids"]) | set(emptied)))
+            count = len(emptied)
+            summary = (summary.strip() + f" (cleared {count} empty part{'s' if count != 1 else ''}: "
+                       f"{', '.join(emptied)} / 已清理 {count} 个空构件)")
         provider = DeterministicIntentProvider(projection)
         protected = provider._protected(tuple(edit["protected"]) + tuple(keep_refs))
         operator = compile_component_edit(

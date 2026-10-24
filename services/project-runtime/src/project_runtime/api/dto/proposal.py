@@ -161,11 +161,6 @@ class SketchActionDto(BaseModel):
         for x, z in value:
             if not isfinite(x) or not isfinite(z):
                 raise ValueError("a profile point must be a finite number")
-        rounded = [(round(x, 9), round(z, 9)) for x, z in value]
-        if any(a == b for a, b in zip(rounded, rounded[1:] + rounded[:1])):
-            raise ValueError("a profile cannot repeat a point; it closes on its own")
-        if len(set(rounded)) != len(rounded):
-            raise ValueError("a profile cannot visit the same point twice")
         return value
 
     @field_validator("height")
@@ -184,6 +179,14 @@ class SketchActionDto(BaseModel):
         if self.component_id == self.element_id:
             raise ValueError(f"componentId and elementId are both {self.element_id!r}; "
                              "a new form's component and element need different ids")
+        profile = closed_at_revisit(self.profile) if self.closed else self.profile
+        rounded = [(round(x, 9), round(z, 9)) for x, z in profile]
+        if any(a == b for a, b in zip(rounded, rounded[1:] + rounded[:1])):
+            raise ValueError("a profile cannot repeat a point; it closes on its own")
+        if len(set(rounded)) != len(rounded):
+            raise ValueError("a profile cannot visit the same point twice")
+        if profile != self.profile:
+            object.__setattr__(self, "profile", profile)
         if self.closed and len(self.profile) < 3:
             raise ValueError("a closed profile needs at least three points")
         if not self.closed and self.height != 0:
@@ -194,6 +197,21 @@ class SketchActionDto(BaseModel):
         """The element row's ``references.base``, as the producers read it."""
 
         return {"level": self.base_level} if self.base_level is not None else {"datum": self.base_datum}
+
+def closed_at_revisit(profile: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """A closed outline whose last click lands on an earlier point, read as closing there (#300 录屏 bug 3).
+
+    Clicking back onto the first point is how a person closes a shape: the
+    repeated point is dropped. Landing on a later point closes the loop that
+    starts there, and the clicks before it were the way in.
+    """
+
+    if len(profile) < 2:
+        return profile
+    last = (round(profile[-1][0], 9), round(profile[-1][1], 9))
+    earlier = [index for index, (x, z) in enumerate(profile[:-1]) if (round(x, 9), round(z, 9)) == last]
+    return list(profile[earlier[0]:-1]) if earlier else profile
+
 
 class SketchPrismRequestDto(SketchActionDto):
     """One drawing action against an exact retained or proposed source."""

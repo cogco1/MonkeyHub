@@ -168,6 +168,16 @@ class SketchTestCase(unittest.TestCase):
                 status, _ = self.draw(**invalid)
                 self.assertEqual(status, 422)
 
+    def test_a_click_back_onto_an_earlier_point_closes_the_outline_there(self) -> None:
+        # 录屏 bug 3: a person closes a shape by clicking where it started, or on a later corner after a stray first click.
+        triangle = [[2.44, 0.53], [2.44, 0.085], [2.88, 0.085]]
+        for sent, stored in (([*SQUARE, SQUARE[0]], SQUARE), ([[2.44, 0.19], *triangle, triangle[0]], triangle)):
+            with self.subTest(sent=sent):
+                status, proposal = self.draw(profile=sent)
+                self.assertEqual(status, 201, proposal)
+                [entity] = proposal["change"]["edits"]["entities"]
+                self.assertEqual(entity["fields"]["params"]["profile"], stored)
+
     def test_an_unknown_base_is_refused_by_the_record_not_by_the_drawing(self) -> None:
         status, body = self.draw(baseLevel="level-that-does-not-exist")
         self.assertEqual(status, 422, body)
