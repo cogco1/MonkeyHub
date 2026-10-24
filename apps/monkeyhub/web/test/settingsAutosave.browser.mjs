@@ -360,7 +360,7 @@ try {
   await page.reload();
   await openSettings("Hub 设置");
   await status.filter({ hasText: /^已保存$/ }).waitFor();
-  assert.equal(await page.getByRole("checkbox", { name: "开发者／研究模式", exact: true }).isChecked(), true, "developer mode is kept across a reload");
+  assert.equal(await page.locator("#developer-mode").isChecked(), true, "developer mode is kept across a reload");
   assert.equal(await page.locator("#render-model").inputValue(), "gemini-3.1-flash-image-preview");
   assert.equal(await page.locator("#studio-port").inputValue(), "18791");
   assert.deepEqual(errors, []);

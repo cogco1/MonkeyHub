@@ -2231,7 +2231,8 @@ try {
   await create.getByText("harbour study", { exact: false }).first().waitFor();
   await create.locator("#new-project-name").fill("A");
   await create.getByRole("button", { name: "Create and start chatting" }).click();
-  await create.getByRole("alert").filter({ hasText: "already exists" }).waitFor();
+  // The person reads the Hub's sentence; the folder's own words are for developer mode.
+  await create.getByRole("alert").filter({ hasText: "This project name is already in use." }).waitFor();
   await create.locator("#new-project-name").fill("harbour-study");
   await create.getByRole("button", { name: "Create and start chatting" }).click();
   await page.waitForFunction(() => document.querySelectorAll(".chat-project").length === 3);
@@ -2631,7 +2632,7 @@ try {
   emitRuntime();
   await choices.waitFor();
   await choices.getByRole("button", { name: "Reject", exact: true }).click();
-  const permissionError = page.getByRole("alert").filter({ hasText: "CHAT_PERMISSION_EXPIRED" });
+  const permissionError = page.getByRole("alert").filter({ hasText: "This permission request is no longer pending." });
   await permissionError.waitFor();
   assert.equal(await choices.getByRole("button", { name: "Reject", exact: true }).isEnabled(), true);
   await permissionError.getByRole("button", { name: "Close", exact: true }).click();
@@ -3708,7 +3709,7 @@ try {
   await page.getByRole("button", { name: "New project", exact: true }).first().click();
   await page.locator("#new-project-name").fill("provider-recovery");
   await create.getByRole("button", { name: "Create and start chatting" }).click();
-  await page.locator(".chat-error").filter({ hasText: "The CLI connection is temporarily unavailable." }).waitFor();
+  await page.locator(".chat-error").filter({ hasText: "The CLI connection is unavailable." }).waitFor();
   assert.equal(await create.isVisible(), false);
   releaseProjectList();
   for (let refresh = 0; refresh < 2; refresh++) await Promise.all([page.waitForResponse(response =>
