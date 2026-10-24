@@ -32,20 +32,34 @@ it only touches several things, or something else lies at its rim. Which of
 several things the architect meant is their question to answer, not this
 module's. No model call and no write; the same page and marks give the same
 reading.
+
+A registered page is read as it was drawn (``read_page_marks``): a view
+drawing by its retained SVG, a view sheet by each view it placed, a camera pass
+by its object-ID image, and the record state the drawing was made from answers
+for each object. An imported PDF or picture names no object.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from itertools import chain
 
+from archflow.project.refs import record_ref_from_uri
+from monkeydiagram.drawing_runs import read_model_axis_elevation
 from monkeydiagram.rendering.marks import (
-    FREEHAND, OUTLINE, POINT_ZONE, STROKE, TIP, MarkInk, ObjectInk, id_image_under_marks, ink_under_mark,
+    FREEHAND, OUTLINE, POINT_ZONE, STROKE, TIP, MarkInk, ObjectInk, id_image_under_marks, ink_under_mark, page_ink,
 )
+from monkeydiagram.rendering.svg import DrawingSvgError, svg_object_marks
+from monkeydiagram.sources import DrawingElevationError, object_semantics
 
+from ..binding import ProjectBinding
+from ..errors import StudioError
+from . import artifacts, drawings
+from .camera_passes import PASS_KIND
 from .gestures import ARROW, CIRCLE, POLYLINE, TEXT, DocumentGesture, Gesture, GestureHit
 from .pick import MODEL_VISIBLE_CATALOG_MISSING, RESOLVED, PickRequest, element_of_object, resolve_pick
-from .projection import StateProjection
+from .projection import StateProjection, project_state
 
 #: Coverage at or above which a subject counts as circled whole, wherever in the mark it lies.
 ENCLOSED = 0.8
@@ -65,6 +79,15 @@ POINT_REACH = 2.0
 
 #: The zone of a stroke drawn on the model, read by the objects its samples fell on.
 MODEL_ZONE = "model"
+
+#: What a page's marks were read from (``PageMarks.source``): a view drawing's object-named lines, a view sheet's
+#: placed views, a camera pass's object-ID image, or a page that names no object, where every mark reads NOTHING.
+DRAWING_PAGE = "drawing"
+SHEET_PAGE = "sheet"
+ID_IMAGE_PAGE = "id-image"
+PLAIN_PAGE = "page"
+#: The sheet kind whose views are retained drawings placed where the request put them.
+VIEW_SHEET = "view-sheet"
 
 NOTHING = "nothing"
 UNBOUND = "unbound"
@@ -233,6 +256,105 @@ def read_id_image(gestures: Sequence[DocumentGesture], id_png: bytes, legend: Se
     return tuple(_reading(gesture, ink, identify) for gesture, ink in zip(marks, found))
 
 
+@dataclass(frozen=True, slots=True)
+class PageMarks:
+    """One page's marks read, what they were read from, and the record state that answered for what they lie on."""
+
+    source: str
+    state_digest: str | None
+    readings: tuple[MarkReading, ...]
+
+
+def read_page_marks(binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int,
+                    gestures: Sequence[DocumentGesture], *, revision_ref: str | None = None) -> PageMarks:
+    """Each mark on one registered page read into the components and elements it lies on (#300 3-2).
+
+    The page is read as it was drawn, never drawn again: a view drawing (plan,
+    section, elevation, section perspective) by its retained SVG's object-named
+    lines; a view sheet by each view's, at its paper position; a camera pass by
+    its object-ID image, which its line and depth images match pixel for pixel.
+    The record state the drawing was made from answers for each object
+    (``subjects_of``), so a drawing of a model from outside the project reads
+    UNBOUND. Another page names no object: every mark on it reads NOTHING. A
+    view drawing is read by the revision the documents list names it by
+    (DRAWING_REVISION_REQUIRED).
+    """
+
+    document, data = artifacts.document_bytes(binding, run_id, asset_sha256, revision_ref)
+    if not 0 <= page_index < len(document.pages):
+        raise StudioError(422, "DOCUMENT_PAGE_NOT_FOUND", "The page does not exist in this source document version.")
+    if document.revision_ref is not None and revision_ref is None:
+        raise StudioError(422, "DRAWING_REVISION_REQUIRED", "A view drawing's marks are read by its revisionRef, as "
+                                                           "the documents list names it.")
+    recipe = document.view_recipe or {}
+    if document.revision_ref is not None:
+        page, marks = _drawing_marks(binding, document.revision_ref)
+        source, ink = DRAWING_PAGE, page_ink(marks)
+    elif recipe.get("kind") == VIEW_SHEET and recipe.get("views"):
+        page, source = tuple(recipe["paperSizeMm"]), SHEET_PAGE
+        ink = tuple(chain.from_iterable(page_ink(_drawing_marks(binding, row["revisionRef"])[1],
+                                                 place=tuple(row["placeMm"])) for row in recipe["views"]))
+    elif recipe.get("kind") == PASS_KIND and (found := _id_image(binding, document, data)) is not None:
+        id_document, png = found
+        identify, state_digest = _drawn_state(binding, id_document)
+        return PageMarks(ID_IMAGE_PAGE, state_digest, read_id_image(
+            gestures, png, (id_document.view_recipe or {}).get("legend") or (),
+            _object_components(binding, id_document), identify))
+    else:
+        shown = document.pages[page_index]
+        return PageMarks(PLAIN_PAGE, None, read_marks(gestures, (), (shown.width, shown.height), _nobody))
+    identify, state_digest = _drawn_state(binding, document)
+    return PageMarks(source, state_digest, read_marks(gestures, ink, page, identify))
+
+
+def _nobody(object_id: str, component: str | None) -> Subject | None:
+    return None
+
+
+def _drawing_marks(binding: ProjectBinding, revision_ref: str):
+    """A retained view drawing's paper size and object-named marks, from the SVG its receipt keeps."""
+
+    try:
+        drawing = read_model_axis_elevation(binding.repository, record_ref_from_uri(revision_ref, binding.project_id))
+        return svg_object_marks(drawing.svg)
+    except (DrawingElevationError, DrawingSvgError, TypeError, ValueError) as exc:
+        raise StudioError(409, "DOCUMENT_UNAVAILABLE", "The retained drawing revision cannot be read.") from exc
+
+
+def _drawn_state(binding: ProjectBinding, document) -> tuple[Identify, str | None]:
+    """Who answers for a drawn object: the record state the drawing was made from; none for a model from outside."""
+
+    if document.model_source is None and document.source_stage_ref is None:
+        return _nobody, None
+    projection = project_state(binding, None if document.model_source is None else document.model_source.run_id,
+                               source_stage_ref=document.source_stage_ref)
+    return subjects_of(projection), projection.state_digest
+
+
+def _id_image(binding: ProjectBinding, document, data: bytes):
+    """The camera pass's object-ID image and its bytes, from any of its three images; None when none is retained."""
+
+    recipe = document.view_recipe or {}
+    if recipe.get("pass") == "id":
+        return document, data
+    for row in reversed(artifacts.list_documents(binding, document.run_id)):
+        other = row.view_recipe or {}
+        if other.get("kind") == PASS_KIND and other.get("pass") == "id" and other.get("passId") == recipe.get("passId"):
+            return artifacts.document_bytes(binding, row.run_id, row.asset_sha256)
+    return None
+
+
+def _object_components(binding: ProjectBinding, document) -> dict[str, str]:
+    """Each object's component as the export a camera pass drew named it; none for a layer or material image."""
+
+    if (document.view_recipe or {}).get("idBy") != "object" or (
+            document.model_source is None and document.source_stage_ref is None):
+        return {}
+    receipt = drawings.drawing_receipt(binding, model_source=document.model_source,
+                                       source_stage_ref=document.source_stage_ref)
+    return {object_id: row["component"] for object_id, row in object_semantics(receipt).items() if "component" in row}
+
+
 def _page(page_size: tuple[float, float]) -> tuple[float, float]:
     width, height = page_size
     if not (width > 0 and height > 0):
@@ -326,11 +448,13 @@ __all__ = [
     "MarkReading",
     "NOTHING",
     "PARTIAL",
+    "PageMarks",
     "Subject",
     "UNBOUND",
     "hit_subjects_of",
     "read_id_image",
     "read_model_marks",
     "read_marks",
+    "read_page_marks",
     "subjects_of",
 ]
