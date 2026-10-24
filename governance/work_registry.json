@@ -727,9 +727,7 @@
           "base_ref": "d64d6bb8b",
           "contributor": "Claude",
           "reviewer": null,
-          "depends_on": [
-            "front-minimal"
-          ],
+          "depends_on": [],
           "handoff": "17: without Codex installed a new conversation starts on the signed-in Claude Code and the composer says so in a sentence; the CLI's English is not shown. Stacked on front-minimal (ChatShell.tsx, attentionShell test).",
           "modules": [
             "hub.shell"

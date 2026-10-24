@@ -14200,6 +14200,7 @@
         "archflow.contracts.failures",
         "archflow.project.archive",
         "archflow.project.manifest",
+        "archflow.project.ports",
         "archflow.project.record_kinds",
         "archflow.project.refs",
         "archflow.project.repository",
