@@ -117,7 +117,7 @@ def waiting_chat(project_dir: str) -> ChatDetail:
 
 
 def result_line(run: str) -> dict:
-    return {"kind": "result", "runId": run, "status": "ready", "admission": "none", "relation": "diverged",
+    return {"kind": "result", "runId": run, "status": "ready", "admission": "admitted", "relation": "diverged",
             "reconcile": "unknown", "studyId": "s1", "updatedAt": NOW.isoformat()}
 
 

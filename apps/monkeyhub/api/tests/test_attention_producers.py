@@ -51,8 +51,8 @@ SUGGESTION = {"title": "出一套期中评图的图", "outcome": "平立剖各�
 
 class ResultProducerTests(unittest.TestCase):
     def test_two_results_of_one_study_are_one_ab_card(self):
-        cards = producers.results(graph(line("run-a", studyId="s1", label="V16 去掉斜撑"),
-                                        line("run-b", studyId="s1", label="V16 加厚楼板")), now=NOW)
+        cards = producers.results(graph(line("run-a", studyId="s1", label="V16 去掉斜撑", admission="admitted"),
+                                        line("run-b", studyId="s1", label="V16 加厚楼板", admission="admitted")), now=NOW)
         self.assertEqual(len(cards), 1)
         card = cards[0]
         self.assertEqual((card.kind, card.dedupeKey), ("ab", "result:study:s1"))
@@ -64,26 +64,30 @@ class ResultProducerTests(unittest.TestCase):
     def test_a_single_result_asks_to_switch_or_combine(self):
         combine, conflict = producers.results(graph(line("run-c", reconcile="can-combine", label="东入口加宽"),
                                                     line("run-d", reconcile="conflict")), now=NOW)
-        self.assertEqual([row.id for row in combine.options], ["combine", "switch", "keep", "archive"])
+        self.assertEqual([row.id for row in combine.options], ["combine", "switch", "keep"])
         self.assertEqual(combine.options[0].action.args, {"runIds": ["run-v16", "run-c"]})
         self.assertIn("东入口加宽", combine.titleZh)
         self.assertIn("东入口加宽", combine.title)
-        self.assertEqual([row.id for row in conflict.options], ["switch", "keep", "archive"])
+        self.assertEqual([row.id for row in conflict.options], ["switch", "keep"],
+                         "a run nobody admitted cannot be archived, so the card does not offer it")
+        candidate, = producers.results(graph(line("run-e", admission="admitted")), now=NOW)
+        self.assertEqual([row.id for row in candidate.options], ["switch", "keep", "archive"])
         self.assertIn("同一处", conflict.summaryZh)
         self.assertIn("same part", conflict.summary)
 
     def test_a_result_already_answered_for_is_not_asked_about_alone(self):
-        after = graph(line("run-a", studyId="s1", admission="admitted"), line("run-b", studyId="s1"), head="run-a")
+        after = graph(line("run-b", studyId="s1", admission="admitted"), head="run-a")
         self.assertEqual([card.dedupeKey for card in producers.results(after, now=NOW)], ["result:run:run-b"])
         self.assertEqual(producers.results(after, now=NOW, handled={"run-a", "run-b"}), [],
                          "B was on the A/B card the person answered")
-        third = graph(line("run-b", studyId="s1"), line("run-c", studyId="s1"), head="run-a")
+        third = graph(line("run-b", studyId="s1", admission="admitted"), line("run-c", studyId="s1", admission="admitted"),
+                      head="run-a")
         card, = producers.results(third, now=NOW, handled={"run-a", "run-b"})
         self.assertEqual(card.source.runIds, ["run-b", "run-c"], "compared again with a new one")
 
     def test_a_large_study_shows_its_newest_and_archives_them_all(self):
-        lines = [line(f"run-{n}", studyId="s1", updatedAt=(NOW - timedelta(minutes=10 - n)).isoformat())
-                 for n in range(8)]
+        lines = [line(f"run-{n}", studyId="s1", admission="admitted",
+                      updatedAt=(NOW - timedelta(minutes=10 - n)).isoformat()) for n in range(8)]
         card, = producers.results(graph(*lines), now=NOW)
         self.assertEqual([row.id for row in card.options], ["a", "b", "c", "d", "e", "f", "archive"])
         self.assertEqual(card.options[0].action.args["runId"], "run-2", "the newest six, oldest of them first")
@@ -93,11 +97,12 @@ class ResultProducerTests(unittest.TestCase):
 
     def test_decided_results_ask_nothing_and_old_ones_are_offered_for_archiving(self):
         cards = producers.results(graph(
-            line("run-admitted", admission="admitted"), line("run-rejected", admission="rejected"),
-            line("run-superseded", relation="superseded"), line("run-archived", review="archived"),
+            line("run-rejected", admission="rejected"), line("run-withdrawn", admission="superseded"),
+            line("run-superseded", relation="superseded"), line("run-archived", admission="admitted", review="archived"),
             line("run-running", status="running"),
-            line("run-old1", updatedAt=(NOW - timedelta(days=9)).isoformat()),
-            line("run-old2", studyId="s9", updatedAt=(NOW - timedelta(days=8)).isoformat())), now=NOW)
+            line("run-old1", admission="admitted", updatedAt=(NOW - timedelta(days=9)).isoformat()),
+            line("run-old2", studyId="s9", admission="admitted", updatedAt=(NOW - timedelta(days=8)).isoformat()),
+            line("run-old-unadmitted", updatedAt=(NOW - timedelta(days=10)).isoformat())), now=NOW)
         self.assertEqual(len(cards), 1)
         self.assertTrue(cards[0].dedupeKey.startswith("result:stale:"))
         self.assertEqual(cards[0].options[0].action.args, {"runIds": ["run-old1", "run-old2"]})
@@ -106,10 +111,11 @@ class ResultProducerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             store = AttentionStore(Path(root) / "attention")
             project = str(Path(root))
-            first = producers.results(graph(line("run-a", studyId="s1"), line("run-b", studyId="s1")), now=NOW)
+            first = producers.results(graph(line("run-a", studyId="s1", admission="admitted"),
+                                            line("run-b", studyId="s1", admission="admitted")), now=NOW)
             store.reconcile("thi-hemp", project, producers.RESULTS, first)
-            after = producers.results(graph(line("run-a", studyId="s1", admission="admitted"),
-                                            line("run-b", studyId="s1"), head="run-a"), now=NOW)
+            # A was continued: it is the head now, not a result off its line.
+            after = producers.results(graph(line("run-b", studyId="s1", admission="admitted"), head="run-a"), now=NOW)
             store.reconcile("thi-hemp", project, producers.RESULTS, after)
             self.assertEqual(sorted((row.dedupeKey, row.state) for row in store.items(states=["open", "superseded"])),
                              [("result:run:run-b", "open"), ("result:study:s1", "superseded")])
@@ -179,9 +185,11 @@ class HubProducerTests(unittest.TestCase):
 class EveryButtonIsKnownTests(unittest.TestCase):
     def test_producers_write_only_answers_the_executor_runs(self):
         cards = [
-            *producers.results(graph(line("run-a", studyId="s1"), line("run-b", studyId="s1"),
-                                     line("run-c", reconcile="can-combine"),
-                                     line("run-old", updatedAt=(NOW - timedelta(days=9)).isoformat())), now=NOW),
+            *producers.results(graph(line("run-a", studyId="s1", admission="admitted"),
+                                     line("run-b", studyId="s1", admission="admitted"),
+                                     line("run-c", reconcile="can-combine"), line("run-d", admission="admitted"),
+                                     line("run-old", admission="admitted",
+                                          updatedAt=(NOW - timedelta(days=9)).isoformat())), now=NOW),
             *producers.permissions([chat([message("m1", "tool", permission={"id": "p1", "title": "t", "options": [
                 {"optionId": "allow", "name": "Allow", "kind": "allow_once"}]})])]),
             *producers.questions([producers.AskedQuestion("c1", "u1", "q", "r")]),
