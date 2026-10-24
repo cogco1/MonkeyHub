@@ -1,4 +1,31 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-300",
+      "lanes": [
+        {
+          "id": "b3-record-unstuck",
+          "status": "active",
+          "branch": "claude/300-b3-record-unstuck",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-record-unstuck",
+          "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "录屏 bug 1 (thi-hemp could record nothing): an edit that leaves a component holding nothing takes the component too and says so; a closed outline whose last click lands on an earlier point closes there (bug 3). Touches the design loop's proposal path: merge after the paper relay.",
+          "modules": [
+            "project_runtime.intent",
+            "project_runtime.shell"
+          ],
+          "write_scope": [
+            "services/project-runtime/src/project_runtime/application/intent.py",
+            "services/project-runtime/src/project_runtime/api/dto/proposal.py",
+            "services/project-runtime/tests/test_sketch.py",
+            "services/project-runtime/tests/test_proposals.py"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
