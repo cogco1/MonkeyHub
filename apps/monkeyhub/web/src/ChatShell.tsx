@@ -28,6 +28,7 @@ import { editFocused, HubMenuBar, type HubMenu, type HubMenuItem } from "./HubMe
 import { ASK_AI_ACTION, openSurfaceAction, useCommandActions, useCommands, type CommandHandler } from "./features/commands/CommandProvider";
 import { indexOf, routeSentence, searchable } from "./features/commands/search";
 import { usePreferences } from "./features/settings/preferences";
+import { chooseShell, useShellLayout } from "./app/shellLayout";
 import { AttentionShell, RECENT_CONVERSATIONS, type CenterView, type ShellProject } from "./app/AttentionShell";
 import { useT } from "./i18n/useT";
 import { attentionConversation } from "./notifications/queue";
@@ -1971,7 +1972,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const mw = menuWords[preferences.language];
   const tc = useT();
   // 2-3a: the attention shell, opened with ?shell=attention until it becomes the default (2-3c).
-  const [attentionLayout] = useState(() => new URLSearchParams(window.location.search).get("shell") === "attention");
+  // 2-3c: the attention shell by default; the workbench while the person has gone back to it (app/shellLayout.ts).
+  const attentionLayout = useShellLayout() === "attention";
   /** Whether the attention shell shows a conversation now; while it does not, a message goes to the attention conversation. */
   // A New conversation the person asked for: the next message starts one, in the attention shell too.
   const [freshChat, setFreshChat] = useState(false);
@@ -2016,6 +2018,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     "view.conversation_history.forward": { run: () => walk(1), available: () => (trail.index < trail.ids.length - 1 ? true : tc("commands.noLaterChat")) },
     "view.left_column.toggle": { run: toggleSidebar },
     "view.side_panel": { run: () => setPanel(!panel) },
+    "view.shell.workbench": { run: () => chooseShell("workbench"), available: () => (attentionLayout ? true : tc("shell.alreadyWorkbench")) },
+    "view.shell.attention": { run: () => chooseShell("attention"), available: () => (attentionLayout ? tc("shell.alreadyAttention") : true) },
     "view.tab.board": needsProject(() => openTool("monkeyboard")),
     "view.tab.modeling": needsProject(() => openTool("monkeyarch")),
     "view.settings.open": { run: openSettings },
@@ -2420,6 +2424,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       <button type="button" className="chat-icon" aria-label={mw.back} title={mw.back} disabled={trail.index <= 0} data-command="view.conversation_history.back" onClick={() => walk(-1)}><Icon name="back" /></button>
       <button type="button" className="chat-icon" aria-label={mw.forward} title={mw.forward} disabled={trail.index >= trail.ids.length - 1} data-command="view.conversation_history.forward" onClick={() => walk(1)}><Icon name="forward" /></button>
       <button type="button" className="chat-icon" aria-label={sidebar ? t.collapse : t.expand} title={sidebar ? t.collapse : t.expand} data-command="view.left_column.toggle" onClick={toggleSidebar}><Icon name="sidebar" /></button>
+      {/* 2-3c: the workbench is the way back; the new shell is one press away from it. */}
+      <button type="button" className="menu-command chat-menubar__to-new" data-command="view.shell.attention" onClick={() => chooseShell("attention")}>{tc("shell.toAttention")}</button>
     </>} /></div>
     <aside className="chat-sidebar" aria-label={t.projects}>
       <div className="chat-sidebar__body">

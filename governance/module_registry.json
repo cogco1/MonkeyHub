@@ -4529,6 +4529,20 @@
             ]
           },
           {
+            "id": "view.shell.workbench",
+            "label": "Back to the old shell",
+            "label_zh": "回旧版",
+            "aliases": ["old interface", "workbench", "旧界面", "工作台"],
+            "entries": []
+          },
+          {
+            "id": "view.shell.attention",
+            "label": "Back to the new shell",
+            "label_zh": "回新版",
+            "aliases": ["new interface", "attention shell", "新界面", "新版"],
+            "entries": []
+          },
+          {
             "id": "view.side_panel",
             "label": "Show or hide the tools panel",
             "label_zh": "展开或收起工具面板",
