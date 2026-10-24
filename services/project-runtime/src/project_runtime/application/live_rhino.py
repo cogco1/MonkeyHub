@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import json
+import ntpath
 import os
 import shutil
 import subprocess
@@ -124,7 +125,8 @@ def list_instances(*, runner: Runner | None = None) -> tuple[LiveRhino, ...]:
 
 
 def _same_path(left: str, right: str) -> bool:
-    return os.path.normcase(os.path.abspath(left)) == os.path.normcase(os.path.abspath(right))
+    # A Rhino document path is a Windows path, compared as Windows compares it wherever this runs.
+    return ntpath.normcase(ntpath.normpath(left)) == ntpath.normcase(ntpath.normpath(right))
 
 
 def select_instance(instances: tuple[LiveRhino, ...], *, rhino_id: str | None = None,

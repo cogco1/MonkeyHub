@@ -856,7 +856,7 @@ try {
     await until(() => page.getByRole("tooltip").textContent(), value => value === "Wall · Concrete · cut", "the cut names its wall");
     await page.mouse.click(wall.x, wall.y);
     assert.equal(await objectChoice().inputValue(), "obj-wall");
-    assert.equal(await group("objects").evaluate(node => node.open), true, "picking an object on the drawing opens its group");
+    await until(() => group("objects").evaluate(node => node.open), Boolean, "picking an object on the drawing opens its group");
     assert.equal(await page.locator(".drawing-object-picked > strong").textContent(), "Wall · Concrete · cut");
     assert.equal(await page.locator('.drawing-plan__highlight > .is-picked').count(), 2, "the wall's cut and poché are lit");
     await page.screenshot({ path: join(screenshots, "drawing-object-picked.png"), fullPage: true });
