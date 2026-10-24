@@ -1157,6 +1157,32 @@ export function Stage({
   };
   const documentOpenRef = useRef(documentOpen);
   documentOpenRef.current = documentOpen;
+  // Tracing Paper exits as one action, before the model can consume Escape.
+  // Keep this listener stable: re-registering it when a tool changes would put
+  // it behind the model's existing listener. The overlay only owns gesture cleanup.
+  const exitTracingPaper = useCallback(() => {
+    setAnnotationCancel((value) => value + 1);
+    setEraser(false);
+    onTool(null);
+    setAnnotationToolsOpen(false);
+  }, [onTool]);
+  const tracingPaperRef = useRef({ open: false, exit: exitTracingPaper });
+  tracingPaperRef.current = { open: annotationToolsOpen || tool !== null || eraser, exit: exitTracingPaper };
+  useEffect(() => {
+    const listen = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || !activeRef.current ||
+          documentOpenRef.current || !tracingPaperRef.current.open) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable ||
+          target.closest("input, textarea, select, [contenteditable], [role='dialog']"))) return;
+      if (document.querySelector("dialog[open], [aria-modal='true']")) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      tracingPaperRef.current.exit();
+    };
+    window.addEventListener("keydown", listen);
+    return () => window.removeEventListener("keydown", listen);
+  }, []);
   const cancelInkRef = useRef(setAnnotationCancel);
   cancelInkRef.current = setAnnotationCancel;
   useEffect(() => {
@@ -1206,10 +1232,11 @@ export function Stage({
       if (!keys || event.defaultPrevented) return;
       const target = event.target;
       if (target instanceof HTMLElement && (target.isContentEditable ||
-          target.closest("input, textarea, select, [contenteditable]") !== null)) {
-        // Someone is writing. Delete, Ctrl+Z and the rest belong to the text.
+          target.closest("input, textarea, select, [contenteditable], [role='dialog']") !== null)) {
+        // Text and dialogs keep their own keys, including Escape.
         return;
       }
+      if (document.querySelector("dialog[open], [aria-modal='true']")) return;
       // The drawings workspace owns its own keys while it is open.
       if (documentOpenRef.current) return;
       const control = event.ctrlKey || event.metaKey;
@@ -2074,8 +2101,7 @@ export function Stage({
               onClick={() => { setAnnotationCancel((value) => value + 1); setEraser(false); onEraseGestures(gestures.map((_, index) => index)); }} />
             <ModelToolButton icon="undo" label={t("stage.tools.undo.label")} disabled={!canUndoGesture} onClick={onUndoGesture} />
             <ModelToolButton icon="redo" label={t("document.redo")} disabled={!canRedoGesture} onClick={onRedoGesture} />
-            {(tool !== null || eraser) && <ModelToolButton icon="close" label={t("stage.tools.cancel.label")}
-              onClick={() => { setAnnotationCancel((value) => value + 1); setEraser(false); onTool(null); }} />}
+            <ModelToolButton icon="close" label={t("stage.tools.cancel.label")} onClick={exitTracingPaper} />
             {GESTURE_TOOLS.map((item) => (
               <button key={item.kind} type="button" disabled={!annotationsReady} title={t(item.titleKey)}
                 aria-pressed={!eraser && tool === item.kind}

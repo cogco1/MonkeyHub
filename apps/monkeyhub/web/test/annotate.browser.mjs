@@ -24,7 +24,7 @@ const proto=CanvasRenderingContext2D.prototype, original=proto.stroke;
 proto.stroke=function(...args){const result=original.apply(this,args);metrics.canvasDraws++;if(metrics.pendingInput){metrics.latencies.push(performance.now()-metrics.pendingInput);performance.mark('annotate-ink-'+metrics.sequence);metrics.pendingInput=0;metrics.paints++;}return result;};
 function App(){const [gestures,setGestures]=useState(base),[tool,setTool]=useState('freehand'),[eraser,setEraser]=useState(false),[cancelToken,setCancel]=useState(0);
 const viewportRef=useRef({camera:()=>camera,sampleAt:(x,y)=>{metrics.hitCalls++;const start=performance.now();while(performance.now()-start<metrics.sampleCost){}return {objectName:'fixture',userStrings:{Element:'fixture'},world:[x,y,0]};},unprojectOnPlane:(x,y)=>[x,y,0]});
-Object.assign(metrics,{setTool:t=>flushSync(()=>{setTool(t);setEraser(false)}),setEraser:e=>flushSync(()=>setEraser(e)),reset:()=>flushSync(()=>{setGestures([]);setCancel(n=>n+1);metrics.committed=[];metrics.erased=[];metrics.hitCalls=0;}),getGestures:()=>gestures});
+Object.assign(metrics,{cancel:()=>flushSync(()=>setCancel(n=>n+1)),setTool:t=>flushSync(()=>{setTool(t);setEraser(false)}),setEraser:e=>flushSync(()=>setEraser(e)),reset:()=>flushSync(()=>{setGestures([]);setCancel(n=>n+1);metrics.committed=[];metrics.erased=[];metrics.hitCalls=0;}),getGestures:()=>gestures});
 return <><input id="text"/><div id="stage"><canvas className="viewport-canvas" onPointerDown={e=>{metrics.downstream.push(e.button);e.currentTarget.setPointerCapture(e.pointerId);}}/><Annotate viewportRef={viewportRef} tool={tool} eraser={eraser} onErase={indices=>{metrics.erased.push(indices);setGestures(old=>old.filter((_,i)=>!indices.includes(i)));}} gestures={gestures} onGesture={g=>{metrics.committed.push(g);setGestures(old=>[...old,g]);}} style={{color:'#2468dd',lineWidth:2}} cancelToken={cancelToken}/></div></>}
 createRoot(document.getElementById('root')).render(<React.StrictMode><UserPreferencesProvider><App/></UserPreferencesProvider></React.StrictMode>);
 `;
@@ -90,8 +90,8 @@ try {
     assert.equal(await page.evaluate(()=>window.fixture.committed[1].screen.at(-1)[0]),52,"short stroke endpoint persists");
     await page.mouse.move(box.x+100,box.y+100);await page.mouse.down();await page.mouse.move(box.x+900,box.y+650);await page.mouse.up();
     await page.waitForFunction(()=>window.fixture.committed.length===3);
-    await page.mouse.move(box.x+100,box.y+120);await page.mouse.down();await page.keyboard.press('Escape');await page.mouse.up();
-    assert.equal(await page.evaluate(()=>window.fixture.committed.length),3,"Escape cancels live ink");
+    await page.mouse.move(box.x+100,box.y+120);await page.mouse.down();await page.evaluate(()=>window.fixture.cancel());await page.mouse.up();
+    assert.equal(await page.evaluate(()=>window.fixture.committed.length),3,"The Stage cancel token cancels live ink");
     await page.mouse.move(box.x+120,box.y+120);await page.mouse.down();await ink.dispatchEvent('pointercancel',{pointerId:1});await page.mouse.up();
     assert.equal(await page.evaluate(()=>window.fixture.committed.length),3,"pointercancel cancels live ink");
     await page.evaluate(()=>window.fixture.setEraser(true));
@@ -119,6 +119,6 @@ try {
     await page.mouse.move(box.x+100,box.y+300);await page.mouse.down();await page.mouse.move(box.x+900,box.y+650);await page.mouse.up();
     assert.equal(await page.evaluate(()=>window.fixture.committed.length),count+1,"no-capture fallback finishes outside the overlay");
     assert.deepEqual(await page.evaluate(()=>window.fixture.committed.at(-1).screen.at(-1)),[900,650]);
-    console.log("Annotate headless behavior PASS: point, short stroke, outside release, Escape, pointercancel, eraser commit/cancel, Space/middle viewer transfer, text Space, coalesced curve, arc, missing-capture fallback, DPR 2.");
+    console.log("Annotate headless behavior PASS: point, short stroke, outside release, cancel token, pointercancel, eraser commit/cancel, Space/middle viewer transfer, text Space, coalesced curve, arc, missing-capture fallback, DPR 2.");
   }
 } finally { await browser?.close(); await server.close(); }
