@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { chosenOption, isPending, orderedOptions, pendingFor, queueOrder, say } from "../src/notifications/cards/cardText.ts";
+import { chosenOption, isPending, needsWords, orderedOptions, pendingFor, queueOrder, say } from "../src/notifications/cards/cardText.ts";
 import type { AttentionCard, CardOption } from "../src/notifications/cards/types.ts";
 
 const option = (id: string, recommended = false): CardOption => ({
@@ -21,6 +21,12 @@ test("a card reads in Chinese where its writer gave Chinese, and in English othe
 test("the recommended answer comes first; the others keep their writer's order", () => {
   assert.deepEqual(orderedOptions(card("a", { options: [option("x"), option("y", true), option("z")] })).map((item) => item.id), ["y", "x", "z"]);
   assert.deepEqual(orderedOptions(card("a", { options: [option("x"), option("z")] })).map((item) => item.id), ["x", "z"], "no recommendation, no reordering");
+});
+
+test("an answer that sends a message the card does not write asks for the person's words", () => {
+  assert.equal(needsWords({ action: { commandId: "chat.send_message", args: {} } }), true);
+  assert.equal(needsWords({ action: { commandId: "chat.send_message", args: { content: "Use the south entrance." } } }), false, "the card wrote it");
+  assert.equal(needsWords({ action: { commandId: "candidate.review.archive", args: {} } }), false);
 });
 
 test("a handled card names the answer it was given", () => {

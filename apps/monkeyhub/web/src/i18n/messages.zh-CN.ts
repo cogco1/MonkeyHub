@@ -1337,6 +1337,7 @@ export const messagesZhCN = {
   "cards.undo": "撤销",
   "cards.reopen": "找回",
   "cards.evidence": "依据",
+  "cards.words": "要发出的话",
 } satisfies MessageCatalog;
 
 export const hubCopy = {

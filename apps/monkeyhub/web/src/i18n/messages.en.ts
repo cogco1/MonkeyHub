@@ -1374,6 +1374,7 @@ export const messagesEn = {
   "cards.undo": "Undo",
   "cards.reopen": "Bring back",
   "cards.evidence": "Evidence",
+  "cards.words": "What to send",
 } as const;
 
 export type MessageKey = keyof typeof messagesEn;

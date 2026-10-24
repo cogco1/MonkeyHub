@@ -16,6 +16,10 @@ export function orderedOptions(card: Pick<AttentionCard, "options">): CardOption
   return [...card.options.filter((option) => option.recommended), ...card.options.filter((option) => !option.recommended)];
 }
 
+/** An answer that sends a message the card does not write itself: the person's words go with it (the resolve's note). */
+export const needsWords = (option: Pick<CardOption, "action">) =>
+  option.action.commandId === "chat.send_message" && !("content" in option.action.args);
+
 /** The answer a handled card was given, if it names one of its options. */
 export function chosenOption(card: Pick<AttentionCard, "options" | "resolution">): CardOption | null {
   const id = card.resolution?.optionId;

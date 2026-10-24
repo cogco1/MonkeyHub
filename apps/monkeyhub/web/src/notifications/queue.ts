@@ -83,13 +83,14 @@ export function cardsIn(states: readonly CardState[], projectDir?: string): Prom
 }
 
 const post = <T>(path: string, body?: unknown) => call<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
+// The queue is read again before the action's answer comes back, so a card it raised is there to be shown.
 const acted = async <T>(action: Promise<T>): Promise<T> => {
-  try { return await action; } finally { void refreshQueue(); }
+  try { return await action; } finally { await refreshQueue(); }
 };
 
-/** The person's answer; the Hub's executor carries it out as them. */
-export const resolveCard = (id: string, optionId: string) =>
-  acted(post<CardActionResult>(`/api/attention/${encodeURIComponent(id)}/resolve`, { optionId }));
+/** The person's answer, with their own words where the answer sends a message; the Hub's executor carries it out as them. */
+export const resolveCard = (id: string, optionId: string, note?: string) =>
+  acted(post<CardActionResult>(`/api/attention/${encodeURIComponent(id)}/resolve`, note === undefined ? { optionId } : { optionId, note }));
 export const undoCard = (id: string) => acted(post<CardActionResult>(`/api/attention/${encodeURIComponent(id)}/undo`));
 export const laterCard = (id: string) => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/later`));
 export const dismissCard = (id: string) => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/dismiss`));

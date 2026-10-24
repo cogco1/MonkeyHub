@@ -101,9 +101,11 @@ const seedCards = () => [
   queueCard("guess", "B", { channel: "guess", kind: "ask", title: "Which side for the entrance", titleZh: "入口放在哪边",
     options: [answer("south", "South", "南边", "按南边入口改"), answer("east", "East", "东边", "按东边入口改")] }),
   queueCard("notice", "A", { channel: "notice", kind: "info", title: "The section is ready", titleZh: "剖面图出好了" }),
+  queueCard("ask", "A", { channel: "guess", kind: "ask", title: "How wide should the stair be", titleZh: "楼梯宽度你想怎么定",
+    options: [answer("say", "Say it", "我来说", "把你写的话交给对话", { action: { commandId: "chat.send_message", args: {} } })] }),
 ];
 let cards = [];
-const attentionActions = [];
+const attentionActions = [], attentionNotes = [];
 const route = async (handler) => {
   const request = handler.request(), url = new URL(request.url()), method = request.method();
   if (url.pathname === "/api/runtime/events") return handler.continue();
@@ -164,11 +166,16 @@ const route = async (handler) => {
       const item = cards.find((card) => card.id === act[1]);
       const option = act[2] === "resolve" ? item.options.find((row) => row.id === data().optionId) : null;
       attentionActions.push([act[2], item.id, option?.id ?? null]);
+      if (act[2] === "resolve" && data().note !== undefined) attentionNotes.push(data().note);
+      // An answer the Hub carried out raised a card that asks what comes next.
+      const followUp = act[2] === "resolve" && item.id === "att_ask" ? queueCard("ask_next", "A", { channel: "decide", kind: "choice",
+        title: "Change the stair to 1.2 m", titleZh: "按 1.2 米改楼梯吗", options: [answer("yes", "Change it", "改", "按 1.2 米改")], createdAt: stamp(), updatedAt: stamp() }) : null;
+      if (followUp) cards.push(followUp);
       Object.assign(item, { updatedAt: stamp() }, act[2] === "resolve"
         ? { state: "done", resolution: { optionId: option.id, by: "person", at: stamp(), undo: option.undoable ? { action: option.action } : null } }
         : act[2] === "later" ? { state: "later" } : act[2] === "dismiss" ? { state: "dismissed" } : { state: "open", resolution: null });
       setTimeout(() => announce("attention/changed"), 0);
-      return json(act[2] === "resolve" || act[2] === "undo" ? { item } : item);
+      return json(act[2] === "resolve" || act[2] === "undo" ? { item, followUp } : item);
     }
   }
   unexpected.push(`${method} ${url.pathname}`);
@@ -338,12 +345,12 @@ try {
   await open(queuePage);
   const queueCards = queuePage.locator(".attention-shell__queue .attention-card");
   const queued = (text) => queueCards.filter({ hasText: text });
-  await queueCards.nth(2).waitFor();
-  assert.deepEqual(await queueCards.evaluateAll((nodes) => nodes.map((node) => node.dataset.channel)), ["decide", "guess", "notice"]);
+  await queueCards.nth(3).waitFor();
+  assert.deepEqual(await queueCards.evaluateAll((nodes) => nodes.map((node) => node.dataset.channel)), ["decide", "guess", "notice", "guess"]);
   // The counts are the queue's own.
-  await queuePage.locator(".attention-shell__row--attention .attention-shell__count").filter({ hasText: "3" }).waitFor();
+  await queuePage.locator(".attention-shell__row--attention .attention-shell__count").filter({ hasText: "4" }).waitFor();
   const projectCount = (name) => queuePage.locator(".attention-shell__projects .attention-shell__row").filter({ hasText: name }).locator(".attention-shell__count");
-  assert.equal(await projectCount("Thi Hemp").textContent(), "2");
+  assert.equal(await projectCount("Thi Hemp").textContent(), "3");
   assert.equal(await projectCount("Housing").textContent(), "1");
   // A decision: what each answer does, the recommended one first with its reason, and what it opens.
   const decide = queued("V16 和 V17 留哪个");
@@ -372,6 +379,14 @@ try {
   await queuePage.locator(".attention-shell__rail-item").filter({ hasText: "已忽略" }).click();
   await queuePage.locator(".attention-shell__panel .attention-card").filter({ hasText: "剖面图出好了" }).getByRole("button", { name: "找回" }).click();
   await queued("剖面图出好了").waitFor();
+  // An answer that sends the architect's own words waits for them, and a card the answer raised is shown next.
+  const ask = queued("楼梯宽度你想怎么定");
+  assert.equal(await ask.locator('[data-option="say"]').isDisabled(), true, "nothing to send yet");
+  await ask.locator("textarea").fill("1.2 米，和走廊一样宽");
+  await ask.locator('[data-option="say"]').click();
+  await ask.waitFor({ state: "detached" });
+  assert.deepEqual(attentionNotes, ["1.2 米，和走廊一样宽"]);
+  await queuePage.waitForFunction(() => document.activeElement?.id === "attention-card-att_ask_next");
   // A card that comes to need the architect is a notice; over the model, with the side panel open, it keeps
   // left of the side and above the floating toolbar where they share columns.
   await queuePage.keyboard.press("Alt+3");

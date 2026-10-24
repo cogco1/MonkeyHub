@@ -4,9 +4,10 @@ import { useCommands } from "../../features/commands/CommandProvider";
 import { usePreferences } from "../../features/settings/preferences";
 import type { MessageKey } from "../../i18n/messages.en";
 import { useT } from "../../i18n/useT";
+import { openCard } from "../openChat";
 import { dismissCard, laterCard, reopenCard, resolveCard, undoCard, type QueueFailure } from "../queue";
-import { chosenOption, isPending, orderedOptions, say } from "./cardText";
-import type { AttentionCard, CommandRef } from "./types";
+import { chosenOption, isPending, needsWords, orderedOptions, say } from "./cardText";
+import type { AttentionCard, CardActionResult, CommandRef } from "./types";
 import "./cards.css";
 
 /**
@@ -30,7 +31,11 @@ function useCardActions() {
   const [failure, setFailure] = useState<QueueFailure | null>(null);
   const act = (name: string, action: () => Promise<unknown>) => {
     setBusy(name); setFailure(null);
-    void action().catch((cause: QueueFailure) => setFailure({ code: cause?.code ?? "HTTP_ERROR", detail: cause?.detail ?? String(cause) }))
+    void action().then((result) => {
+      // Taking an answer back after the project moved on raises a card that asks instead: show that one.
+      const followUp = (result as CardActionResult | null)?.followUp;
+      if (followUp) openCard(followUp.id, "", followUp.projectDir);
+    }, (cause: QueueFailure) => setFailure({ code: cause?.code ?? "HTTP_ERROR", detail: cause?.detail ?? String(cause) }))
       .finally(() => setBusy(null));
   };
   return { busy, failure, act };
@@ -55,6 +60,7 @@ function CardFrame({ card, project, compact = false, children }: CardProps & { c
   const { language } = usePreferences();
   const t = useT();
   const { busy, failure, act } = useCardActions();
+  const [words, setWords] = useState("");
   const chosen = chosenOption(card);
   const pending = isPending(card);
   const reason = card.recommendation ? say(card.recommendation.reason, card.recommendation.reasonZh, language) : null;
@@ -73,10 +79,16 @@ function CardFrame({ card, project, compact = false, children }: CardProps & { c
     {!compact && card.evidence.length > 0 && <dl className="attention-card__evidence" aria-label={t("cards.evidence")}>{card.evidence.map((row) =>
       <div key={row.key} data-status={row.status}><dt>{say(row.label, row.labelZh, language)}</dt><dd>{say(row.text, row.textZh, language)}</dd></div>)}</dl>}
     {children}
+    {pending && card.options.some(needsWords) && <label className="attention-card__words">
+      <span>{t("cards.words")}</span>
+      <textarea rows={2} value={words} onChange={(event) => setWords(event.target.value)} />
+    </label>}
     {pending && card.options.length > 0 && <div className="attention-card__answers" role="group" aria-label={t("cards.answers")}>
       {orderedOptions(card).map((option) => <button key={option.id} type="button" data-option={option.id} data-command-view
-        className={option.recommended ? "btn btn--primary attention-card__answer" : "btn attention-card__answer"} disabled={busy !== null}
-        aria-describedby={`attention-card-${card.id}-${option.id}`} onClick={() => act(option.id, () => resolveCard(card.id, option.id))}>
+        className={option.recommended ? "btn btn--primary attention-card__answer" : "btn attention-card__answer"}
+        disabled={busy !== null || (needsWords(option) && !words.trim())}
+        aria-describedby={`attention-card-${card.id}-${option.id}`}
+        onClick={() => act(option.id, () => resolveCard(card.id, option.id, needsWords(option) ? words.trim() : undefined))}>
         <span>{say(option.label, option.labelZh, language)}{option.recommended && <small className="attention-card__recommended">{t("cards.recommended")}</small>}</span>
         <small id={`attention-card-${card.id}-${option.id}`}>{say(option.consequence, option.consequenceZh, language)}</small>
       </button>)}
