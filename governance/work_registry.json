@@ -200,7 +200,6 @@
             "apps/monkeyhub/web/src/workspaces/monkeyarch/gestureTools.ts",
             "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/ModelComparison.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
-            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentStudyPanel.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentTextLayer.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingDressing.tsx",
@@ -223,14 +222,9 @@
             "apps/monkeyhub/web/test/boundWorkCopy.browser.mjs",
             "apps/monkeyhub/web/test/candidatePreview.browser.mjs",
             "apps/monkeyhub/web/test/commandLocator.mjs",
-            "apps/monkeyhub/web/test/documentCanvas.browser.mjs",
-            "apps/monkeyhub/web/test/documentModelSource.browser.mjs",
             "apps/monkeyhub/web/test/documentShortcuts.browser.mjs",
-            "apps/monkeyhub/web/test/documentStudy.browser.mjs",
             "apps/monkeyhub/web/test/documentTextLayer.browser.mjs",
-            "apps/monkeyhub/web/test/documentTracing.browser.mjs",
             "apps/monkeyhub/web/test/drawingCanvas.browser.mjs",
-            "apps/monkeyhub/web/test/drawingStyles.browser.mjs",
             "apps/monkeyhub/web/test/elevation.browser.mjs",
             "apps/monkeyhub/web/test/errorBoundary.browser.mjs",
             "apps/monkeyhub/web/test/externalModelImport.browser.mjs",
@@ -263,7 +257,7 @@
           "base_ref": "b03420ddd87b4b48d586b943f27b6f108df2f490",
           "contributor": "Claude",
           "reviewer": null,
-          "handoff": "Three-channel convergence 6-2 (ADR-014 B4): the embedded pages' 13 'continue from here' and 'record changes and continue' rows become one in-page decision card that looks like the attention queue's DecisionCard and appears only when needed. Stacked on GH-300/shell (#695) with GH-300/tests (#684) merged; the seven page files are handed over from GH-300/tests, whose work on them (T-1a) is done. Continued by the test-migration session from 2026-10-24 (the coordinator's decision), which opens its PR and stacks 6-1's document and Modeling pages on it. On this branch Stage.tsx is this lane's alone for its decision rows; GH-300/shell holds it on #695 and #697, and whichever merges second reconciles.",
+          "handoff": "Three-channel convergence 6-2 (ADR-014 B4): the embedded pages' 13 'continue from here' and 'record changes and continue' rows become one in-page decision card that looks like the attention queue's DecisionCard and appears only when needed. Stacked on GH-300/shell (#695) with GH-300/tests (#684) merged; the seven page files are handed over from GH-300/tests, whose work on them (T-1a) is done. Continued by the test-migration session from 2026-10-24 (the coordinator's decision), which opens its PR and stacks 6-1's document and Modeling pages on it. On this branch Stage.tsx is this lane's alone for its decision rows; GH-300/shell holds it on #695 and #697, and whichever merges second reconciles. DocumentCanvas.tsx and DocumentTracingPanel.tsx go to GH-300/entry-document (6-1c) on claude/300-entry-document; Stage.tsx and ParameterLocksPanel.tsx go to 6-1's Modeling page later.",
           "modules": [
             "hub.shell"
           ],
@@ -273,8 +267,6 @@
             "apps/monkeyhub/web/src/features/stage/ParameterLocksPanel.tsx",
             "apps/monkeyhub/web/src/features/stage/Stage.tsx",
             "apps/monkeyhub/web/src/notifications/cards/InlineDecision.tsx",
-            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
-            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentTracingPanel.tsx",
             "apps/monkeyhub/web/test/inlineDecision.test.ts"
           ],
           "depends_on": []
@@ -317,6 +309,31 @@
             "apps/monkeyhub/web/test/commandTreeCoverage.test.ts",
             "docs/audits/hub-entries.md",
             "tools/tests/test_hub_entries_coverage.py"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "entry-document",
+          "status": "active",
+          "branch": "claude/300-entry-document",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-entry-document",
+          "base_ref": "61ee0aac4fd11576883031768e66c04fd8c91469",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Three-channel convergence 6-1c (ADR-014 B6, first part): the document page's right column becomes three pages (hand to the AI, trace to 3D, drawing sheet), so it shows at most about ten controls; the page's own bar menus come with 6-1's Modeling page, which also changes Stage, and research mode's tier with 6-1f. Stacked on GH-300/decision-rows (6-2, #700) with the registry data merged. Not merged before the paper relay ends.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.css",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentStudyPanel.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentTracingPanel.tsx",
+            "apps/monkeyhub/web/test/documentCanvas.browser.mjs",
+            "apps/monkeyhub/web/test/documentModelSource.browser.mjs",
+            "apps/monkeyhub/web/test/documentStudy.browser.mjs",
+            "apps/monkeyhub/web/test/documentTracing.browser.mjs",
+            "apps/monkeyhub/web/test/drawingStyles.browser.mjs"
           ],
           "depends_on": []
         }
