@@ -6277,6 +6277,28 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
+      "id": "view.layout.place_result",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Put in Layout",
+        "zh-CN": "放进排版"
+      },
+      "terms": [
+        "put drawing in layout",
+        "put render in layout",
+        "放进汇报"
+      ],
+      "surface": "layout",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
       "id": "view.layout.select_page",
       "capability": "shell.pages",
       "label": {

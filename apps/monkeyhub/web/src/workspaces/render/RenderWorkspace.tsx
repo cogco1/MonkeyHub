@@ -6,6 +6,7 @@ import { asStudioApiError } from "../../api/project-runtime/client";
 import type { RenderCameraDto, RenderCapabilityDto, RenderJobDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { usePreferences } from "../../features/settings/preferences";
 import { useT } from "../../i18n/useT";
+import { MenuTabs, SurfaceMenus } from "../../features/chrome/SurfaceChrome";
 import { documentKey, documentMime, findSource, pageKey, pageReplacements, pageSource, type PageSource } from "../monkeyboard/boardScene";
 import RenderResults, { ImageThumbnail, renderStatus } from "./RenderResults";
 import "./render.css";
@@ -14,11 +15,13 @@ import "./render.css";
 /** How many times Render reads its attempts again after a submit whose answer was lost. */
 const UNCERTAIN_READS = 5;
 
-export default function RenderWorkspace({ projectId, active, refreshKey, onBoard, readModelView, onModeling, onShowInModeling }: {
+export default function RenderWorkspace({ projectId, active, refreshKey, onBoard, onLayout, readModelView, onModeling, onShowInModeling }: {
   readModelView?: () => RenderView | null; onModeling?: () => void;
   /** Stand Modeling's camera in a saved view; the host shows Modeling, which applies it once its model is on screen (#218). */
   onShowInModeling?: (camera: RenderCameraDto) => void;
   projectId: string; active: boolean; refreshKey: number; onBoard(source: PageSource): void;
+  /** Put a result in the layout, on a page of its own (ADR-014 B5). */
+  onLayout?(source: PageSource): void;
 }) {
   const studio = useStudio(), { language } = usePreferences(), zh = language === "zh-CN", t = useT();
   const [mode, setMode] = useState<"ai" | "physical">("ai");
@@ -236,20 +239,22 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
   };
   const sortedJobs = [...jobs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const latest = sortedJobs[0];
+  // B3: the page reads by itself (when shown, when the project moves, after a lost submit); reading again is offered
+  // only where a read is owed: a read that failed, a submit whose outcome is unknown, or an attempt that never said how it ended.
+  const owed = error ? "error" : uncertain ? "uncertain" : sortedJobs.some((job) => job.status === "unknown") ? "unknown" : null;
+  const readAgain = owed && <button data-command="render.run.refresh" type="button" onClick={() => void refresh()} disabled={loading}>
+    {loading ? (zh ? "读取中…" : "Reading…") : (zh ? "刷新状态" : "Refresh status")}</button>;
   const referenceLimit = provider?.maxReferences ?? 8;
 
-  return <section className="render-workspace" aria-label="Render">
-    <header className="render-toolbar render-mode-toolbar">
-      <strong>Render</strong>
-      <div role="group" aria-label={zh ? "工作模式" : "Render mode"}>
-        <button data-command="render.run.mode_ai" type="button" aria-pressed={mode === "ai"} onClick={() => setMode("ai")}>AI</button>
-        <button data-command="render.run.mode_physical" type="button" aria-pressed={mode === "physical"} onClick={() => setMode("physical")}>Physical</button>
-      </div>
-      <button data-command="render.run.refresh" type="button" onClick={() => void refresh()} disabled={loading}>{loading ? (zh ? "读取中…" : "Reading…") : (zh ? "刷新状态" : "Refresh status")}</button>
-    </header>
+  return <section className="render-workspace" aria-label="Render" aria-busy={loading}>
+    {/* ADR-014 B3: Render's mode is words in the project bar, as every surface's menus are; it keeps no bar of its own. */}
+    <SurfaceMenus label="Render" active={active}>
+      <MenuTabs label={zh ? "工作模式" : "Render mode"} value={mode} onChange={setMode}
+        options={[{ value: "ai", label: "AI", command: "render.run.mode_ai" }, { value: "physical", label: "Physical", command: "render.run.mode_physical" }]} />
+    </SurfaceMenus>
     <ModelPreview active={active} readView={readModelView} onModeling={onModeling} onCapture={() => void captureModelView()} onReady={setModelViewReady}
       capturing={uploading || sending} zh={zh} />
-    {error && <div className="render-error" role="alert">{error}</div>}
+    {error && <div className="render-error" role="alert">{error} {owed === "error" && readAgain}</div>}
     {mode === "physical" && <div className="render-physical" role="status">
       <h2>Physical Render</h2>
       <p>{zh ? "Native WebGL2、D5 与 Blender 尚未接通此工作区的执行器。" : "Native WebGL2, D5 and Blender executors are not connected to this workspace yet."}</p>
@@ -308,7 +313,8 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
           </div>
         </fieldset>
         {submitError && <div className="render-error" role="alert">{submitError}</div>}
-        {uncertain && <p className="render-note" role="alert">{zh ? "提交结果未知，可能已计费。先刷新状态；再次生成会创建新请求。" : "Submission outcome is unknown and may be charged. Refresh status first; generating again creates a new request."}<small>{uncertain}</small></p>}
+        {uncertain && <p className="render-note" role="alert">{zh ? "提交结果未知，可能已计费。先刷新状态；再次生成会创建新请求。" : "Submission outcome is unknown and may be charged. Refresh status first; generating again creates a new request."}<small>{uncertain}</small>
+          {owed === "uncertain" && readAgain}</p>}
         <button data-command="render.run.generate" type="submit" className="render-generate" disabled={sending || hasPending || uploading || !sourceDocument || !provider?.available || !direction.trim()
           || references.length > referenceLimit || references.some((ref) => !findSource(images, ref)) || !actualSize || !actualAspect}>
           {sending ? (zh ? "正在提交…" : "Submitting…") : uncertain ? (zh ? "新建一次生成" : "Generate a new attempt") : (zh ? "生成" : "Generate")}
@@ -316,7 +322,8 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
         {uploading && <p role="status">{zh ? "正在保存项目图片…" : "Saving project images…"}</p>}
         {latest && <p className="render-note" role="status">{zh ? "最近任务：" : "Latest: "}{renderStatus(latest.status, zh)}</p>}
       </form>
-      <RenderResults active={active} jobs={sortedJobs} documents={documents} selectedId={selectedId} onSelect={setSelectedId} onBoard={onBoard} onReuse={reuse} onUpdateSource={updateSource}
+      <RenderResults active={active} jobs={sortedJobs} documents={documents} selectedId={selectedId} onSelect={setSelectedId} onBoard={onBoard} onLayout={onLayout}
+        onReuse={reuse} onUpdateSource={updateSource} readAgain={owed === "unknown" ? readAgain : null}
         onShowInModeling={onShowInModeling} onRecapture={readModelView ? (job, saved) => void recapture(job, saved) : undefined}
         recaptureReady={modelViewReady && !uploading && !sending} />
     </div>

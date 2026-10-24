@@ -262,6 +262,10 @@ try {
   const generate = () => cmd(workspace(), "render.run.generate");
   const history = () => cmd(workspace(), "view.render.select_job", { includeHidden: true });
   const refresh = () => cmd(workspace(), "render.run.refresh");
+  // ADR-014 B3: Render keeps no standing refresh. Outside the Hub no store moves, so the window coming back reads again;
+  // the page says it is reading on its section.
+  const readAgain = () => page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  const readSettled = (where = workspace()) => until(() => where.locator(".render-workspace").getAttribute("aria-busy"), value => value === "false", "the read finished");
   const jobs = () => api("project-a", "/api/render/jobs");
   const headBefore = (await api("project-a", "/fixture/metrics")).head;
   let first, second, source, refs;
@@ -298,7 +302,7 @@ try {
       await until(() => acceptedResponse, Boolean, "accepted POST response held after admission");
       assert.equal(acceptedResponse.status, "queued");
       first = (await until(jobs, (r) => r.jobs[0]?.status === "succeeded", "first output")).jobs[0];
-      await refresh().click();
+      await readAgain();
       await until(() => completedHistory, value => value?.jobs[0]?.status === "succeeded", "completed history captured during submission");
       assert.equal(historyReads, 1);
       releaseAccepted();
@@ -371,7 +375,7 @@ try {
     try {
       await direction().fill("SLOW afternoon"); await generate().click();
       await until(() => submitHeld, Boolean, "submission held before admission");
-      await refresh().click();
+      await readAgain();
       await until(() => oldHistory, value => value?.jobs.length === 1, "old history captured during submission");
       assert.equal(oldHistory.jobs[0].jobId, first.jobId);
       assert.equal((await api("project-a", "/fixture/metrics")).calls.length, 1, "held submission has not called the provider");
@@ -380,7 +384,7 @@ try {
       await until(() => history().count(), n => n === 2, "accepted attempt is visible before releasing the old read");
       assert.equal(await generate().isDisabled(), true, "accepted attempt blocks a second submission");
       releaseHistory();
-      await until(() => refresh().isEnabled(), Boolean, "old history response finished");
+      await readSettled();
       const pending = history().filter({ hasText: "SLOW afternoon" });
       assert.equal(await pending.count(), 1, "late history must not erase the accepted attempt");
       assert.match(await pending.innerText(), /Queued|Generating/);
@@ -405,7 +409,7 @@ try {
     await page.getByRole("button", { name: "Project A", exact: true }).click();
     assert.equal(await direction().inputValue(), "SLOW afternoon");
     second = (await until(jobs, (r) => r.jobs.length === 2 && r.jobs.every((j) => j.status === "succeeded"), "background completion")).jobs[0];
-    await refresh().click(); await until(() => history().count(), (n) => n === 2, "two histories");
+    await readAgain(); await until(() => history().count(), (n) => n === 2, "two histories");
     assert.notEqual(first.jobId, second.jobId); assert.equal(first.document.assetSha256, second.document.assetSha256);
     assert.equal((await api("project-a", "/fixture/metrics")).calls.length, 2);
     await page.getByRole("button", { name: "drawing", exact: true }).click();
@@ -446,14 +450,17 @@ try {
     await until(() => workspace().locator('.render-image img').last().getAttribute('alt'), (alt) => alt === second.document.fileName, 'previous successful result loaded');
     const previous = await workspace().locator('.render-image img').last().getAttribute("alt");
     await direction().fill("FAIL input"); await generate().click();
-    await until(jobs, (r) => r.jobs[0].status === "failed", "failed input"); await refresh().click();
+    await until(jobs, (r) => r.jobs[0].status === "failed", "failed input"); await readAgain();
     await until(() => history().first().innerText(), (text) => text.includes("Failed"), "failed status readback");
     assert.equal(await workspace().locator('.render-image img').last().getAttribute("alt"), previous);
     await direction().fill("UNKNOWN response"); await generate().click();
-    await until(jobs, (r) => r.jobs[0].status === "unknown", "unknown call"); await refresh().click();
+    assert.equal(await refresh().count(), 0, "a failed attempt said how it ended: nothing is owed a read");
+    await until(jobs, (r) => r.jobs[0].status === "unknown", "unknown call"); await readAgain();
     await until(() => history().first().innerText(), (text) => text.includes("Unknown outcome"), "unknown status readback");
     await history().first().click();
     assert.match(await workspace().innerText(), /unconfirmed.*charge/s);
+    // An attempt that never said how it ended is owed a read, offered beside it.
+    await workspace().locator(".render-job").getByRole("button", { name: "Refresh status", exact: true }).waitFor();
     await refresh().click(); await page.reload(); await direction().waitFor();
     assert.equal((await api("project-a", "/fixture/metrics")).calls.length, 4);
     await until(() => history().count(), (n) => n === 4, "cold history reloaded");
@@ -462,7 +469,7 @@ try {
     let replacement = Buffer.from(await (await fetch(origins["project-a"] + '/fixture/image?color=darkgreen')).arrayBuffer());
     await api("project-a", "/api/documents", "POST", { projectId: "project-a", fileName: "revised-reference.png", mimeType: "image/png",
       contentBase64: replacement.toString("base64"), replacesPages: [{ ...refs[0], newPageIndex: 0 }] });
-    await refresh().click(); await history().filter({ hasText: "Soft morning light" }).click();
+    await readAgain(); await history().filter({ hasText: "Soft morning light" }).click();
     await until(() => workspace().locator('.render-source-state').innerText(), (text) => text.includes("Source outdated"), "reference update is explicit");
     await cmd(workspace(), "view.render.use_updated_source").click();
     assert.match(await workspace().getByRole("combobox", { name: "Source image", exact: true }).locator('option:checked').innerText(), /source.png/);
@@ -470,7 +477,7 @@ try {
     replacement = Buffer.from(await (await fetch(origins["project-a"] + '/fixture/image?color=purple')).arrayBuffer());
     await api("project-a", "/api/documents", "POST", { projectId: "project-a", fileName: "revised-source.png", mimeType: "image/png",
       contentBase64: replacement.toString("base64"), replacesPages: [{ ...source, newPageIndex: 0 }] });
-    await refresh().click(); await history().filter({ hasText: "Soft morning light" }).click();
+    await readAgain(); await history().filter({ hasText: "Soft morning light" }).click();
     await until(() => workspace().locator('.render-source-state').innerText(), (text) => text.includes("Source outdated"), "outdated result is explicit");
     assert.deepEqual((await jobs()).jobs.find((j) => j.jobId === first.jobId).request.source, source);
     await cmd(workspace(), "view.render.use_updated_source").click();
@@ -500,20 +507,40 @@ try {
     assert.equal((await planRender()).sourceState, "current", "a newer revision that registered no replacement leaves the render current");
     await upload("revised-plan-reference.png", "teal", planReference);
     const sourceImage = () => workspace().getByRole("combobox", { name: "Source image", exact: true });
-    await refresh().click(); await history().filter({ hasText: "Plan in evening light" }).click();
+    await readAgain(); await history().filter({ hasText: "Plan in evening light" }).click();
     await until(() => workspace().locator('.render-source-state').innerText(), (text) => text.includes("Source outdated"), "drawing render outdated by its reference");
     await cmd(workspace(), "view.render.use_updated_source").click();
     assert.equal(await sourceImage().inputValue(), key(drawing), "the drawing's newest revision is never guessed as its replacement");
     assert.match(await workspace().locator('.render-references li').first().innerText(), /revised-plan-reference/);
     const rebuilt = await plan(await model("revised-wall.3dm", true), { previousRevisionRef: drawing.revisionRef });
     assert.deepEqual(rebuilt.replacesPages, [{ ...onlyPage(drawing), newPageIndex: 0 }], "a rebuild on another source replaces the page it continues");
-    await refresh().click();
+    await readAgain();
     await until(() => sourceImage().locator("option").evaluateAll((options) => options.map((option) => option.value)),
       (values) => values.includes(key(rebuilt)), "rebuilt drawing listed");
     await cmd(workspace(), "view.render.use_updated_source").click();
     assert.equal(await sourceImage().inputValue(), key(rebuilt), "the rebuilt drawing is reached through its registered replacement");
     assert.match(await workspace().locator('.render-references li').first().innerText(), /revised-plan-reference/);
     assert.equal((await api("project-a", "/fixture/metrics")).calls.length, 5, "following a rebuilt drawing is not generation");
+  });
+  await step("the mode is words in the project bar and a result's actions are one group over its image", async () => {
+    await history().filter({ hasText: "Soft morning light" }).click();
+    assert.equal(await page.locator(".project-bar").getByRole("group", { name: "Render mode", exact: true }).count(), 1, "AI and Physical sit in the project bar");
+    assert.equal(await workspace().locator(".render-toolbar, header.render-mode-toolbar").count(), 0, "Render keeps no bar of its own");
+    assert.equal(await refresh().count(), 0, "no standing refresh");
+    assert.deepEqual(await workspace().locator(".render-tools [data-command]").evaluateAll(nodes => nodes.map(node => node.dataset.command)),
+      ["view.render.result", "view.render.source", "view.render.compare", "view.render.zoom_out", "view.render.fit", "view.render.zoom_in",
+        "view.render.download", "board.place_image", "view.layout.place_result"]);
+  });
+  await step("Put in Layout opens the layout with the result on a page of its own", async () => {
+    const before = (await api("project-a", "/api/publication")).pages.length;
+    await cmd(workspace(), "view.layout.place_result").click();
+    const layout = page.locator('[data-project-surface="publish"]:visible');
+    await layout.waitFor();
+    const exact = (element) => element.kind === "image" && element.source?.runId === first.document.runId && element.source?.assetSha256 === first.document.assetSha256;
+    const saved = await until(() => api("project-a", "/api/publication"), (publication) => publication.pages.length === before + 1, "the new page saved");
+    assert.equal(saved.pages.at(-1).elements.length, 1);
+    assert.ok(exact(saved.pages.at(-1).elements[0]), "the page holds the result's exact page");
+    await page.getByRole("button", { name: "render", exact: true }).click();
   });
   await step("Board receives the same exact page, selects it and can restore only the explicitly deleted old result", async () => {
     await history().filter({ hasText: "Soft morning light" }).click();
@@ -639,7 +666,7 @@ try {
       await capture().click();
       if (index === 0) {
         await until(() => captureRequests.length, count => count === 1, "capture waiting to save");
-        await cmd(capturePage, "render.run.refresh").click();
+        await capturePage.evaluate(() => window.dispatchEvent(new Event("focus")));
         await until(() => oldDocumentsRead, Boolean, "refresh read the documents before capture was saved");
         releaseCapture();
       }
@@ -647,7 +674,7 @@ try {
       if (index === 0) {
         const selected = await selectedSource();
         releaseDocuments();
-        await until(() => cmd(capturePage, "render.run.refresh").isEnabled(), Boolean, "stale refresh finished");
+        await readSettled(capturePage);
         assert.equal(await selectedSource(), selected, "a late refresh cannot replace the just-saved source with its older document list");
         await capturePage.unroute("**/capture/api/render/views"); await capturePage.unroute("**/capture/api/documents");
       }
@@ -702,7 +729,7 @@ try {
       assert.deepEqual(job.document.modelSource, view.modelSource);
       assert.equal((await api("capture", "/fixture/metrics")).calls[index].source, sha);
       retained.push(document);
-      await cmd(capturePage, "render.run.refresh").click();
+      await capturePage.evaluate(() => window.dispatchEvent(new Event("focus")));
       const result = cmd(capturePage, "view.render.select_job", { includeHidden: true }).filter({ hasText: `Captured ${projection} view` });
       await until(() => result.innerText(), text => text.includes("Complete"), `${projection} result appears in the UI`);
       await result.click();
@@ -768,7 +795,7 @@ try {
     assert.deepEqual([kept.status, kept.request, kept.document], [earlier.status, earlier.request, earlier.document], "the earlier result keeps its own source");
     const after = (await api("capture", "/api/documents")).documents;
     for (const document of retained) assert.deepEqual(after.find(row => row.assetSha256 === document.assetSha256), document, "earlier captures are unchanged");
-    await cmd(capturePage, "render.run.refresh").click();
+    await capturePage.evaluate(() => window.dispatchEvent(new Event("focus")));
     const history = cmd(capturePage, "view.render.select_job", { includeHidden: true });
     await until(() => history.allInnerTexts(), texts => texts.length === 3 && texts.every(text => text.includes("Complete")), "the new attempt is listed beside the earlier ones");
     await history.first().click();
