@@ -928,6 +928,38 @@ export type ChatPermissionRequest = {
 };
 
 /**
+ * ChatPickPathRequest
+ *
+ * Ask the person to choose a folder or a file in the system's own dialog.
+ */
+export type ChatPickPathRequest = {
+    /**
+     * Kind
+     */
+    kind: 'folder' | 'file';
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Filter
+     */
+    filter?: 'archive' | 'any';
+};
+
+/**
+ * ChatPickedPath
+ */
+export type ChatPickedPath = {
+    /**
+     * Path
+     *
+     * the chosen path; null when the dialog was closed without choosing
+     */
+    path: string | null;
+};
+
+/**
  * ChatPostRequest
  */
 export type ChatPostRequest = {
@@ -4128,6 +4160,31 @@ export type ChatWorkspaceApiChatWorkspaceGetResponses = {
 };
 
 export type ChatWorkspaceApiChatWorkspaceGetResponse = ChatWorkspaceApiChatWorkspaceGetResponses[keyof ChatWorkspaceApiChatWorkspaceGetResponses];
+
+export type PickChatPathApiChatPickPathPostData = {
+    body: ChatPickPathRequest;
+    path?: never;
+    query?: never;
+    url: '/api/chat/pick-path';
+};
+
+export type PickChatPathApiChatPickPathPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PickChatPathApiChatPickPathPostError = PickChatPathApiChatPickPathPostErrors[keyof PickChatPathApiChatPickPathPostErrors];
+
+export type PickChatPathApiChatPickPathPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatPickedPath;
+};
+
+export type PickChatPathApiChatPickPathPostResponse = PickChatPathApiChatPickPathPostResponses[keyof PickChatPathApiChatPickPathPostResponses];
 
 export type ExportProjectArchiveApiProjectArchiveExportPostData = {
     body: ProjectArchiveExportRequest;

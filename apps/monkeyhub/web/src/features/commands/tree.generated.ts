@@ -8721,6 +8721,25 @@ export const COMMAND_TREE: CommandTree = {
       "inPlace": true
     },
     {
+      "id": "project.create.choose_folder",
+      "capability": "project.manage",
+      "label": {
+        "en": "Choose folder",
+        "zh-CN": "选择文件夹"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true
+    },
+    {
       "id": "project.create.add_existing_confirm",
       "capability": "project.manage",
       "label": {
@@ -8739,6 +8758,25 @@ export const COMMAND_TREE: CommandTree = {
         "窗8",
         "窗10"
       ],
+      "args": [],
+      "inPlace": true
+    },
+    {
+      "id": "project.archive.choose_file",
+      "capability": "project.manage",
+      "label": {
+        "en": "Choose archive file",
+        "zh-CN": "选择归档文件"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
       "args": [],
       "inPlace": true
     },
