@@ -620,6 +620,30 @@
             "services/project-runtime/tests/test_construction_routes.py"
           ],
           "depends_on": []
+        },
+        {
+          "id": "compare-decide",
+          "status": "active",
+          "branch": "claude/300-b3-compare-decide",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-compare-decide",
+          "base_ref": "a0053f870",
+          "contributor": "Claude",
+          "reviewer": null,
+          "depends_on": [],
+          "handoff": "2-5 比较并决定: a decision card's 比较并决定 opens its two results side by side (the later one against the earlier, not its original) with the card under them; answered there it closes the comparison (batch 3, from claude/300-batch3).",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/app/ProjectWorkspace.tsx",
+            "apps/monkeyhub/web/src/notifications/cards/AttentionCards.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/ModelComparison.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/comparisonPair.ts",
+            "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/modelComparison.css",
+            "apps/monkeyhub/web/test/attentionShell.browser.mjs",
+            "apps/monkeyhub/web/test/modelComparison.test.ts"
+          ]
         }
       ]
     }

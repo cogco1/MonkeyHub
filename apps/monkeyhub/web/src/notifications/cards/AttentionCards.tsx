@@ -1,11 +1,11 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { useCommands } from "../../features/commands/CommandProvider";
 import { usePreferences } from "../../features/settings/preferences";
 import type { MessageKey } from "../../i18n/messages.en";
 import { useT } from "../../i18n/useT";
 import { openCard } from "../openChat";
-import { dismissCard, laterCard, reopenCard, resolveCard, undoCard, type QueueFailure } from "../queue";
+import { dismissCard, laterCard, queueSnapshot, reopenCard, resolveCard, subscribeQueue, undoCard, type QueueFailure } from "../queue";
 import { chosenOption, isPending, needsWords, orderedOptions, say } from "./cardText";
 import type { AttentionCard, CardActionResult, CommandRef } from "./types";
 import "./cards.css";
@@ -30,6 +30,8 @@ interface CardProps {
   project?: string | null;
   /** Arrived while the list was on screen: marked for a moment. */
   fresh?: boolean;
+  /** Shown under the comparison it opened (2-5): the way to open that comparison is left out. */
+  comparing?: boolean;
 }
 
 /** One card's pending action and the Hub's refusal of the last one, kept with the card. */
@@ -48,7 +50,7 @@ function useCardActions() {
   return { busy, failure, act };
 }
 
-function Opens({ refs }: { refs: readonly CommandRef[] }) {
+function Opens({ refs, cardId }: { refs: readonly CommandRef[]; cardId: string }) {
   const { tree, run, stateOf } = useCommands();
   const { language } = usePreferences();
   const t = useT();
@@ -62,11 +64,11 @@ function Opens({ refs }: { refs: readonly CommandRef[] }) {
     const reason = state.kind === "unavailable" ? state.reason ?? t("commands.unavailable") : null;
     return <button key={`${ref.commandId}:${index}`} type="button" className="menu-command" data-command-view
       aria-disabled={reason ? true : undefined} title={reason ?? undefined}
-      onClick={() => { if (!reason) run(ref.commandId, "card", { args: ref.args }); }}>{command.label[language]}</button>;
+      onClick={() => { if (!reason) run(ref.commandId, "card", { args: { ...ref.args, cardId } }); }}>{command.label[language]}</button>;
   })}</div>;
 }
 
-function CardFrame({ card, project, fresh = false, compact = false, children }: CardProps & { compact?: boolean; children?: ReactNode }) {
+function CardFrame({ card, project, fresh = false, compact = false, comparing = false, children }: CardProps & { compact?: boolean; children?: ReactNode }) {
   const { language } = usePreferences();
   const t = useT();
   const { busy, failure, act } = useCardActions();
@@ -115,7 +117,7 @@ function CardFrame({ card, project, fresh = false, compact = false, children }: 
       : t("cards.done")}</p>}
     {failure && <p className="attention-card__failure" role="alert">{failure.detail}</p>}
     <footer className="attention-card__foot">
-      <Opens refs={card.opens} />
+      {!comparing && <Opens refs={card.opens} cardId={card.id} />}
       <span className="attention-card__queue">
         {pending && <>
           <button type="button" className="menu-command" data-command="attention.queue.later" data-command-arg={card.id} disabled={busy !== null}
@@ -161,3 +163,23 @@ export function AttentionCardView(props: CardProps) {
     default: return <NoticeCard {...props} />;
   }
 }
+
+/**
+ * 比较并决定 (2-5): the decision card under the comparison it opened, answered there as on the Attention page. Once
+ * it is answered (or put off, set aside), the comparison has done its work and closes.
+ */
+export function ComparisonDecision({ cardId, project, onDone }: { cardId: string; project: string | null; onDone(): void }) {
+  const queue = useSyncExternalStore(subscribeQueue, queueSnapshot);
+  const card = queue.cards.find((item) => item.id === cardId) ?? null;
+  const done = useRef(onDone);
+  done.current = onDone;
+  const closed = useRef(false), seen = useRef(false);
+  // Answered, put off, or gone from the queue after it was there: the decision is made, so the comparison has done its work.
+  const pending = card ? isPending(card) : false;
+  if (card && pending) seen.current = true;
+  useEffect(() => {
+    if (seen.current && !pending && !closed.current) { closed.current = true; done.current(); }
+  }, [pending]);
+  return card ? <AttentionCardView card={card} project={project} comparing /> : null;
+}
+

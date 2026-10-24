@@ -9,7 +9,7 @@
  * candidate that names none, or several, says so here and still returns.
  * Loaded on demand with the two viewports it opens.
  */
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import type { CompareDto } from "../../../api/project-runtime/generated";
 import { asStudioApiError, type StudioApiError } from "../../../api/project-runtime/client";
 import { useStudio } from "../../../api/project-runtime/ProjectRuntimeContext";
@@ -37,9 +37,13 @@ type ObjectCompare = { status: "pending" } | { status: "ready"; value: CompareDt
 
 const noop = () => undefined;
 
-export default function ModelComparison({ projectId, candidateRunId, active, nameOf, backLabel, focusOnOpen, onReturn, onPhase }: {
+export default function ModelComparison({ projectId, candidateRunId, againstRunId = null, aside = null, active, nameOf, backLabel, focusOnOpen, onReturn, onPhase }: {
   projectId: string;
   candidateRunId: string;
+  /** The other result a decision weighs this one against, shown in place of its original (2-5). */
+  againstRunId?: string | null;
+  /** What the person decides here, below the two models: the decision's card, when one opened the comparison. */
+  aside?: ReactNode;
   /** The project is on screen; a hidden comparison offers no menus and no hover. */
   active: boolean;
   /** A run's name on the Design Tree, when the tree has it; naming only, never used to choose the original. */
@@ -93,12 +97,12 @@ export default function ModelComparison({ projectId, candidateRunId, active, nam
     link.current.setLinked(linked);
     void Promise.all([studio.runtime(candidateRunId), studio.artifacts()]).then(([runtime, list]) => {
       if (!live) return;
-      const result = resolveComparisonPair(projectId, candidateRunId, runtime, { projectId: list.projectId, viewable: viewableArtifacts(list.artifacts) });
+      const result = resolveComparisonPair(projectId, candidateRunId, runtime, { projectId: list.projectId, viewable: viewableArtifacts(list.artifacts) }, againstRunId);
       setResolution("pair" in result ? { status: "ready", pair: result.pair } : { status: "refused", refusal: result.refusal });
     }, (cause) => { if (live) setResolution({ status: "failed", error: asStudioApiError(cause) }); });
     return () => { live = false; };
     // The link's on/off is the person's: carried into a retry, never a reason to resolve again.
-  }, [studio, projectId, candidateRunId, attempt]);
+  }, [studio, projectId, candidateRunId, againstRunId, attempt]);
 
   // What changed, object by object, as the server counts it for exactly this pair.
   useEffect(() => {
@@ -246,6 +250,7 @@ export default function ModelComparison({ projectId, candidateRunId, active, nam
       })}
     </div>}
     {pair && outlineOn && outlineNote && <p className="model-compare__note">{outlineNote}</p>}
+    {aside && <aside className="model-compare__decide">{aside}</aside>}
     {pair && <p className="model-compare__summary">{counts !== null ? t("modelCompare.summary", { counts })
       : objects.status === "pending" ? t("modelCompare.summaryPending") : t("modelCompare.summaryUnavailable")}</p>}
     {/* Runs, states, files and the object table are for developer mode; the count of changes is above. */}
