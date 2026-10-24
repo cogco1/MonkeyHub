@@ -1098,5 +1098,38 @@ class ResendTests(unittest.TestCase):
         self.assertEqual((result.status, self.pauses.call_count), (200, 2))
 
 
+class StudioRestartTests(unittest.TestCase):
+    """A project's Studio that stopped is started again by the Hub, as often as the repair table allows (#300 4-2)."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        operations = OperationManager("demo", project_dir=str(root / "demo"), journal_path=root / "operations.json")
+        self.runtime = ProjectRuntime("restart-runtime", "demo", str(root / "demo"), operations,
+                                      SimpleNamespace(run_ids=lambda: ()))
+        self.hub = ProjectRuntimeManager(None, None)
+        self.stopped = SimpleNamespace(state="crashed", desired_state="running",
+                                       error=SimpleNamespace(detail="The application exited with code 3221225477."))
+
+    def test_a_stopped_studio_is_restarted_three_times_then_left_for_a_person(self):
+        with patch.object(self.hub, "recover") as recovered, patch.object(self.hub, "emit") as told:
+            for _ in range(5):
+                self.hub._restart_stopped(self.runtime, [self.stopped])
+            self.assertFalse(self.hub._restart_stopped(self.runtime, [SimpleNamespace(state="ready", desired_state="running")]))
+        self.assertEqual(recovered.call_count, 3)
+        self.assertEqual([row.kind for row in self.runtime.repairs],
+                         ["studio-restarted", "studio-restarted", "studio-restarted", "studio-restart-held"])
+        self.assertEqual([call.args for call in told.call_args_list], [("repair/applied", "restart-runtime")] * 4)
+        self.assertIn("3221225477", self.runtime.repairs[0].detail)
+
+    def test_a_studio_stopped_on_purpose_or_in_a_closed_project_is_left_alone(self):
+        with patch.object(self.hub, "recover") as recovered:
+            self.hub._restart_stopped(self.runtime, [SimpleNamespace(state="crashed", desired_state="stopped", error=None)])
+            self.runtime.state = "closed"
+            self.hub._restart_stopped(self.runtime, [self.stopped])
+        self.assertEqual((recovered.call_count, self.runtime.repairs), (0, []))
+
+
 if __name__ == "__main__":
     unittest.main()

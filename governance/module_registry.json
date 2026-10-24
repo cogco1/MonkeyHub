@@ -13694,7 +13694,8 @@
         "An Agent's skill run (S-1): the project's approvals from before carried over, what the run still needs read from its Runtime (GET /api/skills/{id}/needs), and only that put to the person in the chat as one question (always allow, only this time, no); the Hub writes the grant from the answer, the Agent never names one",
         "The installed skills that cannot be used right now (S-1): GET /api/settings/skill-problems lists them from the skill folders alone, each with its kind (entry_syntax, missing_file, name_differs, unreadable), file, line and the technical line; Settings › What the AI may do says each in plain words with who can fix it",
         "What a person allowed a conversation's Codex agent to do in one project (A4): a command it starts, going online, and a call to the Hub's own MCP server (an edit, and any other MCP server's tool, are asked every time: ADR-012). <runtime root>/config/tool-grants.json (MonkeyHubToolGrants@1), one grant per answer, kept apart from the skills' grants and never read by a Project Runtime; the permission card offers 'always allow in this project' beside 'only this time' and 'no', and a later request of that kind in that project is answered by the Hub with the adapter's own 'allow once' option and a line in the conversation; commands and going online are asked again while the design loop is enforced; withdrawn in Settings › What the AI may do",
-        "sending again what did nothing (#300 4-3): the forward waits while a project's Studio starts (WORKER_STARTING) and sends the same request again while the Runtime's answer is a transient failure that did nothing (archflow.contracts.failures), a few times at most; OperationRecord.attempts counts the sends and errorCode keeps the code it ended with; a failed operation's attention card can be handed to the project's conversation"
+        "sending again what did nothing (#300 4-3): the forward waits while a project's Studio starts (WORKER_STARTING) and sends the same request again while the Runtime's answer is a transient failure that did nothing (archflow.contracts.failures), a few times at most; OperationRecord.attempts counts the sends and errorCode keeps the code it ended with; a failed operation's attention card can be handed to the project's conversation",
+        "the repair table (runtime.manager.REPAIRS, #300 4-2): what the Hub puts right without asking a person; its first entry starts a project's Studio that stopped unexpectedly again through recover, at most three times in ten minutes, then leaves it for a person; each repair and the hold are kept on the project's snapshot (ProjectRuntimeDto.repairs, RepairRecord) and told as repair/applied, which the attention queue shows as a notice, or, for the hold, a card that hands it to the project's conversation"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -13856,7 +13857,9 @@
         "tool_grants.covers",
         "tool_grants.read",
         "POST /api/commands/meaning",
-        "skill_plugins.installed_library"
+        "skill_plugins.installed_library",
+        "REPAIRS",
+        "RepairRecord"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",

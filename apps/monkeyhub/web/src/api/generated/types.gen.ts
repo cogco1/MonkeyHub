@@ -2332,6 +2332,12 @@ export type ProjectRuntimeDto = {
      * Clients
      */
     clients?: number;
+    /**
+     * Repairs
+     *
+     * What the Hub put right by itself in this project since it opened it, newest last (at most 10).
+     */
+    repairs?: Array<RepairRecord>;
     error?: HubError | null;
 };
 
@@ -2425,6 +2431,36 @@ export type Recommendation = {
      * Basis
      */
     basis?: Array<string>;
+};
+
+/**
+ * RepairRecord
+ *
+ * Something the Hub put right by itself, from its repair table (``manager.REPAIRS``), and when (#300 4-2).
+ */
+export type RepairRecord = {
+    /**
+     * Repairid
+     */
+    repairId: string;
+    /**
+     * Kind
+     *
+     * studio-restarted: the project's Studio stopped unexpectedly and was started again with the same binding and port. studio-restart-held: it stopped again too often to be restarted again by itself; a person recovers it.
+     */
+    kind: 'studio-restarted' | 'studio-restart-held';
+    /**
+     * At
+     *
+     * When, in UTC.
+     */
+    at: string;
+    /**
+     * Detail
+     *
+     * How it had stopped, as its supervisor saw it.
+     */
+    detail: string;
 };
 
 /**
