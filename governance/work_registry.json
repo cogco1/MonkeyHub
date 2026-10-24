@@ -1,4 +1,37 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-300",
+      "lanes": [
+        {
+          "id": "b3-repairs",
+          "status": "active",
+          "branch": "claude/300-b3-repairs",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-repairs",
+          "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "第三批第 15 条「坏了自己修好，通知一声」(03 4-2, F007): the repair table; a stopped Studio is started again by the Hub, at most three times in ten minutes, and the attention queue says so.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
+            "apps/monkeyhub/api/monkeyhub_api/runtime/models.py",
+            "apps/monkeyhub/api/monkeyhub_api/attention/producers.py",
+            "apps/monkeyhub/api/monkeyhub_api/attention/hub.py",
+            "apps/monkeyhub/api/tests/test_runtime_operations.py",
+            "apps/monkeyhub/api/tests/test_attention_producers.py",
+            "apps/monkeyhub/api/tests/test_project_runtime.py",
+            "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
+            "apps/monkeyhub/web/src/api/generated/index.ts",
+            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+            "docs/architecture/project-runtime.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
