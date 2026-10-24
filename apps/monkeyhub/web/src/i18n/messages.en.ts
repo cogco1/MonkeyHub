@@ -11,6 +11,8 @@ export const messagesEn = {
   "document.trace.distance": "Known length (m)",
   "document.trace.calibrate": "Set scale and direction",
   "document.trace.invalidScale": "Choose a nonzero line and enter a positive known length.",
+  "document.trace.fromDrawing": "Scale and direction come from this drawing: {scale}, the sheet's right is +X and its top +Y.",
+  "document.trace.measureInstead": "Measure a line instead",
   "document.trace.calibrated": "Baseline: {distance} m. O is the origin; the line ends toward +X. The left side of that direction is +Y.",
   "document.trace.noScale": "No scale yet. Draw the baseline from the intended origin toward model +X. One dimension sets uniform scale; it does not correct perspective or conflicting sketch dimensions.",
   "document.trace.shapes": "Paths to model",

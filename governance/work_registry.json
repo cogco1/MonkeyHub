@@ -567,6 +567,28 @@
             "apps/monkeyhub/web/test/quietRetry.test.ts",
             "apps/monkeyhub/web/test/sidebarTasks.test.ts"
           ]
+        },
+        {
+          "id": "auto-scale",
+          "status": "active",
+          "branch": "claude/300-b3-auto-scale",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-auto-scale",
+          "base_ref": "a0053f870",
+          "contributor": "Claude",
+          "reviewer": null,
+          "depends_on": [],
+          "handoff": "F093: a page that is a horizontal cut plan MonkeyDiagram drew gets its tracing scale and direction from the drawing; measuring a line stays one click away (batch 3, from claude/300-batch3).",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentTracingPanel.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/drawnCalibration.ts",
+            "apps/monkeyhub/web/test/drawnCalibration.test.ts"
+          ]
         }
       ]
     }
