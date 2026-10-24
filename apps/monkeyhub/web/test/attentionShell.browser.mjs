@@ -249,6 +249,12 @@ const browser = await chromium.launch({ headless: true, channel: "chrome" });
 if (shots) await mkdir(shots, { recursive: true });
 const errors = [];
 const shoot = async (page, name) => { if (shots) await page.screenshot({ path: path.join(shots, `${name}.png`) }); };
+const sidePage = async (page, label) => {
+  await page.locator(".attention-shell__search").click();
+  await page.locator("dialog.command-palette[open] input").fill(label);
+  await page.keyboard.press("Enter");
+  await page.locator("dialog.command-palette[open]").waitFor({ state: "detached" });
+};
 const box = (locator) => locator.boundingBox();
 const style = (page, value, family) => page.evaluate(([value, family]) => {
   document.documentElement.dataset.uiStyle = value; document.documentElement.dataset.uiFamily = family; }, [value, family]);
@@ -356,7 +362,7 @@ try {
   await page.waitForFunction(() => document.querySelector(".attention-shell .chat-composer").getBoundingClientRect().height < 60);
 
   // The side panel: background, and the advanced tools that run the command tree.
-  await page.locator(".attention-shell__rail-item").filter({ hasText: "高级工具" }).click();
+  await sidePage(page, "查看高级工具");
   await page.locator(".advanced-tools__group h3").first().waitFor();
   assert.ok((await page.locator(".advanced-tools__group h3").allTextContents()).includes("外壳：文件、视图、对话"));
   await shoot(page, "attention-tools-desktop-light");
@@ -390,6 +396,7 @@ try {
   await clear("rail only");
   await page.locator(".attention-shell__rail-item").filter({ hasText: "后台" }).click();
   // Ctrl+K from the top row's search; it opens a side page by its command, as the rail does.
+  // The rail shows what has something in it (the background, while it runs); with a page open it lists them all.
   assert.deepEqual(await page.locator(".attention-shell__rail-item").evaluateAll((items) => items.map((item) => item.getAttribute("data-command"))),
     ["view.background.toggle", "view.design_history.toggle", "view.handled.toggle", "view.ignored.toggle", "view.advanced_tools.toggle"]);
   await page.locator(".attention-shell__search").click();
@@ -546,7 +553,7 @@ try {
   await decide.locator(".attention-card__answer").first().click();
   await decide.waitFor({ state: "detached" });
   assert.deepEqual(attentionActions.slice(0, 2), [["later", "att_guess", null], ["resolve", "att_decide", "v17"]]);
-  await queuePage.locator(".attention-shell__rail-item").filter({ hasText: "已处理" }).click();
+  await sidePage(queuePage, "已处理");
   const handled = queuePage.locator(".attention-shell__panel .attention-card").filter({ hasText: "V16 和 V17 留哪个" });
   await handled.getByText("你选了：留 V17").waitFor();
   await handled.getByRole("button", { name: "撤销" }).click();
@@ -555,7 +562,7 @@ try {
   // Set aside leaves the queue for the set-aside page, which brings it back.
   await queued("剖面图出好了").getByRole("button", { name: "忽略" }).click();
   await queued("剖面图出好了").waitFor({ state: "detached" });
-  await queuePage.locator(".attention-shell__rail-item").filter({ hasText: "已忽略" }).click();
+  await sidePage(queuePage, "查看已忽略的卡");
   await queuePage.locator(".attention-shell__panel .attention-card").filter({ hasText: "剖面图出好了" }).getByRole("button", { name: "找回" }).click();
   await queued("剖面图出好了").waitFor();
   // An answer that sends the architect's own words waits for them.
@@ -566,7 +573,7 @@ try {
   await ask.waitFor({ state: "detached" });
   assert.deepEqual(attentionNotes, ["1.2 米，和走廊一样宽"]);
   // Taking it back after the project moved on: the card the Hub raised instead is shown, with no notice.
-  await queuePage.locator(".attention-shell__rail-item").filter({ hasText: "已处理" }).click();
+  await sidePage(queuePage, "已处理");
   await queuePage.locator(".attention-shell__panel .attention-card").filter({ hasText: "楼梯宽度你想怎么定" }).getByRole("button", { name: "撤销" }).click();
   await queuePage.waitForFunction(() => document.activeElement?.id === "attention-card-att_ask_next");
   assert.equal(await queuePage.locator(".attention-toast").filter({ hasText: "楼梯已经改过了" }).count(), 0, "nor one the undo raised");
