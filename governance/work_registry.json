@@ -1,4 +1,37 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-300",
+      "lanes": [
+        {
+          "id": "b3-camera-pool",
+          "status": "active",
+          "branch": "claude/300-b3-camera-pool",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-camera-pool",
+          "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "第三批第 13 条后一半「读写分开」: a camera pass is read, meshed and drawn in a drawing worker, so the project's other requests answer at once while it runs; only retaining its images stays in the Runtime.",
+          "modules": [
+            "project_runtime.camera_passes",
+            "project_runtime.documents",
+            "monkeydiagram.drawing_runs",
+            "monkeycad.formats"
+          ],
+          "write_scope": [
+            "services/project-runtime/src/project_runtime/application/camera_passes.py",
+            "services/project-runtime/src/project_runtime/application/drawing_pool.py",
+            "services/project-runtime/src/project_runtime/application/drawings.py",
+            "services/project-runtime/tests/test_camera_passes.py",
+            "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
+            "packages/monkeycad/src/monkeycad/formats/three_dm_inspector.py",
+            "governance/module_registry.json",
+            "docs/architecture/system-map.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
