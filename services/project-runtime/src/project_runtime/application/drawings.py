@@ -716,6 +716,18 @@ def load_drawing_source(binding: ProjectBinding, *, model_source: ModelSource | 
     return selected, source, receipt, verified
 
 
+def drawing_receipt(binding: ProjectBinding, *, model_source: ModelSource | None = None,
+                    source_asset: dict[str, str] | None = None, source_stage_ref: str | None = None) -> dict[str, Any]:
+    """The CAD receipt of the model a drawing route would draw, read from its records alone; no shape is read.
+
+    A native model's says only its length unit when its registration records
+    one: it has no expected semantics (``object_semantics``) to read.
+    """
+
+    selected, stage_ref = _selected_source(binding, source_stage_ref, model_source, source_asset)
+    return _complete_source(binding, selected, stage_ref, read_only=True, geometry=False)[1]
+
+
 def object_groups(binding: ProjectBinding, selected, source, object_ids, by: str) -> dict[str, str]:
     """Each drawn object's layer path or material name, as the exact model asset's own index names it.
 

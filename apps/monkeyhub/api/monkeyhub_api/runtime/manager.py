@@ -78,7 +78,7 @@ _STUDIO_REPLAY = 200
 # admitted for them: a body names what to read, or the project is read again.
 # How long the Hub waits for POST /api/revisions: its build wait (at most 300 s) and its checks.
 REVISION_TIMEOUT_S = 420
-_READ_POSTS = frozenset({"/api/state/closure", "/api/pick/resolve", "/api/project/refresh"})
+_READ_POSTS = frozenset({"/api/state/closure", "/api/pick/resolve", "/api/markup/resolve", "/api/project/refresh"})
 # Reading the project again (ADR-012): the Hub reads it again too, whole.
 _REFRESH_PATH = "/api/project/refresh"
 # The domains of an index commit that do not say the project moved: a thumbnail

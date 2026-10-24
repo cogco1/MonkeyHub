@@ -7150,6 +7150,175 @@ export type LocatorValueRequestDto = {
 };
 
 /**
+ * MarkHitDto
+ *
+ * One component, or one element of it, a mark lies on.
+ */
+export type MarkHitDto = {
+    /**
+     * Componentid
+     */
+    componentId: string;
+    /**
+     * Elementid
+     *
+     * Null when no one row of the component produced it.
+     */
+    elementId: string | null;
+    /**
+     * Objectids
+     */
+    objectIds: Array<string>;
+    /**
+     * Coverage
+     *
+     * How much of all of it on the page lies inside the mark (circled whole is 1).
+     */
+    coverage: number;
+    /**
+     * Share
+     *
+     * How much of what is inside the mark is its own; for an arrow or a model stroke, its share of the weight.
+     */
+    share: number;
+    /**
+     * Central
+     *
+     * It reaches the middle of the mark, not only its rim.
+     */
+    central: boolean;
+    /**
+     * Target
+     *
+     * The mark clearly means it.
+     */
+    target: boolean;
+    /**
+     * Borderline
+     *
+     * It lies in the mark's rim and may be meant.
+     */
+    borderline: boolean;
+};
+
+/**
+ * MarkReadingDto
+ *
+ * One mark's subjects, targets first, and why it goes back to the architect when it does.
+ */
+export type MarkReadingDto = {
+    /**
+     * Markid
+     */
+    markId: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Zone
+     *
+     * area, stroke or point on a page; model for a stroke on the model.
+     */
+    zone: string;
+    /**
+     * Hits
+     */
+    hits: Array<MarkHitDto>;
+    /**
+     * Ambiguous
+     */
+    ambiguous: boolean;
+    /**
+     * Reason
+     *
+     * nothing: nothing is drawn under it; unbound: what is drawn names no component of this record; partial: it only touches several things; borderline: something else lies at its rim. Null: clear.
+     */
+    reason: 'nothing' | 'unbound' | 'partial' | 'borderline' | null;
+};
+
+/**
+ * MarkupPageDto
+ *
+ * The registered page the marks were drawn on, addressed as the documents list names it.
+ */
+export type MarkupPageDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+    /**
+     * Drawingrevisionref
+     *
+     * A view drawing's revisionRef, which reading its marks needs; omitted for any other page.
+     */
+    drawingRevisionRef?: string | null;
+};
+
+/**
+ * MarkupReadingsDto
+ */
+export type MarkupReadingsDto = {
+    /**
+     * Source
+     *
+     * What the marks were read against: a view drawing's lines, a view sheet's placed views, a camera pass's object-ID image, a page that names no object (every mark reads nothing), or the model's own objects.
+     */
+    source: 'drawing' | 'sheet' | 'id-image' | 'page' | 'model';
+    /**
+     * Statedigest
+     *
+     * The record state that answered for what the marks lie on; null when none could.
+     */
+    stateDigest: string | null;
+    /**
+     * Readings
+     */
+    readings: Array<MarkReadingDto>;
+};
+
+/**
+ * MarkupResolveRequestDto
+ *
+ * Marks on one page (``page`` and ``marks``) or strokes on the model (``stateDigest`` and ``strokes``).
+ */
+export type MarkupResolveRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    page?: MarkupPageDto | null;
+    /**
+     * Marks
+     */
+    marks?: Array<DocumentGestureDto>;
+    /**
+     * Statedigest
+     *
+     * For strokes: the stateDigest the model view was loaded with; another state is refused as STALE_BASE.
+     */
+    stateDigest?: string | null;
+    /**
+     * Sourcerunid
+     *
+     * For strokes: the run the model view shows; omitted uses the project's working design.
+     */
+    sourceRunId?: string | null;
+    /**
+     * Strokes
+     */
+    strokes?: Array<ModelGestureDto>;
+};
+
+/**
  * MassingMetricsDto
  *
  * What one massing measures, and what could not be measured.
@@ -18871,6 +19040,41 @@ export type ResolveApiPickResolvePostResponses = {
 };
 
 export type ResolveApiPickResolvePostResponse = ResolveApiPickResolvePostResponses[keyof ResolveApiPickResolvePostResponses];
+
+export type ResolveApiMarkupResolvePostData = {
+    body: MarkupResolveRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/markup/resolve';
+};
+
+export type ResolveApiMarkupResolvePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ResolveApiMarkupResolvePostError = ResolveApiMarkupResolvePostErrors[keyof ResolveApiMarkupResolvePostErrors];
+
+export type ResolveApiMarkupResolvePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: MarkupReadingsDto;
+};
+
+export type ResolveApiMarkupResolvePostResponse = ResolveApiMarkupResolvePostResponses[keyof ResolveApiMarkupResolvePostResponses];
 
 export type CreateProposalApiProposalsPostData = {
     body: ProposalRequestDto;
