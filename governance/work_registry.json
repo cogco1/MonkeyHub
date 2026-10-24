@@ -174,7 +174,7 @@
           "base_ref": "cc8f54e20546c73a1e1e1763a5001a8495c48675",
           "contributor": "Claude",
           "reviewer": null,
-          "handoff": "T-1a then T-1b: Hub components render data-command ids from the command tree (format agreed with GH-300/command-tree) and browser tests reach controls by command id instead of label or position, each test file's result unchanged. T-1b (ChatShell, HubMenu, settings dialog, notifications) waits for GH-300/command-tree's shell ids. Not merged before the paper relay ends.",
+          "handoff": "T-1a then T-1b: Hub components render data-command ids from the command tree (format agreed with GH-300/command-tree) and browser tests reach controls by command id instead of label or position, each test file's result unchanged. T-1b (ChatShell, HubMenu, settings dialog, notifications) waits for GH-300/command-tree's shell ids. Not merged before the paper relay ends. Stage.tsx, SurfaceChrome.tsx and Board.tsx carry their command ids and go to GH-300/shell (2-3b).",
           "modules": [
             "hub.shell"
           ],
