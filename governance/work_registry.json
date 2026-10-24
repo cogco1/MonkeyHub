@@ -762,6 +762,27 @@
             "apps/monkeyhub/web/test/attentionShell.browser.mjs"
           ],
           "depends_on": []
+        },
+        {
+          "id": "suggested-lines",
+          "status": "active",
+          "branch": "claude/300-b3-suggested-lines",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-suggested-lines",
+          "base_ref": "d64d6bb8b",
+          "contributor": "Claude",
+          "reviewer": null,
+          "depends_on": [
+            "composer-words"
+          ],
+          "handoff": "18: under the empty input, a hint and 3-4 sentences made from the project (its last two versions, what was asked there before); one click says it. Stacked on composer-words.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.css",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/test/attentionShell.browser.mjs"
+          ]
         }
       ]
     }
