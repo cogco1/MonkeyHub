@@ -1016,6 +1016,7 @@ class JournalSpellingTests(unittest.TestCase):
         self.assertFalse(project_key(plain).startswith("\\\\?\\"))
         self.assertEqual(earlier_project_keys(plain), ("\\\\?\\" + project_key(plain),))
 
+    @unittest.skipUnless(sys.platform == "win32", "the extended-length spelling is a Windows one")
     def test_an_earlier_journal_joins_this_one_and_is_kept_under_another_name(self):
         only_earlier, both = str(uuid4()), str(uuid4())
         earlier = self.write("earlier.json", "\\\\?\\" + project_key(str(self.project)),

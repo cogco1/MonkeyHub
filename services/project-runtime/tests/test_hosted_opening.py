@@ -270,7 +270,8 @@ class HostedOpeningChangeTestCase(HostedOpeningTestCase):
         self.assertIn("obj-door-leaf-block-body-opening-1-0", objects)
         rows = {row["id"]: row for row in self.model(run)["entities"]}
         self.assertEqual(rows["block"]["openings"],
-                         [{"id": "opening-1", "kind": "door", "along": 4.5, "width": 1.4, "sill": 0, "head": 2.4}])
+                         [{"id": "opening-1", "kind": "door", "along": 4.5, "width": 1.4, "sill": 0, "head": 2.4,
+                           "parameters": {}, "part": None}])
 
     def test_a_change_names_an_opening_the_host_has_and_says_what_to_change(self) -> None:
         chain = self.walled()
