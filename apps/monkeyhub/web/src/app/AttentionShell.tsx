@@ -85,8 +85,8 @@ export interface AttentionShellProps {
   surfaces: ReactNode;
   taskItems: ReactNode;
   dialogs: ReactNode;
-  /** Whether the conversation drawer is open: while it is closed the composer writes to the project's attention conversation. */
-  onDrawer?(open: boolean): void;
+  /** The left column's Attention: no conversation is chosen, so the next message goes to the attention conversation. */
+  onAttentionConversation(): void;
 }
 
 function Glyph({ path }: { path: string }) {
@@ -108,9 +108,6 @@ export function AttentionShell(props: AttentionShellProps) {
     if (props.conversationActive && !active.current) setDrawer(true);
     active.current = props.conversationActive;
   }, [props.conversationActive]);
-  const onDrawer = useRef(props.onDrawer);
-  onDrawer.current = props.onDrawer;
-  useEffect(() => { onDrawer.current?.(drawer); }, [drawer]);
   useEffect(() => { showingQueue(view === "attention"); return () => showingQueue(false); }, [view]);
   const open = (page: SidePage) => setSide((current) => (current === page ? null : page));
   const pageLabel = (page: SidePage) => t(`shell.side.${page}` as MessageKey);
@@ -168,7 +165,7 @@ export function AttentionShell(props: AttentionShellProps) {
 
     <nav className="attention-shell__left" id="attention-shell-left" aria-label={t("shell.projects")}>
       <button type="button" className="attention-shell__row attention-shell__row--attention" aria-current={view === "attention" ? "page" : undefined}
-        data-command="view.tab.attention" onClick={() => { props.onView("attention"); setLeftOpen(false); }}>
+        data-command="view.tab.attention" onClick={() => { props.onView("attention"); props.onAttentionConversation(); setLeftOpen(false); }}>
         <Glyph path={QUEUE} /><span>{t("shell.view.attention")}</span>
         {attentionCount > 0 && <span className="attention-shell__count">{attentionCount}</span>}
       </button>

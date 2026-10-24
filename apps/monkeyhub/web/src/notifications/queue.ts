@@ -131,8 +131,12 @@ export const reopenCard = (id: string) => bringingBack([id], () => acted(post<At
 
 /** "All as recommended" over the cards the person has in view, taken back as one. */
 export const bulkRecommended = (ids: readonly string[]) => acted(post<BulkResult>("/api/attention/bulk", { ids, mode: "recommended" }));
-export const undoBulk = (bulkId: string, ids: readonly string[]) =>
-  bringingBack(ids, () => acted(post<BulkResult>(`/api/attention/bulk/${encodeURIComponent(bulkId)}/undo`)));
+export const undoBulk = async (bulkId: string, ids: readonly string[]) => {
+  const result = await bringingBack(ids, () => acted(post<BulkResult>(`/api/attention/bulk/${encodeURIComponent(bulkId)}/undo`)));
+  // What the undo left where it was did not come back.
+  for (const row of result.skipped) shownHere.delete(row.id);
+  return result;
+};
 
 let conversationServed = true;
 /**

@@ -148,6 +148,7 @@ const composerWords = {
     composerMenu: "附件与新话题", newTopic: "新话题", newTopicDetail: "下一条消息从项目状态开始，不带之前的对话",
     newTopicRemove: "移除新话题",
     target: "将修改：当前", targetUnrecorded: "未记录的修改不包括在内", sending: "发送中…",
+    sendTo: (name: string) => `发到：${name}`, sendToAttention: "关注对话", sendToNew: "新对话",
     operationOpenChat: "打开对话", operationDismiss: "知道了",
     operationMore: (count: number) => `另有 ${count} 个`,
     targetViewing: (name: string) => `正在查看 ${name}，这条消息仍会修改当前`,
@@ -158,6 +159,7 @@ const composerWords = {
     newTopicDetail: "The next message starts from the project state, without this conversation's context",
     newTopicRemove: "Remove New topic",
     target: "Changes: Current", targetUnrecorded: "unrecorded edits not included", sending: "Sending…",
+    sendTo: (name: string) => `To: ${name}`, sendToAttention: "the attention conversation", sendToNew: "a new conversation",
     operationOpenChat: "Open chat", operationDismiss: "Dismiss",
     operationMore: (count: number) => `${count} more`,
     targetViewing: (name: string) => `Viewing ${name}; this message still changes Current`,
@@ -1176,7 +1178,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   /** A conversation chosen is one to read: it comes out of Focus (#283). */
   const selectChat = (item: ChatSummary) => {
     if (item.projectDir !== projectDir) { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); }
-    setArchivedView(Boolean(item.archived)); setProjectDir(item.projectDir); setChatId(item.id); setFocus(false);
+    setArchivedView(Boolean(item.archived)); setProjectDir(item.projectDir); setChatId(item.id); setFreshChat(false); setFocus(false);
   };
   // GH-300: a notice's 查看 opens its chat here, in place (src/notifications/openChat.ts).
   const openFromNotice = useRef<(chatId: string, projectDir: string) => void>(() => undefined);
@@ -1200,7 +1202,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const selectProject = (item: ChatProject) => {
     const recent = visibleSessions.find((session) => session.projectDir === item.projectDir);
     if (recent) selectChat(recent);
-    else { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setProjectDir(item.projectDir); setChatId(null); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); setFocus(false); }
+    else { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setProjectDir(item.projectDir); setChatId(null); setFreshChat(false); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); setFocus(false); }
   };
 
   /** Ask the Hub to start an application and poll until it runs. `signal` stops only this polling (PP-1 Cancel). */
@@ -1356,8 +1358,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     }
     actionLock.current = true; setBusy(true); setSending("connecting"); setError(null);
     try {
-      // 2-3a: in the attention shell, with no conversation open, the project's attention conversation takes the message.
-      const routed = attentionLayout && !attentionDrawerOpen.current ? await attentionConversation(target) : null;
+      // 2-3a: in the attention shell a message goes to the conversation chosen in the column, or a new one asked for;
+      // with neither, to the project's attention conversation. Where the Hub cannot open that, it starts a new one.
+      const routed = attentionLayout && !chatId && !freshChat ? await attentionConversation(target).catch(() => null) : null;
       const reading = routed ?? chatId;
       let current = chat?.id === reading ? chat : reading ? await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(reading)}`) : null;
       if (!current) {
@@ -1366,7 +1369,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         setDrafts((value) => ({ ...value, [key]: "", [current!.id]: content }));
         setDraftAttachments((value) => ({ ...value, [key]: [], [current!.id]: files }));
         moveRender(key, current.id);
-        if (selection.current.projectDir === target && selection.current.chatId === chatId) { setChatId(current.id); setChat(current); }
+        if (selection.current.projectDir === target && selection.current.chatId === chatId) { setChatId(current.id); setChat(current); setFreshChat(false); }
       }
       if (current.archived) { setChat(current); return; }
       await ensureProject(target, current.projectId);
@@ -1953,8 +1956,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // 2-3a: the attention shell, opened with ?shell=attention until it becomes the default (2-3c).
   const [attentionLayout] = useState(() => new URLSearchParams(window.location.search).get("shell") === "attention");
   /** Whether the attention shell shows a conversation now; while it does not, a message goes to the attention conversation. */
-  const attentionDrawerOpen = useRef(false);
-  const startChat = () => { setArchivedView(false); setChatId(null); setChat(null); setError(null); toComposer(); };
+  // A New conversation the person asked for: the next message starts one, in the attention shell too.
+  const [freshChat, setFreshChat] = useState(false);
+  const startChat = () => { setArchivedView(false); setChatId(null); setChat(null); setFreshChat(true); setError(null); toComposer(); };
   const openNewProject = () => { setDialogError(null); newDialog.current?.showModal(); };
   const openAddProject = () => { setDialogError(null); addDialog.current?.showModal(); };
   const openArchiveExport = () => { setDialogError(null); setArchiveSummary(null); setRestoreResult(null); archiveDialog.current?.showModal(); };
@@ -2181,6 +2185,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           {/* DC-9: what this message will change, and DC-5: a New topic chosen from the + menu, as one removable chip. */}
           <div className="chat-composer__context">
             {project && <p className="chat-target" id="chat-target" data-viewing={Boolean(position?.viewing)} data-read-only={Boolean(staleBase)}>
+              {/* 2-3a: which conversation the message goes to, said before it goes. */}
+              {attentionLayout && <span className="chat-target__to">{w.sendTo(chatId ? (chat?.id === chatId ? chat.title : sessions.find((item) => item.id === chatId)?.title) ?? w.sendToAttention
+                : freshChat ? w.sendToNew : w.sendToAttention)}</span>}
               <span className="chat-target__text">{target}</span>
               {position?.viewing && !imageTurn && <span className="chat-target__viewing">{w.targetViewing(position.viewing)}</span>}
             </p>}
@@ -2375,7 +2382,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       background={{ running: tasks.filter((task) => task.state === "running").length, queued: tasks.filter((task) => task.state !== "running").length }}
       conversationActive={running || sending !== null}
       notices={statusNotices} conversation={conversationLog} composer={composerArea} surfaces={workspacePages(panel)}
-      taskItems={taskItems} dialogs={dialogs} onDrawer={(open) => { attentionDrawerOpen.current = open; }} />;
+      taskItems={taskItems} dialogs={dialogs} onAttentionConversation={() => { setChatId(null); setChat(null); setFreshChat(false); }} />;
   }
   return <div className="chat-shell" data-sidebar={sidebar} data-panel={panel} data-focus={focused} style={{ "--chat-width": `${chatWidth}px` } as CSSProperties}>
     {/* #337 L0: the Hub's text menu row, as desktop apps have it: back, forward, the sidebar, then words. */}
