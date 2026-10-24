@@ -245,5 +245,12 @@ class CommandUiTests(unittest.TestCase):
     def test_arguments_are_camel_case_and_opens_is_a_flag(self):
         self.assertEqual(self._codes(_ui_command("board.export.run", args=["stage_ref"], opens="yes")), ["COMMAND_UI", "COMMAND_UI"])
 
+    def test_an_in_place_command_is_a_flag_with_no_standing_place_or_shortcut(self):
+        self.assertEqual(self._codes(_ui_command("chat.composer.stop", in_place=True),
+                                     _ui_command("chat.composer.send", in_place=False, place="composer")), [])
+        self.assertEqual(self._codes(_ui_command("chat.composer.stop", in_place="yes")), ["COMMAND_UI"])
+        self.assertEqual(self._codes(_ui_command("chat.composer.stop", in_place=True, place="composer")), ["COMMAND_UI"])
+        self.assertEqual(self._codes(_ui_command("chat.composer.stop", in_place=True, shortcut="Esc")), ["COMMAND_UI"])
+
 if __name__ == "__main__":
     unittest.main()

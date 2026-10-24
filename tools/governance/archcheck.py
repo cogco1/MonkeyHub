@@ -1739,7 +1739,7 @@ COMMAND_TIERS = frozenset({"basic", "advanced", "developer"})
 # view would drop without a word.
 COMMAND_UI_FIELDS = frozenset({"preview", "surface", "group", "tier", "channel", "commands"})
 COMMAND_FIELDS = frozenset({"id", "label", "label_zh", "aliases", "entries", "channel", "tier", "args", "opens",
-                            "surface", "group", "place", "when", "shortcut", "action"})
+                            "surface", "group", "place", "when", "shortcut", "action", "in_place"})
 # An entry-audit row: the surface's short name and the row number (壳 Hub shell, 窗 Hub dialogs, 栏 project
 # bar, 模 Modeling, 板 Board, 排 Layout, 文 document page, 图 Drawings, 渲 Render, 树 Design tree,
 # 制 Fabrication, 量 Usage).
@@ -1783,6 +1783,16 @@ def _command_ui_problems(entry: dict[str, Any]) -> Iterator[str]:
             yield f"{name}: opens is true or false"
         if command.get("shortcut") is not None and not isinstance(command["shortcut"], str):
             yield f"{name}: shortcut is text"
+        # in_place: the command acts only where it renders (a dialog, a card, the composer, a row), so the
+        # advanced tools and Ctrl+K leave it out; it then stands nowhere else and no key reaches it from elsewhere.
+        if "in_place" in command:
+            if not isinstance(command["in_place"], bool):
+                yield f"{name}: in_place is true or false"
+            elif command["in_place"]:
+                if command.get("place"):
+                    yield f"{name}: a command that acts only where it renders has no standing place"
+                if command.get("shortcut"):
+                    yield f"{name}: a command that acts only where it renders has no shortcut"
 
 
 def _strings(value: Any) -> list[str]:
