@@ -11948,7 +11948,8 @@
         "the placement checks over the paths Git tracks (#553): the entries directly under each directory directory_entries lists (the Hub web source root, the docs categories), test files that test_file_patterns names only under test_roots, and the first-level directories of each Python package under packages/<name>/src/ and services/<name>/src/ against subpackages",
         "the file-ownership check over the paths Git tracks (#559): every Python file under checked_source_roots, outside the test suites and import_only_source_roots, held by exactly one module's files, listed directly or through a listed directory; a file no module holds is reported with its nearest plausible owner and a file two modules hold with both, while a package's __init__.py may go unheld",
         "Validating the live work registry (ArchFlowDevelopmentRegistry@3): GitHub Issue claims only, claimed directly or through lanes, with checkout, base, contributor, paths and dependencies; reporting competing live path and checkout claims; checking each commit against the claim it names in its own registry, and reading commits made before #358 by their card-era rules",
-        "the command tree's checks over the registry's capability commands (COMMAND_ID, COMMAND_FIELD, COMMAND_PLACE, COMMAND_TREE_STALE) and the one renderer of its web view, render_command_tree"
+        "the command tree's checks over the registry's capability commands (COMMAND_ID, COMMAND_FIELD, COMMAND_PLACE, COMMAND_UI: only the fields the view reads, entries as audit rows, camelCase arguments; COMMAND_TREE_STALE) and the one renderer of its web view, render_command_tree",
+        "the interface-entry checks (#300): every clickable control under ui_entries.source_roots - a <button> or listed wrapper, or an element with a control role (button, tab, option, treeitem, switch, checkbox, radio), with onClick, or a menu-item role - names its command with data-command (a command-tree row marked data-command-view under ui_entries.view_rows is not a control), found only where TSX code can hold an element (not in comments, strings, templates, regular expressions, type-parameter lists or JSX text), with a per-file baseline of unnamed controls that may only go down, also across a branch (UI_ENTRY_UNREGISTERED, UI_ENTRY_BASELINE), and the commands standing in one place of one surface stay within that kind of place's budget (UI_ENTRY_BUDGET)"
       ],
       "does_not_own": [
         "the policy content - governance/architecture_policy.json",
@@ -11960,7 +11961,8 @@
         "repository root, a Git checkout whose index lists the top-level entries",
         "governance/architecture_policy.json",
         "governance/work_registry.json",
-        "optional Git base revision and committed policy/registry history"
+        "optional Git base revision and committed policy/registry history",
+        "the Hub web TSX sources under ui_entries.source_roots, parsed as text and never executed"
       ],
       "outputs": [
         "Finding tuple",
@@ -12006,7 +12008,8 @@
         "tools/tests/test_archcheck_paths.py",
         "tools/tests/test_archcheck_dependencies.py",
         "tools/tests/test_archcheck_ownership.py",
-        "tools/tests/test_archcheck_command_tree.py"
+        "tools/tests/test_archcheck_command_tree.py",
+        "tools/tests/test_archcheck_ui_entries.py"
       ],
       "notes": "Architecture checks parse source without importing application code; scope behavior is verified with disposable Git repositories."
     },

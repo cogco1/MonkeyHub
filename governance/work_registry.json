@@ -390,6 +390,24 @@
             "packages/web-shared/src/base.css"
           ],
           "depends_on": []
+        },
+        {
+          "id": "entry-ci",
+          "status": "active",
+          "branch": "claude/300-entry-ci",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-entry-ci",
+          "base_ref": "ca023bdf5a723c1fe8c906d7b93eb186bd5990de",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "R-1: archcheck reports UI_ENTRY_UNREGISTERED for a clickable control without data-command beyond a per-file baseline that only goes down (D-2 empties it), and UI_ENTRY_BUDGET for a standing place over its ADR-014 budget. Branched from claude/300-command-tree, whose command_tree() it reads; merge after GH-300/command-tree. Not merged before the paper relay ends. The 2-1a registry data (claude/300-registry-data) is merged here and reaches main with this PR (the coordinator's decision, 2026-10-24); the baseline counts are taken after it.",
+          "modules": [
+            "tools.governance.archcheck"
+          ],
+          "write_scope": [
+            "tools/governance/archcheck.py",
+            "tools/tests/test_archcheck_ui_entries.py"
+          ],
+          "depends_on": []
         }
       ]
     }
