@@ -138,6 +138,7 @@
             "apps/monkeyhub/web/test/attentionShell.browser.mjs",
             "apps/monkeyhub/web/test/attentionShell.test.ts",
             "apps/monkeyhub/web/test/canvasChrome.browser.mjs",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "apps/monkeyhub/web/test/commandPalette.browser.mjs",
             "apps/monkeyhub/web/test/commandPalette.test.ts",
             "apps/monkeyhub/web/test/commandTree.test.ts",
