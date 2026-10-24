@@ -5042,6 +5042,26 @@ export const COMMAND_TREE: CommandTree = {
       ]
     },
     {
+      "id": "candidate.compare.decide",
+      "capability": "candidate.compare",
+      "label": {
+        "en": "Compare and decide",
+        "zh-CN": "比较并决定"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "runIds"
+      ]
+    },
+    {
       "id": "component.inspect.open",
       "capability": "component.catalog",
       "label": {
