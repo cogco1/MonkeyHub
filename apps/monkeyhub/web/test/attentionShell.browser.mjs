@@ -81,6 +81,8 @@ const server = createServer(async (request, response) => {
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 origin = `http://127.0.0.1:${server.address().port}`;
 const unexpected = [];
+// A 4x3 grey picture, standing in for a drawing's first page.
+const DRAWING_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAE0lEQVR4nGM8ceIEAwwwwVnoHABXVAJetxGYDgAAAABJRU5ErkJggg==", "base64");
 // The theme each pass loads with, as the saved preferences say it.
 let preferredTheme = "light";
 // The projects the Hub lists; one pass empties it to see the Board and the model refuse.
@@ -113,6 +115,11 @@ const attentionActions = [], attentionNotes = [], chatPosts = [];
 const route = async (handler) => {
   const request = handler.request(), url = new URL(request.url()), method = request.method();
   if (url.pathname === "/api/runtime/events") return handler.continue();
+  // A drawing's first page, as the project service serves it beside the snapshot's recent drawings.
+  if (url.pathname.endsWith("/api/drawings/d-section/thumbnail.png")) return handler.fulfill({ status: 200, contentType: "image/png", body: DRAWING_PNG });
+  // The page the tile opens on the Board has no comments yet.
+  if (url.pathname.endsWith("/api/document-comments")) return handler.fulfill({ json: { comments: [], kind: "document",
+    runId: url.searchParams.get("runId") ?? "run-v17", revisionRef: url.searchParams.get("revisionRef") } });
   if (await workspace.handle(handler, url)) return;
   const json = (body, status = 200) => handler.fulfill({ json: body, status });
   const data = () => request.postDataJSON();
@@ -677,7 +684,10 @@ try {
     for (const [age, caption] of [[0.5, "进行中"], [3, "进行中"], [15, "约还要 35 秒"]]) {
       projectA.retained = { projectId: "A", projectDir: projectA.projectDir, published: { version: 3, stateSha256: null }, candidates: [], branches: [], stages: [],
         errors: [], runsScanned: 3, hasMore: false,
-        jobs: [jobRow("now", "running", null, new Date(started).toISOString()), jobRow("j1", "succeeded", 40, null, "2026-10-24T09:57:00Z"), jobRow("j2", "succeeded", 60, null, "2026-10-24T08:00:00Z")] };
+        jobs: [jobRow("now", "running", null, new Date(started).toISOString()), jobRow("j1", "succeeded", 40, null, "2026-10-24T09:57:00Z"), jobRow("j2", "succeeded", 60, null, "2026-10-24T08:00:00Z")],
+        // At 15 s a section has come out: the tile beside the conclusion shows it instead of the finished job.
+        drawings: age < 10 ? [] : [{ drawingId: "d-section", name: "A-A 剖面.pdf", kind: "cut-plan", runId: "run-v17", sourceStageRef: "S2",
+          generatedAt: "2026-10-24T09:58:00Z", assetSha256: "e".repeat(64), revisionRef: "rev-1", thumbnailPath: "/api/drawings/d-section/thumbnail.png" }] };
       const wait = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       await wait.clock.setFixedTime(new Date(started + age * 1000));
       const waitPage = await wait.newPage(); waitPage.setDefaultTimeout(15_000);
@@ -687,7 +697,13 @@ try {
       // The Attention page leads with its conclusion; the running job and the latest result sit beside it.
       const overview = waitPage.locator(".attention-overview");
       await overview.locator(".attention-overview__tile").filter({ hasText: "1 个在跑" }).filter({ hasText: age < 10 ? "" : caption }).waitFor();
-      await overview.locator(".attention-overview__tile").filter({ hasText: "最近完成" }).filter({ hasText: "Thi Hemp 墙身节点 · 3 分钟前" }).waitFor();
+      const recent = age < 10 ? overview.locator(".attention-overview__tile").filter({ hasText: "最近完成" }).filter({ hasText: "Thi Hemp 墙身节点 · 3 分钟前" })
+        : overview.getByRole("button", { name: "最近出的图：A-A 剖面.pdf" });
+      await recent.waitFor();
+      if (age >= 10) {
+        assert.match(await recent.textContent(), /Thi Hemp 墙身节点 · 2 分钟前/);
+        await recent.locator("img").evaluate((picture) => picture.complete && picture.naturalWidth > 0 || new Promise((resolve) => picture.addEventListener("load", resolve, { once: true })));
+      }
       await waitPage.getByRole("button", { name: "展开后台" }).click();
       const row = waitPage.locator(".attention-shell__tasks .chat-task").filter({ hasText: "Thi Hemp" });
       await row.getByText(caption).waitFor();
@@ -696,6 +712,12 @@ try {
       await waitPage.locator(".attention-shell__panel").evaluate((panel) => Promise.all(panel.getAnimations({ subtree: true })
         .filter((animation) => animation.effect?.getTiming().iterations !== Infinity).map((animation) => animation.finished)));
       await shoot(waitPage, `attention-wait-${String(age).replace(".", "_")}s-${colour}`);
+      if (age >= 10 && colour === "light") {
+        // One click opens the drawing on the Board.
+        await waitPage.getByRole("button", { name: "收起侧栏" }).first().click();
+        await recent.click();
+        await waitPage.waitForFunction(() => document.querySelector(".menu-tab[aria-pressed=true]")?.textContent === "画板");
+      }
       await wait.close();
     }
   }

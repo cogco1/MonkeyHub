@@ -4,7 +4,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useM
 import { applicationUrl, type AppearancePreferences } from "../../../../packages/web-shared/src/appearance.js";
 import type { WorktreeGraphDto } from "./api/project-runtime/generated";
 import { projectStatus } from "./worktreeGraph";
-import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, OperationRecord, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus, UserSettingsDto } from "./api/generated";
+import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, OperationRecord, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RecentDrawingDto, RuntimeEvent, UpdateStatus, UserSettingsDto } from "./api/generated";
 import { ProjectRuntimeProvider, useProjectRevision, useStudio } from "./api/project-runtime/ProjectRuntimeContext";
 import { projectStores, relayHubStream } from "./api/project-runtime/projectStore";
 import type { ModelSourceDto, ProjectRefreshDto, RenderPageRefDto, SourceDocumentDto } from "./api/project-runtime/generated";
@@ -2127,19 +2127,55 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     const left = Math.round(task.expectedSeconds - elapsed);
     return { elapsed, share: Math.min(elapsed / task.expectedSeconds, 0.95), text: left > 0 ? t.taskLeft(left) : t.taskLonger(elapsed) };
   };
-  // The latest result a project's job produced in the last day, beside the Attention page's conclusion.
+  const ago = (at: number) => {
+    const minutes = Math.max(0, Math.floor((Date.now() - at) / 60_000));
+    return minutes < 1 ? tc("shell.overview.justNow") : minutes < 60 ? tc("shell.overview.minutesAgo", { count: minutes })
+      : minutes < 1440 ? tc("shell.overview.hoursAgo", { count: Math.floor(minutes / 60) }) : tc("shell.overview.daysAgo", { count: Math.floor(minutes / 1440) });
+  };
+  // A drawing opened from the Attention page in another project opens once that project is the one on screen.
+  const pendingDrawing = useRef<{ projectDir: string; source: PageSource } | null>(null);
+  const openDocument = (target: string, source: PageSource) => {
+    const requestId = ++documentRequestSequence.current;
+    setDocumentRequests((current) => ({ ...current, [target]: { source, requestId } }));
+    void openTool("monkeyboard");
+  };
+  useEffect(() => {
+    const pending = pendingDrawing.current;
+    if (!pending || pending.projectDir !== projectDir) return;
+    pendingDrawing.current = null;
+    openDocument(pending.projectDir, pending.source);
+  }, [projectDir]);
+  // Beside the Attention page's conclusion: the newest drawing of an open project, with its picture, one click from
+  // its page on the Board; without one, the latest result a project's job produced in the last day.
   const recentResult = () => {
+    let drawing: { at: number; projectDir: string; runtimeId: string; item: RecentDrawingDto } | null = null;
+    for (const row of runtime?.projects ?? []) for (const item of row.retained?.drawings ?? []) {
+      const at = item.generatedAt ? Date.parse(item.generatedAt) : NaN;
+      if (at > (drawing?.at ?? -Infinity)) drawing = { at, projectDir: row.projectDir, runtimeId: row.runtimeId, item };
+    }
+    if (drawing) {
+      const { item, projectDir: target } = drawing;
+      const name = projects.find((row) => row.projectDir === target)?.name;
+      const source: PageSource = { runId: item.runId, assetSha256: item.assetSha256, revisionRef: item.revisionRef, pageIndex: 0 };
+      return { id: item.drawingId, label: tc("shell.overview.recentDrawing"), title: item.name, caption: [name, ago(drawing.at)].filter(Boolean).join(" · "),
+        picture: `/api/runtime/projects/${encodeURIComponent(drawing.runtimeId)}/studio${item.thumbnailPath}`,
+        onOpen: () => {
+          if (target === projectDir) { openDocument(target, source); return; }
+          const item = projects.find((row) => row.projectDir === target);
+          if (!item) return;
+          pendingDrawing.current = { projectDir: target, source };
+          selectProject(item);
+        } };
+    }
     let latest: { finishedAt: number; proposalId: string; projectDir: string } | null = null;
     for (const row of runtime?.projects ?? []) for (const job of row.retained?.jobs ?? []) {
       const finishedAt = job.status === "succeeded" && job.finishedAt ? Date.parse(job.finishedAt) : NaN;
       if (finishedAt > (latest?.finishedAt ?? Date.now() - 86_400_000)) latest = { finishedAt, proposalId: job.proposalId, projectDir: row.projectDir };
     }
     if (!latest) return null;
-    const minutes = Math.max(0, Math.floor((Date.now() - latest.finishedAt) / 60_000));
-    const ago = minutes < 1 ? tc("shell.overview.justNow") : minutes < 60 ? tc("shell.overview.minutesAgo", { count: minutes })
-      : tc("shell.overview.hoursAgo", { count: Math.floor(minutes / 60) });
     const name = projects.find((row) => row.projectDir === latest!.projectDir)?.name;
-    return { title: stepText(describeCall(`POST /api/proposals/${latest.proposalId}/candidate`), processWords(t)), caption: [name, ago].filter(Boolean).join(" · ") };
+    return { label: tc("shell.overview.recent"), title: stepText(describeCall(`POST /api/proposals/${latest.proposalId}/candidate`), processWords(t)),
+      caption: [name, ago(latest.finishedAt)].filter(Boolean).join(" · ") };
   };
   const taskItems = <>
           {runtime === null ? <li className="chat-muted chat-tasks__empty" role="status">{t.tasksReading}</li> : tasks.length ? tasks.map((task) => {

@@ -5441,6 +5441,16 @@
             ]
           },
           {
+            "id": "view.recent_drawing.open",
+            "label": "Open the latest drawing",
+            "label_zh": "打开最近出的图",
+            "args": [
+              "drawingId"
+            ],
+            "in_place": true,
+            "entries": []
+          },
+          {
             "id": "view.ignored.toggle",
             "label": "Show set-aside cards",
             "label_zh": "查看已忽略的卡",

@@ -11475,6 +11475,27 @@ export const COMMAND_TREE: CommandTree = {
       ]
     },
     {
+      "id": "view.recent_drawing.open",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Open the latest drawing",
+        "zh-CN": "打开最近出的图"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "drawingId"
+      ],
+      "inPlace": true
+    },
+    {
       "id": "view.ignored.toggle",
       "capability": "shell.pages",
       "label": {

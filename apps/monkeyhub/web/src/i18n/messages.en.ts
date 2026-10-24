@@ -1364,6 +1364,8 @@ export const messagesEn = {
   "shell.overview.running": "{count} running",
   "shell.overview.queued": "{count} waiting",
   "shell.overview.recent": "Just finished",
+  "shell.overview.recentDrawing": "Latest drawing",
+  "shell.overview.daysAgo": "{count} d ago",
   "shell.overview.justNow": "just now",
   "shell.overview.minutesAgo": "{count} min ago",
   "shell.overview.hoursAgo": "{count} h ago",
