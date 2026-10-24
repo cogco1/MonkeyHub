@@ -37,6 +37,8 @@ class FakeStudio:
         self.reviews: dict[str, str] = {}
         self.missing: set[str] = set()
         self.unrestorable: set[str] = set()
+        self.decisions: list[dict] = []
+        self.revoked: list[dict] = []
         self.stale_once = False
         self.calls: list[tuple] = []
 
@@ -63,6 +65,12 @@ class FakeStudio:
             return {"disposition": self.reviews[body["subjectRef"]]}
         if path == "/api/candidates/combine":
             return {"candidateId": "run-combined"}
+        if path == "/api/decisions":
+            self.decisions.append(dict(body))
+            return {"decisionId": "dec-1", "revisionRef": "project://p/runs/studio-decisions/rev-1"}
+        if path == "/api/decisions/dec-1/revisions":
+            self.revoked.append(dict(body))
+            return {"decisionId": "dec-1"}
         raise AssertionError(f"unexpected request {method} {path}")
 
     def writes(self):
@@ -295,6 +303,31 @@ class AttentionExecutorTests(unittest.TestCase):
         self.assertEqual((self.chats.posts[-1][0], self.chats.posts[-1][1].content), ("c-attention", "梁高再降 50"),
                          "a card that names no conversation answers into the project's own")
 
+    def test_a_recipe_guess_keeps_the_value_as_the_project_recipe_and_can_be_taken_back(self):
+        page = {"runId": "run-draw", "assetSha256": "a" * 64, "revisionRef": "project://p/drawings/r1", "pageIndex": 0}
+        card = self.card(AttentionDraft.model_validate({
+            "channel": "guess", "kind": "ask", "title": "Keep 0.35 mm cut lines?", "dedupeKey": "recipe:cut",
+            "options": [{"id": "save", "label": "Keep it", "consequence": "Cut lines are 0.35 mm on every drawing",
+                         "consequenceZh": "以后所有图纸剖切线都是 0.35 mm", "undoable": True,
+                         "action": {"commandId": "attention.answer_guess.save",
+                                    "args": {"field": "cutLineMm", "value": 0.35, **page}}}]}))
+        done = self.executor.resolve(card, "save").item
+        kept, = self.studio.decisions
+        self.assertEqual((kept["targetRef"], kept["typedBinding"], kept["source"]["pageIndex"], kept["rawLanguage"]),
+                         ("drawing:lineweight", {"kind": "recipe", "graphics": {"cutLineMm": 0.35}}, 0,
+                          "以后所有图纸剖切线都是 0.35 mm"))
+        self.assertEqual(done.resolution.undo.action.args["expectedRevisionRef"], "project://p/runs/studio-decisions/rev-1")
+        self.executor.undo(card)
+        self.assertEqual((self.studio.revoked[0]["action"], self.studio.revoked[0]["expectedRevisionRef"]),
+                         ("revoke", "project://p/runs/studio-decisions/rev-1"))
+
+        wrong = self.card(AttentionDraft.model_validate({
+            "channel": "guess", "kind": "ask", "title": "t", "dedupeKey": "recipe:x",
+            "options": [option("save", "Keep", "attention.answer_guess.save", field="wallThickness", value=1, **page)]}))
+        with self.assertRaises(HubFailure) as refused:
+            self.executor.resolve(wrong, "save")
+        self.assertEqual(refused.exception.error.code, "ATTENTION_ACTION_INVALID")
+
     def test_notices_are_read_and_put_away(self):
         failed = self.card(AttentionDraft.model_validate({
             "channel": "notice", "kind": "info", "title": "改模型没有完成", "dedupeKey": "op:o1:failed",
@@ -324,7 +357,8 @@ class AttentionExecutorTests(unittest.TestCase):
         self.assertEqual(missing.exception.error.code, "ATTENTION_OPTION_UNKNOWN")
         self.assertTrue(all(re.fullmatch(COMMAND_ID, command) for command in COMMANDS))
         self.assertEqual({command for command, row in COMMANDS.items() if row.undoable},
-                         {"design.go_to_step.continue", "candidate.review.archive", "candidate.review.restore"})
+                         {"design.go_to_step.continue", "candidate.review.archive", "candidate.review.restore",
+                          "attention.answer_guess.save"})
 
     def test_all_as_recommended_runs_once_and_is_taken_back_together(self):
         first = self.card(ab_card("s1", recommend="b"))
