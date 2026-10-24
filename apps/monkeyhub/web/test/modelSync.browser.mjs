@@ -1124,6 +1124,21 @@ await cmd(page,'draft.record.save').click();await wait(s=>!s.syncBusy&&Boolean(s
 assert.ok(failedReads>=3);assert.equal(candidateCalls().length,5);const retryCalls=sent.length;
 await page.unroute('**/api/jobs/*');await cmd(page,'draft.record.save').click();await wait(s=>!s.syncBusy&&!s.error,'job reconnect did not settle',60000);
 assert.equal(candidateCalls().length,5);assert.equal(sent.length,retryCalls,'job reconnect wrote another proposal/candidate');
+console.log('10 · 4-4: an edit nobody records records itself once the model rests, and Undo puts the base back');
+await page.evaluate(()=>localStorage.setItem('monkeyhub.autoRecordMs','1500'));
+const restingCandidates=candidateCalls().length,restingBase=(await snap()).base;
+const restStart=await blank();await cmd(page,'draft.tools.line').click();await page.mouse.click(restStart.x,restStart.y);
+await page.mouse.click(restStart.x+60,restStart.y+30);await page.keyboard.press('Enter');await deselect();
+await wait(s=>s.dirty||s.syncBusy,'the resting edit is unrecorded or already recording');
+await wait(s=>{assert.ok(!s.error,`the resting edit did not record: ${s.error}`);return !s.syncBusy&&!s.dirty&&candidateCalls().length===restingCandidates+1;},
+  'the resting edit recorded itself without Record',120000);
+await page.locator('.model-tools__sync-status').filter({hasText:/^Recorded$/}).waitFor();
+assert.equal(await cmd(page,'draft.record.save').count(),0,'nothing is left to record by hand');
+const recordedBase=(await snap()).base;assert.notEqual(recordedBase,restingBase,'the record became the editing base');
+const undoneAt=sent.length;await page.locator('.model-tools__sync-undo').click();
+await wait(()=>sent.slice(undoneAt).some(row=>row.path==='/api/working-design/undo'),'Undo did not ask the Runtime to put the base back',30000);
+await wait(s=>!s.error&&s.base===restingBase,'Undo did not bring the previous base back',60000);
+await page.evaluate(()=>localStorage.removeItem('monkeyhub.autoRecordMs'));
 console.log('TIMING local actions (automation observation, 100 ms polling maximum)',JSON.stringify(localTimings));
 const qa=path.join(root,'qa');await mkdir(qa,{recursive:true});await deselect();await cmd(page,'draft.tools.line').hover();await delay(400);
 await page.screenshot({path:path.join(qa,'manual-sync-toolbar.png')});

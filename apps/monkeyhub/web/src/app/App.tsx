@@ -276,8 +276,13 @@ const FOLLOW_WORDS: Readonly<Record<FollowNotice["state"], MessageKey>> = {
   "moved-on": "stage.follow.undoMoved", unsynced: "stage.follow.undoUnsynced", failed: "stage.follow.undoFailed",
 };
 
-/** 4-4: how long the model rests untouched before its edits are recorded without the architect asking. */
+/** 4-4: how long the model rests untouched before its edits are recorded without the architect asking; a test may
+ *  shorten it for its own browser (localStorage monkeyhub.autoRecordMs). */
 const AUTO_RECORD_IDLE_MS = 30_000;
+const autoRecordDelay = () => {
+  try { const set = Number(localStorage.getItem("monkeyhub.autoRecordMs")); return set > 0 ? set : AUTO_RECORD_IDLE_MS; }
+  catch { return AUTO_RECORD_IDLE_MS; }
+};
 
 export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onBoard, onChatRequest, onDesignContextChange, onRenderReader, cameraRequest = null, onView, onRecorder, onOpenTree, treeMove = null }: {
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;
@@ -3236,14 +3241,14 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     }
   }, []);
   recordEditsRef.current = recordEdits;
-  // 4-4 改完不用记得点记录: edits are recorded once the architect has stopped for AUTO_RECORD_IDLE_MS on the model,
+  // 4-4 改完不用记得点记录: edits are recorded once the architect has stopped for autoRecordDelay() on the model,
   // and before a message goes (ChatShell asks through the recorder). Leaving for the Board records nothing: a Board
   // visit keeps the draft as it was (SS-5, boardDocumentOpen). A failed record stops the timer until the architect
   // records or edits again, so a refusal is not sent over and over.
   useEffect(() => {
     const session = localModel;
     if (!active || !session || session.busy || session.error || viewOnlyReason !== null || !unsynced(session)) return;
-    const timer = window.setTimeout(() => { if (!localEditingRef.current) void syncRef.current(session); }, AUTO_RECORD_IDLE_MS);
+    const timer = window.setTimeout(() => { if (!localEditingRef.current) void syncRef.current(session); }, autoRecordDelay());
     return () => window.clearTimeout(timer);
   }, [active, localModel, draftSnapshot, localModel?.busy, localModel?.error, viewOnlyReason]);
   // A new edit makes the last record's 撤销 a different act: what it would put back is no longer what is on screen.
