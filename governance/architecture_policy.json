@@ -1571,6 +1571,9 @@
       "MenuCommand",
       "ModelToolButton"
     ],
+    "view_rows": [
+      "apps/monkeyhub/web/src/features/commands/"
+    ],
     "budgets": {
       "project_bar": 4,
       "project_bar_state": 1,
@@ -1584,7 +1587,7 @@
       "side_panel": 6,
       "card": 4,
       "status_line": 2,
-      "composer": 2
+      "composer": 3
     },
     "baseline": {
       "apps/monkeyhub/web/src/ChatMessageContent.tsx": 3,
@@ -1599,7 +1602,6 @@
       "apps/monkeyhub/web/src/app/ErrorBoundary.tsx": 1,
       "apps/monkeyhub/web/src/app/ProjectWorkspace.tsx": 1,
       "apps/monkeyhub/web/src/features/chrome/SurfaceChrome.tsx": 1,
-      "apps/monkeyhub/web/src/features/commands/CommandPalette.tsx": 2,
       "apps/monkeyhub/web/src/features/componentInfo/ComponentInfoCard.tsx": 3,
       "apps/monkeyhub/web/src/features/conversation/CapabilityPanel.tsx": 3,
       "apps/monkeyhub/web/src/features/conversation/ComponentTree.tsx": 3,

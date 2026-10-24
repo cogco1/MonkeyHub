@@ -17,7 +17,7 @@ SOURCE = "apps/monkeyhub/web/src"
 
 
 def _policy(baseline=None, budgets=None, **fields):
-    return {"ui_entries": {"source_roots": [SOURCE], "wrappers": ["MenuCommand"],
+    return {"ui_entries": {"source_roots": [SOURCE], "wrappers": ["MenuCommand"], "view_rows": [],
                            "baseline": baseline or {}, "budgets": budgets or {}, **fields}}
 
 
@@ -113,6 +113,15 @@ class BaselineTests(unittest.TestCase):
     def test_a_baseline_for_a_removed_file_is_reported(self):
         codes = [code for code, _ in self._findings(_policy({f"{SOURCE}/Gone.tsx": 2}))]
         self.assertEqual(codes, ["UI_ENTRY_BASELINE"])
+
+    def test_command_tree_rows_count_only_outside_the_view_rows(self):
+        row = '<div role="option" data-command-view onClick={run}>Run</div>'
+        for name in ("features/commands/CommandPalette.tsx", "Shell.tsx"):
+            path = self.root / SOURCE / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(row, encoding="utf-8")
+        findings = list(check_ui_entries(self.root, _policy(view_rows=[f"{SOURCE}/features/commands/"])))
+        self.assertEqual([(finding.code, finding.path) for finding in findings], [("UI_ENTRY_UNREGISTERED", f"{SOURCE}/Shell.tsx")])
 
     def test_installed_packages_are_not_scanned(self):
         self._source("node_modules/lib/Widget.tsx", 5)

@@ -2406,6 +2406,9 @@ UI_ENTRY_ROLE = re.compile(r"""\brole\s*=\s*\{?\s*["'](?:menuitem|menuitemcheckb
 UI_ENTRY_CONTROL_ROLE = re.compile(r"""\brole\s*=\s*\{?\s*["'](?:button|tab|option|treeitem|switch|checkbox|radio)["']""")
 UI_ENTRY_CLICK = re.compile(r"\bonClick\s*=")
 UI_ENTRY_COMMAND = re.compile(r"\bdata-command\s*=")
+# A row of the command palette or the advanced tools is the command tree itself, not an entry on
+# the page; it says so with data-command-view, which counts only under ui_entries.view_rows.
+UI_ENTRY_VIEW_ROW = re.compile(r"\bdata-command-view\b(?!-)")
 
 
 def _ui_entries_policy(policy: dict[str, Any]) -> dict[str, Any] | None:
@@ -2416,7 +2419,7 @@ def _ui_entries_policy(policy: dict[str, Any]) -> dict[str, Any] | None:
         return None
     if not isinstance(block, dict):
         raise ArchitecturePolicyError("ui_entries must be an object")
-    for field in ("source_roots", "wrappers"):
+    for field in ("source_roots", "wrappers", "view_rows"):
         values = block.get(field)
         if not isinstance(values, list) or not all(isinstance(value, str) and value for value in values):
             raise ArchitecturePolicyError(f"ui_entries.{field} must be a list of non-empty text")
@@ -2614,14 +2617,16 @@ def _jsx_openings(text: str) -> Iterator[tuple[int, str, str]]:
         yield bisect.bisect_right(starts, position), tag, attributes
 
 
-def unregistered_ui_entries(text: str, wrappers: Iterable[str] = ()) -> list[int]:
+def unregistered_ui_entries(text: str, wrappers: Iterable[str] = (), view_rows: bool = False) -> list[int]:
     """Lines of the controls in one source file that run an action but name no command.
 
     A control is a ``<button>`` (or a wrapper component that renders one) or an element with
     a control role (button, tab, option, treeitem, switch, checkbox, radio) that has an
     ``onClick``, or any element whose role is a menu item; it is registered when it carries
     ``data-command``. A wrapper the policy does not list, a spread ``{...props}`` and an
-    expression that leaves ``data-command`` empty are for the browser tests to catch.
+    expression that leaves ``data-command`` empty are for the browser tests to catch. With
+    ``view_rows`` (a file listed in ui_entries.view_rows), a row marked ``data-command-view`` is
+    the command tree's own row and is not a control.
     """
 
     clickable = {"button", *wrappers}
@@ -2629,6 +2634,8 @@ def unregistered_ui_entries(text: str, wrappers: Iterable[str] = ()) -> list[int
     for line, tag, attributes in _jsx_openings(text):
         acts = ((tag in clickable or UI_ENTRY_CONTROL_ROLE.search(attributes)) and UI_ENTRY_CLICK.search(attributes)
                 or UI_ENTRY_ROLE.search(attributes))
+        if acts and view_rows and UI_ENTRY_VIEW_ROW.search(attributes):
+            continue
         if acts and not UI_ENTRY_COMMAND.search(attributes):
             lines.append(line)
     return lines
@@ -2643,9 +2650,11 @@ def _ui_entry_counts(root: Path, block: dict[str, Any]) -> dict[str, list[int]]:
         for path in sorted(base.rglob("*.tsx")):
             if any(part in NOT_SOURCE_DIRECTORIES for part in path.relative_to(base).parts):
                 continue
-            lines = unregistered_ui_entries(path.read_text(encoding="utf-8"), block["wrappers"])
+            relative = path.relative_to(root).as_posix()
+            view_rows = any(_scope_covers(scope, relative) for scope in block["view_rows"])
+            lines = unregistered_ui_entries(path.read_text(encoding="utf-8"), block["wrappers"], view_rows)
             if lines:
-                found[path.relative_to(root).as_posix()] = lines
+                found[relative] = lines
     return found
 
 
@@ -2670,6 +2679,9 @@ def check_ui_entries(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFindi
     for source_root in block["source_roots"]:
         if not (root / source_root).is_dir():
             yield PolicyFinding(ARCHITECTURE_POLICY, 1, "UI_ENTRY_BASELINE", f"ui_entries.source_roots names {source_root}, which does not exist")
+    for view_root in block["view_rows"]:
+        if not (root / view_root).exists():
+            yield PolicyFinding(ARCHITECTURE_POLICY, 1, "UI_ENTRY_BASELINE", f"ui_entries.view_rows names {view_root}, which does not exist")
     found = _ui_entry_counts(root, block)
     baseline: dict[str, int] = block["baseline"]
     for relative, lines in sorted(found.items()):
