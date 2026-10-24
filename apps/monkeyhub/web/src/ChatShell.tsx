@@ -29,7 +29,8 @@ import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSet
 import { ProjectSkills } from "./features/skills/SkillsPanel";
 import { ProjectSkillGrants, SkillRunChoice } from "./features/skills/SkillPermissions";
 import { editFocused, HubMenuBar, type HubMenu, type HubMenuItem } from "./HubMenu";
-import { ASK_AI_ACTION, openSurfaceAction, useCommandActions, type CommandHandler } from "./features/commands/CommandProvider";
+import { ASK_AI_ACTION, openSurfaceAction, useCommandActions, useCommands, type CommandHandler } from "./features/commands/CommandProvider";
+import { indexOf, routeSentence, searchable } from "./features/commands/search";
 import { AttentionShell, RECENT_CONVERSATIONS, type CenterView, type ShellProject } from "./app/AttentionShell";
 import { useT } from "./i18n/useT";
 import { attentionConversation } from "./notifications/queue";
@@ -153,6 +154,7 @@ const composerWords = {
     newTopicRemove: "移除新话题",
     target: "将修改：当前", targetUnrecorded: "未记录的修改不包括在内", sending: "发送中…",
     sendTo: (name: string) => `发到：${name}`, sendToAttention: "关注对话", sendToNew: "新对话",
+    routeSays: (label: string) => `这句话可以直接做：「${label}」`, routeRun: "直接做", routeSend: "还是发给 AI",
     operationOpenChat: "打开对话", operationDismiss: "知道了",
     operationMore: (count: number) => `另有 ${count} 个`,
     targetViewing: (name: string) => `正在查看 ${name}，这条消息仍会修改当前`,
@@ -164,6 +166,7 @@ const composerWords = {
     newTopicRemove: "Remove New topic",
     target: "Changes: Current", targetUnrecorded: "unrecorded edits not included", sending: "Sending…",
     sendTo: (name: string) => `To: ${name}`, sendToAttention: "the attention conversation", sendToNew: "a new conversation",
+    routeSays: (label: string) => `This can be done directly: ${label}`, routeRun: "Do it", routeSend: "Send to the AI instead",
     operationOpenChat: "Open chat", operationDismiss: "Dismiss",
     operationMore: (count: number) => `${count} more`,
     targetViewing: (name: string) => `Viewing ${name}; this message still changes Current`,
@@ -586,6 +589,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   runtimeEventRef.current = onRuntimeEvent;
   const t = words[preferences.language], w = composerWords[preferences.language], s = shellWords[preferences.language];
   const developer = useDeveloperMode();
+  // 08: a sentence that clearly names one command the person can run here is offered as that command before it goes
+  // to the model (the search index in features/commands/search.ts); the person can still send it as written.
+  const commands = useCommands();
+  const [routed, setRouted] = useState<{ id: string; text: string } | null>(null);
+  const sendAsWritten = useRef(false);
   const [initial] = useState(readView);
   const [projects, setProjects] = useState<ChatProject[]>([]);
   const [sessions, setSessions] = useState<ChatSummary[]>([]);
@@ -1361,6 +1369,13 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       finally { actionLock.current = false; setSending(null); }
       return;
     }
+    if (!sendAsWritten.current && !attachments.length && !renderDraft) {
+      const hit = routeSentence(indexOf(commands.tree, searchable(commands.tree, developer)), draft.trim());
+      const state = hit ? commands.stateOf(hit.command) : null;
+      if (hit && state && (state.kind === "ready" || state.kind === "opens")) { setRouted({ id: hit.command.id, text: draft.trim() }); return; }
+    }
+    sendAsWritten.current = false;
+    setRouted(null);
     const target = projectDir, content = draft.trim(), key = draftKey, files = attachments;
     const requestedContext = designContext, requestedContextMode = contextMode, contextProjectId = workspaceContext?.projectId;
     const requestedRender = renderDraft;
@@ -2194,6 +2209,19 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); addAttachments(Array.from(event.dataTransfer.files)); } setDraggingFiles(false); }}
           onPaste={(event) => { if (event.clipboardData.files.length) { event.preventDefault(); addAttachments(Array.from(event.clipboardData.files)); } }}>
           {draggingFiles && <p className="chat-attachment-drop" role="status">{t.dropFiles}</p>}
+          {/* 08: the command the sentence names, offered before the model; it goes once the words change. */}
+          {routed && routed.text === draft.trim() && (() => {
+            const command = commands.tree.commands.find((item) => item.id === routed.id);
+            if (!command) return null;
+            return <div className="chat-route" role="group" aria-label={w.routeSays(command.label[preferences.language])}>
+              <p className="chat-route__says">{w.routeSays(command.label[preferences.language])}</p>
+              <button type="button" className="btn btn--primary chat-route__run" data-command-view onClick={() => {
+                if (commands.run(routed.id, "composer")) setDrafts((value) => ({ ...value, [draftKey]: "" }));
+                setRouted(null);
+              }}>{w.routeRun}</button>
+              <button type="button" className="btn chat-route__send" onClick={() => { sendAsWritten.current = true; void send(); }}>{w.routeSend}</button>
+            </div>;
+          })()}
           {/* DC-9: what this message will change, and DC-5: a New topic chosen from the + menu, as one removable chip. */}
           <div className="chat-composer__context">
             {project && <p className="chat-target" id="chat-target" data-viewing={Boolean(position?.viewing)} data-read-only={Boolean(staleBase)}>

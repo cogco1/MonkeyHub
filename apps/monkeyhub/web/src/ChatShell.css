@@ -334,3 +334,6 @@
 .chat-strip__state[data-state=running]{animation:chat-pulse 1.6s ease-in-out infinite}
 @media(prefers-reduced-motion:reduce){.chat-strip__state[data-state=running]{animation:none}}
 :where([data-ui-family=instrument]) .chat-strip__open{border-radius:var(--radius-sm)}
+/* 08: a sentence that names one command, offered as that command before it goes to the model. */
+.chat-route{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 6px;padding:6px 8px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);font-size:var(--text-caption)}
+.chat-route__says{flex:1 1 12em;margin:0;color:var(--ink)}
