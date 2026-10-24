@@ -19,11 +19,11 @@
           ],
           "write_scope": [
             "apps/monkeyhub/web/src/FabPage.tsx",
-            "apps/monkeyhub/web/src/fabPrinter.ts",
+            "apps/monkeyhub/web/src/features/fab/printerHost.ts",
             "apps/monkeyhub/web/src/i18n/messages.en.ts",
             "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
             "apps/monkeyhub/web/src/main.tsx",
-            "apps/monkeyhub/web/test/fabPrinter.test.ts",
+            "apps/monkeyhub/web/test/fabPrinterHost.test.ts",
             "apps/monkeyhub/web/test/settingsAutosave.browser.mjs",
             "services/project-runtime/src/project_runtime/render_adapters/gemini.py",
             "services/project-runtime/tests/test_render_gemini_adapter.py"

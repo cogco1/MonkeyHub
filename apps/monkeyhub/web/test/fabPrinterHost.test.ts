@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { PRINTER_HOST_KEY, rememberedPrinterHost, rememberPrinterHost } from "../src/fabPrinter.ts";
+import { PRINTER_HOST_KEY, rememberedPrinterHost, rememberPrinterHost } from "../src/features/fab/printerHost.ts";
 
 const memory = () => {
   const values = new Map<string, string>();

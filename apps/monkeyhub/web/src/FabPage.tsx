@@ -3,7 +3,7 @@ import type { AppearancePreferences } from "../../../../packages/web-shared/src/
 import { MenuCommand, MenuSeparator, MenuTabs, StatusLine, SurfaceBar } from "./features/chrome/SurfaceChrome";
 import type { createClient } from "./api/generated/client";
 import { useRowEndSeparators } from "./surfaceBarRows";
-import { rememberedPrinterHost, rememberPrinterHost } from "./fabPrinter";
+import { rememberedPrinterHost, rememberPrinterHost } from "./features/fab/printerHost";
 import {
   getFabProfilesApiFabProfilesGet, prepareFabApiFabPreparePost, sendFabApiFabSendPost,
   type FabProfile, type FabPrepareResult, type FabSendResult,
