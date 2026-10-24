@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import multiprocessing
+import multiprocessing.connection
 import os
 import threading
 from collections import OrderedDict
@@ -48,9 +49,19 @@ def pool_size() -> int:
 
 
 def _initialize_worker() -> None:
+    # A worker ends with the Runtime that started it, however the Runtime ended. One stopped by a signal
+    # leaves its workers waiting on a queue they hold open themselves, and holding the Runtime's output.
+    parent = multiprocessing.parent_process()
+    if parent is not None:
+        threading.Thread(target=_end_with, args=(parent.sentinel,), name="drawing-worker-parent", daemon=True).start()
     from monkeydiagram.documentation.styles import initialize_drawing_runtime
 
     initialize_drawing_runtime()
+
+
+def _end_with(sentinel) -> None:
+    multiprocessing.connection.wait([sentinel])
+    os._exit(0)
 
 
 def _ready() -> bool:

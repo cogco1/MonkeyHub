@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import base64
+import os
 from pathlib import Path
 import pickle
+import signal
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -35,6 +39,29 @@ class DrawingPoolSizeTests(unittest.TestCase):
             self.assertEqual(drawing_pool.pool_size(), 4)
         with patch.dict("os.environ", {drawing_pool.WORKERS_ENV: ""}), patch("os.cpu_count", return_value=1):
             self.assertEqual(drawing_pool.pool_size(), 1)
+
+    @unittest.skipUnless(os.name == "posix", "a signal ends a POSIX Runtime after it gave its pool back")
+    def test_the_workers_end_with_a_runtime_that_a_signal_stopped(self) -> None:
+        # uvicorn gives the pool back on SIGTERM, then raises the signal again: the Runtime ends at once. Its workers
+        # must end with it, or they keep its output open and the Hub reading it never sees the end.
+        script = "\n".join((
+            "import os, signal",
+            "from project_runtime.application import drawing_pool",
+            "pool = drawing_pool.start(2, warm=True)",
+            "for future in [pool._running().submit(drawing_pool._ready) for _ in range(2)]: future.result(timeout=120)",
+            "print('ready', flush=True)",
+            "drawing_pool.stop()",
+            "os.kill(os.getpid(), signal.SIGTERM)"))
+        runtime = subprocess.Popen([sys.executable, "-c", script], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   stdin=subprocess.DEVNULL, start_new_session=True, text=True)
+        try:
+            output, _ = runtime.communicate(timeout=60)
+        except subprocess.TimeoutExpired:
+            os.killpg(runtime.pid, signal.SIGKILL)
+            runtime.communicate()
+            self.fail("the drawing workers outlived the Runtime and kept its output open")
+        self.assertIn("ready", output)
+        self.assertEqual(runtime.returncode, -signal.SIGTERM)
 
     def test_a_named_refusal_keeps_its_code_across_processes(self) -> None:
         refusal = pickle.loads(pickle.dumps(SectionPerspectiveError("SECTION_PLANE_MISSES_MODEL", "the plane misses")))
