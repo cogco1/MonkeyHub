@@ -17,6 +17,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from test_monkeyhub_lifecycle import ROOT, LocalHubCase, free_ports, http_json, port_open, project_fixture, wait_for
+from monkeyhub_api.runtime import workers as workers_module
 from monkeyhub_api.runtime.applications import Applications
 from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import HubFailure
@@ -78,6 +79,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(result).encode())
 
+time.sleep(float(os.environ.get("START_DELAY", "0")))  # a project still reading itself before it listens
 server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
 def stop():
     sys.stdin.readline()
@@ -384,6 +386,22 @@ class WorkerSupervisorTests(unittest.TestCase):
                  "The watcher did not record the exit", timeout=_STABLE_PROBE_S)
         self.assertLess(min(when for when in changes if when >= killed) - killed, 1.0)
         self.assertEqual(child.error.code, "PROCESS_EXITED")
+
+    def test_a_slow_start_is_waited_for_and_only_a_stuck_one_is_stopped(self):
+        """0925 (10-24): a launch that is alive and still reading its project before it listens is not stopped."""
+
+        self.assertGreaterEqual(workers_module._START_LIMIT_S, 120.0, "a large project on a busy machine starts slowly")
+        slow = self.launch("slow")
+        slow = replace(slow, environment={**slow.environment, "START_DELAY": "2"})
+        with patch.object(workers_module, "_START_LIMIT_S", 0.5):
+            self.supervisor.start(slow)
+            stuck = self.wait_state(slow.worker_id, "unavailable")
+        self.assertEqual(stuck.error.code, "START_TIMEOUT")
+        waited = self.launch("waited")
+        waited = replace(waited, environment={**waited.environment, "START_DELAY": "2"})
+        with patch.object(workers_module, "_START_LIMIT_S", 10.0):
+            self.supervisor.start(waited)
+            self.assertIsNone(self.wait_state(waited.worker_id, "ready", timeout=15).error)
 
     def test_a_starting_launch_is_asked_again_while_its_port_does_not_listen_yet(self):
         """#449: a port nobody listens on fails a starting probe at once, not after the probe's timeout.

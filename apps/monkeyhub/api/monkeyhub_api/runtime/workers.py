@@ -39,6 +39,13 @@ _UNAVAILABLE_AFTER_S = 5.0
 _BUSY_UNAVAILABLE_AFTER_S = 600.0
 # How long a probe waits for the answer once its connection is open.
 _PROBE_TIMEOUT_S = 1.0
+# How long a launch that is alive may take to answer its first probe. Opening a
+# large project reads its index and first views before the port listens; 0925,
+# with 51 attached models, took longer than the 30 s this once was when the Hub
+# restarted and opened several projects at once, and was stopped while it worked
+# (10-24). A launch that is truly stuck is stopped after this and started again
+# by the repair table.
+_START_LIMIT_S = 180.0
 # How long a probe of a launch that has not answered yet waits for its port to
 # accept (#449). Nothing listens there until the service has imported its
 # application, and Windows refuses a loopback connection to such a port only
@@ -289,7 +296,7 @@ class WorkerSupervisor:
         return child.state, child.healthy, child.error, child.service_pid, child.desired_state
 
     def _watch(self, child: _Child) -> None:
-        deadline = time.monotonic() + 30
+        deadline = time.monotonic() + _START_LIMIT_S
         unavailable_since = None
         probe = _ProbeHandler()
         opener = build_opener(ProxyHandler({}), probe)

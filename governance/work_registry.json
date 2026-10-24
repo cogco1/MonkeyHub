@@ -32,7 +32,9 @@
             "apps/monkeyhub/api/tests/test_attention_executor.py",
             "governance/module_registry.json",
             "docs/architecture/system-map.md",
-            "apps/monkeyhub/web/src/features/commands/tree.generated.ts"
+            "apps/monkeyhub/web/src/features/commands/tree.generated.ts",
+            "apps/monkeyhub/api/monkeyhub_api/runtime/workers.py",
+            "apps/monkeyhub/api/tests/test_workers.py"
           ],
           "depends_on": []
         }
