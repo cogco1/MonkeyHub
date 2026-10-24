@@ -933,6 +933,29 @@
             "services/project-runtime/tests/test_working_copies.py"
           ],
           "depends_on": []
+        },
+        {
+          "id": "skill-chat-grants",
+          "status": "active",
+          "branch": "claude/300-b3-skill-chat-grants",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-skill-chat-grants",
+          "base_ref": "2867c2985c3824334a49b992219475977a399476",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "A skill with a program runs through the Hub in a Claude chat (SKILL.md opens with how to start it); the permission page says what it governs.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat/skill_plugins.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/tool_calls.py",
+            "apps/monkeyhub/api/tests/test_skill_agent_runs.py",
+            "apps/monkeyhub/api/tests/test_skill_library.py",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "docs/architecture/project-runtime.md"
+          ],
+          "depends_on": []
         }
       ]
     }

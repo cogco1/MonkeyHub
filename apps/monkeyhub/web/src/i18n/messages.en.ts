@@ -1487,7 +1487,7 @@ export const messagesEn = {
   "skills.grants.revokeAria": "Withdraw what was allowed: {scope}",
   "skills.grants.revoking": "Withdrawing…",
   "skills.agentRuns.title": "How the AI runs skills in a chat",
-  "skills.agentRuns.intro": "Applies to every project on this Hub.",
+  "skills.agentRuns.intro": "Applies to every project on this Hub. This governs the AI asking MonkeyHub to run a skill; anything else the AI does on its own in a command line does not pass through here - Claude Code and Codex ask you for that themselves.",
   "skills.agentRuns.ask": "Ask me in the chat",
   "skills.agentRuns.askHint": "When a skill needs something you have not allowed yet, the chat asks once - Always allow, Only this time, No - and waits for your answer. What you allowed is not asked again.",
   "skills.agentRuns.granted": "Only what I already allowed",

@@ -71,6 +71,41 @@ class SkillLibraryTest(unittest.TestCase):
                                            encoding="utf-8")
         (folder / "SKILL.md").write_text(skill["body"], encoding="utf-8")
 
+    def install_runnable(self, name: str, access: dict | None = None) -> None:
+        """A skill that carries a program: a script, the entry that names it, and what it declares."""
+        folder = self.user / name
+        (folder / "scripts").mkdir(parents=True, exist_ok=True)
+        (folder / "scripts" / "run.py").write_text("print('hello')\n", encoding="utf-8")
+        (folder / "skill.json").write_text(json.dumps({
+            "name": name, "description": "Writes a card and says who ran it.", "entry": "scripts/run.py",
+            **({"access": access} if access else {})}), encoding="utf-8")
+        (folder / "SKILL.md").write_text("Write card.txt, then run whoami.\n", encoding="utf-8")
+
+    def test_a_skill_with_a_program_tells_the_agent_to_start_it_through_the_hub(self):
+        # The plugin holds only SKILL.md: an agent that reads "run whoami" would otherwise do it itself with Bash,
+        # past the question the Hub asks a person (S01, 10-24).
+        self.install(HATCH)
+        cards = str(self.root / "cards")
+        self.install_runnable("s01-needs-tool", {"programs": ["whoami"], "write": [cards]})
+        cache = self.runtime / "cache" / "skill-plugins"
+        built = skill_plugins.materialize(cache, skill_plugins.installed_library())
+        runnable = (built / "skills/s01-needs-tool/SKILL.md").read_text(encoding="utf-8")
+        head, _, body = runnable.partition("\n---\n\n")
+        self.assertTrue(body.startswith("> **This skill is a program MonkeyHub runs for you."), body[:120])
+        self.assertIn("Do not run its scripts or programs yourself, with Bash or any other tool", body)
+        self.assertIn("`POST /api/skills/skill:s01-needs-tool/run`", body)
+        self.assertIn("`studio_request`", body)
+        self.assertIn("the key is `parameters`", body, "the example in a package may still write params")
+        self.assertIn(f"It declares that it will run whoami; write to {cards}.", body)
+        self.assertTrue(body.rstrip().endswith("Write card.txt, then run whoami."), "the author's steps follow, unchanged")
+        # A skill of instructions only is left exactly as its author wrote it.
+        self.assertNotIn("MonkeyHub runs", (built / "skills/hatch-review/SKILL.md").read_text(encoding="utf-8"))
+
+        # A skill that gains a program is another plugin directory.
+        before = skill_plugins.index_digest(skill_plugins.installed_library())
+        self.install_runnable("hatch-review")
+        self.assertNotEqual(skill_plugins.index_digest(skill_plugins.installed_library()), before)
+
     def test_the_plugin_layout_is_built_once_per_state_of_the_folders(self):
         self.install(HATCH)
         self.install(SHEET)

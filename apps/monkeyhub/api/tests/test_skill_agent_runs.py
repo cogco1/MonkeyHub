@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -179,3 +180,39 @@ class AgentSkillRunTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StudioRunBodyTest(unittest.TestCase):
+    """A chat is bound to one project, so the agent need not name it to run a skill (S01: the run failed on a missing projectId)."""
+
+    def call(self, arguments: dict) -> dict:
+        seen: dict = {}
+
+        def agent_run(hub, chat, base, path, body, wait):
+            seen["agent_body"] = dict(body)
+            return {**body, "agentRun": True}
+
+        def request(base, path, method="GET", body=None, **_):
+            seen["posted"] = (path.rsplit("/api/", 1)[-1], method, body)
+            return {"jobId": "job-1", "status": "queued"}
+
+        with tempfile.TemporaryDirectory() as folder:
+            session = {"projectId": "p", "projectDir": folder}
+            with patch.object(tool_calls.preparation, "_bound_studio", return_value=("http://studio", session)), \
+                    patch.object(tool_calls, "_agent_skill_run", side_effect=agent_run), \
+                    patch.object(tool_calls.transport, "_request_json", side_effect=request):
+                tool_calls.call_tool("http://hub", CHAT, "studio_request", arguments)
+        return seen
+
+    def test_the_hub_adds_the_project_to_a_skill_run(self):
+        path = "/api/skills/skill:site-palette/run"
+        for body in (None, {}, {"inputs": {}}, {"projectId": "p", "inputs": {}}):
+            with self.subTest(body=body):
+                seen = self.call({"method": "POST", "path": path, **({} if body is None else {"body": body})})
+                self.assertEqual(seen["agent_body"]["projectId"], "p")
+                self.assertEqual(seen["posted"][2], {**(body or {}), "projectId": "p", "agentRun": True})
+
+    def test_a_skill_run_cannot_name_another_project(self):
+        with self.assertRaises(HubFailure) as refused:
+            self.call({"method": "POST", "path": "/api/skills/skill:site-palette/run", "body": {"projectId": "other"}})
+        self.assertEqual(refused.exception.error.code, "CHAT_PROJECT_MISMATCH")

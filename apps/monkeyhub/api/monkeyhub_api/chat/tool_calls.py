@@ -505,6 +505,8 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                              "was read against. Without it, send the request without awaitSeconds and read "
                              "the job and the candidate yourself.")
     body = arguments.get("body")
+    if method == "POST" and _SKILL_RUN.fullmatch(parsed.path) and body is None:
+        body = {}
     if method == "POST" and parsed.path == "/api/project/modeling":
         # Its only field is the project, which the chat supplies, and the chat
         # always asks for the base it leaves: the guide's first proposal is
@@ -520,7 +522,9 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         if parsed.path in {"/api/proposals", "/api/board/export", "/api/board/view", "/api/project/modeling", "/api/render/jobs"}:
             body["projectId"] = session["projectId"]
         if method == "POST" and _SKILL_RUN.fullmatch(parsed.path):
-            body = _agent_skill_run(hub, chat_id, base, parsed.path, body, _PERMISSION_WAIT_S)
+            # The agent need not know the project: a chat is bound to one.
+            body = _agent_skill_run(hub, chat_id, base, parsed.path, {**body, "projectId": session["projectId"]},
+                                    _PERMISSION_WAIT_S)
         if method == "POST" and parsed.path == "/api/drawings/plans":
             # A cut plan the Agent asks for is its reading of what the user
             # said, so its revision says so (05 §5). Only a person's own
