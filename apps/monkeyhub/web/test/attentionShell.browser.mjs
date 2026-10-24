@@ -103,7 +103,7 @@ const seedCards = () => [
     options: [answer("south", "South", "南边", "按南边入口改"), answer("east", "East", "东边", "按东边入口改")] }),
   queueCard("notice", "A", { channel: "notice", kind: "info", title: "The section is ready", titleZh: "剖面图出好了" }),
   queueCard("ask", "A", { channel: "guess", kind: "ask", title: "How wide should the stair be", titleZh: "楼梯宽度你想怎么定",
-    options: [answer("say", "Say it", "我来说", "把你写的话交给对话", { action: { commandId: "chat.send_message", args: {} }, undoable: true })] }),
+    options: [answer("say", "Say it", "我来说", "把你写的话交给对话", { action: { commandId: "chat.composer.send", args: {} }, undoable: true })] }),
 ];
 let cards = [];
 const bulks = new Map();
