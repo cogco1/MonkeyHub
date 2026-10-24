@@ -3236,20 +3236,16 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     }
   }, []);
   recordEditsRef.current = recordEdits;
-  // 4-4 改完不用记得点记录: edits are recorded once the architect has stopped for AUTO_RECORD_IDLE_MS, when the model
-  // page is left, and before a message goes (ChatShell asks through the recorder). A failed record stops the timer
-  // until the architect records or edits again, so a refusal is not sent over and over.
+  // 4-4 改完不用记得点记录: edits are recorded once the architect has stopped for AUTO_RECORD_IDLE_MS on the model,
+  // and before a message goes (ChatShell asks through the recorder). Leaving for the Board records nothing: a Board
+  // visit keeps the draft as it was (SS-5, boardDocumentOpen). A failed record stops the timer until the architect
+  // records or edits again, so a refusal is not sent over and over.
   useEffect(() => {
     const session = localModel;
     if (!active || !session || session.busy || session.error || viewOnlyReason !== null || !unsynced(session)) return;
     const timer = window.setTimeout(() => { if (!localEditingRef.current) void syncRef.current(session); }, AUTO_RECORD_IDLE_MS);
     return () => window.clearTimeout(timer);
   }, [active, localModel, draftSnapshot, localModel?.busy, localModel?.error, viewOnlyReason]);
-  const wasActive = useRef(active);
-  useEffect(() => {
-    if (wasActive.current && !active && [...localModels.current.values()].some(unsynced)) void recordEdits().catch(() => undefined);
-    wasActive.current = active;
-  }, [active, recordEdits]);
   // A new edit makes the last record's 撤销 a different act: what it would put back is no longer what is on screen.
   useEffect(() => { if (draftSnapshot && localModel && unsynced(localModel)) setRecorded(null); }, [draftSnapshot, localModel]);
   /** 撤销 a record: the Runtime's Undo puts the base it replaced back while the record is still Current. */

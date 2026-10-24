@@ -365,7 +365,7 @@
           "contributor": "Claude",
           "reviewer": null,
           "depends_on": [],
-          "handoff": "4-4: model edits record themselves after 30 s without touching the model, when the model page is left and before a message goes; the Record button stays and, once recorded, the line reads 「已记录 · 撤销」 (batch 3, from claude/300-batch3).",
+          "handoff": "4-4: model edits record themselves after 30 s without touching the model and before a message goes (not on leaving for the Board: SS-5); the Record button stays and, once recorded, the line reads 「已记录 · 撤销」 (batch 3, from claude/300-batch3).",
           "modules": [
             "hub.shell"
           ],
