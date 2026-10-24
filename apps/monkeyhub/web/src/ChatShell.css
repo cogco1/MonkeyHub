@@ -132,7 +132,7 @@
 .chat-process__current{color:var(--ink)}
 .chat-process__count{flex:none;white-space:nowrap}
 .chat-process__failed{flex:none;color:var(--violated);white-space:nowrap}
-.chat-shell .chat-process__chevron{width:14px;height:14px;margin-left:6px;transition:transform .15s ease}
+.chat-process__chevron{width:14px;height:14px;margin-left:6px;transition:transform .15s ease}
 .chat-process__row[aria-expanded=true] .chat-process__chevron{transform:rotate(90deg)}
 .chat-process__body{margin:6px 0 0 4px;padding:2px 0 2px 13px;border-left:2px solid var(--line)}
 .chat-process__steps{display:grid;grid-template-columns:minmax(0,1fr);gap:3px;margin:0;padding:0;list-style:none}
@@ -148,9 +148,9 @@
 .chat-composer-wrap{position:relative}
 .chat-jump{position:absolute;left:50%;bottom:calc(100% + 10px);transform:translateX(-50%);z-index:2;display:grid;place-items:center;width:36px;height:36px;padding:0;border:1px solid var(--line);border-radius:50%;background:var(--ground);color:var(--ink);box-shadow:var(--shadow);cursor:pointer}
 .chat-jump:hover{background:var(--panel-2)}
-.chat-shell .chat-jump svg{width:18px;height:18px}
+.chat-jump svg{width:18px;height:18px}
 .chat-jump__count{position:absolute;top:-7px;right:-10px;min-width:19px;height:19px;padding:0 5px;border-radius:10px;background:var(--accent);color:var(--ground);font-size:11px;font-weight:600;line-height:19px;text-align:center}
-@media(prefers-reduced-motion:reduce){.chat-shell .chat-process__chevron{transition:none}}
+@media(prefers-reduced-motion:reduce){.chat-process__chevron{transition:none}}
 
 /* GH-300: the sidebar's Tasks entry, project badges and footer. */
 .chat-tasks-toggle{color:var(--muted);font-weight:500}.chat-tasks-toggle svg{color:var(--muted)}.chat-tasks-toggle[aria-expanded=true]{color:var(--ink)}
@@ -202,7 +202,7 @@
 .chat-topic{display:inline-flex;align-items:center;gap:2px;min-height:28px;padding:2px 3px 2px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--ink);font-size:var(--text-caption);line-height:1.4}
 .chat-topic__remove{display:inline-grid;place-items:center;width:22px;height:22px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
 .chat-topic__remove:hover{background:var(--panel-2);color:var(--ink)}
-.chat-shell .chat-topic__remove svg{width:13px;height:13px}
+.chat-topic__remove svg{width:13px;height:13px}
 .chat-topic-refusal{margin:0 2px 8px}.chat-topic-refusal>.chat-muted{margin:0}
 @media(max-width:900px){.chat-composer-menu__item{min-height:44px}.chat-topic__remove{width:32px;height:32px}}
 
@@ -235,7 +235,7 @@
 /* GH-300 NA-2: the Stage chip in the chat header, below 900 px only; there the header stays above an open panel. */
 .chat-header__text{flex:1;min-width:0}
 .chat-header__chip{display:none;align-items:center;gap:6px;flex:0 1 auto;max-width:48%;min-width:0;min-height:36px;padding:4px 12px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--ink);font-size:var(--text-caption);font-weight:600;cursor:pointer}
-.chat-shell .chat-header__chip svg{width:15px;height:15px;color:var(--muted)}
+.chat-header__chip svg{width:15px;height:15px;color:var(--muted)}
 .chat-header__chip span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chat-header__chip:hover{border-color:var(--accent);background:var(--accent-soft)}
 @media(max-width:900px){.chat-header__chip{display:inline-flex}}
@@ -311,12 +311,12 @@
 /* #283: the pin beside New chat keeps the projects list open when a workspace opens on the right. */
 .chat-sidebar__head{display:flex;align-items:center;gap:4px}
 .chat-sidebar__head .chat-new{flex:1;width:auto;min-width:0}
-.chat-pin{flex:none}.chat-shell .chat-pin svg{width:18px;height:18px}
+.chat-pin{flex:none}.chat-pin svg{width:18px;height:18px}
 .chat-pin[aria-pressed=true]{background:var(--panel-2);color:var(--accent)}
 /* #283: Focus, at the end of the conversation's header while a workspace is open. Below 900 px the workspace
    covers the conversation already, and there is no Focus. */
 .chat-focus{display:inline-flex;align-items:center;gap:6px;flex:none;min-height:32px;padding:4px 11px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);font-size:var(--text-caption);white-space:nowrap;cursor:pointer}
-.chat-shell .chat-focus svg{width:15px;height:15px}
+.chat-focus svg{width:15px;height:15px}
 .chat-focus:hover{background:var(--panel-2);color:var(--ink)}
 /* In Focus the conversation keeps its place and layout out of sight, so its scroll position and draft come back
    as they were, and a strip as narrow as the folded projects list stands in for it. */
@@ -329,7 +329,7 @@
 @media(max-width:900px){.chat-focus{display:none}}
 .chat-strip__open{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:100%;min-height:52px;padding:7px 2px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:var(--text-caption);line-height:1.25;cursor:pointer}
 .chat-strip__open:hover{background:var(--panel-2);color:var(--ink)}
-.chat-shell .chat-strip__open svg{width:18px;height:18px}
+.chat-strip__open svg{width:18px;height:18px}
 .chat-strip__state{position:absolute;top:7px;right:9px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
 .chat-strip__state[data-state=running]{animation:chat-pulse 1.6s ease-in-out infinite}
 @media(prefers-reduced-motion:reduce){.chat-strip__state[data-state=running]{animation:none}}

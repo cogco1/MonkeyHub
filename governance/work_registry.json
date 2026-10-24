@@ -1139,10 +1139,7 @@
             "hub.shell"
           ],
           "write_scope": [
-            "apps/monkeyhub/web/src/features/stage/ElevationPanel.tsx",
-            "apps/monkeyhub/web/src/i18n/messages.en.ts",
-            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-            "apps/monkeyhub/web/test/elevation.browser.mjs"
+            "apps/monkeyhub/web/src/ChatShell.css"
           ],
           "depends_on": []
         }
