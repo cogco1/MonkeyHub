@@ -263,6 +263,15 @@ class AttentionHubTests(unittest.TestCase):
         self.assertEqual(seen[0]["runtimeId"], self.runtimes.runtime.runtime_id)
         self.assertEqual([item.dedupeKey for item in self.store.items()], ["perm:c1:p1"])
 
+    def test_a_project_opened_before_the_queue_follows_the_hub_gets_its_cards(self):
+        # The Hub reopens last session's projects in the background as it starts; one may open first.
+        self.runtimes.events.publish(event={"kind": "project/opened", "runtimeId": self.runtimes.runtime.runtime_id})
+        self.hub.start()
+        self.addCleanup(self.hub.stop)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not self.store.items():
+            time.sleep(0.1)
+        self.assertEqual([item.dedupeKey for item in self.store.items()], ["perm:c1:p1"])
 
 
 class AttentionCompositionTests(unittest.TestCase):

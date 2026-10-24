@@ -233,7 +233,11 @@ class AttentionHub:
     def _follow(self) -> None:
         dirty: dict[str, float] = {}
         hub_due = 0.0
-        with self.runtimes.events.subscribe() as (_, inbox):
+        with self.runtimes.events.subscribe() as (earlier, inbox):
+            # What the Hub did before the queue followed it, a project it reopened at start among it, is read too.
+            for event in earlier:
+                if event.get("kind") != CHANGED and event.get("runtimeId"):
+                    dirty[event["runtimeId"]] = time.monotonic() + SETTLE_S
             while not self._stop.is_set():
                 if time.monotonic() >= hub_due:
                     hub_due = time.monotonic() + HUB_EVERY_S
