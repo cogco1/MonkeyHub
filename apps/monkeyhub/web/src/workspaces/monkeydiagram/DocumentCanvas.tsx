@@ -17,6 +17,7 @@ import { DocumentTracingPanel } from "./DocumentTracingPanel";
 import { DocumentStudyPanel } from "./DocumentStudyPanel";
 import { useDocumentStudy } from "./useDocumentStudy";
 import { studyEvidenceToGestures, studyEvidenceFromGestures } from "./documentStudy";
+import { DOCUMENT_TOOLS, EVIDENCE_TOOLS } from "./documentTools";
 import "./DocumentCanvas.css";
 
 type DrawingTool = "freehand" | "line" | "arrow" | "circle" | "polyline";
@@ -384,7 +385,7 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
 
   return <div className="document-canvas">
     <div className="document-tools" role="toolbar" aria-label={t("document.tools")}>
-      {(["select", "freehand", "line", "polyline", "arrow", "circle", "text", "eraser", "pan"] as const).filter(kind => !evidenceOnly || ["select", "polyline", "eraser", "pan"].includes(kind)).map((kind) => <button data-command={`view.markup_tools.${kind}`} key={kind} type="button"
+      {DOCUMENT_TOOLS.filter(kind => !evidenceOnly || EVIDENCE_TOOLS.includes(kind)).map((kind) => <button data-command={`view.markup_tools.${kind}`} key={kind} type="button"
         disabled={readOnly && kind !== "pan"} aria-pressed={tool === kind} aria-label={t(`document.tool.${kind}`)} title={t(`document.tool.${kind}`)}
         onClick={() => { cancel(); setOutline([]); setTool(kind); if (kind !== "select") setSelectedVectorId(null); }}><Icon name={kind} /><span>{t(`document.tool.${kind}`)}</span></button>)}
       {tool === "polyline" && <button data-command="view.markup_tools.close_outline" type="button" disabled={readOnly || outline.length < 3} onClick={closeOutline}>{t("document.trace.close")}</button>}
@@ -876,8 +877,8 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
       </button>)}
     </div>}
     {(error || draft.error) && <div className="document-error"><ErrorPanel error={(error ?? draft.error)!} what={t("document.workspace")} />
-      {draft.error && <><button data-command="document.annotations.retry_save" type="button" onClick={() => void draft.save().then(() => setError(null)).catch((cause: unknown) => setError(asStudioApiError(cause)))}>{t("document.retrySave")}</button>
-        <button data-command="document.annotations.reload" type="button" onClick={() => void draft.reload().then(() => setError(null)).catch((cause: unknown) => setError(asStudioApiError(cause)))}>{t("document.reload")}</button>
+      {draft.error && <><button data-command="view.notice.retry" data-command-arg="document_save" type="button" onClick={() => void draft.save().then(() => setError(null)).catch((cause: unknown) => setError(asStudioApiError(cause)))}>{t("document.retrySave")}</button>
+        <button data-command="view.notice.retry" data-command-arg="document_reload" type="button" onClick={() => void draft.reload().then(() => setError(null)).catch((cause: unknown) => setError(asStudioApiError(cause)))}>{t("document.reload")}</button>
         <span>{t("document.reloadHint")}</span></>}
     </div>}
     {review && <div className="document-review-banner"><span>{t("document.reviewVersion")}</span><button data-command="view.markup_tools.return_to_edit" type="button" onClick={() => { setReview(null); setPageIndex(0); }}>{t("document.returnToEdit")}</button></div>}
@@ -937,7 +938,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
           {sheetBusy && <p role="status">{t("document.drawingGeneratingHint")}</p>}
           {stylesError && <ErrorPanel error={stylesError} what={t("document.drawingGenerate")} />}
           {sheetError && <p className="document-drawing-styles__error" role="alert">{sheetError.detail}</p>}
-          {stylesError && <button data-command="drawing.sheet.retry_styles" type="button" onClick={() => setStylesRetry((value) => value + 1)}>{t("document.drawingStylesRetry")}</button>}
+          {stylesError && <button data-command="view.notice.retry" data-command-arg="drawing_styles" type="button" onClick={() => setStylesRetry((value) => value + 1)}>{t("document.drawingStylesRetry")}</button>}
         </section>}
         <label htmlFor="document-comment">{t("document.comment")}</label>
         <textarea id="document-comment" value={review?.text ?? draft.comment} readOnly={draft.readOnly} disabled={!draft.ready || sending}
@@ -947,7 +948,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
             onClick={() => void submit()}>{t(sending ? "document.submitting" : "document.submit")}</button></div>
         {!documentVisualInputAvailable && <p className="document-visual-unavailable" role="status">{t("document.visualUnavailable")}</p>}
         {review === null && <details className="document-references">
-          <summary data-command="view.disclosure.document_references">{t("document.references", { count: references.length })}</summary>
+          <summary data-command="view.disclosure.toggle" data-command-arg="document_references">{t("document.references", { count: references.length })}</summary>
           <p>{t("document.referenceHint")}</p>
           <div className="document-references__pages">{referenceChoices.map((choice) => {
             const selected = references.find((item) => pageKey(item) === pageKey(choice));

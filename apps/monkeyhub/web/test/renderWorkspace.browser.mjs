@@ -433,10 +433,10 @@ try {
       await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'second result ready');
       await page.route(firstBytes, (route) => route.fulfill(response));
       await firstButton().click();
-      await cmd(workspace(), "view.render.reload_image").waitFor();
+      await cmd(workspace(), "view.notice.retry", { arg: "render_image" }).waitFor();
       assert.equal(await workspace().locator('.render-image img').count(), 0, 'broken bytes are not displayed as a usable image');
       await page.unroute(firstBytes);
-      await cmd(workspace(), "view.render.reload_image").click();
+      await cmd(workspace(), "view.notice.retry", { arg: "render_image" }).click();
       await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'read retry recovers image');
     }
     assert.equal((await api('project-a', '/fixture/metrics')).calls.length, 2, 'image recovery never calls the generation adapter');

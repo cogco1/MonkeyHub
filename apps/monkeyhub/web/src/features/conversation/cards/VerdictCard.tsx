@@ -85,7 +85,7 @@ export function VerdictCard({
             error={validation.error}
             what={`GET /api/candidates/${candidateId}/validation`}
           />
-          <button data-command="candidate.review.retry" type="button" className="btn btn--small" onClick={onRetry}>{t("stage.base.retry")}</button>
+          <button data-command="view.notice.retry" data-command-arg="verdict" type="button" className="btn btn--small" onClick={onRetry}>{t("stage.base.retry")}</button>
         </div>
       </article>
     );

@@ -207,7 +207,7 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
       </div>}
       {failure && <p className="design-tree-inspector__refusal" role="alert">{t("stage.record.failed", { reason: failure.detail })}</p>}
       {developerMode && <details className="design-tree-inspector__details">
-        <summary data-command="view.disclosure.technical_details">{t("designTree.details")}</summary>
+        <summary data-command="view.disclosure.toggle" data-command-arg="technical_details">{t("designTree.details")}</summary>
         <dl>{technical(node).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
       </details>}
     </div>

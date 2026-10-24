@@ -54,7 +54,7 @@ const screenshotDir = await mkdtemp(path.join(tmpdir(), "monkeyhub-version-notif
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 const state = () => page.evaluate(() => window.__versionWorkspace?.());
 const versions = () => cmd(page.locator(".project-bar"), "design.go_to_step.versions", { includeHidden: true });
-const more = () => cmd(page, "view.menu.modeling_more", { includeHidden: true });
+const more = () => cmd(page, "view.menu.toggle", { arg: "modeling_more", includeHidden: true });
 const readyNotice = () => cmd(page, "attention.decide.show_ready", { includeHidden: true }).filter({ hasText: "1 option ready" });
 const choice = () => cmd(page, "view.design_tree.select_row", { arg: `candidate:${B.runId}`, includeHidden: true });
 const listCounts = () => Object.fromEntries(listPaths.map((name) => [name,
@@ -404,7 +404,7 @@ window.addEventListener("pagehide", () => { stopRelay(); stream.close(); project
       await page.setViewportSize(viewport); await painted();
       const layout = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
       assert.ok(layout.document <= layout.viewport + 1 && layout.body <= layout.viewport + 1, `No horizontal overflow: ${JSON.stringify(layout)}`);
-      for (const control of [versions(), more(), cmd(page, "view.menu.model_tools_more", { includeHidden: true })]) {
+      for (const control of [versions(), more(), cmd(page, "view.menu.toggle", { arg: "model_tools_more", includeHidden: true })]) {
         await control.click({ trial: true });
         const box = await control.boundingBox();
         assert.ok(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width + 1 && box.y + box.height <= viewport.height + 1);

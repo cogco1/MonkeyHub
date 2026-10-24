@@ -221,7 +221,7 @@ async function selectDocument(sha, pageIndex = 0) {
   await pageReady(sha, pageIndex);
 }
 async function openReferences() {
-  if (await referencePanel().getAttribute("open") === null) await cmd(referencePanel(), "view.disclosure.document_references").click();
+  if (await referencePanel().getAttribute("open") === null) await cmd(referencePanel(), "view.disclosure.toggle", { arg: "document_references" }).click();
 }
 async function clearReferences() {
   await openReferences();

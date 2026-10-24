@@ -319,7 +319,7 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
   assert.equal(await page.locator(".document-viewport").getAttribute("aria-label"), pageIdentity);
   faults.save = false;
   // GH-302: a refused autosave keeps the edit and waits for Retry, never retrying in a loop.
-  await cmd(page.locator(".document-error"), "document.annotations.retry_save").click();
+  await cmd(page.locator(".document-error"), "view.notice.retry", { arg: "document_save" }).click();
   const secondPage = await saved();
   assert.notEqual(secondPage.revisionSha256, calibrated.revisionSha256);
   assert.deepEqual(secondPage.tracingCalibration, calibrated.tracingCalibration);

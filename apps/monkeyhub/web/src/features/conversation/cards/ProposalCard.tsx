@@ -130,7 +130,7 @@ export function ProposalCard({
         </dl>
       </div>}
       <details className="card__row card__details">
-        <summary data-command="view.disclosure.technical_details">{t("common.technicalDetails")}</summary>
+        <summary data-command="view.disclosure.toggle" data-command-arg="technical_details">{t("common.technicalDetails")}</summary>
         <p className="card__title">
           <span className="mono">{subject}</span>
           {target.elementId && (

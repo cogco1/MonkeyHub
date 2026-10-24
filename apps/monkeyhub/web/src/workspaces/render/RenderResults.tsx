@@ -12,6 +12,7 @@ import { usePreferences } from "../../features/settings/preferences";
 import { useT } from "../../i18n/useT";
 import { findSource, pageSource, type PageSource } from "../monkeyboard/boardScene";
 import { savedView, type SavedView } from "../monkeyarch/viewer/renderView";
+import { RENDER_VIEWS } from "./renderViews";
 
 export function useDocumentImage(image: SourceDocumentDto | undefined, active: boolean, attempt = 0) {
   const studio = useStudio();
@@ -107,7 +108,7 @@ export default function RenderResults({ active, jobs, documents, selectedId, onS
   return <section className="render-results" aria-label={zh ? "渲染历史" : "Render history"}>
     <header className="render-toolbar">
       <strong>{zh ? "结果与历史" : "Results & history"}</strong>
-      {(["result", "source", "compare"] as const).map((mode) => <button data-command={`view.render.${mode}`} key={mode} type="button" disabled={!job || (mode !== "result" && !source)}
+      {RENDER_VIEWS.map((mode) => <button data-command={`view.render.${mode}`} key={mode} type="button" disabled={!job || (mode !== "result" && !source)}
         aria-pressed={view === mode} onClick={() => setView(mode)}>{(zh ? { result: "结果", source: "来源", compare: "对比" }
           : { result: "Result", source: "Source", compare: "Compare" })[mode]}</button>)}
       <button data-command="view.render.zoom_out" type="button" onClick={() => setZoom((value) => Math.max(.25, value / 1.25))} disabled={!image && !source} aria-label={zh ? "缩小" : "Zoom out"}>−</button>
@@ -116,7 +117,7 @@ export default function RenderResults({ active, jobs, documents, selectedId, onS
       {resultImage.url && image && <a data-command="view.render.download" href={resultImage.url} download={image.fileName}>{zh ? "下载" : "Download"}</a>}
       <button data-command="board.place_image" type="button" disabled={!image} onClick={() => { if (image) onBoard(pageSource(image, 0)); }}>{zh ? "送到画板" : "Send to Board"}</button>
     </header>
-    {error && <div className="render-error" role="alert">{error} <button data-command="view.render.reload_image" type="button" onClick={() => setAttempt((value) => value + 1)}>{zh ? "重读图像" : "Reload image"}</button></div>}
+    {error && <div className="render-error" role="alert">{error} <button data-command="view.notice.retry" data-command-arg="render_image" type="button" onClick={() => setAttempt((value) => value + 1)}>{zh ? "重读图像" : "Reload image"}</button></div>}
     {!jobs.length ? <div className="render-empty"><h2>{zh ? "从一张已有设计图开始" : "Start with an existing design image"}</h2>
       <p>{zh ? "选择底图、参考图和视觉方向。每次生成的来源与结果独立保留。" : "Choose a source image, references and visual direction. Each generation retains its own source and result."}</p></div>
       : <div className="render-content">
@@ -157,7 +158,7 @@ export default function RenderResults({ active, jobs, documents, selectedId, onS
             {saved && onShowInModeling && <button data-command="view.render.show_in_modeling" type="button" onClick={() => onShowInModeling(saved.camera)}>{t("render.savedView.show")}</button>}
             {saved && onRecapture && <button data-command="view.render.recapture" type="button" disabled={!recaptureReady} onClick={() => onRecapture(job, saved)}>{t("render.savedView.recapture")}</button>}
             <span className="render-cost">{zh ? "费用：" : "Cost: "}{job.costUsd == null ? (zh ? "未知" : "Unknown") : `USD ${job.costUsd.toFixed(4)}`}</span>
-            <details><summary data-command="view.disclosure.render_details">{zh ? "来源与生成记录" : "Source & generation details"}</summary>
+            <details><summary data-command="view.disclosure.toggle" data-command-arg="render_details">{zh ? "来源与生成记录" : "Source & generation details"}</summary>
               <pre>{JSON.stringify({ source: job.request?.source ?? null, references: job.request?.references ?? [], modelSource: modelSource ?? null,
                 sourceStageRef: source?.sourceStageRef ?? image?.sourceStageRef ?? null, sourceView: sourceView ?? null,
                 sourceState: job.sourceState, sourceStateReason: job.sourceStateReason, requestId: job.requestId, jobId: job.jobId,

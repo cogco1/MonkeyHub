@@ -91,7 +91,7 @@ try {
   await page.keyboard.press("Control+Shift+z");assert.equal(object(await state(),"lower").spec.height,4.5);
   await choose("upper");await set("Base Z",5.5);
   assert.equal(object(await state(),"upper").elevation.baseReference.offset,1);
-  await cmd(page,"view.disclosure.reference_elevations").click();
+  await cmd(page,"view.disclosure.toggle", { arg: "reference_elevations" }).click();
   await page.getByLabel("Datum name",{exact:true}).fill("Roof ref");await page.getByLabel("Datum elevation",{exact:true}).fill("12");
   await waitForCommandLabel(cmd(page,"frame.set_level.datum"),"Create datum");await cmd(page,"frame.set_level.datum").click();
   const datum=(await state()).levels[0];assert.equal(datum.name,"Roof ref");

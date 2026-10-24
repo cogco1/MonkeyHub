@@ -73,7 +73,7 @@ export function QuestionCard({
       )}
       {(error.question || error.acceptedForms.length > 0 || pending) && (
         <details className="card__row card__details">
-          <summary data-command="view.disclosure.technical_details">{t("common.technicalDetails")}</summary>
+          <summary data-command="view.disclosure.toggle" data-command-arg="technical_details">{t("common.technicalDetails")}</summary>
           {error.question && (
             <p className="quiet">
               <BilingualText source={error.detail} />

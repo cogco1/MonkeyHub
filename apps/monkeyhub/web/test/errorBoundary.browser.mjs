@@ -73,11 +73,11 @@ try {
 
   const crashUrl = `${origin}?crash=render&project=villa`;
   await page.goto(crashUrl);
-  const reload = cmd(page, "view.page.reload");
+  const reload = cmd(page, "view.notice.retry", { arg: "page" });
   await reload.waitFor();
   const loadsBefore = await page.evaluate(() => Number(sessionStorage.getItem("fixture.documentLoads")));
   await Promise.all([page.waitForNavigation({ waitUntil: "domcontentloaded" }), reload.click()]);
-  await cmd(page, "view.page.reload").waitFor();
+  await cmd(page, "view.notice.retry", { arg: "page" }).waitFor();
 
   assert.equal(page.url(), crashUrl, "reload must keep the exact current URL and project locator");
   assert.equal(await page.evaluate(() => Number(sessionStorage.getItem("fixture.documentLoads"))), loadsBefore + 1,

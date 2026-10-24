@@ -34,7 +34,7 @@ export function MissingControlCard({ error }: { error: StudioApiError }) {
       </div>
       {(pending || draft) && (
         <details className="card__row card__details">
-          <summary data-command="view.disclosure.technical_details">{t("common.technicalDetails")}</summary>
+          <summary data-command="view.disclosure.toggle" data-command-arg="technical_details">{t("common.technicalDetails")}</summary>
           {pending && (
             <p className="quiet mono">
               {t("terminal.identity", {

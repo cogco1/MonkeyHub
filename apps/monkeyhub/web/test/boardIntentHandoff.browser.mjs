@@ -250,7 +250,7 @@ try {
             history.branches[0].headStageRef = sourceStageRef;
             const readsAtRecovery = stateReads.length;
             if (await page.locator(".refusal__card").count()) {
-              await cmd(page.locator(".refusal__card"), "model.open.retry").click();
+              await cmd(page.locator(".refusal__card"), "view.notice.retry", { arg: "model_open" }).click();
               await page.locator(".refusal__card").waitFor({ state: "hidden" });
             } else {
               await cmd(page, "design.go_to_step.default_base").click();

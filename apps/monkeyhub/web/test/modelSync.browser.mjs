@@ -479,7 +479,7 @@ if (autosaveOnly) {
   assert.equal(await page.locator('.versions [data-design-stage], .versions [data-preview-candidate]').count(),0,'no second list of Stages or candidates beside the Design Tree');
   assert.equal(await page.locator('.stage__versions-current, .stage__versions-new').count(),0,'the footer leaves position and new options to the Stage chip');
   assert.equal(await cmd(page,'view.design_tree.open').count(),2,'the footer and Versions each offer the one link');
-  const recovery=page.locator('.versions details').filter({has:cmd(page,'view.disclosure.recovery_points',{includeHidden:true})});
+  const recovery=page.locator('.versions details').filter({has:cmd(page,'view.disclosure.toggle',{arg:'recovery_points',includeHidden:true})});
   assert.equal(await recovery.evaluate(node=>node.open),false,'automatic recovery starts collapsed');
   assert.equal(await page.locator('[data-working-draft]:visible').count(),1,'only current is expanded before saving a milestone');
   await page.getByRole('textbox',{name:'Milestone name',exact:true}).fill('Autosave milestone');
@@ -1022,9 +1022,9 @@ state=await snap();assert.equal(state.picked,block);assert.equal(state.selection
 await page.mouse.move(empty.x,empty.y);await page.mouse.down();await page.mouse.move(empty.x+40,empty.y+25,{steps:8});await page.mouse.up();
 state=await snap();assert.notDeepEqual(state.view.camera,selected.view.camera);assert.equal(state.picked,block);
 // Reframe through the current view menu; the primary Fit button was retired.
-await cmd(page,'view.menu.modeling_more').click();
+await cmd(page,'view.menu.toggle', { arg: 'modeling_more' }).click();
 await cmd(page.locator('#stage-more-menu'),'view.model_camera.iso').click();
-await cmd(page,'view.menu.modeling_more').click();
+await cmd(page,'view.menu.toggle', { arg: 'modeling_more' }).click();
 const typing=await blank();await cmd(page,'draft.tools.rectangle').click();await page.mouse.click(typing.x,typing.y);
 const textEntry=page.locator('.sketch-entry input'),beforeText=(await snap()).index;
 await textEntry.fill('12');await textEntry.press('Delete');await textEntry.press('Backspace');await textEntry.press('Control+z');
@@ -1083,7 +1083,7 @@ assert.ok(correctedExport.has('obj-'+corrected));assert.ok(!correctedExport.has(
 assert.notEqual(state.base,failedBase);assert.equal(candidateCalls().length,3);
 console.log('7 · annotation and document keys cannot act on the local model');
 const inkObject=await rectangle(.8,.6);await pick(inkObject);const inkModelIndex=(await snap()).index;
-const moreTools=cmd(page,'view.menu.model_tools_more'),annotate=cmd(page,'view.markup_tools.tracing_paper');await moreTools.click();await annotate.click();
+const moreTools=cmd(page,'view.menu.toggle', { arg: 'model_tools_more' }),annotate=cmd(page,'view.markup_tools.tracing_paper');await moreTools.click();await annotate.click();
 assert.deepEqual(await cmd(page.getByRole('group',{name:'Annotation colour',exact:true}),'view.markup_tools.colour').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label'))),
   ['Red','Blue','Yellow','White'],'annotation swatches announce colour names, not hex codes');
 const inkTool=cmd(page.locator('#annotation-tools'),'view.markup_tools.line');await inkTool.click();

@@ -83,7 +83,7 @@ try {
     return answer({ code: "UNEXPECTED", detail: url.pathname }, 404);
   });
   await page.goto(server.resolvedUrls.local[0]);
-  await cmd(page, "view.menu.recipe_transfer").click();
+  await cmd(page, "view.menu.toggle", { arg: "recipe_transfer" }).click();
   await cmd(page, "drawing.recipe.export").waitFor();
   const download = page.waitForEvent("download");
   await cmd(page, "drawing.recipe.export").click();
@@ -93,11 +93,11 @@ try {
   const menu = page.locator("details.recipe-transfer"), isOpen = () => menu.evaluate(node => node.open);
   await page.keyboard.press("Escape");
   assert.equal(await isOpen(), false, "Escape closes the menu");
-  assert.equal(await cmd(menu, "view.menu.recipe_transfer").evaluate(node => node === document.activeElement), true, "focus returns to its word");
-  await cmd(menu, "view.menu.recipe_transfer").click();
+  assert.equal(await cmd(menu, "view.menu.toggle", { arg: "recipe_transfer" }).evaluate(node => node === document.activeElement), true, "focus returns to its word");
+  await cmd(menu, "view.menu.toggle", { arg: "recipe_transfer" }).click();
   await page.getByText("Drawing", { exact: true }).click();
   assert.equal(await isOpen(), false, "a click outside closes the menu");
-  await cmd(menu, "view.menu.recipe_transfer").click();
+  await cmd(menu, "view.menu.toggle", { arg: "recipe_transfer" }).click();
   await upload();
   await cmd(page, "drawing.recipe.import_confirm").waitFor();
   assert.equal(await isOpen(), false, "the file waiting for confirmation closes the menu, so its row is in sight");
@@ -105,7 +105,7 @@ try {
   await cmd(page, "drawing.recipe.import_cancel").click();
   assert.equal(writes.length, 0);
   await upload();
-  await cmd(page, "view.disclosure.recipe_version").click();
+  await cmd(page, "view.disclosure.toggle", { arg: "recipe_version" }).click();
   await page.getByText(`Source revision: ${document.source.revisionSha256}`, { exact: true }).waitFor();
   await page.screenshot({ path: join(scratch, "wide.png"), fullPage: true });
   await cmd(page, "drawing.recipe.import_confirm").click();
@@ -116,7 +116,7 @@ try {
   assert.deepEqual({ ...writes[0], rawLanguage: undefined }, { projectId: "second-project", content, confirmed: true, sourceKind: "human", rawLanguage: undefined });
   assert.ok(writes[0].rawLanguage.includes(document.sha256));
   // The menu closed when the import was confirmed in the row; it opens again to refresh.
-  await cmd(page, "view.menu.recipe_transfer").click();
+  await cmd(page, "view.menu.toggle", { arg: "recipe_transfer" }).click();
   await cmd(page, "drawing.recipe.refresh").click();
   await upload();
   await cmd(page, "drawing.recipe.import_confirm").click();
@@ -138,7 +138,7 @@ try {
   await page.waitForFunction(() => document.querySelector('input[type="file"]').disabled);
   project = "third-project";
   await page.evaluate(() => window.fixture.setProject("third-project"));
-  await cmd(page, "view.menu.recipe_transfer").click();
+  await cmd(page, "view.menu.toggle", { arg: "recipe_transfer" }).click();
   release?.();
   await cmd(page, "drawing.recipe.export").waitFor();
   assert.equal(await cmd(page, "drawing.recipe.import_confirm").count(), 0, "a delayed preview cannot transfer across projects");

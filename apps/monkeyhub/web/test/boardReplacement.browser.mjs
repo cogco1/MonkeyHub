@@ -643,7 +643,7 @@ try {
 
   // Clear marks through both real buttons, with a single keyboard undo/redo.
   // Include a real Crit pen stroke and arrow/text bindings to a retained page.
-  await cmd(page, "view.menu.board_more").click();
+  await cmd(page, "view.menu.toggle", { arg: "board_more" }).click();
   await cmd(page, "markup.hand_to_ai.enter_crit").click();
   await page.mouse.move(800, 450); await page.mouse.down();
   await page.mouse.move(840, 470, { steps: 6 }); await page.mouse.move(890, 450, { steps: 6 }); await page.mouse.up();
@@ -675,7 +675,7 @@ try {
   const clear = cmd(page, "markup.clear");
   const waitCleared = () => page.waitForFunction((ids) => ids.every((id) => !window.__boardApi.getSceneElements().some((element) => element.id === id)), markIds);
   const waitRestored = () => page.waitForFunction((ids) => ids.every((id) => window.__boardApi.getSceneElements().some((element) => element.id === id)), markIds);
-  await cmd(page, "view.menu.board_more").click();
+  await cmd(page, "view.menu.toggle", { arg: "board_more" }).click();
   await clear.click(); await waitCleared();
   assert.equal(await cmd(page, "markup.clear", { includeHidden: true }).isEnabled(), false);
   const cleared = await readScene();
@@ -691,7 +691,7 @@ try {
   assert.deepEqual(byId(await readScene(), "kept-image").boundElements, byId(beforeClear, "kept-image").boundElements);
   await page.keyboard.press("Control+Shift+z"); await waitCleared();
   await page.keyboard.press("Control+z"); await waitRestored();
-  await cmd(page, "view.menu.board_more").click();
+  await cmd(page, "view.menu.toggle", { arg: "board_more" }).click();
   await cmd(page, "markup.hand_to_ai.enter_crit").click();
   await clear.click(); await waitCleared();
   await page.keyboard.press("Control+z"); await waitRestored();
@@ -739,7 +739,7 @@ try {
     const added = convertToExcalidrawElements([{ id: "headless-local-note", type: "text", text: "Keep this critique", x: 430, y: 670 }], { regenerateIds: false });
     api.updateScene({ elements: [...api.getSceneElementsIncludingDeleted(), ...added], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
   });
-  const retryPreviews = cmd(page, "board.previews.retry");
+  const retryPreviews = cmd(page, "view.notice.retry", { arg: "board_previews" });
   await retryPreviews.waitFor(); await waitForCommandLabel(retryPreviews, "重试预览 / 接收");
   assert.ok(headlessPreviewFailures > 0, "The uncached remote preview must actually fail before recovery");
   const failedHeadless = await readScene();

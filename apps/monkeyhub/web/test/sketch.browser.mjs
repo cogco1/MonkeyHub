@@ -294,7 +294,7 @@ try {
   assert.ok(Math.abs(openArc.profile[16][1] + 0.75) < 1e-6);
   assert.notDeepEqual(openArc.profile[0], openArc.profile.at(-1));
 
-  await cmd(page, "view.menu.model_tools_more").click();
+  await cmd(page, "view.menu.toggle", { arg: "model_tools_more" }).click();
   await cmd(page, "draft.tools.freehand").click();
   await page.mouse.move(...start); await page.mouse.down();
   await page.mouse.move(...await project([1, 0.5, 0]), { steps: 5 });
@@ -338,7 +338,7 @@ try {
   assert.equal(await page.evaluate(() => window.submitted.length), 3);
   await cmd(page, "draft.tools.line").click();
   await page.mouse.click(...start); await page.mouse.move(...lineEnd);
-  await cmd(page, "view.menu.model_tools_more").click();
+  await cmd(page, "view.menu.toggle", { arg: "model_tools_more" }).click();
   await cmd(page, "draft.tools.arc").click();
   assert.equal(await page.evaluate(() => window.previewGroup?.parent === null), true);
   assert.equal(await page.evaluate(() => window.submitted.length), 3);
@@ -482,7 +482,7 @@ try {
   assert.equal(polygon.height, 1.5);
 
   // A vertical rectangle remains local 2D plus its explicit world frame.
-  await cmd(page, "view.menu.model_tools_more").click();
+  await cmd(page, "view.menu.toggle", { arg: "model_tools_more" }).click();
   await page.getByRole("combobox", { name: "Drawing plane" }).selectOption("xz");
   await cmd(page, "draft.tools.rectangle").click();
   const verticalCorner = await page.evaluate(() => window.projectPoint([2, 0, 3]));
@@ -550,7 +550,7 @@ try {
   });
   assert.deepEqual(cancel, { lateCalls: 0, parent: false, disposals: 6, submissions: 5 });
 
-  await cmd(page, "view.menu.model_tools_more").click();
+  await cmd(page, "view.menu.toggle", { arg: "model_tools_more" }).click();
   await page.getByRole("combobox", { name: "Drawing plane" }).selectOption("xy");
   const startPoint = await page.evaluate(() => window.projectPoint([0, 0, 0]));
   await page.mouse.click(...startPoint);
@@ -598,7 +598,7 @@ try {
   await page.keyboard.up("Shift");
   // Tool and plane changes also cancel the pending frame before clearing.
   for (const change of ["tool", "plane"]) {
-    if (change === "plane") await cmd(page, "view.menu.model_tools_more").click();
+    if (change === "plane") await cmd(page, "view.menu.toggle", { arg: "model_tools_more" }).click();
     await page.mouse.move(...negativeCorner);
     const result = await page.evaluate(async (change) => {
       window.moveBurst([[650, 400]]);
@@ -650,7 +650,7 @@ try {
 
   // Measure the real pointer -> snap -> RAF -> preview path on loaded meshes.
   await page.keyboard.press("Escape");
-  await cmd(page, "view.menu.model_tools_more").click();
+  await cmd(page, "view.menu.toggle", { arg: "model_tools_more" }).click();
   await page.getByRole("combobox", { name: "Drawing plane" }).selectOption("xy");
   await cmd(page, "draft.tools.line").click();
   await page.mouse.click(...await project([0, 0, 0]));

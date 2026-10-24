@@ -296,7 +296,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
     <main className="monitor-shell">
       {/* The rail and the Help menu name the page; the heading is for screen readers. */}
       <h1 className="sr-only">{t.title}</h1>
-      {error && <div className="error-message" role="alert"><strong>{t.failed}</strong><p>{error}</p><button data-command="view.usage.retry" className="btn" type="button" onClick={() => void readAll(true)}>{t.retry}</button></div>}
+      {error && <div className="error-message" role="alert"><strong>{t.failed}</strong><p>{error}</p><button data-command="view.notice.retry" data-command-arg="usage" className="btn" type="button" onClick={() => void readAll(true)}>{t.retry}</button></div>}
       <section className="monitor-stats" aria-label={t.usage} hidden={view !== "calls"}>
         {[
           [t.calls, summary.calls.toLocaleString(), ""],
@@ -332,8 +332,8 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
               </details>;
             })}
           </div>
-          {(selectedDiagnostics.length > 0 || selectedWarnings.length > 0) && <details className="monitor-diagnostics"><summary data-command="view.disclosure.usage_diagnostics">{t.diagnostics} · {selectedDiagnostics.length + selectedWarnings.length}</summary>{selectedDiagnostics.map((item, index) => <div key={index}><strong>{text(item.label ?? item.code)}</strong><p>{text(item.note)}</p></div>)}{selectedWarnings.map((warning) => <p key={warning}>{warning}</p>)}</details>}
-          <details className="monitor-raw"><summary data-command="view.disclosure.usage_raw">{t.raw}</summary><pre>{JSON.stringify(selectedTrace, null, 2)}</pre></details>
+          {(selectedDiagnostics.length > 0 || selectedWarnings.length > 0) && <details className="monitor-diagnostics"><summary data-command="view.disclosure.toggle" data-command-arg="usage_diagnostics">{t.diagnostics} · {selectedDiagnostics.length + selectedWarnings.length}</summary>{selectedDiagnostics.map((item, index) => <div key={index}><strong>{text(item.label ?? item.code)}</strong><p>{text(item.note)}</p></div>)}{selectedWarnings.map((warning) => <p key={warning}>{warning}</p>)}</details>}
+          <details className="monitor-raw"><summary data-command="view.disclosure.toggle" data-command-arg="usage_raw">{t.raw}</summary><pre>{JSON.stringify(selectedTrace, null, 2)}</pre></details>
         </>}
       </section>
 
@@ -359,7 +359,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
         </section>
       </div>
 
-      {warnings.length > 0 && <details className="monitor-global-warnings"><summary data-command="view.disclosure.usage_warnings">{t.warnings} · {warnings.length}</summary>{warnings.map((warning) => <p key={warning}>{warning}</p>)}</details>}
+      {warnings.length > 0 && <details className="monitor-global-warnings"><summary data-command="view.disclosure.toggle" data-command-arg="usage_warnings">{t.warnings} · {warnings.length}</summary>{warnings.map((warning) => <p key={warning}>{warning}</p>)}</details>}
     </main>
     {/* L5: where the records come from, when they were read, and how the scope counts them. */}
     <StatusLine className="monitor-status" end={<span title={t.usageScope}>{t.usageScope}</span>}>

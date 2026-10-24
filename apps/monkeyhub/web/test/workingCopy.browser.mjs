@@ -54,7 +54,7 @@ async function ready(source, readStart = 0) {
 }
 async function openTracing() {
   if (await page.locator("#annotation-tools").isVisible()) return;
-  const more = cmd(page, "view.menu.model_tools_more", { includeHidden: true });
+  const more = cmd(page, "view.menu.toggle", { arg: "model_tools_more", includeHidden: true });
   if (await more.getAttribute("aria-expanded") !== "true") await more.click();
   await cmd(page, "view.markup_tools.tracing_paper").click();
   await page.locator("#annotation-tools").waitFor();
@@ -231,9 +231,9 @@ try {
   await page.goto(`${origin}/?view=board&lang=en`, { waitUntil: "domcontentloaded" });
   await page.locator(".monkeyboard-canvas canvas").first().waitFor();
   await until(() => getJson("/api/board"), (value) => value.elements.some((element) => element.type === "image" && !element.isDeleted), "The exact drawing must reach Board");
-  await cmd(page.locator(".monkeyboard-actions"), "view.menu.board_more").click();
+  await cmd(page.locator(".monkeyboard-actions"), "view.menu.toggle", { arg: "board_more" }).click();
   await cmd(page.locator(".monkeyboard-actions"), "view.canvas.fit").click();
-  await cmd(page.locator(".monkeyboard-actions"), "view.menu.board_more").click();
+  await cmd(page.locator(".monkeyboard-actions"), "view.menu.toggle", { arg: "board_more" }).click();
   const box = await page.locator(".monkeyboard-canvas").boundingBox();
   assert.ok(box);
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);

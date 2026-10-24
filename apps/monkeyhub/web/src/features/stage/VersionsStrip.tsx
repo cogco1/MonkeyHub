@@ -117,7 +117,7 @@ export function VersionsStrip({
     return <div className="versions" role="list" aria-label={t("stage.historyPanel.ariaLabel")}>
       {draft?.current && draftRow(draft.current, t("stage.historyPanel.currentDraft"), "current", true)}
       {draft?.saved?.map((row) => draftRow(row, row.label || t("stage.historyPanel.savedVersion"), "saved"))}
-      {draft && <details className="vcard"><summary data-command="view.disclosure.recovery_points">{t("stage.historyPanel.recoveryPoints", { count: (draft.recovery ?? []).length })}</summary>
+      {draft && <details className="vcard"><summary data-command="view.disclosure.toggle" data-command-arg="recovery_points">{t("stage.historyPanel.recoveryPoints", { count: (draft.recovery ?? []).length })}</summary>
         <p className="quiet">{t("stage.historyPanel.recoveryHelp")}</p>
         {draft.recovery?.map((row) => draftRow(row, t("stage.historyPanel.recoveryPoint"), "recovery"))}
       </details>}
@@ -153,7 +153,7 @@ export function VersionsStrip({
       {workingCopies.map((copy) => <div key={copy.groupId} className="vcard" data-working-copy={copy.groupId}><strong>{t("stage.historyPanel.exploration", { label: copy.label })}</strong>
         <div className="vcard__exports">{copy.options.map((option) => <button data-command="design.go_to_step.candidate" data-command-arg={option.id} key={option.id} className="btn btn--small" disabled={design.busy}
           onClick={() => design.onCandidate(option.modelSource)}>{option.label}{copy.selectedOptionId === option.id ? " · ✓" : ""}</button>)}</div></div>)}
-      <details className="vcard"><summary data-command="view.disclosure.candidates">{t("stage.historyPanel.candidates")}</summary>
+      <details className="vcard"><summary data-command="view.disclosure.toggle" data-command-arg="candidates">{t("stage.historyPanel.candidates")}</summary>
       {design.candidates.length > 1 && <div className="vcard"><button data-command="design.go_to_step.combine" className="btn btn--small"
         disabled={design.busy || selectedCandidates.length < 2 || selectedCandidates.some((candidate) => candidate.sourceStageRef !== commonSource)}
         onClick={() => design.onCombine(selectedCandidates.map((candidate) => candidate.modelSource.runId))}>{t("stage.historyPanel.combine")}</button>

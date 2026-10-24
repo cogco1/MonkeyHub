@@ -179,7 +179,7 @@ test("the shipped export control and versions panel answer for the model on scre
   const controls = () => page.evaluate(() => window.__workModel.controls);
   const button = cmd(page, "model.export_3dm.editable", { includeHidden: true });
   const openViewTools = async () => {
-    const toggle = cmd(page, "view.menu.modeling_export", { includeHidden: true });
+    const toggle = cmd(page, "view.menu.toggle", { arg: "modeling_export", includeHidden: true });
     if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
   };
 

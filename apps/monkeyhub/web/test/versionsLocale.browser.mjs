@@ -113,11 +113,11 @@ try {
     await name.fill("  用户 {name}  ");
     const recovery = root.locator(":scope > details").first();
     const legacy = root.locator(":scope > details").last();
-    await cmd(recovery, "view.disclosure.recovery_points").click(); await cmd(legacy, "view.old_results.toggle").click();
+    await cmd(recovery, "view.disclosure.toggle", { arg: "recovery_points" }).click(); await cmd(legacy, "view.old_results.toggle").click();
     if (mode === "fallback") {
       await cmd(root.locator('[data-design-stage]'), "design.go_to_step.fork").click();
       await root.locator(":scope > form input").fill("alternate-layout");
-      await cmd(root.locator(":scope > details").nth(1), "view.disclosure.candidates").click();
+      await cmd(root.locator(":scope > details").nth(1), "view.disclosure.toggle", { arg: "candidates" }).click();
       await root.locator('[data-preview-candidate="candidate-a"] input').check();
       await root.locator('[data-preview-candidate="candidate-b"] input').check();
     }
@@ -141,7 +141,7 @@ try {
       equal(await current.locator("strong").textContent(), text.current, `${prefix} current draft`);
       equal(await root.locator('[data-working-draft="draft-saved"] strong').textContent(), "保留 {name}", `${prefix} saved user name`);
       equal(await root.locator('[data-working-draft="draft-unnamed"] strong').textContent(), text.saved, `${prefix} unnamed saved version`);
-      equal(await cmd(recovery, "view.disclosure.recovery_points").textContent(), text.recovery, `${prefix} recovery count`);
+      equal(await cmd(recovery, "view.disclosure.toggle", { arg: "recovery_points" }).textContent(), text.recovery, `${prefix} recovery count`);
       equal(await recovery.locator("p").textContent(), text.guidance, `${prefix} recovery explanation`);
       equal(await recovery.locator("strong").textContent(), text.point, `${prefix} recovery row`);
       equal(await cmd(legacy, "view.old_results.toggle").textContent(), text.legacy, `${prefix} legacy history`);
@@ -158,7 +158,7 @@ try {
         equal(await cmd(root.locator(":scope > form"), "design.go_to_step.create_branch").or(cmd(root.locator(":scope > form"), "design.go_to_step.cancel_fork")).allTextContents(), [text.create,text.cancel], `${prefix} branch actions`);
         equal(await root.locator('[data-working-copy] strong').textContent(), text.exploration, `${prefix} exploration interpolation`);
         const candidateDetails=root.locator(":scope > details").nth(1);
-        equal(await cmd(candidateDetails, "view.disclosure.candidates").textContent(),text.candidates,`${prefix} candidates summary`);
+        equal(await cmd(candidateDetails, "view.disclosure.toggle", { arg: "candidates" }).textContent(),text.candidates,`${prefix} candidates summary`);
         equal(await cmd(candidateDetails, "design.go_to_step.combine").textContent(),text.combine,`${prefix} combine action`);
         equal(await candidateDetails.locator(":scope > .vcard > .quiet").textContent(),text.combineHelp,`${prefix} combine guidance`);
         equal(await root.locator('[data-preview-candidate="candidate-a"] input').getAttribute("aria-label"),text.checkbox,`${prefix} candidate accessible name`);

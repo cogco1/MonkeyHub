@@ -311,7 +311,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
     "A board whose last save was refused is not written again behind the operator");
   // The canvas is untouched by the refusal: the mark saves once the write is accepted.
   faults["/api/board"] = false;
-  await cmd(boardAlert, "board.save.retry").click();
+  await cmd(boardAlert, "view.notice.retry", { arg: "board_save" }).click();
   const afterRetry = await savedWhere((value) => savedMarks(value) === 1, "The mark drawn during a refused save was lost");
   assert.deepEqual(active(afterRetry, "image").map((element) => element.customData.sourceDocument),
     active(beforeRefusal, "image").map((element) => element.customData.sourceDocument));

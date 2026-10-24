@@ -111,10 +111,10 @@ try {
       await page.locator(".monkeyboard-loading p").first().waitFor();
       equal(await page.locator(".monkeyboard-loading p").first().textContent(), expected[initial].loading, `${initial}: loading`);
       releaseLoad();
-      await cmd(page, "board.open.retry").waitFor();
+      await cmd(page, "view.notice.retry", { arg: "board_open" }).waitFor();
       equal(await page.locator(".monkeyboard-loading p").first().textContent(), expected[initial].failed, `${initial}: load failure`);
-      equal(await cmd(page, "board.open.retry").textContent(), expected[initial].retry, `${initial}: retry`);
-      await cmd(page, "board.open.retry").click();
+      equal(await cmd(page, "view.notice.retry", { arg: "board_open" }).textContent(), expected[initial].retry, `${initial}: retry`);
+      await cmd(page, "view.notice.retry", { arg: "board_open" }).click();
       await page.waitForFunction(() => window.__boardApi && !document.querySelector(".monkeyboard-initializing"));
       await page.locator(".monkeyboard-title").fill("Unfinished review {count}");
       await page.evaluate(() => {
@@ -135,12 +135,12 @@ try {
         await page.waitForFunction((language) => document.documentElement.lang === language, language);
         const text = expected[language];
         equal(await page.locator(".monkeyboard-title").getAttribute("aria-label"), text.title, `${initial} → ${language}: title label`);
-        await cmd(page, "view.menu.board_more").click();
+        await cmd(page, "view.menu.toggle", { arg: "board_more" }).click();
         equal(await cmd(page, "board.export.run").textContent(), text.export, `${initial} → ${language}: export`);
         equal(await page.locator(".monkeyboard-export select").getAttribute("aria-label"), text.export, `${initial} → ${language}: export format label`);
         await cmd(page, "board.export.run").click();
         equal(await page.locator(".monkeyboard-alert").filter({ hasText: text.empty }).count(), 1, `${initial} → ${language}: empty export guidance`);
-        await cmd(page, "view.menu.board_more").click();
+        await cmd(page, "view.menu.toggle", { arg: "board_more" }).click();
         const unchanged = await page.evaluate(() => ({
           api: window.__boardApi === window.__retainedBoardApi,
           canvas: document.querySelector(".monkeyboard-canvas canvas") === window.__retainedCanvas,

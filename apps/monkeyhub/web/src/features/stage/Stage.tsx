@@ -50,6 +50,7 @@ import "./stageNotices.css";
 import type { NormalDragController } from "../../workspaces/monkeyarch/viewer/normalDrag";
 import { constrainedTranslation, type TranslationConstraint } from "../../workspaces/monkeyarch/viewer/translationGizmo";
 import { draftTransformCenter, previewDirectModel, specFromDrawnShape } from "./modelDraft";
+import { MODEL_TOOLS, MORE_SKETCH_TOOLS, SKETCH_TOOLS, STANDARD_VIEWS, draftToolCommand } from "./tools";
 import {
   IDLE as SKETCH_IDLE,
   cancelled as cancelledSketch,
@@ -1409,7 +1410,7 @@ export function Stage({
         modelAnnotations.saving || modelAnnotations.dirty ? "stage.annotations.saving" : "stage.annotations.saved")}</span>}
       {modelAnnotations.error && <>
         <ErrorPanel error={modelAnnotations.error} what="/api/model-annotations" />
-        <button data-command="markup.marks.retry" type="button" className="btn btn--small" onClick={() => void (!modelAnnotations.ready || modelAnnotations.error?.status === 409
+        <button data-command="view.notice.retry" data-command-arg="model_marks" type="button" className="btn btn--small" onClick={() => void (!modelAnnotations.ready || modelAnnotations.error?.status === 409
           ? modelAnnotations.reload() : modelAnnotations.save()).catch(() => undefined)}>
           {t(!modelAnnotations.ready || modelAnnotations.error.status === 409 ? "stage.annotations.reload" : "stage.annotations.retry")}
         </button>
@@ -1442,7 +1443,7 @@ export function Stage({
           : t("stage.tools.workModelTitle", { fileName: workModel.source?.fileName ?? "" }));
   // #352: Export, in the bar: the editable copy of the model on screen and, once made, its file.
   const exportMenu = workModel && <span ref={exportMenuElement} className="stage-menu">
-    <MenuCommand data-command="view.menu.modeling_export" aria-expanded={barMenu === "export"} aria-controls="stage-export-menu" onClick={() => toggleBarMenu("export")}>
+    <MenuCommand data-command="view.menu.toggle" data-command-arg="modeling_export" aria-expanded={barMenu === "export"} aria-controls="stage-export-menu" onClick={() => toggleBarMenu("export")}>
       {t("stage.menu.export")}</MenuCommand>
     {barMenu === "export" && <div ref={exportPanelElement} id="stage-export-menu" className="stage-menu__panel" role="group" aria-label={t("stage.menu.export")}>
       {/* The editable copy of what is on screen. It is made from that model's own exact STEP by the
@@ -1466,11 +1467,11 @@ export function Stage({
     moreMenuElement.current?.querySelector<HTMLElement>('[aria-controls="stage-more-menu"]')?.focus();
   };
   const moreMenu = <span ref={moreMenuElement} className="stage-menu">
-    <MenuCommand data-command="view.menu.modeling_more" aria-expanded={barMenu === "more"} aria-controls="stage-more-menu" onClick={() => toggleBarMenu("more")}>
+    <MenuCommand data-command="view.menu.toggle" data-command-arg="modeling_more" aria-expanded={barMenu === "more"} aria-controls="stage-more-menu" onClick={() => toggleBarMenu("more")}>
       {t("stage.menu.more")}</MenuCommand>
     {barMenu === "more" && <div ref={morePanelElement} id="stage-more-menu" className="stage-menu__panel" role="group" aria-label={t("stage.menu.more")}>
       <div className="stage-menu__views">
-        {(["top", "front", "right", "iso", "perspective"] as const).map((view) => <button data-command={`view.model_camera.${view}`} type="button" key={view}
+        {STANDARD_VIEWS.map((view) => <button data-command={`view.model_camera.${view}`} type="button" key={view}
           onClick={() => viewportRef.current?.standardView(view)}>{t(`stage.view.${view}`)}</button>)}
       </div>
       <button data-command="view.model_camera.fit_selected" type="button" disabled={!model?.hasSelection} onClick={() => viewportRef.current?.fitSelection()}>{t("stage.tools.fitSelected")}</button>
@@ -2000,13 +2001,13 @@ export function Stage({
             <div className="model-tools__group" role="group" aria-label={zh ? "选择与绘制" : "Select and draw"}>
             <ModelToolButton data-command="draft.tools.select" icon="select" label={t("stage.sketch.select")} shortcut="Space" aria-pressed={sketch.tool === null && !measuring && !model?.directTool && !tool && !eraser}
               onClick={() => chooseDrawingTool(null)} />
-            {onSketch && (["line", "rectangle", "circle"] as const).map((kind) => <ModelToolButton data-command={`draft.tools.${kind}`} key={kind} icon={kind}
+            {onSketch && SKETCH_TOOLS.map((kind) => <ModelToolButton data-command={draftToolCommand(kind)} key={kind} icon={kind}
               label={t(`stage.sketch.${kind}`)} shortcut={{ line: "L", rectangle: "R", circle: "C" }[kind]}
               aria-pressed={sketch.tool === kind}
               onClick={() => chooseDrawingTool(sketch.tool === kind ? null : kind)} />)}
             </div>
             <div className="model-tools__group" role="group" aria-label={zh ? "修改模型" : "Edit model"}>
-            {model?.onTool && (["pushPull", "move", "rotate", "scale", "copy"] as const).map((kind) => <ModelToolButton data-command={`draft.tools.${kind === "pushPull" ? "push_pull" : kind}`}
+            {model?.onTool && MODEL_TOOLS.map((kind) => <ModelToolButton data-command={draftToolCommand(kind)}
               key={kind} icon={kind} data-model-tool={kind} label={t(`stage.model.${kind}`)} shortcut={{ pushPull: "P", move: "M", rotate: "Q", scale: "S", copy: "" }[kind]}
               aria-pressed={model.directTool === kind} disabled={sketchBusy || (kind !== "pushPull" && !model.hasSelection)}
               onClick={() => { chooseDrawingTool(null); model.onTool?.(model.directTool === kind ? "select" : kind); }} />)}
@@ -2024,14 +2025,14 @@ export function Stage({
                 paper and the drawing plane. It says whether it is open; its look also shows while it
                 holds what is in use - one of its tools, tracing paper or a drawing plane other than XY. */}
             <span ref={moreToolsElement} className="model-tools__more">
-              <ModelToolButton data-command="view.menu.model_tools_more" icon="more" label={t("stage.tools.more")} aria-expanded={moreToolsOpen} aria-controls="model-tools-more"
+              <ModelToolButton data-command="view.menu.toggle" data-command-arg="model_tools_more" icon="more" label={t("stage.tools.more")} aria-expanded={moreToolsOpen} aria-controls="model-tools-more"
                 className={sketch.tool === "polygon" || sketch.tool === "arc" || sketch.tool === "freehand" || annotationToolsOpen || workPlaneName !== "xy"
                   ? "model-tool-button--holds" : undefined}
                 onClick={() => setMoreToolsOpen((open) => !open)} />
               {moreToolsOpen && <div ref={moreToolsPanelElement} id="model-tools-more" className="model-tools__flyout model-tools__flyout--more"
                 role="group" aria-label={t("stage.tools.more")}>
                 {onSketch && <>
-                  {(["polygon", "arc", "freehand"] as const).map((kind) => <ModelToolButton data-command={`draft.tools.${kind}`} key={kind} icon={kind} showLabel
+                  {MORE_SKETCH_TOOLS.map((kind) => <ModelToolButton data-command={draftToolCommand(kind)} key={kind} icon={kind} showLabel
                     label={t(`stage.sketch.${kind}`)} shortcut={kind === "arc" ? "A" : undefined} aria-pressed={sketch.tool === kind}
                     onClick={() => chooseDrawingTool(sketch.tool === kind ? null : kind)} />)}
                   <span className="model-tools__more-sep" aria-hidden="true" />

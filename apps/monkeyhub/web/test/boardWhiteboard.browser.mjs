@@ -150,7 +150,7 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
     await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
     await page.locator(".monkeyboard-canvas canvas").first().waitFor();
   };
-  const more = () => cmd(page, "view.menu.board_more");
+  const more = () => cmd(page, "view.menu.toggle", { arg: "board_more" });
   const setMore = async (expanded) => { if ((await page.locator(".monkeyboard-actions").getAttribute("open") !== null) !== expanded) await more().click(); };
   const fit = async () => { await setMore(true); await cmd(page, "view.canvas.fit").click(); await setMore(false); };
   const selectAll = async () => {
@@ -650,8 +650,8 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
   await savedTab.close();
   await open("zh-CN");
   await waitForCommandLabel(cmd(page, "board.add_document_page.toggle_list"), "项目资料");
-  await waitForCommandLabel(cmd(page, "view.menu.board_more"), "更多画板操作");
-  await cmd(page, "view.menu.board_more").click();
+  await waitForCommandLabel(cmd(page, "view.menu.toggle", { arg: "board_more" }), "更多画板操作");
+  await cmd(page, "view.menu.toggle", { arg: "board_more" }).click();
   await waitForCommandLabel(cmd(page, "markup.clear"), "清除批注");
   assert.equal((await board()).title, "Other saved version");
   await open("zh-CN", "light");

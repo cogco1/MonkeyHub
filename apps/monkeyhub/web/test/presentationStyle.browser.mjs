@@ -172,7 +172,7 @@ try {
     runtime?.model?.traverse((object) => { if (object.name === "roof") found = true; });
     return found;
   }, null, { polling: "raf" });
-  const moreMenu = cmd(page, "view.menu.modeling_more", { includeHidden: true });
+  const moreMenu = cmd(page, "view.menu.toggle", { arg: "modeling_more", includeHidden: true });
   const chooseStyle = async (style) => {
     if (await moreMenu.getAttribute("aria-expanded") !== "true") await moreMenu.click();
     await page.locator("#stage-more-menu select[data-display-style]").selectOption(style);
@@ -362,7 +362,7 @@ try {
   assert.equal(original.worn.roof.style, "file");
   assert.equal(original.worn.roof.colour, "687073", "the file's material, decoded");
   assert.deepEqual([original.shadows, original.ground, original.lights.presentation], [false, false, false]);
-  await cmd(page, "view.menu.modeling_more", { includeHidden: true }).click();
+  await cmd(page, "view.menu.toggle", { arg: "modeling_more", includeHidden: true }).click();
   await cmd(page.locator("#stage-more-menu"), "view.model_camera.iso").click();
   await moreMenu.click();
   await settle();

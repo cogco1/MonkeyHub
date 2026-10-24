@@ -485,7 +485,7 @@ try {
     await openDocument();
     assert.equal(await page.locator(".document-model-source").getAttribute("data-model-source-status"), "ready");
     await page.locator("#document-comment").fill("Apply the drawing annotation to B");
-    await cmd(page.locator(".document-references"), "view.disclosure.document_references").click();
+    await cmd(page.locator(".document-references"), "view.disclosure.toggle", { arg: "document_references" }).click();
     await page.locator(".document-reference").first().locator('input[type="checkbox"]').first().check();
     await page.locator(".document-reference input[type=text]").fill("Use this page for alignment");
     await page.evaluate(() => { window.__intentViewCalls = []; });
@@ -657,7 +657,7 @@ try {
     const drawLine = async () => {
       // #352: tracing paper is in the tools' own More.
       if (await page.locator("#annotation-tools").count() === 0) {
-        await cmd(page, "view.menu.model_tools_more").click();
+        await cmd(page, "view.menu.toggle", { arg: "model_tools_more" }).click();
         await cmd(page, "view.markup_tools.tracing_paper").click();
       }
       await cmd(page.locator("#annotation-tools"), "view.markup_tools.line").click();

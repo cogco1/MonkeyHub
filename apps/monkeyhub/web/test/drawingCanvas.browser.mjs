@@ -117,7 +117,7 @@ async function step(name, action) { current = name; await action(); passed.push(
 const revision = () => page.getByRole("combobox", { name: "Drawing", exact: true });
 const source = () => page.getByRole("combobox", { name: "Version to draw", exact: true });
 // GH-302: appearance saves itself; the only save button left is Retry after a refusal.
-const saveButton = () => cmd(page, "drawing.plan.retry");
+const saveButton = () => cmd(page, "view.notice.retry", { arg: "drawing_save" });
 const pen = label => page.getByLabel(label, { exact: true });
 const objectChoice = () => page.getByRole("combobox", { name: "Projected object", exact: true });
 // #337: the source's state is a quiet word at the bar's right end while all is well, and a row above the drawing while
@@ -128,7 +128,7 @@ const sourceRow = (attributes = "") => page.locator(`.drawing-attention .drawing
 // The bar's menus: the version to draw under Draw another version; Download SVG and Refresh sources under More.
 const menu = name => page.locator(`details.drawing-${name}`);
 const isOpen = name => menu(name).evaluate(node => node.open);
-const openMenu = async name => { if (!await isOpen(name)) await cmd(menu(name), `view.menu.drawing_${name}`).click(); };
+const openMenu = async name => { if (!await isOpen(name)) await cmd(menu(name), "view.menu.toggle", { arg: `drawing_${name}` }).click(); };
 const moreCommand = async id => { await openMenu("more"); return cmd(page, id); };
 const refreshSources = async () => (await moreCommand("drawing.plan.refresh")).click();
 // The page's own drawing of a projected object, and where a plan point is on screen.
@@ -305,7 +305,7 @@ try {
     await nameField.fill("Ground Floor A");
     assert.equal(await page.getByRole("group", { name: "Saved dimensions", exact: true }).count(), 0);
     // A new drawing's pens are left to the project recipe until a person sets one.
-    await cmd(page, "view.disclosure.drawing_graphics").click();
+    await cmd(page, "view.disclosure.toggle", { arg: "drawing_graphics" }).click();
     assert.equal(await pen("Hatch spacing (paper mm)").inputValue(), "");
     assert.equal(await pen("Hatch spacing (paper mm)").getAttribute("placeholder"), "Project recipe");
     await cmd(page, "drawing.plan.generate").click();
@@ -319,7 +319,7 @@ try {
     // The drawing then shows the values it was made with: the recipe's hatch spacing and the defaults.
     await until(() => pen("Hatch spacing (paper mm)").inputValue(), value => value === "3", "the recipe's hatch spacing shown");
     assert.equal(await pen("Cut line (paper mm)").inputValue(), "0.35"); assert.equal(await pen("Visible line (paper mm)").inputValue(), "0.18");
-    await cmd(page, "view.disclosure.drawing_graphics").click();
+    await cmd(page, "view.disclosure.toggle", { arg: "drawing_graphics" }).click();
   });
   let oldRevision;
   await step("appearance updates retain semantic dimension and previous revision without design calls", async () => {
@@ -561,7 +561,7 @@ try {
     await until(() => page.getByLabel("Cut height (meter)", { exact: true }).isEnabled(), Boolean, "active form");
     // Choose a version again: the previous step returned this drawing to LIVE.
     const another = page.locator("details.drawing-another");
-    if (!await another.evaluate(node => node.open)) await cmd(another, "view.menu.drawing_another").click();
+    if (!await another.evaluate(node => node.open)) await cmd(another, "view.menu.toggle", { arg: "drawing_another" }).click();
     await source().selectOption("stage-A");
     const before = requests.length;
     await page.getByLabel("Cut height (meter)", { exact: true }).fill("");
@@ -654,14 +654,14 @@ try {
   await step("keyboard controls and English/Chinese narrow layouts keep the drawing usable", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => window.drawingFixture.setLanguage("zh-CN"));
-    await waitForCommandLabel(cmd(page, "view.menu.drawing_more"), "更多");
+    await waitForCommandLabel(cmd(page, "view.menu.toggle", { arg: "drawing_more" }), "更多");
     await page.evaluate(() => { document.querySelector('.drawing-body').scrollTop = 0; document.querySelector('.drawing-controls__fields').scrollTop = 0; });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: join(screenshots, "drawing-narrow.png"), fullPage: true });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.evaluate(() => { window.drawingFixture.setLanguage("en"); window.drawingFixture.setTheme("dark"); });
     await page.evaluate(() => { document.querySelector('.drawing-body').scrollTop = 0; document.querySelector('.drawing-controls__fields').scrollTop = 0; });
-    const actionBounds = await cmd(menu("more"), "view.menu.drawing_more").boundingBox();
+    const actionBounds = await cmd(menu("more"), "view.menu.toggle", { arg: "drawing_more" }).boundingBox();
     assert.ok(actionBounds && actionBounds.y >= 0 && actionBounds.y + actionBounds.height <= 900, "the drawing's commands stay in sight above it while settings scroll");
     await page.screenshot({ path: join(screenshots, "drawing-wide-dark.png"), fullPage: true });
     // Choosing another version is a disclosed, explicit action; the LIVE drawing needs no choice.
@@ -676,14 +676,14 @@ try {
     // Reuse drawing recipes, which reads the project's decisions when it opens, is covered by its own suite.
     for (const name of ["another", "more"]) {
       const word = menu(name);
-      if (!await word.evaluate(node => node.open)) await cmd(word, `view.menu.drawing_${name}`).click();
+      if (!await word.evaluate(node => node.open)) await cmd(word, "view.menu.toggle", { arg: `drawing_${name}` }).click();
       await page.locator(".drawing-preview__viewport").click({ position: { x: 4, y: 4 } });
       assert.equal(await word.evaluate(node => node.open), false, `${name} closes on a click outside it`);
-      await cmd(word, `view.menu.drawing_${name}`).click();
+      await cmd(word, "view.menu.toggle", { arg: `drawing_${name}` }).click();
       assert.equal(await word.evaluate(node => node.open), true);
       await page.keyboard.press("Escape");
       assert.equal(await word.evaluate(node => node.open), false, `${name} closes on Escape`);
-      assert.equal(await cmd(word, `view.menu.drawing_${name}`).evaluate(node => node === document.activeElement), true, "focus returns to its word");
+      assert.equal(await cmd(word, "view.menu.toggle", { arg: `drawing_${name}` }).evaluate(node => node === document.activeElement), true, "focus returns to its word");
     }
   });
   await step("an imported 3DM draws from its retained asset and reopens without following HEAD", async () => {
@@ -847,7 +847,7 @@ try {
     assert.equal(requests.at(-1).previousRevisionRef, legacyDocument.revisionRef);
     await cmd(page, "drawing.plan.show_object", { arg: "obj-table" }).waitFor();
     const another = page.locator("details.drawing-another");
-    if (!await another.evaluate(node => node.open)) await cmd(another, "view.menu.drawing_another").click();
+    if (!await another.evaluate(node => node.open)) await cmd(another, "view.menu.toggle", { arg: "drawing_another" }).click();
     await source().selectOption("stage-B");
     const hiddenRevision = await revision().inputValue();
     await cmd(page, "drawing.recipe.rebuild").click();
@@ -888,8 +888,8 @@ try {
   });
   await step("a new drawing sends only the pens a person set and shows the ones it was drawn with", async () => {
     await revision().selectOption("");
-    const graphics = page.locator("details", { has: cmd(page, "view.disclosure.drawing_graphics", { includeHidden: true }) });
-    if (!await graphics.evaluate(node => node.open)) await cmd(page, "view.disclosure.drawing_graphics").click();
+    const graphics = page.locator("details", { has: cmd(page, "view.disclosure.toggle", { arg: "drawing_graphics", includeHidden: true }) });
+    if (!await graphics.evaluate(node => node.open)) await cmd(page, "view.disclosure.toggle", { arg: "drawing_graphics" }).click();
     assert.equal(await pen("Cut line (paper mm)").inputValue(), "");
     await pen("Cut line (paper mm)").fill("0.5");
     const sent = requests.length;
@@ -957,8 +957,8 @@ try {
     await cmd(page, "drawing.plan.generate").click();
     await until(() => revision().inputValue(), value => value !== "", "a new drawing opened");
     assert.equal("hatchSpacingMm" in requests.at(-1), false, "a new drawing leaves the hatch spacing to the recipe");
-    const graphics = page.locator("details", { has: cmd(page, "view.disclosure.drawing_graphics", { includeHidden: true }) });
-    if (!await graphics.evaluate(node => node.open)) await cmd(page, "view.disclosure.drawing_graphics").click();
+    const graphics = page.locator("details", { has: cmd(page, "view.disclosure.toggle", { arg: "drawing_graphics", includeHidden: true }) });
+    if (!await graphics.evaluate(node => node.open)) await cmd(page, "view.disclosure.toggle", { arg: "drawing_graphics" }).click();
     assert.equal(await pen("Hatch spacing (paper mm)").inputValue(), "4", "the saved recipe is what the new drawing was drawn with");
     assert.deepEqual(decisionCalls, ["POST"]);
   });
@@ -1028,8 +1028,8 @@ try {
     const deeper = await until(() => Promise.resolve(requests[before + 1]), Boolean, "the depth saved itself");
     assert.deepEqual([asked(deeper), deeper.depth, deeper.previousRevisionRef], [["depth"], 4.5, `revision-${before + 1}`]);
     await until(() => revision().inputValue(), value => JSON.parse(value)[2] === `revision-${before + 2}`, "the deeper section opened");
-    const graphics = page.locator("details", { has: cmd(page, "view.disclosure.drawing_graphics", { includeHidden: true }) });
-    if (!await graphics.evaluate(node => node.open)) await cmd(page, "view.disclosure.drawing_graphics").click();
+    const graphics = page.locator("details", { has: cmd(page, "view.disclosure.toggle", { arg: "drawing_graphics", includeHidden: true }) });
+    if (!await graphics.evaluate(node => node.open)) await cmd(page, "view.disclosure.toggle", { arg: "drawing_graphics" }).click();
     await pen("Cut line (paper mm)").fill("0.5");
     const inked = await until(() => Promise.resolve(requests[before + 2]), Boolean, "the pen saved itself");
     assert.deepEqual([asked(inked), inked.cutLineMm], [["cutLineMm"], .5], "only the changed pen is asked for");

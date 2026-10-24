@@ -737,7 +737,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
         {earlier.length > 0 && <optgroup label={text.earlier}>{earlier.map(item => <option key={drawingDocumentKey(item)} value={drawingDocumentKey(item)}>
           {documentLabel(item)}</option>)}</optgroup>}</select>
       <MenuSeparator />
-      <DrawingMenu label={text.another} command="view.menu.drawing_another" className="drawing-another" panelClassName="drawing-another__panel" open={anotherOpen} onOpenChange={setAnotherOpen}>
+      <DrawingMenu label={text.another} command="view.menu.toggle" commandArg="drawing_another" className="drawing-another" panelClassName="drawing-another__panel" open={anotherOpen} onOpenChange={setAnotherOpen}>
         <label className="drawing-field">{text.source}<select value={selectedTargetValue} disabled={busy || loading || statusLoading}
           onKeyDown={event => { arrowing.current = /^(Arrow|Page|Home|End)/.test(event.key) || event.key.length === 1; }}
           onPointerDown={() => { arrowing.current = false; }}
@@ -757,7 +757,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
         <p className="drawing-field__hint">{text.anotherHint}</p>
       </DrawingMenu>
       {recipes.menu}
-      <DrawingMenu label={t("drawing.more")} command="view.menu.drawing_more" className="drawing-more" panelClassName="drawing-more__panel" open={moreOpen} onOpenChange={setMoreOpen}>
+      <DrawingMenu label={t("drawing.more")} command="view.menu.toggle" commandArg="drawing_more" className="drawing-more" panelClassName="drawing-more__panel" open={moreOpen} onOpenChange={setMoreOpen}>
         {source && !perspectiveOpen && <>
           <button data-command="drawing.export.svg" type="button" disabled={busy || dirty || !active || !vector} onClick={() => { setMoreOpen(false); downloadSvg(); }}>{text.download}</button>
           <p className="drawing-field__hint">{text.downloadHint}</p>
@@ -796,7 +796,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
         </div>
       </section>}
       {refused && <div className="drawing-held" role="status"><p>{text.held}</p>
-        <button data-command="drawing.plan.retry" className="btn btn--accent" type="submit" form={controlsId} disabled={busy || !(source?.modelSource || documentAsset(source))}>{text.retry}</button></div>}
+        <button data-command="view.notice.retry" data-command-arg="drawing_save" className="btn btn--accent" type="submit" form={controlsId} disabled={busy || !(source?.modelSource || documentAsset(source))}>{text.retry}</button></div>}
       {error && <ErrorPanel error={error} what={text.title} />}
       {offers.map(offer => {
         const label = offerText(offer, text.offer);
@@ -826,7 +826,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
           {!verticalOpen && numeric("bottom", `${text.bottom} (${lengthUnit || "…"})`)}
           {verticalOpen && numeric("depth", `${text.depth} (${lengthUnit || "…"})`)}
           {numeric("scaleDenominator", text.scale, 1, "1")}
-          <details><summary data-command="view.disclosure.drawing_graphics">{text.graphics}</summary>{numeric("cutLineMm", text.cutLine, 0.01)}{numeric("visibleLineMm", text.visibleLine, 0.01)}{numeric("hatchSpacingMm", text.hatch, 0.1)}
+          <details><summary data-command="view.disclosure.toggle" data-command-arg="drawing_graphics">{text.graphics}</summary>{numeric("cutLineMm", text.cutLine, 0.01)}{numeric("visibleLineMm", text.visibleLine, 0.01)}{numeric("hatchSpacingMm", text.hatch, 0.1)}
             {!source && <p className="drawing-field__hint">{text.penHint}</p>}
             {source && <div className="drawing-recipe">
               <button data-command="drawing.plan.save_recipe" type="button" disabled={recipeSaving || dirty || !source.revisionRef} onClick={() => void saveRecipe()}>{text.saveRecipe}</button>

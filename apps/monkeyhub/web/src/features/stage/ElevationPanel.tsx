@@ -74,7 +74,7 @@ export function ElevationPanel({ controls, busy, error, onReference }: {
     {referenceInput("top", facts.topReference)}
     <small>{zh ? "输入数值保留当前引用并调整偏移。" : "Numeric edits keep the reference and adjust its offset."}</small>
     <details>
-      <summary data-command="view.disclosure.reference_elevations">{zh ? "参考标高" : "Reference elevations"}</summary>
+      <summary data-command="view.disclosure.toggle" data-command-arg="reference_elevations">{zh ? "参考标高" : "Reference elevations"}</summary>
       <label>{zh ? "基准" : "Datum"}<select aria-label="Datum" value={datumId} disabled={busy}
         onChange={event => { setDatumId(event.target.value); onReference(levels.find(row => row.levelId === event.target.value)?.elevation ?? null); }}>
         <option value="">{zh ? "新建基准" : "New datum"}</option>

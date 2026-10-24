@@ -116,7 +116,7 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
         <p>{comparisonStudyName(pair.left.studyId)} ↔ {comparisonStudyName(pair.right.studyId)}</p>
         <dl><dt>{text("Topology similarity", "拓扑相似度")}</dt><dd>{formatted(pair.topologySimilarity)}</dd>
           <dt>{text("Largest proportion difference", "最大比例差异")}</dt><dd>{formatted(pair.maxProportionDelta)}</dd></dl>
-        <details><summary data-command="view.disclosure.study_exact_versions">{text("Exact saved versions & unique relations", "确切保存版本及独有关系")}</summary>
+        <details><summary data-command="view.disclosure.toggle" data-command-arg="study_exact_versions">{text("Exact saved versions & unique relations", "确切保存版本及独有关系")}</summary>
           <strong>{text("Left saved version", "左侧保存版本")}</strong><small>{pair.left.ledgerRef}</small>
           <ul>{(pair.leftOnlyTopology ?? []).map((item, i) => <li key={i}>{comparisonFact(item)}</li>)}</ul>
           <strong>{text("Right saved version", "右侧保存版本")}</strong><small>{pair.right.ledgerRef}</small>
@@ -160,8 +160,8 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
         <p>{text("Relation similarity", "关系相似度")}: {formatted(actual.relationSignatureSimilarity)}</p>
         <p>{text("The architectural interpretation remains open; geometric changes do not decide which explanation or preference is right.",
           "建筑解释仍待判断；几何变化不能自动决定哪一个解释或偏好成立。")}</p>
-        <details><summary data-command="view.disclosure.study_actual_relations">{text("Actual polygon relations", "改动后的多边形关系")}</summary>{relationFacts(actual.relations ?? [])}</details>
-        <details><summary data-command="view.disclosure.study_changed_facts">{text("Changed geometric facts", "改变的几何事实")}</summary>
+        <details><summary data-command="view.disclosure.toggle" data-command-arg="study_actual_relations">{text("Actual polygon relations", "改动后的多边形关系")}</summary>{relationFacts(actual.relations ?? [])}</details>
+        <details><summary data-command="view.disclosure.toggle" data-command-arg="study_changed_facts">{text("Changed geometric facts", "改变的几何事实")}</summary>
           <strong>{text("Removed", "移除")}</strong><ul>{(actual.removedFacts ?? []).map(item => <li key={item}>{item}</li>)}</ul>
           <strong>{text("Added", "新增")}</strong><ul>{(actual.addedFacts ?? []).map(item => <li key={item}>{item}</li>)}</ul>
         </details>
@@ -181,7 +181,7 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
     <div className="document-study__body">
       <p className="document-study__note">{text("Manual tracing baseline. Geometry describes this drawing; it does not establish the original architect’s intentions.",
         "当前以人工描图为基线。几何描述本页图纸，不代表原作者的实际意图。")}</p>
-      {modelInvocation && <details className="document-study__model"><summary data-command="view.disclosure.study_model_suggestions">{text("Model suggestions · review required", "模型建议，需人工审阅")}</summary>
+      {modelInvocation && <details className="document-study__model"><summary data-command="view.disclosure.toggle" data-command-arg="study_model_suggestions">{text("Model suggestions · review required", "模型建议，需人工审阅")}</summary>
         <p>{text("A model proposal has been retained. Its interpretations remain hypotheses until you challenge and revise them.", "已保留模型提案。其中的解释仍是假设，需要进一步质疑与修订。")}</p>
         <dl><dt>{text("Provider", "服务")}</dt><dd>{String(modelInvocation.providerId ?? "—")}</dd>
           <dt>{text("Model", "模型")}</dt><dd>{String(modelInvocation.modelId ?? text("Configured default", "配置默认值"))}</dd>
@@ -197,7 +197,7 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
             "用页面已有的多段线工具绘制闭合轮廓，再选择顶点调整。此处为每条轮廓分类并确认。")}</p>
           {selectedTrace && <button data-command="study.run.use_trace" type="button" disabled={!studyTraceIsClosed(selectedTrace)} onClick={() => onChange(addStudyTrace(draft, selectedTrace))}>
             {text("Use selected closed trace", "使用选中的闭合轮廓")}</button>}
-          {onPropose && <details><summary data-command="view.disclosure.study_model_proposal">{text("Optional model proposal", "可选的模型提案")}</summary>
+          {onPropose && <details><summary data-command="view.disclosure.toggle" data-command-arg="study_model_proposal">{text("Optional model proposal", "可选的模型提案")}</summary>
             <p>{text("Send this registered page to the configured model provider to propose contours. Review every proposal before confirming it.",
               "将本张已登记页面发送给已配置的模型服务，提出轮廓。每条提案都需校正后确认。")}</p>
             <button data-command="study.run.propose_traces" type="button" disabled={!study || dirty} onClick={() => onPropose("trace")}>{text("Propose traces with model", "模型提议轮廓")}</button>
@@ -244,7 +244,7 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
               {polygonMeasurements(retained.observations.measurements, text("Corrected polygon measurements", "校正后的多边形测量"))}
               <h4>{text("Computed polygon relations", "已计算的多边形关系")}</h4>{relationFacts(retained.observations.relations)}
             </> : <p>{text("This saved revision has no polygon observations. Save a research revision to compute them.", "本保存版本尚无多边形观察。保存研究版本后计算。")}</p>}
-            <details><summary data-command="view.disclosure.study_bounding_box">{text("Earlier bounding-box method", "原有包围框方法")}</summary>
+            <details><summary data-command="view.disclosure.toggle" data-command-arg="study_bounding_box">{text("Earlier bounding-box method", "原有包围框方法")}</summary>
             <p>{text("Bounds are only a geometric proxy; their area is not polygon area.", "包围框仅是几何近似，其面积不代表多边形面积。")}</p>
             <div className="document-study__table-scroll"><table><caption>{text("Normalized bounding measurements", "归一化包围框测量")}</caption>
               <thead><tr><th>{text("Trace", "轮廓")}</th><th>{text("Width", "宽")}</th><th>{text("Height", "高")}</th><th>{text("Bounds area", "框面积")}</th></tr></thead>
@@ -253,7 +253,7 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
             </table></div>
             <h4>{text("Geometric relation proposals", "几何关系提案")}</h4>
             {relationFacts(study.relations)}
-            <details><summary data-command="view.disclosure.study_auto_hypotheses">{text("Automatic geometric hypotheses", "自动生成的几何假设")}</summary>
+            <details><summary data-command="view.disclosure.toggle" data-command-arg="study_auto_hypotheses">{text("Automatic geometric hypotheses", "自动生成的几何假设")}</summary>
               <p>{text("These are method-generated suggestions. Author a challengeable explanation in the next step.", "这些是方法生成的提示。请在下一步提出可挑战的解释。")}</p>
               <ul>{study.hypotheses.map(row => <li key={String(row.hypothesisId)}>{String(row.rule).replaceAll("_", " ")}</li>)}</ul>
             </details>
@@ -359,7 +359,7 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
               <div className="document-study__card-title"><h4>{text("Archived comparison", "归档比较")} {index + 1}</h4>
                 <button data-command="study.run.remove_comparison" data-command-arg={index} type="button" onClick={() => changeResearch({ comparisons: comparisonDefinitions.filter((_, position) => position !== index) })}>
                   {text("Remove archived comparison", "移除归档比较")}</button></div>
-              <details><summary data-command="view.disclosure.study_saved_inputs">{text("Saved inputs", "保存的输入版本")}</summary>
+              <details><summary data-command="view.disclosure.toggle" data-command-arg="study_saved_inputs">{text("Saved inputs", "保存的输入版本")}</summary>
                 {definition.studies.map(row => <p key={`${row.studyId}:${row.ledgerRef}`}>{comparisonStudyName(row.studyId)}<small>{row.ledgerRef}</small></p>)}
               </details>
               {result ? comparisonResult(result) : <p>{text("This comparison has no saved result yet. Save the study to compute and retain it.", "此比较尚无保存结果。保存研究以计算并保留结果。")}</p>}
@@ -415,11 +415,11 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
               })()}
             </article>;
           })()}
-          {retained?.completion && <details><summary data-command="view.disclosure.study_completion">{retained.completion.ready ? text("Saved research cycle complete", "已保存研究循环完整") : text("Remaining in the saved research cycle", "已保存研究中仍待完成的项")}</summary>
+          {retained?.completion && <details><summary data-command="view.disclosure.toggle" data-command-arg="study_completion">{retained.completion.ready ? text("Saved research cycle complete", "已保存研究循环完整") : text("Remaining in the saved research cycle", "已保存研究中仍待完成的项")}</summary>
             <ul>{retained.completion.missing.map(item => <li key={item}>{item}</li>)}</ul></details>}
         </section>}
       </fieldset>
-      <details className="document-study__provenance"><summary data-command="view.disclosure.study_source">{text("Source & saved revision", "来源与保存版本")}</summary>
+      <details className="document-study__provenance"><summary data-command="view.disclosure.toggle" data-command-arg="study_source">{text("Source & saved revision", "来源与保存版本")}</summary>
         <dl><dt>{text("Source page", "来源页")}</dt><dd>{source.pageIndex + 1}</dd><dt>{text("Source fingerprint", "来源指纹")}</dt><dd>{source.assetSha256}</dd>
           <dt>{text("Saved revision", "保存版本")}</dt><dd>{study?.ledgerRef ?? text("Not saved", "尚未保存")}</dd></dl>
       </details>

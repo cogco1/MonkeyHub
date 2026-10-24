@@ -246,7 +246,7 @@ function Block({ block, heading, t }: { block: CardBlock; heading: boolean; t: C
 
 function Technical({ card, t }: { card: ComponentCard; t: CardWords }) {
   return <details className="component-info__technical">
-    <summary data-command="view.disclosure.technical_details">{t("componentInfo.technical")}</summary>
+    <summary data-command="view.disclosure.toggle" data-command-arg="technical_details">{t("componentInfo.technical")}</summary>
     <dl className="component-info__fields component-info__fields--technical">
       <div className="component-info__field"><dt>{t("componentInfo.componentId")}</dt><dd className="mono">{card.componentId}</dd></div>
       {card.elementId && <div className="component-info__field"><dt>{t("componentInfo.elementId")}</dt><dd className="mono">{card.elementId}</dd></div>}

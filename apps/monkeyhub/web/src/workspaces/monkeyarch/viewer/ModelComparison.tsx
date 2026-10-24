@@ -223,7 +223,7 @@ export default function ModelComparison({ projectId, candidateRunId, active, nam
       <p>{failure}</p>
       <div className="model-compare__actions">
         <button data-command="candidate.compare.back" type="button" className="btn btn--small btn--primary" onClick={onReturn}>{backLabel}</button>
-        {resolution.status === "failed" && <button data-command="candidate.compare.retry" type="button" className="btn btn--small" onClick={() => setAttempt((value) => value + 1)}>{t("modelCompare.retry")}</button>}
+        {resolution.status === "failed" && <button data-command="view.notice.retry" data-command-arg="model_compare" type="button" className="btn btn--small" onClick={() => setAttempt((value) => value + 1)}>{t("modelCompare.retry")}</button>}
       </div>
     </div>}
     {pair && <div className="model-compare__panes">
@@ -245,7 +245,7 @@ export default function ModelComparison({ projectId, candidateRunId, active, nam
     </div>}
     {pair && outlineOn && outlineNote && <p className="model-compare__note">{outlineNote}</p>}
     <details className="model-compare__details">
-      <summary data-command="view.disclosure.technical_details">{t("modelCompare.details")}</summary>
+      <summary data-command="view.disclosure.toggle" data-command-arg="technical_details">{t("modelCompare.details")}</summary>
       {pair && <p className="model-compare__summary">{counts !== null ? t("modelCompare.summary", { counts })
         : objects.status === "pending" ? t("modelCompare.summaryPending") : t("modelCompare.summaryUnavailable")}</p>}
       <dl>

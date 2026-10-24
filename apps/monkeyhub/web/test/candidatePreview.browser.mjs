@@ -176,7 +176,7 @@ async function reportedLoad(artifact, status) {
 }
 /** Open the view tools if a step has since opened the panel that closes them. #352: they are the bar's More. */
 async function openViewTools() {
-  const toggle = cmd(page, "view.menu.modeling_more", { includeHidden: true });
+  const toggle = cmd(page, "view.menu.toggle", { arg: "modeling_more", includeHidden: true });
   if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
 }
 
@@ -192,8 +192,8 @@ async function openDrawingFromBoard(drawing, pageIndex = 0) {
 async function openVersions() {
   const toggle = cmd(page.locator(".project-bar"), "design.go_to_step.versions", { includeHidden: true });
   if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
-  const retained = page.locator('#stage-versions-panel details').filter({ has: cmd(page, "view.disclosure.candidates", { includeHidden: true }) });
-  if (await retained.count() && await retained.getAttribute("open") === null) await cmd(retained, "view.disclosure.candidates").click();
+  const retained = page.locator('#stage-versions-panel details').filter({ has: cmd(page, "view.disclosure.toggle", { arg: "candidates", includeHidden: true }) });
+  if (await retained.count() && await retained.getAttribute("open") === null) await cmd(retained, "view.disclosure.toggle", { arg: "candidates" }).click();
 }
 
 async function rendered(id, fileName = `${id}.3dm`) {
@@ -1469,15 +1469,15 @@ try {
       const before = await state();
       const requestStart = requests.length;
       // #352: the view tools are the bar's More; tracing paper is in the tools' own More.
-      for (const [command, panel, label, opener] of [
-        ['view.menu.modeling_more', '#stage-more-menu', 'View tools'],
-        ['view.markup_tools.tracing_paper', '#annotation-tools', 'Tracing Paper', 'view.menu.model_tools_more'],
-        ['draft.tools.select', null, 'Select'],
+      for (const [[command, arg], panel, label, opener] of [
+        [['view.menu.toggle', 'modeling_more'], '#stage-more-menu', 'View tools'],
+        [['view.markup_tools.tracing_paper'], '#annotation-tools', 'Tracing Paper', ['view.menu.toggle', 'model_tools_more']],
+        [['draft.tools.select'], null, 'Select'],
       ]) {
         await openVersions();
         await page.locator('#stage-versions-panel').waitFor();
-        if (opener) await cmd(page, opener).click();
-        const button = cmd(page, command);
+        if (opener) await cmd(page, opener[0], { arg: opener[1] }).click();
+        const button = cmd(page, command, { arg });
         await assertReachable(button, label);
         const separation = await page.evaluate(() => {
           const history = document.querySelector('#stage-versions-panel').getBoundingClientRect();
@@ -1559,7 +1559,7 @@ try {
     assert.equal((await snapshot()).documentView.revisionRef, lastDrawing.revisionRef);
     assert.equal(await page.locator("#document-comment").inputValue(), "Keep the terrace line.");
     annotationFailure = false;
-    await cmd(page.locator(".document-error"), "document.annotations.retry_save").first().click();
+    await cmd(page.locator(".document-error"), "view.notice.retry", { arg: "document_save" }).first().click();
     await until(async () => page.locator(".document-error").count(), (value) => value === 0, "Retry did not save the retained draft");
     await continueFromViewed(currentHome.runId);
     assert.equal((await snapshot()).documentView.runId, currentHome.runId);

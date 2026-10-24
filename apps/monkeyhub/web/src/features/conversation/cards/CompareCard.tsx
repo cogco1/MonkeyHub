@@ -109,7 +109,7 @@ export function CompareCard({
       )}
       <div className="card__row">
         <details className="compare__objects">
-          <summary data-command="view.disclosure.compare_objects" className="quiet">
+          <summary data-command="view.disclosure.toggle" data-command-arg="compare_objects" className="quiet">
             {t("compare.everyObject", { count: comparison.objects.length })}
           </summary>
           <ul className="reflist">

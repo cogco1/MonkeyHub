@@ -519,7 +519,7 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPubl
   return <section className="monkeyboard monkeyboard-loading" aria-live="polite">
     <strong>MonkeyBoard</strong>
     <p>{error === null ? text.loading : text.loadFailed}</p>
-    {error !== null && <><p className="monkeyboard-error-detail">{errorText(error)}</p><button data-command="board.open.retry" onClick={() => setAttempt((value) => value + 1)}>{text.retry}</button></>}
+    {error !== null && <><p className="monkeyboard-error-detail">{errorText(error)}</p><button data-command="view.notice.retry" data-command-arg="board_open" onClick={() => setAttempt((value) => value + 1)}>{text.retry}</button></>}
   </section>;
 }
 
@@ -1427,7 +1427,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       <MenuCommand data-command="board.manage.import_component_info" disabled={!ready || busy || saveState.conflict} title={t("componentInfo.board.importTitle")}
         onClick={() => infoInput.current?.click()}>{t("componentInfo.board.import")}</MenuCommand>
       <details ref={actions} className="monkeyboard-actions" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) closeActions(); }} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeActions(); actions.current?.querySelector("summary")?.focus(); } }}>
-        <summary className="menu-command" data-command="view.menu.board_more">{boardText.more}</summary>
+        <summary className="menu-command" data-command="view.menu.toggle" data-command-arg="board_more">{boardText.more}</summary>
         <div className="monkeyboard-actions-panel" role="group" aria-label={boardText.more}>
           <button data-command="view.canvas.fit" disabled={!ready} onClick={() => canvas.current?.scrollToContent(undefined, { fitToContent: true, animate: false })}>{text.fit}</button>
           <button data-command="markup.hand_to_ai.open" disabled={!ready || busy || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>
@@ -1449,8 +1449,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     <input ref={input} type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" multiple hidden onChange={(event) => { void upload([...event.target.files ?? []]); event.target.value = ""; }} />
     <input ref={infoInput} type="file" accept="application/json,.json" hidden data-component-info-import
       onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void importComponentInfo(file); }} />
-    {saveState.error !== null && <div className="monkeyboard-alert" role="alert"><span>{saveState.conflict ? text.conflict : `${text.saveError} ${errorText(saveState.error)}`}</span>{!saveState.conflict && <button data-command="board.save.retry" onClick={() => { void queue.retry().catch(() => {}); }}>{text.retry}</button>}</div>}
-    {(previewFailed || sourceError) && <div className="monkeyboard-alert" role="alert"><span>{previewFailed ? text.previewError : `${text.sourceError} ${sourceError}`}</span><button data-command="board.previews.retry" onClick={retryVisuals} disabled={busy}>{text.refresh}</button></div>}
+    {saveState.error !== null && <div className="monkeyboard-alert" role="alert"><span>{saveState.conflict ? text.conflict : `${text.saveError} ${errorText(saveState.error)}`}</span>{!saveState.conflict && <button data-command="view.notice.retry" data-command-arg="board_save" onClick={() => { void queue.retry().catch(() => {}); }}>{text.retry}</button>}</div>}
+    {(previewFailed || sourceError) && <div className="monkeyboard-alert" role="alert"><span>{previewFailed ? text.previewError : `${text.sourceError} ${sourceError}`}</span><button data-command="view.notice.retry" data-command-arg="board_previews" onClick={retryVisuals} disabled={busy}>{text.refresh}</button></div>}
     {notice && <div className="monkeyboard-alert" role="alert"><span>{notice}</span><button data-command="view.notice.dismiss" onClick={() => setNotice("")} aria-label={text.dismiss}>×</button></div>}
     {update && <div className="monkeyboard-alert monkeyboard-update" role="status"><span>{updateNoticeText(update, t)}</span><span className="monkeyboard-update-actions"><button data-command="view.attention.open" onClick={focusUpdate}>{replacementText.view}</button><button data-command="view.attention.dismiss" onClick={() => setUpdate(null)} aria-label={text.dismiss}>×</button></span></div>}
     {!critMode && sketchSelection && <div className="monkeyboard-sketch" role="group" aria-label={sketchCopy[language].panel}>

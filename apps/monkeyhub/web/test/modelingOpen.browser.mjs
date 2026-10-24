@@ -183,7 +183,7 @@ try {
   await page.goto(`${origin}/?lang=en`);
   await page.locator(".refusal__card").waitFor();
   assert.equal(await page.locator(".refusal__title").innerText(), "Could not reopen the selected editing version");
-  assert.equal(await cmd(page.locator(".refusal__card"), "model.open.retry").count(), 1);
+  assert.equal(await cmd(page.locator(".refusal__card"), "view.notice.retry", { arg: "model_open" }).count(), 1);
   assert.deepEqual(errors, []);
   console.log("Stale published base: read-only view, reason once, continue from the default base; broken run still refused PASS");
   if (unexpected.length) console.log(JSON.stringify({ unserved: [...new Set(unexpected)] }));

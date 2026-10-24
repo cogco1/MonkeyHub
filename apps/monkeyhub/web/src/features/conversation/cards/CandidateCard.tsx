@@ -138,7 +138,7 @@ export function CandidateCard({
         </div>
       )}
       {(job.status === "failed" || candidate.status === "failed") && (
-        <div className="card__row"><button data-command="candidate.review.retry" type="button" className="btn btn--small" onClick={onRetry}>{t("stage.base.retry")}</button></div>
+        <div className="card__row"><button data-command="view.notice.retry" data-command-arg="candidate" type="button" className="btn btn--small" onClick={onRetry}>{t("stage.base.retry")}</button></div>
       )}
       {candidate.status === "ready" && (
         <CandidateReadout

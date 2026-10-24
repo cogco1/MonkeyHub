@@ -3654,7 +3654,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           {developerMode && sourceRunId !== null && <p className="mono">{sourceRunId}</p>}
           {error && <ErrorPanel error={error} what={error === documentIntentError ? "MonkeyBoard" : undefined} />}
           {baseNotice && <p className="refusal__lead" role="alert">{baseNotice}</p>}
-          <button data-command="model.open.retry" type="button" className="btn" disabled={changingBase}
+          <button data-command="view.notice.retry" data-command-arg="model_open" type="button" className="btn" disabled={changingBase}
             onClick={() => { if (missingChosenModel) void loadArtifacts(); else void reload(); }}>
             {t("stage.base.retry")}
           </button>
