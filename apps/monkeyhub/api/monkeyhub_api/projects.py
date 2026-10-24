@@ -13,6 +13,8 @@ import os
 from pathlib import Path
 from uuid import UUID
 
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import STUDIO_CANDIDATE_DELTA
 from archflow.project.refs import ProjectRecordRef, require_identifier
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecord
@@ -64,6 +66,77 @@ def _position(root: str) -> tuple[int | None, str | None]:
         return version, None
     label = stage.get("label")
     return version, label if isinstance(label, str) and label else None
+
+
+#: How much of a step's name the project list keeps: it is one small line under the project's name.
+STEP_NAME_LIMIT = 48
+# A project's current step, kept under the stats of the files it is read from (the working position, HEAD and the
+# design line); read again only once one of them moved.
+_STEPS: dict[str, tuple[tuple, str | None]] = {}
+_STEP_FILES = ("design/working.json", "HEAD", "design/branches.json")
+
+
+def _step_stamp(root: str) -> tuple | None:
+    stamp = []
+    for name in _STEP_FILES:
+        try:
+            stat = os.stat(Path(root, name))
+        except FileNotFoundError:
+            stamp.append(None)
+        except OSError:
+            return None
+        else:
+            stamp.append((stat.st_size, stat.st_mtime_ns, stat.st_ino))
+    return tuple(stamp)
+
+
+def _short(words: object) -> str | None:
+    text = " ".join(words.split()) if isinstance(words, str) else ""
+    if not text:
+        return None
+    return text if len(text) <= STEP_NAME_LIMIT else text[:STEP_NAME_LIMIT - 1].rstrip() + "…"
+
+
+def _read_step(root: str) -> str | None:
+    """The name of the step the working design stands on, in the words the history page names it by.
+
+    The name a person or the AI gave that step, else the label of the Stage accepted on it, else the words its
+    change was asked in. None while the project has no working position or nothing names the step.
+    """
+
+    try:
+        repository = FilesystemProjectRepository.open(Path(root))
+        value, _ = repository.read_working_draft()
+        current = value.get("current")
+        if not current:
+            return None
+        named = _short(value["runs"][current].get("label"))
+        if named:
+            return named
+        for branch in repository.read_design_branches().values():
+            stage = repository.load_json(ProjectRecordRef.from_dict(branch["head_stage"]))
+            if stage.get("candidate_id") == current and _short(stage.get("label")):
+                return _short(stage["label"])
+        run = repository.load_run(current)
+        for ref in repository.list_json(run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=current)):
+            if ref.record_kind == STUDIO_CANDIDATE_DELTA:
+                return _short(repository.load_json(ref).get("request"))
+    except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+        return None
+    return None
+
+
+def current_step(root: str) -> str | None:
+    """``_read_step``, kept under the stats of the files it reads."""
+
+    stamp = _step_stamp(root)
+    kept = _STEPS.get(root)
+    if stamp is not None and kept is not None and kept[0] == stamp:
+        return kept[1]
+    step = _read_step(root)
+    if stamp is not None and stamp == _step_stamp(root):
+        _STEPS[root] = (stamp, step)
+    return step
 
 
 # A listed project's identity and position, kept under the stats of the three

@@ -666,6 +666,32 @@
             "apps/monkeyhub/web/test/attentionShell.browser.mjs"
           ],
           "depends_on": []
+        },
+        {
+          "id": "project-step",
+          "status": "active",
+          "branch": "claude/300-b3-project-step",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-project-step",
+          "base_ref": "08b978650ae63214ef39205dc2cb77b7ab08f58c",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Todo 19, follow-up: the line under a project name is the step its working design stands on, named as the history page names it (what the person or the AI called it, else the Stage accepted on it, else the words it was asked in), not the project's formal version. ChatProject gets a step field read from the project's own files under their stats. Based on claude/300-batch3. Merged with batch 3.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
+            "apps/monkeyhub/api/monkeyhub_api/models.py",
+            "apps/monkeyhub/api/monkeyhub_api/projects.py",
+            "apps/monkeyhub/api/tests/test_project_step.py",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/app/AttentionShell.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/attentionShell.browser.mjs"
+          ],
+          "depends_on": []
         }
       ]
     }

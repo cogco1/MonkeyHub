@@ -194,6 +194,10 @@ class ChatProject(BaseModel):
     # A candidate is not a version and never appears here.
     version: int | None = None
     stage: str | None = None
+    # The name of the step the project's working design stands on, the way the history page names it (what the
+    # person or the AI called it, else the Stage accepted on it, else the words it was asked in); null when nothing
+    # names it. The left column shows it under the project's name.
+    step: str | None = None
 
 
 class ChatPermissionOption(BaseModel):
