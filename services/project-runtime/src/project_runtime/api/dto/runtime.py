@@ -94,6 +94,10 @@ class WorktreeLineDto(BaseModel):
         "facts count), a result the architect turned down, an attempt a closed loop replaced, or none yet. "
         "Running work is always none.")
     study_id: str | None = Field(alias="studyId", description="The Study that verdict grouped the run into, if any.")
+    review: Literal["unreviewed", "rejected", "archived"] = Field(default="unreviewed", description=(
+        "The architect's retained review of this run as a Candidate (POST /api/candidate-reviews): archived and "
+        "rejected results are put away, and restoring an archived one returns it to what it was before. Running "
+        "work is always unreviewed."))
     superseded_by: str | None = Field(alias="supersededBy", description=
         "For a superseded draft: the step of the head's line that replaced it, the one made from where the draft started. "
         "Null for every other line.")
@@ -164,7 +168,7 @@ def worktree_graph_dto(value: WorktreeGraph) -> WorktreeGraphDto:
             base_run_id=line.base_run_id, base_stage_ref=line.base_stage_ref, branch_id=line.branch_id,
             status=line.status, relation=line.relation, reads=list(line.reads), writes=list(line.writes),
             reconcile=line.reconcile, conflicts=list(line.conflicts), detail=line.detail, updated_at=line.updated_at,
-            admission=line.admission, study_id=line.study_id, superseded_by=line.superseded_by,
+            admission=line.admission, study_id=line.study_id, review=line.review, superseded_by=line.superseded_by,
         ) for line in value.lines],
         representations=[RepresentationStateDto(
             kind=row.kind, item_id=row.item_id, label=row.label, state=row.state,

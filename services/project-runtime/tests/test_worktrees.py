@@ -73,6 +73,19 @@ class WorktreeGraphTests(WorkingSourceFixture):
         self.assertEqual(graph["head"]["runId"], first)
         self.assertEqual(self.lines(graph, "result"), [])
 
+    def test_a_result_the_architect_archived_says_so_until_it_is_restored(self):
+        stage = self.initialize()
+        first = self.candidate_from(stage)
+        [result] = self.lines(self.graph(), "result")
+        self.assertEqual(result["review"], "unreviewed")
+        for action, review in (("archive", "archived"), ("restore", "unreviewed")):
+            response = self.client.post("/api/candidate-reviews", json={
+                "projectId": PROJECT_ID, "subjectKind": "candidate", "subjectRef": first, "action": action})
+            self.assertEqual(response.status_code, 201, response.text)
+            [result] = self.lines(self.graph(), "result")
+            self.assertEqual((result["runId"], result["review"]), (first, review))
+        self.assertEqual(self.lines(self.graph(), "head")[0]["review"], "unreviewed")
+
     def test_sequential_work_is_one_current_line(self):
         stage = self.initialize()
         first = self.candidate_from(stage)

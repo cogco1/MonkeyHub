@@ -284,6 +284,54 @@ def _retain_continued(binding: ProjectBinding, payload: dict, *, undo: dict, wri
                       "Working Head was left where it was.") from failure
 
 
+@dataclass(frozen=True, slots=True)
+class ContinueMove:
+    """One move of the Working Head onto a run, as its ``design.continued`` event retained it."""
+
+    occurred_at: str
+    run_id: str
+    previous_run_id: str | None
+    actor_id: str
+    origin: str
+    message_session_id: str | None
+    message_id: str | None
+
+
+def continue_moves(binding: ProjectBinding, *, limit: int = 50, indexed: bool = False) -> tuple[ContinueMove, ...]:
+    """The Working Head's moves onto runs, newest first: what the history page lists and goes back along.
+
+    Each Continue leaves its event beside the run it moved onto, so every
+    run's review area is read; with ``indexed`` (a route's read, #599) a run
+    the project index says keeps no audit event is not read. A run whose
+    events cannot be read is passed by: the moves listed are the ones
+    retained readably.
+    """
+
+    rows = indexed_runs(binding) if indexed else None
+    moves: list[ContinueMove] = []
+    for run_id in binding.run_ids():
+        if rows is not None and not rows.holds(run_id, AUDIT_EVENT, "reviews"):
+            continue
+        try:
+            refs = binding.repository.list_json(
+                run=binding.load_run(run_id), record_kind=AUDIT_EVENT,
+                destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=run_id))
+            events = [binding.repository.load_json(ref) for ref in refs]
+        except _UNREADABLE:
+            continue
+        for event in events:
+            if event.get("action") != DESIGN_CONTINUED or event.get("targetRunId") != run_id:
+                continue
+            message = event.get("messageSource") or {}
+            moves.append(ContinueMove(
+                occurred_at=str(event.get("occurredAt")), run_id=run_id,
+                previous_run_id=event.get("previousHeadRunId"), actor_id=str(event.get("actorId")),
+                origin=str(event.get("origin")), message_session_id=message.get("sessionId"),
+                message_id=message.get("messageId")))
+    moves.sort(key=lambda move: (move.occurred_at, move.run_id), reverse=True)
+    return tuple(moves[:limit])
+
+
 @retained_sources
 def save_working_draft(binding: ProjectBinding, run_id: str, revision: str | None, label: str | None, *,
                        saved_by: str | None = None) -> WorkingDraftDto:

@@ -36,6 +36,31 @@ class WorkingDraftSelectionDto(BaseModel):
         "messageSource. The retained design.continued event names the message by id, not these words.")
 
 
+class ContinueMoveDto(BaseModel):
+    """One move of the Working Head onto a run, newest first."""
+
+    occurredAt: str
+    runId: str
+    previousRunId: str | None = Field(description=(
+        "The run the Working Head stood on before this move; null when no run did (a fresh project's first "
+        "Continue). Going back to it is the same Continue onto this run id."))
+    actorId: str
+    origin: str = Field(description="The surface the move came through, as the design.continued event names it.")
+    messageSessionId: str | None = Field(default=None, description="The Hub conversation whose user's words asked for it.")
+    messageId: str | None = None
+
+
+class ContinueMovesDto(BaseModel):
+    projectId: str
+    moves: list[ContinueMoveDto]
+
+
+def continue_moves_dto(project_id: str, moves) -> ContinueMovesDto:
+    return ContinueMovesDto(projectId=project_id, moves=[ContinueMoveDto(
+        occurredAt=move.occurred_at, runId=move.run_id, previousRunId=move.previous_run_id, actorId=move.actor_id,
+        origin=move.origin, messageSessionId=move.message_session_id, messageId=move.message_id) for move in moves])
+
+
 class WorkingDraftSaveDto(BaseModel):
     """Name a run as a version. Every name is listed and shown; only one the person saved keeps its run (#575)."""
 
