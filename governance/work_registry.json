@@ -982,6 +982,27 @@
             "governance/module_registry.json"
           ],
           "depends_on": []
+        },
+        {
+          "id": "tracing-fixups",
+          "status": "active",
+          "branch": "claude/300-b3-tracing-fixups",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-tracing-fixups",
+          "base_ref": "636dc4ee5dc791a5a651029dcf783b248852bbad",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "The three failures the tracing batch left in batch3: the text tool's audit row, Alt+2 over the Board, the annotation history fixture.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/features/commands/CommandProvider.tsx",
+            "apps/monkeyhub/web/src/features/commands/keys.ts",
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/test/candidatePreview.browser.mjs",
+            "docs/audits/hub-entries.md"
+          ],
+          "depends_on": []
         }
       ]
     }

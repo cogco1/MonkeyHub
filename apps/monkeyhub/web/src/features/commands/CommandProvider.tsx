@@ -2,7 +2,7 @@ import { createContext, startTransition, useCallback, useContext, useEffect, use
 
 import { usePreferences } from "../settings/preferences";
 import { CommandPalette } from "./CommandPalette";
-import { hubMayTake, normalizeShortcut, PALETTE_SHORTCUT, shortcutOf } from "./keys";
+import { dialogOpen, hubMayTake, normalizeShortcut, PALETTE_SHORTCUT, shortcutOf } from "./keys";
 import { COMMAND_TREE } from "./tree.generated";
 import type { Command, CommandTree } from "./tree";
 import { readUsage, recordUse, type CommandUsage, type UseSource } from "./usage";
@@ -187,7 +187,7 @@ export function CommandProvider({ children, tree = COMMAND_TREE }: { children: R
       }
       // Local shortcuts (Escape, ink undo/clear) require a live owner. They
       // must not open another workspace or steal a dialog's editing keys.
-      if (event.defaultPrevented || open || document.querySelector("dialog[open], [aria-modal='true']")) return;
+      if (event.defaultPrevented || open || dialogOpen()) return;
       const command = byShortcut.get(shortcut);
       if (!command || stateOf(command).kind !== "ready") return;
       event.preventDefault(); event.stopPropagation();

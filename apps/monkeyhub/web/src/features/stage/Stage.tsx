@@ -20,6 +20,7 @@ import type { EvidenceTab } from "../../app/evidence";
 import { FailureActions } from "../../app/FailureActions";
 import { LoadingOverlay } from "../../app/LoadingOverlay";
 import { useCommandActions } from "../commands/CommandProvider";
+import { dialogOpen } from "../commands/keys";
 import { useT } from "../../i18n/useT";
 import { InlineDecision } from "../../notifications/cards/InlineDecision";
 import { usePreferences } from "../settings/preferences";
@@ -1313,7 +1314,7 @@ export function Stage({
       const target = event.target;
       if (target instanceof HTMLElement && !target.closest(".annotate__text") && (target.isContentEditable ||
           target.closest("input, textarea, select, [contenteditable], [role='dialog']"))) return;
-      if (document.querySelector("dialog[open], [aria-modal='true']")) return;
+      if (dialogOpen()) return;
       event.preventDefault(); event.stopImmediatePropagation();
       tracingPaperRef.current.exit();
     };
@@ -1373,7 +1374,7 @@ export function Stage({
         // Someone is writing. Delete, Ctrl+Z and the rest belong to the text.
         return;
       }
-      if (document.querySelector("dialog[open], [aria-modal='true']")) return;
+      if (dialogOpen()) return;
       // The drawings workspace owns its own keys while it is open.
       if (documentOpenRef.current) return;
       const control = event.ctrlKey || event.metaKey;
