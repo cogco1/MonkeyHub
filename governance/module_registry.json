@@ -5672,8 +5672,7 @@
       "owns": [
         "The StudioSkill@1 record: id skill:<kebab-name>, version, name, description, SKILL.md body without frontmatter (at most 64 KiB) and an optional declared manifest of inputs, outputs and permissions",
         "The fixed studio-skills run, created only by the first added skill, and the per-skill version chain 1..n with each version naming the ref it supersedes",
-        "POST /api/skills, GET /api/skills (the index, no bodies) and GET /api/skills/{skill_id} with ?version=",
-        "reading a runnable version's declared access against the access a person allowed: within it, or exactly what it adds (network, programs, ssh hosts, folders read or written, packages), for grants by scope"
+        "POST /api/skills, GET /api/skills (the index, no bodies) and GET /api/skills/{skill_id} with ?version="
       ],
       "does_not_own": [
         "Loading skills into an agent: hub.shell materializes the library's current versions into a plugin directory in its cache and the agent's native mechanism loads it",
@@ -5688,11 +5687,7 @@
         "add_skill",
         "list_skills",
         "read_skill",
-        "skill_versions",
-        "access_added",
-        "access_within",
-        "describe_added",
-        "describe_added_zh"
+        "skill_versions"
       ],
       "depends_on": [
         "project_runtime.binding",
@@ -5704,13 +5699,11 @@
       "files": [
         "services/project-runtime/src/project_runtime/application/skills.py",
         "services/project-runtime/src/project_runtime/api/routes/skills.py",
-        "services/project-runtime/src/project_runtime/api/dto/skills.py",
-        "services/project-runtime/src/project_runtime/application/skill_access.py"
+        "services/project-runtime/src/project_runtime/api/dto/skills.py"
       ],
       "tests": [
         "services/project-runtime/tests/test_skills.py",
-        "apps/monkeyhub/api/tests/test_skill_library.py",
-        "services/project-runtime/tests/test_skill_access.py"
+        "apps/monkeyhub/api/tests/test_skill_library.py"
       ],
       "inputs": [
         "An explicit skill version: name, description, body, optional manifest and, for a successor, the version it supersedes"
