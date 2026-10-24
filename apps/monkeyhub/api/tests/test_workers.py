@@ -17,6 +17,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from test_monkeyhub_lifecycle import ROOT, LocalHubCase, free_ports, http_json, port_open, project_fixture, wait_for
+from monkeyhub_api.runtime import workers as workers_module
 from monkeyhub_api.runtime.applications import Applications
 from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import HubFailure
@@ -78,6 +79,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(result).encode())
 
+time.sleep(float(os.environ.get("START_DELAY", "0")))  # a project still reading itself before it listens
 server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
 def stop():
     sys.stdin.readline()
@@ -384,6 +386,73 @@ class WorkerSupervisorTests(unittest.TestCase):
                  "The watcher did not record the exit", timeout=_STABLE_PROBE_S)
         self.assertLess(min(when for when in changes if when >= killed) - killed, 1.0)
         self.assertEqual(child.error.code, "PROCESS_EXITED")
+
+    def test_a_slow_start_is_waited_for_and_only_a_stuck_one_is_stopped(self):
+        """0925 (10-24): a launch that is alive and still reading its project before it listens is not stopped."""
+
+        self.assertGreaterEqual(workers_module._START_LIMIT_S, 120.0, "a large project on a busy machine starts slowly")
+        slow = self.launch("slow")
+        slow = replace(slow, environment={**slow.environment, "START_DELAY": "2"})
+        with patch.object(workers_module, "_START_LIMIT_S", 0.5):
+            self.supervisor.start(slow)
+            stuck = self.wait_state(slow.worker_id, "unavailable")
+        self.assertEqual(stuck.error.code, "START_TIMEOUT")
+        waited = self.launch("waited")
+        waited = replace(waited, environment={**waited.environment, "START_DELAY": "2"})
+        with patch.object(workers_module, "_START_LIMIT_S", 10.0):
+            self.supervisor.start(waited)
+            self.assertIsNone(self.wait_state(waited.worker_id, "ready", timeout=15).error)
+
+    def test_a_probe_that_connects_to_itself_reads_as_a_port_not_listening(self):
+        """0925 (10-24): on Windows a connection to a port nobody listens on can come back connected to itself."""
+
+        class Looped:
+            closed = False
+
+            def getsockname(self):
+                return ("127.0.0.1", 50410)
+
+            def getpeername(self):
+                return ("127.0.0.1", 50410)
+
+            def close(self):
+                self.closed = True
+
+        looped = Looped()
+        with patch("monkeyhub_api.runtime.workers.socket.create_connection", return_value=looped):
+            with self.assertRaises(ConnectionRefusedError):
+                workers_module._connect_within(0.03, ("127.0.0.1", 50410), 1.0)
+        self.assertTrue(looped.closed, "the looped connection is let go, so the service can take its port")
+
+    def test_an_answer_that_is_not_http_leaves_the_watcher_probing(self):
+        """BadStatusLine used to end the watcher: the launch stayed starting until its limit and was then stopped."""
+
+        from http.client import BadStatusLine
+
+        launch = self.launch("garbled")
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", launch.port))
+        listener.listen(16)
+        self.addCleanup(listener.close)
+        exited = threading.Event()
+        process = SimpleNamespace(pid=4321, stdin=None, poll=lambda: 1 if exited.is_set() else None)
+        child = _Child(launch, process, "instance", self.root / "worker.log")
+        answered = []
+
+        def garbled(*args, **kwargs):
+            answered.append(time.monotonic())
+            raise BadStatusLine("GET /api/health HTTP/1.1")
+
+        with patch.object(workers_module.HTTPConnection, "getresponse", side_effect=garbled):
+            watcher = threading.Thread(target=self.supervisor._watch, args=(child,), daemon=True)
+            watcher.start()
+            time.sleep(1.0)
+            self.assertTrue(watcher.is_alive(), "the watcher ended on an answer that was not HTTP")
+            exited.set()
+            child.signal.set()
+            watcher.join(5)
+        self.assertGreaterEqual(len(answered), 3)
+        self.assertIsNone(child.service_pid)
 
     def test_a_starting_launch_is_asked_again_while_its_port_does_not_listen_yet(self):
         """#449: a port nobody listens on fails a starting probe at once, not after the probe's timeout.
