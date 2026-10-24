@@ -15,7 +15,7 @@ import rhino3dm from "rhino3dm";
 // response and selection write lives in this process; no project/service is
 // read. A and B deliberately share run/state identity but have different bytes.
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const tracingOnly = process.argv.includes("--tracing-only");
+const tracingOnly = process.argv.includes("--tracing-only") || process.env.INTENT_VIEW_TRACING_ONLY === "1";
 const forbiddenPorts = new Set(["5187", "5188", "60617", "60616", "53621"]);
 const runId = "same-run-two-assets";
 const projectId = "intent-view-source-fixture";
@@ -228,6 +228,7 @@ async function tracingScenarios() {
     await addText("Keep this entrance");
     await until(currentInk, (ink) => ink.length === 2 && ink[1].label === "Keep this entrance", "The Stage did not retain its text mark");
     originalInk = await currentInk();
+    await page.screenshot({ path: path.join(screenshots, "tracing-before-exit.png") });
     await cmd(paperTools(), "markup.clear").click();
     await until(currentInk, (ink) => ink.length === 0, "Clear left marks on the current paper");
     await page.keyboard.press("Control+z");
@@ -246,8 +247,10 @@ async function tracingScenarios() {
     // Text is still the selected tool after Undo, so toggle it off before addText arms it.
     if (await cmd(paperTools(), "view.markup_tools.text").getAttribute("aria-pressed") === "true") await cmd(paperTools(), "view.markup_tools.text").click();
     await addText("Exit saves this sentence", { commit: false, x: 0.36, y: 0.68 });
+    await page.screenshot({ path: path.join(screenshots, "tracing-text.png") });
     await page.locator(".annotate__text").press("Escape");
     await paperIsClosed();
+    await page.screenshot({ path: path.join(screenshots, "tracing-after-exit.png") });
     await until(() => modelWrites.length, (count) => count === 1, "Exit did not make exactly one retained write");
     assert.deepEqual((await snapshot()).selection, selected, "The same Escape must not clear the model selection");
     savedPaper = modelHistory[0];
@@ -876,8 +879,12 @@ try {
     assert.equal(await undo.isEnabled(), true);
     await loadLocal("local-second.3dm", bytesB);
     assert.deepEqual(await currentInk(), []);
-    assert.equal(await undo.isEnabled(), false, "Changing a file is not an undoable erase of the previous file's marks");
-    assert.equal(await redo.isEnabled(), false);
+    // Changing the file closes its tracing paper; the old marks are not an undoable erase on the new file.
+    const paperClosed = async () => {
+      await until(() => page.locator("canvas.annotate").count(), (count) => count === 0, "Changing the file left its ink on the model");
+      assert.equal(await page.locator("#annotation-tools").count(), 0);
+    };
+    await paperClosed();
     await page.keyboard.press("Control+z");
     assert.deepEqual(await currentInk(), []);
     const second = await drawLine();
@@ -906,7 +913,7 @@ try {
     await clearAll.click(); assert.deepEqual(await currentInk(), []);
     await loadLocal("local-first.3dm", bytesA);
     assert.deepEqual(await currentInk(), []);
-    assert.equal(await undo.isEnabled(), false); assert.equal(await redo.isEnabled(), false);
+    await paperClosed();
     assert.equal(modelRequests(), requestsBefore, "Local history changes never GET or PUT model annotations");
   });
   assert.deepEqual(errors, []); assert.deepEqual(escapedApiRequests, []);
