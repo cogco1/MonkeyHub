@@ -5623,6 +5623,28 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
+      "id": "attention.queue.answer_permission",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Answer a permission request",
+        "zh-CN": "答复授权请求"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "sessionId",
+        "permissionId",
+        "optionId"
+      ]
+    },
+    {
       "id": "chat.new_conversation",
       "capability": "chat.conversation",
       "label": {

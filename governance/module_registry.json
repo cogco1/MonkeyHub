@@ -3992,6 +3992,17 @@
             "label": "Undo taking every recommendation",
             "label_zh": "撤销全部按建议",
             "entries": []
+          },
+          {
+            "id": "attention.queue.answer_permission",
+            "label": "Answer a permission request",
+            "label_zh": "答复授权请求",
+            "args": [
+              "sessionId",
+              "permissionId",
+              "optionId"
+            ],
+            "entries": []
           }
         ]
       },
