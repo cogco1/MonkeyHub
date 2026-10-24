@@ -22,7 +22,7 @@ from collections import OrderedDict
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 
-from monkeydiagram.drawing_runs import DrawResult, DrawTask, run_draw_task
+from monkeydiagram.drawing_runs import DrawResult, DrawTask, run_draw_task, verify_draw_source
 from monkeydiagram.sources import VerifiedElevationSource
 
 from ..errors import StudioError
@@ -68,15 +68,32 @@ class DrawingPool:
         self._sources: OrderedDict[object, VerifiedElevationSource] = OrderedDict()
 
     def __call__(self, task: DrawTask) -> DrawResult:
+        result = self._solve(run_draw_task, task)
+        self._keep(task.source, result.verified)
+        return result
+
+    def source(self, project_root: str, source) -> VerifiedElevationSource:
+        """``source`` verified by a worker, without its shapes, or as one verified it before.
+
+        A native model is read whole to verify it; here that reading never
+        holds up the Runtime's other requests.
+        """
+
+        known = self.verified(source)
+        if known is not None:
+            return known
+        verified = self._solve(verify_draw_source, project_root, source)
+        self._keep(source, verified)
+        return verified
+
+    def _solve(self, function, *arguments):
         executor = self._running()
         try:
-            result = executor.submit(run_draw_task, task).result()
+            return executor.submit(function, *arguments).result()
         except BrokenProcessPool as exc:
             self._replace(executor)
             raise StudioError(503, "DRAWING_WORKER_LOST", "The drawing worker stopped before the drawing was done; "
                                                           "nothing was retained. Ask for the drawing again.") from exc
-        self._keep(task.source, result.verified)
-        return result
 
     def verified(self, source) -> VerifiedElevationSource | None:
         """The source as a worker verified it before (without its shapes), so a cache can answer for it."""

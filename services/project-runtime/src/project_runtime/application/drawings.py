@@ -188,7 +188,8 @@ def _complete_source(
     projection cache): the run may stand on an older canonical base. Anything
     that builds on the model keeps the default, which requires current HEAD.
     A native model is read to find its receipt; ``loaded`` then receives what
-    was read, so a caller that draws it does not read it again.
+    was read, so a caller that draws it does not read it again. Without
+    ``loaded``, a running drawing pool reads it in a worker (#300).
     """
 
     if isinstance(model, DrawingAssetSource):
@@ -204,8 +205,10 @@ def _complete_source(
     if artifact.representation in {"composed", "external"}:
         registered = binding.repository.load_json(cad_ref)
         native = NativeModelSource(model.run_id, cad_ref, ProjectArtifactRef(**registered["artifact"]))
+        pool = drawing_pool.drawer() if loaded is None else None
         try:
-            verified = read_elevation_source(binding.repository, native)
+            verified = (read_elevation_source(binding.repository, native) if pool is None
+                        else pool.source(str(binding.repository.layout.root), native))
         except DrawingElevationError as exc:
             raise StudioError(422, "DRAWING_NATIVE_GEOMETRY_UNSUPPORTED", str(exc)) from exc
         if loaded is not None:

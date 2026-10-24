@@ -293,14 +293,24 @@ def _shapeless(verified: VerifiedElevationSource) -> VerifiedElevationSource:
 _OPENED: dict[str, FilesystemProjectRepository] = {}
 
 
+def _opened(project_root: str) -> FilesystemProjectRepository:
+    repository = _OPENED.get(project_root)
+    if repository is None:
+        repository = _OPENED.setdefault(project_root, FilesystemProjectRepository.open(Path(project_root)))
+    return repository
+
+
+def verify_draw_source(project_root: str, source: ElevationSource | NativeModelSource) -> VerifiedElevationSource:
+    """Verify a source as a drawing task does, writing nothing: what a caller needs of it without its shapes."""
+
+    return _shapeless(read_elevation_source(_opened(project_root), source))
+
+
 def run_draw_task(task: DrawTask) -> DrawResult:
     """Verify a task's source and draw its view, writing nothing: what a ``drawer`` runs in another process."""
 
-    repository = _OPENED.get(task.project_root)
-    if repository is None:
-        repository = _OPENED.setdefault(task.project_root, FilesystemProjectRepository.open(Path(task.project_root)))
     events: list[Mapping[str, Any]] = []
-    verified = read_elevation_source(repository, task.source)
+    verified = read_elevation_source(_opened(task.project_root), task.source)
     if task.kind == ELEVATION_KIND:
         drawn = _draw_elevation(verified, task.view, backend_identity(), events.append, task.parent_event_id)
     elif task.kind == SECTION_PERSPECTIVE_KIND:
@@ -761,6 +771,7 @@ __all__ = [
     "list_model_axis_elevations",
     "read_model_axis_elevation",
     "run_draw_task",
+    "verify_draw_source",
 ]
 
 

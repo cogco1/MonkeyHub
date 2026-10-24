@@ -3081,7 +3081,8 @@
         "DrawTask",
         "DrawResult",
         "Drawer",
-        "run_draw_task"
+        "run_draw_task",
+        "verify_draw_source"
       ],
       "depends_on": [
         "archflow.project.ports",

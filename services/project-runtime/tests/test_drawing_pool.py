@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import base64
+from pathlib import Path
 import pickle
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -18,7 +21,7 @@ from project_runtime.binding import bound_project
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 
-from .support import PROJECT_ID
+from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project
 from .test_candidate import CandidateTestCase
 
 
@@ -115,6 +118,39 @@ class DrawingPoolTests(CandidateTestCase):
         listed = self.client.get("/api/documents", params={"projectId": PROJECT_ID}).json()
         rows = listed["documents"] if isinstance(listed, dict) else listed
         self.assertEqual(sum(1 for row in rows if row.get("drawingId") == "ground-plan"), 1)
+
+
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
+class NativeDrawingPoolTests(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.repository, _ = make_project(self.root)
+        self.client = TestClient(create_app(StudioSettings(project_dir=self.root / PROJECT_ID, reference_run=REFERENCE_RUN_ID,
+                                                           cad_export="off")))
+        self.addCleanup(self.client.close)
+        drawing_pool.start(2)
+        self.addCleanup(drawing_pool.stop)
+
+    def test_a_native_model_is_read_only_by_workers(self) -> None:
+        from monkeycad.backends.occt import native_models
+
+        data = (Path(__file__).parent / "fixtures/model-source-a.3dm").read_bytes()
+        asset = self.client.post("/api/model-assets", json={
+            "projectId": PROJECT_ID, "fileName": "wall.3dm", "contentBase64": base64.b64encode(data).decode()})
+        self.assertEqual(asset.status_code, 201, asset.text)
+        source = {"runId": asset.json()["runId"], "assetSha256": asset.json()["sha256"]}
+        with patch.object(native_models, "read_three_dm", wraps=native_models.read_three_dm) as here:
+            front = self.client.post("/api/drawings/elevations", json={
+                "projectId": PROJECT_ID, "sourceAsset": source, "view": "front", "drawingId": "wall-front"})
+            plan = self.client.post("/api/drawings/plans", json={
+                "projectId": PROJECT_ID, "sourceAsset": source, "cutHeight": 1.2, "bottom": 0, "scaleDenominator": 50})
+        self.assertEqual(front.status_code, 201, front.text)
+        self.assertEqual(plan.status_code, 201, plan.text)
+        self.assertEqual(here.call_count, 0, "the Runtime's own process never reads the 3DM's shapes")
+        receipt = self.repository.load_json(record_ref_from_uri(front.json()["revisionRef"], PROJECT_ID))
+        self.assertTrue(receipt["source"]["geometry_quality"], "each object's geometry quality comes back from the worker")
 
 
 if __name__ == "__main__":
