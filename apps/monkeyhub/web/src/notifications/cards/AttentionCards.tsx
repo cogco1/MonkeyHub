@@ -21,6 +21,9 @@ import "./cards.css";
  * once their group is registered (after 0-2).
  */
 
+/** The most the Hub takes with an answer as the architect's own words (AttentionResolveRequest.note). */
+const NOTE_MAX = 400;
+
 interface CardProps {
   card: AttentionCard;
   /** The project a card belongs to, as the shell names it; left out where the page shows one project. */
@@ -87,7 +90,7 @@ function CardFrame({ card, project, compact = false, children }: CardProps & { c
     {children}
     {pending && card.options.some(needsWords) && <label className="attention-card__words">
       <span>{t("cards.words")}</span>
-      <textarea rows={2} value={words} onChange={(event) => setWords(event.target.value)} />
+      <textarea rows={2} maxLength={NOTE_MAX} value={words} onChange={(event) => setWords(event.target.value)} />
     </label>}
     {pending && card.options.length > 0 && <div className="attention-card__answers" role="group" aria-label={t("cards.answers")}>
       {orderedOptions(card).map((option) => <button key={option.id} type="button" data-option={option.id} data-command-view
