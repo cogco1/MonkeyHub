@@ -27,7 +27,9 @@
 .attention-card .menu-command[aria-disabled=true]{color:var(--faint);cursor:default}
 .attention-queue__empty{margin:0;color:var(--muted)}
 /* A decision a page asks in place (InlineDecision): a row of the page, tighter than a queue card. Compact puts the title
-   and the answers on one line, wrapping where it is narrow. */
+   and the answers on one line, wrapping where it is narrow. Its lines are whole pixels, so a canvas below the row
+   starts on a whole pixel too. */
+.attention-card--inline,.attention-card--inline .attention-card__title,.attention-card--inline .attention-card__answer{line-height:20px}
 .attention-card--inline{padding:8px 12px}
 .attention-card--inline .attention-card__answers{margin-top:8px}
 .attention-card--inline .attention-card__answer{min-height:32px;padding:4px 12px}
