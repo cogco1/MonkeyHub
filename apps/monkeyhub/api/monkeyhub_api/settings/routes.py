@@ -18,9 +18,10 @@ from ..models import (
 from project_runtime.api.dto.skill_grants import SkillGrantDto, SkillGrantsDto
 from project_runtime.application.skill_library import installed
 
-from . import credentials, skill_grants, skill_problems
+from . import credentials, skill_grants, skill_problems, tool_grants
 from .models import ApplicationSettingsDto, UserSettingsDto
 from .skill_problems import SkillProblemDto
+from .tool_grants import ToolGrantDto, ToolGrantsDto
 from .store import SettingsError, read_application_settings, read_user_settings, save_user_settings
 
 
@@ -52,6 +53,18 @@ def app_settings_router(settings, applications, chats) -> APIRouter:
     def read_skill_problems() -> list[SkillProblemDto]:
         """The installed skills that cannot be used right now and why, read from the skill folders; no project is read."""
         return skill_problems.problems()
+
+    @routes.get("/api/settings/tool-grants", response_model=ToolGrantsDto, response_model_by_alias=True,
+                response_model_exclude_none=True)
+    def read_tool_grants() -> ToolGrantsDto:
+        """What a person allowed a conversation's Codex agent to do in each project, withdrawn grants included."""
+        return tool_grants.read(settings.runtime_root)
+
+    @routes.post("/api/settings/tool-grants/{grant_id}/revoke", response_model=ToolGrantDto,
+                 response_model_by_alias=True, response_model_exclude_none=True)
+    def revoke_tool_grant(grant_id: str) -> ToolGrantDto:
+        """Withdraw one grant in Settings; its record stays and no later request is allowed by it."""
+        return tool_grants.revoke(settings.runtime_root, grant_id, by="settings")
 
     @routes.post("/api/settings/skill-grants/{grant_id}/revoke", response_model=SkillGrantDto,
                  response_model_by_alias=True, response_model_exclude_none=True)

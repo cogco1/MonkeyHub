@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from archflow.project.repository import FilesystemProjectRepository
 from monkeyhub_api.chat import providers, store as chat, turn_context
 from monkeyhub_api.app.composition import HubSettings, create_app
-from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest, ChatDesignContext
+from monkeyhub_api.models import ChatCreateRequest, ChatPermissionRequest, ChatPostRequest, ChatDesignContext
 
 
 HUB_AGENT = FAKE_AGENT.replace("asyncio.run(main())", "") + r'''
@@ -218,6 +218,118 @@ class AcpChatTests(unittest.TestCase):
         self.assertEqual(len([r for r in self.calls() if r["event"] == "new"]), 1)
         self.assertEqual(len([r for r in self.calls() if r["event"] == "load"]), 1)
         self.assertEqual(before, {str(p): p.read_bytes() for p in self.project.rglob("*") if p.is_file()})
+
+    # ---- one answer for a project (A4) ----
+
+    def answer(self, session, option):
+        permission = self.permission(session)
+        self.store.resolve_permission(session.id, permission.id,
+                                      ChatPermissionRequest(projectId=session.projectId, optionId=option))
+        return self.finished(session)
+
+    def adapter_chose(self, text):
+        return [row["outcome"].get("optionId") for row in self.calls() if row["event"] == "permission" and row.get("text") == text]
+
+    def test_a_command_is_allowed_once_for_a_project_and_the_hub_answers_the_rest(self):
+        from monkeyhub_api.settings import tool_grants
+
+        session = self.create()
+        self.post(session, "permission-run")
+        card = self.permission(session)
+        self.assertEqual([(o.optionId, o.kind) for o in card.options],
+                         [("allow", "allow_once"), ("hub-project", "allow_always"), ("reject", "reject_once")])
+        self.assertEqual(card.title, "Run command · git status --short", "the card says what it will run")
+        self.assertIn("这个项目里的命令一直允许", card.options[1].name)
+        self.assertFalse(tool_grants.read(self.runtime).grants)
+        self.answer(session, "hub-project")
+        self.assertEqual(self.adapter_chose("permission-run"), ["allow"], "the adapter is told only 'allow once'")
+        [grant] = tool_grants.read(self.runtime).grants
+        self.assertEqual((grant.project_id, grant.action, grant.revoked_at), (session.projectId, "run", None))
+        # The next command in this project is answered by the Hub: no card, and the conversation says so.
+        self.post(session, "permission-run")
+        done = self.finished(session)
+        self.assertEqual(self.adapter_chose("permission-run"), ["allow", "allow"])
+        self.assertFalse(any(m.permission for m in done.messages))
+        self.assertTrue(any("allowed by your earlier answer for this project" in m.content and "git status --short" in m.content
+                            for m in done.messages))
+        # Going online is another answer, still asked; so is a request in another project.
+        self.post(session, "permission-network")
+        asked = self.permission(session)
+        self.assertEqual(asked.title, "Fetch page · https://example.com/a")
+        self.assertIn("联网", asked.options[1].name)
+        self.answer(session, "allow")
+        self.assertEqual(len(tool_grants.read(self.runtime).grants), 1, "only this time writes no grant")
+        self.assertFalse(tool_grants.covers(self.runtime, "another-project", "run"))
+        # Withdrawing it asks again.
+        tool_grants.revoke(self.runtime, grant.grant_id, by="settings")
+        self.post(session, "permission-run")
+        self.assertEqual(self.permission(session).options[1].optionId, "hub-project")
+        self.answer(session, "reject")
+        self.assertEqual(self.adapter_chose("permission-run")[-1], "reject")
+        self.assertEqual(len([g for g in tool_grants.read(self.runtime).grants if g.revoked_at is None]), 0)
+
+    def test_the_hubs_own_tools_are_one_answer_and_no_other_tool_is_covered(self):
+        from monkeyhub_api.settings import tool_grants
+
+        session = self.create()
+        self.post(session, "permission-hub")
+        card = self.permission(session)
+        self.assertEqual(card.title, "Studio call · studio_request POST /api/proposals")
+        self.assertIn("MonkeyHub 自己的工具", card.options[1].name)
+        self.answer(session, "hub-project")
+        self.post(session, "permission-hub")
+        self.finished(session)
+        self.assertEqual(self.adapter_chose("permission-hub"), ["allow", "allow"])
+        self.assertEqual([g.action for g in tool_grants.read(self.runtime).grants], ["hub"])
+        # A tool of another MCP server and an edit are asked every time, with the adapter's own options only.
+        for text in ("permission-other", "permission-edit"):
+            with self.subTest(text=text):
+                self.post(session, text)
+                card = self.permission(session)
+                self.assertEqual([o.optionId for o in card.options], ["allow", "always", "reject"])
+                self.answer(session, "allow")
+                self.post(session, text)
+                self.assertEqual([o.optionId for o in self.permission(session).options], ["allow", "always", "reject"],
+                                 "asked again, not covered by any grant")
+                self.answer(session, "reject")
+        self.assertEqual([g.action for g in tool_grants.read(self.runtime).grants], ["hub"])
+
+    def test_with_the_design_loop_enforced_a_command_is_asked_every_time_and_the_hubs_tools_are_not(self):
+        from monkeyhub_api.settings.store import read_application_settings, save_application_settings
+        from monkeyhub_api.settings import tool_grants
+
+        tool_grants.allow(self.runtime, "acp-project", "run")
+        tool_grants.allow(self.runtime, "acp-project", "hub")
+        save_application_settings(self.runtime, read_application_settings(self.runtime).model_copy(
+            update={"design_loop": "enforced"}))
+        session = self.create()
+        self.post(session, "permission-run")
+        card = self.permission(session)
+        self.assertEqual([o.optionId for o in card.options], ["allow", "always", "reject"],
+                         "a grant for commands does not reach a chat that is held to Claude's no-shell rule")
+        self.answer(session, "reject")
+        self.post(session, "permission-hub")
+        self.finished(session)
+        self.assertEqual(self.adapter_chose("permission-hub"), ["allow"], "the Hub's own tools still go through")
+
+    def test_the_tool_grants_file_is_kept_apart_withdrawn_and_never_read_wrongly(self):
+        from monkeyhub_api.models import HubFailure
+        from monkeyhub_api.settings import tool_grants
+
+        first = tool_grants.allow(self.runtime, "p", "network")
+        self.assertEqual(tool_grants.allow(self.runtime, "p", "network").grant_id, first.grant_id, "asking again answers the grant in force")
+        with self.assertRaises(HubFailure) as refused:
+            tool_grants.allow(self.runtime, "p", "edit")
+        self.assertEqual(refused.exception.error.code, "TOOL_GRANT_INVALID", "an edit cannot be allowed for a project")
+        tool_grants.revoke(self.runtime, first.grant_id, by="settings")
+        self.assertFalse(tool_grants.covers(self.runtime, "p", "network"))
+        self.assertEqual(tool_grants.allow(self.runtime, "p", "network").grant_id != first.grant_id, True)
+        with self.assertRaises(HubFailure):
+            tool_grants.revoke(self.runtime, "nobody", by="settings")
+        self.assertEqual(tool_grants.grants_path(self.runtime), self.runtime / "config" / "tool-grants.json")
+        self.assertFalse((self.runtime / "config" / "skill-grants.json").exists(), "skills' grants are another file")
+        tool_grants.grants_path(self.runtime).write_text("{ damaged", encoding="utf-8")
+        self.assertFalse(tool_grants.covers(self.runtime, "p", "network"), "a file that cannot be read allows nothing")
 
     def test_http_permission_requires_current_project_option_and_single_decision(self):
         with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):

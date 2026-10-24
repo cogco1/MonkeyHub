@@ -15,7 +15,7 @@ import { usePreferences } from "../settings/preferences";
 import { AccessList } from "./SkillAccess";
 import {
   createSkillGrantsApi, grantsActions, grantStatus, initialGrantsState,
-  type GrantsActions, type GrantsState, type SkillGrant, type SkillGrantsApi, type SkillProblem,
+  type GrantsActions, type GrantsState, type SkillGrant, type SkillGrantsApi, type SkillProblem, type ToolGrant,
 } from "./skillGrants";
 import {
   createHubSettingsApi, initialRunSettingState, runSettingActions, SKILL_AGENT_RUN_CHOICES,
@@ -28,6 +28,7 @@ const PROBLEM_KEYS = {
   entry_syntax: "skills.problems.kind.entry_syntax", missing_file: "skills.problems.kind.missing_file",
   name_differs: "skills.problems.kind.name_differs", unreadable: "skills.problems.kind.unreadable",
 } as const;
+const TOOL_KEYS = { run: "skills.tools.run", network: "skills.tools.network", hub: "skills.tools.hub" } as const;
 const WHO_KEYS = { user: "skills.problems.who.user", bundled: "skills.problems.who.bundled" } as const;
 const METHOD_KEYS = { card: "skills.grants.method.card", settings: "skills.grants.method.settings", migrated: "skills.grants.method.migrated" } as const;
 
@@ -75,7 +76,7 @@ export function SkillGrantsView({ state, actions, runChoice }: {
 }) {
   const t = useT();
   const { language } = usePreferences();
-  const { grants, problems, loading, loadError } = state;
+  const { grants, problems, toolGrants, loading, loadError } = state;
   const when = (value: string) => {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? value
@@ -91,7 +92,14 @@ export function SkillGrantsView({ state, actions, runChoice }: {
       <p>{t("skills.grants.loadFailed")} {loadError.detail}</p>
       <button type="button" className="btn" disabled={loading} onClick={() => void actions.load()}>{t("skills.retry")}</button>
     </div>}
-    {grants && grants.length === 0 && <p className="chat-muted">{t("skills.grants.empty")}</p>}
+    {grants && grants.length === 0 && (!toolGrants || toolGrants.length === 0) && <p className="chat-muted">{t("skills.grants.empty")}</p>}
+    {toolGrants && toolGrants.length > 0 && <section className="skills__tools" aria-labelledby="skills-tools-heading">
+      <h3 id="skills-tools-heading">{t("skills.tools.title")}</h3>
+      <p className="chat-muted">{t("skills.tools.intro")}</p>
+      <ul className="skills__list">
+        {toolGrants.map((grant) => <ToolGrantRow key={grant.grantId} grant={grant} state={state} actions={actions} when={when} t={t} />)}
+      </ul>
+    </section>}
     {grants && grants.length > 0 && <ul className="skills__list">
       {grants.map((grant) => <GrantRow key={grant.grantId} grant={grant} state={state} actions={actions} when={when} t={t} />)}
     </ul>}
@@ -111,6 +119,38 @@ function SkillProblems({ problems, t }: { problems: readonly SkillProblem[]; t: 
       </li>)}
     </ul>
   </section>;
+}
+
+/** The one Withdraw control both lists use: what it withdraws is named for assistive technology. */
+function WithdrawButton({ grantId, scope, revoking, onWithdraw, t }: {
+  grantId: string; scope: string; revoking: string | null; onWithdraw(grantId: string): void; t: TFunction;
+}) {
+  return <div className="skills__foot skill-grants__foot">
+    <button type="button" className="btn" disabled={revoking !== null} aria-label={t("skills.grants.revokeAria", { scope })}
+      onClick={() => onWithdraw(grantId)}>
+      {revoking === grantId ? t("skills.grants.revoking") : t("skills.grants.revoke")}</button>
+  </div>;
+}
+
+function ToolGrantRow({ grant, state, actions, when, t }: {
+  grant: ToolGrant; state: GrantsState; actions: GrantsActions; when(value: string): string; t: TFunction;
+}) {
+  const { revoking, revokeError } = state;
+  const status = grant.revokedAt ? "revoked" : "active";
+  const error = revokeError?.grantId === grant.grantId ? revokeError.error : null;
+  const what = t(TOOL_KEYS[grant.action], { project: grant.projectId });
+  return <li className="skills__row" data-status={status}>
+    <div className="skills__head">
+      <strong className="skills__name">{what}</strong>
+      <span className="skills__status" data-status={status}>{t(STATUS_KEYS[status])}</span>
+    </div>
+    <dl className="skills__facts">
+      <dt>{t("skills.grants.at")}</dt><dd>{when(grant.grantedAt)}</dd>
+      {grant.revokedAt && <><dt>{t("skills.grants.revokedAt")}</dt><dd>{when(grant.revokedAt)}</dd></>}
+    </dl>
+    {error && <p className="skills__error" role="alert">{error.detail}</p>}
+    {status === "active" && <WithdrawButton grantId={grant.grantId} scope={what} revoking={revoking} onWithdraw={(id) => void actions.revokeTool(id)} t={t} />}
+  </li>;
 }
 
 function scopeText(grant: SkillGrant, t: TFunction): string {
@@ -138,10 +178,6 @@ function GrantRow({ grant, state, actions, when, t }: {
       {grant.revokedAt && <><dt>{t("skills.grants.revokedAt")}</dt><dd>{when(grant.revokedAt)}</dd></>}
     </dl>
     {error && <p className="skills__error" role="alert">{error.detail}</p>}
-    {status === "active" && <div className="skills__foot skill-grants__foot">
-      <button type="button" className="btn" disabled={revoking !== null}
-        aria-label={t("skills.grants.revokeAria", { scope })} onClick={() => void actions.revoke(grant.grantId)}>
-        {revoking === grant.grantId ? t("skills.grants.revoking") : t("skills.grants.revoke")}</button>
-    </div>}
+    {status === "active" && <WithdrawButton grantId={grant.grantId} scope={scope} revoking={revoking} onWithdraw={(id) => void actions.revoke(id)} t={t} />}
   </li>;
 }

@@ -34,7 +34,7 @@ from pydantic import Field
 
 from .. import projects
 from ..runtime.workers import project_key
-from . import activity, guides, mcp_server, media, providers, skill_plugins, studio_tool, transport, turn_context
+from . import acp_grants, activity, guides, mcp_server, media, providers, skill_plugins, studio_tool, transport, turn_context
 from ..settings.store import read_application_settings
 
 from ..models import (
@@ -204,6 +204,9 @@ class ChatStore:
         self._skill_questions: dict[tuple[str, str], Future] = {}
         # What each skill question would allow (S-1), kept by the Hub until the person answers it.
         self._skill_asks: dict[tuple[str, str], Mapping] = {}
+        # What a permission card's "always allow in this project" would allow, and the adapter option it is answered
+        # with (A4); kept until the person answers.
+        self._tool_asks: dict[tuple[str, str], dict[str, str]] = {}
         self.timeout_s = timeout_s
         self._lock = threading.RLock()
         self._sessions: dict[str, _SavedChat] = {}
@@ -1360,10 +1363,39 @@ class ChatStore:
                     or request.get("sessionId") != session.acpSessionId):
                 future.set_result(None)
                 return future
-            permission = ChatPermission(
-                id=str(uuid4()), title=providers._redact(str(request.get("toolCall", {}).get("title") or "Permission requested")),
-                options=[ChatPermissionOption.model_validate(item) for item in request["options"]],
-            )
+            title = providers._redact(str(request.get("toolCall", {}).get("title") or "Permission requested"))
+            options = [ChatPermissionOption.model_validate(item) for item in request["options"]]
+            # A command, going online or a call to the Hub's own tools can be allowed once for the whole project
+            # (A4). Not a command or going online while the design loop is enforced: Claude has no shell then, and
+            # Codex gets no more than Claude.
+            action = acp_grants.action_of(request)
+            if action in ("run", "network") and self._design_loop_enforced():
+                action = None
+            allow = acp_grants.option_id(request["options"], "allow_once")
+            reject = acp_grants.option_id(request["options"], "reject_once", "reject_always")
+            what = providers._redact(acp_grants.preview(request))
+            if action is not None and allow is not None and reject is not None:
+                from ..settings import tool_grants
+
+                if tool_grants.covers(self.runtime_root, session.projectId, action):
+                    # The person already answered for this project: the Hub answers, and the conversation says so.
+                    session.messages.append(ChatMessage(
+                        id=f"{self._answering(session)}:permission:{uuid4()}", role="tool", createdAt=_now(), status="complete",
+                        content=" · ".join(part for part in (title, what, "allowed by your earlier answer for this project") if part)))
+                    session.updatedAt = _now()
+                    self._save(session)
+                    future.set_result(allow)
+                    return future
+                always = {"run": "这个项目里的命令一直允许 / Always allow commands in this project",
+                          "network": "这个项目里联网一直允许 / Always allow going online in this project",
+                          "hub": "这个项目里 MonkeyHub 自己的工具一直允许 / Always allow MonkeyHub's own tools in this project"}
+                options = [
+                    ChatPermissionOption(optionId=allow, name="只这一次 / Only this time", kind="allow_once"),
+                    ChatPermissionOption(optionId=acp_grants.HUB_PROJECT, kind="allow_always", name=always[action]),
+                    ChatPermissionOption(optionId=reject, name="不 / No", kind="reject_once"),
+                ]
+                title = " · ".join(part for part in (title, what) if part)
+            permission = ChatPermission(id=str(uuid4()), title=title, options=options)
             session.messages.append(ChatMessage(
                 id=f"{self._answering(session)}:permission:{permission.id}", role="tool", content=permission.title,
                 createdAt=_now(), status="streaming", permission=permission,
@@ -1372,10 +1404,15 @@ class ChatStore:
             # two moments in the summary, never one.
             session.updatedAt = _now()
             self._permissions[(session_id, permission.id)] = future
+            if action is not None and allow is not None and reject is not None:
+                self._tool_asks[(session_id, permission.id)] = {"action": action, "allow": allow}
             if running.trace:
                 running.trace.permission(permission.id)
             self._save(session)
         return future
+
+    def _design_loop_enforced(self) -> bool:
+        return read_application_settings(self.runtime_root).design_loop == studio_tool.DESIGN_LOOP_ENFORCED
 
     def request_skill_permission(self, session_id: str, title: str, ask: Mapping | None = None) -> str:
         """Put what a skill run needs to the person in the running chat, as a question with three buttons.
@@ -1466,8 +1503,17 @@ class ChatStore:
             option = next((item for item in message.permission.options if item.optionId == request.optionId), None)
             if request.optionId is not None and option is None:
                 raise HubFailure(422, "CHAT_PERMISSION_OPTION_INVALID", "Choose an option from this permission request.")
+            chosen = request.optionId
+            ask = self._tool_asks.get((session_id, permission_id))
+            if ask is not None and chosen == acp_grants.HUB_PROJECT:
+                # "Always allow in this project": the Hub keeps that, and the adapter is told only "allow once".
+                from ..settings import tool_grants
+
+                tool_grants.allow(self.runtime_root, session.projectId, ask["action"], ref=permission_id)
+                chosen = ask["allow"]
+            self._tool_asks.pop((session_id, permission_id), None)
             try:
-                future.set_result(request.optionId)
+                future.set_result(chosen)
             except InvalidStateError:
                 message.permission, message.status = None, "interrupted"
                 session.updatedAt = _now()
@@ -1488,6 +1534,7 @@ class ChatStore:
         for key, future in list(self._permissions.items()):
             if key[0] == session_id:
                 self._permissions.pop(key)
+                self._tool_asks.pop(key, None)
                 with suppress(InvalidStateError):
                     future.set_result(None)
         for message in self._sessions[session_id].messages:

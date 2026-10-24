@@ -133,6 +133,28 @@ class FakeAgent:
                     session_id="another-session" if text == "foreign-activity" else session_id, update=update,
                 )
                 await asyncio.sleep(0.15)
+        elif text.startswith("permission-"):
+            shapes = {
+                "permission-run": dict(kind="execute", title="Run command", raw_input={"command": ["git", "status", "--short"]}),
+                "permission-network": dict(kind="fetch", title="Fetch page", raw_input={"url": "https://example.com/a"}),
+                "permission-hub": dict(kind="execute", title="Studio call", _meta={"is_mcp_tool_call": True},
+                                       raw_input={"server": "monkeyhub", "tool": "studio_request",
+                                                  "arguments": {"method": "POST", "path": "/api/proposals"}}),
+                "permission-other": dict(kind="execute", title="Another server", _meta={"is_mcp_tool_call": True},
+                                         raw_input={"server": "elsewhere", "tool": "export", "arguments": {}}),
+                "permission-edit": dict(kind="edit", title="Edit file", raw_input={"path": "a.txt"}),
+            }
+            result = await self.client.request_permission(
+                session_id=session_id, tool_call=ToolCallUpdate(tool_call_id="call-" + text, **shapes[text]),
+                options=[
+                    PermissionOption(option_id="allow", name="Yes, proceed", kind="allow_once"),
+                    PermissionOption(option_id="always", name="Yes, and don't ask again", kind="allow_always"),
+                    PermissionOption(option_id="reject", name="No, provide feedback", kind="reject_once"),
+                ],
+            )
+            outcome = result.outcome.model_dump(by_alias=True)
+            log("permission", outcome=outcome, text=text)
+            await self.emit(json.dumps(outcome))
         elif text in {"permission", "delayed-permission"}:
             if text == "delayed-permission":
                 await asyncio.sleep(0.3)

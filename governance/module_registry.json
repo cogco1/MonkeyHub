@@ -13666,7 +13666,8 @@
         "guess rules over the Runtime's edit log: the same element field or parameter changed the same way three times within the line's last five steps becomes one ask card whose answers send a sentence to the project's conversation; a field a person set aside stays quiet until its suppression ends; and the Runtime's drawing recipe suggestions (one pen changed the same way on two drawings or more) as one ask card per pen and direction, saving the value as the person's recipe decision",
         "What a person allowed skills to do on this machine (S-1): <runtime root>/config/skill-grants.json (MonkeyHubSkillGrants@1) beside applications.json, outside every project and never synced with a team; one grant per answer, for every skill, one skill by name and source, or one run bound to its project and code; withdrawn grants kept with when; a project's version grants from before S-1 carried over once as grants for that skill only; written only through monkeyhub_api/settings",
         "An Agent's skill run (S-1): the project's approvals from before carried over, what the run still needs read from its Runtime (GET /api/skills/{id}/needs), and only that put to the person in the chat as one question (always allow, only this time, no); the Hub writes the grant from the answer, the Agent never names one",
-        "The installed skills that cannot be used right now (S-1): GET /api/settings/skill-problems lists them from the skill folders alone, each with its kind (entry_syntax, missing_file, name_differs, unreadable), file, line and the technical line; Settings › What the AI may do says each in plain words with who can fix it"
+        "The installed skills that cannot be used right now (S-1): GET /api/settings/skill-problems lists them from the skill folders alone, each with its kind (entry_syntax, missing_file, name_differs, unreadable), file, line and the technical line; Settings › What the AI may do says each in plain words with who can fix it",
+        "What a person allowed a conversation's Codex agent to do in one project (A4): a command it starts, going online, and a call to the Hub's own MCP server (an edit, and any other MCP server's tool, are asked every time: ADR-012). <runtime root>/config/tool-grants.json (MonkeyHubToolGrants@1), one grant per answer, kept apart from the skills' grants and never read by a Project Runtime; the permission card offers 'always allow in this project' beside 'only this time' and 'no', and a later request of that kind in that project is answered by the Hub with the adapter's own 'allow once' option and a line in the conversation; commands and going online are asked again while the design loop is enforced; withdrawn in Settings › What the AI may do"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -13820,7 +13821,13 @@
         "POST /api/settings/skill-grants/carry",
         "skill_plugins.installed_library",
         "GET /api/settings/skill-problems",
-        "skill_problems.problems"
+        "skill_problems.problems",
+        "GET /api/settings/tool-grants",
+        "POST /api/settings/tool-grants/{grant_id}/revoke",
+        "tool_grants.allow",
+        "tool_grants.revoke",
+        "tool_grants.covers",
+        "tool_grants.read"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -13888,6 +13895,7 @@
         "apps/monkeyhub/api/monkeyhub_api/settings/credentials.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/skill_grants.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/skill_problems.py",
+        "apps/monkeyhub/api/monkeyhub_api/settings/tool_grants.py",
         "apps/monkeyhub/api/monkeyhub_api/project_archive.py",
         "apps/monkeyhub/api/monkeyhub_api/projects.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime/__init__.py",
@@ -13913,6 +13921,7 @@
         "apps/monkeyhub/api/monkeyhub_api/chat/turn_trace.py",
         "apps/monkeyhub/api/monkeyhub_api/computer_tools.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/acp_session.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/acp_grants.py",
         "apps/monkeyhub/web/src/ChatShell.tsx",
         "apps/monkeyhub/web/src/ChatShell.css",
         "apps/monkeyhub/web/src/notifications/",

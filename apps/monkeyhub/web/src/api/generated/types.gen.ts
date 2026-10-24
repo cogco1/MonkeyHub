@@ -2708,6 +2708,56 @@ export type StateChange = {
 };
 
 /**
+ * ToolGrantDto
+ *
+ * One answer a person gave: ``action`` is allowed in ``projectId`` until it is withdrawn.
+ */
+export type ToolGrantDto = {
+    /**
+     * Grantid
+     */
+    grantId: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Action
+     */
+    action: 'run' | 'network' | 'hub';
+    /**
+     * Grantedat
+     */
+    grantedAt: string;
+    /**
+     * Ref
+     */
+    ref?: string | null;
+    /**
+     * Revokedat
+     */
+    revokedAt?: string | null;
+    /**
+     * Revokedby
+     */
+    revokedBy?: string | null;
+};
+
+/**
+ * ToolGrantsDto
+ */
+export type ToolGrantsDto = {
+    /**
+     * Schema
+     */
+    schema?: 'MonkeyHubToolGrants@1';
+    /**
+     * Grants
+     */
+    grants?: Array<ToolGrantDto>;
+};
+
+/**
  * UndoSpec
  *
  * The reverse of a handled option, run by the same executor while its precondition still holds.
@@ -3504,6 +3554,52 @@ export type ReadSkillProblemsApiSettingsSkillProblemsGetResponses = {
 };
 
 export type ReadSkillProblemsApiSettingsSkillProblemsGetResponse = ReadSkillProblemsApiSettingsSkillProblemsGetResponses[keyof ReadSkillProblemsApiSettingsSkillProblemsGetResponses];
+
+export type ReadToolGrantsApiSettingsToolGrantsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/tool-grants';
+};
+
+export type ReadToolGrantsApiSettingsToolGrantsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ToolGrantsDto;
+};
+
+export type ReadToolGrantsApiSettingsToolGrantsGetResponse = ReadToolGrantsApiSettingsToolGrantsGetResponses[keyof ReadToolGrantsApiSettingsToolGrantsGetResponses];
+
+export type RevokeToolGrantApiSettingsToolGrantsGrantIdRevokePostData = {
+    body?: never;
+    path: {
+        /**
+         * Grant Id
+         */
+        grant_id: string;
+    };
+    query?: never;
+    url: '/api/settings/tool-grants/{grant_id}/revoke';
+};
+
+export type RevokeToolGrantApiSettingsToolGrantsGrantIdRevokePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RevokeToolGrantApiSettingsToolGrantsGrantIdRevokePostError = RevokeToolGrantApiSettingsToolGrantsGrantIdRevokePostErrors[keyof RevokeToolGrantApiSettingsToolGrantsGrantIdRevokePostErrors];
+
+export type RevokeToolGrantApiSettingsToolGrantsGrantIdRevokePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ToolGrantDto;
+};
+
+export type RevokeToolGrantApiSettingsToolGrantsGrantIdRevokePostResponse = RevokeToolGrantApiSettingsToolGrantsGrantIdRevokePostResponses[keyof RevokeToolGrantApiSettingsToolGrantsGrantIdRevokePostResponses];
 
 export type RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostData = {
     body?: never;

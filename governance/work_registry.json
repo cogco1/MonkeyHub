@@ -5,22 +5,26 @@
       "id": "GH-300",
       "lanes": [
         {
-          "id": "skill-guard",
+          "id": "codex-grant",
           "status": "active",
-          "branch": "claude/300-skill-guard",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-skill-guard",
-          "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
+          "branch": "claude/300-b3-codex-grant",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-codex-grant",
+          "base_ref": "90f86afcc4330c50d3d01e4a0cf0ec4c55742b44",
           "contributor": "Claude",
           "reviewer": null,
-          "handoff": "Fewer broken skills reach the user (from 10_harness论文对S-1的启发.md, items 1-3): a package that cannot run is caught when it is read and named in plain words in Settings; a run that writes nothing fails and one that misses a file its manifest names says so; every failure says what to do next and an Agent's exact request is not run a third time. Merged with batch 3 after the paper relay.",
+          "handoff": "A4: a person answers once per project for what Codex asks in a conversation (a command, going online, the Hub's own tools) instead of once per call, and withdraws it in Settings. Stacked on claude/300-skill-guard (batch 3): that lane's work is in this branch, so its claim is dropped here and its files are claimed again by this lane. Merged with batch 3 after the paper relay.",
           "modules": [
-            "hub.shell",
-            "project_runtime.skill_library",
-            "project_runtime.skill_runs"
+            "hub.shell"
           ],
           "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat/acp_grants.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
             "apps/monkeyhub/api/monkeyhub_api/settings/routes.py",
             "apps/monkeyhub/api/monkeyhub_api/settings/skill_problems.py",
+            "apps/monkeyhub/api/monkeyhub_api/settings/store.py",
+            "apps/monkeyhub/api/monkeyhub_api/settings/tool_grants.py",
+            "apps/monkeyhub/api/tests/test_acp_chat.py",
+            "apps/monkeyhub/api/tests/test_acp_session.py",
             "apps/monkeyhub/api/tests/test_skill_library.py",
             "apps/monkeyhub/web/src/api/generated/index.ts",
             "apps/monkeyhub/web/src/api/generated/sdk.gen.ts",
