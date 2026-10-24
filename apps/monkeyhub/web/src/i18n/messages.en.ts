@@ -1358,7 +1358,7 @@ export const messagesEn = {
   "shell.view.board": "Board",
   "shell.view.model": "Model",
   "shell.noProjects": "No projects yet.",
-  "shell.projectVersion": "Current V{version}",
+  "shell.projectStep": "Current {step}",
   "shell.needs": "{count} need you",
   "shell.working": "Working in the background",
   "shell.needsYou": "Needs you",

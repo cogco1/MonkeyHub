@@ -1321,7 +1321,7 @@ export const messagesZhCN = {
   "shell.view.board": "画板",
   "shell.view.model": "模型",
   "shell.noProjects": "还没有项目。",
-  "shell.projectVersion": "当前 V{version}",
+  "shell.projectStep": "当前 {step}",
   "shell.needs": "{count} 项需要你",
   "shell.working": "后台在跑",
   "shell.needsYou": "需要你",

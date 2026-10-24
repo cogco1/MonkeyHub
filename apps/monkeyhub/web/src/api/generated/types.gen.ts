@@ -1111,6 +1111,10 @@ export type ChatProject = {
      * Stage
      */
     stage?: string | null;
+    /**
+     * Step
+     */
+    step?: string | null;
 };
 
 /**
