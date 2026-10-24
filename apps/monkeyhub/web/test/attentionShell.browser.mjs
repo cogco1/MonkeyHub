@@ -646,7 +646,7 @@ try {
   await queuePage.keyboard.press("Alt+3");
   await queuePage.waitForFunction(() => document.querySelector(".menu-tab[aria-pressed=true]")?.textContent === "模型");
   await queuePage.locator(".attention-shell__surfaces .viewtools.model-tools").waitFor();
-  await queuePage.locator(".attention-shell__rail-item").filter({ hasText: "后台" }).click();
+  await queuePage.getByRole("button", { name: "展开后台" }).click();
   cards.push(queueCard("stairs", "B", { channel: "decide", kind: "choice", title: "Move the stair east", titleZh: "要不要把楼梯挪到东侧",
     options: [answer("move", "Move it", "挪", "楼梯挪到东侧"), answer("keep", "Keep it", "不挪", "楼梯不动")], createdAt: stamp(), updatedAt: stamp() }));
   announce("attention/changed");
