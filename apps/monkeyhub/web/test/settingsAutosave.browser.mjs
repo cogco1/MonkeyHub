@@ -119,6 +119,14 @@ const openSettings = async (name = "Hub settings") => {
 const PAGES = { Display: "display", Conversations: "chat", "AI Render": "render", Workspace: "workspace", "Software update": "update",
   显示: "display", 对话: "chat", "AI 渲染": "render", 工作区: "workspace", 软件更新: "update" };
 const settingsTab = (name) => cmd(dialog, "view.settings.page", { arg: PAGES[name] });
+// Developer mode sits under the Workspace page's launch options.
+const developerMode = async (on) => {
+  await settingsTab("Workspace").click();
+  const box = page.locator("#developer-mode");
+  if (!(await box.isVisible())) await cmd(dialog, "view.disclosure.toggle", { arg: "launch_options" }).click();
+  await (on ? box.check() : box.uncheck());
+  await settingsTab("Display").click();
+};
 const openPage = async (name) => {
   const tab = settingsTab(name);
   assert.equal(await commandLabel(tab), name);
@@ -152,9 +160,7 @@ try {
     assert.deepEqual(await dialog.getByRole("tab").allInnerTexts(), ["Display", "Conversations", "AI Render", "Workspace", "What the AI may do", "Software update"]);
     // The look and shell switches are a developer's (S01): they are not on the page until developer mode is on.
     assert.equal(await cmd(dialog, "preference.appearance.style_titleblock").count(), 0, "the interface styles wait for developer mode");
-    await settingsTab("Workspace").click();
-    await page.locator("#developer-mode").check();
-    await settingsTab("Display").click();
+    await developerMode(true);
     const before = userWrites.length;
     await cmd(dialog, "preference.appearance.style_titleblock").check();
     await until(() => userWrites.length === before + 1, "choosing a style writes the preferences document");
@@ -174,9 +180,7 @@ try {
     await cmd(dialog, "preference.appearance.style_classic").check();
     await until(() => userWrites.at(-1)?.uiStyle === "classic", "Classic is saved back");
     await status.filter({ hasText: /^Saved$/ }).waitFor();
-    await settingsTab("Workspace").click();
-    await page.locator("#developer-mode").uncheck();
-    await settingsTab("Display").click();
+    await developerMode(false);
   });
 
   await step("a key goes in once, is never shown again, and the page says where the key in use comes from", async () => {
