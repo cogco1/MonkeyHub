@@ -60,7 +60,8 @@ class AttentionHub:
         if store.check is None:
             store.check = check_card
         self._clock = clock or (lambda: datetime.now(timezone.utc))
-        self.executor = AttentionExecutor(store, studio=self.studio, chats=chats, hub=self, clock=self._clock)
+        self.executor = AttentionExecutor(store, studio=self.studio, chats=chats, hub=self, clock=self._clock,
+                                          language=lambda: getattr(self._user_settings(), "language", None))
         store.subscribe(self._changed)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None

@@ -13,6 +13,7 @@ what a person asked for in one click, and only answers that can be taken back.
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import re
 import threading
 from typing import Any, Literal, Protocol
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -98,8 +99,9 @@ class _Run:
     item: AttentionItem
     key: str
     precondition: Mapping[str, ArgValue] = field(default_factory=dict)
-    # What the person wrote on the card with this answer.
+    # What the person wrote on the card with this answer, and the answer's own words as they read them.
     note: str | None = None
+    words: str | None = None
     # Taking an answer back rather than carrying one out.
     undoing: bool = False
     sent: int = 0
@@ -244,6 +246,50 @@ def _send_message(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
     return _Done({"sessionId": session})
 
 
+# Which drawing target a paper value belongs to, as the Drawings page names them (drawingPlan.ts RECIPE_TARGETS).
+_RECIPE_TARGETS = {"cutLineMm": "drawing:lineweight", "visibleLineMm": "drawing:lineweight",
+                   "hatchSpacingMm": "drawing:hatch"}
+
+
+def _save_recipe(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
+    """Keep a suggested paper value as the project's drawing recipe, evidenced by the page it was seen on.
+
+    The same decision the Drawings page writes for "save as project recipe"
+    (drawingPlan.ts recipeDecision), in the words of the answer the person chose.
+    """
+
+    field, value, page = _text(args, "field"), args.get("value"), args.get("pageIndex")
+    if field not in _RECIPE_TARGETS:
+        raise HubFailure(422, "ATTENTION_ACTION_INVALID", f"{field} is no drawing recipe value.")
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or isinstance(page, bool) or not isinstance(page, int):
+        raise HubFailure(422, "ATTENTION_ACTION_INVALID", "This answer names no value or page.")
+    answer = run.studio("POST", "/api/decisions", {
+        "projectId": run.item.projectId, "rawLanguage": run.note or run.words or f"{field} {value}",
+        "disposition": "require", "strength": "strong_preference", "targetRef": _RECIPE_TARGETS[field],
+        "scope": {"domain": "drawing", "extent": "project"},
+        "source": {"kind": "document", "runId": _text(args, "runId"), "assetSha256": _text(args, "assetSha256"),
+                   "revisionRef": _text(args, "revisionRef"), "pageIndex": page},
+        "applicability": "scope", "sourceKind": "human", "typedBinding": {"kind": "recipe", "graphics": {field: value}}})
+    decision, revision = answer.get("decisionId"), answer.get("revisionRef")
+    undo = None
+    if isinstance(decision, str) and isinstance(revision, str):
+        undo = UndoSpec(action=CommandRef(commandId="drawing.recipe.revoke",
+                                          args={"decisionId": decision, "expectedRevisionRef": revision}))
+    return _Done({"decisionId": decision, "revisionRef": revision}, undo)
+
+
+def _revoke_recipe(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
+    """Revoke a recipe decision, only while it is still the revision that was kept: the Runtime compares it."""
+
+    decision = _text(args, "decisionId")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", decision):
+        raise HubFailure(422, "ATTENTION_ACTION_INVALID", "This answer names no decision.")
+    run.studio("POST", f"/api/decisions/{decision}/revisions", {
+        "projectId": run.item.projectId, "expectedRevisionRef": _text(args, "expectedRevisionRef"),
+        "action": "revoke", "reason": "Taken back from the attention queue."})
+    return _Done({"decisionId": decision})
+
+
 def _update_apply(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
     run.executor.hub.apply_update()
     return _Done()
@@ -290,6 +336,12 @@ COMMANDS: dict[str, Command] = {
     # without one to the project's attention conversation.
     "chat.composer.send": Command(_send_message, takes=("sessionId", "content")),
     "hub.update_apply": Command(_update_apply),
+    # A recipe guess: the Drawings page's own "save suggestion", bound to the suggested value and its page.
+    "attention.answer_guess.save": Command(_save_recipe, undoable=True,
+                                           takes=("field", "value", "runId", "assetSha256", "revisionRef", "pageIndex"),
+                                           needs=("field", "value", "runId", "assetSha256", "revisionRef", "pageIndex")),
+    "drawing.recipe.revoke": Command(_revoke_recipe, takes=("decisionId", "expectedRevisionRef"),
+                                     needs=("decisionId", "expectedRevisionRef")),
     # With operationId, the operation journal's acknowledge; without, the card is only put away.
     "attention.queue.acknowledge": Command(_acknowledge, takes=("operationId",)),
 }
@@ -348,8 +400,10 @@ class AttentionExecutor:
     """Runs a card's answers as the person who chose them, and their undo."""
 
     def __init__(self, store: AttentionStore, *, studio: StudioPort, chats: ChatPort, hub: HubPort,
-                 clock: Callable[[], datetime] | None = None):
+                 clock: Callable[[], datetime] | None = None, language: Callable[[], str | None] | None = None):
         self.store, self.studio, self.chats, self.hub = store, studio, chats, hub
+        # The person's interface language, for the words an answer is kept in.
+        self.language = language or (lambda: None)
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._lock = threading.Lock()
         self._busy: set[str] = set()
@@ -377,7 +431,8 @@ class AttentionExecutor:
             refuse_unknown(option)
             started = self.store.begin(item_id, option_id, by=by)
             attempt = sum(row.to == "working" for row in started.history)
-            run = _Run(self, started, f"att:{item_id}:{option_id}:{attempt}", note=note)
+            words = option.consequence if self.language() == "en" else option.consequenceZh or option.consequence
+            run = _Run(self, started, f"att:{item_id}:{option_id}:{attempt}", note=note, words=words)
             try:
                 done = COMMANDS[option.action.commandId].run(run, option.action.args)
             except HubFailure as exc:
