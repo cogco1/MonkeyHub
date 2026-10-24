@@ -1,4 +1,46 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-300",
+      "lanes": [
+        {
+          "id": "intent",
+          "status": "active",
+          "branch": "claude/300-b3-intent",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-intent",
+          "base_ref": "098cca621",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "一句话直接办 (batch 3, 10-24): a sentence that means a listed command offers it on a confirm card (one click runs it, a missing argument is asked on the card); the Hub finds commands by meaning with a local embedding model (numpy, bge-small-zh-v1.5) and the web falls back to its keyword search. Into claude/300-batch3 via the merge session; not into main before 10-26 07:30.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
+            "apps/monkeyhub/api/monkeyhub_api/commands/__init__.py",
+            "apps/monkeyhub/api/monkeyhub_api/commands/meaning.py",
+            "apps/monkeyhub/api/monkeyhub_api/commands/routes.py",
+            "apps/monkeyhub/api/tests/test_command_meaning.py",
+            "apps/monkeyhub/web/src/ChatShell.css",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/api/generated/index.ts",
+            "apps/monkeyhub/web/src/api/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/features/commands/CommandPalette.tsx",
+            "apps/monkeyhub/web/src/features/commands/commands.css",
+            "apps/monkeyhub/web/src/features/commands/meaning.ts",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/attentionShell.browser.mjs",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/test/commandMeaning.test.ts",
+            "governance/command_meaning_cases.json",
+            "governance/module_registry.json",
+            "tools/release/package_monkeyapps.py"
+          ]
+        }
+      ]
+    }
+  ]
 }
