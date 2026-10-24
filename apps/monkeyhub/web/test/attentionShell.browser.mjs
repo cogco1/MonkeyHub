@@ -211,7 +211,7 @@ const route = async (handler) => {
     if (act && method === "POST") {
       const item = cards.find((card) => card.id === act[1]);
       const option = act[2] === "resolve" ? item.options.find((row) => row.id === data().optionId) : null;
-      attentionActions.push([act[2], item.id, option?.id ?? null]);
+      attentionActions.push(data().items === undefined ? [act[2], item.id, option?.id ?? null] : [act[2], item.id, option?.id ?? null, data().items]);
       if (act[2] === "resolve" && data().note !== undefined) attentionNotes.push(data().note);
       // Taking the stair answer back finds the project moved on: the Hub asks instead, and the card stays handled.
       const followUp = act[2] === "undo" && item.id === "att_ask" ? queueCard("ask_next", "A", { channel: "decide", kind: "choice",
@@ -627,6 +627,39 @@ try {
     await shoot(lookPage, name);
     await look.close();
   }
+  attentionServed = false; cards = [];
+
+  // 3-4: the changes a set of circled marks was read as arrive on one card; the architect unticks what is wrong, and the
+  // rest runs as one change. An item the agent was unsure of starts unticked.
+  attentionServed = true; preferredTheme = "light";
+  cards = [queueCard("changes", "A", { channel: "annotate", kind: "change_list", state: "review", title: "Read your marks as 3 changes", titleZh: "按你圈的读出 3 处改动",
+    changeWords: ["把楼板薄一点，西墙开个窗"],
+    changeList: { frameId: "f1", runId: "v17", items: [
+      { n: 1, note: "圈在楼板", understanding: "Thin the floor", understandingZh: "楼板减薄", targets: ["floor-1"], protected: ["wall-w"], keep: true },
+      { n: 2, note: "圈在西墙", understanding: "Cut a window in the west wall", understandingZh: "西墙开窗", targets: ["wall-w", "wall-w2"], keep: true },
+      { n: 3, note: "一个箭头", understanding: "Move something east", understandingZh: "往东挪一处", targets: [], unsure: true, keep: true },
+    ] },
+    options: [answer("run", "Run the ticked changes", "执行勾上的改动", "按勾上的几处改，没勾的不动")] })];
+  const listed = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const listedPage = await listed.newPage(); listedPage.setDefaultTimeout(15_000);
+  listedPage.on("pageerror", (error) => errors.push(error.message));
+  await listedPage.route((url) => url.pathname.startsWith("/api/"), route);
+  await open(listedPage);
+  const changes = listedPage.locator(".attention-card").filter({ hasText: "按你圈的读出 3 处改动" });
+  await changes.waitFor();
+  await changes.getByText("把楼板薄一点，西墙开个窗").waitFor();
+  const boxes = changes.locator(".attention-card__changes input[type=checkbox]");
+  assert.deepEqual(await boxes.evaluateAll((nodes) => nodes.map((node) => node.checked)), [true, true, false], "the unsure one starts unticked");
+  await changes.getByText("拿不准").waitFor();
+  await changes.getByText("涉及 2 个构件").waitFor();
+  await changes.getByText("保持 1 个不动").waitFor();
+  await boxes.nth(1).uncheck();
+  await boxes.nth(2).check();
+  await changes.getByRole("button", { name: /执行勾上的改动/ }).click();
+  await changes.waitFor({ state: "detached" });
+  assert.deepEqual(attentionActions.at(-1), ["resolve", "att_changes", "run", [1, 3]], "the ticked numbers go with the answer");
+  await boxes.first().waitFor({ state: "detached" }).catch(() => undefined);
+  await listed.close();
   attentionServed = false; cards = [];
 
   // Phone: the projects column and the side panel open over the center.

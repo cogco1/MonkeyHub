@@ -69,6 +69,31 @@
             "docs/protocols/project-runtime-api.md"
           ],
           "depends_on": []
+        },
+        {
+          "id": "change-list-ui",
+          "status": "active",
+          "branch": "claude/300-b3-change-list-ui",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-change-list-ui",
+          "base_ref": "9e24d9493",
+          "contributor": "Claude",
+          "reviewer": null,
+          "depends_on": [
+            "GH-300/change-list"
+          ],
+          "handoff": "3-4: the change-list card — each change as the agent understood it, ticked to run (an unsure one starts unticked); the ticked numbers go with the answer. Stacked on b3-change-list.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/notifications/cards/types.ts",
+            "apps/monkeyhub/web/src/notifications/queue.ts",
+            "apps/monkeyhub/web/src/notifications/cards/AttentionCards.tsx",
+            "apps/monkeyhub/web/src/notifications/cards/cards.css",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/attentionShell.browser.mjs"
+          ]
         }
       ]
     }
