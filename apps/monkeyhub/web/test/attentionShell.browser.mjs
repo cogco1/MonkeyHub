@@ -211,7 +211,7 @@ const route = async (handler) => {
     if (act && method === "POST") {
       const item = cards.find((card) => card.id === act[1]);
       const option = act[2] === "resolve" ? item.options.find((row) => row.id === data().optionId) : null;
-      attentionActions.push(data().items === undefined ? [act[2], item.id, option?.id ?? null] : [act[2], item.id, option?.id ?? null, data().items]);
+      attentionActions.push(data()?.items === undefined ? [act[2], item.id, option?.id ?? null] : [act[2], item.id, option?.id ?? null, data().items]);
       if (act[2] === "resolve" && data().note !== undefined) attentionNotes.push(data().note);
       // Taking the stair answer back finds the project moved on: the Hub asks instead, and the card stays handled.
       const followUp = act[2] === "undo" && item.id === "att_ask" ? queueCard("ask_next", "A", { channel: "decide", kind: "choice",
