@@ -119,12 +119,14 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
         {/* The relations only one side has are for everyone; each side's saved record reference is for developer mode. */}
         <details><summary data-command="view.disclosure.toggle" data-command-arg="study_exact_versions">{developerMode
           ? text("Exact saved versions & unique relations", "确切保存版本及独有关系") : text("Unique relations", "独有关系")}</summary>
-          <strong>{text("Left saved version", "左侧保存版本")}</strong>{developerMode && <small>{pair.left.ledgerRef}</small>}
+          <strong>{developerMode ? text("Left saved version", "左侧保存版本")
+            : text(`Only in ${comparisonStudyName(pair.left.studyId)}`, `只在 ${comparisonStudyName(pair.left.studyId)} 里有`)}</strong>{developerMode && <small>{pair.left.ledgerRef}</small>}
           <ul>{(pair.leftOnlyTopology ?? []).map((item, i) => <li key={i}>{comparisonFact(item)}</li>)}</ul>
-          <strong>{text("Right saved version", "右侧保存版本")}</strong>{developerMode && <small>{pair.right.ledgerRef}</small>}
+          <strong>{developerMode ? text("Right saved version", "右侧保存版本")
+            : text(`Only in ${comparisonStudyName(pair.right.studyId)}`, `只在 ${comparisonStudyName(pair.right.studyId)} 里有`)}</strong>{developerMode && <small>{pair.right.ledgerRef}</small>}
           <ul>{(pair.rightOnlyTopology ?? []).map((item, i) => <li key={i}>{comparisonFact(item)}</li>)}</ul>
         </details></div>)}
-      <small>{result.method}</small>
+      {developerMode && <small>{result.method}</small>}
     </div>;
   }
 
@@ -259,7 +261,7 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
               <p>{text("These are method-generated suggestions. Author a challengeable explanation in the next step.", "这些是方法生成的提示。请在下一步提出可挑战的解释。")}</p>
               <ul>{study.hypotheses.map(row => <li key={String(row.hypothesisId)}>{String(row.rule).replaceAll("_", " ")}</li>)}</ul>
             </details>
-            <small>{text("Derivation", "推导方法")}: {study.derivationMethod ?? text("Older unstamped revision", "未标注方法的旧版本")}</small>
+            {developerMode && <small>{text("Derivation", "推导方法")}: {study.derivationMethod ?? text("Older unstamped revision", "未标注方法的旧版本")}</small>}
             </details>
           </>}
         </section>}
@@ -361,7 +363,7 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
               <div className="document-study__card-title"><h4>{text("Archived comparison", "归档比较")} {index + 1}</h4>
                 <button data-command="study.run.remove_comparison" data-command-arg={index} type="button" onClick={() => changeResearch({ comparisons: comparisonDefinitions.filter((_, position) => position !== index) })}>
                   {text("Remove archived comparison", "移除归档比较")}</button></div>
-              <details><summary data-command="view.disclosure.toggle" data-command-arg="study_saved_inputs">{text("Saved inputs", "保存的输入版本")}</summary>
+              <details><summary data-command="view.disclosure.toggle" data-command-arg="study_saved_inputs">{developerMode ? text("Saved inputs", "保存的输入版本") : text("Studies compared", "参与比较的研究")}</summary>
                 {definition.studies.map(row => <p key={`${row.studyId}:${row.ledgerRef}`}>{comparisonStudyName(row.studyId)}{developerMode && <small>{row.ledgerRef}</small>}</p>)}
               </details>
               {result ? comparisonResult(result) : <p>{text("This comparison has no saved result yet. Save the study to compute and retain it.", "此比较尚无保存结果。保存研究以计算并保留结果。")}</p>}
