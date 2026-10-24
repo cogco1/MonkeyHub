@@ -14,6 +14,7 @@
 import { useMemo, useState } from "react";
 import { usePreferences } from "../settings/preferences";
 import { useT } from "../../i18n/useT";
+import { InlineDecision } from "../../notifications/cards/InlineDecision";
 import { DESIGN_TREE_UNSYNCED } from "./continueUndo";
 import { DesignTreeToast } from "./DesignTreeToast";
 import { continuable, CURRENT, type GrowthTree, type TreeNode } from "./model";
@@ -112,21 +113,19 @@ export function DesignTreeBar({ data, seen, open, viewing, onToggle, onBackToCur
       <span>{fresh.length === 1 ? t("designTree.chip.readyOne") : t("designTree.chip.ready", { count: fresh.length })}</span>
       <span aria-hidden="true">·</span> <strong>{t("designTree.action.view")}</strong>
     </button>}
-    {shown && <span className="stage-chip__viewing" role="status">
-      <span>{t("designTree.chip.viewing", { name: shown.name })}</span>
-      <button data-command="design.go_to_step.back_to_current" type="button" className="btn btn--small" disabled={!tree?.nodes.get(CURRENT)} onClick={onBackToCurrent}>{t("designTree.chip.back")}</button>
-      {node && <button data-command="design.go_to_step.continue" type="button" className="btn btn--small btn--primary" data-action="continue" disabled={data.busy !== null || recording}
-        onClick={continueViewed}>{data.busy?.kind === "continue" && data.busy.node === node.id ? t("designTree.action.continuing") : t("designTree.action.continue")}</button>}
-    </span>}
+    {shown && <InlineDecision className="stage-chip__viewing" compact live label={t("designTree.chip.viewing", { name: shown.name })}
+      title={t("designTree.chip.viewing", { name: shown.name })} choices={[
+        { command: "design.go_to_step.back_to_current", label: t("designTree.chip.back"), disabled: !tree?.nodes.get(CURRENT), onSelect: onBackToCurrent },
+        node && { command: "design.go_to_step.continue", action: "continue", primary: true, disabled: data.busy !== null || recording, onSelect: continueViewed,
+          label: data.busy?.kind === "continue" && data.busy.node === node.id ? t("designTree.action.continuing") : t("designTree.action.continue") },
+      ]} />}
     {/* One live region for the toast, present before it speaks. */}
     <div className="design-tree-bar__notice" role="status">
       {data.toast && <DesignTreeToast key={data.toast.id} data={data} toast={data.toast} words={words} />}
     </div>
-    {mine && (refused || failure) && <p className="design-tree-bar__refusal" role="alert">
-      {refused && <span>{refusalWords(t, language, refused)}</span>}
-      {recordable && <button data-command="draft.record.continue" type="button" className="btn btn--small btn--primary" data-action="record" disabled={recording || data.busy !== null}
-        onClick={() => void recordAndContinue(node.id)}>{t(recording ? "stage.record.busy" : "stage.record.continue")}</button>}
-      {failure && <span>{t("stage.record.failed", { reason: failure.detail })}</span>}
-    </p>}
+    {mine && (refused || failure) && <InlineDecision className="design-tree-bar__refusal" compact label={t("stage.record.continue")}
+      failure={<>{refused && refusalWords(t, language, refused)}{refused && failure && " "}{failure && t("stage.record.failed", { reason: failure.detail })}</>}
+      choices={[recordable && { command: "draft.record.continue", action: "record", primary: true, disabled: recording || data.busy !== null,
+        label: t(recording ? "stage.record.busy" : "stage.record.continue"), onSelect: () => void recordAndContinue(node.id) }]} />}
   </div>;
 }

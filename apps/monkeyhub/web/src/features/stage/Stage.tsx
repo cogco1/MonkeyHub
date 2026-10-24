@@ -18,6 +18,7 @@ import { designObjectLabel } from "../../app/format";
 import type { EvidenceTab } from "../../app/evidence";
 import { LoadingOverlay } from "../../app/LoadingOverlay";
 import { useT } from "../../i18n/useT";
+import { InlineDecision } from "../../notifications/cards/InlineDecision";
 import { usePreferences } from "../settings/preferences";
 import { useNoticeRegion } from "../../notifications/regions";
 import type { SceneInspection } from "../../workspaces/monkeyarch/viewer/sceneInspection";
@@ -1305,8 +1306,6 @@ export function Stage({
   // where it was asked, beside the Continue that usually resolves it.
   const baseNotices = <>
     {baseNotice && <p className="editing-base__notice" role="alert">{baseNotice}</p>}
-    {baseRecord && <button data-command="draft.record.continue" type="button" className="btn btn--small btn--primary" disabled={baseRecord.busy}
-      onClick={baseRecord.onRecord}>{t(baseRecord.busy ? "stage.record.busy" : "stage.record.continue")}</button>}
     {baseNotSaved && <p className="editing-base__notice" role="status">{t("stage.base.notSaved")}</p>}
   </>;
   // #337: which model the next edit starts from. While that is the model on screen it is quiet words on the
@@ -1317,22 +1316,19 @@ export function Stage({
     {!sameSource && <strong className="editing-base__name" title={editingLabel ?? undefined}> {editingLabel}</strong>}
   </span>;
   const editingStatus = baseQuestion ? (
-    <div className="editing-base" data-source-match={editingBaseRunId === null ? undefined : sameSource ? "same" : "different"}>
+    <InlineDecision className="editing-base" compact label={t("stage.base.label")}
+      data={{ "source-match": editingBaseRunId === null ? undefined : sameSource ? "same" : "different" }} choices={[
+        editingBaseRunId !== null && loadedRunId !== null && !sameSource && onContinue !== null && {
+          command: "design.go_to_step.continue", title: t("stage.base.continueTitle"), label: t("stage.base.continue"),
+          disabled: changingBase || baseActionBusy || loadingSha !== null || status === "loading" || blend !== null,
+          onSelect: () => onContinue(loadedRunId, viewedModelSource) },
+        baseRecord && { command: "draft.record.continue", primary: true, disabled: baseRecord.busy,
+          label: t(baseRecord.busy ? "stage.record.busy" : "stage.record.continue"), onSelect: baseRecord.onRecord },
+      ]}>
       {baseWords}
-      {editingBaseRunId !== null && loadedRunId !== null && !sameSource && onContinue !== null && (
-        <button data-command="design.go_to_step.continue"
-          type="button"
-          className="btn btn--small"
-          disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading" || blend !== null}
-          title={t("stage.base.continueTitle")}
-          onClick={() => onContinue(loadedRunId, viewedModelSource)}
-        >
-          {t("stage.base.continue")}
-        </button>
-      )}
       {baseNotices}
       {editingBaseRunId !== null && baseError && <ErrorPanel error={baseError} what="GET /api/state" />}
-    </div>
+    </InlineDecision>
   ) : null;
   const quietBase = !baseQuestion && editingBaseRunId !== null &&
     <span className="editing-base" data-source-match={sameSource ? "same" : "different"}>{baseWords}</span>;
@@ -1537,19 +1533,17 @@ export function Stage({
         <button data-command="view.tab.board" type="button" onClick={onReturnToBoard}>{t("workspace.monkeyboard")}</button>
       </div>}
       {(baseChoice || editingStatus) && <div className="stage-decision" role="group" aria-label={t("stage.base.label")}>
-        {baseChoice && <div className="base-choice" role="group" aria-label={t("board.feedback.choice")}>
-          {baseChoice.model !== null && <p className="base-choice__text">{t("board.feedback.otherBase", { model: baseChoice.model })}</p>}
-          {baseChoice.notice && <p className="base-choice__text" role="alert">{baseChoice.notice}</p>}
-          <div className="base-choice__actions">
-            {baseChoice.onRecord && <button data-command="draft.record.continue" type="button" className="btn btn--small btn--primary" disabled={baseChoice.busy}
-              onClick={baseChoice.onRecord}>{t(baseChoice.recording ? "stage.record.busy" : "stage.record.continue")}</button>}
-            {/* Only looking is the default: it is first, primary and focused. */}
-            <button data-command="design.go_to_step.view_only" type="button" className={`btn btn--small${baseChoice.onRecord ? "" : " btn--primary"}`} autoFocus disabled={baseChoice.busy}
-              onClick={baseChoice.onView}>{t("board.feedback.viewOnly")}</button>
-            {!baseChoice.onRecord && <button data-command="design.go_to_step.continue" type="button" className="btn btn--small" disabled={baseChoice.busy}
-              onClick={baseChoice.onContinue}>{t("stage.base.continue")}</button>}
-          </div>
-        </div>}
+        {baseChoice && <InlineDecision className="base-choice" compact label={t("board.feedback.choice")}
+          title={baseChoice.model !== null ? t("board.feedback.otherBase", { model: baseChoice.model }) : undefined}
+          failure={baseChoice.notice || undefined} choices={[
+            baseChoice.onRecord && { command: "draft.record.continue", primary: true, disabled: baseChoice.busy,
+              label: t(baseChoice.recording ? "stage.record.busy" : "stage.record.continue"), onSelect: baseChoice.onRecord },
+            // Only looking is the default: it is first after recording, primary when there is nothing to record, and focused.
+            { command: "design.go_to_step.view_only", primary: !baseChoice.onRecord, autoFocus: true, disabled: baseChoice.busy,
+              label: t("board.feedback.viewOnly"), onSelect: baseChoice.onView },
+            !baseChoice.onRecord && { command: "design.go_to_step.continue", disabled: baseChoice.busy, label: t("stage.base.continue"),
+              onSelect: baseChoice.onContinue },
+          ]} />}
         {editingStatus}
       </div>}
       <div ref={workspaceElement} className="stage-workspace">

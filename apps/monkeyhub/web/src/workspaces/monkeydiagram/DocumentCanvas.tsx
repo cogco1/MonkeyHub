@@ -8,6 +8,7 @@ import type { DocumentAnnotationRefDto, DocumentCommentDto, DocumentGestureDto, 
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { startClientTiming, type ClientTimingSpan } from "../../app/clientTiming";
 import { useT } from "../../i18n/useT";
+import { InlineDecision } from "../../notifications/cards/InlineDecision";
 import { usePreferences } from "../../features/settings/preferences";
 import { eraseAt, inkPath, toPagePoint, zoomPageAt, type PagePoint, type PageView } from "./documentInk";
 import { useDocumentAnnotations, type createDocumentAnnotationsController } from "./useDocumentAnnotations";
@@ -872,9 +873,10 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
             {t(bindingModel ? "document.modelSource.associating" : "document.modelSource.associate")}
           </button>
         </> : <span>{t("document.modelSource.noModels")}</span>}
-      </div> : !modelMatches && <button data-command="design.go_to_step.continue" type="button" disabled={continuingModel || busy} onClick={() => void continueModel()}>
-        {t(continuingModel ? "document.modelSource.continuing" : "document.modelSource.continue")}
-      </button>)}
+      </div> : !modelMatches && <InlineDecision className="document-model-source__decision" compact label={t("document.modelSource.mismatch")} choices={[
+        { command: "design.go_to_step.continue", primary: true, disabled: continuingModel || busy, onSelect: () => void continueModel(),
+          label: t(continuingModel ? "document.modelSource.continuing" : "document.modelSource.continue") },
+      ]} />)}
     </div>}
     {(error || draft.error) && <div className="document-error"><ErrorPanel error={(error ?? draft.error)!} what={t("document.workspace")} />
       {draft.error && <><button data-command="view.notice.retry" data-command-arg="document_save" type="button" onClick={() => void draft.save().then(() => setError(null)).catch((cause: unknown) => setError(asStudioApiError(cause)))}>{t("document.retrySave")}</button>
