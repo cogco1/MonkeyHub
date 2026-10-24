@@ -824,6 +824,8 @@ try {
     child.stderr.on('data', (chunk) => { process.log = (process.log + chunk).slice(-5000); });
     await until(() => fetch(hubOrigin + '/api/health').then((r) => r.ok).catch(() => false), Boolean, 'real Hub ready');
     const hubPage = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
+    // This step drives the workbench shell; the Hub opens the attention shell unless told otherwise (2-3c).
+    await hubPage.addInitScript(() => localStorage.setItem("monkeyhub.shell", "workbench"));
     const posts = [];
     hubPage.on('request', (request) => { if (request.method() === 'POST') posts.push(request.url()); });
     await hubPage.goto(hubOrigin);

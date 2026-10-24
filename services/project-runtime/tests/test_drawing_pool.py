@@ -53,7 +53,8 @@ class DrawingPoolSizeTests(unittest.TestCase):
             "drawing_pool.stop()",
             "os.kill(os.getpid(), signal.SIGTERM)"))
         runtime = subprocess.Popen([sys.executable, "-c", script], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                   stdin=subprocess.DEVNULL, start_new_session=True, text=True)
+                                   stdin=subprocess.DEVNULL, start_new_session=True, text=True,
+                                   env=dict(os.environ, PYTHONPATH=os.pathsep.join(path for path in sys.path if path)))
         try:
             output, _ = runtime.communicate(timeout=60)
         except subprocess.TimeoutExpired:
