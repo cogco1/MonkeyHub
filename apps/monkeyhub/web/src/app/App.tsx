@@ -277,7 +277,7 @@ const FOLLOW_WORDS: Readonly<Record<FollowNotice["state"], MessageKey>> = {
 };
 
 /** 4-4: how long the model rests untouched before its edits are recorded without the architect asking. */
-const AUTO_RECORD_IDLE_MS = 20_000;
+const AUTO_RECORD_IDLE_MS = 30_000;
 
 export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onBoard, onChatRequest, onDesignContextChange, onRenderReader, cameraRequest = null, onView, onRecorder, onOpenTree, treeMove = null }: {
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;

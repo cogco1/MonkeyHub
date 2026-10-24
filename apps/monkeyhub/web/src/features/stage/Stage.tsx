@@ -580,8 +580,8 @@ export function Stage({
   // #302: Record never moves a tool. It sits beside the tools while their row has
   // room for it, else on a line of its own above them (stageNotices.css).
   const recordShown = Boolean(model?.sync && (model.sync.dirty || model.sync.busy || model.sync.error || model.sync.recorded));
-  // 4-4: edits record themselves; the button is there only to try a failed record again.
-  const recordNamed = Boolean(model?.sync && model.sync.error && model.sync.dirty && !model.sync.busy);
+  // 4-4: edits also record themselves (App.tsx); the button stays for recording at once.
+  const recordNamed = Boolean(model?.sync && (model.sync.dirty || model.sync.busy));
   const modelToolsElement = useRef<HTMLDivElement>(null);
   // A notice keeps above the floating toolbar where they share columns (1-4).
   useNoticeRegion(modelToolsElement, "bottom");
@@ -2151,8 +2151,8 @@ export function Stage({
               {recordNamed && <ModelToolButton data-command="draft.record.save" icon="sync" label={t("stage.sync.label")} showLabel
                 disabled={model.sync.busy} onClick={model.sync.onSync} />}
               <span className="model-tools__sync-status" role={model.sync.error ? "alert" : "status"}>
-                {model.sync.error ?? (model.sync.busy ? t("stage.sync.busy") : model.sync.dirty ? t("stage.sync.autoPending")
-                  : t("stage.sync.recorded"))}
+                {model.sync.error ?? (model.sync.busy ? t("stage.sync.busy") : !model.sync.dirty ? t("stage.sync.recorded") : model.sync.autosave
+                  ? t(model.sync.autosave === "saved" ? "stage.sync.autosaved" : "stage.sync.autosaving") : t("stage.sync.dirty"))}
               </span>
               {model.sync.recorded && !model.sync.dirty && !model.sync.busy && <button type="button" className="btn btn--link model-tools__sync-undo"
                 data-command="design.undo_last" onClick={model.sync.recorded.onUndo}>{t("stage.record.undo")}</button>}
