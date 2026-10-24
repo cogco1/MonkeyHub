@@ -126,6 +126,9 @@ class LocalHubCase(unittest.TestCase):
         app = create_app(HubSettings(
             runtime_root=self.runtime, port=self.hub_port,
         ), source_root=ROOT)
+        # These tests watch a stopped Studio stay stopped until they recover it; the Hub's own restart
+        # (REPAIRS) is tested on its own.
+        app.state.runtimes.restart_stopped = False
         with TestClient(app, base_url=self.base_url) as client:
             yield client
 

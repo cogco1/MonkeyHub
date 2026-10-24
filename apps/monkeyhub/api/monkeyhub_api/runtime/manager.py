@@ -12,7 +12,7 @@ Hub hears on the worker's event stream.
 from collections import deque
 from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from http.client import HTTPException
 import base64
 import hashlib
@@ -39,7 +39,7 @@ from project_runtime.errors import StudioError
 
 from ..projects import _project
 from ..models import HubError, HubFailure
-from .models import HubRuntimeDto, OperationRecord, ProjectRuntimeDto, WorkerStatus
+from .models import HubRuntimeDto, OperationRecord, ProjectRuntimeDto, RepairRecord, WorkerStatus
 from .operations import _ACTIVE, _CANDIDATE_REQUEST, _PROPOSAL_CANDIDATE, OperationManager
 from .worker_http import HttpResult, _WorkerEvents, request_http
 from .workers import earlier_project_keys, project_key
@@ -192,6 +192,9 @@ class ProjectRuntime:
     refresh_lock: threading.RLock = field(default_factory=threading.RLock)
     wake: _Wake = field(default_factory=_Wake)
     thread: threading.Thread | None = None
+    # What the Hub put right by itself (REPAIRS), newest last, and when it last restarted the Studio.
+    repairs: list = field(default_factory=list)
+    restarts: list = field(default_factory=list)
     last_workers: tuple = ()
     last_snapshot: dict | None = None
     projection_key: tuple | None = None
@@ -224,11 +227,22 @@ def _failure_code(result: HttpResult) -> str | None:
         return None
     return payload.get("code") if isinstance(payload, dict) else None
 
+#: What the Hub puts right without asking a person (#300 4-2, 03 Q6): only what is listed here.
+REPAIRS = {
+    "studio-restarted": "A project's Studio that stopped unexpectedly is started again with the same binding and port.",
+}
+# A Studio that stops this often within the window is left for a person to recover.
+_RESTARTS_PER_WINDOW = 3
+_RESTART_WINDOW_S = 600.0
+_REPAIRS_KEPT = 10
+
 
 class ProjectRuntimeManager:
     def __init__(self, applications, chats):
         self.applications, self.chats = applications, chats
         self.server_id = str(uuid4())
+        # REPAIRS: a project's Studio that stopped unexpectedly is started again (a test of explicit recovery turns it off).
+        self.restart_stopped = True
         self.events = StudioEvents(buffer_size=256)
         self._lock = threading.RLock()
         self._projects: dict[str, ProjectRuntime] = {}
@@ -467,7 +481,8 @@ class ProjectRuntimeManager:
                 (row.failure for row in tuple(runtime.work_copies.values()) if row.failure is not None), None)
             return ProjectRuntimeDto(runtimeId=runtime.runtime_id, projectId=runtime.project_id, projectDir=runtime.project_dir,
                 state=runtime.state, workers=workers, operations=runtime.operations.records(), sessions=sessions,
-                retained=runtime.retained, projection=runtime.projection, clients=self._clients, error=failure)
+                retained=runtime.retained, projection=runtime.projection, clients=self._clients, error=failure,
+                repairs=list(runtime.repairs))
 
     def snapshot(self) -> HubRuntimeDto:
         with self._lock:
@@ -845,6 +860,8 @@ class ProjectRuntimeManager:
             checked = runtime.wake.take_check()
             workers = self.applications.worker_snapshots(project_dir=runtime.project_dir)
             self._follow_worker(runtime, workers)
+            if self._restart_stopped(runtime, workers):
+                workers = self.applications.worker_snapshots(project_dir=runtime.project_dir)
             worker_states = tuple((row.instance_id, row.state, row.healthy) for row in workers)
             drained = runtime.state == "closed" and not any(row.process_id is not None for row in workers)
             active = runtime.operations._has_active() or any(
@@ -1114,6 +1131,41 @@ class ProjectRuntimeManager:
             if isinstance(exc, HubFailure):
                 raise
             raise HubFailure(503, "OPERATION_INTERRUPTED", "The worker connection ended. Runtime status will reconcile retained results; the request was not retried.") from exc
+
+    def _restart_stopped(self, runtime: ProjectRuntime, workers) -> bool:
+        """Start a project's Studio again when it stopped unexpectedly: the repair table's first entry (#300 4-2).
+
+        As often as REPAIRS allows: one that keeps stopping is left for a
+        person to recover, and the record says so once. Each restart and the
+        hold are kept on the runtime (``repairs``) and told as
+        ``repair/applied``, which the attention queue turns into a notice.
+        """
+
+        if not self.restart_stopped:
+            return False
+        stopped = next((row for row in workers if row.state == "crashed" and row.desired_state == "running"), None)
+        if stopped is None or runtime.state != "open":
+            return False
+        detail = (stopped.error.detail if stopped.error is not None else "The project's Studio stopped unexpectedly.")[:600]
+        now = time.monotonic()
+        with runtime.lock:
+            runtime.restarts[:] = [at for at in runtime.restarts if now - at < _RESTART_WINDOW_S]
+            held = len(runtime.restarts) >= _RESTARTS_PER_WINDOW
+            if held and runtime.repairs and runtime.repairs[-1].kind == "studio-restart-held":
+                return False
+            if not held:
+                runtime.restarts.append(now)
+        if not held:
+            try:
+                self.recover(runtime)
+            except (HubFailure, StudioError, OSError, HTTPException, ValueError):
+                return False  # it stays stopped, with its own error, for the next pass or a person
+        record = RepairRecord(repairId=str(uuid4()), kind="studio-restart-held" if held else "studio-restarted",
+                              at=datetime.now(timezone.utc).isoformat(), detail=detail)
+        with runtime.lock:
+            runtime.repairs[:] = [*runtime.repairs, record][-_REPAIRS_KEPT:]
+        self.emit("repair/applied", runtime.runtime_id)
+        return not held
 
     def recover(self, runtime: ProjectRuntime) -> ProjectRuntimeDto:
         with runtime.refresh_lock:

@@ -996,7 +996,8 @@
         "GET /api/documents",
         "POST /api/documents",
         "GET /api/documents/{asset_sha256}/bytes",
-        "POST /api/documents/{asset_sha256}/model-source"
+        "POST /api/documents/{asset_sha256}/model-source",
+        "PUT /api/documents/{asset_sha256}/model-source"
       ],
       "works": [
         "PDF, PNG and JPEG uploads kept by content",
@@ -1061,6 +1062,14 @@
               "文8",
               "文9"
             ]
+          },
+          {
+            "id": "document.model_source.change",
+            "label": "Change linked model",
+            "label_zh": "换一个模型",
+            "surface": "document",
+            "channel": "background",
+            "entries": []
           }
         ]
       }
@@ -10215,7 +10224,7 @@
         "verifying and decoding a viewport PNG before retaining its bytes through P036 under runs/<requested-run>/workspaces/studio-captures with a server-generated content name; an optional exact modelSource also registers the preview through the existing SourceDocument object store",
         "validating original PDF/PNG/JPEG bytes and visible page dimensions, ingesting them through P036, and registering their content identity in the named run; serving only registered source bytes whose SHA-256 still matches",
         "retaining an explicitly supplied composed 3dm against its exact run state, or an external 3dm without semantic state in P036 source runs keyed by the exact asset digest; original bytes and immutable registrations share the existing artifact owner, with no native readback claim",
-        "one-time declared model-source association for an existing unbound document, retained in its unchanged storage run; serving the association without rewriting source bytes, annotations or earlier comments",
+        "one-time declared model-source association for an existing unbound document, retained in its unchanged storage run; serving the association without rewriting source bytes, annotations or earlier comments; changing that link later (PUT; an uploaded or imported document only, a drawing made from a model keeps its model) writes a record that names the one it replaces, so the earlier link stays in modelSourceHistory and is never overwritten",
         "registering model-axis elevation and top projection revisions from a complete exact STEP in the existing document list, with fixed model/Stage source, logical drawing id, view recipe and immutable drawing receipt; top is an uncut orthographic projection",
         "composing front/right/top review sheets from the exact retained model using a selected drawing style and explicit scale, registering PDF and same-scene editable DXF through P036, and reusing an identical retained sheet without another projection",
         "requiring a native Stage model to cover every producing seat execution, or an explicitly registered complete composed model",
@@ -10301,10 +10310,12 @@
         "GET /api/projections/pages",
         "GET /api/projections/{key}",
         "ModelSource",
+        "ModelSourceBinding",
         "POST /api/artifacts/{sha256}/rhino-export",
         "POST /api/captures",
         "POST /api/documents",
         "POST /api/documents/{asset_sha256}/model-source",
+        "PUT /api/documents/{asset_sha256}/model-source",
         "POST /api/documents/{asset_sha256}/work-copy",
         "POST /api/drawings/elevations",
         "POST /api/drawings/plans",
@@ -10363,6 +10374,7 @@
         "projection_spec",
         "read_model_preview",
         "read_model_source_index",
+        "rebind_document_model_source",
         "recipe_suggestions",
         "register_model_asset",
         "replacement_cause",
@@ -13694,7 +13706,8 @@
         "An Agent's skill run (S-1): the project's approvals from before carried over, what the run still needs read from its Runtime (GET /api/skills/{id}/needs), and only that put to the person in the chat as one question (always allow, only this time, no); the Hub writes the grant from the answer, the Agent never names one",
         "The installed skills that cannot be used right now (S-1): GET /api/settings/skill-problems lists them from the skill folders alone, each with its kind (entry_syntax, missing_file, name_differs, unreadable), file, line and the technical line; Settings › What the AI may do says each in plain words with who can fix it",
         "What a person allowed a conversation's Codex agent to do in one project (A4): a command it starts, going online, and a call to the Hub's own MCP server (an edit, and any other MCP server's tool, are asked every time: ADR-012). <runtime root>/config/tool-grants.json (MonkeyHubToolGrants@1), one grant per answer, kept apart from the skills' grants and never read by a Project Runtime; the permission card offers 'always allow in this project' beside 'only this time' and 'no', and a later request of that kind in that project is answered by the Hub with the adapter's own 'allow once' option and a line in the conversation; commands and going online are asked again while the design loop is enforced; withdrawn in Settings › What the AI may do",
-        "sending again what did nothing (#300 4-3): the forward waits while a project's Studio starts (WORKER_STARTING) and sends the same request again while the Runtime's answer is a transient failure that did nothing (archflow.contracts.failures), a few times at most; OperationRecord.attempts counts the sends and errorCode keeps the code it ended with; a failed operation's attention card can be handed to the project's conversation"
+        "sending again what did nothing (#300 4-3): the forward waits while a project's Studio starts (WORKER_STARTING) and sends the same request again while the Runtime's answer is a transient failure that did nothing (archflow.contracts.failures), a few times at most; OperationRecord.attempts counts the sends and errorCode keeps the code it ended with; a failed operation's attention card can be handed to the project's conversation",
+        "the repair table (runtime.manager.REPAIRS, #300 4-2): what the Hub puts right without asking a person; its first entry starts a project's Studio that stopped unexpectedly again through recover, at most three times in ten minutes, then leaves it for a person; each repair and the hold are kept on the project's snapshot (ProjectRuntimeDto.repairs, RepairRecord) and told as repair/applied, which the attention queue shows as a notice, or, for the hold, a card that hands it to the project's conversation"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -13856,7 +13869,9 @@
         "tool_grants.covers",
         "tool_grants.read",
         "POST /api/commands/meaning",
-        "skill_plugins.installed_library"
+        "skill_plugins.installed_library",
+        "REPAIRS",
+        "RepairRecord"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",

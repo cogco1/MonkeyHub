@@ -17,7 +17,10 @@ from fastapi.testclient import TestClient
 
 from monkeycad.formats.three_dm_inspector import ThreeDmInspectionError, ThreeDmInspectionErrorCode
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import STUDIO_SOURCE_DOCUMENT, STUDIO_WORKING_COPY
+from archflow.project.record_kinds import STUDIO_DOCUMENT_MODEL_SOURCE, STUDIO_SOURCE_DOCUMENT, STUDIO_WORKING_COPY
+from project_runtime.application.artifacts import ModelSource, _document_from_body, document_bytes, document_row_body, list_documents, save_document
+from project_runtime.authentication import LOCAL_ACTOR_ID
+from project_runtime.errors import StudioError
 from project_runtime.binding import record_kind
 from project_runtime.binding import bound_project
 from project_runtime.main import create_app
@@ -328,6 +331,78 @@ class WorkingCopyTests(unittest.TestCase):
         with TestClient(create_app(self.settings)) as reopened:
             self.assertEqual(reopened.get("/api/documents", params={"runId": REFERENCE_RUN_ID}).json()["documents"], [associated.json()])
             self.assertEqual(reopened.get("/api/document-annotations", params=query).json(), page)
+
+    def test_a_documents_link_can_be_changed_and_every_earlier_link_stays_as_history(self) -> None:
+        upload = self.client.post("/api/documents", json={"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID,
+                                  "fileName": "relink.png", "mimeType": "image/png", "contentBase64": base64.b64encode(image_bytes()).decode()})
+        self.assertEqual(upload.status_code, 201, upload.text)
+        sha = upload.json()["assetSha256"]
+        self.assertEqual(upload.json()["modelSourceHistory"], [])
+        url = f"/api/documents/{sha}/model-source"
+
+        def body(source):
+            return {"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "modelSource": source}
+
+        def link_records():
+            run = self.repository.load_run(REFERENCE_RUN_ID)
+            refs = self.repository.list_json(run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id))
+            return [ref for ref in refs if ref.record_kind == STUDIO_DOCUMENT_MODEL_SOURCE]
+
+        first = self.client.put(url, json=body(self.a))
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual((first.json()["modelSource"], first.json()["modelSourceHistory"]), (self.a, []),
+                         "changing the link of an unlinked document is its first link")
+        self.assertEqual(self.client.put(url, json=body(self.a)).json(), first.json())
+        self.assertEqual(len(link_records()), 1, "linking to the model it already has writes nothing")
+
+        changed = self.client.put(url, json=body(self.b))
+        self.assertEqual(changed.status_code, 200, changed.text)
+        self.assertEqual(changed.json()["modelSource"], self.b)
+        self.assertNotEqual(changed.json()["modelSourceBindingRef"], first.json()["modelSourceBindingRef"])
+        self.assertEqual(changed.json()["modelSourceHistory"], [{
+            "modelSource": self.a, "bindingRef": first.json()["modelSourceBindingRef"], "boundAt": None, "actorId": None}])
+        self.assertEqual(len(link_records()), 2, "the first link's record is kept, not overwritten")
+
+        back = self.client.put(url, json=body(self.a))
+        self.assertEqual(back.status_code, 200, back.text)
+        history = back.json()["modelSourceHistory"]
+        self.assertEqual([row["modelSource"] for row in history], [self.a, self.b])
+        self.assertEqual(history[1]["actorId"], LOCAL_ACTOR_ID)
+        self.assertRegex(history[1]["boundAt"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d")
+        self.assertEqual(len(link_records()), 3)
+
+        binding = bound_project(self.client.app.state)
+        with self.assertRaises(StudioError) as stale:
+            document_bytes(binding, REFERENCE_RUN_ID, sha, binding_ref=changed.json()["modelSourceBindingRef"])
+        self.assertEqual(stale.exception.code, "DOCUMENT_NOT_FOUND", "a request pinned to the link it was made under finds the link changed")
+        listed = next(row for row in list_documents(binding, REFERENCE_RUN_ID) if row.asset_sha256 == sha)
+        self.assertEqual(_document_from_body(json.loads(json.dumps(document_row_body(listed)))), listed,
+                         "the project index keeps a document with its link history")
+        with TestClient(create_app(self.settings)) as reopened:
+            self.assertEqual(reopened.get("/api/documents", params={"runId": REFERENCE_RUN_ID}).json()["documents"], [back.json()])
+        # The one-time link keeps refusing another model; only the change does that.
+        self.assertEqual(self.client.post(url, json=body(self.b)).status_code, 409)
+
+    def test_a_drawing_made_from_a_model_keeps_that_model_and_a_retried_upload_does_not_conflict(self) -> None:
+        binding = bound_project(self.client.app.state)
+        drawing = save_document(binding, REFERENCE_RUN_ID, "front.png", "image/png", base64.b64encode(image_bytes(color="blue")).decode(),
+                                ModelSource.from_dict(self.a), drawing_id="front-elevation")
+        refused = self.client.put(f"/api/documents/{drawing.asset_sha256}/model-source",
+                                  json={"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "modelSource": self.b})
+        self.assertEqual((refused.status_code, refused.json()["code"]), (409, "DOCUMENT_SOURCE_IMMUTABLE"))
+        # A caller that names no model takes a document that is already linked as it is.
+        linked = self.client.post("/api/documents", json={"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "fileName": "linked.png",
+                                  "mimeType": "image/png", "contentBase64": base64.b64encode(image_bytes(color="red")).decode(),
+                                  "modelSource": self.a})
+        self.assertEqual(linked.status_code, 201, linked.text)
+        again = self.client.post("/api/documents", json={"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "fileName": "linked.png",
+                                 "mimeType": "image/png", "contentBase64": base64.b64encode(image_bytes(color="red")).decode()})
+        self.assertEqual(again.status_code, 201, again.text)
+        self.assertEqual(again.json(), linked.json())
+        named_other = self.client.post("/api/documents", json={"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "fileName": "linked.png",
+                                       "mimeType": "image/png", "contentBase64": base64.b64encode(image_bytes(color="red")).decode(),
+                                       "modelSource": self.b})
+        self.assertEqual((named_other.status_code, named_other.json()["code"]), (409, "DOCUMENT_SOURCE_IMMUTABLE"))
 
     def test_concurrent_document_uploads_cannot_install_competing_sources(self) -> None:
         before = self.repository.read_head()
