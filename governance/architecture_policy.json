@@ -896,6 +896,17 @@
     },
     {
       "path": "tools/release/package_monkeyapps.py",
+      "function": "fetch_embedding_model",
+      "operations": [
+        "mkdir",
+        "open_write"
+      ],
+      "kind": "distribution_build",
+      "owner": "tools.release.package_monkeyapps",
+      "reason": "Downloads the command meaning search's embedding model at the revision the Hub's loader pins, only into the caller-selected external cache; an incomplete download is atomically replaced, and a file whose SHA-256 differs from the pin is refused."
+    },
+    {
+      "path": "tools/release/package_monkeyapps.py",
       "function": "prepare_runtime",
       "operations": [
         "mkdir",

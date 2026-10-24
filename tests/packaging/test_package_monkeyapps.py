@@ -1283,4 +1283,3 @@ class EmbeddingModelPinTests(unittest.TestCase):
             with patch.object(builder.urllib.request, "urlopen", side_effect=AssertionError("nothing is fetched again")):
                 with self.assertRaisesRegex(ValueError, "wrong SHA-256"):
                     builder.fetch_embedding_model(builder.SOURCE_ROOT, cache)
-

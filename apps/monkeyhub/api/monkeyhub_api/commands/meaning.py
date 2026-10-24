@@ -344,4 +344,3 @@ def route(sentence: str, hits: Sequence[MeaningHit]) -> MeaningHit | None:
     first, lead = hits[0], hits[0].score - (hits[1].score if len(hits) > 1 else 0.0)
     needed = QUESTION_SCORE if _QUESTION.search(sentence) else ROUTE_SCORE
     return first if first.score >= needed and lead >= ROUTE_LEAD else None
-
