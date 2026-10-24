@@ -264,6 +264,14 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
   correctedPath = await tracePath();
   assert.deepEqual(await annotations(), annotationsBefore);
   await page.screenshot({ path: path.join(evidenceDir, "study-saved-prior.png") });
+  // 2-7: the source page and that the study is saved are for everyone; the file's fingerprint and the
+  // saved record's reference wait for developer mode.
+  const provenance = panel().locator(".document-study__provenance");
+  await cmd(provenance, "view.disclosure.toggle", { arg: "study_source" }).click();
+  await provenance.getByText("Saved", { exact: true }).waitFor();
+  assert.equal(await provenance.getByText(main.source.assetSha256, { exact: true }).count(), 0, "no fingerprint outside developer mode");
+  assert.equal(await provenance.getByText(retained.ledgerRef, { exact: true }).count(), 0, "no record reference outside developer mode");
+  await cmd(provenance, "view.disclosure.toggle", { arg: "study_source" }).click();
   await cmd(panel(), "study.run.reopen").click();
   await panel().getByText("Saved · can reopen", { exact: true }).waitFor();
   await step("Explanations");

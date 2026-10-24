@@ -72,7 +72,7 @@ const formatted = (value: unknown) => typeof value === "number" ? value.toFixed(
 export function DocumentStudyPanel({ source, sourceName, draft, study, onChange, onSave, onReopen,
   selectedTrace, onSelectEvidence, comparisonTargets = [], onCompare, onPropose,
   proposing, dirty: draftDirty, busy = false, loading = false, error }: DocumentStudyPanelProps) {
-  const { language } = usePreferences();
+  const { language, developerMode } = usePreferences();
   const zh = language === "zh-CN";
   const text = (en: string, cn: string) => zh ? cn : en;
   const [step, setStep] = useState(0);
@@ -420,8 +420,10 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
         </section>}
       </fieldset>
       <details className="document-study__provenance"><summary data-command="view.disclosure.toggle" data-command-arg="study_source">{text("Source & saved revision", "来源与保存版本")}</summary>
-        <dl><dt>{text("Source page", "来源页")}</dt><dd>{source.pageIndex + 1}</dd><dt>{text("Source fingerprint", "来源指纹")}</dt><dd>{source.assetSha256}</dd>
-          <dt>{text("Saved revision", "保存版本")}</dt><dd>{study?.ledgerRef ?? text("Not saved", "尚未保存")}</dd></dl>
+        {/* The page and whether the study is saved are for everyone; the file's fingerprint and the saved record's reference are for developer mode. */}
+        <dl><dt>{text("Source page", "来源页")}</dt><dd>{source.pageIndex + 1}</dd>
+          {developerMode && <><dt>{text("Source fingerprint", "来源指纹")}</dt><dd>{source.assetSha256}</dd></>}
+          <dt>{text("Saved revision", "保存版本")}</dt><dd>{study ? (developerMode ? study.ledgerRef : text("Saved", "已保存")) : text("Not saved", "尚未保存")}</dd></dl>
       </details>
     </div>
     <footer className="document-study__footer">
