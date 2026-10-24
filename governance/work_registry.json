@@ -1125,6 +1125,26 @@
             "services/project-runtime/tests/test_proposals.py"
           ],
           "depends_on": []
+        },
+        {
+          "id": "srv",
+          "status": "active",
+          "branch": "claude/srv",
+          "worktree": "",
+          "base_ref": "",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Claimed in the copy the batch carries; the original commit named this lane without claiming it.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/features/stage/ElevationPanel.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/elevation.browser.mjs"
+          ],
+          "depends_on": []
         }
       ]
     }

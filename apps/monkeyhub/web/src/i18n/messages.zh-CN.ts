@@ -368,14 +368,14 @@ export const messagesZhCN = {
     "候选工作区 · 已发布版本未变",
   "shell.proposalOnly": "候选工作区 · 已发布版本未变",
   "shell.notBound": "未绑定 · {code}",
-  "shell.readingBinding": "正在读取绑定…",
+  "shell.readingBinding": "正在读取项目…",
   "shell.bindingRefused": "绑定被拒绝：{code}",
   "shell.readingProjection": "正在读取投影…",
   "shell.boundViewRefused": "内核拒绝了此记录的绑定视图；请先修复记录再提出改动",
   "shell.pickFirst": "请先在模型中选择对象，或选择一个构件",
 
   "loading.startingSession": "正在启动会话",
-  "loading.readingBinding": "正在读取绑定",
+  "loading.readingBinding": "正在读取项目",
   "loading.askingServer": "正在询问服务器",
 
   "conversation.ariaLabel": "对话",
