@@ -368,7 +368,7 @@ export const messagesEn = {
     "Candidate workspace · published version unchanged",
   "shell.proposalOnly": "Candidate workspace · published version unchanged",
   "shell.notBound": "not bound · {code}",
-  "shell.readingBinding": "reading the binding…",
+  "shell.readingBinding": "reading the project…",
   "shell.bindingRefused": "the binding refused: {code}",
   "shell.readingProjection": "reading the projection…",
   "shell.boundViewRefused":
@@ -376,7 +376,7 @@ export const messagesEn = {
   "shell.pickFirst": "pick something in the model first, or choose a component",
 
   "loading.startingSession": "starting the session",
-  "loading.readingBinding": "reading the binding",
+  "loading.readingBinding": "reading the project",
   "loading.askingServer": "asking the server",
 
   "conversation.ariaLabel": "Conversation",

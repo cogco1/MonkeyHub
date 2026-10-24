@@ -10,6 +10,10 @@ export interface ElevationControls {
   onApply(command: ElevationCommand): boolean;
 }
 
+/** Model units are metres; the panel shows and takes whole millimetres, which is how an architect reads a level. */
+const toMm = (metres: number) => Math.round(metres * 1000);
+const fromMm = (millimetres: number) => millimetres / 1000;
+
 /** A selected mass's vertical controls; all writes enter the same local draft history. */
 export function ElevationPanel({ controls, busy, error, onReference }: {
   controls: ElevationControls; busy: boolean; error: string | null;
@@ -28,10 +32,10 @@ export function ElevationPanel({ controls, busy, error, onReference }: {
   const label = (row: DraftObject) => row.elementId.startsWith("drawn-")
     ? `${zh ? "体块" : "Mass"} ${objects.indexOf(row) + 1}` : row.elementId;
   const references = [
-    ...levels.map(level => ({ key: `level:${level.levelId}`, label: `${level.name} · ${level.elevation.toFixed(3)} m`,
+    ...levels.map(level => ({ key: `level:${level.levelId}`, label: `${level.name} · ${toMm(level.elevation)} mm`,
       reference: { kind: "level", id: level.levelId, offset: 0 } as ElevationReference, value: level.elevation })),
     ...objects.filter(row => row.elementId !== object.elementId && elevationOf(row)).map(row => ({
-      key: `element-top:${row.elementId}`, label: `${label(row)} · ${zh ? "顶部" : "top"} ${elevationOf(row)!.top.toFixed(3)} m`,
+      key: `element-top:${row.elementId}`, label: `${label(row)} · ${zh ? "顶部" : "top"} ${toMm(elevationOf(row)!.top)} mm`,
       reference: { kind: "element-top", id: row.elementId, offset: 0 } as ElevationReference, value: elevationOf(row)!.top })),
   ];
   const referenceInput = (side: "base" | "top", reference: ElevationReference | null) => <label className="elevation-panel__reference">
@@ -47,23 +51,24 @@ export function ElevationPanel({ controls, busy, error, onReference }: {
       <option value="">{side === "base" ? (zh ? "自由 · 绝对标高" : "Free · absolute Z") : (zh ? "由高度确定" : "From height")}</option>
       {references.map(row => <option key={row.key} value={row.key}>{row.label}</option>)}
     </select>
-    {reference && <small>{zh ? "偏移" : "Offset"} {reference.offset >= 0 ? "+" : ""}{reference.offset.toFixed(3)} m</small>}
+    {reference && <small>{zh ? "偏移" : "Offset"} {reference.offset >= 0 ? "+" : ""}{toMm(reference.offset)} mm</small>}
   </label>;
   const selectedDatum = levels.find(level => level.levelId === datumId);
   return <aside className="elevation-panel" aria-label={zh ? "体块标高" : "Mass elevation"}
     onKeyDown={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()}>
-    <strong>{zh ? "标高" : "Elevation"} <span className="quiet">m</span></strong>
+    <strong>{zh ? "标高" : "Elevation"} <span className="quiet">mm</span></strong>
     <div className="elevation-panel__numbers">
       {(["base", "top", "height"] as const).map(field => <form key={`${object.elementId}:${field}:${facts[field]}`}
         onSubmit={event => {
           event.preventDefault();
           const value = new FormData(event.currentTarget).get("value"), number = Number(value);
           if (typeof value !== "string" || !value.trim() || !Number.isFinite(number)) { setLocalError(zh ? "请输入有效数值。" : "Enter a valid number."); return; }
-          if (!blocked) apply({ action: field === "base" ? "set-base" : field === "top" ? "set-top" : "set-height", value: number });
+          if (number === toMm(facts[field])) return;  // unchanged: the shown value is rounded, so applying it would move the mass
+          if (!blocked) apply({ action: field === "base" ? "set-base" : field === "top" ? "set-top" : "set-height", value: fromMm(number) });
         }}>
         <label>{field === "base" ? (zh ? "底标高" : "Base Z") : field === "top" ? (zh ? "顶标高" : "Top Z") : (zh ? "高度" : "Height")}
           <input name="value" aria-label={field === "base" ? "Base Z" : field === "top" ? "Top Z" : "Height"}
-            type="number" step="any" required defaultValue={Number(facts[field].toFixed(6))} disabled={blocked}
+            type="number" step="any" required defaultValue={toMm(facts[field])} disabled={blocked}
             onFocus={event => { event.currentTarget.select(); onReference(field === "height" ? facts.top : facts[field]); }}
             onBlur={() => onReference(null)} />
         </label>
@@ -82,14 +87,14 @@ export function ElevationPanel({ controls, busy, error, onReference }: {
       </select></label>
       <form key={`${datumId}:${selectedDatum?.name}:${selectedDatum?.elevation}`} onSubmit={event => {
         event.preventDefault(); const data = new FormData(event.currentTarget);
-        const name = String(data.get("name") ?? "").trim(), raw = String(data.get("elevation") ?? ""), value = Number(raw);
+        const name = String(data.get("name") ?? "").trim(), raw = String(data.get("elevation") ?? ""), value = fromMm(Number(raw));
         if (!name || !raw.trim() || !Number.isFinite(value)) { setLocalError(zh ? "请输入名称和有效标高。" : "Enter a name and a valid elevation."); return; }
         const levelId = datumId || `datum-${crypto.randomUUID()}`;
         if (apply({ action: "set-datum", levelId, name, value })) { setDatumId(levelId); onReference(value); }
       }}>
         <label>{zh ? "名称" : "Name"}<input name="name" required maxLength={120} aria-label="Datum name" defaultValue={selectedDatum?.name ?? ""} disabled={busy} /></label>
-        <label>{zh ? "标高 m" : "Elevation m"}<input name="elevation" required type="number" step="any" aria-label="Datum elevation"
-          defaultValue={selectedDatum?.elevation ?? facts.base} disabled={busy} onFocus={() => onReference(selectedDatum?.elevation ?? facts.base)} /></label>
+        <label>{zh ? "标高 mm" : "Elevation mm"}<input name="elevation" required type="number" step="any" aria-label="Datum elevation"
+          defaultValue={toMm(selectedDatum?.elevation ?? facts.base)} disabled={busy} onFocus={() => onReference(selectedDatum?.elevation ?? facts.base)} /></label>
         <button data-command="frame.set_level.datum" type="submit" disabled={busy}>{datumId ? (zh ? "更新基准" : "Update datum") : (zh ? "创建基准" : "Create datum")}</button>
       </form>
     </details>

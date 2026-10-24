@@ -3684,12 +3684,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           status={
             session.status === "idle"
               ? t("loading.startingSession")
-              : (
-                  <>
-                    {t("loading.readingBinding")} ·{" "}
-                    <code lang="en">GET /api/project</code>
-                  </>
-                )
+              : t("loading.readingBinding")
           }
         />
       )}
