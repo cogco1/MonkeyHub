@@ -1,4 +1,38 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-300",
+      "lanes": [
+        {
+          "id": "batch3",
+          "status": "active",
+          "branch": "claude/300-batch3",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-batch3",
+          "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "The third redesign batch (three-channel shell, #300): the reviewed redesign branches merged into one PR to main in the order their PRs give, the coordinator's decision of 2026-10-24. This lane exists only while the batch is assembled: its merges and the regenerated clients are filed under it, and the batch's last commit releases it with the lanes whose work the batch completes.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            ".github/",
+            "AGENTS.md",
+            "CONTRIBUTING.md",
+            "apps/",
+            "docs/",
+            "governance/",
+            "packages/",
+            "probes/",
+            "scripts/",
+            "services/",
+            "tests/",
+            "tools/"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
