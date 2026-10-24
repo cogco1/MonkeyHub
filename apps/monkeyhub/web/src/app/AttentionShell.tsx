@@ -6,6 +6,7 @@ import { useT } from "../i18n/useT";
 import { AttentionQueue, CardHistory, useAttentionQueue } from "../notifications/cards/AttentionQueue";
 import { pendingFor } from "../notifications/cards/cardText";
 import { OPEN_CARD_EVENT, type OpenCardDetail } from "../notifications/openChat";
+import { showingQueue } from "../notifications/queue";
 import { useNoticeRegion } from "../notifications/regions";
 import { AdvancedTools } from "./AdvancedTools";
 import "./attentionShell.css";
@@ -105,6 +106,7 @@ export function AttentionShell(props: AttentionShellProps) {
   const onDrawer = useRef(props.onDrawer);
   onDrawer.current = props.onDrawer;
   useEffect(() => { onDrawer.current?.(drawer); }, [drawer]);
+  useEffect(() => { showingQueue(view === "attention"); return () => showingQueue(false); }, [view]);
   const open = (page: SidePage) => setSide((current) => (current === page ? null : page));
   const pageLabel = (page: SidePage) => t(`shell.side.${page}` as MessageKey);
   useCommandActions({ "view.tab.attention": { run: () => props.onView("attention") } });

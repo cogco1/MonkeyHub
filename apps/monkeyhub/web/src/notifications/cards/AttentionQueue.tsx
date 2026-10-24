@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import type { MessageKey } from "../../i18n/messages.en";
 import { useT } from "../../i18n/useT";
@@ -16,11 +16,15 @@ export function useAttentionQueue(): QueueSnapshot {
 export function AttentionQueue({ projectName }: { projectName(projectDir: string): string | null }) {
   const queue = useAttentionQueue();
   const cards = queueOrder(queue.cards);
+  // A card that arrives while the list is on screen is marked for a moment instead of raising a notice.
+  const listed = useRef<Set<string> | null>(null);
+  const fresh = listed.current ? new Set(cards.filter((card) => !listed.current!.has(card.id)).map((card) => card.id)) : new Set<string>();
+  useEffect(() => { listed.current = new Set([...(listed.current ?? []), ...cards.map((card) => card.id)]); });
   // An empty queue is said by the page's heading.
   if (!cards.length) return <AllAsRecommended cards={cards} />;
   return <div className="attention-queue">
     <AllAsRecommended cards={cards} />
-    {cards.map((card) => <AttentionCardView key={card.id} card={card} project={projectName(card.projectDir)} />)}
+    {cards.map((card) => <AttentionCardView key={card.id} card={card} project={projectName(card.projectDir)} fresh={fresh.has(card.id)} />)}
   </div>;
 }
 

@@ -431,6 +431,9 @@ try {
       recommendation: { optionId: "archive", reason: "Conflicts with the current design", reasonZh: "和当前方案冲突" }, createdAt: stamp(), updatedAt: stamp() }));
   }
   announce("attention/changed");
+  // On the Attention page they arrive marked in the list, not as notices.
+  await queued("V11b 和当前冲突 78 处，归档吗").and(queuePage.locator("[data-fresh]")).waitFor();
+  assert.equal(await queuePage.locator(".attention-toast").filter({ hasText: "V11b" }).count(), 0, "a card arriving in the list on screen is no notice");
   const bulk = queuePage.locator(".attention-queue__bulk");
   await bulk.getByRole("button", { name: "全部按建议（3）" }).waitFor();
   await shoot(queuePage, "attention-queue-bulk-desktop-light");

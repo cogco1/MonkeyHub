@@ -89,6 +89,11 @@ const post = <T>(path: string, body?: unknown) => call<T>(path, { method: "POST"
  */
 export const shownHere = new Set<string>();
 
+let listShown = false;
+/** Whether the queue's own list is on screen (the attention shell's Attention page): a card arriving there is seen in it. */
+export const showingQueue = (shown: boolean) => { listShown = shown; };
+export const queueOnScreen = () => listShown;
+
 // The queue is read again before the action's answer comes back, so a card it raised is there to be shown.
 const acted = async <T>(action: Promise<T>, brings: (result: T) => readonly (string | null | undefined)[] = () => []): Promise<T> => {
   try {
