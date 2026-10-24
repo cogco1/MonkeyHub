@@ -68,6 +68,11 @@ NO_MATCH = (
 )
 
 
+# A word or two an entry shares with a sentence it was not written for is not evidence. Kept are the entries
+# scoring at least this share of the best one, whose evidence also covers at least this share of the sentence.
+EVIDENCE_SHARE = 0.25
+
+
 class CapabilityIndexUnavailable(StudioError):
     """The registry this index is read from is not beside the application."""
 
@@ -96,16 +101,29 @@ def registry_path(start: Path | None = None) -> Path | None:
     return None
 
 
+# The same table also holds what the Hub itself performs (``host: "hub"``): opening a
+# project, settings, updates, and the interface-only arrangements of the window
+# (``kind: "shell"``). Those are found through the Hub and the command palette; an agent
+# working in a project reaches only this Runtime's routes, so this index leaves them out.
+RUNTIME_HOST = "runtime"
+
+
+def hosted_here(entry: Mapping[str, Any]) -> bool:
+    """Whether this Runtime performs the capability: an entry names no host, or this one."""
+
+    return entry.get("host", RUNTIME_HOST) == RUNTIME_HOST
+
+
 @lru_cache(maxsize=1)
 def _read(path: str, stamp: tuple[int, int]) -> tuple[dict[str, Any], ...]:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if data.get("schema") != REGISTRY_SCHEMA:
         return ()
-    return tuple(data.get("capabilities", ()))
+    return tuple(entry for entry in data.get("capabilities", ()) if hosted_here(entry))
 
 
 def capability_index() -> tuple[dict[str, Any], ...]:
-    """Every registered capability entry, read from the registry beside us."""
+    """Every registered capability this Runtime performs, read from the registry beside us."""
 
     path = registry_path()
     if path is None:
@@ -221,7 +239,9 @@ def match_capabilities(
     """Rank registered entries against what someone said they want to do.
 
     Returns the entries in relevance order with the evidence for each, and the
-    sentence to answer with when nothing was relevant. The caller pages and
+    sentence to answer with when nothing was relevant. An entry that shares only a
+    common word with the sentence ("change", "图纸") is not returned beside the
+    entry the sentence was written for (EVIDENCE_SHARE). The caller pages and
     renders; this is the only place the rule itself lives, so the CLI and the
     served index cannot disagree about what matches.
     """
@@ -234,6 +254,9 @@ def match_capabilities(
         (pair for pair in scored if pair[1][0] > 0),
         key=lambda pair: (-pair[1][0], str(pair[0].get("capability_id", ""))),
     )
+    if hits:
+        floor = max(hits[0][1][0], len(query.strip())) * EVIDENCE_SHARE
+        hits = [pair for pair in hits if pair[1][0] >= floor]
     if not hits:
         return (), (), NO_MATCH.format(query=query, count=len(rows))
     return tuple(entry for entry, _ in hits), tuple(evidence for _, evidence in hits), None

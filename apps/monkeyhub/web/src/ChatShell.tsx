@@ -25,6 +25,8 @@ import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } f
 import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
 import { editFocused, HubMenuBar, type HubMenu, type HubMenuItem } from "./HubMenu";
+import { ASK_AI_ACTION, openSurfaceAction, useCommandActions, type CommandHandler } from "./features/commands/CommandProvider";
+import { useT } from "./i18n/useT";
 import "./ChatShell.css";
 
 type AppId = AppStatus["appId"] | "drawing" | "publish" | "tree";
@@ -187,14 +189,14 @@ const shellWords = {
     Drawing is a projection of the project's current state, not another
     architectural surface. Layout is Board's second mode, reached from its
     Board | Layout switch, so it has no rail entry of its own. */
-const tools: { id: AppId; label: "model" | "drawing" | "board" | "render" | "publish" | "fab" | "monitor" | "tree"; icon: string; group: "workspace" | "tools" | null }[] = [
-  { id: "monkeyarch", label: "model", icon: "cube", group: "workspace" },
-  { id: "monkeyboard", label: "board", icon: "board", group: "workspace" },
-  { id: "tree", label: "tree", icon: "tree", group: "workspace" },
-  { id: "drawing", label: "drawing", icon: "drawing", group: "tools" },
-  { id: "monkeyrender", label: "render", icon: "render", group: "tools" },
-  { id: "monkeyfab", label: "fab", icon: "fab", group: "tools" },
-  { id: "monkeymonitor", label: "monitor", icon: "chart", group: "tools" },
+const tools: { id: AppId; label: "model" | "drawing" | "board" | "render" | "publish" | "fab" | "monitor" | "tree"; icon: string; group: "workspace" | "tools" | null; command?: string }[] = [
+  { id: "monkeyarch", label: "model", icon: "cube", group: "workspace", command: "view.tab.modeling" },
+  { id: "monkeyboard", label: "board", icon: "board", group: "workspace", command: "view.tab.board" },
+  { id: "tree", label: "tree", icon: "tree", group: "workspace", command: "view.design_tree.open" },
+  { id: "drawing", label: "drawing", icon: "drawing", group: "tools", command: "view.drawings" },
+  { id: "monkeyrender", label: "render", icon: "render", group: "tools", command: "view.render.open" },
+  { id: "monkeyfab", label: "fab", icon: "fab", group: "tools", command: "fab.prepare_parts.open" },
+  { id: "monkeymonitor", label: "monitor", icon: "chart", group: "tools", command: "view.usage.open" },
   { id: "publish", label: "publish", icon: "board", group: null },
 ];
 const railGroups = [{ id: "workspace", caption: "railSurfaces" }, { id: "tools", caption: "railTools" }] as const;
@@ -1938,32 +1940,88 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (target.id !== chatId) { walking.current = true; selectChat(target); }
   };
   const mw = menuWords[preferences.language];
+  const tc = useT();
   const startChat = () => { setArchivedView(false); setChatId(null); setChat(null); setError(null); toComposer(); };
+  const openNewProject = () => { setDialogError(null); newDialog.current?.showModal(); };
+  const openAddProject = () => { setDialogError(null); addDialog.current?.showModal(); };
+  const openArchiveExport = () => { setDialogError(null); setArchiveSummary(null); setRestoreResult(null); archiveDialog.current?.showModal(); };
+  const openArchiveRestore = () => {
+    setDialogError(null); setArchiveSummary(null); setRestoreResult(null); setRestoreTarget(workspace?.workspaceDir ?? ""); restoreDialog.current?.showModal();
+  };
+  // Ctrl+K's "Ask the AI": the words go out the way the composer sends them, unless a draft is
+  // already there; then they join it and wait for the person to send.
+  const pendingAsk = useRef<string | null>(null);
+  const askAgent = (text: string) => {
+    if (!text.trim()) return;
+    if (draft.trim()) { setDrafts((value) => ({ ...value, [draftKey]: `${draft.trimEnd()}\n${text}` })); toComposer(); return; }
+    pendingAsk.current = text;
+    setDrafts((value) => ({ ...value, [draftKey]: text }));
+  };
+  useEffect(() => {
+    if (pendingAsk.current === null || draft !== pendingAsk.current) return;
+    pendingAsk.current = null;
+    void send();
+  }, [draft]);
+  // The commands of the shell-level capabilities (governance/module_registry.json) and the
+  // surfaces Ctrl+K opens before running a command that lives on one.
+  const needsProject = (run: () => unknown): CommandHandler => ({ run, available: () => (projectDir ? true : t.projectRequired) });
+  const surfaceOf: Readonly<Record<string, AppId>> = { modeling: "monkeyarch", board: "monkeyboard", layout: "publish", design_tree: "tree",
+    drawings: "drawing", render: "monkeyrender", fabrication: "monkeyfab", usage: "monkeymonitor" };
+  useCommandActions({
+    "chat.new_conversation": { run: startChat },
+    "chat.open_conversation": { run: ({ args }) => {
+      const target = sessions.find((item) => item.id === args?.sessionId);
+      if (target) selectChat(target);
+    } },
+    [ASK_AI_ACTION]: { run: ({ text }) => askAgent(text ?? ""), available: () => (projectDir && !archived && !external ? true : t.projectRequired) },
+    "project.create.new": { run: openNewProject },
+    "project.create.add_existing": { run: openAddProject },
+    "project.archive.export": { run: openArchiveExport, available: () => (project ? true : t.projectRequired) },
+    "project.archive.restore": { run: openArchiveRestore },
+    "view.conversation_history.back": { run: () => walk(-1), available: () => (trail.index > 0 ? true : tc("commands.noEarlierChat")) },
+    "view.conversation_history.forward": { run: () => walk(1), available: () => (trail.index < trail.ids.length - 1 ? true : tc("commands.noLaterChat")) },
+    "view.left_column.toggle": { run: toggleSidebar },
+    "view.side_panel": { run: () => setPanel(!panel) },
+    "view.tab.board": needsProject(() => openTool("monkeyboard")),
+    "view.tab.modeling": needsProject(() => openTool("monkeyarch")),
+    "view.settings.open": { run: openSettings },
+    "view.design_tree.open": needsProject(() => openTool("tree")),
+    "view.drawings": needsProject(() => openTool("drawing")),
+    "view.render.open": needsProject(() => openTool("monkeyrender")),
+    "view.usage.open": { run: () => openTool("monkeymonitor") },
+    "fab.prepare_parts.open": { run: () => openTool("monkeyfab") },
+    "hub.update_check": { run: openSoftwareUpdate },
+    ...(onAppearance ? Object.fromEntries([
+      ...(["system", "dark", "light"] as const).map((theme) => [`preference.appearance.theme_${theme}`, { run: () => onAppearance({ theme }) }]),
+      ...(["classic", "quiet", "titleblock", "night"] as const).map((uiStyle) => [`preference.appearance.style_${uiStyle}`, { run: () => onAppearance({ uiStyle }) }]),
+      ...([[0.9, "compact"], [1, "normal"], [1.1, "large"]] as const).map(([fontScale, name]) => [`preference.appearance.size_${name}`, { run: () => onAppearance({ fontScale }) }]),
+    ]) : {}),
+    ...Object.fromEntries(Object.entries(surfaceOf).map(([surface, id]) => [openSurfaceAction(surface),
+      id === "monkeyfab" || id === "monkeymonitor" ? { run: () => openTool(id) } : needsProject(() => openTool(id))])),
+  });
   const appearanceChoices = (onAppearance ? [
     { kind: "separator", id: "look" },
     { kind: "heading", id: "theme", label: mw.theme },
-    ...(["system", "dark", "light"] as const).map((theme) => ({ kind: "choice", id: `theme-${theme}`, label: mw[theme],
+    ...(["system", "dark", "light"] as const).map((theme) => ({ kind: "choice", id: `theme-${theme}`, label: mw[theme], command: `preference.appearance.theme_${theme}`,
       checked: preferences.theme === theme, onSelect: () => onAppearance({ theme }) })),
     { kind: "heading", id: "style", label: mw.uiStyle },
     ...(["classic", "quiet", "titleblock", "night"] as const).map((uiStyle) => ({ kind: "choice", id: `style-${uiStyle}`, label: mw[uiStyle],
-      checked: (preferences.uiStyle ?? "classic") === uiStyle, onSelect: () => onAppearance({ uiStyle }) })),
+      command: `preference.appearance.style_${uiStyle}`, checked: (preferences.uiStyle ?? "classic") === uiStyle, onSelect: () => onAppearance({ uiStyle }) })),
     { kind: "heading", id: "size", label: mw.size },
     ...([[0.9, "compact"], [1, "normal"], [1.1, "large"]] as const).map(([fontScale, name]) => ({ kind: "choice", id: `size-${name}`, label: mw[name],
-      checked: preferences.fontScale === fontScale, onSelect: () => onAppearance({ fontScale }) })),
+      command: `preference.appearance.size_${name}`, checked: preferences.fontScale === fontScale, onSelect: () => onAppearance({ fontScale }) })),
   ] : []) as HubMenuItem[];
   const hubMenus: HubMenu[] = [
     { id: "file", label: mw.file, items: [
-      { kind: "command", id: "new-chat", label: mw.newChat, onSelect: startChat },
-      { kind: "command", id: "new-project", label: mw.newProject, onSelect: () => { setDialogError(null); newDialog.current?.showModal(); } },
-      { kind: "command", id: "add-project", label: mw.addProject, onSelect: () => { setDialogError(null); addDialog.current?.showModal(); } },
+      { kind: "command", id: "new-chat", label: mw.newChat, command: "chat.new_conversation", onSelect: startChat },
+      { kind: "command", id: "new-project", label: mw.newProject, command: "project.create.new", onSelect: openNewProject },
+      { kind: "command", id: "add-project", label: mw.addProject, command: "project.create.add_existing", onSelect: openAddProject },
       { kind: "command", id: "reload-project", label: t.reloadProject, disabled: !projectRuntime || reloading, onSelect: () => void reloadProject() },
       { kind: "separator", id: "archive" },
-      { kind: "command", id: "export", label: mw.exportArchive, disabled: !project,
-        onSelect: () => { setDialogError(null); setArchiveSummary(null); setRestoreResult(null); archiveDialog.current?.showModal(); } },
-      { kind: "command", id: "restore", label: mw.restoreArchive,
-        onSelect: () => { setDialogError(null); setArchiveSummary(null); setRestoreResult(null); setRestoreTarget(workspace?.workspaceDir ?? ""); restoreDialog.current?.showModal(); } },
+      { kind: "command", id: "export", label: mw.exportArchive, disabled: !project, command: "project.archive.export", onSelect: openArchiveExport },
+      { kind: "command", id: "restore", label: mw.restoreArchive, command: "project.archive.restore", onSelect: openArchiveRestore },
       { kind: "separator", id: "hub" },
-      { kind: "command", id: "settings", label: mw.settings, onSelect: openSettings },
+      { kind: "command", id: "settings", label: mw.settings, command: "view.settings.open", onSelect: openSettings },
     ] },
     { id: "edit", label: mw.edit, items: [
       { kind: "command", id: "undo", label: mw.undo, hint: "Ctrl+Z", onSelect: () => editFocused("undo") },
@@ -1975,30 +2033,30 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       { kind: "command", id: "select-all", label: mw.selectAll, hint: "Ctrl+A", onSelect: () => editFocused("selectAll") },
     ] },
     { id: "view", label: mw.view, items: [
-      { kind: "check", id: "sidebar", label: mw.sidebar, checked: sidebar, onSelect: toggleSidebar },
-      { kind: "check", id: "tools", label: mw.tools, checked: panel, onSelect: () => setPanel(!panel) },
+      { kind: "check", id: "sidebar", label: mw.sidebar, checked: sidebar, command: "view.left_column.toggle", onSelect: toggleSidebar },
+      { kind: "check", id: "tools", label: mw.tools, checked: panel, command: "view.side_panel", onSelect: () => setPanel(!panel) },
       ...appearanceChoices,
     ] },
     { id: "help", label: mw.help, items: [
-      { kind: "command", id: "update", label: mw.update, onSelect: openSoftwareUpdate },
+      { kind: "command", id: "update", label: mw.update, command: "hub.update_check", onSelect: openSoftwareUpdate },
     ] },
   ];
   return <div className="chat-shell" data-sidebar={sidebar} data-panel={panel} data-focus={focused} style={{ "--chat-width": `${chatWidth}px` } as CSSProperties}>
     {/* #337 L0: the Hub's text menu row, as desktop apps have it: back, forward, the sidebar, then words. */}
     <div className="chat-menubar"><HubMenuBar label={mw.menus} menus={hubMenus} before={<>
-      <button type="button" className="chat-icon" aria-label={mw.back} title={mw.back} disabled={trail.index <= 0} onClick={() => walk(-1)}><Icon name="back" /></button>
-      <button type="button" className="chat-icon" aria-label={mw.forward} title={mw.forward} disabled={trail.index >= trail.ids.length - 1} onClick={() => walk(1)}><Icon name="forward" /></button>
-      <button type="button" className="chat-icon" aria-label={sidebar ? t.collapse : t.expand} title={sidebar ? t.collapse : t.expand} onClick={toggleSidebar}><Icon name="sidebar" /></button>
+      <button type="button" className="chat-icon" aria-label={mw.back} title={mw.back} disabled={trail.index <= 0} data-command="view.conversation_history.back" onClick={() => walk(-1)}><Icon name="back" /></button>
+      <button type="button" className="chat-icon" aria-label={mw.forward} title={mw.forward} disabled={trail.index >= trail.ids.length - 1} data-command="view.conversation_history.forward" onClick={() => walk(1)}><Icon name="forward" /></button>
+      <button type="button" className="chat-icon" aria-label={sidebar ? t.collapse : t.expand} title={sidebar ? t.collapse : t.expand} data-command="view.left_column.toggle" onClick={toggleSidebar}><Icon name="sidebar" /></button>
     </>} /></div>
     <aside className="chat-sidebar" aria-label={t.projects}>
       <div className="chat-sidebar__body">
         {/* #283: the pin keeps this list open when a workspace opens on the right. */}
         <div className="chat-sidebar__head">
-          <button className="chat-new" onClick={startChat}><Icon name="plus" /><span>{t.newChat}</span></button>
+          <button className="chat-new" data-command="chat.new_conversation" onClick={startChat}><Icon name="plus" /><span>{t.newChat}</span></button>
           <button type="button" className="chat-icon chat-pin" aria-pressed={sidebarPinned === true} aria-label={t.pinSidebar}
             aria-description={sidebarPinned ? t.pinSidebarOn : t.pinSidebarOff} title={sidebarPinned ? t.pinSidebarOn : t.pinSidebarOff} onClick={togglePin}><Icon name="pin" /></button>
         </div>
-        <button className="chat-new chat-new--project" onClick={() => { setDialogError(null); newDialog.current?.showModal(); }}><Icon name="folder" /><span>{t.newProject}</span></button>
+        <button className="chat-new chat-new--project" data-command="project.create.new" onClick={openNewProject}><Icon name="folder" /><span>{t.newProject}</span></button>
         {/* #300: Agent work running or waiting in any open project, one entry away. */}
         <button className="chat-new chat-tasks-toggle" aria-expanded={tasksOpen} aria-controls="chat-tasks" onClick={() => setTasksOpen(!tasksOpen)}>
           <Icon name="tasks" /><span>{t.tasks}</span>
@@ -2324,7 +2382,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             : isTool(item.id) && back ? t.toolReturn(t[item.label], t[labelOf(back)]) : t.toolClose(t[item.label]);
           const disabledReason = pending ? undefined : needsProject && !project ? t.projectRequired
             : !currentTabs.some((tab) => tab.runtimeId || tab.id === item.id) && (busy || toolBusy) ? t.actionPending : undefined;
-          return <button key={item.id} className="chat-rail__tool" aria-label={t[item.label]} aria-pressed={pressed} aria-busy={pending || undefined}
+          return <button key={item.id} className="chat-rail__tool" data-command={item.command} aria-label={t[item.label]} aria-pressed={pressed} aria-busy={pending || undefined}
             aria-description={disabledReason ?? hint} title={disabledReason ?? status?.error?.detail ?? stateText ?? hint} data-state={state}
             disabled={!pending && ((needsProject && !project) || (!currentTabs.some((tab) => tab.runtimeId || tab.id === item.id) && (busy || Boolean(toolBusy))))}
             onClick={() => { if (pending) cancelOpening(); else if (pressed) stepBack(); else void openTool(item.id); }}><Icon name={item.icon} /><span>{t[item.label]}</span>{stateText && <small aria-hidden="true">{stateText}</small>}</button>;
