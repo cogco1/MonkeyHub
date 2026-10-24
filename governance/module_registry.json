@@ -5232,8 +5232,8 @@
       "host": "hub",
       "kind": "shell",
       "status": "PRODUCTION",
-      "purpose": "The controls every page shares: trying again what did not load or save, opening a folded section or a menu, closing a dialog or a notice.",
-      "purpose_zh": "各页共用的控件：没读到或没存上时再试一次，展开收起的段落和菜单，关掉对话框和提示。",
+      "purpose": "The controls every page shares: trying again what did not load or save, reading the latest version after a conflict, opening a folded section or a menu, closing a dialog or a notice.",
+      "purpose_zh": "各页共用的控件：没读到或没存上时再试一次，有冲突时读取最新版本，展开收起的段落和菜单，关掉对话框和提示。",
       "goals": [
         "try loading again",
         "show the details",
@@ -5290,13 +5290,24 @@
               "排7",
               "排14",
               "文11",
-              "文12",
               "文41",
               "图18",
               "渲23",
               "树8",
               "制3",
               "量5"
+            ]
+          },
+          {
+            "id": "view.notice.read_latest",
+            "label": "Read the latest version",
+            "label_zh": "读取最新版本",
+            "args": [
+              "notice"
+            ],
+            "entries": [
+              "文12",
+              "模90"
             ]
           },
           {
