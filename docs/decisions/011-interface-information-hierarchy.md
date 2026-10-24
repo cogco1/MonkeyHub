@@ -36,6 +36,67 @@ fixed place, and every surface stacks the same six rows.
 6. **Keyboard:** every menu works with the arrow keys, Enter and Esc; the Hub row is a menubar (#338).
 7. **Checks:** screenshots in Chinese and English, light and dark, and all four interface styles;
    keyboard use; the affected browser tests.
+8. **Interface rules (2026-10-24, GH-300).** Every interface change follows this one list. A new
+   article or reference is folded into it here rather than written up as a separate note. Sources:
+   two Xiaohongshu notes (client polish; design terms for layout), Nutlope/hallmark (MIT, ideas
+   only, no files copied) and the loading tiers.
+
+   **Layout.** Name the layout before drawing it (hero, bento grid, board, timeline, map overview),
+   so the person building it knows which part leads.
+   - Conclusion first, details after. A page that summarises leads with one conclusion ("2 项需要关注"),
+     puts two or three secondary figures beside it in smaller tiles (what runs and how long it has
+     left, what just finished), and lists the details below. Never a wall of equal cards.
+   - A secondary tile shows only when it has something to say: nothing running, no tile.
+   - Work screens fill the window and keep density; the landing-page rules (word budget, first-screen
+     headline, capped width) do not apply.
+
+   **Surfaces and colour.**
+   - Layers are told apart by a 1–3% step of tone, not by an outline. No card inside a card.
+   - Every colour and font comes from a `:root` token; light and dark swap tokens only.
+   - Dark is re-derived, not inverted: ground at 12–18% lightness with a slight tint, text at 92–96%,
+     higher layers lighter, no drop shadows.
+   - The accent marks only the main action, the current selection and states. One filled main button
+     per screen.
+
+   **Type and figures.**
+   - In dark, titles sit one weight lighter. Noto Sans SC and Microsoft YaHei draw 600 like 700, so
+     weights are chosen from 400, 500 and 700 and the step down from bold is 500.
+   - Figures that change in place use tabular numerals.
+   - No all-caps tracked labels, no small label above a heading, no invented numbers.
+
+   **Motion.**
+   - Dragging and pressing land at once; feedback (an answer, an arriving card) springs a little.
+   - Motion only shows a change of state, 0.14–0.42 s, on opacity and transform only; never
+     `transition: all`, never width, height or position.
+   - A reply being written washes in block by block instead of appearing a character at a time.
+   - Under `prefers-reduced-motion` the marks still appear after their delay, without fading or
+     sliding, and bars jump instead of gliding.
+
+   **Waiting.** A wait is shown by how long it lasts:
+
+   | Wait | Shown |
+   |---|---|
+   | under 1 s | nothing: a loading mark appears only after a second (`.boot`, `.chat-thinking`), though input stays blocked meanwhile |
+   | first load of a whole page | a skeleton in the final layout (`LoadingOverlay`), not a spinner in the middle |
+   | one module | a spinner or reading line in that module only |
+   | over 10 s (drawing, export, model sync, a candidate's job) | a measured bar and the time left, from this project's earlier jobs in the same lane (the median `wallTimeS`); with no history, the time so far; past the estimate, 「比平常久 · 已 N 秒」 |
+   | upload, export | progress or the time so far, never a skeleton |
+
+   **States.**
+   - Zero, not filled in, and not read yet are three different words: 「现在没有要你处理的」 only after
+     the queue was read, 「正在读取…」 before; 「没有正在进行或排队的工作」 only after the Hub's state arrived.
+   - Every data region has four looks: reading, empty (what is missing and one action to fill it),
+     failed (what broke and what to do), full.
+
+   **Interaction.**
+   - Undo instead of a confirmation dialog wherever the change can be undone.
+   - Everything clickable shows a keyboard focus outline at once.
+   - At most two button sizes; an input matches the height of the button beside it; disabled is half
+     opacity with the native `disabled` attribute.
+   - The page never scrolls sideways.
+
+   **Checks.** Screenshots in light and dark, with the font named (Noto Sans SC on the build
+   workstation and the laptop); for a wait, one operation at 0.5 s, 3 s and 15 s.
 
 **Why:** surfaces drew the same kind of information differently. Board stacked three layers above its
 content (Stage capsule, Board/Layout segmented buttons, title field with buttons); Modeling crowded

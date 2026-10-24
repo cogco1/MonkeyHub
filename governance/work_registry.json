@@ -31,6 +31,38 @@
             "tools/"
           ],
           "depends_on": []
+        },
+        {
+          "id": "polish",
+          "status": "active",
+          "branch": "claude/300-polish",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-polish",
+          "base_ref": "61cf5b4f1",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "The new shell's finish (10-24): Critique Table layers by tone instead of outlines and sets dark type a weight lighter; counts in tabular figures; a reply being written washes in; panels rise, answers spring, Ctrl K fades open. For the third batch after the relay (10-26 07:30); not merged before. Waiting by length (ADR-011 §8): no mark under 1 s, a measured bar and time left past 10 s, reading states apart from empty.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatMessageContent.css",
+            "apps/monkeyhub/web/src/ChatMessageContent.tsx",
+            "apps/monkeyhub/web/src/ChatShell.css",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/app/AttentionShell.tsx",
+            "apps/monkeyhub/web/src/app/attentionShell.css",
+            "apps/monkeyhub/web/src/app/styles.css",
+            "apps/monkeyhub/web/src/features/commands/commands.css",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/src/notifications/cards/cards.css",
+            "apps/monkeyhub/web/src/sidebarTasks.ts",
+            "apps/monkeyhub/web/test/attentionShell.browser.mjs",
+            "apps/monkeyhub/web/test/sidebarTasks.test.ts",
+            "docs/decisions/011-interface-information-hierarchy.md",
+            "packages/web-shared/src/base.css"
+          ],
+          "depends_on": []
         }
       ]
     }

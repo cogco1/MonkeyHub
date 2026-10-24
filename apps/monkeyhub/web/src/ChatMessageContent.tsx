@@ -67,9 +67,10 @@ function renderTokens(tokens: Token[] = []): ReactNode {
   });
 }
 
-export function ChatMarkdown({ text }: { text: string }) {
+/** A reply in Markdown; while it is still being written (streaming) its new blocks wash in instead of landing at once. */
+export function ChatMarkdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
   const content = useMemo(() => renderTokens(marked.lexer(text, { gfm: true })), [text]);
-  return <div className="chat-prose">{content}</div>;
+  return <div className={streaming ? "chat-prose chat-prose--streaming" : "chat-prose"}>{content}</div>;
 }
 
 const rasterTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);

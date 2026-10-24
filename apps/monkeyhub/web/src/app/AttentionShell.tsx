@@ -76,6 +76,8 @@ export interface AttentionShellProps {
   usage: { label: string; onOpen(): void } | null;
   /** Agent work running or queued in any project, for the background line and page. */
   background: { running: number; queued: number };
+  /** Beside the conclusion: how long the longest running work has left, and the latest finished result. */
+  overview?: { wait: string | null; recent: { title: string; caption: string } | null };
   /** True while the conversation is being sent to or answers; the drawer opens for it. */
   conversationActive: boolean;
   notices: ReactNode;
@@ -226,8 +228,22 @@ export function AttentionShell(props: AttentionShellProps) {
       {props.notices}
       <div className="attention-shell__body">
         <section className="attention-shell__queue" hidden={view !== "attention"} aria-label={t("shell.view.attention")}>
-          <h2>{attentionCount ? t("shell.queueCount", { count: attentionCount }) : t("shell.queueEmpty")}</h2>
-          {queue.available ? <AttentionQueue projectName={projectName} /> : <p>{t("shell.queueHint")}</p>}
+          {/* The conclusion first, what runs and what just came out beside it, the cards below (ADR-011 §8). */}
+          <div className="attention-overview">
+            <div className="attention-overview__hero">
+              <h2>{queue.available === null ? t("shell.queueReading") : attentionCount ? t("shell.queueCount", { count: attentionCount }) : t("shell.queueEmpty")}</h2>
+              {!queue.available && <p>{t("shell.queueHint")}</p>}
+            </div>
+            {backgroundCount > 0 && <button type="button" className="attention-overview__tile" onClick={() => open("background")}>
+              <span>{t("shell.overview.background")}</span>
+              <b>{props.background.running ? t("shell.overview.running", { count: props.background.running }) : t("shell.overview.queued", { count: props.background.queued })}</b>
+              <small>{props.overview?.wait ?? (props.background.running && props.background.queued ? t("shell.overview.queued", { count: props.background.queued }) : "")}</small>
+            </button>}
+            {props.overview?.recent && <div className="attention-overview__tile">
+              <span>{t("shell.overview.recent")}</span><b>{props.overview.recent.title}</b><small>{props.overview.recent.caption}</small>
+            </div>}
+          </div>
+          {queue.available && <AttentionQueue projectName={projectName} />}
         </section>
         <div className="attention-shell__surfaces" hidden={view === "attention"}>{props.surfaces}</div>
       </div>

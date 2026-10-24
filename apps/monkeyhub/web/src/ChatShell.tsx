@@ -502,6 +502,9 @@ type ChatWords = (typeof words)[keyof typeof words];
 const processWords = (t: ChatWords): ProcessWords => ({ steps: t.processStep, prepare: t.processPrepare,
   webSearch: t.processWebSearch, desktop: t.processDesktop, permission: t.processPermission });
 /** The wall clock while `active`; a finished turn needs no ticking. */
+/** Under this, a wait shows only that it runs; past it, how far along it is (08 加载分档). */
+const LONG_WAIT_SECONDS = 10;
+
 function useNow(active: boolean) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -1936,7 +1939,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     {message.role === "user" && message.contextMode === "project" && <p className="chat-muted">{t.contextProjectMessage}</p>}
     {message.role === "user" && message.contextMode === "stage" && <p className="chat-muted">{t.contextStageMessage}: {message.confirmedStageLabel}</p>}
     {message.role === "user" && message.interjection && <p className="chat-muted" data-interjection={message.interjection}>{t.interjected} · {{ pending: t.interjectionPending, delivered: t.interjectionDelivered, restarted: t.interjectionRestarted, undelivered: t.interjectionUndelivered }[message.interjection]}</p>}
-    <ChatMarkdown text={message.content} />
+    <ChatMarkdown text={message.content} streaming={message.status === "streaming"} />
     {message.role === "assistant" && message.suggestion && <ChatSuggestionCard key={`${chat!.id}:${message.id}:${message.presentationRevision}`}
       message={message} chat={chat!} language={preferences.language} busy={busy || Boolean(toolBusy)} sending={suggestionBusy === message.id}
       error={suggestionError?.chatId === chat!.id && suggestionError.messageId === message.id ? suggestionError.error : null}
@@ -2091,15 +2094,42 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   ];
   // The pieces of the shell both layouts place: the workbench below, and the attention shell
   // (?shell=attention) in app/AttentionShell.tsx. Each is built once per render from the same state.
+  // 08 加载分档: a job past ten seconds shows how far along it is, measured against this project's earlier jobs.
+  const taskNow = useNow(tasks.some((task) => task.state === "running" && task.startedAt));
+  const taskTiming = (task: SidebarTask) => {
+    if (task.state !== "running" || !task.startedAt) return null;
+    const elapsed = Math.max(0, Math.round((taskNow - Date.parse(task.startedAt)) / 1000));
+    if (elapsed < LONG_WAIT_SECONDS) return null;
+    if (!task.expectedSeconds) return { elapsed, share: null, text: t.taskElapsed(elapsed) };
+    const left = Math.round(task.expectedSeconds - elapsed);
+    return { elapsed, share: Math.min(elapsed / task.expectedSeconds, 0.95), text: left > 0 ? t.taskLeft(left) : t.taskLonger(elapsed) };
+  };
+  // The latest result a project's job produced in the last day, beside the Attention page's conclusion.
+  const recentResult = () => {
+    let latest: { finishedAt: number; proposalId: string; projectDir: string } | null = null;
+    for (const row of runtime?.projects ?? []) for (const job of row.retained?.jobs ?? []) {
+      const finishedAt = job.status === "succeeded" && job.finishedAt ? Date.parse(job.finishedAt) : NaN;
+      if (finishedAt > (latest?.finishedAt ?? Date.now() - 86_400_000)) latest = { finishedAt, proposalId: job.proposalId, projectDir: row.projectDir };
+    }
+    if (!latest) return null;
+    const minutes = Math.max(0, Math.floor((Date.now() - latest.finishedAt) / 60_000));
+    const ago = minutes < 1 ? tc("shell.overview.justNow") : minutes < 60 ? tc("shell.overview.minutesAgo", { count: minutes })
+      : tc("shell.overview.hoursAgo", { count: Math.floor(minutes / 60) });
+    const name = projects.find((row) => row.projectDir === latest!.projectDir)?.name;
+    return { title: stepText(describeCall(`POST /api/proposals/${latest.proposalId}/candidate`), processWords(t)), caption: [name, ago].filter(Boolean).join(" · ") };
+  };
   const taskItems = <>
-          {tasks.length ? tasks.map((task) => {
+          {runtime === null ? <li className="chat-muted chat-tasks__empty" role="status">{t.tasksReading}</li> : tasks.length ? tasks.map((task) => {
             const action = task.action ? stepText(describeCall(task.action), processWords(t)) : null;
             const title = task.chat?.title ?? action ?? t.workTools;
             // Where and whether it runs come before what it is doing: a narrow sidebar cuts the end.
-            const caption = [task.projectName, task.state === "running" ? t.taskRunning : t.taskQueued, task.chat ? action : null].filter(Boolean).join(" · ");
+            const timing = taskTiming(task);
+            const caption = [task.projectName, timing?.text ?? (task.state === "running" ? t.taskRunning : t.taskQueued), task.chat ? action : null].filter(Boolean).join(" · ");
             return <li key={task.key}><button data-command="view.background.open_task" data-command-arg={task.key} type="button" className="chat-task" data-state={task.state} title={`${title}\n${caption}`} onClick={() => openTask(task)}>
               <span className="chat-thread__dot" data-status={task.state === "running" ? "running" : "idle"} />
-              <span className="chat-task__text"><span className="chat-task__title">{title}</span><small>{caption}</small></span>
+              <span className="chat-task__text"><span className="chat-task__title">{title}</span><small>{caption}</small>
+                {timing?.share != null && <span className="chat-task__progress" role="progressbar" aria-valuemin={0} aria-valuemax={100}
+                  aria-valuenow={Math.round(timing.share * 100)} aria-label={timing.text}><span style={{ transform: `scaleX(${timing.share.toFixed(3)})` }} /></span>}</span>
             </button></li>;
           }) : <li className="chat-muted chat-tasks__empty">{t.tasksEmpty}</li>}
   </>;
@@ -2147,7 +2177,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             {turn.visible.map((message) => message.role !== "tool" ? messageEntry(message)
               : message.id.includes(":progress:") ? <article className="chat-progress" key={message.id} data-status={message.status}>
                 <div className="chat-progress__heading"><span className="chat-thread__dot" data-status={message.status === "streaming" ? "running" : message.status === "failed" ? "failed" : "idle"} />{t.progress}</div>
-                <ChatMarkdown text={message.content} />
+                <ChatMarkdown text={message.content} streaming={message.status === "streaming"} />
                 {(message.status === "failed" || message.status === "interrupted") && <p className="chat-muted">{t[message.status]}</p>}
               </article>
               : <div className="chat-activity chat-activity--permission" key={message.id} data-status={message.status}>
@@ -2436,6 +2466,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       onNewProject={openNewProject} onAddProject={openAddProject} onSettings={openSettings}
       usage={{ label: usageFigure ? `${t.monitor} · ${t.usageWeek(usageFigure.short)}` : t.monitor, onOpen: () => void openTool("monkeymonitor", { projectId: "" }) }}
       background={{ running: tasks.filter((task) => task.state === "running").length, queued: tasks.filter((task) => task.state !== "running").length }}
+      overview={{ wait: tasks.map(taskTiming).find((timing) => timing?.share != null)?.text ?? tasks.map(taskTiming).find(Boolean)?.text ?? null,
+        recent: recentResult() }}
       conversationActive={running || sending !== null}
       notices={statusNotices} conversation={conversationLog} composer={composerArea} surfaces={workspacePages(panel)}
       taskItems={taskItems} dialogs={dialogs}
