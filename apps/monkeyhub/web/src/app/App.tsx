@@ -3848,6 +3848,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             gestures={gestures}
             onTool={setTool}
             onGesture={(gesture) => editGestures((current) => [...current, { ...gesture, id: crypto.randomUUID() }])}
+            onReplaceGesture={(index, gesture) => editGestures((current) => current.map((mark, i) => i === index ? { ...gesture, id: mark.id } : mark))}
+            onStartPaper={modelAnnotations.startPaper}
             onUndoGesture={modelAnnotations.undo}
             onRedoGesture={modelAnnotations.redo}
             canUndoGesture={modelAnnotations.canUndo}

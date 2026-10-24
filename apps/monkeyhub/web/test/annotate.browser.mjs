@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
 
@@ -9,29 +11,32 @@ const root = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]$/, "")
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 const baselineId = `${root.replaceAll("\\", "/")}/src/features/stage/__baselineAnnotate.tsx`;
 const fixture = `
-import React, {useState, useRef} from 'react';
+import React, {useState, useRef, useEffect} from 'react';
 import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
 import {Annotate} from '${process.argv.includes('--baseline') ? '/baseline-annotate.tsx' : '/src/workspaces/monkeyarch/Annotate.tsx'}';
 import {UserPreferencesProvider} from '/test/TestProviders.tsx';
 const camera={position:[1,2,3],target:[0,0,0],up:[0,0,1],fov:50,projection:'perspective',zoom:1};
 const base=Array.from({length:120},(_,i)=>({kind:'freehand',screen:Array.from({length:180},(_,j)=>[10+j*4,10+i*4+Math.sin(j/12)*7]),screenSize:[800,600],camera,hits:[],color:'#2468dd',lineWidth:2}));
-window.fixture={committed:[],erased:[],hitCalls:0,sampleCost:0,canvasDraws:0,latencies:[],durations:[],longTasks:[],longFrames:[],downstream:[],paints:0};
+window.fixture={committed:[],erased:[],replaced:[],hitCalls:0,sampleCost:0,canvasDraws:0,latencies:[],durations:[],longTasks:[],longFrames:[],downstream:[],paints:0};
 const metrics=window.fixture;
 new PerformanceObserver(list=>metrics.longTasks.push(...list.getEntries().map(e=>e.duration))).observe({type:'longtask',buffered:true});
 let previousFrame=0; const frame=now=>{if(previousFrame&&now-previousFrame>34)metrics.longFrames.push(now-previousFrame);previousFrame=now;requestAnimationFrame(frame)};requestAnimationFrame(frame);
 const proto=CanvasRenderingContext2D.prototype, original=proto.stroke;
 proto.stroke=function(...args){const result=original.apply(this,args);metrics.canvasDraws++;if(metrics.pendingInput){metrics.latencies.push(performance.now()-metrics.pendingInput);performance.mark('annotate-ink-'+metrics.sequence);metrics.pendingInput=0;metrics.paints++;}return result;};
 function App(){const [gestures,setGestures]=useState(base),[tool,setTool]=useState('freehand'),[eraser,setEraser]=useState(false),[cancelToken,setCancel]=useState(0);
+const commitPendingRef=useRef(null);
+useEffect(()=>{const exit=e=>{if(e.key==='Escape')flushSync(()=>{commitPendingRef.current?.();setTool(null);setEraser(false);setCancel(n=>n+1);});};window.addEventListener('keydown',exit);return()=>window.removeEventListener('keydown',exit);},[]);
 const viewportRef=useRef({camera:()=>camera,sampleAt:(x,y)=>{metrics.hitCalls++;const start=performance.now();while(performance.now()-start<metrics.sampleCost){}return {objectName:'fixture',userStrings:{Element:'fixture'},world:[x,y,0]};},unprojectOnPlane:(x,y)=>[x,y,0]});
-Object.assign(metrics,{setTool:t=>flushSync(()=>{setTool(t);setEraser(false)}),setEraser:e=>flushSync(()=>setEraser(e)),reset:()=>flushSync(()=>{setGestures([]);setCancel(n=>n+1);metrics.committed=[];metrics.erased=[];metrics.hitCalls=0;}),getGestures:()=>gestures});
-return <><input id="text"/><div id="stage"><canvas className="viewport-canvas" onPointerDown={e=>{metrics.downstream.push(e.button);e.currentTarget.setPointerCapture(e.pointerId);}}/><Annotate viewportRef={viewportRef} tool={tool} eraser={eraser} onErase={indices=>{metrics.erased.push(indices);setGestures(old=>old.filter((_,i)=>!indices.includes(i)));}} gestures={gestures} onGesture={g=>{metrics.committed.push(g);setGestures(old=>[...old,g]);}} style={{color:'#2468dd',lineWidth:2}} cancelToken={cancelToken}/></div></>}
+Object.assign(metrics,{setTool:t=>flushSync(()=>{setTool(t);setEraser(false)}),setEraser:e=>flushSync(()=>setEraser(e)),reset:()=>flushSync(()=>{setGestures([]);setCancel(n=>n+1);metrics.committed=[];metrics.erased=[];metrics.replaced=[];metrics.hitCalls=0;}),getGestures:()=>gestures});
+return <><input id="text"/><div id="stage"><canvas className="viewport-canvas" onPointerDown={e=>{metrics.downstream.push(e.button);e.currentTarget.setPointerCapture(e.pointerId);}}/><Annotate viewportRef={viewportRef} tool={tool} eraser={eraser} onErase={indices=>{metrics.erased.push(indices);setGestures(old=>old.filter((_,i)=>!indices.includes(i)));}} onReplaceGesture={(index,gesture)=>{metrics.replaced.push({index,gesture});setGestures(old=>old.map((item,i)=>i===index?gesture:item));}} commitPendingRef={commitPendingRef} gestures={gestures} onGesture={g=>{metrics.committed.push(g);setGestures(old=>[...old,g]);}} style={{color:'#2468dd',lineWidth:2}} cancelToken={cancelToken}/></div></>}
 createRoot(document.getElementById('root')).render(<React.StrictMode><UserPreferencesProvider><App/></UserPreferencesProvider></React.StrictMode>);
 `;
 const server = await createServer({
+  cacheDir: await mkdtemp(path.join(tmpdir(), "monkeyhub-annotate-test-")),
   root, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", publicDir: false,
   server: { host: "127.0.0.1", port: 5189, strictPort: true },
-  plugins: [{ name: "annotate-fixture", resolveId(id) { if (id === "/baseline-annotate.tsx") return baselineId; if (id === "/fixture.tsx") return `${root}/fixture.tsx`; }, async load(id) { if (id === baselineId) return readFile(new URL("../baseline/src/features/stage/Annotate.tsx", import.meta.url), "utf8"); if (id.endsWith("/fixture.tsx")) return fixture; }, configureServer(server) { server.middlewares.use((req,res,next)=>{if(req.url!=="/")return next();res.setHeader("Content-Type","text/html");res.end('<html><style>body{margin:0}#stage{position:relative;width:800px;height:600px}.annotate,.viewport-canvas{position:absolute;inset:0;width:100%;height:100%}.annotate{pointer-events:none;touch-action:none}.annotate[data-armed="true"]{pointer-events:auto}.annotate__note,.annotate__label{position:absolute}</style><div id="root"></div><script type="module" src="/fixture.tsx"></script></html>');});} }],
+  plugins: [{ name: "annotate-fixture", resolveId(id) { if (id === "/baseline-annotate.tsx") return baselineId; if (id === "/fixture.tsx") return `${root}/fixture.tsx`; }, async load(id) { if (id === baselineId) return readFile(new URL("../baseline/src/features/stage/Annotate.tsx", import.meta.url), "utf8"); if (id.endsWith("/fixture.tsx")) return fixture; }, configureServer(server) { server.middlewares.use((req,res,next)=>{if(req.url!=="/")return next();res.setHeader("Content-Type","text/html");res.end('<html><style>body{margin:0}#stage{position:relative;width:800px;height:600px}.annotate,.viewport-canvas{position:absolute;inset:0;width:100%;height:100%}.annotate{pointer-events:none;touch-action:none}.annotate[data-armed="true"]{pointer-events:auto}.annotate__note,.annotate__label,.annotate__text{position:absolute}.annotate__text{z-index:6}</style><div id="root"></div><script type="module" src="/fixture.tsx"></script></html>');});} }],
 });
 let browser;
 try {
@@ -91,7 +96,9 @@ try {
     await page.mouse.move(box.x+100,box.y+100);await page.mouse.down();await page.mouse.move(box.x+900,box.y+650);await page.mouse.up();
     await page.waitForFunction(()=>window.fixture.committed.length===3);
     await page.mouse.move(box.x+100,box.y+120);await page.mouse.down();await page.keyboard.press('Escape');await page.mouse.up();
-    assert.equal(await page.evaluate(()=>window.fixture.committed.length),3,"Escape cancels live ink");
+    assert.equal(await page.evaluate(()=>window.fixture.committed.length),3,"the parent's one Escape exits and cancels live ink");
+    assert.equal(await page.locator('canvas.annotate[data-armed="true"]').count(),0,"one Escape disarms tracing");
+    await page.evaluate(()=>window.fixture.setTool('freehand'));
     await page.mouse.move(box.x+120,box.y+120);await page.mouse.down();await ink.dispatchEvent('pointercancel',{pointerId:1});await page.mouse.up();
     assert.equal(await page.evaluate(()=>window.fixture.committed.length),3,"pointercancel cancels live ink");
     await page.evaluate(()=>window.fixture.setEraser(true));
@@ -113,12 +120,37 @@ try {
     await page.mouse.move(box.x+200,box.y+200);await page.mouse.down();await page.mouse.move(box.x+300,box.y+200);await page.mouse.up();
     await page.mouse.click(box.x+250,box.y+250);
     assert.deepEqual(await page.evaluate(()=>window.fixture.committed.at(-1).screen),[[200,200],[300,200],[250,250]],"arc keeps its three-point workflow");
+    await page.evaluate(()=>{window.fixture.reset();window.fixture.setTool('text');});
+    await page.mouse.click(box.x+200,box.y+300);
+    const textEditor=page.locator('.annotate__text');
+    await textEditor.fill('入口向南');await textEditor.press('Enter');
+    await page.waitForFunction(()=>window.fixture.getGestures().length===1);
+    const note=await page.evaluate(()=>window.fixture.getGestures()[0]);
+    assert.equal(note.kind,'text');assert.equal(note.label,'入口向南');assert.equal(note.fontSize,18);
+    assert.deepEqual(note.screen,[[200,300]],"text retains one canvas anchor");
+    assert.deepEqual(note.hits[0].world,[box.x+200,box.y+300,0],"text reads the model exactly at its anchor");
+    await page.mouse.move(box.x+205,box.y+305);await page.mouse.down();await page.mouse.move(box.x+305,box.y+355);await page.mouse.up();
+    await page.waitForFunction(()=>window.fixture.replaced.length===1);
+    assert.deepEqual(await page.evaluate(()=>window.fixture.getGestures()[0].screen),[[300,350]],"drag moves text as one replacement");
+    assert.deepEqual(await page.evaluate(()=>window.fixture.getGestures()[0].hits[0].world),[box.x+300,box.y+350,0],"moving text refreshes its model anchor");
+    await page.mouse.click(box.x+305,box.y+355);await textEditor.fill('保留入口');await textEditor.press('Enter');
+    assert.equal(await page.evaluate(()=>window.fixture.getGestures()[0].label),'保留入口',"a click edits existing text without another mark");
+    await page.keyboard.press('Delete');
+    assert.equal(await page.evaluate(()=>window.fixture.getGestures().length),0,"Delete removes selected text through the stroke deletion callback");
+    await page.mouse.click(box.x+200,box.y+300);await textEditor.fill('Wide annotation');await textEditor.press('Enter');
+    await page.evaluate(()=>window.fixture.setEraser(true));
+    await page.mouse.click(box.x+290,box.y+305);
+    assert.equal(await page.evaluate(()=>window.fixture.getGestures().length),0,"eraser hits text across its rendered width, not only its anchor");
+    await page.evaluate(()=>window.fixture.setTool('text'));
+    await page.mouse.click(box.x+200,box.y+300);await textEditor.fill('退出时保存');await textEditor.press('Escape');
+    assert.equal(await page.evaluate(()=>window.fixture.getGestures()[0].label),'退出时保存',"the parent commits unfinished text before Escape closes the paper");
+    assert.equal(await textEditor.count(),0,"exiting leaves no input on screen");
     await page.evaluate(()=>window.fixture.setTool('freehand'));
     await ink.evaluate(canvas=>{canvas.setPointerCapture=undefined;canvas.hasPointerCapture=undefined;});
     const count=await page.evaluate(()=>window.fixture.committed.length);
     await page.mouse.move(box.x+100,box.y+300);await page.mouse.down();await page.mouse.move(box.x+900,box.y+650);await page.mouse.up();
     assert.equal(await page.evaluate(()=>window.fixture.committed.length),count+1,"no-capture fallback finishes outside the overlay");
     assert.deepEqual(await page.evaluate(()=>window.fixture.committed.at(-1).screen.at(-1)),[900,650]);
-    console.log("Annotate headless behavior PASS: point, short stroke, outside release, Escape, pointercancel, eraser commit/cancel, Space/middle viewer transfer, text Space, coalesced curve, arc, missing-capture fallback, DPR 2.");
+    console.log("Annotate headless behavior PASS: point, short stroke, outside release, parent Escape exit, pointercancel, eraser commit/cancel, Space/middle viewer transfer, text Space, coalesced curve, arc, text creation/edit/move/delete/eraser/pending exit, missing-capture fallback, DPR 2.");
   }
 } finally { await browser?.close(); await server.close(); }

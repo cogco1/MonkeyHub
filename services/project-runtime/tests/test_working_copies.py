@@ -402,6 +402,38 @@ class WorkingCopyTests(unittest.TestCase):
             self.assertEqual(reopened.get("/api/model-annotations", params={**self.a, "revisionSha256": snapshot["revisionSha256"]}).json(), snapshot)
             self.assertEqual(reopened.get("/api/model-annotations", params=self.b).json()["annotations"], [])
             self.assertEqual(reopened.get("/api/model-annotations", params={**self.b, "revisionSha256": snapshot["revisionSha256"]}).status_code, 404)
+            self.assertEqual(reopened.get("/api/model-annotations/history", params=self.a).json(), [erased, snapshot])
+            self.assertEqual(reopened.get("/api/model-annotations/history", params=self.b).json(), [])
+
+    def test_saved_model_text_survives_move_delete_and_exact_history_reopening(self) -> None:
+        before_head = self.repository.read_head()
+        mark = {"id": "note", **gesture("text", hit("obj-portico-base"), screen=[[20, 30]],
+                                         label="共享厨房", fontSize=18)}
+        request = {"projectId": PROJECT_ID, "modelSource": self.a, "baseRevisionSha256": None,
+                   "annotations": [mark], "comment": ""}
+        response = self.client.put("/api/model-annotations", json=request)
+        self.assertEqual(response.status_code, 200, response.text)
+        first = response.json()
+        expected_notes = [{"componentId": "portico", "key": "description.note", "value": "共享厨房"}]
+        self.assertEqual(first["facetNotes"], expected_notes)
+        ref = next(ref for ref in bound_project(self.app.state).record_refs(self.a["runId"])
+                   if ref.sha256 == first["revisionSha256"])
+        self.assertNotIn("facetNotes", self.repository.load_json(ref), "the resolved reading is never another stored authority")
+        moved = self.client.put("/api/model-annotations", json={**request, "baseRevisionSha256": first["revisionSha256"],
+                                "annotations": [{**mark, "screen": [[80, 50]], "hits": []}]}).json()
+        erased = self.client.put("/api/model-annotations", json={**request, "baseRevisionSha256": moved["revisionSha256"],
+                                 "annotations": []}).json()
+        with TestClient(create_app(self.settings)) as reopened:
+            history = reopened.get("/api/model-annotations/history", params=self.a)
+            self.assertEqual(history.status_code, 200, history.text)
+            self.assertEqual(history.json(), [erased, moved, first])
+            self.assertEqual([row["facetNotes"] for row in history.json()], [[], [], expected_notes])
+            restored = reopened.get("/api/model-annotations", params={**self.a, "revisionSha256": first["revisionSha256"]}).json()
+            self.assertEqual(restored["annotations"][0]["label"], "共享厨房")
+            self.assertEqual(restored["annotations"][0]["fontSize"], 18)
+            self.assertEqual(restored["annotations"][0]["hits"], mark["hits"])
+            self.assertEqual(restored["facetNotes"], expected_notes)
+        self.assertEqual(self.repository.read_head(), before_head)
 
     def test_model_source_survives_clarification_without_resubmitting_it(self) -> None:
         self.app.state.intent_compiler = scripted(status="question", question="What height?", component_id="portico", element_id="portico-base")

@@ -5845,7 +5845,7 @@ export type GestureDto = {
     /**
      * Kind
      */
-    kind: 'circle' | 'arrow' | 'keep' | 'remove' | 'freehand' | 'line' | 'ruler' | 'arc';
+    kind: 'circle' | 'arrow' | 'keep' | 'remove' | 'freehand' | 'line' | 'ruler' | 'arc' | 'text';
     /**
      * Screen
      */
@@ -5905,6 +5905,10 @@ export type GestureDto = {
         number,
         number
     ] | null;
+    /**
+     * Fontsize
+     */
+    fontSize?: number | null;
 };
 
 /**
@@ -7701,6 +7705,26 @@ export type MessageSourceDto = {
 };
 
 /**
+ * ModelAnnotationFacetNoteDto
+ *
+ * The person's text resolved against its saved model, not a StateRecord edit.
+ */
+export type ModelAnnotationFacetNoteDto = {
+    /**
+     * Componentid
+     */
+    componentId: string;
+    /**
+     * Key
+     */
+    key?: 'description.note';
+    /**
+     * Value
+     */
+    value: string;
+};
+
+/**
  * ModelAnnotationsDto
  */
 export type ModelAnnotationsDto = {
@@ -7721,6 +7745,10 @@ export type ModelAnnotationsDto = {
      * Comment
      */
     comment: string;
+    /**
+     * Facetnotes
+     */
+    facetNotes?: Array<ModelAnnotationFacetNoteDto>;
 };
 
 /**
@@ -7797,7 +7825,7 @@ export type ModelGestureDto = {
     /**
      * Kind
      */
-    kind: 'circle' | 'arrow' | 'keep' | 'remove' | 'freehand' | 'line' | 'ruler' | 'arc';
+    kind: 'circle' | 'arrow' | 'keep' | 'remove' | 'freehand' | 'line' | 'ruler' | 'arc' | 'text';
     /**
      * Screen
      */
@@ -7857,6 +7885,10 @@ export type ModelGestureDto = {
         number,
         number
     ] | null;
+    /**
+     * Fontsize
+     */
+    fontSize?: number | null;
     /**
      * Id
      */
@@ -19426,6 +19458,56 @@ export type CreateHostedOpeningProposalApiProposalsHostedOpeningPostResponses = 
 };
 
 export type CreateHostedOpeningProposalApiProposalsHostedOpeningPostResponse = CreateHostedOpeningProposalApiProposalsHostedOpeningPostResponses[keyof CreateHostedOpeningProposalApiProposalsHostedOpeningPostResponses];
+
+export type ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+        /**
+         * Statedigest
+         */
+        stateDigest: string;
+        /**
+         * Assetsha256
+         */
+        assetSha256: string;
+    };
+    url: '/api/model-annotations/history';
+};
+
+export type ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetError = ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetErrors[keyof ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetErrors];
+
+export type ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetResponses = {
+    /**
+     * Response Read Saved Model Annotation History Api Model Annotations History Get
+     *
+     * Successful Response
+     */
+    200: Array<ModelAnnotationsDto>;
+};
+
+export type ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetResponse = ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetResponses[keyof ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetResponses];
 
 export type ReadSavedModelAnnotationsApiModelAnnotationsGetData = {
     body?: never;

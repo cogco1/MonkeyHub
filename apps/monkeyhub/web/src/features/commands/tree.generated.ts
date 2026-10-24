@@ -2433,7 +2433,10 @@ export const COMMAND_TREE: CommandTree = {
         "zh-CN": "文字"
       },
       "terms": [
-        "text size"
+        "text size",
+        "text note",
+        "文字批注",
+        "短话"
       ],
       "surface": "document",
       "group": "document",
@@ -2443,6 +2446,7 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [
+        "模67",
         "文14",
         "文20"
       ],
@@ -2615,7 +2619,7 @@ export const COMMAND_TREE: CommandTree = {
       "tier": "basic",
       "place": null,
       "when": [],
-      "shortcut": null,
+      "shortcut": "Ctrl+Z",
       "entries": [
         "模64",
         "文17"
@@ -2650,7 +2654,7 @@ export const COMMAND_TREE: CommandTree = {
       "tier": "basic",
       "place": null,
       "when": [],
-      "shortcut": null,
+      "shortcut": "Ctrl+Shift+Z",
       "entries": [
         "模65",
         "文18"
@@ -2675,17 +2679,21 @@ export const COMMAND_TREE: CommandTree = {
       "id": "view.markup_tools.cancel",
       "capability": "markup.draw",
       "label": {
-        "en": "Cancel tool",
-        "zh-CN": "取消工具"
+        "en": "Exit tracing paper",
+        "zh-CN": "退出描图纸"
       },
-      "terms": [],
+      "terms": [
+        "Escape",
+        "exit tracing paper",
+        "退出描图纸"
+      ],
       "surface": "modeling",
       "group": "document",
       "channel": "front",
       "tier": "basic",
       "place": null,
       "when": [],
-      "shortcut": null,
+      "shortcut": "Esc",
       "entries": [
         "模66"
       ],
@@ -2886,6 +2894,27 @@ export const COMMAND_TREE: CommandTree = {
         "back to markup",
         "resume markup"
       ]
+    },
+    {
+      "id": "view.markup_tools.restore_paper",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Continue this paper",
+        "zh-CN": "继续这张纸"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "document",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "revisionSha256"
+      ],
+      "inPlace": true
     },
     {
       "id": "markup.hand_to_ai.open",
@@ -3171,14 +3200,19 @@ export const COMMAND_TREE: CommandTree = {
         "en": "Clear annotations",
         "zh-CN": "清除批注"
       },
-      "terms": [],
+      "terms": [
+        "clear tracing paper",
+        "clear all marks",
+        "清空描图纸",
+        "清空批注"
+      ],
       "surface": "board",
       "group": "board",
       "channel": "side",
       "tier": "basic",
       "place": null,
       "when": [],
-      "shortcut": null,
+      "shortcut": "Ctrl+Shift+X",
       "entries": [
         "模63",
         "板11",
