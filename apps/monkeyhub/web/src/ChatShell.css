@@ -337,3 +337,6 @@
 /* 08: a sentence that names one command, offered as that command before it goes to the model. */
 .chat-route{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 6px;padding:6px 8px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);font-size:var(--text-caption)}
 .chat-route__says{flex:1 1 12em;margin:0;color:var(--ink)}
+/* 一句话直接办: the one thing a sentence left out, asked on its card as buttons. */
+.chat-route__which{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.chat-route__which>span{color:var(--muted)}

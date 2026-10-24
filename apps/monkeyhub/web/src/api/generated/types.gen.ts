@@ -1329,6 +1329,38 @@ export type ChatWorkspace = {
 };
 
 /**
+ * CommandMeaningDto
+ */
+export type CommandMeaningDto = {
+    /**
+     * State
+     */
+    state: 'ready' | 'loading' | 'unavailable';
+    /**
+     * Hits
+     */
+    hits: Array<MeaningHitDto>;
+    /**
+     * Route
+     */
+    route?: string | null;
+};
+
+/**
+ * CommandMeaningRequest
+ */
+export type CommandMeaningRequest = {
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Limit
+     */
+    limit?: number;
+};
+
+/**
  * CommandRef
  *
  * One command of the command tree and the arguments it runs with.
@@ -1863,6 +1895,24 @@ export type JobDto = {
      * where this job lives; it is not version history
      */
     persistence: string;
+};
+
+/**
+ * MeaningHitDto
+ */
+export type MeaningHitDto = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Score
+     */
+    score: number;
+    /**
+     * Text
+     */
+    text: string;
 };
 
 /**
@@ -5126,3 +5176,28 @@ export type PutUserSettingsApiSettingsUserPutResponses = {
 };
 
 export type PutUserSettingsApiSettingsUserPutResponse = PutUserSettingsApiSettingsUserPutResponses[keyof PutUserSettingsApiSettingsUserPutResponses];
+
+export type CommandMeaningApiCommandsMeaningPostData = {
+    body: CommandMeaningRequest;
+    path?: never;
+    query?: never;
+    url: '/api/commands/meaning';
+};
+
+export type CommandMeaningApiCommandsMeaningPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CommandMeaningApiCommandsMeaningPostError = CommandMeaningApiCommandsMeaningPostErrors[keyof CommandMeaningApiCommandsMeaningPostErrors];
+
+export type CommandMeaningApiCommandsMeaningPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: CommandMeaningDto;
+};
+
+export type CommandMeaningApiCommandsMeaningPostResponse = CommandMeaningApiCommandsMeaningPostResponses[keyof CommandMeaningApiCommandsMeaningPostResponses];

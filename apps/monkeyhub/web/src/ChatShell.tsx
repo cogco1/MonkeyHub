@@ -30,6 +30,7 @@ import { ProjectSkills } from "./features/skills/SkillsPanel";
 import { SkillGrants } from "./features/skills/SkillPermissions";
 import { editFocused, HubMenuBar, type HubMenu, type HubMenuItem } from "./HubMenu";
 import { ASK_AI_ACTION, openSurfaceAction, useCommandActions, useCommands, type CommandHandler } from "./features/commands/CommandProvider";
+import { askMeaning, offerFor, type ArgChoice, type ArgChoices, type Offer } from "./features/commands/meaning";
 import { indexOf, routeSentence, searchable } from "./features/commands/search";
 import { chooseShell, useShellLayout } from "./app/shellLayout";
 import { AttentionShell, RECENT_CONVERSATIONS, type CenterView, type ShellProject } from "./app/AttentionShell";
@@ -156,6 +157,7 @@ const composerWords = {
     target: "将修改：当前", targetUnrecorded: "未记录的修改不包括在内", sending: "发送中…",
     sendTo: (name: string) => `发到：${name}`, sendToAttention: "关注对话", sendToNew: "新对话",
     routeSays: (label: string) => `这句话可以直接做：「${label}」`, routeRun: "直接做", routeSend: "还是发给 AI",
+    routeWhich: (name: string) => name === "project" ? "哪个项目？" : name === "sessionId" ? "哪个对话？" : `还差：${name}`,
     operationOpenChat: "打开对话", operationDismiss: "知道了",
     operationMore: (count: number) => `另有 ${count} 个`,
     targetViewing: (name: string) => `正在查看 ${name}，这条消息仍会修改当前`,
@@ -168,6 +170,7 @@ const composerWords = {
     target: "Changes: Current", targetUnrecorded: "unrecorded edits not included", sending: "Sending…",
     sendTo: (name: string) => `To: ${name}`, sendToAttention: "the attention conversation", sendToNew: "a new conversation",
     routeSays: (label: string) => `This can be done directly: ${label}`, routeRun: "Do it", routeSend: "Send to the AI instead",
+    routeWhich: (name: string) => name === "project" ? "Which project?" : name === "sessionId" ? "Which conversation?" : `Still needed: ${name}`,
     operationOpenChat: "Open chat", operationDismiss: "Dismiss",
     operationMore: (count: number) => `${count} more`,
     targetViewing: (name: string) => `Viewing ${name}; this message still changes Current`,
@@ -591,13 +594,20 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const t = words[preferences.language], w = composerWords[preferences.language], s = shellWords[preferences.language];
   const developer = useDeveloperMode();
   // 08: a sentence that clearly names one command the person can run here is offered as that command before it goes
-  // to the model (the search index in features/commands/search.ts); the person can still send it as written.
+  // to the model: first by its words (features/commands/search.ts), else by its meaning (the Hub's local model,
+  // features/commands/meaning.ts). One click runs it; an argument the sentence did not name is the one thing the card
+  // asks. The person can still send it as written.
   const commands = useCommands();
-  const [routed, setRouted] = useState<{ id: string; text: string } | null>(null);
+  const [routed, setRouted] = useState<{ text: string; offer: Offer } | null>(null);
   const sendAsWritten = useRef(false);
   const [initial] = useState(readView);
   const [projects, setProjects] = useState<ChatProject[]>([]);
   const [sessions, setSessions] = useState<ChatSummary[]>([]);
+  /** The arguments a sentence may name and the confirm card may ask for: a project, or one of this project's conversations. */
+  const argChoices = (): ArgChoices => ({
+    project: projects.map((item): ArgChoice => ({ value: item.name, label: item.name })),
+    sessionId: sessions.filter((item) => !item.archived && item.projectDir === projectDir).map((item): ArgChoice => ({ value: item.id, label: item.title })),
+  });
   const [archivedView, setArchivedView] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState<string | null>(null);
   const [providers, setProviders] = useState<ChatProvider[]>([]);
@@ -1371,9 +1381,18 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       return;
     }
     if (!sendAsWritten.current && !attachments.length && !renderDraft) {
-      const hit = routeSentence(indexOf(commands.tree, searchable(commands.tree, developer)), draft.trim());
-      const state = hit ? commands.stateOf(hit.command) : null;
-      if (hit && state && (state.kind === "ready" || state.kind === "opens")) { setRouted({ id: hit.command.id, text: draft.trim() }); return; }
+      const text = draft.trim();
+      const runnable = (offer: Offer | null) => {
+        const state = offer ? commands.stateOf(offer.command) : null;
+        return Boolean(state && (state.kind === "ready" || state.kind === "opens"));
+      };
+      const hit = routeSentence(indexOf(commands.tree, searchable(commands.tree, developer)), text);
+      const said = hit ? offerFor(commands.tree, hit.command.id, text, argChoices(), developer) : null;
+      if (said && runnable(said)) { setRouted({ text, offer: said }); return; }
+      actionLock.current = true;
+      const meant = await askMeaning(text).finally(() => { actionLock.current = false; });
+      const offer = meant?.route ? offerFor(commands.tree, meant.route, text, argChoices(), developer) : null;
+      if (offer && runnable(offer)) { setRouted({ text, offer }); return; }
     }
     sendAsWritten.current = false;
     setRouted(null);
@@ -2019,6 +2038,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       const target = sessions.find((item) => item.id === args?.sessionId);
       if (target) selectChat(target);
     } },
+    "project.open": { run: ({ args }) => {
+      const target = projects.find((item) => item.name === args?.project || item.projectDir === args?.project);
+      if (target) selectProject(target);
+    } },
     [ASK_AI_ACTION]: { run: ({ text }) => askAgent(text ?? ""), available: () => (projectDir && !archived && !external ? true : t.projectRequired) },
     "project.create.new": { run: openNewProject },
     "project.create.add_existing": { run: openAddProject },
@@ -2215,14 +2238,19 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           {draggingFiles && <p className="chat-attachment-drop" role="status">{t.dropFiles}</p>}
           {/* 08: the command the sentence names, offered before the model; it goes once the words change. */}
           {routed && routed.text === draft.trim() && (() => {
-            const command = commands.tree.commands.find((item) => item.id === routed.id);
-            if (!command) return null;
+            const { command, args, missing } = routed.offer;
+            const runWith = (more: Record<string, string> = {}) => {
+              if (commands.run(command.id, "composer", { args: { ...args, ...more } })) setDrafts((value) => ({ ...value, [draftKey]: "" }));
+              setRouted(null);
+            };
             return <div className="chat-route" role="group" aria-label={w.routeSays(command.label[preferences.language])}>
               <p className="chat-route__says">{w.routeSays(command.label[preferences.language])}</p>
-              <button data-command={command.id} type="button" className="btn btn--primary chat-route__run" onClick={() => {
-                if (commands.run(routed.id, "composer")) setDrafts((value) => ({ ...value, [draftKey]: "" }));
-                setRouted(null);
-              }}>{w.routeRun}</button>
+              {missing ? <div className="chat-route__which" role="group" aria-label={w.routeWhich(missing.name)}>
+                <span>{w.routeWhich(missing.name)}</span>
+                {missing.choices.slice(0, 6).map((choice) => <button key={choice.value} data-command={command.id} data-command-arg={choice.value}
+                  type="button" className="btn chat-route__choice" onClick={() => runWith({ [missing.name]: choice.value })}>{choice.label}</button>)}
+              </div>
+                : <button data-command={command.id} type="button" className="btn btn--primary chat-route__run" onClick={() => runWith()}>{w.routeRun}</button>}
               <button data-command="chat.composer.send" type="button" className="btn chat-route__send" onClick={() => { sendAsWritten.current = true; void send(); }}>{w.routeSend}</button>
             </div>;
           })()}
