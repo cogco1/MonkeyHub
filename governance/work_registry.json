@@ -956,6 +956,32 @@
             "docs/architecture/project-runtime.md"
           ],
           "depends_on": []
+        },
+        {
+          "id": "failure-actions",
+          "status": "active",
+          "branch": "claude/300-b3-failure-actions",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-failure-actions",
+          "base_ref": "1a1acaf7960ff140dce0a7632ebfd456e6f89c21",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "A failure shows Ask the AI and Undo the last edit as buttons that act.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/app/ErrorPanel.tsx",
+            "apps/monkeyhub/web/src/app/FailureActions.tsx",
+            "apps/monkeyhub/web/src/app/styles.css",
+            "apps/monkeyhub/web/src/features/commands/CommandProvider.tsx",
+            "apps/monkeyhub/web/src/features/commands/tree.generated.ts",
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/attentionShell.browser.mjs",
+            "governance/module_registry.json"
+          ],
+          "depends_on": []
         }
       ]
     }

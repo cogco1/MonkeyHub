@@ -17,6 +17,7 @@ import { ErrorBoundary } from "../../app/ErrorBoundary";
 import { ErrorPanel, PlainFailure } from "../../app/ErrorPanel";
 import { designObjectLabel } from "../../app/format";
 import type { EvidenceTab } from "../../app/evidence";
+import { FailureActions } from "../../app/FailureActions";
 import { LoadingOverlay } from "../../app/LoadingOverlay";
 import { useCommandActions } from "../commands/CommandProvider";
 import { useT } from "../../i18n/useT";
@@ -1608,6 +1609,11 @@ export function Stage({
   // More, closed menus that the attention shell's bar leaves out, so pointing at them did nothing.
   const downloadExport = useRef(false);
   useCommandActions(active ? {
+    // The draft's Undo, for a failure's "Undo the last edit" as well as the tool button.
+    ...(model?.onUndo ? { "draft.tools.undo": {
+      run: () => model.onUndo(),
+      available: () => model.canUndo && !sketchBusy && !actionInProgress ? true : t("stage.model.undo"),
+    } } : {}),
     "model.capture": {
       run: () => { void onCapture(); },
       available: () => loadedRunId === null ? t("stage.tools.screenshotUnavailable")
@@ -2292,6 +2298,7 @@ export function Stage({
               <span className="model-tools__sync-status" role={model.sync.error ? "alert" : "status"}>
                 {model.sync.error ?? (model.sync.busy ? t("stage.sync.busy") : model.sync.autosave
                   ? t(model.sync.autosave === "saved" ? "stage.sync.autosaved" : "stage.sync.autosaving") : t("stage.sync.dirty"))}
+                {model.sync.error && <FailureActions reason={model.sync.error} undo />}
               </span>
             </div>}
           </div>

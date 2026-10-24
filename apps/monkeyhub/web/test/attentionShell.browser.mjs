@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createProjectWorkspaceFixture } from "./projectWorkspaceFixture.mjs";
+import { cmd } from "./commandLocator.mjs";
 import { assertPlainScreen } from "./plainScreen.mjs";
 
 // The attention shell (?shell=attention) over the real built Hub: the projects column with what
@@ -117,6 +118,8 @@ const bulks = new Map();
 // Cards whose undo finds the project moved on: the Hub leaves them handled and asks instead.
 const movedOnUndo = new Set(["att_v11b"]);
 const attentionActions = [], attentionNotes = [], chatPosts = [];
+// The next answer the Hub refuses with its own words, as a record that disagrees with itself does.
+let failNextAnswer = false;
 const route = async (handler) => {
   const request = handler.request(), url = new URL(request.url()), method = request.method();
   if (url.pathname === "/api/runtime/events") return handler.continue();
@@ -233,6 +236,10 @@ const route = async (handler) => {
     const act = url.pathname.match(/^\/api\/attention\/([^/]+)\/(resolve|later|dismiss|reopen|undo)$/);
     if (act && method === "POST") {
       const item = cards.find((card) => card.id === act[1]);
+      if (failNextAnswer && act[2] === "resolve") {
+        failNextAnswer = false;
+        return json({ code: "INTERNAL_ERROR", detail: "Traceback (most recent call last): seat 'modeler' owns components with no element" }, 500);
+      }
       const option = act[2] === "resolve" ? item.options.find((row) => row.id === data().optionId) : null;
       attentionActions.push([act[2], item.id, option?.id ?? null]);
       if (act[2] === "resolve" && data().note !== undefined) attentionNotes.push(data().note);
@@ -825,6 +832,35 @@ try {
     await shoot(small, `attention-phone-side-${colour}`);
     await phone.close();
   }
+  // A refused answer says it in one plain sentence and offers the next step as a button; the service's words stay off the
+  // screen. Handing it to the AI sends the sentence, in the open conversation. No model is open, so there is no edit to undo.
+  // A page of its own: handing it over opens the conversation, which the queue walkthrough above starts without.
+  attentionServed = true; cards = [queueCard("breaks", "A", { channel: "decide", kind: "choice", title: "An answer that breaks", titleZh: "会出错的回答",
+    options: [answer("go", "Go", "去", "去做")] })];
+  const refusedContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const refusedPage = await refusedContext.newPage(); refusedPage.setDefaultTimeout(15_000);
+  refusedPage.on("pageerror", (error) => errors.push(error.message));
+  await refusedPage.route((url) => url.pathname.startsWith("/api/"), route);
+  await open(refusedPage);
+  const breaks = refusedPage.locator(".attention-shell__queue .attention-card").filter({ hasText: "会出错的回答" });
+  await breaks.waitFor();
+  failNextAnswer = true;
+  await breaks.locator(".attention-card__answer").first().click();
+  const refused = breaks.locator(".attention-card__failure");
+  await refused.getByText("前后不一致").waitFor();
+  const askAi = cmd(refused, "view.notice.ask_ai");
+  await askAi.waitFor();
+  assert.equal(await cmd(refused, "view.notice.undo").count(), 0, "no model is open, so there is no edit to undo");
+  await shoot(refusedPage, "attention-queue-refused-answer");
+  const handedBefore = chatPosts.length;
+  await askAi.click();
+  for (const end = Date.now() + 8000; chatPosts.length === handedBefore && Date.now() < end; await refusedPage.waitForTimeout(50));
+  assert.equal(chatPosts.length, handedBefore + 1, "handing it over sends one message");
+  assert.match(chatPosts.at(-1)[1], /^刚才这一步没有完成：.*前后不一致/s);
+  assert.doesNotMatch(chatPosts.at(-1)[1], /seat '|Traceback/, "the AI is handed the sentence, not the service's words");
+  assert.equal(await askAi.isDisabled(), true, "and once");
+  await refusedContext.close();
+
   assert.deepEqual(errors, [], "page errors");
   console.log(JSON.stringify({ unexpected: [...new Set(unexpected)] }));
   console.log("PASS attention shell: projects column, tabs over the open surfaces, conversation drawer, side panel, phone drawers");

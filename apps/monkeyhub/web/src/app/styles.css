@@ -1784,6 +1784,13 @@ button.chip:hover {
   text-transform: uppercase;
 }
 
+.failure-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-inline-start: 8px;
+}
+
 .error-panel__code {
   color: var(--violated);
   font-weight: 700;

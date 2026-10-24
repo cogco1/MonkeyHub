@@ -11,6 +11,7 @@
 
 import type { StudioApiError } from "../api/project-runtime/client";
 import { asStudioApiError, MISSING_EDITABLE_CONTROL, NETWORK_ERROR, TRANSPORT_ERROR, UNSUPPORTED_REQUEST } from "../api/project-runtime/error";
+import { FailureActions } from "./FailureActions";
 import { currentFailureWords } from "./failureWords";
 import { BilingualText } from "../i18n/BilingualText";
 import { useT } from "../i18n/useT";
@@ -231,6 +232,10 @@ function failureKind(error: FailureLike): FailureKind {
   return "unknown";
 }
 
+/** The failures the AI can look into, and those where undoing the last edit of the draft is a way out. */
+const AI_CAN_HELP: ReadonlySet<FailureKind> = new Set<FailureKind>(["invariant", "record", "write", "drawing", "server", "unknown"]);
+const UNDO_HELPS: ReadonlySet<FailureKind> = new Set<FailureKind>(["invariant", "record", "write"]);
+
 /** A Board note refused before it was sent keeps its own sentence: the note is still below. */
 function boardSourceFailure(error: StudioApiError, what: string | undefined, language: Language): string | null {
   if (what !== "MonkeyBoard") return null;
@@ -280,6 +285,8 @@ export function PlainFailure({ error, className, lead }: { error: FailureLike; c
   return (
     <span className={`plain-failure${className ? ` ${className}` : ""}`}>
       {lead && <>{lead} </>}{copy.reason} {copy.next}
+      <FailureActions reason={copy.reason} ai={AI_CAN_HELP.has(failureKind(error))} undo={UNDO_HELPS.has(failureKind(error))}
+        technical={developerMode ? `${error.code}: ${error.detail}` : undefined} />
       {details && <details key={`${error.code}:${error.detail}`} className="card__details" open={developerMode}>
         <summary>{t("common.technicalDetails")}</summary>
         <span className="error-panel__code">{error.code}</span>{" "}
@@ -310,6 +317,8 @@ export function ErrorPanel({
     <div className="error-panel" role="alert">
       <p className="error-panel__detail error-panel__reason">{reason}</p>
       {next && <p className="error-panel__detail error-panel__next">{next}</p>}
+      {!board && !error.question && !semantic && <FailureActions reason={copy.reason} ai={AI_CAN_HELP.has(kind)} undo={UNDO_HELPS.has(kind)}
+        technical={developerMode ? `${error.code}: ${error.detail}` : undefined} />}
       {error.acceptedForms.length > 0 && (
         <ul className="error-panel__forms">
           {error.acceptedForms.map((form) => (

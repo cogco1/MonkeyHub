@@ -13108,6 +13108,46 @@ export const COMMAND_TREE: CommandTree = {
       ]
     },
     {
+      "id": "view.notice.ask_ai",
+      "capability": "shell.controls",
+      "label": {
+        "en": "Ask the AI to fix it",
+        "zh-CN": "交给 AI 处理"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "notice"
+      ]
+    },
+    {
+      "id": "view.notice.undo",
+      "capability": "shell.controls",
+      "label": {
+        "en": "Undo the last edit",
+        "zh-CN": "撤销上一步修改"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "notice"
+      ]
+    },
+    {
       "id": "view.notice.open",
       "capability": "shell.controls",
       "label": {
