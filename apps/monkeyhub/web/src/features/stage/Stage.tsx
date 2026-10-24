@@ -1410,7 +1410,9 @@ export function Stage({
         modelAnnotations.saving || modelAnnotations.dirty ? "stage.annotations.saving" : "stage.annotations.saved")}</span>}
       {modelAnnotations.error && <>
         <ErrorPanel error={modelAnnotations.error} what="/api/model-annotations" />
-        <button data-command="view.notice.retry" data-command-arg="model_marks" type="button" className="btn btn--small" onClick={() => void (!modelAnnotations.ready || modelAnnotations.error?.status === 409
+        {/* A conflict reads what is newer; a load or save that failed tries again. */}
+        <button data-command={modelAnnotations.ready && modelAnnotations.error.status === 409 ? "view.notice.read_latest" : "view.notice.retry"} data-command-arg="model_marks"
+          type="button" className="btn btn--small" onClick={() => void (!modelAnnotations.ready || modelAnnotations.error?.status === 409
           ? modelAnnotations.reload() : modelAnnotations.save()).catch(() => undefined)}>
           {t(!modelAnnotations.ready || modelAnnotations.error.status === 409 ? "stage.annotations.reload" : "stage.annotations.retry")}
         </button>

@@ -878,7 +878,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
     </div>}
     {(error || draft.error) && <div className="document-error"><ErrorPanel error={(error ?? draft.error)!} what={t("document.workspace")} />
       {draft.error && <><button data-command="view.notice.retry" data-command-arg="document_save" type="button" onClick={() => void draft.save().then(() => setError(null)).catch((cause: unknown) => setError(asStudioApiError(cause)))}>{t("document.retrySave")}</button>
-        <button data-command="view.notice.retry" data-command-arg="document_reload" type="button" onClick={() => void draft.reload().then(() => setError(null)).catch((cause: unknown) => setError(asStudioApiError(cause)))}>{t("document.reload")}</button>
+        <button data-command="view.notice.read_latest" data-command-arg="document" type="button" onClick={() => void draft.reload().then(() => setError(null)).catch((cause: unknown) => setError(asStudioApiError(cause)))}>{t("document.reload")}</button>
         <span>{t("document.reloadHint")}</span></>}
     </div>}
     {review && <div className="document-review-banner"><span>{t("document.reviewVersion")}</span><button data-command="view.markup_tools.return_to_edit" type="button" onClick={() => { setReview(null); setPageIndex(0); }}>{t("document.returnToEdit")}</button></div>}
