@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from functools import partial
-from http.client import HTTPConnection
+from http.client import HTTPConnection, HTTPException
 import json
 import os
 from pathlib import Path
@@ -55,10 +55,22 @@ _START_LIMIT_S = 180.0
 _STARTING_CONNECT_S = 0.03
 
 
-def _connect_within(limit: float, address, timeout, source_address=None) -> socket.socket:
-    """Connect within ``limit``; the exchange then has the request's own timeout."""
+def _connect_within(limit: float | None, address, timeout, source_address=None) -> socket.socket:
+    """Connect within ``limit`` (the request's own timeout when None); the exchange then has that timeout.
 
-    connection = socket.create_connection(address, limit, source_address)
+    A connection to a port nobody listens on yet can, on Windows, come back
+    connected to itself: the source port it was given is the port it dialled,
+    and the probe would read its own request as the answer (BadStatusLine,
+    0925 on 10-24). That is a port not listening yet, said as such.
+    """
+
+    connection = socket.create_connection(address, timeout if limit is None else limit, source_address)
+    try:
+        if connection.getsockname() == connection.getpeername():
+            raise ConnectionRefusedError(f"{address[0]}:{address[1]} answered from itself; nothing listens there yet")
+    except OSError:
+        connection.close()
+        raise
     connection.settimeout(timeout)
     return connection
 
@@ -73,8 +85,7 @@ class _ProbeHandler(HTTPHandler):
 
     def _connection(self, host, **kwargs) -> HTTPConnection:
         connection = HTTPConnection(host, **kwargs)
-        if self.connect_limit is not None:
-            connection._create_connection = partial(_connect_within, self.connect_limit)
+        connection._create_connection = partial(_connect_within, self.connect_limit)
         return connection
 
 
@@ -342,7 +353,9 @@ class WorkerSupervisor:
                                 if health.get("sourceRevision") != child.launch.source_revision:
                                     detail += " Its source version differs from the running Hub. Restart MonkeyHub after changing the source version before opening its tools."
                                 self._reject(child, "SERVICE_IDENTITY_MISMATCH", detail)
-                except (OSError, URLError, ValueError):
+                except (OSError, URLError, ValueError, HTTPException):
+                    # HTTPException: an answer that is not HTTP (BadStatusLine) is a failed probe like any other; the
+                    # watcher goes on, or the launch would stay starting until its limit and then be stopped.
                     with self._lock:
                         if child.desired_state == "running":
                             if child.service_pid is not None:
