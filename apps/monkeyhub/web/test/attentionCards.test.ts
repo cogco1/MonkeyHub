@@ -24,8 +24,8 @@ test("the recommended answer comes first; the others keep their writer's order",
 });
 
 test("an answer that sends a message the card does not write asks for the person's words", () => {
-  assert.equal(needsWords({ action: { commandId: "chat.send_message", args: {} } }), true);
-  assert.equal(needsWords({ action: { commandId: "chat.send_message", args: { content: "Use the south entrance." } } }), false, "the card wrote it");
+  assert.equal(needsWords({ action: { commandId: "chat.composer.send", args: {} } }), true);
+  assert.equal(needsWords({ action: { commandId: "chat.composer.send", args: { content: "Use the south entrance." } } }), false, "the card wrote it");
   assert.equal(needsWords({ action: { commandId: "candidate.review.archive", args: {} } }), false);
 });
 
