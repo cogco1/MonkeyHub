@@ -121,16 +121,14 @@ def _is_feedback(path: str) -> bool:
 
 
 def _recipe_value(hub: str, value) -> dict:
-    """A recipe's value with its skill pinned to the configured library's current version.
+    """A recipe's value with its skill pinned to the installed skill's current code (S-1).
 
-    The agent names the skill as it sees it; the Hub reads the library's
-    current index through the library's own Runtime and fills the exact
-    version. The chat project's Studio never reads the library.
+    The agent names the skill as it sees it; the Hub reads the skill folders
+    and fills the exact code. The chat project's Studio never reads them.
     """
     if not isinstance(value, dict):
         raise HubFailure(422, "CHAT_FEEDBACK_INVALID", "A recipe's value is {task, skill, note}.")
-    library = skill_plugins.read_library(transport._request_json(hub, "/api/settings/apps").get("libraryDir"), hub)
-    return {**value, "skill": skill_plugins.pin(library, value.get("skill"))}
+    return {**value, "skill": skill_plugins.pin(skill_plugins.installed_library(), value.get("skill"))}
 
 
 def _feedback_body(hub: str, base: str, chat_id: str, session: dict, path: str, body: dict,

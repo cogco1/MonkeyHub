@@ -1645,9 +1645,10 @@
         "project_runtime.application.artifacts.DocumentWorkCopy",
         "project_runtime.application.artifacts.WORK_COPY_WORKSPACE",
         "project_runtime.application.boards.export_board_pages",
-        "project_runtime.application.boards.BoardExportPage"
+        "project_runtime.application.boards.BoardExportPage",
+        "project_runtime.application.skill_library.installed"
       ],
-      "reason": "MonkeyHub starts the Runtime (main), shares its refusals (errors) and embeds its wire shapes (api.dto); it reads a project in process only through the Runtime's declared read API (#519): ProjectBinding and ReadToken, the event log, the runtime status, the document and work-copy readers and the Board page export. Everything else in project_runtime is reached over the Hub's forwarding path, so the Runtime can change its insides without the Hub following them."
+      "reason": "MonkeyHub starts the Runtime (main), shares its refusals (errors) and embeds its wire shapes (api.dto); it reads a project in process only through the Runtime's declared read API (#519): ProjectBinding and ReadToken, the event log, the runtime status, the document and work-copy readers and the Board page export. Everything else in project_runtime is reached over the Hub's forwarding path, so the Runtime can change its insides without the Hub following them. The skills installed on this machine (skill_library.installed, S-1) are read the same way: the skill folders and what a person allowed are this machine's, not a project's, and listing them reads those folders only and touches no project."
     },
     {
       "source": "services/project-runtime/src/project_runtime/binding",
@@ -1720,7 +1721,7 @@
       "apps/monkeyhub/web/src/HubMenu.tsx": 1,
       "apps/monkeyhub/web/src/app/AttentionShell.tsx": 12,
       "apps/monkeyhub/web/src/features/skills/SkillPermissions.tsx": 3,
-      "apps/monkeyhub/web/src/features/skills/SkillsPanel.tsx": 6,
+      "apps/monkeyhub/web/src/features/skills/SkillsPanel.tsx": 2,
       "apps/monkeyhub/web/src/i18n/BilingualText.tsx": 1,
       "apps/monkeyhub/web/src/main.tsx": 1
     }

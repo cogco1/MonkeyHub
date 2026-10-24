@@ -1988,6 +1988,128 @@ export type RuntimeProjectRequest = {
 };
 
 /**
+ * SkillAccessDto
+ *
+ * Network and the four lists a person allows; reading is not one of them.
+ */
+export type SkillAccessDto = {
+    /**
+     * Network
+     */
+    network?: boolean;
+    /**
+     * Programs
+     */
+    programs?: Array<string>;
+    /**
+     * Ssh
+     */
+    ssh?: Array<string>;
+    /**
+     * Write
+     */
+    write?: Array<string>;
+    /**
+     * Packages
+     */
+    packages?: Array<string>;
+};
+
+/**
+ * SkillGrantCarryRequest
+ *
+ * A project's approvals from before S-1, as its Runtime lists them (GET /api/skills/approvals).
+ */
+export type SkillGrantCarryRequest = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Approvals
+     */
+    approvals?: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+/**
+ * SkillGrantDto
+ *
+ * One answer a person gave, for every skill, one skill or one run (``once``).
+ */
+export type SkillGrantDto = {
+    /**
+     * Grantid
+     */
+    grantId: string;
+    access: SkillAccessDto;
+    skill?: SkillRefDto | null;
+    /**
+     * Once
+     */
+    once?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Grantedat
+     */
+    grantedAt: string;
+    /**
+     * Method
+     */
+    method: 'card' | 'settings' | 'migrated';
+    /**
+     * Ref
+     */
+    ref?: string | null;
+    /**
+     * Migratedfrom
+     */
+    migratedFrom?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Revokedat
+     */
+    revokedAt?: string | null;
+    /**
+     * Revokedby
+     */
+    revokedBy?: string | null;
+};
+
+/**
+ * SkillGrantsDto
+ */
+export type SkillGrantsDto = {
+    /**
+     * Schema
+     */
+    schema?: 'MonkeyHubSkillGrants@1';
+    /**
+     * Grants
+     */
+    grants?: Array<SkillGrantDto>;
+};
+
+/**
+ * SkillRefDto
+ *
+ * A skill as a grant names it: its name and the folder it is found in.
+ */
+export type SkillRefDto = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Source
+     */
+    source: 'bundled' | 'user' | 'shared';
+};
+
+/**
  * UpdateCheck
  *
  * The last automatic or requested check of the unsigned prerelease channel.
@@ -2735,6 +2857,79 @@ export type UpdateApplicationSettingsApiSettingsAppsPutResponses = {
 };
 
 export type UpdateApplicationSettingsApiSettingsAppsPutResponse = UpdateApplicationSettingsApiSettingsAppsPutResponses[keyof UpdateApplicationSettingsApiSettingsAppsPutResponses];
+
+export type ReadSkillGrantsApiSettingsSkillGrantsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/skill-grants';
+};
+
+export type ReadSkillGrantsApiSettingsSkillGrantsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: SkillGrantsDto;
+};
+
+export type ReadSkillGrantsApiSettingsSkillGrantsGetResponse = ReadSkillGrantsApiSettingsSkillGrantsGetResponses[keyof ReadSkillGrantsApiSettingsSkillGrantsGetResponses];
+
+export type RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostData = {
+    body?: never;
+    path: {
+        /**
+         * Grant Id
+         */
+        grant_id: string;
+    };
+    query?: never;
+    url: '/api/settings/skill-grants/{grant_id}/revoke';
+};
+
+export type RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostError = RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostErrors[keyof RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostErrors];
+
+export type RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: SkillGrantDto;
+};
+
+export type RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostResponse = RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostResponses[keyof RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostResponses];
+
+export type CarrySkillGrantsApiSettingsSkillGrantsCarryPostData = {
+    body: SkillGrantCarryRequest;
+    path?: never;
+    query?: never;
+    url: '/api/settings/skill-grants/carry';
+};
+
+export type CarrySkillGrantsApiSettingsSkillGrantsCarryPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CarrySkillGrantsApiSettingsSkillGrantsCarryPostError = CarrySkillGrantsApiSettingsSkillGrantsCarryPostErrors[keyof CarrySkillGrantsApiSettingsSkillGrantsCarryPostErrors];
+
+export type CarrySkillGrantsApiSettingsSkillGrantsCarryPostResponses = {
+    /**
+     * Response Carry Skill Grants Api Settings Skill Grants Carry Post
+     *
+     * Successful Response
+     */
+    200: Array<SkillGrantDto>;
+};
+
+export type CarrySkillGrantsApiSettingsSkillGrantsCarryPostResponse = CarrySkillGrantsApiSettingsSkillGrantsCarryPostResponses[keyof CarrySkillGrantsApiSettingsSkillGrantsCarryPostResponses];
 
 export type PrepareProjectModelingApiProjectModelingPostData = {
     body: ModelingInitializeRequestDto;

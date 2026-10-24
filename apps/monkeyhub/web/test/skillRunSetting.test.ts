@@ -1,5 +1,5 @@
 /**
- * Settings › Skill permissions: the Hub-wide choice of how a chat's AI runs a skill, above the
+ * Settings › What the AI may do: the Hub-wide choice of how a chat's AI runs a skill, above the
  * project's grants. It shows what the Hub saved, unset read as Ask, each choice with its one-line
  * explanation; a choice is saved at once by writing back every saved preference with only
  * `skillAgentRuns` changed, and reading never writes it. A refused save is shown in the Hub's
@@ -64,14 +64,13 @@ async function harness(t: TestContext, fixture: Fixture = {}) {
   let state: RunState = setting.initialRunSettingState;
   const actions = setting.runSettingActions(setting.createHubSettingsApi(HUB), (update) => { state = update(state); });
   const grants: GrantsState = {
-    projectId: "project-a", names: { "skill:site-palette": "Site palette" }, loading: false, loadError: null, revoking: null, revokeError: null,
-    grants: [{ approvalId: "apv-1", skillId: "skill:site-palette", version: 3, codeSha256: "3f9a1c0d2e4b".padEnd(64, "a"), scope: "version",
-      status: "active", access: null, method: "hub-page", approvedAt: "2026-10-19T09:30:00Z", approvedBy: { actorId: "kaiwen", origin: "hub" } }],
+    loading: false, loadError: null, revoking: null, revokeError: null,
+    grants: [{ grantId: "g-1", access: { programs: ["blender"] }, method: "card", grantedAt: "2026-10-19T09:30:00Z" }],
   };
   const unused = grantsActions({} as never, () => {});
   const render = (language: "en" | "zh-CN" = "en") => renderToStaticMarkup(createElement(UserPreferencesProvider,
     { appearance: { language, theme: "light", fontScale: 1 } }, createElement(SkillGrantsView, {
-      state: grants, actions: unused, projectName: "Harbour study", runChoice: createElement(SkillRunChoiceView, { state, actions }),
+      state: grants, actions: unused, runChoice: createElement(SkillRunChoiceView, { state, actions }),
     })));
   return { actions, sent, state: () => state, saved: () => saved, render };
 }
@@ -92,17 +91,17 @@ test("the page shows the saved choice above the grants, each choice with its one
   assert.equal(checked(en), "granted", "the saved choice is the one marked");
   const choices = [...en.matchAll(/<input[^>]*type="radio"[^>]*value="([a-z]+)"/g)].map((match) => match[1]);
   assert.deepEqual(choices, ["ask", "granted", "never"]);
-  for (const text of ["Ask me in the chat", "Allow once, Always allow this version and Deny",
-    "Only versions I always allowed", "never asks you",
-    "Only always-allowed versions that need no access", "run programs, use the network, connect to servers, write files or install Python packages"]) {
+  for (const text of ["Ask me in the chat", "Always allow, Only this time, No",
+    "Only what I already allowed", "never asks you",
+    "Only skills that need nothing allowed", "run programs, use the network, connect to servers, write files or install Python packages"]) {
     assert.ok(en.includes(text), text);
   }
   const at = (text: string) => en.indexOf(text);
-  assert.ok(at(">Skill permissions</h2>") < at("How the AI runs skills") && at("How the AI runs skills") < at("Every skill grant in Harbour study.")
-    && at("Every skill grant in Harbour study.") < at('class="skills__list"'), "under the title, above the project's grants");
+  assert.ok(at(">What the AI may do</h2>") < at("How the AI runs skills") && at("How the AI runs skills") < at("What you allowed skills to do on this computer.")
+    && at("What you allowed skills to do on this computer.") < at('class="skills__list"'), "under the title, above the grants");
 
   const zh = render("zh-CN");
-  for (const text of [">AI 在对话里运行 skill</legend>", "在对话里问我", "允许这一次 / 这个版本一直允许 / 拒绝", "只运行我设为一直允许的版本", "只运行一直允许、且不要额外权限的版本"]) {
+  for (const text of [">AI 在对话里运行 skill</legend>", "在对话里问我", "总是允许 / 只这一次 / 不", "只做我已经允许过的事", "只运行什么都不用允许的 skill"]) {
     assert.ok(zh.includes(text), text);
   }
 });

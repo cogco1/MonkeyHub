@@ -27,7 +27,7 @@ import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } f
 import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
 import { ProjectSkills } from "./features/skills/SkillsPanel";
-import { ProjectSkillGrants, SkillRunChoice } from "./features/skills/SkillPermissions";
+import { SkillGrants } from "./features/skills/SkillPermissions";
 import { editFocused, HubMenuBar, type HubMenu, type HubMenuItem } from "./HubMenu";
 import { ASK_AI_ACTION, openSurfaceAction, useCommandActions, useCommands, type CommandHandler } from "./features/commands/CommandProvider";
 import { indexOf, routeSentence, searchable } from "./features/commands/search";
@@ -2392,15 +2392,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             hidden={page.id !== shownSettingsPage}>{page.body}</section>)}
           <section role="tabpanel" id="settings-page-skill-permissions" className="settings-page" aria-labelledby="settings-tab-skill-permissions"
             hidden={shownSettingsPage !== "skill-permissions"}>
-            {/* Read each time the page is shown, for the project on screen; only this page and the Skills panel grant or revoke.
-                The Hub-wide choice of how a chat's AI runs skills shows without a project too. */}
-            {settingsOpen && shownSettingsPage === "skill-permissions" && (projectRuntime
-              ? <ProjectRuntimeProvider key={`skill-grants:${projectRuntime.runtimeId}`} runtimeId={projectRuntime.runtimeId}
-                baseUrl={`${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`}>
-                <ProjectSkillGrants projectName={project?.name ?? null} />
-              </ProjectRuntimeProvider>
-              : <div className="skills skill-grants"><h2>{t.skillPermissions}</h2><SkillRunChoice />
-                <p className="settings-intro">{t.skillPermissionsUnavailable}</p></div>)}
+            {/* What a person allowed skills to do on this computer (S-1), read each time the page is shown: the Hub's own
+                grants, so it needs no project and no project has to answer. Only this page withdraws a grant. */}
+            {settingsOpen && shownSettingsPage === "skill-permissions" && <SkillGrants />}
           </section>
         </div>
         <section role="tabpanel" id="settings-page-update" className="settings-page" aria-labelledby="settings-tab-update" hidden={shownSettingsPage !== "update"}>
@@ -2637,12 +2631,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             </> : <p className="chat-muted">{t.connectionNone}</p>}
           </details> : reloadPage;
         })()}
-        {/* The project's skills, read from its runtime: the one place a person approves a version to run. */}
-        <div className="chat-project-card__skills">
+        {/* The skills installed on this computer, as this project's runtime lists them; nothing is approved here (S-1). */}
+        {developer && <div className="chat-project-card__skills">
           <button type="button" className="chat-activity__open" disabled={!projectRuntime} title={projectRuntime ? undefined : t.skillsUnavailable}
             aria-description={projectRuntime ? undefined : t.skillsUnavailable} onClick={() => { setSkillsOpen(true); skillsDialog.current?.showModal(); }}>
             <Icon name="file" /><span>{t.skills}</span></button>
-        </div>
+        </div>}
         {/* A whole project moved as one file: written from what is retained,
             and read back into a folder of its own. Neither touches this view. */}
         <div className="chat-project-card__archive">

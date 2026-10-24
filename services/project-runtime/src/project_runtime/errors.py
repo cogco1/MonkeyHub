@@ -1,7 +1,8 @@
 """The one error body the Studio API returns: ``{code, detail}``, plus
-``question`` and ``acceptedForms`` when a human has to answer something, and
+``question`` and ``acceptedForms`` when a human has to answer something,
 ``outcome``, ``pendingIntent`` and ``authoredControlDraft`` when the answer
-belongs to a clarification chain.
+belongs to a clarification chain, and ``needs`` with what it is bound to when a
+person has to allow what a skill run needs (``SkillAccessNeeded``).
 
 An intent ends in one of four outcomes (``application/clarification.py``). One
 of them is a proposal and answers 201; the other three are refusals, and each
@@ -167,3 +168,25 @@ class UnsupportedRequest(ClarificationRefused):
             outcome="UNSUPPORTED",
             pending=pending,
         )
+
+
+class SkillAccessNeeded(StudioError):
+    """A skill run waits for a person to allow what it needs (S-1); nothing ran.
+
+    ``needs`` is what no grant allows yet, in the form a person allows it, and
+    ``broad`` the part of it that can be allowed only for this skill or this
+    run. ``skill``, ``projectId`` and ``codeSha256`` are what a one-run grant
+    for it is bound to.
+    """
+
+    def __init__(self, detail: str, *, needs: Mapping[str, object], broad: Mapping[str, object],
+                 skill: Mapping[str, str], project_id: str, code_sha256: str) -> None:
+        super().__init__(403, "SKILL_ACCESS_NEEDED", detail)
+        self.needs, self.broad, self.skill = dict(needs), dict(broad), dict(skill)
+        self.project_id, self.code_sha256 = project_id, code_sha256
+
+    def body(self) -> dict[str, object]:
+        body = super().body()
+        body |= {"needs": self.needs, "broad": self.broad, "skill": self.skill, "projectId": self.project_id,
+                 "codeSha256": self.code_sha256}
+        return body

@@ -34,7 +34,7 @@ _CONTEXT_NOTE = (
     "drawing request wins, then the drawing's own previous revision, then the project recipe, then the default. "
     "memory holds the locators, source policies and recipes this request's words are about: answer where-is from a "
     "current locator (a stale one with its staleReason) and follow a policy's prefer/avoid unless asked otherwise; "
-    "a recipe's skill names the library skill to load and whether its pinned version is still the library's. "
+    "a recipe's skill names the installed skill to load and whether it still has the pinned code. "
     "studyEvidence contains explicitly selected, exact Study revisions, not accepted project facts. "
     "Keep their conditions, exceptions, competing hypotheses and counterevidence together. "
     "Check completeness and changedContext before transferring a prior; incomplete evidence requires "
