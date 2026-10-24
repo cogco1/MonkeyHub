@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { usePreferences } from "../settings/preferences";
 import { CommandPalette } from "./CommandPalette";
@@ -161,7 +161,11 @@ export function CommandProvider({ children, tree = COMMAND_TREE }: { children: R
       const entry = (event.target as Element | null)?.closest?.("[data-command]");
       const id = entry?.getAttribute("data-command");
       if (!entry || !id || !byId.has(id) || inactive(entry)) return;
-      setUsage(recordUse(storage(), id, "button"));
+      // This listener runs before React handles the click. An urgent update here would re-render before then,
+      // and a controlled checkbox in that render takes back the change the click just made, so onChange never
+      // fires. The use is stored now; the page sees it after the click is handled.
+      const next = recordUse(storage(), id, "button");
+      startTransition(() => setUsage(next));
     };
     window.addEventListener("click", onClick, true);
     return () => window.removeEventListener("click", onClick, true);
