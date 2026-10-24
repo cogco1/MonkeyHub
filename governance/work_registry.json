@@ -187,26 +187,6 @@
             "apps/monkeyhub/web/test/workingCopy.browser.mjs"
           ],
           "depends_on": []
-        },
-        {
-          "id": "devmode-details",
-          "status": "active",
-          "branch": "claude/300-devmode-details",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-devmode-details",
-          "base_ref": "d6ce682ffd0cf3c5b9efa8dd6cc703a9d2912a09",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": "2-7b follow-up: the document page's source fingerprint and saved-ledger reference, and the drawing recipe's file hashes, show only in developer mode; the page number and whether the study is saved stay. Takes these files over from GH-300/tests, whose T-1b does not touch them.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentStudyPanel.tsx",
-            "apps/monkeyhub/web/src/workspaces/monkeydiagram/RecipeTransfer.tsx",
-            "apps/monkeyhub/web/test/documentStudy.browser.mjs",
-            "apps/monkeyhub/web/test/recipeTransfer.browser.mjs"
-          ],
-          "depends_on": []
         }
       ]
     }
