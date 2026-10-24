@@ -246,6 +246,54 @@ class RevisionOrderTests(unittest.TestCase):
         self.assertIn("楼板不动", outcome.detail)
         self.assertNotIn("run", ports.calls)
 
+    def test_a_keep_a_checked_condition_states_is_checked_on_the_built_change_and_lands_when_it_holds(self) -> None:
+        words = "Keep at least 0.15 m of wall above every lintel."
+        kept = _obligation("k4", "validator:wall-above-at-least/0.15", "entity:slab", statement=words)
+        ports = FakePorts(base=_record(kept), decisions=(Decision("d1", "keep", "entity:house", "keep at least 0.15 m of "
+                                                                  "wall above every lintel"),),
+                          obligations={"new": [], "results": [
+                              {"obligationId": "k4", "status": "held", "detail": "least wall above 0.3000 at slab"}]})
+        outcome = _revise(ports)
+        self.assertEqual((outcome.outcome, outcome.code), (LANDED, "LANDED"), outcome.detail)
+        self.assertEqual(ports.proposed[0]["keep"], [], "the condition keeps it, not a frozen target")
+        self.assertIn("k4", [row["obligationId"] for row in outcome.conditions])
+        for said in (outcome.detail, ports.admitted[0]["results"][0]["reason"]):
+            self.assertIn("obligation:k4 held (least wall above 0.3000 at slab)", said)
+
+    def test_a_built_change_that_breaks_a_checked_keep_asks_and_lands_nothing(self) -> None:
+        words = "Keep at least 0.15 m of wall above every lintel."
+        kept = _obligation("k4", "validator:wall-above-at-least/0.15", "entity:slab", statement=words)
+        for status, code in (("violated", "KEEP_CONFLICT"), ("unchecked", "UNCHECKED_CONDITION")):
+            with self.subTest(status=status):
+                ports = FakePorts(base=_record(kept), decisions=(Decision("d1", "keep", "entity:house", words),),
+                                  obligations={"new": ["k4"], "results": [
+                                      {"obligationId": "k4", "status": status, "detail": "wall above 0.0500 at slab"}]})
+                outcome = _revise(ports)
+                self.assertEqual((outcome.outcome, outcome.code), (NEEDS_QUESTION, code))
+                self.assertIn("obligation:k4", outcome.question_refs)
+                self.assertIn("wall above 0.0500 at slab", outcome.detail)
+                self.assertNotIn("admit", ports.calls)
+
+    def test_a_change_that_changes_nothing_is_a_problem_whatever_the_model_comparison_says(self) -> None:
+        # Re-encoded meshes compare as changed; the design record says whether anything changed.
+        ports = FakePorts(direct=())
+        outcome = _revise(ports)
+        self.assertEqual((outcome.outcome, outcome.code), (PROBLEMS, "NO_CHANGE"))
+        self.assertNotIn("admit", ports.calls)
+
+    def test_a_keep_no_checked_condition_states_still_protects_its_target(self) -> None:
+        said = _obligation("k5", None, "entity:slab", statement="The slab stays where it is.")
+        checked = _obligation("k6", "validator:headroom-at-least/2.0", "entity:stair", statement="Headroom stays 2.0 m.")
+        ports = FakePorts(base=_record(said, checked),
+                          decisions=(Decision("d1", "keep", "entity:slab", "The slab stays where it is."),
+                                     Decision("d2", "keep", "entity:stair", "Headroom stays 2.0 m."),
+                                     Decision("d3", "keep", "entity:house", "the house as it is")),
+                          status="conflict", conflicts=("entity:slab",))
+        outcome = _revise(ports)
+        self.assertEqual((outcome.outcome, outcome.code), (NEEDS_QUESTION, "KEEP_CONFLICT"))
+        self.assertEqual(ports.proposed[0]["keep"], ["entity:slab", "entity:house"],
+                         "a keep whose condition has no check, or that no condition states, protects its target")
+
     def test_touching_a_rejected_option_asks_in_the_architects_words(self) -> None:
         ports = FakePorts(decisions=(Decision("d2", "reject", "entity:stair", "不要螺旋楼梯"),))
         outcome = _revise(ports)
@@ -263,6 +311,29 @@ class RevisionOrderTests(unittest.TestCase):
         ports = FakePorts(decisions=(Decision("d4", "reject", "entity:stair", "不要螺旋楼梯"),),
                           direct=("parameter:rise",), propagated=("entity:stair",))
         self.assertEqual(_revise(ports).code, "REJECTED_OPTION")
+
+    def test_a_part_a_support_only_asks_to_check_again_is_not_changed_by_the_change(self) -> None:
+        def prism(entity_id, height):
+            return {"entity_id": entity_id, "schema": "Element@1", "parent_id": "house", "basis_refs": ["evidence:t"],
+                    "fields": {"component_id": "house", "producer": "prism", "references": {"base": {"level": "level-0"}},
+                               "params": {"height": height, "profile": [[0, 0], [1, 0], [1, 1], [0, 1]]}}}
+
+        record = StateRecord.from_dict({
+            "schema": "StateRecord@1", "project_id": "demo", "run_id": "run-1", "evidence_refs": ["evidence:t"],
+            "entities": [{"entity_id": "house", "schema": "Component@1", "fields": {"intent": "house"}},
+                         {"entity_id": "level-0", "schema": "Level@1", "basis_refs": ["evidence:t"],
+                          "fields": {"elevation": 0.0, "role": "ground"}},
+                         prism("stair", "@rise"), prism("slab", 0.2)],
+            "parameters": [{"key": "rise", "value": 0.17, "unit": "m", "epistemic_status": "declared"}],
+            "relations": [{"relation_id": "slab-on-stair", "kind": "support", "subject": "stair", "object": "slab",
+                           "propagation": "revalidate", "validator": {"check_kind": "support_contact", "tolerance": 0.001}}],
+            "obligations": [_obligation("on-slab", None, "entity:slab").to_dict()]})
+        self.assertIn("entity:slab", record.closure(("parameter:rise",)), "the support asks the slab to be checked again")
+        reach = {"direct": ("parameter:rise",), "propagated": tuple(record.closure(("parameter:rise",)))}
+        apart = FakePorts(base=record, decisions=(Decision("d1", "reject", "entity:slab", "不要厚楼板"),), **reach)
+        self.assertEqual(_revise(apart).outcome, LANDED, "the slab does not change: no rejected option, no question")
+        bound = FakePorts(base=record, decisions=(Decision("d2", "reject", "entity:stair", "不要螺旋楼梯"),), **reach)
+        self.assertEqual(_revise(bound).code, "REJECTED_OPTION", "the stair the parameter binds does change")
 
     def test_a_condition_in_reach_that_no_check_can_verify_asks_before_building(self) -> None:
         said = _obligation("k3", None, "entity:stair", statement="楼梯要舒服")

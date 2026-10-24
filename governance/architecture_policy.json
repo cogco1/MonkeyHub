@@ -202,6 +202,7 @@
     "docs/protocols/project-runtime-api.md",
     "governance/architecture_policy.json",
     "docs/architecture/system-map.md",
+    "apps/monkeyhub/web/src/features/commands/tree.generated.ts",
     "docs/architecture/semantic-registry.md"
   ],
   "unclaimed_write_scope": [

@@ -298,7 +298,8 @@ def _resolved_keep_ref(ref: str, entities: set[str], parameters: set[str]) -> st
 
 def _unknown_keep_ref(ref: str) -> BlockedNeedsHuman:
     return BlockedNeedsHuman(
-        "the keep ref names nothing in this record",
+        f"keep names {ref}, which is neither an entity nor a parameter of this record; keep takes entity:<id> or "
+        "parameter:<key>",
         question=(
             f"keep names {ref}, which this record declares neither as an "
             "entity nor as a parameter. Which did you mean?"
@@ -821,7 +822,17 @@ def component_edit_proposal(
             }:
                 raise ValueError("a parameter edit contains undeclared fields")
             previous = current_parameters.get(payload.get("key"))
+            if (previous is not None and previous.expr and "expr" not in payload and "value" in payload
+                    and payload["value"] != previous.value):
+                # Its expression gives its value back, so the value alone would change nothing.
+                raise ValueError(
+                    f"parameter {previous.key} is derived: {previous.expr} (now {previous.value}), so a value alone "
+                    "changes nothing; change what it is derived from, send expr with a new expression, or send "
+                    "expr null to fix it at the value")
             value = {**({} if previous is None else previous.to_dict()), **payload}
+            if "expr" in payload and payload["expr"] is None and "epistemic_status" not in payload \
+                    and value.get("epistemic_status") == "derived":
+                value["epistemic_status"] = "declared"
             value["inputs"] = ref_set(value.get("inputs", ()), "parameter inputs")
             parameters.append(Parameter.from_dict(value))
         relations = []

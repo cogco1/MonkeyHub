@@ -4,18 +4,20 @@
     {
       "id": "GH-185",
       "status": "active",
-      "branch": "codex/185-design-loop-tools",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-185-design-loop-tools",
-      "base_ref": "7a73b8b41b6a1e0ed82d76cbf26be4f1beec0dd9",
+      "branch": "codex/185-submit-shapes",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-185-submit-shapes",
+      "base_ref": "f6136b0b1b646099a6e281c979e23d2ea905ce07",
       "contributor": "Claude",
       "reviewer": null,
-      "handoff": "Second slice on top of #660: the design-loop tools (design_read, design_submit, design_ask, design_report_limitation) with a repair limit per user message, the --design-loop tool surface, the turn's Stop hook and cli_profile; then the state-carrying 3DM (#657). The first slice (#660) carries the one call, the setting and the condition checks (#659).",
+      "handoff": "Tuning after #678: design_submit states each kind's body with an example and answers a refused body with its fields; parameters may come as key: value; keep takes only entity and parameter refs; the model view names the declared parameters, what each geometry id is made from, the parts a script cannot edit and every opening with the parameters that size it; an unknown id is answered with what it is.",
       "modules": [
         "archflow.state.state_record",
         "hub.shell",
+        "monkeyarch.authoring.construction",
         "monkeycad.formats",
         "project_runtime.binding",
         "project_runtime.candidate",
+        "project_runtime.construction",
         "project_runtime.documents",
         "project_runtime.intent",
         "project_runtime.shell",
@@ -48,16 +50,19 @@
         "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
         "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
         "docs/architecture/system-map.md",
+        "docs/design/construction-api.md",
         "docs/protocols/project-runtime-api.md",
         "governance/architecture_policy.json",
         "governance/module_registry.json",
         "packages/archflow/src/archflow/state/state_record.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/construction/shapes.py",
         "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
         "packages/monkeyarch/tests/test_element_producers.py",
         "packages/monkeyarch/tests/test_state_record.py",
         "packages/monkeycad/src/monkeycad/formats/state_file.py",
         "packages/monkeycad/tests/test_state_file.py",
         "services/project-runtime/src/project_runtime/api/dto/candidate.py",
+        "services/project-runtime/src/project_runtime/api/dto/construction.py",
         "services/project-runtime/src/project_runtime/api/dto/design_history.py",
         "services/project-runtime/src/project_runtime/api/dto/proposal.py",
         "services/project-runtime/src/project_runtime/api/dto/validation.py",
@@ -68,6 +73,7 @@
         "services/project-runtime/src/project_runtime/api/routes/validation.py",
         "services/project-runtime/src/project_runtime/api/routes/working_draft.py",
         "services/project-runtime/src/project_runtime/application/candidate.py",
+        "services/project-runtime/src/project_runtime/application/construction.py",
         "services/project-runtime/src/project_runtime/application/intent.py",
         "services/project-runtime/src/project_runtime/application/model_exports.py",
         "services/project-runtime/src/project_runtime/application/revision_transaction.py",
@@ -76,6 +82,9 @@
         "services/project-runtime/src/project_runtime/authentication.py",
         "services/project-runtime/src/project_runtime/settings.py",
         "services/project-runtime/tests/test_candidate.py",
+        "services/project-runtime/tests/test_construction_first_authoring.py",
+        "services/project-runtime/tests/test_construction_routes.py",
+        "services/project-runtime/tests/test_hosted_opening.py",
         "services/project-runtime/tests/test_revision_transaction.py",
         "services/project-runtime/tests/test_sketch.py",
         "services/project-runtime/tests/test_state_files.py",
@@ -248,6 +257,47 @@
             "apps/monkeyhub/web/test/viewportSelection.browser.mjs",
             "apps/monkeyhub/web/test/workModelExport.browser.mjs",
             "apps/monkeyhub/web/test/workingCopy.browser.mjs"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "entry-rules",
+          "status": "active",
+          "branch": "claude/300-entry-rules",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-entry-rules",
+          "base_ref": "919bbf2af07d2ec7b60f71a09cd0229c0f551f7a",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "0-5a: ADR-014 and the 711-entry audit from the local line (B1 now reads the command tree as a view of module_registry capabilities), the Interface entries rules in AGENTS.md, CONTRIBUTING 10-12 and the PR template's 入口去向. Documentation only; merges on 10-27 after the paper freeze.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            ".github/pull_request_template.md",
+            "AGENTS.md",
+            "CONTRIBUTING.md",
+            "docs/README.md",
+            "docs/decisions/014-entries-earn-their-place.md",
+            "docs/decisions/README.md"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "registry-data",
+          "status": "active",
+          "branch": "claude/300-registry-data",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-registry-data",
+          "base_ref": "dee04b0e92b49390ae5b0e3611372c9afab2c3b8",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "2-1a data: the nine surfaces' commands (Board, Modeling, Design tree, Drawings, document page, Render, Layout, Fabrication, Usage) registered as capability groups with ui.commands from the 711-entry audit, every templated id expanded, the audit's command columns and coverage tests. The shell layer stays with GH-300/command-tree. Branched from claude/300-command-tree with #690 merged in; PR after the freeze.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/test/commandTreeCoverage.test.ts",
+            "docs/audits/hub-entries.md",
+            "tools/tests/test_hub_entries_coverage.py"
           ],
           "depends_on": []
         }
