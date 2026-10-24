@@ -245,7 +245,9 @@
             "apps/monkeyhub/api/tests/test_attention_producers.py",
             "apps/monkeyhub/web/src/api/generated/index.ts",
             "apps/monkeyhub/web/src/api/generated/types.gen.ts",
-            "docs/architecture/project-runtime.md"
+            "docs/architecture/project-runtime.md",
+            "apps/monkeyhub/api/monkeyhub_api/attention/hub.py",
+            "apps/monkeyhub/api/tests/test_attention_hub.py"
           ],
           "depends_on": []
         },

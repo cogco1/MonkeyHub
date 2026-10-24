@@ -28,6 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.requests import Request
 
 from ..models import ChatCreateRequest, ChatDetail, HubFailure
+from ..runtime.manager import index_moved
 from ..runtime.workers import project_key
 from ..settings.models import UserSettingsDto
 from ..settings.store import SettingsError, read_user_settings
@@ -236,7 +237,7 @@ class AttentionHub:
         with self.runtimes.events.subscribe() as (earlier, inbox):
             # What the Hub did before the queue followed it, a project it reopened at start among it, is read too.
             for event in earlier:
-                if event.get("kind") != CHANGED and event.get("runtimeId"):
+                if _wakes(event):
                     dirty[event["runtimeId"]] = time.monotonic() + SETTLE_S
             while not self._stop.is_set():
                 if time.monotonic() >= hub_due:
@@ -249,7 +250,7 @@ class AttentionHub:
                     event = inbox.get(True, SETTLE_S / 2)
                 except queue.Empty:
                     event = None
-                if event is not None and event.get("kind") != CHANGED and event.get("runtimeId"):
+                if event is not None and _wakes(event):
                     dirty[event["runtimeId"]] = time.monotonic() + SETTLE_S
                 for key in [key for key, due in dirty.items() if due <= time.monotonic()]:
                     del dirty[key]
@@ -257,6 +258,15 @@ class AttentionHub:
                         self.refresh(key)
                     except HubFailure:
                         continue  # A card that cannot be saved now is written on the project's next event.
+
+
+def _wakes(event: Mapping[str, Any]) -> bool:
+    """Whether an event can change a project's cards: the queue's own change and an index commit that moved
+    nothing (a thumbnail drawn, the index loaded again; ``index_moved``) do not."""
+
+    if event.get("kind") == CHANGED or not event.get("runtimeId"):
+        return False
+    return event.get("kind") != "index/committed" or index_moved(event.get("index"))
 
 
 class AttentionConversationRequest(BaseModel):
