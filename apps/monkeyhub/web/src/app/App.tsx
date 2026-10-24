@@ -153,6 +153,7 @@ import { followStep, followsTreeMove, followUndo, headOf, pinStep, undoFollow, v
 import { useTranscript, type SystemTextPart } from "./transcript";
 import { useCandidateRuns } from "./useCandidateRuns";
 import { finishEditTiming, startClientTiming, type ClientTimingSpan, type EditTimingTicket } from "./clientTiming";
+import { AutoRetry } from "./AutoRetry";
 
 /** The three refusing outcomes of an intent, and the two that end an exchange. */
 const TERMINAL_OUTCOMES = [MISSING_EDITABLE_CONTROL, UNSUPPORTED_REQUEST];
@@ -3656,10 +3657,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           {developerMode && sourceRunId !== null && <p className="mono">{sourceRunId}</p>}
           {error && <ErrorPanel error={error} what={error === documentIntentError ? "MonkeyBoard" : undefined} />}
           {baseNotice && <p className="refusal__lead" role="alert">{baseNotice}</p>}
-          <button data-command="view.notice.retry" data-command-arg="model_open" type="button" className="btn" disabled={changingBase}
-            onClick={() => { if (missingChosenModel) void loadArtifacts(); else void reload(); }}>
+          <AutoRetry failure={error} data-command="view.notice.retry" data-command-arg="model_open" className="btn" disabled={changingBase}
+            retry={() => { if (missingChosenModel) void loadArtifacts(); else void reload(); }}>
             {t("stage.base.retry")}
-          </button>
+          </AutoRetry>
           <button data-command="design.go_to_step.default_base" type="button" className="btn" disabled={changingBase}
             onClick={() => void changeBaseFromRow(null)}>
             {t("stage.base.default")}

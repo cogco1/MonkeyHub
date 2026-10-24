@@ -8,6 +8,7 @@ import {
   getFabProfilesApiFabProfilesGet, prepareFabApiFabPreparePost, sendFabApiFabSendPost,
   type FabProfile, type FabPrepareResult, type FabSendResult,
 } from "./api/generated";
+import { AutoRetry } from "./app/AutoRetry";
 
 type Props = {
   preferences: AppearancePreferences;
@@ -145,7 +146,7 @@ export function FabPage({ preferences, client, readResult }: Props) {
       <MenuCommand data-command="fab.prepare_parts.display_settings" onClick={openDisplaySettings}>{t.settings}</MenuCommand>
     </SurfaceBar>
     <div className="fab-scroll"><main className="hub fab-page"><h1 className="sr-only">MonkeyFab</h1>
-      {profileError ? <div className="error-message" role="alert"><p>{profileError}</p><button data-command="view.notice.retry" data-command-arg="fab_profile" className="btn" type="button" onClick={() => setProfileAttempt((value) => value + 1)}>{t.retry}</button></div> : null}
+      {profileError ? <div className="error-message" role="alert"><p>{profileError}</p><AutoRetry failure={profileError} data-command="view.notice.retry" data-command-arg="fab_profile" className="btn" retry={() => setProfileAttempt((value) => value + 1)}>{t.retry}</AutoRetry></div> : null}
       <div className="fab-forms">
         <form className="app-card fab-form" onSubmit={(event) => void prepare(event)} aria-busy={busy === "prepare"} hidden={view !== "prepare"}>
           <h2 className="sr-only">{t.prepare}</h2><p className="help">{t.prepareHelp}</p>

@@ -355,6 +355,43 @@
             "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
             "apps/monkeyhub/web/test/attentionShell.browser.mjs"
           ]
+        },
+        {
+          "id": "auto-retry",
+          "status": "active",
+          "branch": "claude/300-b3-auto-retry",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-auto-retry",
+          "base_ref": "a0053f870",
+          "contributor": "Claude",
+          "reviewer": null,
+          "depends_on": [],
+          "handoff": "F046: a read that failed is tried again by itself after 1 s and 3 s; its button shows only when the failure stays; the background list says which attempt a resent request is on (batch 3, from claude/300-batch3).",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/FabPage.tsx",
+            "apps/monkeyhub/web/src/MonitorPage.tsx",
+            "apps/monkeyhub/web/src/app/App.tsx",
+            "apps/monkeyhub/web/src/app/AutoRetry.tsx",
+            "apps/monkeyhub/web/src/app/ProjectWorkspace.tsx",
+            "apps/monkeyhub/web/src/app/styles.css",
+            "apps/monkeyhub/web/src/features/conversation/cards/CandidateCard.tsx",
+            "apps/monkeyhub/web/src/features/conversation/cards/VerdictCard.tsx",
+            "apps/monkeyhub/web/src/features/designTree/DesignTreeSurface.tsx",
+            "apps/monkeyhub/web/src/features/skills/SkillPermissions.tsx",
+            "apps/monkeyhub/web/src/features/skills/SkillsPanel.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/src/sidebarTasks.ts",
+            "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/ModelComparison.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
+            "apps/monkeyhub/web/src/workspaces/publish/PublishWorkspace.tsx",
+            "apps/monkeyhub/web/src/workspaces/render/RenderResults.tsx",
+            "apps/monkeyhub/web/test/sidebarTasks.test.ts"
+          ]
         }
       ]
     }

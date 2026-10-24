@@ -1369,6 +1369,7 @@ export const messagesEn = {
   "shell.overview.justNow": "just now",
   "shell.overview.minutesAgo": "{count} min ago",
   "shell.overview.hoursAgo": "{count} h ago",
+  "retry.auto": "Trying again…",
   "shell.queueHint": "Decisions, marks on drawings and questions for you line up here.",
   "shell.backgroundLine": "Background · {running} running · {queued} waiting",
   "shell.backgroundIdle": "Nothing running in the background",
@@ -1681,7 +1682,7 @@ export const chatCopy = {
     jumpLatest: "Jump to the latest message", jumpLatestNew: (count: number) => `Jump to the latest message (${count} new)`,
     // GH-300: the sidebar's cross-project entries.
     tasks: "Tasks", tasksActive: (count: number) => `${count} running or waiting`, tasksEmpty: "Nothing is running or waiting.",
-    tasksReading: "Reading the background…",
+    tasksReading: "Reading the background…", taskAttempt: (count: number) => `attempt ${count}`,
     taskElapsed: (seconds: number) => `${seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`} so far`,
     taskLeft: (seconds: number) => `about ${seconds < 60 ? `${seconds} s` : `${Math.ceil(seconds / 60)} min`} left`,
     taskLonger: (seconds: number) => `longer than usual · ${seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`}`,

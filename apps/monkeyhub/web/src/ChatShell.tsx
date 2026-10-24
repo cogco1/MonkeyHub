@@ -2183,7 +2183,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             const title = task.chat?.title ?? action ?? t.workTools;
             // Where and whether it runs come before what it is doing: a narrow sidebar cuts the end.
             const timing = taskTiming(task);
-            const caption = [task.projectName, timing?.text ?? (task.state === "running" ? t.taskRunning : t.taskQueued), task.chat ? action : null].filter(Boolean).join(" · ");
+            const caption = [task.projectName, timing?.text ?? (task.state === "running" ? t.taskRunning : t.taskQueued),
+              task.attempts ? t.taskAttempt(task.attempts) : null, task.chat ? action : null].filter(Boolean).join(" · ");
             return <li key={task.key}><button data-command="view.background.open_task" data-command-arg={task.key} type="button" className="chat-task" data-state={task.state} title={`${title}\n${caption}`} onClick={() => openTask(task)}>
               <span className="chat-thread__dot" data-status={task.state === "running" ? "running" : "idle"} />
               <span className="chat-task__text"><span className="chat-task__title">{title}</span><small>{caption}</small>

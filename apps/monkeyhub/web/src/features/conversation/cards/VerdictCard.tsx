@@ -21,6 +21,7 @@ import { BilingualText } from "../../../i18n/BilingualText";
 import { useT } from "../../../i18n/useT";
 import { usePreferences } from "../../settings/preferences";
 import { Verbatim } from "./Verbatim";
+import { AutoRetry } from "../../../app/AutoRetry";
 
 const NOT_FINISHED = "CANDIDATE_NOT_FINISHED";
 
@@ -85,7 +86,7 @@ export function VerdictCard({
             error={validation.error}
             what={`GET /api/candidates/${candidateId}/validation`}
           />
-          <button data-command="view.notice.retry" data-command-arg="verdict" type="button" className="btn btn--small" onClick={onRetry}>{t("stage.base.retry")}</button>
+          <AutoRetry failure={validation.error} data-command="view.notice.retry" data-command-arg="verdict" className="btn btn--small" retry={onRetry}>{t("stage.base.retry")}</AutoRetry>
         </div>
       </article>
     );

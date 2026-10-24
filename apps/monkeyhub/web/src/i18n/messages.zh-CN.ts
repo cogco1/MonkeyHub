@@ -1332,6 +1332,7 @@ export const messagesZhCN = {
   "shell.overview.justNow": "刚刚",
   "shell.overview.minutesAgo": "{count} 分钟前",
   "shell.overview.hoursAgo": "{count} 小时前",
+  "retry.auto": "正在自动重试…",
   "shell.queueHint": "要你决定、在图上批注、或回答的事，都排在这里。",
   "shell.backgroundLine": "后台 · {running} 个在跑 · {queued} 个在等",
   "shell.backgroundIdle": "后台没有在跑的",
@@ -1637,7 +1638,7 @@ export const chatCopy = {
     jumpLatest: "跳到最新消息", jumpLatestNew: (count: number) => `跳到最新消息（${count} 条新消息）`,
     // GH-300：侧栏的跨项目入口。
     tasks: "任务", tasksActive: (count: number) => `${count} 项进行中或排队`, tasksEmpty: "没有正在进行或排队的工作。",
-    tasksReading: "正在读取后台…",
+    tasksReading: "正在读取后台…", taskAttempt: (count: number) => `第 ${count} 次`,
     taskElapsed: (seconds: number) => `已 ${seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`}`,
     taskLeft: (seconds: number) => `约还要 ${seconds < 60 ? `${seconds} 秒` : `${Math.ceil(seconds / 60)} 分钟`}`,
     taskLonger: (seconds: number) => `比平常久 · 已 ${seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`}`,
