@@ -13781,7 +13781,7 @@
         "CLI tools resolve the chat's project-specific Studio and verify process and project identity; retained design changes use existing Studio/P036 APIs, and stopping one project never interrupts another",
         "No new provider gateway or credential store; native CLI configuration owns authentication and provider routing",
         "Chat attachment bytes stay under runtime/chats/<session>/attachments, outside the project; transcripts retain metadata only. Native images use provider image blocks or CLI image inputs; the existing MCP connection reads only the bound chat's attachments, with bounded text or binary chunks and single-page PDF text. Attachment delivery itself does not widen sandbox or filesystem permissions, and later turns do not resend earlier attachment bytes",
-        "The bound project folder is read-only to the agent's file tools (ADR-012): a Claude-compatible turn carries one --disallowedTools rule, Edit(//<drive letter>/<path>/**) with pattern characters escaped, which the CLI applies to Write and Edit, while scratch and a source checkout stay writable; Codex is given no writable root in the project. Bash is not confined, nor is Codex started in the project by an installed Hub (its sandbox writes the folder it starts in); what they write there is a change from elsewhere, not design state",
+        "The bound project folder is read-only to the agent's file tools (ADR-012): a Claude-compatible turn carries one --disallowedTools rule, Edit(//<drive letter>/<path>/**) with pattern characters escaped, which the CLI applies to Write and Edit, while scratch and a source checkout stay writable; Codex is given no writable root in the project. Bash is not confined, nor is Codex started in the project by an installed Hub (its sandbox writes the folder it starts in); what they write there is a change from elsewhere, not design state With the Hub's runtime root, the same rules also cover the account's Hub settings folder, the runtime root's folders (a chat's records and attachments, never its scratch), the skill folders, Claude Code's own configuration and an installed Hub's files.",
         "A request is sent once. Waiting for its result only reads: a wait that runs out, a read that fails and a job that failed all answer with the identifiers and the reads that find them, and none of them sends the request again",
         "What is reported is what was read: a run whose candidate or comparison could not be read is never presented as a read-back candidate, and relation counts travel as the run stated them",
         "Runtime records and the admission journal are observations, not another project repository; completed candidate and Stage outcomes require existing retained proof, and a prepared unreachable Stage never proves a commit",
@@ -14031,7 +14031,8 @@
         "apps/monkeyhub/api/tests/test_attention_store.py",
         "apps/monkeyhub/api/tests/test_change_list.py",
         "apps/monkeyhub/api/tests/test_attention_store.py",
-        "apps/monkeyhub/api/tests/test_attention_rules.py"
+        "apps/monkeyhub/api/tests/test_attention_rules.py",
+        "apps/monkeyhub/api/tests/test_agent_write_paths.py"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
