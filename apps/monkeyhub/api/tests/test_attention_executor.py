@@ -112,13 +112,13 @@ def ab_card(study="s1", recommend=None):
 
 
 class CommandTreeTests(unittest.TestCase):
-    def test_what_a_card_may_open_is_what_the_command_tree_marks_as_opening(self):
+    def test_what_a_card_may_open_the_command_tree_marks_as_opening(self):
         registry = json.loads((ROOT / "governance" / "module_registry.json").read_text(encoding="utf-8"))
         commands = {command["id"]: command for capability in registry.get("capabilities", ())
                     for command in (capability.get("ui") or {}).get("commands", ())}
-        self.assertEqual({key for key, command in commands.items() if command.get("opens")} - set(OPENS), set(),
-                         "every command the tree marks as opening may be opened from a card")
-        self.assertEqual({key for key in set(OPENS) & set(commands) if not commands[key].get("opens")}, set())
+        # The tree marks every command that only opens something; a card offers a few of them.
+        self.assertEqual({key for key in set(OPENS) & set(commands) if not commands[key].get("opens")}, set(),
+                         "a card opens only what the command tree marks as opening")
         self.assertEqual({key for key in set(COMMANDS) & set(commands) if commands[key].get("opens")}, set(),
                          "an answer is never a command that only opens something")
 
