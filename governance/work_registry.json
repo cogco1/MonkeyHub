@@ -1,4 +1,42 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-300",
+      "lanes": [
+        {
+          "id": "b3-drawings",
+          "status": "active",
+          "branch": "claude/300-b3-drawings",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-drawings",
+          "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "第三批「出图有记录、重复出图秒出」: GET /api/runtime (and so the Hub's project snapshot) names the project's newest drawings for the attention page; a native model's verified drawing source is kept in the projection cache, so a restarted Runtime answers a registered drawing without reading the model.",
+          "modules": [
+            "monkeydiagram.drawing_runs",
+            "project_runtime.candidate",
+            "project_runtime.documents"
+          ],
+          "write_scope": [
+            "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
+            "services/project-runtime/src/project_runtime/status.py",
+            "services/project-runtime/src/project_runtime/api/dto/runtime.py",
+            "services/project-runtime/src/project_runtime/api/routes/drawings.py",
+            "services/project-runtime/src/project_runtime/application/drawings.py",
+            "services/project-runtime/src/project_runtime/application/drawing_plans.py",
+            "services/project-runtime/src/project_runtime/application/drawing_pool.py",
+            "services/project-runtime/src/project_runtime/application/projections.py",
+            "services/project-runtime/tests/test_drawing_pool.py",
+            "services/project-runtime/tests/test_runtime.py",
+            "apps/monkeyhub/web/src/api/generated/index.ts",
+            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
