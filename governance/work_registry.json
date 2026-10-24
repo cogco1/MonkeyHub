@@ -105,15 +105,19 @@
           "base_ref": "cc8f54e20546c73a1e1e1763a5001a8495c48675",
           "contributor": "Claude",
           "reviewer": null,
-          "handoff": "Ctrl+K and the Hub's shortcuts read the command tree devctl render-map writes from governance/module_registry.json capabilities (ui.commands); the shell-level capabilities come first, the Runtime-side ones follow on this lane. Draft only during the paper freeze: nothing merges into main until the relay ends and the coordinator says so. archcheck.py passes to GH-300/entry-ci; a later command-tree check is asked for there. The web files moved to GH-300/shell on claude/300-attention-shell, which stacks on this lane.",
+          "handoff": "Ctrl+K and the Hub's shortcuts read the command tree devctl render-map writes from governance/module_registry.json capabilities (ui.commands); the shell-level capabilities come first, the Runtime-side ones follow on this lane. Draft only during the paper freeze: nothing merges into main until the relay ends and the coordinator says so. archcheck.py passes to GH-300/entry-ci; a later command-tree check is asked for there. The web files moved to GH-300/shell on claude/300-attention-shell, which stacks on this lane. On claude/300-command-search (08 提速, for the private converge/new-hub branch, 10-24): the search index's data (governance/command_phrases.json, governance/command_search_cases.json), its rule in the capability index, the tree generator in archcheck.py and the package list; archcheck.py moved here from GH-300/shell for that and goes back to whichever lane holds it when #686 merges.",
           "modules": [
             "project_runtime.intent",
             "tools.governance.devctl"
           ],
           "write_scope": [
+            "governance/command_phrases.json",
+            "governance/command_search_cases.json",
             "services/project-runtime/src/project_runtime/application/capability.py",
             "services/project-runtime/tests/test_capabilities.py",
-            "tools/governance/devctl.py"
+            "tools/governance/archcheck.py",
+            "tools/governance/devctl.py",
+            "tools/release/package_monkeyapps.py"
           ],
           "depends_on": []
         },
@@ -132,6 +136,7 @@
           "write_scope": [
             "apps/monkeyhub/web/scripts/check-generated.mjs",
             "apps/monkeyhub/web/scripts/command-tree.mjs",
+            "apps/monkeyhub/web/src/ChatShell.css",
             "apps/monkeyhub/web/src/ChatShell.tsx",
             "apps/monkeyhub/web/src/app/AdvancedTools.tsx",
             "apps/monkeyhub/web/src/app/AttentionShell.tsx",
@@ -162,9 +167,9 @@
             "apps/monkeyhub/web/test/canvasChrome.browser.mjs",
             "apps/monkeyhub/web/test/commandPalette.browser.mjs",
             "apps/monkeyhub/web/test/commandPalette.test.ts",
+            "apps/monkeyhub/web/test/commandSearch.test.ts",
             "apps/monkeyhub/web/test/commandTree.test.ts",
-            "apps/monkeyhub/web/test/designTree.browser.mjs",
-            "tools/governance/archcheck.py"
+            "apps/monkeyhub/web/test/designTree.browser.mjs"
           ],
           "depends_on": []
         },

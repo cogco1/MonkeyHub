@@ -137,6 +137,8 @@ SOURCE_PATHS = (
     "services/project-runtime",
     "apps/monkeyhub", FAB_SOURCE, "packages/web-shared", "OPEN_MONKEYHUB.cmd",
     "README.md", "SECURITY.md", "pyproject.toml", *BUNDLED_TOOLS, "governance/module_registry.json",
+    # How each command is said, beside the registry: the agent's capability index reads it (08 提速).
+    "governance/command_phrases.json",
 )
 
 
@@ -356,7 +358,7 @@ def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) 
                      "apps/monkeyhub/launch-hub.ps1", "OPEN_MONKEYHUB.cmd", "pyproject.toml",
                      # The security-reporting route travels with the distributed bundle,
                      # not only with a checkout of the public repository.
-                     "governance/module_registry.json", "SECURITY.md",
+                     "governance/module_registry.json", "governance/command_phrases.json", "SECURITY.md",
                      # Both tools put a checkout's source roots first through source_roots;
                      # the bundle ships no architecture policy, so there it does nothing.
                      *BUNDLED_TOOLS):
