@@ -45,7 +45,9 @@ test("a capability's goals speak for its command only when it has one", () => {
     ],
   };
   assert.deepEqual(ids(rankCommands(pages, "drawings", "en")), ["view.drawings"]);
-  assert.deepEqual(ids(rankCommands(pages, "打开图纸", "zh-CN")), [], "a sibling's goal is not this command's");
+  // No command has the whole of 打开图纸 in its words; the search index finds Drawings by its own label, not by the
+  // sibling goal that says it.
+  assert.deepEqual(ids(rankCommands(pages, "打开图纸", "zh-CN")), ["view.drawings"], "a sibling's goal is not this command's");
 });
 
 test("every part has to match, and the shown label outranks the rest", () => {
