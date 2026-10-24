@@ -1273,6 +1273,8 @@ export const messagesZhCN = {
   "commands.placeholder": "搜索功能，或让 AI 做",
   "commands.recent": "最近用过",
   "commands.empty": "没有叫“{query}”的功能。",
+  "commands.byMeaning": "按意思",
+  "commands.byWords": "按字面",
   "commands.askAI": "让 AI 做：{text}",
   "commands.opens": "在{surface}里",
   "commands.unavailable": "这里用不了",

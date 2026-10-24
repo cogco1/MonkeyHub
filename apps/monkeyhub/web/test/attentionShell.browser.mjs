@@ -116,6 +116,13 @@ const route = async (handler) => {
   if (await workspace.handle(handler, url)) return;
   const json = (body, status = 200) => handler.fulfill({ json: body, status });
   const data = () => request.postDataJSON();
+  // 一句话直接办: the Hub's meaning search, answered for the sentences this test types; the rest mean nothing listed.
+  if (url.pathname === "/api/commands/meaning" && method === "POST") {
+    const meant = { "后台现在在忙什么呀": "view.background.toggle", "切到另一个项目": "project.open", "切到 Housing 13 户": "project.open" }[data().text] ?? null;
+    // Ctrl K lists what a phrase means below what its words find.
+    if (data().text === "那个东西挪远点") return json({ state: "ready", hits: [{ id: "draft.tools.move", score: 0.71, text: "把物体挪个位置" }], route: null });
+    return json({ state: "ready", hits: meant ? [{ id: meant, score: 0.8, text: meant }] : [], route: meant });
+  }
   if (url.pathname === "/api/settings/user") return json({ language: "zh-CN", theme: preferredTheme, fontScale: 1, sidebarPinned: true });
   if (url.pathname === "/api/settings/apps") return json({ projectDir: "D:\\fixture\\A", referenceRun: null, cadExport: "off", studioPort: 18789, monitorPort: 18790 });
   if (url.pathname === "/api/credentials") return json([]);
@@ -409,6 +416,36 @@ try {
   for (let wait = 0; chatPosts.at(-1)?.[1] !== "这个方案怎么样" && wait < 100; wait += 1) await page.waitForTimeout(50);
   assert.equal(chatPosts.at(-1)?.[1], "这个方案怎么样");
   assert.equal(await offer.count(), 0);
+  // 一句话直接办: a sentence no phrasing says is found by its meaning, and one click does it.
+  const before = chatPosts.length;
+  await said.fill("后台现在在忙什么呀");
+  await said.press("Enter");
+  await offer.getByText("这句话可以直接做：「展开任务列表」").waitFor();
+  await offer.getByRole("button", { name: "直接做" }).click();
+  await page.locator(".attention-shell__side-tabs .menu-tab[aria-selected=true]").filter({ hasText: "后台" }).waitFor();
+  assert.equal(await said.inputValue(), "");
+  await page.getByRole("button", { name: "收起侧栏" }).first().click();
+  // A sentence that names the project needs no question; one that leaves it out is asked that one thing, as buttons.
+  await said.fill("切到 Housing 13 户");
+  await said.press("Enter");
+  await offer.getByRole("button", { name: "直接做" }).waitFor();
+  assert.equal(await offer.getByText("哪个项目？").count(), 0);
+  await offer.getByRole("button", { name: "还是发给 AI" }).click();
+  for (let wait = 0; chatPosts.length === before && wait < 100; wait += 1) await page.waitForTimeout(50);
+  assert.deepEqual(chatPosts.slice(before).map(([, content]) => content), ["切到 Housing 13 户"], "only what was sent as written reached the model");
+  await said.fill("切到另一个项目");
+  await said.press("Enter");
+  await offer.getByText("哪个项目？").waitFor();
+  assert.equal(await offer.getByRole("button", { name: "直接做" }).count(), 0, "the choice is the click that does it");
+  await offer.getByRole("button", { name: "Housing 13 户" }).click();
+  await page.waitForFunction(() => document.querySelector(".attention-shell__projects .attention-shell__row[aria-current]")?.textContent.includes("Housing"));
+  await page.locator(".attention-shell__search").click();
+  await page.locator("dialog.command-palette[open] input").fill("那个东西挪远点");
+  const byMeaning = page.locator("dialog.command-palette[open] .command-palette__heading").filter({ hasText: "按意思" });
+  await byMeaning.waitFor();
+  assert.equal(await page.locator("dialog.command-palette[open] [role=option]").first().locator(".command-palette__label").textContent(), "移动",
+    "what the phrase means comes first when its words find nothing");
+  await page.keyboard.press("Escape");
   // The later passes count what reached the conversations from here on.
   const sent = chatPosts.splice(posted);
   for (const [id] of sent) sessions.find((row) => row.id === id)?.messages.pop();

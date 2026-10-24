@@ -1310,6 +1310,8 @@ export const messagesEn = {
   "commands.placeholder": "Search functions, or ask the AI",
   "commands.recent": "Recently used",
   "commands.empty": "No function is called “{query}”.",
+  "commands.byMeaning": "By meaning",
+  "commands.byWords": "By words",
   "commands.askAI": "Ask the AI: {text}",
   "commands.opens": "Opens {surface}",
   "commands.unavailable": "Not available here",

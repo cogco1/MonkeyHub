@@ -4,6 +4,8 @@ import { useT, type TFunction } from "../../i18n/useT";
 import { usePreferences } from "../settings/preferences";
 import type { MessageKey } from "../../i18n/messages.en";
 import { entriesOnScreen, useCommands, type CommandState } from "./CommandProvider";
+import type { CommandMeaningDto } from "../../api/generated";
+import { askMeaning, meaningRows } from "./meaning";
 import { rankCommands, type Language } from "./search";
 import type { Command } from "./tree";
 import "./commands.css";
@@ -15,6 +17,9 @@ type Row =
   | { kind: "heading"; key: string; label: string }
   | { kind: "command"; key: string; command: Command; state: CommandState }
   | { kind: "ask"; key: string; text: string };
+
+/** A pause in typing before the meaning search is asked, so it runs once per phrase, not per key. */
+const MEANING_PAUSE_MS = 250;
 
 /** The advanced tools' twelve groups, in the order they are listed. */
 const GROUPS = ["shell", "settings", "project_bar", "modeling", "board", "layout", "document", "drawings", "render",
@@ -43,6 +48,15 @@ export function CommandPalette({ language, onClose, askAI }: {
   const list = useRef<HTMLDivElement>(null);
   // Which standing entries are on screen is read once, as the palette opens, not per keystroke and command.
   const [onScreen] = useState(entriesOnScreen);
+  // What the typed words mean (the Hub's local model), for commands the keywords miss: "把这面墙往外推一点".
+  const [meant, setMeant] = useState<{ query: string; answer: CommandMeaningDto | null } | null>(null);
+  useEffect(() => {
+    const text = query.trim();
+    if (text.length < 3) return;
+    let current = true;
+    const timer = window.setTimeout(() => { void askMeaning(text, 8).then((answer) => { if (current) setMeant({ query: text, answer }); }); }, MEANING_PAUSE_MS);
+    return () => { current = false; window.clearTimeout(timer); };
+  }, [query]);
 
   useEffect(() => {
     const element = dialog.current;
@@ -69,10 +83,20 @@ export function CommandPalette({ language, onClose, askAI }: {
       }
     } else {
       for (const { command } of ranked) out.push({ kind: "command", key: command.id, command, state: stateOf(command, onScreen) });
+      const meaning = meant?.query === query.trim() ? meaningRows(meant.answer, tree, new Set(ranked.slice(0, 5).map((row) => row.command.id)), developerMode) : [];
+      if (meaning.length) {
+        const shown = new Set(meaning.map((command) => command.id));
+        // The meaning rows lead when the keywords found little; a keyword row they repeat moves up with them.
+        const rest = out.filter((row) => row.kind !== "command" || !shown.has(row.command.id));
+        out.length = 0;
+        out.push({ kind: "heading", key: "h:meaning", label: t("commands.byMeaning") },
+          ...meaning.map((command): Row => ({ kind: "command", key: command.id, command, state: stateOf(command, onScreen) })));
+        if (rest.length) out.push({ kind: "heading", key: "h:words", label: t("commands.byWords") }, ...rest);
+      }
     }
     if (askAI && query.trim()) out.push({ kind: "ask", key: "ask", text: query.trim() });
     return out;
-  }, [tree, query, language, usage.recent, developerMode, stateOf, onScreen, askAI, t]);
+  }, [tree, query, language, usage.recent, developerMode, stateOf, onScreen, askAI, t, meant]);
   const choices = rows.filter((row) => row.kind !== "heading");
   const current = choices[Math.min(active, choices.length - 1)];
 

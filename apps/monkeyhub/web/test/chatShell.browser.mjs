@@ -591,6 +591,8 @@ const hubApi = async (route) => {
     }
     return json(session);
   }
+  // An installation without the embedding model: the composer and Ctrl K keep their keyword search alone.
+  if (url.pathname === "/api/commands/meaning" && method === "POST") return json({ state: "unavailable", hits: [], route: null });
   // A Hub that does not serve the attention queue yet (1-4), as main's does.
   if (url.pathname.startsWith("/api/attention")) return json({ code: "NOT_FOUND", detail: "This Hub does not serve the attention queue yet." }, 404);
   errors.push(`Unexpected request: ${method} ${url.pathname}`); return json({ detail: "Unexpected fixture request" }, 404);

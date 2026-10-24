@@ -344,3 +344,6 @@
 .chat-thinking{animation:wait-appear 160ms ease-out 1s both}
 @keyframes wait-appear{from{opacity:0}to{opacity:1}}
 @media(prefers-reduced-motion:reduce){.chat-task__progress>span{transition:none}.chat-thinking{animation-duration:0s}}
+/* 一句话直接办: the one thing a sentence left out, asked on its card as buttons. */
+.chat-route__which{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.chat-route__which>span{color:var(--muted)}

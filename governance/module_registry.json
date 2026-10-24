@@ -13841,7 +13841,9 @@
         "tool_grants.allow",
         "tool_grants.revoke",
         "tool_grants.covers",
-        "tool_grants.read"
+        "tool_grants.read",
+        "POST /api/commands/meaning",
+        "skill_plugins.installed_library"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -14028,6 +14030,9 @@
         "apps/monkeyhub/api/monkeyhub_api/attention/models.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/store.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/routes.py",
+        "apps/monkeyhub/api/monkeyhub_api/commands/__init__.py",
+        "apps/monkeyhub/api/monkeyhub_api/commands/meaning.py",
+        "apps/monkeyhub/api/monkeyhub_api/commands/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/actions.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/hub.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/producers.py",
@@ -14036,6 +14041,7 @@
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
+        "apps/monkeyhub/api/tests/test_command_meaning.py",
         "apps/monkeyhub/api/tests/test_hub_locator.py",
         "apps/monkeyhub/api/tests/test_launch_hub.py",
         "apps/monkeyhub/api/tests/test_applications.py",

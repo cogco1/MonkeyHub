@@ -34,6 +34,7 @@ from ..attention.hub import AttentionHub, hub_router
 from ..attention.routes import attention_router
 from ..attention.store import AttentionStore
 from ..chat.routes import projects_router, providers_router, sessions_router
+from ..commands.routes import CommandMeaning, commands_router
 from ..chat.store import ChatStore
 from ..computer_tools import ComputerService
 from ..fabrication import Fabrication
@@ -312,6 +313,10 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     app.include_router(action_router(attention.executor))
     app.include_router(hub_router(attention))
     app.include_router(preferences_router, prefix="/api")
+    # Commands found by what a sentence means (08 提速): the index is built off the request thread at start.
+    meaning = CommandMeaning(source_root, settings.runtime_root / "cache")
+    meaning.start()
+    app.include_router(commands_router(meaning))
     if settings.hub_web_dir is not None:
         if not (settings.hub_web_dir / "index.html").is_file():
             raise ValueError("hub_web_dir must contain the built Hub index.html")

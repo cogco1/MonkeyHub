@@ -179,6 +179,59 @@ def fetch_runtime(cache: Path) -> Path:
     return archive
 
 
+# The Hub's meaning search over its commands (一句话直接办) ships its embedding model beside the runtime. Its name,
+# revision and file digests are read from the module that loads it, so the pin lives in one place.
+MEANING_MODULE = "apps/monkeyhub/api/monkeyhub_api/commands/meaning.py"
+MODEL_URL = "https://huggingface.co/BAAI/{name}/resolve/{revision}/{file}"
+MEANING_VECTORS = (
+    "import json, sys; from pathlib import Path; "
+    "from monkeyhub_api.commands.meaning import Encoder, MeaningIndex, command_texts; "
+    "root, model = Path(sys.argv[1]), Path(sys.argv[2]); "
+    "registry = json.loads((root / 'governance/module_registry.json').read_text(encoding='utf-8')); "
+    "phrases = json.loads((root / 'governance/command_phrases.json').read_text(encoding='utf-8')).get('commands', {}); "
+    "MeaningIndex(Encoder(model), command_texts(registry, phrases), caches=[model])"
+)
+
+
+def model_pins(source: Path) -> dict[str, object]:
+    """The embedding model's name, revision and files with their SHA-256, as the Hub's loader pins them."""
+
+    tree = ast.parse((source / MEANING_MODULE).read_text(encoding="utf-8"))
+    found = {target.id: ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
+             for target in node.targets if isinstance(target, ast.Name) and target.id in {"MODEL_NAME", "MODEL_REVISION", "MODEL_FILES"}}
+    return {"name": found["MODEL_NAME"], "revision": found["MODEL_REVISION"], "files": found["MODEL_FILES"]}
+
+
+def fetch_embedding_model(source: Path, cache: Path) -> Path:
+    pins = model_pins(source)
+    folder = cache / "models" / f"{pins['name']}-{str(pins['revision'])[:12]}"
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, expected in dict(pins["files"]).items():
+        target = folder / name
+        if not target.exists():
+            temporary = target.with_suffix(target.suffix + ".download")
+            url = MODEL_URL.format(name=pins["name"], revision=pins["revision"], file=name)
+            with urllib.request.urlopen(url, timeout=120) as response, temporary.open("wb") as output:
+                shutil.copyfileobj(response, output)
+            temporary.replace(target)
+        if expected and sha256(target) != expected:
+            raise ValueError(f"The cached embedding model file has the wrong SHA-256: {target}")
+    return folder
+
+
+def ship_command_meaning(source: Path, bundle: Path, cache: Path) -> dict[str, object]:
+    """Put the pinned model in the bundle with the vectors of this commit's command texts, computed by the
+    bundled Python, so an installed Hub only encodes the sentence it is asked about."""
+
+    pins = model_pins(source)
+    destination = bundle / "_runtime/models" / str(pins["name"])
+    shutil.copytree(fetch_embedding_model(source, cache), destination)
+    run([str(bundle / "_runtime/python/python.exe"), "-I", "-c", MEANING_VECTORS, str(bundle), str(destination)],
+        cwd=bundle, environment=_interpreter_environment(OPENBLAS_NUM_THREADS="4"))
+    return {"name": pins["name"], "revision": pins["revision"], "path": destination.relative_to(bundle).as_posix(),
+            "files": {path.name: sha256(path) for path in sorted(destination.iterdir()) if path.is_file()}}
+
+
 def prepare_runtime(source: Path, destination: Path, cache: Path,
                     environment: dict[str, str] | None = None) -> None:
     """Vendor complete cp313 wheels; never install into the builder's Python."""
@@ -707,6 +760,14 @@ def sbom_document(source: Path, bundle: Path, build_info: dict, version: str) ->
         *python_components(bundle),
         *node_components(source, bundle),
     ]
+    if "embeddingModel" in build_info:
+        model = build_info["embeddingModel"]
+        components.append(sbom_component(
+            "machine-learning-model", f"BAAI/{model['name']}", model["revision"],
+            purl("huggingface", f"{model['name']}", model["revision"], namespace="BAAI"), (SHIPPED_IN, model["path"]),
+            licenses=[{"expression": "MIT"}],
+            hashes=[{"alg": "SHA-256", "content": model["files"]["model.safetensors"]}],
+            externalReferences=[{"type": "distribution", "url": f"https://huggingface.co/BAAI/{model['name']}"}]))
     if "desktop" in build_info:
         components.extend(rust_components(bundle, build_info["desktop"]))
     components = merged_components(components)
@@ -1196,6 +1257,7 @@ def package(source_root: Path, source_ref: str, staging: Path, output: Path,
     prepare_runtime(source, bundle / "_runtime/python", cache, environment)
     bytecode = compile_bytecode(bundle)
     smoke_runtime(bundle)
+    meaning_model = ship_command_meaning(source, bundle, cache)
     desktop_info = build_desktop(source, bundle, commit, cargo, environment) if desktop else None
     # Version + exact inputs are distribution metadata, not project records.
     # pythonBytecode also tells the patch builder that this version's updater
@@ -1205,6 +1267,7 @@ def package(source_root: Path, source_ref: str, staging: Path, output: Path,
         **({"desktop": desktop_info} if desktop_info else {}),
         "pythonVersion": PYTHON_VERSION, "pythonUrl": PYTHON_URL, "pythonSha256": PYTHON_SHA256,
         "pythonBytecode": bytecode,
+        "embeddingModel": meaning_model,
         "runtimeInventory": runtime_inventory(source, bundle),
     }
     build_info_path = bundle / "build-info.json"

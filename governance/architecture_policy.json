@@ -896,6 +896,17 @@
     },
     {
       "path": "tools/release/package_monkeyapps.py",
+      "function": "fetch_embedding_model",
+      "operations": [
+        "mkdir",
+        "open_write"
+      ],
+      "kind": "distribution_build",
+      "owner": "tools.release.package_monkeyapps",
+      "reason": "Downloads the command meaning search's embedding model at the revision the Hub's loader pins, only into the caller-selected external cache; an incomplete download is atomically replaced, and a file whose SHA-256 differs from the pin is refused."
+    },
+    {
+      "path": "tools/release/package_monkeyapps.py",
       "function": "prepare_runtime",
       "operations": [
         "mkdir",
@@ -1247,6 +1258,17 @@
       "kind": "cli_workspace",
       "owner": "tools.project.state_file",
       "reason": "Creates the caller's --work-root and writes workflow.json there, the one-stage workflow handed to freeze_project_stage_workflow.py; the project's own files are written by the repository and the project tools."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/commands/meaning.py",
+      "function": "_keep_vectors",
+      "operations": [
+        "mkdir",
+        "replace"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Keeps the vectors of the commands' names and phrasings, computed once by the local embedding model, at cache/command-vectors/ under the nonproject Hub runtime root, named by the model and a digest of the texts, so the next start reads them instead of computing them again (一句话直接办). No project data is written."
     }
   ],
   "forbidden_layer_imports": [
