@@ -178,7 +178,17 @@ class HubProducerTests(unittest.TestCase):
         notice, asked = producers.repairs([restarted, held])
         self.assertEqual((notice.kind, notice.dedupeKey, notice.options), ("auto_fixed", "repair:r1", []))
         self.assertEqual(notice.titleZh, "项目服务意外停了一次，已经自动重启")
-        self.assertEqual([(option.id, option.action.commandId) for option in asked.options], [("ai", "chat.composer.send")])
+        self.assertEqual([(option.id, option.action.commandId) for option in asked.options],
+                         [("restart", "attention.queue.restart_service"), ("ai", "chat.composer.send")])
+
+    def test_a_service_that_stays_down_names_its_project_and_a_retried_start_is_a_notice(self):
+        retried = RepairRecord(repairId="r3", kind="studio-start-retried", at=NOW.isoformat(), detail="START_TIMEOUT")
+        held = RepairRecord(repairId="r4", kind="studio-restart-held", at=NOW.isoformat(), detail="did not become ready")
+        notice, asked = producers.repairs([retried, held], "housing-13-units")
+        self.assertEqual((notice.kind, notice.titleZh), ("auto_fixed", "housing-13-units: 项目服务没按时启动，已经自动再启动一次"))
+        self.assertEqual(asked.titleZh, "housing-13-units: 项目服务停着，自动重启了三次还是不行")
+        self.assertIn("skill", asked.summaryZh)
+        self.assertEqual(asked.options[0].labelZh, "重新启动")
 
     def test_a_prepared_update_asks_to_restart(self):
         ready = UpdateStatus.model_validate({

@@ -8053,6 +8053,24 @@ export const COMMAND_TREE: CommandTree = {
       ]
     },
     {
+      "id": "attention.queue.restart_service",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Restart the project service",
+        "zh-CN": "重新启动项目服务"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
       "id": "chat.new_conversation",
       "capability": "chat.conversation",
       "label": {

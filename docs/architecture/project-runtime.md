@@ -271,9 +271,11 @@ with `CANDIDATE_NOT_THIS_CHATS` unless this Hub admitted that run for the same c
 
 - One process, one project, one port. A crash affects one project; `recover` restarts it on
   the same port after inspecting retained outcomes and replays no mutation; `close` drains it.
-  The Hub recovers a Studio that stopped unexpectedly by itself, at most three times in ten
-  minutes (its repair table, #300 4-2), and the project's snapshot and attention queue say so;
-  one that keeps stopping waits for a person.
+  The Hub recovers a Studio that stopped unexpectedly, or whose start timed out
+  (`START_TIMEOUT`), by itself, at most three times in ten minutes (its repair table, #300 4-2),
+  and the project's snapshot and attention queue say so; one that stays down waits for a person,
+  whose card names the project and restarts it in one click (`recover` starts a timed-out
+  launch again). A launch refused for another source version is not started again.
   Other projects continue ([project-runtime-api.md, "MonkeyHub project runtime"](../protocols/project-runtime-api.md#monkeyhub-project-runtime)).
 - The Hub keeps no copy of canonical state, candidates or documents; its projection is rebuilt
   from this runtime's read routes and the project's retained receipts.

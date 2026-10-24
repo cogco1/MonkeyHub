@@ -128,6 +128,11 @@ class AttentionHub:
         except (SettingsError, OSError):
             return UserSettingsDto()
 
+    def restart_project(self, project_id: str, project_dir: str):
+        """Start the project's Studio again, as the project page's own recover does."""
+
+        return self.runtimes.recover(self.runtimes.open(project_id, project_dir))
+
     def apply_update(self):
         if self.updates is None:
             raise HubFailure(409, "UPDATE_NOT_READY", "This Hub has no update to apply.")
@@ -146,7 +151,7 @@ class AttentionHub:
         self.store.reconcile(project_id, project_dir, producers.OPERATIONS,
                              producers.operations(runtime.operations.records()))
         self.store.reconcile(project_id, project_dir, producers.REPAIRS,
-                             producers.repairs(getattr(runtime, "repairs", ())))
+                             producers.repairs(getattr(runtime, "repairs", ()), project_id))
         sessions = self._sessions(project_id, project_dir)
         self.store.reconcile(project_id, project_dir, producers.PERMISSIONS, producers.permissions(sessions))
         self.store.reconcile(project_id, project_dir, producers.SUGGESTIONS, producers.suggestions(sessions))
