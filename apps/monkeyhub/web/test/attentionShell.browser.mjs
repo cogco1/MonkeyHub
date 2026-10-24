@@ -640,8 +640,8 @@ try {
       { n: 3, note: "一个箭头", understanding: "Move something east", understandingZh: "往东挪一处", targets: [], unsure: true, keep: true },
     ] },
     options: [answer("run", "Run the ticked changes", "执行勾上的改动", "按勾上的几处改，没勾的不动")] })];
-  const listed = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  const listedPage = await listed.newPage(); listedPage.setDefaultTimeout(15_000);
+  const changesContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const listedPage = await changesContext.newPage(); listedPage.setDefaultTimeout(15_000);
   listedPage.on("pageerror", (error) => errors.push(error.message));
   await listedPage.route((url) => url.pathname.startsWith("/api/"), route);
   await open(listedPage);
@@ -659,7 +659,7 @@ try {
   await changes.waitFor({ state: "detached" });
   assert.deepEqual(attentionActions.at(-1), ["resolve", "att_changes", "run", [1, 3]], "the ticked numbers go with the answer");
   await boxes.first().waitFor({ state: "detached" }).catch(() => undefined);
-  await listed.close();
+  await changesContext.close();
   attentionServed = false; cards = [];
 
   // Phone: the projects column and the side panel open over the center.
