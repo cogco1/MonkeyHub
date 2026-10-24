@@ -1314,9 +1314,7 @@ async function suggestionCards() {
   assert.equal(await card.locator('[data-suggestion-action="accept"]').count(), 1, "one recommended execution action per card");
   assert.equal(await card.locator(".chat-suggestion__estimates").count(), 0, "unknown estimates are not shown as figures");
   const details = card.locator(".chat-card__details");
-  assert.equal(await details.count(), 0, "outside developer mode the card says only what it offers");
-  await setDeveloperMode(true);
-  assert.equal(await details.count(), 1, "rationale and method are progressively disclosed");
+  assert.equal(await details.count(), 1, "why it is offered, and the request it sends, are progressively disclosed");
   assert.equal(await details.getAttribute("open"), null);
   assert.equal(await card.getByText("To be assessed").first().isVisible(), false, "unknown effort waits in the folded details");
   // The keyboard opens the shared disclosure.
@@ -1325,7 +1323,13 @@ async function suggestionCards() {
   await card.getByText(available.suggestion.rationale, { exact: true }).waitFor();
   assert.deepEqual(await details.locator("p").filter({ hasText: "To be assessed" }).allInnerTexts(),
     ["Estimated time · To be assessed", "Estimated cost · To be assessed"], "unknown effort and cost remain unknown");
-  for (const text of [...available.suggestion.tools, ...available.suggestion.deliverables]) assert.ok((await card.innerText()).includes(text));
+  await card.locator(".chat-suggestion__request").filter({ hasText: available.suggestion.prompt }).waitFor();
+  for (const text of available.suggestion.deliverables) assert.ok((await card.innerText()).includes(text));
+  // The tools it would use are for developer mode.
+  for (const text of available.suggestion.tools) assert.ok(!(await card.innerText()).includes(text), `${text} waits for developer mode`);
+  await setDeveloperMode(true);
+  if (await details.getAttribute("open") === null) await details.locator(":scope > summary").click();
+  for (const text of available.suggestion.tools) assert.ok((await card.innerText()).includes(text));
   await details.first().locator("summary").click();
   await setDeveloperMode(false);
   assert.equal(postWrites().length, before, "reading a recommendation does not execute it");
@@ -1439,7 +1443,12 @@ async function suggestionCards() {
       await estimateCard.screenshot({ path: path.join(temporary, `suggestion-${language}-${theme}-${width}.png`) });
     }
     // The bases wait for developer mode.
-    assert.equal(await estimateCard.locator("details").count(), 0, "outside developer mode the bases are not offered");
+    for (const disclosure of await estimateCard.locator("details").all()) {
+      if (!await disclosure.getAttribute("open")) await disclosure.locator(":scope > summary").click();
+    }
+    for (const estimate of [estimated.suggestion.timeEstimate, estimated.suggestion.costEstimate]) {
+      assert.equal(await estimateCard.getByText(estimate.basis).count(), 0, "outside developer mode the bases are not offered");
+    }
     await developerModeOnNextLoad(true);
     await visit(estimatesSession);
     await estimateCard.waitFor();

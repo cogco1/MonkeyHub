@@ -28,7 +28,7 @@ export function BilingualText({
   className,
   showSourceToggle = false,
 }: BilingualTextProps) {
-  const { language, developerMode } = usePreferences();
+  const { language } = usePreferences();
   const [attempt, setAttempt] = useState<TranslationAttempt>(() => ({
     source,
     translated: null,
@@ -128,8 +128,7 @@ export function BilingualText({
         </span>
       )}
 
-      {/* The English original of a translated line is for developer mode. */}
-      {showSourceToggle && hasTranslation && developerMode && (
+      {showSourceToggle && hasTranslation && (
         <button
           className="bilingual-text__toggle"
           type="button"
