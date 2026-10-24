@@ -10414,7 +10414,8 @@
         "The representation-status projection (#223): for one exact registered page, current, outdated, frozen or unavailable, the exact retained refs it was made from and its newest registered replacement, derived on every read by asking the page's owner (a cut plan's read set through plan_status, an AI render's retained request through Render's freshness, a page bound to one model state through model_is_current, a page bound to nothing through its replacements alone); it writes nothing and stores no status or dependency edge: the project-level dependency is this projection, not a second state; GET /api/representation-status answers it for one exact page in the projection's own words (#288)",
         "the Studio projector of the project index (StudioProjector): each run's records, artifacts, documents and candidate source, the parts of its change the tree reads (change_parts), its part of the reference survey and its newest runner receipt, and the committed stages, read through the same readers the routes use; attaching the index in StudioSettings.project_index_dir (the index subdirectory of the Hub's project cache directory) to the one binding, kept current by its keeper; which reads use the index (only when it holds every write this process made): the artifact and document listings and, since #599, the design tree's views, which read every run from one snapshot (indexed_runs); the read-only agent query route GET /api/index/{table}; the client stores' catch-up route GET /api/index?since=&epoch= (#366): empty when current, the changes while the change log reaches back, otherwise a reset snapshot, tagged \"<epoch>:<revision>\"",
         "reading the project again on request (POST /api/project/refresh, ProjectBinding.refresh, ADR-012): one walk of the runtime binding's known layout, which answers whether the folder changed outside this runtime and names what moved; the read token moves with it, and the answer waits (bounded) for the project index to apply it",
-        "listing the Working Head's moves onto runs newest first (GET /api/working-design/moves, #300) from the design.continued event each Continue retains beside its run: when, onto which run, from which run, who and through which surface, and the conversation message it answered; it only reads, and going back is the same PUT /api/working-draft onto the earlier run"
+        "listing the Working Head's moves onto runs newest first (GET /api/working-design/moves, #300) from the design.continued event each Continue retains beside its run: when, onto which run, from which run, who and through which surface, and the conversation message it answered; it only reads, and going back is the same PUT /api/working-draft onto the earlier run",
+        "moving the Working Head through Switch and its Undo (POST /api/working-design/switch and /undo, #300): Switch is Continue refused while Modeling holds unrecorded edits, answered with the Undo that puts back the Current it replaced; Undo writes that entry back only while Current still stands on the run the Switch moved it to, answers an Undo already written as done, and otherwise names where Current stands"
       ],
       "does_not_own": [
         "issuing a project version, and direct project file writes: the ProjectBinding object stays read-only, initial authored-input preparation and configured sync use archflow.project.repository ports; monkeyarch.application.project_runner is the writer of a modeling run and archflow.project.issue the only issuer. A configured pull advances this Runtime's local design branch, and it does so entirely through archflow.project.repository's transfer and branch compare-and-swap ports; this owner writes no project file itself and moves no canonical HEAD",
@@ -10514,6 +10515,12 @@
         "GET /api/working-design/moves",
         "continue_moves",
         "ContinueMove",
+        "POST /api/working-design/switch",
+        "POST /api/working-design/undo",
+        "switch_working_design",
+        "undo_working_design",
+        "SwitchUndo",
+        "HeadEntry",
         "WorkingHead",
         "model_is_current",
         "lineage_of",

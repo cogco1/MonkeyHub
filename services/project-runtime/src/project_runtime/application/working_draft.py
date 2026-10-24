@@ -284,6 +284,93 @@ def _retain_continued(binding: ProjectBinding, payload: dict, *, undo: dict, wri
                       "Working Head was left where it was.") from failure
 
 
+# ---- Switch and its Undo (#300, 2-6) -----------------------------------------
+#
+# The history page and the attention executor move the Working Head through one
+# pair of writes. Switch is Continue, refused while Modeling holds edits not yet
+# recorded on the current source, and it answers with the Undo that puts back the
+# Current it replaced. Undo is the same Continue onto that entry; it holds only
+# while Current still stands on the run the Switch moved it to. A head no entry
+# named (the line's accepted Stage or the reference run answered for it) has no
+# exact Undo: returning there is another act, the default.
+
+DESIGN_TREE_UNSYNCED = "DESIGN_TREE_UNSYNCED_EDITS"
+DESIGN_TREE_UNDO_MOVED = "DESIGN_TREE_UNDO_MOVED"
+
+
+@dataclass(frozen=True, slots=True)
+class HeadEntry:
+    """A working-position entry Undo can put back: an exact run, on the line it was named on."""
+
+    run_id: str
+    branch_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class SwitchUndo:
+    """What one Switch's Undo puts back, and where that Switch left the position."""
+
+    previous: HeadEntry | None
+    continued: str
+    revision_after: str | None
+
+
+class UndoMoved(StudioError):
+    """Undo found Current moved on from the run its Switch left it on; the answer says where Current stands."""
+
+    def __init__(self, current_run_id: str | None) -> None:
+        super().__init__(409, DESIGN_TREE_UNDO_MOVED, "The working design moved on since that switch, so nothing was put back.")
+        self.current_run_id = current_run_id
+
+    def body(self) -> dict[str, object]:
+        body = super().body()
+        body["currentRunId"] = self.current_run_id
+        return body
+
+
+def _unsynced() -> StudioError:
+    return StudioError(409, DESIGN_TREE_UNSYNCED, "Modeling holds edits not yet recorded on the current source; record or "
+                       "undo them before moving the working design.")
+
+
+def switch_working_design(binding: ProjectBinding, run_id: str, revision: str | None, branch_id: str | None = None, *,
+                          attribution: ActorAttribution = ActorAttribution(LOCAL_ACTOR_ID, False, ORIGIN_STUDIO),
+                          message_source: Mapping[str, str] | None = None,
+                          raw_language: str | None = None) -> tuple[WorkingDraftDto, SwitchUndo]:
+    """Continue onto ``run_id`` from the position as read at ``revision``, and the Undo that puts it back."""
+
+    replaced = read_working_draft(binding)
+    if replaced.revisionSha256 != revision:
+        raise StudioError(409, "WORKING_DRAFT_STALE", "The working position changed; read it before selecting another source.")
+    if replaced.localDraft is not None:
+        raise _unsynced()
+    position = select_working_draft(binding, run_id, revision, branch_id, attribution=attribution,
+                                    message_source=message_source, raw_language=raw_language)
+    current = replaced.current
+    previous = None if current is None or current.runId == run_id else HeadEntry(current.runId, current.branchId)
+    return position, SwitchUndo(previous, run_id, position.revisionSha256)
+
+
+def undo_working_design(binding: ProjectBinding, previous: HeadEntry, continued: str, *,
+                        attribution: ActorAttribution = ActorAttribution(LOCAL_ACTOR_ID, False, ORIGIN_STUDIO)
+                        ) -> WorkingDraftDto:
+    """Put back the Current one Switch replaced, while Current still stands where that Switch left it.
+
+    An Undo already written answers as done, so a retry after a restart cannot fail on its own success.
+    """
+
+    position = read_working_draft(binding)
+    current = None if position.current is None else position.current.runId
+    if current == previous.run_id:
+        return position
+    if current != continued:
+        raise UndoMoved(current)
+    if position.localDraft is not None:
+        raise _unsynced()
+    return select_working_draft(binding, previous.run_id, position.revisionSha256, previous.branch_id,
+                                attribution=attribution)
+
+
 @dataclass(frozen=True, slots=True)
 class ContinueMove:
     """One move of the Working Head onto a run, as its ``design.continued`` event retained it."""

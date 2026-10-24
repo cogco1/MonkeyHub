@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ...application.working_draft import LocalDraftInputDto, LocalDraftSourceDto
+from ...application.working_draft import LocalDraftInputDto, LocalDraftSourceDto, WorkingDraftDto
 from .artifacts import ModelSourceDto, model_source_dto
 from .decisions import MessageSourceDto
 
@@ -34,6 +34,49 @@ class WorkingDraftSelectionDto(BaseModel):
         default=None, min_length=1, max_length=2000,
         description="The user's own words in that message that ask for this Continue; required with "
         "messageSource. The retained design.continued event names the message by id, not these words.")
+
+
+class WorkingDesignSwitchRequestDto(WorkingDraftSelectionDto):
+    """Switch: the Continue onto one run, answered with its Undo (#300, 2-6)."""
+
+    runId: str = Field(min_length=1, description="The run the Working Head moves onto; returning to the default stays "
+                       "PUT /api/working-draft with none.")
+
+
+class HeadEntryDto(BaseModel):
+    """A working-position entry: an exact run, on the line it was named on."""
+
+    model_config = ConfigDict(extra="forbid")
+    runId: str = Field(min_length=1)
+    branchId: str | None = None
+
+
+class SwitchUndoDto(BaseModel):
+    previous: HeadEntryDto | None = Field(description=(
+        "The Current this Switch replaced, which POST /api/working-design/undo puts back; null when no working-position "
+        "entry named it (the line's accepted Stage or the reference run answered for the head), so there is no exact Undo."))
+    continued: str = Field(description="The run this Switch moved Current onto; Undo holds only while Current is still there.")
+    revisionAfter: str | None = Field(description="The working position's revision this Switch wrote.")
+
+
+class WorkingDesignSwitchDto(BaseModel):
+    position: WorkingDraftDto
+    undo: SwitchUndoDto
+
+
+class WorkingDesignUndoRequestDto(BaseModel):
+    """Undo one Switch: its ``undo`` as the Switch answered it."""
+
+    model_config = ConfigDict(extra="forbid")
+    projectId: str
+    previous: HeadEntryDto
+    continued: str = Field(min_length=1)
+
+
+def switch_dto(position: WorkingDraftDto, undo) -> WorkingDesignSwitchDto:
+    previous = None if undo.previous is None else HeadEntryDto(runId=undo.previous.run_id, branchId=undo.previous.branch_id)
+    return WorkingDesignSwitchDto(position=position, undo=SwitchUndoDto(
+        previous=previous, continued=undo.continued, revisionAfter=undo.revision_after))
 
 
 class ContinueMoveDto(BaseModel):
