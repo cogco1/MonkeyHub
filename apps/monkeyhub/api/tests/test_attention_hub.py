@@ -8,6 +8,7 @@ import tempfile
 import time
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[4]
 if str(ROOT) not in sys.path:
@@ -262,6 +263,23 @@ class AttentionHubTests(unittest.TestCase):
                     seen.append(event)
         self.assertEqual(seen[0]["runtimeId"], self.runtimes.runtime.runtime_id)
         self.assertEqual([item.dedupeKey for item in self.store.items()], ["perm:c1:p1"])
+
+    def test_an_index_commit_that_moved_nothing_does_not_wake_the_queue(self):
+        with patch.object(self.hub, "refresh", wraps=self.hub.refresh) as refreshed:
+            self.hub.start()
+            self.addCleanup(self.hub.stop)
+            key = self.runtimes.runtime.runtime_id
+            for index in ({"epoch": 1, "revision": 2, "domains": ["projections"]}, None,
+                          {"epoch": 1, "revision": 3, "domains": ["reset"]}):
+                self.runtimes.events.publish(event={"kind": "index/committed", "runtimeId": key, "index": index})
+            time.sleep(1.2)
+            self.assertEqual(refreshed.call_count, 0, "a thumbnail drawn or the index loaded again changes no card")
+            self.runtimes.events.publish(event={"kind": "index/committed", "runtimeId": key,
+                                                "index": {"epoch": 1, "revision": 4, "domains": ["runs"]}})
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and not refreshed.call_count:
+                time.sleep(0.1)
+        self.assertEqual(refreshed.call_count, 1)
 
     def test_a_project_opened_before_the_queue_follows_the_hub_gets_its_cards(self):
         # The Hub reopens last session's projects in the background as it starts; one may open first.

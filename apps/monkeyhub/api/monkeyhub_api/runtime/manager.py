@@ -87,6 +87,12 @@ _REFRESH_PATH = "/api/project/refresh"
 _UNMOVED_DOMAINS = frozenset({"projections", "reset"})
 
 
+def index_moved(index: dict | None) -> bool:
+    """Whether an index commit says the project moved: not a thumbnail drawn, the index loaded again, or a bare hint."""
+
+    return index is not None and bool(set(index.get("domains") or ()) - _UNMOVED_DOMAINS)
+
+
 def binding_signature(project_dir: str) -> tuple[int, int, int, bool] | None:
     """Two stats that move whenever the folder could stop being the project it was.
 
@@ -294,7 +300,7 @@ class ProjectRuntimeManager:
         restarted is read again on its own state change.
         """
 
-        if index is not None and set(index.get("domains") or ()) - _UNMOVED_DOMAINS:
+        if index_moved(index):
             with self._lock:
                 runtime = self._projects.get(runtime_id)
             if runtime is not None:
