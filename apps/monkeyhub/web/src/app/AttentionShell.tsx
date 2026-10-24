@@ -169,10 +169,11 @@ export function AttentionShell(props: AttentionShellProps) {
 
   return <div className="attention-shell" data-view={view} data-side={side ?? "closed"} data-left={leftOpen ? "open" : "closed"}>
     <header className="attention-shell__top">
-      <button type="button" className="chat-icon" aria-label={t("shell.back")} title={t("shell.back")} disabled={!props.history.back}
-        data-command="view.conversation_history.back" onClick={props.history.onBack}><Icon name="back" /></button>
-      <button type="button" className="chat-icon" aria-label={t("shell.forward")} title={t("shell.forward")} disabled={!props.history.forward}
-        data-command="view.conversation_history.forward" onClick={props.history.onForward}><Icon name="forward" /></button>
+      {/* S01: the arrows are there only while there is a conversation to go back or forward to; Ctrl K has them always. */}
+      {props.history.back && <button type="button" className="chat-icon" aria-label={t("shell.back")} title={t("shell.back")}
+        data-command="view.conversation_history.back" onClick={props.history.onBack}><Icon name="back" /></button>}
+      {props.history.forward && <button type="button" className="chat-icon" aria-label={t("shell.forward")} title={t("shell.forward")}
+        data-command="view.conversation_history.forward" onClick={props.history.onForward}><Icon name="forward" /></button>}
       <button type="button" className="chat-icon attention-shell__left-toggle" aria-label={t("shell.projects")} aria-expanded={leftOpen}
         aria-controls="attention-shell-left" data-command="view.left_column.toggle" onClick={() => setLeftOpen(!leftOpen)}><Icon name="sidebar" /></button>
       <button type="button" className="attention-shell__search" onClick={openPalette} aria-keyshortcuts="Control+K">
@@ -270,12 +271,12 @@ export function AttentionShell(props: AttentionShellProps) {
       </div>
       <div className="attention-shell__bottom" ref={bottomRef}>
         <div className="status-line attention-shell__status">
-          <span className="status-line__start">{backgroundCount
-            ? t("shell.backgroundLine", { running: props.background.running, queued: props.background.queued }) : t("shell.backgroundIdle")}</span>
+          <button type="button" className="status-line__start menu-command attention-shell__status-open" aria-expanded={side === "background"} aria-label={t("shell.openBackground")}
+            title={t("shell.openBackground")} data-command="view.background.toggle" onClick={() => open("background")}>{backgroundCount
+            ? t("shell.backgroundLine", { running: props.background.running, queued: props.background.queued }) : t("shell.backgroundIdle")}</button>
           <span className="status-line__end attention-shell__status-actions">
             <button type="button" className="menu-command" aria-expanded={drawer} aria-controls="attention-shell-drawer" onClick={() => setDrawer(!drawer)}>
               {drawer ? t("shell.hideConversation") : t("shell.showConversation")}</button>
-            <button type="button" className="menu-command" aria-expanded={side === "background"} onClick={() => open("background")}>{t("shell.openBackground")}</button>
           </span>
         </div>
         <section className="attention-shell__drawer" id="attention-shell-drawer" hidden={!drawer} aria-label={t("shell.conversation")}>
@@ -305,8 +306,8 @@ export function AttentionShell(props: AttentionShellProps) {
       </div>}
       {/* 20 前台只剩草图、体块和少量语义描述: the rail shows the background while there is work in it; the other pages are
           one Ctrl K away (their commands), and the open panel's own tabs switch between them. Nothing to show, no rail. */}
-      {(backgroundCount > 0 || side !== null) && <div className="attention-shell__rail" role="toolbar" aria-orientation="vertical" aria-label={t("shell.side")}>
-        {SIDE_PAGES.filter((page) => side !== null || (page === "background" && backgroundCount > 0)).map((page) => <button key={page} type="button" className="attention-shell__rail-item" aria-pressed={side === page}
+      {(Boolean(props.historyPage) || side !== null) && <div className="attention-shell__rail" role="toolbar" aria-orientation="vertical" aria-label={t("shell.side")}>
+        {SIDE_PAGES.filter((page) => side !== null || (page === "history" && Boolean(props.historyPage))).map((page) => <button key={page} type="button" className="attention-shell__rail-item" aria-pressed={side === page}
           data-command={SIDE_COMMANDS[page]} onClick={() => open(page)}>
           <Icon name={page === "background" ? "tasks" : page === "history" ? "tree" : page === "handled" ? "archive" : page === "ignored" ? "restore" : "display"} />
           <span>{pageLabel(page)}</span>{page === "background" && backgroundCount > 0 && <span className="attention-shell__count">{backgroundCount}</span>}

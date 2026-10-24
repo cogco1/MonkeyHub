@@ -23,9 +23,10 @@ export function AdvancedTools() {
     const commands = searchable(tree, developerMode);
     const order = (group: string) => { const index = (GROUPS as readonly string[]).indexOf(group); return index < 0 ? GROUPS.length : index; };
     const byGroup = new Map<string, typeof commands>();
-    for (const command of commands) byGroup.set(command.group, [...(byGroup.get(command.group) ?? []), command]);
+    // S01: what cannot run here is not listed (Ctrl K still says why when it is searched for).
+    for (const command of commands) if (stateOf(command, onScreen).kind !== "unavailable") byGroup.set(command.group, [...(byGroup.get(command.group) ?? []), command]);
     return [...byGroup.entries()].sort(([a], [b]) => order(a) - order(b));
-  }, [tree, developerMode]);
+  }, [tree, developerMode, stateOf, onScreen]);
   if (!groups.length) return <p className="attention-shell__empty">{t("shell.side.tools.empty")}</p>;
   return <div className="advanced-tools">{groups.map(([group, commands]) => <section key={group} className="advanced-tools__group">
     <h3>{(GROUPS as readonly string[]).includes(group) ? t(`commands.group.${group}` as MessageKey) : group}</h3>

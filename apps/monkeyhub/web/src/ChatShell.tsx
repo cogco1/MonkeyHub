@@ -2445,10 +2445,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <div className="chat-composer__bottom"><ComposerMenu label={w.composerMenu} disabled={!project || busy} disabledReason={composerDisabledReason} items={[
             { key: "attach", label: t.attach, onSelect: () => fileInput.current?.click() },
             // Offered as the checkbox was: with a saved editing state to start from, or with the edits that keep it out.
+            // S01: a New topic that cannot start is not offered; its reason was a sentence nobody could act on.
             { key: "topic", label: w.newTopic, detail: busy ? t.actionPending : running ? t.contextRunning : designContext ? w.newTopicDetail : contextUnavailable, checked: contextMode === "project",
               disabled: busy || running || (!designContext && contextMode !== "project" && !recordContext),
               onSelect: () => { setContextModes((value) => ({ ...value, [draftKey]: value[draftKey] === "project" ? "continue" : "project" })); input.current?.focus(); } },
-          ]} /><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}
+          ].filter((item) => !item.disabled || item.checked)} /><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}
             data-default={customModel === null && !chosenModel && availableProvider?.available !== false ? true : undefined}>
             <span className="chat-connection__name">{providers.find((item) => item.id === connection.provider)?.label ?? connection.provider}</span>
             <label className="sr-only" htmlFor="chat-model">{t.modelLabel}</label>
@@ -2622,7 +2623,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       onArchiveConversation={(id) => { const item = sessions.find((row) => row.id === id); if (item) void setArchived(item, !item.archived); }}
       archivedView={archivedView} onArchivedView={setArchivedView}
       onNewProject={openNewProject} onAddProject={openAddProject} onSettings={openSettings}
-      usage={{ label: usageFigure ? `${t.monitor} · ${t.usageWeek(usageFigure.short)}` : t.monitor, onOpen: () => void openTool("monkeymonitor", { projectId: "" }) }}
+      usage={developer ? { label: usageFigure ? `${t.monitor} · ${t.usageWeek(usageFigure.short)}` : t.monitor, onOpen: () => void openTool("monkeymonitor", { projectId: "" }) } : null}
       background={{ running: tasks.filter((task) => task.state === "running").length, queued: tasks.filter((task) => task.state !== "running").length }}
       overview={{ wait: tasks.map(taskTiming).find((timing) => timing?.share != null)?.text ?? tasks.map(taskTiming).find(Boolean)?.text ?? null,
         recent: recentResult() }}
