@@ -87,7 +87,7 @@ export function SkillGrantsView({ state, actions, runChoice }: {
     {runChoice}
     {problems && problems.length > 0 && <SkillProblems problems={problems} t={t} />}
     <p className="settings-intro">{t("skills.grants.intro")}</p>
-    {loading && !grants && <p className="chat-muted" role="status">{t("skills.grants.loading")}</p>}
+    {loading && !grants && <p className="chat-muted wait-late" role="status">{t("skills.grants.loading")}</p>}
     {loadError && <div className="skills__error" role="alert">
       <p>{t("skills.grants.loadFailed")} {loadError.detail}</p>
       <button type="button" className="btn" disabled={loading} onClick={() => void actions.load()}>{t("skills.retry")}</button>

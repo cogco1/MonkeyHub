@@ -2566,7 +2566,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           {taskItems}
         </ul>}
         <div className="chat-project-label"><span>{archivedView ? t.archivedChats : t.projects}</span><button data-command="project.create.add_existing" className="chat-icon" aria-label={t.addExisting} title={t.addExisting} onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}><Icon name="plus" /></button></div>
-        {!projects.length && <p className="chat-muted chat-project-empty">{loading ? t.loading : t.emptyProjects}</p>}
+        {!projects.length && <p className={loading ? "chat-muted chat-project-empty wait-late" : "chat-muted chat-project-empty"}>{loading ? t.loading : t.emptyProjects}</p>}
         {archivedView && !visibleSessions.length && <p className="chat-muted chat-project-empty">{t.archiveEmpty}</p>}
         {projects.filter((item) => !archivedView || visibleSessions.some((session) => session.projectDir === item.projectDir)).map((item) => {
           const threads = visibleSessions.filter((session) => session.projectDir === item.projectDir);

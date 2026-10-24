@@ -442,7 +442,7 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
           color={color} fontSize={fontSize} lineWidth={lineWidth} active={tool === "text"}
           panning={temporaryPan} readOnly={readOnly || !renderReady} onChange={onChange} />
       </div>
-      {!renderReady && <p className="document-page-loading" role="status">{t("document.loadingPage")}</p>}
+      {!renderReady && <p className="document-page-loading wait-late" role="status">{t("document.loadingPage")}</p>}
     </div>
     <p className="document-input-hint">{t(readOnly ? "document.readOnly" : "document.inputHint")}</p>
   </div>;

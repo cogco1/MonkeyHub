@@ -131,7 +131,7 @@ export function HistoryPage({ projectDir, active }: { readonly projectDir: strin
       {note.kind === "moved" && note.undo && <button type="button" className="btn btn--link" data-command="design.undo_last"
         disabled={busy} onClick={() => void undo(note.undo!)}>{words.undo}</button>}
     </p>}
-    {read === null ? <p className="design-history__empty" role="status">{words.loading}</p>
+    {read === null ? <p className="design-history__empty wait-late" role="status">{words.loading}</p>
       : read.rows.length === 0 ? <p className="design-history__empty">{words.empty}</p>
       : <ol className="design-history__rows">
         {read.rows.map((row, index) => <li key={`${row.runId}:${row.occurredAt}:${index}`} className="design-history__row"
