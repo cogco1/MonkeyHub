@@ -1,0 +1,94 @@
+{
+  "projectId": "demo-project",
+  "runId": "studio-cand-20261024-214615-1ca77f1e-8124",
+  "assetSha256": "0ddc7fabeed1a14e80dec47755c8dada688ab4d62cb0d60ab3c8dd1fafaaa62f",
+  "fileName": "room-plan.png",
+  "mimeType": "image/png",
+  "sizeBytes": 6803,
+  "pageCount": 1,
+  "pages": [
+    {
+      "pageIndex": 0,
+      "width": 697.0,
+      "height": 697.0,
+      "rotation": 0
+    }
+  ],
+  "modelSource": {
+    "runId": "studio-cand-20261024-214615-1ca77f1e-8124",
+    "stateDigest": "23cbcbd7b8a142cc32e61028e01fcd7d562fec6a84432f5e5ac20adb0712e083",
+    "assetSha256": "407d8cd5e23435057b993f0f6f6534b3ca5df7e9e479c36f2f74e126adda7f60"
+  },
+  "modelSourceBindingRef": "project://demo-project/runs/studio-cand-20261024-214615-1ca77f1e-8124/records/studio-source-document-dd452ce2fc226b32a18439786625752787d18e09c683e877624f53eef50f6903.json",
+  "drawingId": "room-plan",
+  "revisionRef": "project://demo-project/runs/studio-drawing-589daf2379054293bb4cc4c9049bd3fc/records/drawing-projection-receipt-6a32fe0fadf6326562b722b5ad65d5e44a88c4aa2acf7f63c42faef35bbe50eb.json",
+  "sourceStageRef": "project://demo-project/runs/studio-cand-20261024-214615-1ca77f1e-8124/reviews/design-stage-94b92ab3568172ab60091396190e0e6bebb649314b46444c6acc0cc917e78a07.json",
+  "viewRecipe": {
+    "dimensions": [
+      {
+        "entityRef": "entity:passage-wall",
+        "id": "door-width",
+        "openingId": "passage-arch",
+        "placement": {
+          "offsetMm": 8.0
+        }
+      }
+    ],
+    "frame": {
+      "crop_uv": [
+        -0.95,
+        -0.95,
+        4.95,
+        4.95
+      ],
+      "depth_definition": "dot(point - origin, look)",
+      "far_depth": 1.2,
+      "hidden_lines": false,
+      "kind": "model-axis-elevation",
+      "linear_deflection": 0.0001,
+      "look": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "name": "room-plan",
+      "near_depth": 0.0,
+      "origin": [
+        0.0,
+        0.0,
+        1.2
+      ],
+      "projection": "orthographic",
+      "right": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "scale": "1:50",
+      "up": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "uv_definition": "u = dot(point - origin, right); v = dot(point - origin, up)"
+    },
+    "graphics": {
+      "cutLineMm": 0.35,
+      "hatchSpacingMm": 2,
+      "visibleLineMm": 0.18
+    },
+    "hiddenObjectIds": [],
+    "kind": "cut-plan",
+    "name": "room-plan"
+  },
+  "generatedAt": "2026-10-24T21:46:25.875242+00:00",
+  "replacesPages": [],
+  "previousRevisionRef": null,
+  "attribution": {
+    "actorId": "studio:explicit-user-action",
+    "authenticated": false,
+    "origin": "studio"
+  },
+  "reason": null,
+  "sourceKind": null
+}
