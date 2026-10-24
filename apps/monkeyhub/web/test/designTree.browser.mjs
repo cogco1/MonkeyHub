@@ -232,6 +232,8 @@ async function hubApi(request, response, url, body, origin) {
     return json(hubRuntime(origin).projects[0]);
   }
   if (name === "/api/updates/status") return json({ currentVersion: "fixture", currentRevision: "f".repeat(40), mode: "local", state: "idle", prepared: null, canApply: false, message: null, error: null });
+  // A Hub that does not serve the attention queue yet (1-4), as main's does.
+  if (name.startsWith("/api/attention")) return json({ code: "NOT_FOUND", detail: "This Hub does not serve the attention queue yet." }, 404);
   unexpected.push(`hub ${request.method} ${name}`);
   return json({ code: "FIXTURE_UNEXPECTED", detail: name }, 404);
 }

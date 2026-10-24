@@ -112,6 +112,8 @@ await context.route((url) => url.pathname.startsWith("/api/"), async (route) => 
   if (url.pathname === "/api/updates/status") return json(updateStatus());
   // Fabrication's own reads are not this test's subject.
   if (url.pathname.startsWith("/api/fab/")) return json({ code: "FAB_UNAVAILABLE", detail: "Not part of this fixture." }, 503);
+  // A Hub that does not serve the attention queue yet (1-4), as main's does.
+  if (url.pathname.startsWith("/api/attention")) return json({ code: "NOT_FOUND", detail: "This Hub does not serve the attention queue yet." }, 404);
   unexpected.push(`${method} ${url.pathname}`);
   return json({ detail: "Not part of this fixture" }, 404);
 });
