@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 import { workspaceFixture } from "./workspaceFixture.mjs";
+import { cmd } from "./commandLocator.mjs";
 
 // Real Hub, Studio/P036, Board and Excalidraw, all in disposable directories.
 // Only the component entry and access to Excalidraw's public API are transformed.
@@ -165,12 +166,12 @@ try {
   assert.equal(afterRuntime.artifactEvents.length - beforeRuntime.artifactEvents.length, 1);
   const retainedBeforeView = await (await request("/api/board")).json();
   const writesBeforeView = writes.length;
-  await notice.getByRole("button", { name: "查看", exact: true }).click();
+  await cmd(notice, "view.attention.open").click();
   await page.waitForTimeout(1000);
   assert.deepEqual((await scene()).elements, after.elements);
   assert.equal(writes.length, writesBeforeView, "View changes the camera, never the saved board");
   assert.deepEqual(await (await request("/api/board")).json(), retainedBeforeView);
-  await notice.getByRole("button", { name: "关闭提示", exact: true }).click();
+  await cmd(notice, "view.attention.dismiss").click();
   // An unbound sibling and a timestamp-only edit are not new project revisions.
   await writeFile(path.join(path.dirname(setup.workPath), "unbound.png"), Buffer.from(setup.editsBase64[0], "base64"));
   await utimes(setup.workPath, new Date(), new Date());

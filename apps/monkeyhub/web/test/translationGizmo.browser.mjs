@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
+import { cmd } from "./commandLocator.mjs";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
 const cacheDir = await mkdtemp(path.join(tmpdir(), "translation-gizmo-"));
@@ -121,7 +122,7 @@ try {
     // tool callback, then keep all actual mouse/form/identity assertions below.
     // This is not acceptance of a visible Copy entry in the primary toolbar.
     if (tool === "copy") await page.evaluate(() => window.arm("copy"));
-    else await page.locator(`button[data-model-tool="${tool}"]`).click();
+    else await cmd(page,`draft.tools.${tool}`).click();
     await page.locator(".stage-move").waitFor();
     await page.waitForFunction(()=>!!window.readRuntime().translation);
   };
@@ -132,7 +133,7 @@ try {
     if (release) await page.mouse.up();
     await page.waitForTimeout(30);
   };
-  const apply = () => page.locator(".model-edit-panel--move button[type=submit]").click();
+  const apply = () => cmd(page.locator(".model-edit-panel--move"),"draft.tools.apply").click();
   const axis = () => page.getByRole("combobox",{name:"World constraint"});
   const field = name => page.getByRole("spinbutton",{name:`${name} m`,exact:true});
   const near = (actual,expected) => actual.forEach((value,i)=>assert.ok(Math.abs(value-expected[i])<0.002,`${actual} != ${expected}`));

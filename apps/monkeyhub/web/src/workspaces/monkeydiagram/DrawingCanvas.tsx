@@ -240,9 +240,9 @@ function PlanPreview({ source, file, vector, picture, hidden, picked, onPick, sy
   return <section className="drawing-preview" aria-label={source.fileName}>
     {/* #337: the drawing's one tool group, over the bottom of the canvas; the bar names the drawing. */}
     <div className="drawing-preview__tools">
-      <button type="button" aria-label={text.zoomOut} disabled={zoom <= 0.25} onClick={() => setZoom(value => Math.max(0.25, value / 1.25))}>−</button>
-      <button type="button" onClick={() => setZoom(1)}>{text.fit}</button>
-      <button type="button" aria-label={text.zoomIn} disabled={zoom >= 8} onClick={() => setZoom(value => Math.min(8, value * 1.25))}>+</button>
+      <button data-command="view.canvas.zoom_out" type="button" aria-label={text.zoomOut} disabled={zoom <= 0.25} onClick={() => setZoom(value => Math.max(0.25, value / 1.25))}>−</button>
+      <button data-command="view.canvas.fit" type="button" onClick={() => setZoom(1)}>{text.fit}</button>
+      <button data-command="view.canvas.zoom_in" type="button" aria-label={text.zoomIn} disabled={zoom >= 8} onClick={() => setZoom(value => Math.min(8, value * 1.25))}>+</button>
     </div>
     <div className="drawing-preview__viewport" ref={viewport} tabIndex={0} data-ready={inline || ready}
       onKeyDown={event => { if (event.key === "Escape" && picked) { event.preventDefault(); onPick(null); } }}>
@@ -737,7 +737,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
         {earlier.length > 0 && <optgroup label={text.earlier}>{earlier.map(item => <option key={drawingDocumentKey(item)} value={drawingDocumentKey(item)}>
           {documentLabel(item)}</option>)}</optgroup>}</select>
       <MenuSeparator />
-      <DrawingMenu label={text.another} className="drawing-another" panelClassName="drawing-another__panel" open={anotherOpen} onOpenChange={setAnotherOpen}>
+      <DrawingMenu label={text.another} command="view.menu.toggle" commandArg="drawing_another" className="drawing-another" panelClassName="drawing-another__panel" open={anotherOpen} onOpenChange={setAnotherOpen}>
         <label className="drawing-field">{text.source}<select value={selectedTargetValue} disabled={busy || loading || statusLoading}
           onKeyDown={event => { arrowing.current = /^(Arrow|Page|Home|End)/.test(event.key) || event.key.length === 1; }}
           onPointerDown={() => { arrowing.current = false; }}
@@ -753,16 +753,16 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
         <input ref={importInput} className="visually-hidden" type="file" accept=".3dm,.skp" onChange={event => {
           const file = event.currentTarget.files?.[0]; if (file) void importModel(file); event.currentTarget.value = "";
         }} />
-        <button type="button" disabled={busy || importing || !active} onClick={() => importInput.current?.click()}>{importing ? text.importing : text.importModel}</button>
+        <button data-command="drawing.plan.import_model" type="button" disabled={busy || importing || !active} onClick={() => importInput.current?.click()}>{importing ? text.importing : text.importModel}</button>
         <p className="drawing-field__hint">{text.anotherHint}</p>
       </DrawingMenu>
       {recipes.menu}
-      <DrawingMenu label={t("drawing.more")} className="drawing-more" panelClassName="drawing-more__panel" open={moreOpen} onOpenChange={setMoreOpen}>
+      <DrawingMenu label={t("drawing.more")} command="view.menu.toggle" commandArg="drawing_more" className="drawing-more" panelClassName="drawing-more__panel" open={moreOpen} onOpenChange={setMoreOpen}>
         {source && !perspectiveOpen && <>
-          <button type="button" disabled={busy || dirty || !active || !vector} onClick={() => { setMoreOpen(false); downloadSvg(); }}>{text.download}</button>
+          <button data-command="drawing.export.svg" type="button" disabled={busy || dirty || !active || !vector} onClick={() => { setMoreOpen(false); downloadSvg(); }}>{text.download}</button>
           <p className="drawing-field__hint">{text.downloadHint}</p>
         </>}
-        <button type="button" disabled={busy || loading} onClick={() => { setMoreOpen(false); setRefresh(value => value + 1); }}>{text.refresh}</button>
+        <button data-command="drawing.plan.refresh" type="button" disabled={busy || loading} onClick={() => { setMoreOpen(false); setRefresh(value => value + 1); }}>{text.refresh}</button>
       </DrawingMenu>
     </SurfaceMenus>
     {/* One row above the drawing, only while something asks for a person. */}
@@ -784,10 +784,10 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
             {chosenNotes && chosenAsset && importNotice(chosenAsset)}
           </div>
           {historical && latest.some(item => item.drawingId === source.drawingId) &&
-            <button type="button" disabled={busy} onClick={() => { void chooseDocument(drawingDocumentKey(latest.find(item => item.drawingId === source.drawingId)!)); }}>{text.openLatest}</button>}
+            <button data-command="drawing.plan.open_latest" type="button" disabled={busy} onClick={() => { void chooseDocument(drawingDocumentKey(latest.find(item => item.drawingId === source.drawingId)!)); }}>{text.openLatest}</button>}
           {kept && !imported && !historical && !explicitTarget &&
-            <button type="button" disabled={busy || !liveTarget} onClick={() => void generate(liveTarget, { follow: "live" })}>{text.followAgain}</button>}
-          {explicitTarget && <button type="button" disabled={!stage || busy || statusLoading} onClick={() => void generate(stage, { follow: "frozen" })}>{text.rebuild}</button>}
+            <button data-command="drawing.recipe.follow_live" type="button" disabled={busy || !liveTarget} onClick={() => void generate(liveTarget, { follow: "live" })}>{text.followAgain}</button>}
+          {explicitTarget && <button data-command="drawing.recipe.rebuild" type="button" disabled={!stage || busy || statusLoading} onClick={() => void generate(stage, { follow: "frozen" })}>{text.rebuild}</button>}
         </section>)}
       {chosenRow && chosenAsset && <section className="drawing-status" aria-label={text.status} data-kind="chosen">
         <div className="drawing-status__summary">
@@ -796,14 +796,14 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
         </div>
       </section>}
       {refused && <div className="drawing-held" role="status"><p>{text.held}</p>
-        <button className="btn btn--accent" type="submit" form={controlsId} disabled={busy || !(source?.modelSource || documentAsset(source))}>{text.retry}</button></div>}
+        <button data-command="view.notice.retry" data-command-arg="drawing_save" className="btn btn--accent" type="submit" form={controlsId} disabled={busy || !(source?.modelSource || documentAsset(source))}>{text.retry}</button></div>}
       {error && <ErrorPanel error={error} what={text.title} />}
       {offers.map(offer => {
         const label = offerText(offer, text.offer);
         return <section key={offer.suggestionId} className="drawing-offer" aria-label={label}><p>{label}</p>
           <div className="drawing-offer__actions">
-            <button type="button" className="btn btn--accent" disabled={recipeSaving || !active} onClick={() => void saveOffer(offer)}>{text.save}</button>
-            <button type="button" disabled={recipeSaving} onClick={() => ignoreOffer(offer)}>{text.ignore}</button>
+            <button data-command="attention.answer_guess.save" type="button" className="btn btn--accent" disabled={recipeSaving || !active} onClick={() => void saveOffer(offer)}>{text.save}</button>
+            <button data-command="attention.answer_guess.ignore" type="button" disabled={recipeSaving} onClick={() => ignoreOffer(offer)}>{text.ignore}</button>
           </div></section>;
       })}
       {recipes.row}
@@ -826,10 +826,10 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
           {!verticalOpen && numeric("bottom", `${text.bottom} (${lengthUnit || "…"})`)}
           {verticalOpen && numeric("depth", `${text.depth} (${lengthUnit || "…"})`)}
           {numeric("scaleDenominator", text.scale, 1, "1")}
-          <details><summary>{text.graphics}</summary>{numeric("cutLineMm", text.cutLine, 0.01)}{numeric("visibleLineMm", text.visibleLine, 0.01)}{numeric("hatchSpacingMm", text.hatch, 0.1)}
+          <details><summary data-command="view.disclosure.toggle" data-command-arg="drawing_graphics">{text.graphics}</summary>{numeric("cutLineMm", text.cutLine, 0.01)}{numeric("visibleLineMm", text.visibleLine, 0.01)}{numeric("hatchSpacingMm", text.hatch, 0.1)}
             {!source && <p className="drawing-field__hint">{text.penHint}</p>}
             {source && <div className="drawing-recipe">
-              <button type="button" disabled={recipeSaving || dirty || !source.revisionRef} onClick={() => void saveRecipe()}>{text.saveRecipe}</button>
+              <button data-command="drawing.plan.save_recipe" type="button" disabled={recipeSaving || dirty || !source.revisionRef} onClick={() => void saveRecipe()}>{text.saveRecipe}</button>
               <p className="drawing-field__hint" role={recipeNote ? "status" : undefined}>{recipeNote ?? text.saveRecipeHint}</p>
             </div>}</details>
         </fieldset>}
@@ -839,12 +839,12 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
             {listedObjects.map(({ object, label }) => <option key={object.id} value={object.id}>{label}</option>)}</select></label>
           {pickedObject && <div className="drawing-object-picked">
             <strong>{objectLabel(text, pickedObject)}</strong><small>{pickedObject.id}</small>
-            <button type="button" onClick={() => hideObject(pickedObject.id)}>{text.hideObject}</button>
+            <button data-command="drawing.plan.hide_object" type="button" onClick={() => hideObject(pickedObject.id)}>{text.hideObject}</button>
           </div>}
           {hiddenIds.length > 0 && <div className="drawing-object-hidden"><strong>{text.hiddenObjects}</strong><ul>{hiddenIds.map(id => {
             const name = hiddenName(id);
             return <li key={id}><span>{name}{status?.unresolvedObjectIds?.includes(id) ? ` · ${text.notInModel}` : ""}</span>
-              <button type="button" aria-label={`${text.showObject}: ${name}`} onClick={() => showObject(id)}>{text.showObject}</button></li>;
+              <button data-command="drawing.plan.show_object" data-command-arg={id} type="button" aria-label={`${text.showObject}: ${name}`} onClick={() => showObject(id)}>{text.showObject}</button></li>;
           })}</ul></div>}
         </fieldset>}
         {source && vector && form.cropUv && !verticalOpen && <DressingControls objects={form.dressing} vector={vector} crop={form.cropUv}
@@ -859,12 +859,12 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
               {resolved && resolved.status !== "resolved" && <p className="drawing-anchor-warning">{resolved.status === "outside-view" ? text.outsideView : resolved.detail ?? text.broken}</p>}
               <label className="drawing-field">{text.placement}<input type="number" min="-100" max="100" step="1" required value={Number.isFinite(dimension.placement?.offsetMm ?? 8) ? dimension.placement?.offsetMm ?? 8 : ""}
                 onChange={event => update({ dimensions: dimensions.map(item => item.id === dimension.id ? { ...item, placement: { ...item.placement, offsetMm: event.currentTarget.valueAsNumber } } : item) })} /></label>
-              <button type="button" onClick={() => update({ dimensions: dimensions.filter(item => item.id !== dimension.id) })}>{text.remove}</button>
+              <button data-command="drawing.plan.remove_dimension" data-command-arg={dimension.id} type="button" onClick={() => update({ dimensions: dimensions.filter(item => item.id !== dimension.id) })}>{text.remove}</button>
             </div>;
           })}
         </fieldset>}
         {/* Its controls belong to the section form below, so a cut plan's autosave never waits on them. */}
-        <details className="drawing-section" open={perspectiveOpen || undefined}><summary>{text.section}</summary>
+        <details className="drawing-section" open={perspectiveOpen || undefined}><summary data-command="drawing.section_perspective.toggle">{text.section}</summary>
           <fieldset form={sectionFormId} disabled={busy || !active || !lengthUnit || !sectionTarget}>
             <p className="drawing-field__hint">{text.sectionHint}</p>
             <label className="drawing-field">{text.sectionPlane}<select form={sectionFormId} value={section.axis}
@@ -879,13 +879,13 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
               value={Number.isFinite(sectionEyeHeight) ? sectionEyeHeight : ""} onChange={event => { const eyeHeight = event.currentTarget.valueAsNumber; setSection(current => ({ ...current, eyeHeight })); }} /></label>
             <label className="drawing-field">{text.fov}<input form={sectionFormId} type="number" min="1" max="170" step="any" required
               value={Number.isFinite(section.fovDeg) ? section.fovDeg : ""} onChange={event => { const fovDeg = event.currentTarget.valueAsNumber; setSection(current => ({ ...current, fovDeg })); }} /></label>
-            <button className="btn btn--accent" type="submit" form={sectionFormId}>{busy && perspectiveOpen ? text.generating : text.sectionGenerate}</button>
+            <button data-command="drawing.section_perspective.generate" className="btn btn--accent" type="submit" form={sectionFormId}>{busy && perspectiveOpen ? text.generating : text.sectionGenerate}</button>
           </fieldset>
         </details>
         </div>
         {/* A new cut plan's one primary action; an open drawing saves itself, and its commands are in the bar. */}
         {!source && <div className="drawing-actions">
-          <button className="btn btn--accent" type="submit" disabled={busy || loading || !lengthUnit || !stage}>{busy ? text.generating : text.generate}</button>
+          <button data-command="drawing.plan.generate" className="btn btn--accent" type="submit" disabled={busy || loading || !lengthUnit || !stage}>{busy ? text.generating : text.generate}</button>
         </div>}
       </form>
       <form id={sectionFormId} ref={sectionForm} hidden aria-label={text.section}

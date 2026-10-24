@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 import { workspaceFixture } from "./workspaceFixture.mjs";
+import { cmd } from "./commandLocator.mjs";
 
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repoRoot = path.resolve(webRoot, "../../..");
@@ -148,8 +149,10 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
   page.on("pageerror", error => errors.push(error.message));
   const panel = () => page.getByRole("complementary", { name: "Document study", exact: true });
   const toolbar = () => page.getByRole("toolbar", { name: "Page annotation tools", exact: true });
-  const step = name => panel().getByRole("navigation", { name: "Study steps" }).getByRole("button", { name: new RegExp(name) }).click();
-  const saveButton = () => panel().getByRole("button", { name: "Save study & run selected changes", exact: true });
+  // The Study steps in the panel's order; each step button names its index (data-command-arg).
+  const stepIndex = { Evidence: 0, Explanations: 2, Counterfactuals: 3, Compare: 4, "Pattern & prior": 5 };
+  const step = name => cmd(panel().getByRole("navigation", { name: "Study steps" }), "study.run.step", { arg: stepIndex[name] }).click();
+  const saveButton = () => cmd(panel(), "study.run.save");
   const posts = () => requests.filter(row => row.method === "POST" && row.path === "/api/studies");
   const point = async ([u, v]) => {
     const box = await page.locator(".document-page").boundingBox();
@@ -159,7 +162,7 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
   async function openStudy() {
     await page.locator(".document-viewport[data-ready=true]").waitFor();
     assert.equal(await page.getByLabel("Page", { exact: true }).inputValue(), "0");
-    if (!await panel().isVisible()) await page.getByRole("button", { name: "Study this page", exact: true }).click();
+    if (!await panel().isVisible()) await cmd(page, "view.study.toggle").click();
     await panel().waitFor();
     await panel().getByText("Saved · can reopen", { exact: true }).waitFor();
   }
@@ -193,9 +196,9 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
 
   // A fifth trace is genuinely drawn, classified, confirmed and corrected in the page UI.
   await step("Evidence");
-  await toolbar().getByRole("button", { name: "Outline", exact: true }).click();
+  await cmd(toolbar(), "view.markup_tools.polyline").click();
   for (const vertex of [[0.2, 0.2], [0.3, 0.2], [0.3, 0.3], [0.2, 0.3]]) await page.mouse.click(...await point(vertex));
-  await toolbar().getByRole("button", { name: "Close outline", exact: true }).click();
+  await cmd(toolbar(), "view.markup_tools.close_outline").click();
   await until(() => panel().getByLabel("Geometric classification", { exact: true }).count(), value => value === 5,
     "The new closed contour did not enter Study evidence");
   await panel().getByLabel("Geometric classification", { exact: true }).nth(4).selectOption("floor_plate");
@@ -206,15 +209,15 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
   assert.ok(traceId, "A new trace retains its own identity");
   const tracePath = () => page.locator(`.document-page__ink [data-stroke-id="${traceId}"]`).getAttribute("d");
   const beforeDrag = await tracePath();
-  await toolbar().getByRole("button", { name: "Edit line", exact: true }).click();
+  await cmd(toolbar(), "view.markup_tools.select").click();
   await page.mouse.move(...await point([0.3, 0.2])); await page.mouse.down();
   await page.mouse.move(...await point([0.32, 0.18]), { steps: 12 }); await page.mouse.up();
   let correctedPath = await until(tracePath, value => value !== beforeDrag, "The vertex correction did not change the Study contour");
   assert.equal(await panel().getByLabel("Evidence decision", { exact: true }).nth(4).inputValue(), "proposed",
     "Correcting geometry requires confirmation again");
-  await toolbar().getByRole("button", { name: "Undo", exact: true }).click();
+  await cmd(toolbar(), "view.markup_tools.undo").click();
   assert.equal(await tracePath(), beforeDrag, "Study undo restores the original contour");
-  await toolbar().getByRole("button", { name: "Redo", exact: true }).click();
+  await cmd(toolbar(), "view.markup_tools.redo").click();
   assert.equal(await tracePath(), correctedPath, "Study redo restores the correction");
   await panel().getByLabel("Evidence decision", { exact: true }).nth(4).selectOption("confirmed");
 
@@ -236,7 +239,7 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
   await panel().getByLabel("Pattern name", { exact: true }).fill("Conditional clear interval — manually revised");
   await panel().getByLabel("Relationship / mechanism", { exact: true }).fill("Test connected unobstructed space separately from contact with two flanking masses.");
   await panel().getByLabel("Prior to test in design", { exact: true }).fill("Transfer a required connection only when its surface and endpoints are independently supported; preserve no silhouette by default.");
-  await panel().getByRole("button", { name: "Change applicability conditions", exact: true }).click();
+  await cmd(panel(), "study.run.change_conditions").click();
   await panel().getByLabel("Changed conditions", { exact: true }).fill("The interval is a non-passable planting strip.\nThe brief does not require through-access.");
   await panel().getByLabel("Decision under changed conditions", { exact: true }).selectOption("revise");
   await panel().getByLabel("Reason tied to evidence / experiment", { exact: true }).fill("The source geometry remains connected but the conditions for a circulation recommendation are absent.");
@@ -261,7 +264,7 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
   correctedPath = await tracePath();
   assert.deepEqual(await annotations(), annotationsBefore);
   await page.screenshot({ path: path.join(evidenceDir, "study-saved-prior.png") });
-  await panel().getByRole("button", { name: "Reopen saved", exact: true }).click();
+  await cmd(panel(), "study.run.reopen").click();
   await panel().getByText("Saved · can reopen", { exact: true }).waitFor();
   await step("Explanations");
   assert.equal(await panel().getByLabel("Research question", { exact: true }).inputValue(), question);
@@ -269,21 +272,21 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
   assert.equal(await panel().getByText("Saved actual result", { exact: true }).count(), 4);
   await page.screenshot({ path: path.join(evidenceDir, "study-counterfactuals.png") });
 
-  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await cmd(page, "view.tab.board").click();
   await page.locator(".monkeyboard-context").waitFor();
   assert.equal(await page.evaluate(() => window.__studyBoardCanvas === document.querySelector(".monkeyboard-canvas canvas")), true);
   assert.equal(await page.locator(".excalidraw .reset-zoom-button").innerText(), zoom);
   assert.match(await page.locator(".monkeyboard-footer").innerText(), /synthetic-study-base\.png/);
   assert.deepEqual(activeImages(await board()).map(row => row.customData.sourceDocument),
     activeImages(placed).map(row => row.customData.sourceDocument));
-  await page.getByRole("button", { name: "Edit this page", exact: true }).click(); await openStudy();
+  await cmd(page.locator(".monkeyboard-context"), "view.open_document.page").click(); await openStudy();
   assert.equal(await tracePath(), correctedPath, "Returning through Board retains the corrected Study geometry");
   console.log("study: UI correction, all reasoning fields, save/reopen and original Board context verified");
 
   // Two further exact sources are independently registered; their seeded studies only feed Compare.
   const alternatives = [];
   for (const item of cases.slice(1)) alternatives.push(await register(item));
-  await panel().getByRole("button", { name: "Reopen saved", exact: true }).click();
+  await cmd(panel(), "study.run.reopen").click();
   await panel().getByText("Saved · can reopen", { exact: true }).waitFor();
   await step("Compare");
   let compared = retained;
@@ -291,7 +294,7 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
     await panel().getByLabel("Comparison study", { exact: true }).selectOption(`${alternative.study.studyId}:${alternative.study.ledgerRef}`);
     const before = compared;
     const count = posts().length;
-    await panel().getByRole("button", { name: "Compare saved revisions", exact: true }).click();
+    await cmd(panel(), "study.run.compare_revisions").click();
     const comparison = await until(() => posts().at(count),
       row => row?.result, "The comparison was not archived with the research");
     assert.equal(comparison.status, 201, JSON.stringify(comparison.result));
@@ -304,7 +307,7 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
     await panel().getByText("Saved · can reopen", { exact: true }).waitFor();
   }
   assert.equal(compared.research.comparisonResults.length, 2);
-  await panel().getByRole("button", { name: "Reopen saved", exact: true }).click();
+  await cmd(panel(), "study.run.reopen").click();
   await panel().getByText("Saved · can reopen", { exact: true }).waitFor();
   await panel().getByRole("heading", { name: "Archived comparison 1", exact: true }).waitFor();
   await panel().getByRole("heading", { name: "Archived comparison 2", exact: true }).waitFor();
@@ -321,11 +324,11 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
   assert.equal(await panel().getByLabel("Research question", { exact: true }).inputValue(), draft503);
   assert.equal((await currentStudy()).ledgerRef, compared.ledgerRef);
   assert.equal(await tracePath(), correctedPath);
-  await panel().getByRole("button", { name: "Retry reading saved study", exact: true }).click();
+  await cmd(panel(), "study.run.reopen").click();
   await panel().getByRole("group", { name: "Discard draft confirmation", exact: true }).waitFor();
   assert.equal(await panel().getByLabel("Research question", { exact: true }).inputValue(), draft503,
     "Reading after a failed save must ask before replacing the draft");
-  await panel().getByRole("button", { name: "Keep editing", exact: true }).click();
+  await cmd(panel(), "study.run.keep_editing").click();
   refuseSave = false;
   const retried = await save();
 
@@ -352,12 +355,12 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
   assert.equal(context.pages().length, 1);
   assert.deepEqual(errors, []);
   await page.screenshot({ path: path.join(evidenceDir, "study-stale-draft-retained.png") });
-  await panel().getByRole("button", { name: "Discard unsaved draft and reopen…", exact: true }).click();
-  await panel().getByRole("button", { name: "Keep editing", exact: true }).click();
+  await cmd(panel(), "study.run.discard").click();
+  await cmd(panel(), "study.run.keep_editing").click();
   assert.equal(await panel().getByLabel("Research question", { exact: true }).inputValue(), draft409,
     "Cancelling explicit discard keeps the refused draft");
-  await panel().getByRole("button", { name: "Discard unsaved draft and reopen…", exact: true }).click();
-  await panel().getByRole("button", { name: "Discard draft and reopen", exact: true }).click();
+  await cmd(panel(), "study.run.discard").click();
+  await cmd(panel(), "study.run.discard_confirm").click();
   await panel().getByText("Saved · can reopen", { exact: true }).waitFor();
   assert.equal(await panel().getByLabel("Research question", { exact: true }).inputValue(), concurrent.research.question,
     "Only explicit discard replaces a stale draft with the latest retained revision");
@@ -381,15 +384,15 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
   assert.equal((await currentStudy()).research.question, uploadQuestion, "Opening a source first saves the current Study draft");
   assert.equal(await panel().getByLabel("Research question", { exact: true }).isDisabled(), true,
     "Study inputs must be locked while the source upload is pending");
-  assert.equal(await toolbar().getByRole("button", { name: "Outline", exact: true }).isDisabled(), true);
-  assert.equal(await toolbar().getByRole("button", { name: "Undo", exact: true }).isDisabled(), true);
+  assert.equal(await cmd(toolbar(), "view.markup_tools.polyline").isDisabled(), true);
+  assert.equal(await cmd(toolbar(), "view.markup_tools.undo").isDisabled(), true);
   assert.equal(await sourceSelect().isDisabled(), true, "A pending upload must prevent source switches");
   assert.equal(await page.getByRole("combobox", { name: "Page", exact: true }).isDisabled(), true,
     "A pending upload must prevent page switches");
-  assert.equal(await page.getByRole("button", { name: "Return to annotations", exact: true }).isDisabled(), true);
+  assert.equal(await cmd(page, "view.study.toggle").isDisabled(), true);
   assert.equal(await sourceSelect().inputValue(), mainSelection);
   assert.equal(await tracePath(), correctedPath, "The existing source remains visible while its replacement uploads");
-  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await cmd(page, "view.tab.board").click();
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
   assert.equal(await panel().isVisible(), true, "Leaving during the upload cannot hide an unfinished Study operation");
   assert.equal(await page.locator(".monkeyboard-context").isVisible(), false);
@@ -436,7 +439,7 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
     "A refused source read must not reveal stale geometry from a different page");
   assert.equal(await panel().getByLabel("Research question", { exact: true }).inputValue(), "");
   await page.unroute("**/api/studies", holdStudyRead);
-  await panel().getByRole("button", { name: "Retry reading saved study", exact: true }).click();
+  await cmd(panel(), "study.run.reopen").click();
   await panel().getByText("Saved · can reopen", { exact: true }).waitFor();
   assert.equal(await panel().getByLabel("Research question", { exact: true }).inputValue(), uploadQuestion,
     "Retrying must restore only the selected source's saved research");

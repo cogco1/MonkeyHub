@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
+import { cmd, commandProblems } from "./commandLocator.mjs";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = path.resolve(webRoot, "../../..");
@@ -258,9 +259,9 @@ try {
   await page.goto(origin);
   const workspace = () => page.locator('[data-project-surface="render"]:visible');
   const direction = () => workspace().getByRole("textbox", { name: "Visual direction" });
-  const generate = () => workspace().getByRole("button", { name: "Generate", exact: true });
-  const history = () => workspace().locator(".render-list button");
-  const refresh = () => workspace().getByRole("button", { name: "Refresh status", exact: true });
+  const generate = () => cmd(workspace(), "render.run.generate");
+  const history = () => cmd(workspace(), "view.render.select_job", { includeHidden: true });
+  const refresh = () => cmd(workspace(), "render.run.refresh");
   const jobs = () => api("project-a", "/api/render/jobs");
   const headBefore = (await api("project-a", "/fixture/metrics")).head;
   let first, second, source, refs;
@@ -275,7 +276,7 @@ try {
       { name: "warm.png", mimeType: "image/png", buffer: await image("pink") }, { name: "cool.png", mimeType: "image/png", buffer: await image("lightblue") },
     ]);
     await until(() => workspace().locator(".render-references li").count(), (n) => n === 2, "two refs saved");
-    await workspace().getByRole("button", { name: "Move reference up 2", exact: true }).click();
+    await cmd(workspace(), "render.run.reference_up", { arg: 1 }).click();
     await direction().fill("Soft morning light");
     // The inverse ordering: completion is read while the queued POST response is delayed.
     // Invalidating that read must schedule one catch-up, not strand the accepted job as pending.
@@ -322,21 +323,22 @@ try {
     assert.equal(first.request.output.size, "2K");
   });
   await step("source comparison, zoom and authenticated-byte download keep exact generation identity", async () => {
-    await workspace().getByRole("button", { name: "Compare", exact: true }).click();
+    await cmd(workspace(), "view.render.compare").click();
     await until(() => workspace().locator('.render-image img').count(), (n) => n === 2, "source and result");
-    await workspace().getByRole("button", { name: "Zoom in", exact: true }).click();
+    assert.deepEqual(await commandProblems(workspace()), [], "every visible Render control names its command");
+    await cmd(workspace(), "view.render.zoom_in").click();
     assert.equal(await workspace().locator('.render-image img').first().evaluate((el) => el.style.width), "125%");
-    await workspace().getByRole("button", { name: "Fit", exact: true }).click();
+    await cmd(workspace(), "view.render.fit").click();
     assert.match(await workspace().locator('.render-metadata').innerText(), /source.png/);
     assert.match(await workspace().locator('.render-metadata').innerText(), /No model association/);
-    assert.equal(await workspace().getByRole("button", { name: "Show this view in Modeling", exact: true }).count(), 0, "an uploaded source has no saved camera");
-    const download = page.waitForEvent("download"); await workspace().getByRole("link", { name: "Download", exact: true }).click();
+    assert.equal(await cmd(workspace(), "view.render.show_in_modeling").count(), 0, "an uploaded source has no saved camera");
+    const download = page.waitForEvent("download"); await cmd(workspace(), "view.render.download").click();
     assert.equal((await download).suggestedFilename(), first.document.fileName);
     await page.screenshot({ path: path.join(temporary, "render-wide.png"), fullPage: true });
   });
   await step("zoomed result can be dragged and Fit resets the image viewport", async () => {
-    await workspace().getByRole("button", { name: "Result", exact: true }).click();
-    for (let i = 0; i < 5; i++) await workspace().getByRole("button", { name: "Zoom in", exact: true }).click();
+    await cmd(workspace(), "view.render.result").click();
+    for (let i = 0; i < 5; i++) await cmd(workspace(), "view.render.zoom_in").click();
     const pane = workspace().locator('.render-image');
     const box = await pane.boundingBox();
     await page.mouse.move(box.x + box.width * .8, box.y + box.height * .7);
@@ -344,7 +346,7 @@ try {
     await page.mouse.move(box.x + box.width * .3, box.y + box.height * .3, { steps: 6 });
     await page.mouse.up();
     assert.ok(await pane.evaluate((el) => el.scrollLeft > 0 && el.scrollTop > 0), 'drag moves both image axes');
-    await workspace().getByRole("button", { name: "Fit", exact: true }).click();
+    await cmd(workspace(), "view.render.fit").click();
     await until(() => pane.evaluate((el) => [el.scrollLeft, el.scrollTop]), (p) => p[0] === 0 && p[1] === 0, 'fit resets pan');
     assert.equal(await workspace().locator('.render-model-canvas').isVisible(), false, 'no blank canvas when no model is loaded');
   });
@@ -431,10 +433,10 @@ try {
       await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'second result ready');
       await page.route(firstBytes, (route) => route.fulfill(response));
       await firstButton().click();
-      await workspace().getByRole('button', { name: 'Reload image', exact: true }).waitFor();
+      await cmd(workspace(), "view.notice.retry", { arg: "render_image" }).waitFor();
       assert.equal(await workspace().locator('.render-image img').count(), 0, 'broken bytes are not displayed as a usable image');
       await page.unroute(firstBytes);
-      await workspace().getByRole('button', { name: 'Reload image', exact: true }).click();
+      await cmd(workspace(), "view.notice.retry", { arg: "render_image" }).click();
       await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'read retry recovers image');
     }
     assert.equal((await api('project-a', '/fixture/metrics')).calls.length, 2, 'image recovery never calls the generation adapter');
@@ -462,7 +464,7 @@ try {
       contentBase64: replacement.toString("base64"), replacesPages: [{ ...refs[0], newPageIndex: 0 }] });
     await refresh().click(); await history().filter({ hasText: "Soft morning light" }).click();
     await until(() => workspace().locator('.render-source-state').innerText(), (text) => text.includes("Source outdated"), "reference update is explicit");
-    await workspace().getByRole("button", { name: "Use updated source", exact: true }).click();
+    await cmd(workspace(), "view.render.use_updated_source").click();
     assert.match(await workspace().getByRole("combobox", { name: "Source image", exact: true }).locator('option:checked').innerText(), /source.png/);
     assert.match(await workspace().locator('.render-references li').first().innerText(), /revised-reference/);
     replacement = Buffer.from(await (await fetch(origins["project-a"] + '/fixture/image?color=purple')).arrayBuffer());
@@ -471,7 +473,7 @@ try {
     await refresh().click(); await history().filter({ hasText: "Soft morning light" }).click();
     await until(() => workspace().locator('.render-source-state').innerText(), (text) => text.includes("Source outdated"), "outdated result is explicit");
     assert.deepEqual((await jobs()).jobs.find((j) => j.jobId === first.jobId).request.source, source);
-    await workspace().getByRole("button", { name: "Use updated source", exact: true }).click();
+    await cmd(workspace(), "view.render.use_updated_source").click();
     assert.match(await workspace().getByRole("combobox", { name: "Source image", exact: true }).locator('option:checked').innerText(), /revised-source/);
     assert.equal((await api("project-a", "/fixture/metrics")).calls.length, 4, "loading a replacement is not generation");
     // A drawing is followed through the replacement its rebuild registered
@@ -500,7 +502,7 @@ try {
     const sourceImage = () => workspace().getByRole("combobox", { name: "Source image", exact: true });
     await refresh().click(); await history().filter({ hasText: "Plan in evening light" }).click();
     await until(() => workspace().locator('.render-source-state').innerText(), (text) => text.includes("Source outdated"), "drawing render outdated by its reference");
-    await workspace().getByRole("button", { name: "Use updated source", exact: true }).click();
+    await cmd(workspace(), "view.render.use_updated_source").click();
     assert.equal(await sourceImage().inputValue(), key(drawing), "the drawing's newest revision is never guessed as its replacement");
     assert.match(await workspace().locator('.render-references li').first().innerText(), /revised-plan-reference/);
     const rebuilt = await plan(await model("revised-wall.3dm", true), { previousRevisionRef: drawing.revisionRef });
@@ -508,14 +510,14 @@ try {
     await refresh().click();
     await until(() => sourceImage().locator("option").evaluateAll((options) => options.map((option) => option.value)),
       (values) => values.includes(key(rebuilt)), "rebuilt drawing listed");
-    await workspace().getByRole("button", { name: "Use updated source", exact: true }).click();
+    await cmd(workspace(), "view.render.use_updated_source").click();
     assert.equal(await sourceImage().inputValue(), key(rebuilt), "the rebuilt drawing is reached through its registered replacement");
     assert.match(await workspace().locator('.render-references li').first().innerText(), /revised-plan-reference/);
     assert.equal((await api("project-a", "/fixture/metrics")).calls.length, 5, "following a rebuilt drawing is not generation");
   });
   await step("Board receives the same exact page, selects it and can restore only the explicitly deleted old result", async () => {
     await history().filter({ hasText: "Soft morning light" }).click();
-    await workspace().getByRole("button", { name: "Send to Board", exact: true }).click();
+    await cmd(workspace(), "board.place_image").click();
     const board = () => api("project-a", "/api/board");
     const exact = (el) => el.type === "image" && !el.isDeleted && el.customData?.sourceDocument?.runId === first.document.runId;
     await until(board, (b) => b.elements.some(exact), "exact render page persisted on board");
@@ -526,7 +528,7 @@ try {
     await until(board, (b) => !b.elements.some(exact), "selected source page deleted");
     const before = await board(); const seen = before.seenDocuments;
     await page.getByRole("button", { name: "render", exact: true }).click();
-    await workspace().getByRole("button", { name: "Send to Board", exact: true }).click();
+    await cmd(workspace(), "board.place_image").click();
     const after = await until(board, (b) => b.elements.some(exact), "only chosen page reinserted");
     assert.equal(after.elements.filter(exact).length, 1);
     assert.deepEqual(after.seenDocuments, seen);
@@ -543,7 +545,7 @@ try {
       if (width === 375) {
         await workspace().locator('.render-results').scrollIntoViewIfNeeded();
         await page.screenshot({ path: path.join(temporary, 'render-375-results.png'), fullPage: true });
-        assert.equal(await workspace().getByRole('button', { name: 'Send to Board', exact: true }).isVisible(), true);
+        assert.equal(await cmd(workspace(), "board.place_image").isVisible(), true);
       }
     }
     await page.setViewportSize({ width: 1440, height: 1050 });
@@ -553,8 +555,8 @@ try {
     assert.deepEqual(errors, []);
   });
   await step("a source and direction alone can generate; a lost response recovers by an automatic read without replay", async () => {
-    await workspace().getByRole("button", { name: "Use these inputs", exact: true }).click();
-    while (await workspace().locator('.render-references li').count()) await workspace().getByRole('button', { name: 'Remove reference 1', exact: true }).click();
+    await cmd(workspace(), "view.render.reuse_inputs").click();
+    while (await workspace().locator('.render-references li').count()) await cmd(workspace(), "render.run.reference_remove", { arg: 0 }).click();
     await direction().fill('Source only');
     let intercepted = false;
     await page.route('**/project-a/api/render/jobs', async (route) => {
@@ -580,11 +582,11 @@ try {
     await until(() => history().count(), (n) => n === 1, 'native history visible');
     await until(() => workspace().locator('.render-image img').count(), (n) => n === 1, 'native image read');
     assert.match(await workspace().locator('.render-metadata').innerText(), /retained-native.png/);
-    assert.equal(await workspace().getByRole('button', { name: 'Source', exact: true }).isDisabled(), true);
-    assert.equal(await workspace().getByRole('button', { name: 'Compare', exact: true }).isDisabled(), true);
-    assert.equal(await workspace().getByRole('button', { name: 'Use these inputs', exact: true }).isDisabled(), true);
+    assert.equal(await cmd(workspace(), "view.render.source").isDisabled(), true);
+    assert.equal(await cmd(workspace(), "view.render.compare").isDisabled(), true);
+    assert.equal(await cmd(workspace(), "view.render.reuse_inputs").isDisabled(), true);
     const download = page.waitForEvent('download');
-    await workspace().getByRole('link', { name: 'Download', exact: true }).click();
+    await cmd(workspace(), "view.render.download").click();
     assert.equal((await download).suggestedFilename(), native.fileName);
     await page.screenshot({ path: path.join(temporary, 'render-native-history.png'), fullPage: true });
     await page.reload();
@@ -606,7 +608,7 @@ try {
       if (request.method() === "POST" && request.url().endsWith("/api/render/views")) captureRequests.push(request.postDataJSON());
     });
     await capturePage.goto(new URL("camera", origin).href);
-    const capture = () => capturePage.getByRole("button", { name: "Use current view as source", exact: true });
+    const capture = () => cmd(capturePage, "render.run.capture_view");
     const selectedSource = () => capturePage.getByRole("combobox", { name: "Source image", exact: true }).inputValue();
     try { await capture().waitFor(); }
     catch (error) { await capturePage.screenshot({ path: path.join(temporary, "capture-failure.png"), fullPage: true }); throw error; }
@@ -637,7 +639,7 @@ try {
       await capture().click();
       if (index === 0) {
         await until(() => captureRequests.length, count => count === 1, "capture waiting to save");
-        await capturePage.getByRole("button", { name: "Refresh status", exact: true }).click();
+        await cmd(capturePage, "render.run.refresh").click();
         await until(() => oldDocumentsRead, Boolean, "refresh read the documents before capture was saved");
         releaseCapture();
       }
@@ -645,7 +647,7 @@ try {
       if (index === 0) {
         const selected = await selectedSource();
         releaseDocuments();
-        await until(() => capturePage.getByRole("button", { name: "Refresh status", exact: true }).isEnabled(), Boolean, "stale refresh finished");
+        await until(() => cmd(capturePage, "render.run.refresh").isEnabled(), Boolean, "stale refresh finished");
         assert.equal(await selectedSource(), selected, "a late refresh cannot replace the just-saved source with its older document list");
         await capturePage.unroute("**/capture/api/render/views"); await capturePage.unroute("**/capture/api/documents");
       }
@@ -694,17 +696,17 @@ try {
       assert.equal(await selectedSource(), selected, "moving the live camera cannot replace the selected frozen source");
       assert.deepEqual((await api("capture", "/api/documents")).documents.find(row => row.assetSha256 === sha), document);
       await capturePage.getByRole("textbox", { name: "Visual direction", exact: true }).fill(`Captured ${projection} view`);
-      await capturePage.getByRole("button", { name: "Generate", exact: true }).click();
+      await cmd(capturePage, "render.run.generate").click();
       const job = (await until(() => api("capture", "/api/render/jobs"), value => value.jobs.length === index + 1 && value.jobs[0].status === "succeeded", `${projection} generated from capture`)).jobs[0];
       assert.equal(job.request.source.assetSha256, sha);
       assert.deepEqual(job.document.modelSource, view.modelSource);
       assert.equal((await api("capture", "/fixture/metrics")).calls[index].source, sha);
       retained.push(document);
-      await capturePage.getByRole("button", { name: "Refresh status", exact: true }).click();
-      const result = capturePage.locator(".render-list button").filter({ hasText: `Captured ${projection} view` });
+      await cmd(capturePage, "render.run.refresh").click();
+      const result = cmd(capturePage, "view.render.select_job", { includeHidden: true }).filter({ hasText: `Captured ${projection} view` });
       await until(() => result.innerText(), text => text.includes("Complete"), `${projection} result appears in the UI`);
       await result.click();
-      await capturePage.getByRole("button", { name: "Compare", exact: true }).click();
+      await cmd(capturePage, "view.render.compare").click();
       await until(() => capturePage.locator(".render-image img").count(), count => count === 2, "saved model view and its offline result visible together");
       await capturePage.screenshot({ path: path.join(temporary, `render-capture-${projection}.png`), fullPage: true });
     }
@@ -720,9 +722,9 @@ try {
     const [saved] = retained;
     const renderJobs = () => api("capture", "/api/render/jobs");
     const earlier = (await renderJobs()).jobs.find(job => job.request?.direction === "Captured perspective view");
-    await capturePage.locator(".render-list button").filter({ hasText: "Captured perspective view" }).click();
-    const recapture = () => capturePage.getByRole("button", { name: "Re-capture on current model", exact: true });
-    await capturePage.getByRole("button", { name: "Show this view in Modeling", exact: true }).click();
+    await cmd(capturePage, "view.render.select_job", { includeHidden: true }).filter({ hasText: "Captured perspective view" }).click();
+    const recapture = () => cmd(capturePage, "view.render.recapture");
+    await cmd(capturePage, "view.render.show_in_modeling").click();
     assert.deepEqual(await capturePage.evaluate(() => window.captureFixture.shown), [saved.viewRecipe.camera], "Modeling is handed the saved camera");
     assert.equal(await recapture().isDisabled(), true, "no model on screen to capture the view on");
     // Modeling's model changes: another retained model of the same run, registered as any model is.
@@ -756,7 +758,7 @@ try {
     const recapturedNote = capturePage.getByText("This view was captured again on the current model and is now the source. Generate to render it; the earlier result is kept.", { exact: true });
     await recapturedNote.waitFor();
     assert.equal((await api("capture", "/fixture/metrics")).calls.length, 2, "capturing a view again never calls the provider");
-    await capturePage.getByRole("button", { name: "Generate", exact: true }).click();
+    await cmd(capturePage, "render.run.generate").click();
     const next = (await until(renderJobs, value => value.jobs.length === 3 && value.jobs[0].status === "succeeded", "a new attempt from the view captured again")).jobs[0];
     await until(() => recapturedNote.count(), count => count === 0, "the note ends once the new attempt is submitted");
     assert.equal(next.request.source.assetSha256, againSha);
@@ -766,11 +768,11 @@ try {
     assert.deepEqual([kept.status, kept.request, kept.document], [earlier.status, earlier.request, earlier.document], "the earlier result keeps its own source");
     const after = (await api("capture", "/api/documents")).documents;
     for (const document of retained) assert.deepEqual(after.find(row => row.assetSha256 === document.assetSha256), document, "earlier captures are unchanged");
-    await capturePage.getByRole("button", { name: "Refresh status", exact: true }).click();
-    const history = capturePage.locator(".render-list button");
+    await cmd(capturePage, "render.run.refresh").click();
+    const history = cmd(capturePage, "view.render.select_job", { includeHidden: true });
     await until(() => history.allInnerTexts(), texts => texts.length === 3 && texts.every(text => text.includes("Complete")), "the new attempt is listed beside the earlier ones");
     await history.first().click();
-    await capturePage.getByRole("button", { name: "Compare", exact: true }).click();
+    await cmd(capturePage, "view.render.compare").click();
     await until(() => capturePage.locator(".render-image img").count(), count => count === 2, "the view captured again and its result");
     await capturePage.screenshot({ path: path.join(temporary, "render-capture-again.png"), fullPage: true });
     assert.equal((await api("capture", "/fixture/metrics")).head, initial.head, "a saved camera moves no model HEAD");

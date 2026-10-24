@@ -129,7 +129,7 @@ export function Conversation({
       <header className="chat__head">
         <span className="label">{t("conversation.title")}</span>
         {developerMode && <span className="chat__head-meta mono">{t("conversation.scope")}</span>}
-        {onClose && <button type="button" className="btn btn--small" onClick={onClose} aria-label={t("common.close")}>×</button>}
+        {onClose && <button data-command="view.model_chat.close" type="button" className="btn btn--small" onClick={onClose} aria-label={t("common.close")}>×</button>}
       </header>
       <div
         ref={scrollRef}

@@ -6,6 +6,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { cmd, commandLabel, waitForCommandLabel } from "./commandLocator.mjs";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 
@@ -324,7 +325,7 @@ try {
     } catch (error) { failures.push(error.stack ?? String(error)); await route.abort("blockedbyclient"); }
   });
   await page.goto(`${origin}/?view=board&lang=en`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Project documents", exact: true }).waitFor();
+  await cmd(page, "board.add_document_page.toggle_list").waitFor();
   await page.waitForFunction(() => window.__boardApi && !document.querySelector(".monkeyboard-initializing"));
   const original = await readScene();
   assert.equal(byId(original, "kept-image").frameId, "kept-frame");
@@ -337,14 +338,14 @@ try {
       captureUpdate: window.__boardHelpers.CaptureUpdateAction.NEVER });
     await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
   }, ids);
-  const updateAction = (name = "Update this page") => page.locator(".monkeyboard-context").getByRole("button", { name, exact: true });
+  const updateAction = () => cmd(page.locator(".monkeyboard-context"), "document.replace_page.open");
   const expectUpdate = async (ids, visible) => {
     await select(ids);
     await updateAction().waitFor({ state: visible ? "visible" : "hidden" });
     assert.equal(await updateAction().count(), Number(visible), `Update action selection: ${ids.join(", ") || "empty"}`);
     if (visible) assert.equal(await updateAction().isEnabled(), true);
   };
-  assert.equal(await page.getByRole("button", { name: "Project documents", exact: true }).getAttribute("aria-expanded"), "false");
+  assert.equal(await cmd(page, "board.add_document_page.toggle_list").getAttribute("aria-expanded"), "false");
   for (const ids of [["kept-image"], ["kept-frame"], ["kept-image", "kept-frame"], ["kept-image", "existing-mark"]]) {
     await expectUpdate(ids, true);
   }
@@ -447,7 +448,7 @@ try {
     "A received update must not use the error surface");
   const boardBeforeView = JSON.stringify(saved), writesBeforeView = writes.length;
   const beforeView = await readScene();
-  await quiet.getByRole("button", { name: "View", exact: true }).click();
+  await cmd(quiet, "view.attention.open").click();
   await page.waitForFunction(() => window.__boardApi.getAppState().selectedElementIds["kept-image"] === true);
   assert.deepEqual(await page.evaluate(() => Object.entries(window.__boardApi.getAppState().selectedElementIds)
     .filter(([, active]) => active).map(([id]) => id).sort()), ["kept-image"], "View selects the updated page alone");
@@ -465,7 +466,7 @@ try {
   assert.deepEqual(persisted((await readScene()).elements), persisted(beforeView.elements), "Focusing an update changes no element");
   assert.equal(writes.length, writesBeforeView, "Focusing an update must not write the board");
   assert.equal(JSON.stringify(saved), boardBeforeView, "The saved board must be byte-identical across a View click");
-  await quiet.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await cmd(quiet, "view.attention.dismiss").click();
   await quiet.waitFor({ state: "hidden" });
 
   assert.deepEqual(saved.elements, persisted(updated.elements), "The latest replacement and concurrent edits must reach the saved scene");
@@ -493,13 +494,12 @@ try {
 
   // The source-card entry stays available, while the new selection entry also
   // works for this cropped, unbound image whose marks cannot enter feedback.
-  await page.getByRole("button", { name: "Project documents", exact: true }).click();
+  await cmd(page, "board.add_document_page.toggle_list").click();
   const originalCard = page.locator(".monkeyboard-source").filter({ has: page.getByRole("heading", { name: oldDocument.fileName, exact: true }) });
   // An editable copy is offered for every registered document. Which of them
   // can actually have one is the document owner's answer, and its refusal is
   // shown as it is rather than guessed at here.
-  const workCopyName = "Get editable copy";
-  const originalWorkCopy = originalCard.getByRole("button", { name: workCopyName, exact: true });
+  const originalWorkCopy = cmd(originalCard, "board.add_document_page.work_copy");
   assert.equal(await originalWorkCopy.isEnabled(), true,
     "Every registered document offers to be asked for an editable copy");
   await originalWorkCopy.click();
@@ -507,9 +507,9 @@ try {
   await refusalNotice.waitFor();
   assert.match(await refusalNotice.innerText(), /different documents/,
     "The document owner's refusal reaches the operator unchanged");
-  await refusalNotice.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await cmd(refusalNotice, "view.notice.dismiss").click();
   const replacementCard = page.locator(".monkeyboard-source").filter({ has: page.getByRole("heading", { name: replacement.fileName, exact: true }) });
-  const workCopyButton = replacementCard.getByRole("button", { name: workCopyName, exact: true });
+  const workCopyButton = cmd(replacementCard, "board.add_document_page.work_copy");
   assert.equal(await workCopyButton.isEnabled(), true, "A registered single-page PNG can be given an editable copy");
   await workCopyButton.click();
   const workCopyNotice = page.locator(".monkeyboard-alert[role=alert]").filter({ hasText: workCopy.relativePath });
@@ -520,13 +520,13 @@ try {
     "The work copy names the exact registration, and sends no path");
   assert.match(await workCopyNotice.innerText(), new RegExp(workCopy.relativePath.replaceAll(".", "\\.")),
     "The project-relative path of the editable copy is shown to the operator");
-  await workCopyNotice.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await cmd(workCopyNotice, "view.notice.dismiss").click();
   await workCopyNotice.waitFor({ state: "hidden" });
   await originalCard.getByRole("combobox").selectOption("0");
-  await originalCard.getByRole("button", { name: "Update this page", exact: true }).click();
+  await cmd(originalCard, "document.replace_page.open").click();
   const dialog = page.getByRole("dialog", { name: "Update this page", exact: true });
-  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await page.getByRole("button", { name: "Project documents", exact: true }).click();
+  await cmd(dialog, "view.dialog.close").click();
+  await cmd(page, "board.add_document_page.toggle_list").click();
   await expectUpdate(["deleted-copy"], false);
   await expectUpdate(["kept-image"], true);
   await expectUpdate(["kept-frame"], true);
@@ -538,7 +538,7 @@ try {
   assert.match(await dialog.locator(".monkeyboard-feedback-source").innerText(), /Updated single page\.png.*1\/1/);
   await dialog.getByLabel("Updated PDF / image", { exact: true }).setInputFiles({ name: uploadedReplacement.fileName, mimeType: "application/pdf", buffer: uploadBytes });
   await dialog.getByLabel("Page number in the new file", { exact: true }).fill("2");
-  await dialog.getByRole("button", { name: "Update in place", exact: true }).click();
+  await cmd(dialog, "document.replace_page.submit").click();
   await dialog.waitFor({ state: "hidden" });
   const afterUpload = await readScene();
   assert.equal(uploads.length, 1, "One user submission uploads one replacement");
@@ -572,7 +572,7 @@ try {
     "The first revision of a drawing is placed as one new page");
   await page.waitForFunction((count) => window.__boardScrolls.length === count + 1, scrollsBeforePlan);
   await quiet.waitFor();
-  await quiet.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await cmd(quiet, "view.attention.dismiss").click();
   await quiet.waitFor({ state: "hidden" });
   // Mark the placed plan and look elsewhere, so that its rebuild has to come back into view.
   await page.evaluate(({ image, frame }) => {
@@ -620,7 +620,7 @@ try {
   await untilSaved((board) => board.seenDocuments.includes(documentKey(rebuiltPlan)) && board.elements.find((element) =>
     element.id === planImageId)?.customData?.sourceDocument?.revisionRef === rebuiltPlan.revisionRef, "The rebuilt page reaches the saved board");
   assert.deepEqual(saved.elements, persisted((await readScene()).elements), "The rebuilt page and its kept mark are what the board retains");
-  await quiet.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await cmd(quiet, "view.attention.dismiss").click();
   await quiet.waitFor({ state: "hidden" });
 
   // Restoring the original pixels is still a new revision in the same chain.
@@ -638,13 +638,13 @@ try {
   assert.deepEqual(persisted([byId(restored, planFrameId)]), persisted([byId(marked, planFrameId)]));
   assert.deepEqual(persisted([byId(restored, "plan-mark")]), persisted([byId(marked, "plan-mark")]));
   assert.deepEqual(activeIds(restored, "image"), activeIds(marked, "image"));
-  await quiet.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await cmd(quiet, "view.attention.dismiss").click();
   await quiet.waitFor({ state: "hidden" });
 
   // Clear marks through both real buttons, with a single keyboard undo/redo.
   // Include a real Crit pen stroke and arrow/text bindings to a retained page.
-  await page.locator(".monkeyboard-actions summary").click();
-  await page.getByRole("button", { name: "Crit mode", exact: true }).click();
+  await cmd(page, "view.menu.toggle", { arg: "board_more" }).click();
+  await cmd(page, "markup.hand_to_ai.enter_crit").click();
   await page.mouse.move(800, 450); await page.mouse.down();
   await page.mouse.move(840, 470, { steps: 6 }); await page.mouse.move(890, 450, { steps: 6 }); await page.mouse.up();
   await page.waitForFunction(() => window.__boardApi.getSceneElements().some((element) => element.type === "freedraw"));
@@ -664,7 +664,7 @@ try {
       ? newElementWith(element, { boundElements: [{ id: "bound-arrow", type: "arrow" }] }) : element);
     api.updateScene({ elements: [...elements, ...marks], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
   });
-  await page.getByRole("button", { name: "Exit", exact: true }).click();
+  await cmd(page, "markup.hand_to_ai.exit_crit").click();
   for (const ids of [["bound-arrow"], ["arrow-label"], ["loose-note"], ["bound-arrow", "arrow-label"]]) await expectUpdate(ids, false);
   await expectUpdate(["kept-image", "bound-arrow", "arrow-label"], true);
   await select([]);
@@ -672,12 +672,12 @@ try {
   const markIds = beforeClear.elements.filter((element) => !element.isDeleted && !["image", "frame"].includes(element.type)).map(({ id }) => id).sort();
   assert.ok(markIds.length >= 8, "The fixture covers freehand, lines, shapes, bound text and loose notes");
   const preservedIds = beforeClear.elements.filter((element) => !element.isDeleted && ["image", "frame"].includes(element.type)).map(({ id }) => id).sort();
-  const clear = page.getByRole("button", { name: "Clear annotations", exact: true });
+  const clear = cmd(page, "markup.clear");
   const waitCleared = () => page.waitForFunction((ids) => ids.every((id) => !window.__boardApi.getSceneElements().some((element) => element.id === id)), markIds);
   const waitRestored = () => page.waitForFunction((ids) => ids.every((id) => window.__boardApi.getSceneElements().some((element) => element.id === id)), markIds);
-  await page.locator(".monkeyboard-actions summary").click();
+  await cmd(page, "view.menu.toggle", { arg: "board_more" }).click();
   await clear.click(); await waitCleared();
-  assert.equal(await page.getByRole("button", { name: "Clear annotations", exact: true, includeHidden: true }).isEnabled(), false);
+  assert.equal(await cmd(page, "markup.clear", { includeHidden: true }).isEnabled(), false);
   const cleared = await readScene();
   for (const id of preservedIds) {
     assert.deepEqual(geometry(byId(cleared, id)), geometry(byId(beforeClear, id)), `Clear preserves page/frame geometry: ${id}`);
@@ -691,8 +691,8 @@ try {
   assert.deepEqual(byId(await readScene(), "kept-image").boundElements, byId(beforeClear, "kept-image").boundElements);
   await page.keyboard.press("Control+Shift+z"); await waitCleared();
   await page.keyboard.press("Control+z"); await waitRestored();
-  await page.locator(".monkeyboard-actions summary").click();
-  await page.getByRole("button", { name: "Crit mode", exact: true }).click();
+  await cmd(page, "view.menu.toggle", { arg: "board_more" }).click();
+  await cmd(page, "markup.hand_to_ai.enter_crit").click();
   await clear.click(); await waitCleared();
   await page.keyboard.press("Control+z"); await waitRestored();
   await clear.click(); await waitCleared();
@@ -702,7 +702,8 @@ try {
   await page.goto(`${origin}/?view=board&lang=zh-CN`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => window.__boardApi && !document.querySelector(".monkeyboard-initializing"));
   await waitCleared();
-  assert.equal(await page.getByRole("button", { name: "清除批注", exact: true, includeHidden: true }).isEnabled(), false);
+  assert.equal(await cmd(page, "markup.clear", { includeHidden: true }).isEnabled(), false);
+  assert.equal(await commandLabel(cmd(page, "markup.clear", { includeHidden: true })), "清除批注");
   assert.deepEqual(activeIds(await readScene(), "image"), activeIds(beforeClear, "image"));
   assert.deepEqual(activeIds(await readScene(), "frame"), activeIds(beforeClear, "frame"));
   assert.deepEqual(saved.seenDocuments, seenBeforeReopen);
@@ -710,8 +711,8 @@ try {
     "Cold reopen retains the new revision even when its pixels match the original");
   assert.deepEqual(geometry(byId(await readScene(), planImageId)), geometry(byId(marked, planImageId)));
   await select(["kept-frame"]);
-  const chineseUpdate = updateAction("更新此页原图");
-  await chineseUpdate.waitFor(); assert.equal(await chineseUpdate.isEnabled(), true);
+  const chineseUpdate = updateAction();
+  await chineseUpdate.waitFor(); await waitForCommandLabel(chineseUpdate, "更新此页原图"); assert.equal(await chineseUpdate.isEnabled(), true);
   await chineseUpdate.click();
   const chineseDialog = page.getByRole("dialog", { name: "更新此页原图", exact: true });
   assert.match(await chineseDialog.locator(".monkeyboard-feedback-source").innerText(), /UI updated\.pdf.*2\/2/);
@@ -738,8 +739,8 @@ try {
     const added = convertToExcalidrawElements([{ id: "headless-local-note", type: "text", text: "Keep this critique", x: 430, y: 670 }], { regenerateIds: false });
     api.updateScene({ elements: [...api.getSceneElementsIncludingDeleted(), ...added], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
   });
-  const retryPreviews = page.getByRole("button", { name: "重试预览 / 接收", exact: true });
-  await retryPreviews.waitFor();
+  const retryPreviews = cmd(page, "view.notice.retry", { arg: "board_previews" });
+  await retryPreviews.waitFor(); await waitForCommandLabel(retryPreviews, "重试预览 / 接收");
   assert.ok(headlessPreviewFailures > 0, "The uncached remote preview must actually fail before recovery");
   const failedHeadless = await readScene();
   assert.deepEqual(byId(failedHeadless, "unmapped-image").customData.sourceDocument,
@@ -771,11 +772,13 @@ try {
     "Receiving a saved source replacement must announce the same update as a document refresh");
   assert.equal(await rebasedNotice.count(), 1, "A saved replacement produces one coalesced notice");
   const writesBeforeRebasedView = writes.length;
-  await rebasedNotice.getByRole("button", { name: "查看", exact: true }).click();
+  await waitForCommandLabel(cmd(rebasedNotice, "view.attention.open"), "查看");
+  await cmd(rebasedNotice, "view.attention.open").click();
   assert.deepEqual(persisted((await readScene()).elements), persisted(afterHeadless.elements));
   await page.waitForTimeout(1000);
   assert.equal(writes.length, writesBeforeRebasedView, "Viewing a rebased page does not write another revision");
-  await rebasedNotice.getByRole("button", { name: "关闭提示", exact: true }).click();
+  await waitForCommandLabel(cmd(rebasedNotice, "view.attention.dismiss"), "关闭提示");
+  await cmd(rebasedNotice, "view.attention.dismiss").click();
   // Re-reading the same saved revision cannot bring back a dismissed notice.
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await page.waitForTimeout(1000);
