@@ -94,7 +94,7 @@
 .chat-project-card dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .chat-project-card__path,.chat-project-card__candidate{display:block;font:var(--text-caption)/1.5 var(--font-mono)}
 .chat-project-card dd .chat-muted{display:block;margin:2px 0 6px}.chat-project-card__connection{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}.chat-project-card__connection summary{cursor:pointer;min-height:32px;display:flex;align-items:center;color:var(--muted)}.chat-project-card__url{width:100%;margin-top:6px;min-height:30px;font:var(--text-caption)/1.5 var(--font-mono);color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 8px}.chat-project-card__connection-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}.chat-project-card__connection-actions .chat-activity__open{min-height:32px;padding:6px 10px}
-.chat-project-card__archive{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}.chat-project-card__archive .chat-activity__open{min-height:32px;padding:6px 10px}
+.chat-project-card__archive,.chat-project-card__skills{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}.chat-project-card__archive .chat-activity__open,.chat-project-card__skills .chat-activity__open{min-height:32px;padding:6px 10px}
 /* A written summary makes this dialog taller than a short window; its own
    scrollbar keeps Export and Close reachable rather than clipped. */
 .chat-dialog--archive{max-height:85dvh;overflow:auto}

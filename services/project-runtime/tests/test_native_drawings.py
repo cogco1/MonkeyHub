@@ -85,7 +85,10 @@ class NativeDrawingTests(unittest.TestCase):
         updated = self.generate(asset, previousRevisionRef=drawing["revisionRef"], hatchSpacingMm=3)
         self.assertEqual(updated["drawingId"], drawing["drawingId"])
         self.assertNotEqual(updated["revisionRef"], drawing["revisionRef"])
-        dimensions = self.client.get("/api/drawings/plans/dimensions", params={"sourceAssetRunId": asset["runId"], "sourceAssetSha256": asset["sha256"]})
+        # Listing the choices needs only the unit; the shapes are not decoded again (#12).
+        with patch("project_runtime.application.drawings.read_elevation_source",
+                   side_effect=AssertionError("the model was decoded to list dimension choices")):
+            dimensions = self.client.get("/api/drawings/plans/dimensions", params={"sourceAssetRunId": asset["runId"], "sourceAssetSha256": asset["sha256"]})
         self.assertEqual(dimensions.json(), {"lengthUnit": "meter", "dimensions": []})
 
     def test_composed_3dm_draws_its_own_geometry(self):

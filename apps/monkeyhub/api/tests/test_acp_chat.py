@@ -243,6 +243,36 @@ class AcpChatTests(unittest.TestCase):
                         for r in self.calls() if r["event"] == "permission"]
             self.assertEqual(outcomes, [{"outcome": "selected", "optionId": "allow"}, {"outcome": "cancelled"}])
 
+    def test_a_skill_question_is_answered_by_the_persons_button_and_read_by_the_chat_tool(self):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
+            app = create_app(HubSettings(runtime_root=self.runtime))
+        with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
+            session = self.create()
+            ask = f"/api/chat/sessions/{session.id}/skill-permissions"
+            self.assertEqual(client.post(ask, json={"title": "Run"}).status_code, 409, "an idle chat has no one to ask")
+            self.post(session, "permission")
+            acp = self.permission(session)
+            asked = client.post(ask, json={"title": "运行 skill site-palette v2\n启动程序 / start programs: blender"})
+            self.assertEqual(asked.status_code, 201, asked.text)
+            question = asked.json()["permissionId"]
+            self.assertEqual(client.get(f"{ask}/{question}").json()["status"], "waiting")
+            shown = next(m.permission for m in self.store.get(session.id).messages
+                         if m.permission and m.permission.id == question)
+            self.assertEqual([o.optionId for o in shown.options], ["allow_once", "allow_always", "reject"])
+            self.assertIn("blender", shown.title)
+            answer = client.post(f"/api/chat/sessions/{session.id}/permissions/{question}",
+                                 json={"projectId": session.projectId, "optionId": "allow_always"})
+            self.assertEqual(answer.status_code, 200, answer.text)
+            self.assertEqual(client.get(f"{ask}/{question}?wait=5").json(),
+                             {"permissionId": question, "status": "answered", "optionId": "allow_always"})
+            self.assertEqual(client.get(f"{ask}/{question}").status_code, 404, "an answer is read once")
+            unanswered = client.post(ask, json={"title": "Run again"}).json()["permissionId"]
+            client.post(f"/api/chat/sessions/{session.id}/permissions/{acp.id}",
+                        json={"projectId": session.projectId, "optionId": "allow"})
+            self.finished(session)
+            self.assertEqual(client.get(f"{ask}/{unanswered}").json()["status"], "withdrawn",
+                             "a question the turn left unanswered is withdrawn with it")
+
     def test_project_context_opens_new_acp_session_without_loading_old_transcript(self):
         session = self.create()
         self.post(session, "OLD_TRANSCRIPT_185")

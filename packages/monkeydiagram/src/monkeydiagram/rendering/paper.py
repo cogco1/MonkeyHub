@@ -188,7 +188,7 @@ class PaperCanvas:
         self._primitives: list[PaperPrimitive] = []
         self._state = _GraphicsState()
         self._stack: list[_GraphicsState] = []
-        self.title = self.author = ""
+        self.title = self.author = self.subject = ""
 
     def start_sheet(self, number: str, size_mm: tuple[float, float]):
         if self._number is not None:
@@ -227,6 +227,9 @@ class PaperCanvas:
 
     def setAuthor(self, value):
         self.author = str(value)
+
+    def setSubject(self, value):
+        self.subject = str(value)
 
     def setFont(self, name, size, leading=None):
         if size <= 0:
@@ -367,9 +370,13 @@ def render_pdf(source, font_mapping: Mapping[str, str | Path] | None = None) -> 
         pdfmetrics.registerFont(TTFont(alias, str(path)))
         aliases[name] = alias
     buffer = BytesIO()
-    canvas = pdf_canvas.Canvas(buffer, pagesize=tuple(v/MM_PER_PT for v in scenes[0].size_mm), invariant=1)
+    # The page's initial font is one of the embedded faces: reportlab's default
+    # would name a Helvetica the file does not carry (gap 13).
+    initial = {"initialFontName": next(iter(aliases.values()))} if aliases else {}
+    canvas = pdf_canvas.Canvas(buffer, pagesize=tuple(v/MM_PER_PT for v in scenes[0].size_mm), invariant=1, **initial)
     canvas.setTitle(getattr(source, "title", ""))
     canvas.setAuthor(getattr(source, "author", ""))
+    canvas.setSubject(getattr(source, "subject", ""))
     for sheet in scenes:
         canvas.setPageSize(tuple(v/MM_PER_PT for v in sheet.size_mm))
         for primitive in sheet.primitives:

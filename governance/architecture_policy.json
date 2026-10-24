@@ -597,6 +597,60 @@
       "reason": "Writes the response schema and transient document PNGs into the same TemporaryDirectory handed to codex exec; the directory is cleaned after the call and nothing under the project is touched."
     },
     {
+      "path": "services/project-runtime/src/project_runtime/application/live_rhino.py",
+      "function": "run_in_rhino",
+      "operations": [
+        "write_text"
+      ],
+      "kind": "provider_tempdir",
+      "owner": "project_runtime.live_rhino",
+      "reason": "Writes the request JSON and the generated Rhino script into its own mkdtemp directory for RhinoCode, removed after the answer is read; nothing under the project is touched."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/skill_runs.py",
+      "function": "_write_skill",
+      "operations": [
+        "write_text",
+        "mkdir"
+      ],
+      "kind": "provider_tempdir",
+      "owner": "project_runtime.skill_runs",
+      "reason": "Writes the skill's files, the input documents, params.json and the outputs folder into its own TemporaryDirectory for one run; the folder is removed after the outputs are read, and results enter the project only through P036."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/skill_runs.py",
+      "function": "_write_inputs",
+      "operations": [
+        "write_bytes",
+        "write_text"
+      ],
+      "kind": "provider_tempdir",
+      "owner": "project_runtime.skill_runs",
+      "reason": "Writes the skill's files, the input documents, params.json and the outputs folder into its own TemporaryDirectory for one run; the folder is removed after the outputs are read, and results enter the project only through P036."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/skill_runs.py",
+      "function": "_run_once",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "provider_tempdir",
+      "owner": "project_runtime.skill_runs",
+      "reason": "Writes the bootstrap, access, params and audit files and the run's folders into its own TemporaryDirectory for one run; the folder is removed after the outputs are read, and results enter the project only through P036."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/skill_runs.py",
+      "function": "_ensure_packages",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "skill_environment",
+      "owner": "project_runtime.skill_runs",
+      "reason": "Creates one skill's own package folder under the user's MonkeyHub skill-envs (outside every project) for the requirements its granted access declares, and writes its marker after pip succeeds; the folder is reused by later runs."
+    },
+    {
       "path": "packages/archflow/src/archflow/project/inputs.py",
       "function": "write_program_sheet_file",
       "operations": [

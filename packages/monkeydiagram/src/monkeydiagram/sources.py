@@ -259,8 +259,11 @@ def read_native_source(repository: FilesystemProjectRepository, source: NativeMo
               run.run_id == "studio-model-" + source.artifact.sha256),
              "the native model registration has a different source binding")
     data = read_artifact_bytes(repository, source.artifact)
+    # An object that cannot be transferred is left out and named, so one bad
+    # trim loop no longer stops the whole model from being drawn (gap 15).
+    omitted: list = []
     try:
-        entries, unit = read_three_dm(data)
+        entries, unit = read_three_dm(data, omitted=omitted)
     except OcctBackendError as exc:
         raise DrawingElevationError(str(exc)) from exc
     require_drawing(unit == payload.get("lengthUnit"), "native model units differ from its registration")
@@ -269,6 +272,8 @@ def read_native_source(repository: FilesystemProjectRepository, source: NativeMo
     # Plain readback values for the common frame/section operations, not an execution receipt.
     measured = {entry.name: {"bbox": measure_shape(entry.shape).to_dict()["bbox"]} for entry in entries}
     facts = {"identity": {"length_unit": unit}, "physical_object_ids": ids, "readback": measured, "modelSource": bound}
+    if omitted:
+        facts["omittedObjects"] = omitted
     source_import = {key: deepcopy(payload[key]) for key in ("sourceArtifact", "sourceFileName", "conversion") if key in payload}
     if source_import:
         facts["sourceImport"] = source_import

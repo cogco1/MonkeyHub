@@ -173,6 +173,88 @@ def _finish(base: str, started: Mapping, submitted: Mapping, deadline: float) ->
     return result
 
 
+_SKILL_RUN = re.compile(r"/api/skills/([A-Za-z0-9:_.-]+)/run")
+_ACCESS_ITEMS = ("programs", "ssh", "write", "packages")
+_PERMISSION_WAIT_S = 50
+
+
+def _access_words(access: Mapping) -> list[str]:
+    """What a version may do beyond its own folders, in the words the person reads on the button."""
+
+    words = []
+    if access.get("programs"):
+        words.append("启动程序 / start programs: " + ", ".join(access["programs"]))
+    if access.get("network"):
+        words.append("连接网络 / use the network")
+    if access.get("ssh"):
+        words.append("ssh 到 / ssh to: " + ", ".join(access["ssh"]))
+    if access.get("write"):
+        words.append("写入 / write to: " + ", ".join(access["write"]))
+    if access.get("packages"):
+        words.append("安装 Python 包 / install packages: " + ", ".join(access["packages"]))
+    return words
+
+
+def _agent_skill_run(hub: str, chat_id: str, base: str, path: str, body: dict, wait: float) -> dict:
+    """An Agent's skill run, after the person's say where the setting asks for it.
+
+    Every run needs a person's grant. The Hub setting skillAgentRuns decides
+    how an Agent gets one, as Claude Code and Codex do before a tool runs. A
+    version a person always allowed runs. Otherwise "ask" (the default) puts the
+    run and its access to the person in this chat with three buttons and runs
+    on their answer; "granted" and "never" ask nothing and refuse it. "never"
+    also refuses an always-allowed version that declares access. While the
+    design loop is enforced (#185) the setting reads as "never". The Agent
+    never grants: the grant is written here, from the button the person pressed.
+    """
+
+    from ..settings.store import read_user_settings
+
+    skill_id = _SKILL_RUN.fullmatch(path).group(1)
+    permission_id = body.pop("permissionId", None)
+    version = body.get("version")
+    query = "" if version is None else "?" + urlencode({"version": version})
+    skill = transport._request_json(base, f"/api/skills/{skill_id}{query}")
+    body = {**body, "version": skill["version"], "agentRun": True}
+    access = skill.get("access") or {}
+    needs = bool(access.get("network")) or any(access.get(key) for key in _ACCESS_ITEMS)
+    setting = "never" if studio_tool.design_loop_enforced(hub) else read_user_settings().skill_agent_runs or "ask"
+    if needs and setting == "never":
+        raise HubFailure(403, "SKILL_AGENT_RUN_REFUSED",
+                         f"{skill_id} declares access and the Hub setting lets only a person start such a skill, "
+                         "on the Hub page.")
+    if skill.get("approved"):
+        return body
+    if setting != "ask":
+        raise HubFailure(403, "SKILL_AGENT_RUN_REFUSED",
+                         f"No one always allowed {skill_id} version {skill['version']}, and the Hub setting does not "
+                         "ask in the chat. A person allows or starts it on the Hub page.")
+    chat = projects._identifier(chat_id)
+    if permission_id is None:
+        title = "\n".join([f"运行 skill / Run skill「{skill.get('name') or skill_id}」 v{skill['version']}",
+                            *(_access_words(access) or ["只用它自己的文件夹 / needs nothing beyond its own folders"]),
+                            f"代码 / code {skill['codeSha256'][:12]}"])
+        permission_id = transport._request_json(hub, f"/api/chat/sessions/{chat}/skill-permissions", "POST",
+                                                {"title": title})["permissionId"]
+    answer = transport._request_json(
+        hub, f"/api/chat/sessions/{chat}/skill-permissions/{projects._identifier(str(permission_id))}?"
+        + urlencode({"wait": wait}), timeout=wait + 30)
+    if answer["status"] == "waiting":
+        raise HubFailure(409, "SKILL_PERMISSION_WAITING",
+                         f"The person has been asked in this chat whether {skill_id} may run and has not answered "
+                         f"yet. Call the same run again with \"permissionId\": \"{permission_id}\" in the body to "
+                         "keep waiting; do not start it another way.")
+    if answer["status"] == "withdrawn":
+        raise HubFailure(409, "SKILL_PERMISSION_WITHDRAWN", "The question was withdrawn before anyone answered.")
+    if answer["optionId"] not in ("allow_once", "allow_always"):
+        raise HubFailure(403, "SKILL_PERMISSION_DENIED", f"The person denied this run of {skill_id}.")
+    grant = transport._request_json(base, f"/api/skills/{skill_id}/approvals", "POST", {
+        "projectId": body["projectId"], "version": skill["version"], "codeSha256": skill["codeSha256"],
+        "method": "hub-chat", "scope": "once" if answer["optionId"] == "allow_once" else "version",
+    })
+    return {**body, "grantId": grant["approvalId"]} if grant["scope"] == "once" else body
+
+
 def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     token = transport._trace_headers.set({})
     try:
@@ -402,6 +484,8 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "A tool cannot select another project.")
         if parsed.path in {"/api/proposals", "/api/board/export", "/api/project/modeling", "/api/render/jobs"}:
             body["projectId"] = session["projectId"]
+        if method == "POST" and _SKILL_RUN.fullmatch(parsed.path):
+            body = _agent_skill_run(hub, chat_id, base, parsed.path, body, _PERMISSION_WAIT_S)
         if method == "POST" and parsed.path == "/api/drawings/plans":
             # A cut plan the Agent asks for is its reading of what the user
             # said, so its revision says so (05 §5). Only a person's own

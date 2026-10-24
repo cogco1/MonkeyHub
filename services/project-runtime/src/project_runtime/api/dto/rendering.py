@@ -57,6 +57,42 @@ class RenderViewSourceRequestDto(BaseModel):
         return self
 
 
+class CameraPassCameraDto(BaseModel):
+    """A pinhole camera in the model's frame and length unit."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    position: tuple[float, float, float]
+    target: tuple[float, float, float]
+    up: tuple[float, float, float] = (0.0, 0.0, 1.0)
+    fov_deg: float = Field(alias="fovDeg", default=45.0, ge=1.0, le=170.0, description="vertical field of view")
+
+
+class CameraPassViewDto(BaseModel):
+    """A saved perspective model view: the document ``POST /api/render/views`` registered."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    run_id: str = Field(alias="runId", min_length=1)
+    asset_sha256: str = Field(alias="assetSha256", pattern=r"^[0-9a-f]{64}$")
+
+
+class CameraPassRequestDto(BaseModel):
+    """Draw an ID, a line and a depth image of one exact model through a perspective camera (#19).
+
+    Name ``view`` (a saved model view, which brings its own model) or
+    ``camera`` with ``size`` and one model: ``modelSource``, or ``sourceAsset``
+    as the drawing routes take an imported or snapshot model.
+    """
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    project_id: str = Field(alias="projectId", min_length=1)
+    view: CameraPassViewDto | None = None
+    camera: CameraPassCameraDto | None = None
+    size: tuple[int, int] | None = Field(default=None, description="the camera's view in pixels; its aspect is kept")
+    long_edge: int = Field(alias="longEdge", default=2048, ge=16, le=4096)
+    id_by: Literal["object", "layer", "material"] = Field(alias="idBy", default="layer")
+    model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
+    source_asset: dict[str, str] | None = Field(alias="sourceAsset", default=None,
+                                                description="{runId, assetSha256} of an imported or snapshot model")
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
+
+
 class RenderCapabilityDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
     provider_id: str = Field(alias="providerId")

@@ -430,5 +430,419 @@ def mesh_line_view(
     return MeshLineView(buffer.getvalue(), width, height, triangle_count, drawn, showing)
 
 
+# ---- perspective camera passes (#19) ------------------------------------------------
+#
+# The same depth buffer seen through a pinhole camera: an object-ID image, the
+# visible feature edges, and the distance of the nearest surface, each pixel of
+# the three read from one buffer, so they line up exactly. The buffer holds
+# -1/distance along the view axis, which is affine in screen space, so the
+# per-triangle plane interpolation of ``_coverage`` stays exact under
+# perspective; triangles crossing the near plane are cut there.
+
+#: The longest edge of a camera pass. Drawn without supersampling, its buffers
+#: take about 40 bytes a pixel: some 380 MB at 4096 x 2304.
+MAX_CAMERA_EDGE_PX = 4096
+#: A pass whose longer edge is at most this is drawn at twice its size, so its lines are smoothed.
+CAMERA_SUPERSAMPLE_EDGE_PX = 2048
+#: The ID image's paper: no surface.
+ID_BACKGROUND = (255, 255, 255)
+#: The depth image is 16-bit: the nearest visible surface DEPTH_NEAREST, the farthest 1, no surface 0.
+DEPTH_NEAREST = 65535
+
+
+@dataclass(frozen=True, slots=True)
+class PerspectiveCamera:
+    """A pinhole camera in the model frame and unit: where it stands, what it looks at, its vertical field of view."""
+
+    position: tuple[float, float, float]
+    target: tuple[float, float, float]
+    up: tuple[float, float, float]
+    fov_deg: float
+
+    @classmethod
+    def from_matrices(cls, world: Sequence[float], projection: Sequence[float]) -> "PerspectiveCamera":
+        """The camera a saved model view records: three.js column-major world and projection matrices."""
+
+        values = [float(value) for value in world]
+        project = [float(value) for value in projection]
+        if len(values) != 16 or len(project) != 16 or not all(math.isfinite(value) for value in values + project):
+            raise MeshViewError("a camera needs 16 finite world and 16 finite projection values")
+        if project[11] != -1.0 or project[5] <= 0:
+            raise MeshViewError("the saved camera is not a perspective camera")
+        position = tuple(values[12:15])
+        back = values[8:11]
+        target = tuple(position[i] - back[i] for i in range(3))
+        return cls(position, target, tuple(values[4:7]), math.degrees(2 * math.atan(1 / project[5])))
+
+    def basis(self, np):
+        eye = np.asarray(self.position, dtype=float)
+        forward = np.asarray(self.target, dtype=float) - eye
+        up = np.asarray(self.up, dtype=float)
+        if not (np.all(np.isfinite(eye)) and np.all(np.isfinite(forward)) and np.all(np.isfinite(up))):
+            raise MeshViewError("the camera must be finite")
+        if not 1.0 <= float(self.fov_deg) <= 170.0:
+            raise MeshViewError("the camera's vertical field of view must be from 1 to 170 degrees")
+        length = float(np.linalg.norm(forward))
+        if length == 0:
+            raise MeshViewError("the camera's target must differ from its position")
+        forward = forward / length
+        right = np.cross(forward, up)
+        if float(np.linalg.norm(right)) < 1e-9:
+            raise MeshViewError("the camera's up must not point along its view")
+        right = right / np.linalg.norm(right)
+        return eye, right, np.cross(right, forward), forward
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"position": list(self.position), "target": list(self.target), "up": list(self.up),
+                "fovDeg": float(self.fov_deg)}
+
+    def check(self) -> None:
+        """Refuse a camera that cannot look: the same checks ``camera_passes`` makes before drawing."""
+
+        import numpy as np
+
+        self.basis(np)
+
+    def pixel_footprint(self, height_px: int, boxes: Sequence[Mapping[str, Sequence[float]]] = ()) -> float:
+        """Model units one pixel spans at the depth of the middle of ``boxes`` ({min, max}), or of the target."""
+
+        import numpy as np
+
+        eye, _, _, forward = self.basis(np)
+        centre = np.asarray(self.target, dtype=float) if not boxes else (
+            np.min([box["min"] for box in boxes], axis=0) + np.max([box["max"] for box in boxes], axis=0)) / 2
+        distance = max(float((centre - eye) @ forward), 1e-6)
+        return 2 * distance * math.tan(math.radians(self.fov_deg) / 2) / height_px
+
+
+@dataclass(frozen=True, slots=True)
+class CameraPasses:
+    """Three aligned images of one camera's view and what they show.
+
+    ``legend`` holds one row per ID colour: ``{key, color, objects, pixels}``.
+    ``near`` and ``far`` are the distances along the view axis, in the model
+    unit, of the nearest and farthest visible surface the depth image spans.
+    """
+
+    id_png: bytes
+    line_png: bytes
+    depth_png: bytes
+    width: int
+    height: int
+    legend: tuple[dict[str, Any], ...]
+    seen: tuple[str, ...]
+    near: float | None
+    far: float | None
+    triangles: int
+    edges_drawn: int
+
+
+def _id_colour(index: int) -> tuple[int, int, int]:
+    """A distinct, deterministic colour for the index-th ID key: golden-ratio hues in three bands, never white or black."""
+
+    import colorsys
+
+    hue = (index * 0.6180339887498949) % 1.0
+    saturation = (0.85, 0.6, 0.95)[index % 3]
+    value = (0.95, 0.75, 0.55)[(index // 3) % 3]
+    red, green, blue = colorsys.hsv_to_rgb(hue, saturation, value)
+    return int(round(red * 255)), int(round(green * 255)), int(round(blue * 255))
+
+
+def _id_palette(count: int) -> list[tuple[int, int, int]]:
+    """``count`` different colours for the ID keys, none of them ID_BACKGROUND, in a fixed order.
+
+    The golden-ratio hues are taken in turn and a colour already given (two
+    hues can round to one sRGB triple) is skipped; past the few thousand they
+    yield, the rest are the remaining triples in order, so no two keys ever
+    share a colour.
+    """
+
+    seen = {ID_BACKGROUND}
+    palette = []
+    index = 0
+    while len(palette) < count and index < 20 * count + 100:
+        colour = _id_colour(index)
+        index += 1
+        if colour not in seen:
+            seen.add(colour)
+            palette.append(colour)
+    value = 0
+    while len(palette) < count:
+        colour = ((value >> 16) & 255, (value >> 8) & 255, value & 255)
+        value += 1
+        if colour not in seen:
+            seen.add(colour)
+            palette.append(colour)
+    return palette
+
+
+def _perspective_feature_edges(np, vertices, triangles, eye, crease_cos):
+    """``_feature_edges`` for an eye at a point: a silhouette is where the two faces turn opposite ways to it."""
+
+    a, b, c = (vertices[triangles[:, i]] for i in range(3))
+    normals = np.cross(b - a, c - a)
+    lengths = np.linalg.norm(normals, axis=1)
+    keep = lengths > 0
+    triangles, normals = triangles[keep], normals[keep] / lengths[keep, None]
+    if not len(triangles):
+        return np.zeros((0, 2), dtype=np.int64)
+    pairs = np.concatenate([triangles[:, [0, 1]], triangles[:, [1, 2]], triangles[:, [2, 0]]])
+    faces = np.tile(np.arange(len(triangles)), 3)
+    pairs.sort(axis=1)
+    order = np.lexsort((faces, pairs[:, 1], pairs[:, 0]))
+    pairs, faces = pairs[order], faces[order]
+    starts = np.flatnonzero(np.r_[True, np.any(pairs[1:] != pairs[:-1], axis=1)])
+    counts = np.diff(np.r_[starts, len(pairs)])
+    draw = counts != 2
+    two = np.flatnonzero(counts == 2)
+    first, second = normals[faces[starts[two]]], normals[faces[starts[two] + 1]]
+    view = vertices[pairs[starts[two], 0]] - eye
+    facing = np.sign(np.einsum("ij,ij->i", first, view)) != np.sign(np.einsum("ij,ij->i", second, view))
+    draw[two] = (np.einsum("ij,ij->i", first, second) < crease_cos) | facing
+    return pairs[starts[draw]]
+
+
+def _clip_near(np, x, y, z, triangles, labels, near):
+    """Triangles cut at the plane ``z = near``: wholly behind it dropped, crossing it cut into one or two.
+
+    New vertices are appended after the given ones, so the given indices keep
+    their meaning; the arrays and the triangles' labels come back extended.
+    """
+
+    behind = z[triangles] < near
+    count = behind.sum(axis=1)
+    kept, kept_labels = [triangles[count == 0]], [labels[count == 0]]
+    xs, ys, zs = [x], [y], [z]
+    base = len(x)
+
+    def cut(p, q):
+        t = (near - z[p]) / (z[q] - z[p])
+        return x[p] + t * (x[q] - x[p]), y[p] + t * (y[q] - y[p]), np.full(len(p), near)
+
+    for lonely in (1, 2):
+        rows = np.flatnonzero(count == lonely)
+        if not len(rows):
+            continue
+        tri, flag = triangles[rows], behind[rows]
+        # The odd vertex out first: the one behind (one behind) or the one in front (two behind).
+        odd = np.argmax(flag if lonely == 1 else ~flag, axis=1)
+        first = tri[np.arange(len(tri)), odd]
+        second = tri[np.arange(len(tri)), (odd + 1) % 3]
+        third = tri[np.arange(len(tri)), (odd + 2) % 3]
+        a = cut(first, second) if lonely == 1 else cut(second, first)
+        b = cut(first, third) if lonely == 1 else cut(third, first)
+        n = len(rows)
+        ia, ib = base + np.arange(n), base + n + np.arange(n)
+        for values, source in ((xs, 0), (ys, 1), (zs, 2)):
+            values.append(np.concatenate([a[source], b[source]]))
+        base += 2 * n
+        if lonely == 1:
+            kept.append(np.stack([ia, second, third], axis=1))
+            kept.append(np.stack([ia, third, ib], axis=1))
+            kept_labels += [labels[rows], labels[rows]]
+        else:
+            kept.append(np.stack([first, ia, ib], axis=1))
+            kept_labels.append(labels[rows])
+    return (np.concatenate(xs), np.concatenate(ys), np.concatenate(zs), np.concatenate(kept).astype(np.int64),
+            np.concatenate(kept_labels))
+
+
+def _clip_to_frame(np, ax, ay, av, bx, by, bv, width, height, margin=2.0):
+    """Segments cut to the frame (with a margin) by Liang-Barsky; ``av``/``bv`` follow linearly, as -1/z does."""
+
+    dx, dy = bx - ax, by - ay
+    t0, t1 = np.zeros(len(ax)), np.ones(len(ax))
+    inside = np.ones(len(ax), dtype=bool)
+    for p, q in ((-dx, ax + margin), (dx, width + margin - ax), (-dy, ay + margin), (dy, height + margin - ay)):
+        parallel = p == 0
+        inside &= ~(parallel & (q < 0))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            r = np.where(parallel, 0.0, q / np.where(parallel, 1.0, p))
+        entering, leaving = (p < 0) & ~parallel, (p > 0) & ~parallel
+        t0 = np.where(entering, np.maximum(t0, r), t0)
+        t1 = np.where(leaving, np.minimum(t1, r), t1)
+    inside &= t0 <= t1
+    dv = bv - av
+    return (ax + t0 * dx, ay + t0 * dy, av + t0 * dv, ax + t1 * dx, ay + t1 * dy, av + t1 * dv, inside)
+
+
+def _png(image, text):
+    from PIL import Image, PngImagePlugin
+
+    info = PngImagePlugin.PngInfo()
+    for key, value in sorted((text or {}).items()):
+        info.add_text(key, value)
+    buffer = BytesIO()
+    picture = image if isinstance(image, Image.Image) else Image.fromarray(image)
+    picture.save(buffer, format="PNG", pnginfo=info, compress_level=_PNG_COMPRESS_LEVEL)
+    return buffer.getvalue()
+
+
+def camera_passes(
+    meshes: Sequence[ObjectMesh], *, camera: PerspectiveCamera, width: int, height: int,
+    groups: Mapping[str, str] | None = None, text: Mapping[str, str] | None = None,
+) -> CameraPasses:
+    """Draw ``meshes`` through ``camera`` into an ID image, a line image and a depth image of ``width`` x ``height``.
+
+    The vertical field of view spans ``height``; pixels are square. ``groups``
+    maps an object id to the key its ID colour stands for (its layer, its
+    material, or the object itself when absent); each key gets one colour,
+    exact in every pixel the key's nearest surface covers (no smoothing), on
+    ID_BACKGROUND. The line image is black visible feature edges on white.
+    The depth image is 16-bit grey: DEPTH_NEAREST at the nearest visible
+    surface, 1 at the farthest, linear in distance along the view axis
+    between them, 0 where no surface is.
+    """
+
+    import numpy as np
+    from PIL import Image
+
+    for name, value in (("width", width), ("height", height)):
+        if isinstance(value, bool) or not isinstance(value, int) or not 16 <= value <= MAX_CAMERA_EDGE_PX:
+            raise MeshViewError(f"{name} must be a whole number of pixels from 16 to {MAX_CAMERA_EDGE_PX}")
+    eye, right, true_up, forward = camera.basis(np)
+    sample = 2 if max(width, height) <= CAMERA_SUPERSAMPLE_EDGE_PX else 1
+    big_w, big_h = width * sample, height * sample
+    focal = (big_h / 2) / math.tan(math.radians(camera.fov_deg) / 2)
+    crease_cos = math.cos(math.radians(CREASE_DEGREES))
+    group_of = groups or {}
+
+    xs, ys, zs, tris, edges, labels = [], [], [], [], [], []
+    base = 0
+    kept_meshes = []
+    for mesh in meshes:
+        vertices = np.asarray(mesh.vertices, dtype=float).reshape(-1, 3)
+        triangles = np.asarray(mesh.triangles, dtype=np.int64).reshape(-1, 3)
+        if not len(vertices) or not len(triangles):
+            continue
+        label = len(kept_meshes)
+        kept_meshes.append(mesh)
+        extent = float(np.ptp(vertices, axis=0).max()) or 1.0
+        vertices, triangles = _welded(np, vertices, triangles, extent * _WELD)
+        edges.append(_perspective_feature_edges(np, vertices, triangles, eye, crease_cos) + base)
+        offset = vertices - eye
+        xs.append(offset @ right)
+        ys.append(offset @ true_up)
+        zs.append(offset @ forward)
+        tris.append(triangles + base)
+        labels.append(np.full(len(triangles), label, dtype=np.int32))
+        base += len(vertices)
+    keys = sorted({group_of.get(mesh.object_id, mesh.object_id) for mesh in kept_meshes})
+    key_index = {key: index for index, key in enumerate(keys)}
+    palette = np.array(_id_palette(len(keys)) + [ID_BACKGROUND], dtype=np.uint8)
+    key_of_label = np.array([key_index[group_of.get(mesh.object_id, mesh.object_id)] for mesh in kept_meshes]
+                            + [len(keys)], dtype=np.int64)
+
+    line = np.full((big_h, big_w), 255, dtype=np.uint8)
+    ids = np.full((height, width), len(kept_meshes), dtype=np.int64)
+    depth_out = np.zeros((height, width), dtype=np.uint16)
+    near_seen = far_seen = None
+    drawn = 0
+    triangle_count = sum(len(item) for item in tris)
+    if base:
+        x, y, z = np.concatenate(xs), np.concatenate(ys), np.concatenate(zs)
+        reach = float(np.abs(z).max()) or 1.0
+        near = max(reach * 1e-6, 1e-9)
+        cx, cy, cz, all_tris, all_labels = _clip_near(np, x, y, z, np.concatenate(tris), np.concatenate(labels), near)
+        safe = np.maximum(cz, near)
+        sx = big_w / 2 + focal * cx / safe
+        sy = big_h / 2 - focal * cy / safe
+        inverse = -1.0 / safe
+        depth = _depth_buffer(np, sx, sy, inverse, all_tris, big_w, big_h)
+        finite = np.isfinite(depth)
+        if finite.any():
+            tie = 1e-7 / float((-1.0 / depth[finite]).min())
+            front = _front_objects(np, sx, sy, inverse, all_tris, all_labels, depth, len(kept_meshes), tie)
+            at = slice(sample // 2, None, sample)
+            ids = front[at, at][:height, :width]
+            nearest = depth[at, at][:height, :width]
+            shown = np.isfinite(nearest)
+            if shown.any():
+                distance = -1.0 / nearest[shown]
+                near_seen, far_seen = float(distance.min()), float(distance.max())
+                span = far_seen - near_seen
+                scale = (far_seen - distance) / span if span > 0 else np.ones_like(distance)
+                depth_out[shown] = (1 + np.round(scale * (DEPTH_NEAREST - 1))).astype(np.uint16)
+            del front
+            # Visible feature edges, as the model view draws them, with the
+            # hiding tolerance taken at each sample's own distance.
+            padded = np.pad(depth, 1, mode="edge")
+            rows = np.maximum(np.maximum(padded[:-2], padded[1:-1]), padded[2:])
+            farthest = np.maximum(np.maximum(rows[:, :-2], rows[:, 1:-1]), rows[:, 2:])
+            del padded, rows
+            pairs = np.concatenate(edges)
+            za, zb = z[pairs[:, 0]], z[pairs[:, 1]]
+            pairs = pairs[(za >= near) | (zb >= near)]
+            ax, ay, az = x[pairs[:, 0]].copy(), y[pairs[:, 0]].copy(), z[pairs[:, 0]].copy()
+            bx, by, bz = x[pairs[:, 1]].copy(), y[pairs[:, 1]].copy(), z[pairs[:, 1]].copy()
+            for (px_, py_, pz_), (qx, qy, qz) in (((ax, ay, az), (bx, by, bz)), ((bx, by, bz), (ax, ay, az))):
+                cut = pz_ < near
+                t = (near - pz_[cut]) / (qz[cut] - pz_[cut])
+                px_[cut] = px_[cut] + t * (qx[cut] - px_[cut])
+                py_[cut] = py_[cut] + t * (qy[cut] - py_[cut])
+                pz_[cut] = near
+            ax, ay, av = big_w / 2 + focal * ax / az, big_h / 2 - focal * ay / az, -1.0 / az
+            bx, by, bv = big_w / 2 + focal * bx / bz, big_h / 2 - focal * by / bz, -1.0 / bz
+            # Only the part of an edge inside the frame is sampled: an edge
+            # near the eye can project far beyond it.
+            ax, ay, av, bx, by, bv, inside = _clip_to_frame(np, ax, ay, av, bx, by, bv, big_w, big_h)
+            ax, ay, av, bx, by, bv = ax[inside], ay[inside], av[inside], bx[inside], by[inside], bv[inside]
+            drawn = len(ax)
+            steps = np.ceil(np.maximum(np.abs(bx - ax), np.abs(by - ay))).astype(np.int64) + 1
+            steps = np.minimum(steps, 4 * (big_w + big_h))
+            budget = np.cumsum(steps)
+            begin = 0
+            while begin < drawn:
+                start = budget[begin - 1] if begin else 0
+                end = max(begin + 1, int(np.searchsorted(budget, start + _CHUNK_PIXELS, side="right")))
+                chunk = slice(begin, end)
+                begin = end
+                owner, step = _expand(np, steps[chunk])
+                edge = owner + chunk.start
+                t = step / np.maximum(steps[edge] - 1, 1)
+                px = np.floor(ax[edge] + (bx - ax)[edge] * t).astype(np.int64)
+                py = np.floor(ay[edge] + (by - ay)[edge] * t).astype(np.int64)
+                sv = av[edge] + (bv - av)[edge] * t
+                inside = (px >= 0) & (px < big_w) & (py >= 0) & (py < big_h)
+                px, py, sv = px[inside], py[inside], sv[inside]
+                # One and a half fine pixels at the sample's own distance z,
+                # in the buffer's -1/z: dz / z^2 with dz = 1.5 z / focal.
+                tolerance = _DEPTH_TOLERANCE * -sv / focal
+                seen = sv <= farthest[py, px] + tolerance
+                px, py = px[seen], py[seen]
+                line[py, px] = 0
+                line[py, np.minimum(px + 1, big_w - 1)] = 0
+                line[np.minimum(py + 1, big_h - 1), px] = 0
+    pixels = np.bincount(key_of_label[ids].reshape(-1), minlength=len(keys) + 1)[:len(keys)]
+    objects = np.bincount(key_of_label[:-1], minlength=len(keys))
+    legend = tuple({"key": key, "color": "#%02X%02X%02X" % tuple(int(c) for c in palette[index]),
+                    "objects": int(objects[index]), "pixels": int(pixels[index])}
+                   for index, key in enumerate(keys))
+    seen_labels = np.flatnonzero(np.bincount(ids.reshape(-1), minlength=len(kept_meshes) + 1)[:len(kept_meshes)])
+    line_image = Image.fromarray(line).reduce(sample) if sample > 1 else Image.fromarray(line)
+    return CameraPasses(
+        id_png=_png(palette[key_of_label[ids]], text), line_png=_png(line_image, text),
+        depth_png=_png(depth_out, text), width=width, height=height, legend=legend,
+        seen=tuple(sorted(kept_meshes[label].object_id for label in seen_labels)), near=near_seen, far=far_seen,
+        triangles=triangle_count, edges_drawn=drawn)
+
+
+def _camera_renderer_version() -> str:
+    """``RENDERER_VERSION`` for the camera passes: the source of what they read and draw, apart from the model view's."""
+
+    from monkeydiagram import sources
+
+    functions = (tessellate_shape, sources.read_elevation_source, sources.read_native_source, triangulate,
+                 clear_shape_triangulation, _welded, _expand, _coverage, _depth_buffer, _front_objects,
+                 _perspective_feature_edges, _clip_near, _clip_to_frame, _id_colour, _id_palette, _png, camera_passes)
+    digest = hashlib.sha256()
+    for function in functions:
+        digest.update(inspect.getsource(function).encode("utf-8"))
+    return f"camera-passes-{digest.hexdigest()[:12]}"
+
+
 #: Changes whenever the pixels this module draws for the same input change: derived from the source.
 RENDERER_VERSION = _renderer_version()
+#: The camera passes' own version, derived the same way.
+CAMERA_RENDERER_VERSION = _camera_renderer_version()

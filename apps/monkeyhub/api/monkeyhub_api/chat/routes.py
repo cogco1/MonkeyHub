@@ -145,4 +145,21 @@ def sessions_router(chats) -> APIRouter:
     def resolve_chat_permission(session_id: str, permission_id: str, body: ChatPermissionRequest):
         return chats.resolve_permission(session_id, permission_id, body)
 
+    @routes.post("/api/chat/sessions/{session_id}/skill-permissions", status_code=201)
+    def ask_skill_permission(session_id: str, body: dict):
+        """Ask the person in this running chat whether a skill may run, with the three permission buttons.
+
+        The chat tool asks this before an Agent's run of a version no one
+        always allowed, then reads the answer below.
+        """
+        title = str(body.get("title") or "")[:4000]
+        if not title:
+            raise HubFailure(422, "CHAT_PERMISSION_INVALID", "Say what is being asked.")
+        return {"permissionId": chats.request_skill_permission(session_id, title)}
+
+    @routes.get("/api/chat/sessions/{session_id}/skill-permissions/{permission_id}")
+    def read_skill_permission(session_id: str, permission_id: str, wait: float = Query(default=0, ge=0, le=170)):
+        """The person's answer: answered (with optionId), waiting, or withdrawn; waits up to ``wait`` seconds."""
+        return chats.skill_permission_answer(session_id, permission_id, wait)
+
     return routes
