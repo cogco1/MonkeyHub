@@ -87,6 +87,16 @@ class ClientTimingDto(BaseModel):
         return self
 
 
+class JobStepDto(BaseModel):
+    """One of a job's four steps, as its work last reported it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str = Field(description="generate | check | repair | save")
+    state: str = Field(description="pending | running | done | skipped | failed")
+    text: str | None = None
+
+
 class StudioEventDto(BaseModel):
     """One event on ``GET /api/events``."""
 
@@ -99,7 +109,7 @@ class StudioEventDto(BaseModel):
     at: str = Field(description="when the event was published, UTC ISO-8601")
     type: str = Field(
         description="candidate.queued | candidate.running | "
-        "candidate.succeeded | candidate.failed | validation.computed | "
+        "candidate.succeeded | candidate.failed | candidate.waiting | job.step | validation.computed | "
         "model_asset.registered | working_copy.option_added",
     )
     job_id: str | None = Field(alias="jobId", default=None)
@@ -108,6 +118,18 @@ class StudioEventDto(BaseModel):
     run_id: str | None = Field(alias="runId", default=None)
     wall_time_s: float | None = Field(alias="wallTimeS", default=None)
     error: str | None = Field(default=None)
+    lane: str | None = Field(default=None, description="on a job's events, the queue lane it runs in: parallel or exclusive")
+    waiting_for: str | None = Field(alias="waitingFor", default=None, description=(
+        "on a queued job's events, the run it waits for; null when it waits only for a free worker"))
+    waiting_reason: str | None = Field(alias="waitingReason", default=None)
+    title: str | None = Field(default=None, description="on a job's events, what a person calls the job, when it says")
+    steps: list[JobStepDto] | None = Field(default=None, description=(
+        "on a job's events, its four steps (generate, check, repair, save) once its work reported one; "
+        "empty until then"))
+    step: str | None = Field(default=None, description="on job.step, the step that changed")
+    step_state: str | None = Field(alias="stepState", default=None, description=(
+        "on job.step, that step's state: pending, running, done, skipped or failed"))
+    step_text: str | None = Field(alias="stepText", default=None, description="on job.step, a sentence a person can read")
     review_ready: bool | None = Field(
         alias="reviewReady",
         default=None,
@@ -123,7 +145,7 @@ class StudioEventDto(BaseModel):
 
 
 def to_dto(event: Mapping[str, Any]) -> StudioEventDto:
-    """Shape one published event for the wire."""
+    """Shape one published event for the wire: a job's lane and wait travel with it."""
 
     return StudioEventDto(
         seq=event["seq"],
@@ -135,6 +157,14 @@ def to_dto(event: Mapping[str, Any]) -> StudioEventDto:
         run_id=event.get("run_id"),
         wall_time_s=event.get("wall_time_s"),
         error=event.get("error"),
+        lane=event.get("lane"),
+        waiting_for=event.get("waiting_for"),
+        waiting_reason=event.get("waiting_reason"),
+        title=event.get("title"),
+        steps=None if event.get("steps") is None else [JobStepDto(**row) for row in event["steps"]],
+        step=event.get("step"),
+        step_state=event.get("step_state"),
+        step_text=event.get("step_text"),
         review_ready=event.get("review_ready"),
         blocked_by=event.get("blocked_by"),
     )

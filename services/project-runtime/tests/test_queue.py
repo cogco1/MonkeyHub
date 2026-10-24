@@ -21,7 +21,9 @@ from project_runtime.jobs import (
     RUNNING,
     SUCCEEDED,
     JobRegistry,
+    report_step,
 )
+from project_runtime.api.dto.events import to_dto
 from project_runtime.errors import StudioError
 
 
@@ -380,6 +382,62 @@ class FailureReleasesTheQueueTests(QueueTestCase):
 
 
 class JobKindTests(QueueTestCase):
+    def test_a_job_is_followed_in_four_steps_as_its_work_reports_them(self) -> None:
+        events = Recorder()
+        registry = JobRegistry(events, max_workers=1)
+        self.addCleanup(registry.shutdown)
+
+        def work() -> None:
+            report_step("generate", "running", "Building the model")
+            report_step("generate", "done")
+            report_step("check", "running", "Checking 131 conditions")
+
+        job = registry.submit(candidate_id="c-steps", proposal_id="p-steps", work=work, title="Remove four braces")
+        self.assertTrue(wait_until(lambda: registry.get(job.job_id).status == SUCCEEDED))
+        self.assertEqual([(row.name, row.state) for row in registry.get(job.job_id).steps],
+                         [("generate", "done"), ("check", "done"), ("repair", "pending"), ("save", "pending")],
+                         "a step still running when the work ends ends with it")
+        reported = events.of("job.step")
+        self.assertEqual([(event["step"], event["step_state"]) for event in reported],
+                         [("generate", "running"), ("generate", "done"), ("check", "running"), ("check", "done")])
+        self.assertEqual((reported[0]["title"], reported[0]["step_text"]), ("Remove four braces", "Building the model"))
+        wire = to_dto({**events.of("candidate.succeeded")[0], "seq": 1, "at": "now"}).model_dump(by_alias=True)
+        self.assertEqual((wire["lane"], wire["title"], [row["state"] for row in wire["steps"]]),
+                         (PARALLEL, "Remove four braces", ["done", "done", "pending", "pending"]))
+
+    def test_a_step_running_when_the_work_fails_fails_with_it(self) -> None:
+        events = Recorder()
+        registry = JobRegistry(events, max_workers=1)
+        self.addCleanup(registry.shutdown)
+
+        def work() -> None:
+            report_step("generate", "running")
+            raise ValueError("seat pack missing")
+
+        job = registry.submit(candidate_id="c-fails", proposal_id="p-fails", work=work)
+        self.assertTrue(wait_until(lambda: registry.get(job.job_id).status == "failed"))
+        self.assertEqual(registry.get(job.job_id).steps[0].state, "failed")
+        self.assertEqual(events.of("job.step")[-1]["step_state"], "failed")
+
+    def test_a_job_whose_work_reports_nothing_has_no_steps(self) -> None:
+        events = Recorder()
+        registry = JobRegistry(events, max_workers=1)
+        self.addCleanup(registry.shutdown)
+        report_step("generate", "running")  # outside a job, nothing happens
+        job = registry.submit(candidate_id="c-quiet", proposal_id="p-quiet", work=lambda: None)
+        self.assertTrue(wait_until(lambda: registry.get(job.job_id).status == SUCCEEDED))
+        self.assertEqual((registry.get(job.job_id).steps, events.of("job.step")), ((), []))
+        with self.assertRaises(ValueError):
+            registry.step(job.job_id, "render", "running")
+        with self.assertRaises(ValueError):
+            registry.step(job.job_id, "check", "almost")
+
+    def test_a_queued_job_says_on_the_wire_what_it_waits_for(self) -> None:
+        wire = to_dto({"seq": 1, "at": "now", "type": "candidate.waiting", "lane": EXCLUSIVE,
+                       "waiting_for": "c-export", "waiting_reason": EXCLUSIVE_REASON}).model_dump(by_alias=True)
+        self.assertEqual((wire["lane"], wire["waitingFor"], wire["waitingReason"]), (EXCLUSIVE, "c-export", EXCLUSIVE_REASON))
+        self.assertIsNone(wire["steps"])
+
     def test_a_run_keeps_its_published_event_names_and_another_kind_says_what_it_is(self) -> None:
         # A run is the job's own kind now (#294); its lifecycle events keep the names
         # the web client and the Hub relay read, and an export is named an export.

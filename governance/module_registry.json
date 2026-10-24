@@ -4849,7 +4849,8 @@
         "The read-only Worktree Graph: the Working Head and its line (its first-parent chain, oldest first, each step with its retained label, request, summary and Stage; a step's request is its admission's rawLanguage, else the words its run kept), after a return to an earlier step the later line the head left (the runs beyond it the head once stood on and those they were made through, along the branch moved onto last, #575), other accepted lines, running and interrupted candidate work with exact bases and declared read/write refs, retained results off the head's line and whether the StateRecord combine rule accepts them with the head, a conflicting one the line moved past and nobody continued or admitted being a draft the line superseded (#575), plus each drawing's latest revision as project_runtime.binding's representation-status projection reads it (what the Drawing tool says) and each render attempt's retained source state; each finished line's retained admission (admitted, rejected, superseded or none) and Study",
         "Kaiwen's retention rule (#575): which runs go to the project trash (plan_cleaning) - a draft the Worktree Graph names superseded, an attempt an admitted result replaced or its loop withdrew, a design change whose run never finished - and only off every kept line (the Working Head's, a Stage's, an admitted result's), never continued, admitted or rejected, no name a person saved (an agent's or any other caller's name goes with it into the trash) and no row a person chose, no execution's input, holding only what its execution wrote, and named by no retained record outside it but the admission that replaced it; moving them in order (clean_superseded), the trash read and restore (GET /api/trash, POST /api/trash/restore), the 30-day purge, and the sweeps at project open (after the index loads) and after each Continue on a thread of their own (RetentionSweeps)",
         "expiring superseded local recovery in the project's own runtime (prune_recovery over archflow.project.repository's prune_working_draft, its rule unchanged): first in every retention sweep and every 15 minutes while the project is open (RECOVERY_PRUNE_INTERVAL_S), the timer the Hub kept until ADR-012",
-        "relation_problems: the violated relations, then the unchecked ones, by relation id, from the run's retained relation reports, at most RELATION_PROBLEMS_SHOWN; a check that held on the pairs it measured but left a pair unmeasured is unchecked"
+        "relation_problems: the violated relations, then the unchecked ones, by relation id, from the run's retained relation reports, at most RELATION_PROBLEMS_SHOWN; a check that held on the pairs it measured but left a pair unmeasured is unchecked",
+        "following a job in four steps (#300): generate, check, repair and save, each pending, running, done, skipped or failed with a sentence; the work reports them with report_step from the worker thread it runs on, each change is a job.step event, a step still running when the work ends ends with it, and a job's events carry its lane, what it waits for, its title and its steps"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - monkeyarch.application.project_runner",
@@ -4917,6 +4918,10 @@
         "inspect_runtime",
         "GET /api/runtime",
         "JobRegistry.list",
+        "JobRegistry.step",
+        "JobStep",
+        "report_step",
+        "STEPS",
         "candidate_seats",
         "GET /api/worktrees",
         "worktree_graph",

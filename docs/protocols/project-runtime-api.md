@@ -1241,6 +1241,14 @@ as a sequence replays everything rather than silently skipping ahead.
 and closes as soon as the backlog drains — so a bounded read always terminates, even on a quiet
 process. Without `limit` the connection is held open and carries live events.
 
+A job's events (`candidate.queued` … `candidate.failed`, `candidate.waiting`, an export's
+`export.*`) carry its `lane`, while it is queued `waitingFor` and `waitingReason`, its `title`
+when its work gave one, and its `steps`: the four steps a person follows it by — `generate`,
+`check`, `repair`, `save` — each `pending`, `running`, `done`, `skipped` or `failed` with an
+optional sentence, empty until its work reports one. Each report is a `job.step` event naming
+the `step`, its `stepState` and `stepText`; a step still running when the work ends ends with
+it, `done` or `failed`. The steps live in this process's memory, like the job itself (#300).
+
 **Reserved.** The browser's `EventSource` cannot send an `Authorization` header, so an
 authenticated stream (§10.1) has no answer in v2. A minor version will name one — a bearer
 token on the stream request through a fetch reader, or a short-lived stream ticket — and until
