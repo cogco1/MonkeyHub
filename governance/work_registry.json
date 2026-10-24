@@ -162,7 +162,8 @@
             "apps/monkeyhub/web/test/commandPalette.browser.mjs",
             "apps/monkeyhub/web/test/commandPalette.test.ts",
             "apps/monkeyhub/web/test/commandTree.test.ts",
-            "apps/monkeyhub/web/test/designTree.browser.mjs"
+            "apps/monkeyhub/web/test/designTree.browser.mjs",
+            "tools/governance/archcheck.py"
           ],
           "depends_on": []
         },

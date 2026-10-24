@@ -1772,6 +1772,8 @@ def command_tree(registry: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
                 "shortcut": command.get("shortcut"),
                 "entries": _strings(command.get("entries")),
                 "args": _strings(command.get("args")),
+                # Only commands that act where they render carry the flag; the palette and Advanced tools leave them out.
+                **({"inPlace": True} if command.get("in_place") is True else {}),
             })
     return {"capabilities": capabilities, "commands": commands}
 

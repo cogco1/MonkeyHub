@@ -2148,7 +2148,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文25"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "view.markup_tools.text_cancel",
@@ -2168,7 +2169,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文24"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "view.markup_tools.text_delete",
@@ -2188,7 +2190,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文27"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "view.markup_tools.return_to_edit",
@@ -2295,7 +2298,8 @@ export const COMMAND_TREE: CommandTree = {
         "板80",
         "板83"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "markup.hand_to_ai.enter_crit",
@@ -2693,7 +2697,8 @@ export const COMMAND_TREE: CommandTree = {
         "图9",
         "图10"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "drawing.recipe.import_cancel",
@@ -2713,7 +2718,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "图11"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "drawing.recipe.follow_live",
@@ -2802,7 +2808,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "图20"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "drawing.recipe.revoke",
@@ -4487,7 +4494,8 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "design.go_to_step.candidate",
@@ -5154,7 +5162,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模104"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "component.inspect.copy",
@@ -5254,7 +5263,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模88"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "component.lock_params.lock",
@@ -5630,7 +5640,8 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "attention.queue.bulk_undo",
@@ -5648,7 +5659,8 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "attention.queue.answer_permission",
@@ -5762,7 +5774,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳89"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "chat.composer.stop",
@@ -5782,7 +5795,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳88"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "chat.composer.menu",
@@ -5823,7 +5837,8 @@ export const COMMAND_TREE: CommandTree = {
         "壳74",
         "壳82"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "chat.composer.topic",
@@ -5843,7 +5858,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳83"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "chat.composer.remove_topic",
@@ -5863,7 +5879,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳75"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "chat.composer.remove_images",
@@ -5883,7 +5900,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳77"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "chat.composer.remove_attachment",
@@ -5905,7 +5923,8 @@ export const COMMAND_TREE: CommandTree = {
       ],
       "args": [
         "file"
-      ]
+      ],
+      "inPlace": true
     },
     {
       "id": "chat.permission.choose",
@@ -5927,7 +5946,8 @@ export const COMMAND_TREE: CommandTree = {
       ],
       "args": [
         "optionId"
-      ]
+      ],
+      "inPlace": true
     },
     {
       "id": "chat.permission.cancel",
@@ -5947,7 +5967,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳53"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "chat.archive.toggle",
@@ -5969,7 +5990,8 @@ export const COMMAND_TREE: CommandTree = {
       ],
       "args": [
         "sessionId"
-      ]
+      ],
+      "inPlace": true
     },
     {
       "id": "chat.archive.view",
@@ -6009,7 +6031,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳71"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "chat.suggestion.accept",
@@ -6029,7 +6052,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳57"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "chat.suggestion.adjust",
@@ -6049,7 +6073,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳58"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "chat.suggestion.dismiss",
@@ -6069,7 +6094,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳59"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "project.create.new",
@@ -6204,7 +6230,8 @@ export const COMMAND_TREE: CommandTree = {
         "窗4",
         "窗6"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "project.create.add_existing_confirm",
@@ -6225,7 +6252,8 @@ export const COMMAND_TREE: CommandTree = {
         "窗8",
         "窗10"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "project.archive.export_confirm",
@@ -6246,7 +6274,8 @@ export const COMMAND_TREE: CommandTree = {
         "窗12",
         "窗14"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "project.archive.restore_confirm",
@@ -6268,7 +6297,8 @@ export const COMMAND_TREE: CommandTree = {
         "窗17",
         "窗20"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "project.archive.open_restored",
@@ -6288,7 +6318,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗18"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "view.conversation_history.back",
@@ -6488,7 +6519,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳51"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "view.conversation.jump_latest",
@@ -6508,7 +6540,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳67"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "view.tab.cancel",
@@ -6528,7 +6561,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳90"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "view.tab.layout",
@@ -7913,7 +7947,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模117"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "view.chat_drawer.open",
@@ -8073,7 +8108,8 @@ export const COMMAND_TREE: CommandTree = {
       ],
       "args": [
         "page"
-      ]
+      ],
+      "inPlace": true
     },
     {
       "id": "view.open_file.image",
@@ -8093,7 +8129,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳62"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "view.open_file.document",
@@ -8113,7 +8150,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳63"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "view.open_file.download",
@@ -8134,7 +8172,8 @@ export const COMMAND_TREE: CommandTree = {
         "壳64",
         "窗2"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.appearance.theme_system",
@@ -8364,7 +8403,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗48"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.appearance.theme",
@@ -8384,7 +8424,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗49"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.appearance.size",
@@ -8404,7 +8445,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗50"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.chat_model.change",
@@ -8424,7 +8466,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳68"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.chat_model.choose",
@@ -8465,7 +8508,8 @@ export const COMMAND_TREE: CommandTree = {
         "壳85",
         "壳86"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.chat_model.custom_cancel",
@@ -8485,7 +8529,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳87"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.chat_model.default_cli",
@@ -8505,7 +8550,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗52"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.chat_model.default_model",
@@ -8525,7 +8571,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗53"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.chat_model.default_custom",
@@ -8545,7 +8592,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗54"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.chat_provider.sign_in",
@@ -8567,7 +8615,8 @@ export const COMMAND_TREE: CommandTree = {
       ],
       "args": [
         "provider"
-      ]
+      ],
+      "inPlace": true
     },
     {
       "id": "preference.chat_provider.plan_provider",
@@ -8587,7 +8636,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗56"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.chat_provider.plan_url",
@@ -8607,7 +8657,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗57"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.secret.key",
@@ -8630,7 +8681,8 @@ export const COMMAND_TREE: CommandTree = {
       ],
       "args": [
         "credential"
-      ]
+      ],
+      "inPlace": true
     },
     {
       "id": "preference.secret.clear",
@@ -8653,7 +8705,8 @@ export const COMMAND_TREE: CommandTree = {
       ],
       "args": [
         "credential"
-      ]
+      ],
+      "inPlace": true
     },
     {
       "id": "preference.secret.get_link",
@@ -8676,7 +8729,8 @@ export const COMMAND_TREE: CommandTree = {
       ],
       "args": [
         "credential"
-      ]
+      ],
+      "inPlace": true
     },
     {
       "id": "preference.render_provider.provider",
@@ -8696,7 +8750,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗62"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.render_provider.model",
@@ -8716,7 +8771,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗63"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.render_provider.timeout",
@@ -8736,7 +8792,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗64"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.render_provider.check",
@@ -8756,7 +8813,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗67"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.workspace.projects_folder",
@@ -8776,7 +8834,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗69"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.workspace.library_project",
@@ -8796,7 +8855,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗70"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "preference.developer_mode",
@@ -8816,7 +8876,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗72"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "hub.update_check",
@@ -8857,7 +8918,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗83"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "hub.update_check_now",
@@ -8877,7 +8939,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗84"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "hub.update_patch",
@@ -8897,7 +8960,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗86"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "hub.update_auto",
@@ -8917,7 +8981,8 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗87"
       ],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "fab.prepare_parts.open",
@@ -9164,7 +9229,8 @@ export const COMMAND_TREE: CommandTree = {
       ],
       "args": [
         "notice"
-      ]
+      ],
+      "inPlace": true
     },
     {
       "id": "view.notice.dismiss",
