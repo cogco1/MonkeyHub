@@ -251,7 +251,7 @@
 .settings-nav>h2{padding:0 10px;color:var(--muted);font-size:var(--text-caption);font-weight:500;line-height:1.5}
 .settings-tabs{display:flex;flex-direction:column;gap:2px}
 .settings-tab{display:flex;align-items:center;gap:10px;width:100%;min-height:40px;padding:8px 10px;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--muted);font-size:var(--text-ui);text-align:left;cursor:pointer}
-.chat-shell .settings-tab svg{width:18px;height:18px}
+.settings-tab svg{width:18px;height:18px;flex:none}
 .settings-tab:hover{background:var(--panel-2);color:var(--ink)}
 .settings-tab[aria-selected=true]{background:var(--panel-2);color:var(--ink);font-weight:500}
 .settings-nav__status{margin-top:auto;padding:0 10px;color:var(--muted);font-size:var(--text-caption)}
