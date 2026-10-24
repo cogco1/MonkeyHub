@@ -93,6 +93,34 @@
         "tools/tests/test_state_file_command.py"
       ],
       "depends_on": []
+    },
+    {
+      "id": "GH-300",
+      "lanes": [
+        {
+          "id": "entry-rules",
+          "status": "active",
+          "branch": "claude/300-entry-rules",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-entry-rules",
+          "base_ref": "919bbf2af07d2ec7b60f71a09cd0229c0f551f7a",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "0-5a: ADR-014 and the 711-entry audit from the local line (B1 now reads the command tree as a view of module_registry capabilities), the Interface entries rules in AGENTS.md, CONTRIBUTING 10-12 and the PR template's 入口去向. Documentation only; merges on 10-27 after the paper freeze.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            ".github/pull_request_template.md",
+            "AGENTS.md",
+            "CONTRIBUTING.md",
+            "docs/README.md",
+            "docs/audits/hub-entries.md",
+            "docs/decisions/014-entries-earn-their-place.md",
+            "docs/decisions/README.md"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
