@@ -132,6 +132,47 @@
             "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts"
           ],
           "depends_on": []
+        },
+        {
+          "id": "codex-grant",
+          "status": "active",
+          "branch": "claude/300-b3-codex-grant",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-codex-grant",
+          "base_ref": "90f86afcc4330c50d3d01e4a0cf0ec4c55742b44",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "A4: a person answers once per project for what Codex asks in a conversation (a command, going online, the Hub's own tools) instead of once per call, and withdraws it in Settings. Stacked on claude/300-skill-guard (batch 3): that lane's work is in this branch, so its claim is dropped here and its files are claimed again by this lane. Merged with batch 3 after the paper relay.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat/acp_grants.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
+            "apps/monkeyhub/api/monkeyhub_api/settings/routes.py",
+            "apps/monkeyhub/api/monkeyhub_api/settings/skill_problems.py",
+            "apps/monkeyhub/api/monkeyhub_api/settings/store.py",
+            "apps/monkeyhub/api/monkeyhub_api/settings/tool_grants.py",
+            "apps/monkeyhub/api/tests/test_acp_chat.py",
+            "apps/monkeyhub/api/tests/test_acp_session.py",
+            "apps/monkeyhub/api/tests/test_skill_library.py",
+            "apps/monkeyhub/web/src/api/generated/index.ts",
+            "apps/monkeyhub/web/src/api/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/features/skills/SkillPermissions.tsx",
+            "apps/monkeyhub/web/src/features/skills/skillGrants.ts",
+            "apps/monkeyhub/web/src/features/skills/skills.css",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/skillPermissions.test.ts",
+            "apps/monkeyhub/web/test/skillRunSetting.test.ts",
+            "services/project-runtime/src/project_runtime/api/routes/skills.py",
+            "services/project-runtime/src/project_runtime/application/skill_library.py",
+            "services/project-runtime/src/project_runtime/application/skill_runs.py",
+            "services/project-runtime/tests/test_skill_library.py",
+            "services/project-runtime/tests/test_skill_runs.py"
+          ],
+          "depends_on": []
         }
       ]
     }

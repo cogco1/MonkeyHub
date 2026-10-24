@@ -3,8 +3,8 @@
 Their locations and JSON are frozen. Every installed version shares
 ``%APPDATA%\\MonkeyArch\\settings.json``, so a version rolled back to still reads
 what a newer one saved; ``<runtime root>/config/applications.json`` belongs to
-the one Hub runtime root that names it, and so does the ``skill-grants.json``
-beside it (``settings.skill_grants``).
+the one Hub runtime root that names it, and so does the ``skill-grants.json`` and
+``tool-grants.json`` beside it (``settings.skill_grants``, ``settings.tool_grants``).
 """
 
 from __future__ import annotations
@@ -69,6 +69,12 @@ def save_application_settings(runtime_root: Path, settings: ApplicationSettingsD
 
 def save_skill_grants(destination: Path, grants: BaseModel) -> None:
     """The skill grants beside the application configuration (``settings.skill_grants``), replaced in one step."""
+
+    _save_local_settings(destination, grants)
+
+
+def save_tool_grants(destination: Path, grants: BaseModel) -> None:
+    """The tool grants beside the application configuration (``settings.tool_grants``), replaced in one step."""
 
     _save_local_settings(destination, grants)
 
