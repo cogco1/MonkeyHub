@@ -84,6 +84,7 @@ import {
   readJobApiJobsJobIdGet,
   readRuntimeApiRuntimeGet,
   readSavedModelAnnotationsApiModelAnnotationsGet,
+  readSavedModelAnnotationHistoryApiModelAnnotationsHistoryGet,
   readWorkingCopiesApiWorkingCopiesGet,
   readProjectApiProjectGet,
   readProjectsApiProjectsGet,
@@ -501,8 +502,15 @@ export const createStudioClient = (connection: ServerConnection) => ({
     }));
   },
 
-  modelAnnotations(modelSource: ModelSourceDto): Promise<ModelAnnotationsDto> {
-    return call("GET /api/model-annotations", readSavedModelAnnotationsApiModelAnnotationsGet({ client: connection.client, query: modelSource }));
+  modelAnnotations(modelSource: ModelSourceDto, revisionSha256?: string): Promise<ModelAnnotationsDto> {
+    return call("GET /api/model-annotations", readSavedModelAnnotationsApiModelAnnotationsGet({ client: connection.client,
+      query: revisionSha256 === undefined ? modelSource : { ...modelSource, revisionSha256 } }));
+  },
+
+  modelAnnotationHistory(modelSource: ModelSourceDto): Promise<ModelAnnotationsDto[]> {
+    return call("GET /api/model-annotations/history", readSavedModelAnnotationHistoryApiModelAnnotationsHistoryGet({
+      client: connection.client, query: modelSource,
+    }));
   },
 
   saveModelAnnotations(body: ModelAnnotationsRequestDto): Promise<ModelAnnotationsDto> {

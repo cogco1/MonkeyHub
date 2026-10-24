@@ -20,6 +20,7 @@ import base64
 import binascii
 import hashlib
 import io
+import json
 import math
 import threading
 
@@ -34,7 +35,7 @@ from ..binding import ProjectBinding, record_kind
 
 from .intent_agent import DocumentVisual, Selection
 from .pick import PickRequest, resolve_pick
-from .projection import StateProjection
+from .projection import StateProjection, project_state
 from archflow.project.record_kinds import STUDIO_MODEL_ANNOTATIONS
 
 CIRCLE = "circle"
@@ -76,6 +77,7 @@ class Gesture:
     line_width: int | None = None
     camera: Mapping[str, object] | None = None
     screen_size: tuple[int, int] | None = None
+    font_size: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,6 +210,7 @@ class ModelAnnotationSnapshot:
     revision_sha256: str | None
     annotations: tuple[Mapping, ...] = ()
     comment: str = ""
+    facet_notes: tuple[Mapping[str, str], ...] = ()
 
 
 def _model_annotation_revisions(binding: ProjectBinding, source: ModelSource) -> dict[str, Mapping]:
@@ -225,21 +228,47 @@ def _model_annotation_revisions(binding: ProjectBinding, source: ModelSource) ->
 
 
 def read_model_annotations(binding: ProjectBinding, source: ModelSource, revision_sha256: str | None = None) -> ModelAnnotationSnapshot:
-    require_model_source(binding, source)
+    projection = project_state(binding, source.run_id)
+    require_model_source(binding, source, projection)
     revisions = _model_annotation_revisions(binding, source)
     revision = revision_sha256 or _latest_document_revision(revisions)
     if revision is not None and revision not in revisions:
         raise StudioError(404, "ANNOTATION_REVISION_NOT_FOUND", "This exact model source has no such annotation revision.")
     row = revisions.get(revision)
-    return ModelAnnotationSnapshot(binding.project_id, source, revision,
-                                   tuple(row["annotations"]) if row else (), row.get("comment", "") if row else "")
+    annotations = tuple(row["annotations"]) if row else ()
+    return ModelAnnotationSnapshot(binding.project_id, source, revision, annotations,
+                                   row.get("comment", "") if row else "", _model_facet_notes(projection, annotations))
+
+
+def list_model_annotations(binding: ProjectBinding, source: ModelSource) -> tuple[ModelAnnotationSnapshot, ...]:
+    """The existing immutable paper revisions, newest first, for this exact model."""
+
+    projection = project_state(binding, source.run_id)
+    require_model_source(binding, source, projection)
+    revisions = _model_annotation_revisions(binding, source)
+    revision = _latest_document_revision(revisions)
+    snapshots = []
+    seen = set()
+    while revision is not None:
+        if revision in seen:
+            raise StudioError(409, "ANNOTATION_CONFLICT", "The saved model annotations have a cyclic revision chain. Its ink has been retained.")
+        seen.add(revision)
+        row = revisions[revision]
+        snapshots.append(ModelAnnotationSnapshot(binding.project_id, source, revision,
+                                                 tuple(row["annotations"]), row.get("comment", ""),
+                                                 _model_facet_notes(projection, row["annotations"])))
+        revision = row.get("previousRevisionSha256")
+    if len(seen) != len(revisions):
+        raise StudioError(409, "ANNOTATION_CONFLICT", "The saved model annotations have disconnected revisions. Its ink has been retained.")
+    return tuple(snapshots)
 
 
 def save_model_annotations(
     binding: ProjectBinding, source: ModelSource, base_revision_sha256: str | None,
     annotations: Sequence[Mapping], comment: str,
 ) -> ModelAnnotationSnapshot:
-    require_model_source(binding, source)
+    projection = project_state(binding, source.run_id)
+    require_model_source(binding, source, projection)
     if len({row["id"] for row in annotations}) != len(annotations):
         raise StudioError(422, "ANNOTATION_INVALID", "Annotation ids must be distinct within this model source.")
     run = binding.load_run(source.run_id)
@@ -255,7 +284,8 @@ def save_model_annotations(
             run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
             record_kind=STUDIO_MODEL_ANNOTATIONS, payload=payload,
         )
-    return ModelAnnotationSnapshot(binding.project_id, source, ref.sha256, tuple(annotations), comment)
+    return ModelAnnotationSnapshot(binding.project_id, source, ref.sha256, tuple(annotations), comment,
+                                   _model_facet_notes(projection, annotations))
 
 
 def _document_page_source(binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int,
@@ -642,6 +672,8 @@ def read_gestures(
             facts.append(_annotation(gesture.kind, resolved, gesture))
         elif gesture.kind == RULER:
             facts.append(_ruler(resolved, gesture))
+        elif gesture.kind == TEXT:
+            facts.append(_text_note(resolved, gesture))
         facts.extend(_unresolved(gesture.kind, resolved))
     return GestureReading(
         facts=tuple(facts), keep_refs=tuple(keep_refs), target=target
@@ -815,6 +847,36 @@ def _ruler(resolved: Sequence[_Resolved], gesture: Gesture) -> str:
     where = ", ".join(subjects) if subjects else "nothing the record names"
     label = f" · label: {gesture.label}" if gesture.label else ""
     return f"ruler annotation on {where}{label}{_screen_shape(gesture)}"
+
+
+def _note_component(resolved: Sequence[_Resolved]) -> str | None:
+    # The pick resolver owns the binding. An unbound or ambiguous note remains
+    # paper text; proximity never invents a component or changes its facets.
+    components = {row.component_id for row in resolved if row.component_id is not None}
+    if len(components) == 1 and all(row.component_id is not None for row in resolved):
+        return next(iter(components))
+    return None
+
+
+def _text_note(resolved: Sequence[_Resolved], gesture: Gesture) -> str:
+    component = _note_component(resolved)
+    words = json.dumps((gesture.label or "").strip(), ensure_ascii=False)
+    if component is not None:
+        return f"description.note on component {component}: {words}{_screen_shape(gesture)}"
+    return f"text annotation with no single resolved component: {words}{_screen_shape(gesture)}"
+
+
+def _model_facet_notes(projection: StateProjection, annotations: Sequence[Mapping]) -> tuple[Mapping[str, str], ...]:
+    notes = []
+    for row in annotations:
+        if row.get("kind") != TEXT or not (words := (row.get("label") or "").strip()):
+            continue
+        component = _note_component([_resolve(projection, GestureHit(
+            hit.get("objectName"), hit.get("userStrings", {}), tuple(hit["world"]),
+        )) for hit in row.get("hits", ())])
+        if component is not None:
+            notes.append({"componentId": component, "key": "description.note", "value": words})
+    return tuple(notes)
 
 
 # How many unresolved object names one fact lists before it counts the rest:

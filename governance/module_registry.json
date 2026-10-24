@@ -1258,10 +1258,14 @@
             "label": "Text",
             "label_zh": "文字",
             "aliases": [
-              "text size"
+              "text size",
+              "text note",
+              "文字批注",
+              "短话"
             ],
             "channel": "front",
             "entries": [
+              "模67",
               "文14",
               "文20"
             ]
@@ -1311,7 +1315,8 @@
             "entries": [
               "模64",
               "文17"
-            ]
+            ],
+            "shortcut": "Ctrl+Z"
           },
           {
             "id": "view.markup_tools.redo",
@@ -1321,16 +1326,23 @@
             "entries": [
               "模65",
               "文18"
-            ]
+            ],
+            "shortcut": "Ctrl+Shift+Z"
           },
           {
             "id": "view.markup_tools.cancel",
-            "label": "Cancel tool",
-            "label_zh": "取消工具",
+            "label": "Exit tracing paper",
+            "label_zh": "退出描图纸",
             "surface": "modeling",
             "channel": "front",
             "entries": [
               "模66"
+            ],
+            "shortcut": "Esc",
+            "aliases": [
+              "Escape",
+              "exit tracing paper",
+              "退出描图纸"
             ]
           },
           {
@@ -1412,6 +1424,16 @@
             "entries": [
               "文13"
             ]
+          },
+          {
+            "id": "view.markup_tools.restore_paper",
+            "label": "Continue this paper",
+            "label_zh": "继续这张纸",
+            "surface": "modeling",
+            "args": [
+              "revisionSha256"
+            ],
+            "in_place": true
           }
         ]
       }
@@ -1562,6 +1584,13 @@
               "模63",
               "板11",
               "板67"
+            ],
+            "shortcut": "Ctrl+Shift+X",
+            "aliases": [
+              "clear tracing paper",
+              "clear all marks",
+              "清空描图纸",
+              "清空批注"
             ]
           }
         ]
@@ -11201,7 +11230,7 @@
         "the agent seam that compiles free text into a scalar sentence or a construction answer (a construction script, facets, parameters) (deterministic, codex subprocess, Anthropic Messages), or returns a design question or unsupported capability; the record sheet an agent may see, in construction terms (#419: for a design request the construction vocabulary and the model by geometry id with facets and the capabilities they unlock; numeric controls by geometry id; backend prose in construction words; no realisation name, record row or classification but facets)",
         "the receipt of a Studio model call: the request it was bound to, the provider's version and fingerprint, and how the call ended",
         "resolving a picked object to a component and element from its archflow:* user strings, and saying when it is unbound, unknown or stale",
-        "reading circle / arrow / keep / remove and freehand / line / ruler / arc annotations into facts the record can vouch for, retaining their screen control points, colour, line width, manual ruler label and recorded view as annotation context without granting geometry or execution authority",
+        "reading circle / arrow / keep / remove and freehand / line / ruler / arc / text annotations into facts the record can vouch for, retaining their screen control points, colour, line width, short label, text font size and recorded view; text with one resolved component is read as description.note in intent facts and read-only facetNotes on saved model annotations, without writing a model facet or granting geometry or execution authority",
         "the target resolver: which component and element a request is about, from the projection's component tree, an explicit pick and what the architect has rejected - never from the nearest similar string",
         "the action resolver: change_existing_value / declare_missing_control / clarify / unsupported, and the AuthoredControlDraft the second of those returns",
         "the four closed outcomes of one intent (COMPILED, NEEDS_CLARIFICATION, MISSING_EDITABLE_CONTROL, UNSUPPORTED) and their reason codes",
@@ -11363,9 +11392,11 @@
         "DocumentAnnotationRef",
         "DocumentAnnotationPage",
         "GET /api/model-annotations",
+        "GET /api/model-annotations/history",
         "PUT /api/model-annotations",
         "ModelAnnotationSnapshot",
         "read_model_annotations",
+        "list_model_annotations",
         "save_model_annotations",
         "require_document_model_sources",
         "require_document_comment_source",
@@ -11554,7 +11585,7 @@
         "2D points use the visible page with a top-left origin and x-right/y-down coordinates in [0,1]; lineWidth is a fraction of its shorter side, unaffected by zoom or DPI; page text has one top-left anchor, multiline label content and its own short-side-normalized fontSize, while legacy strokes omit that field and retain their serialized identity",
         "submitted document words and exact page references survive restart in the named run even when the intent needs clarification; their retained drawing association is not replaced by a later same-pixel revision, and saving documents or ink never moves HEAD",
         "viewing a work item is read-only; explicit selection changes only that item, leaves canonical HEAD and authored inputs unchanged, and is distinct from project issue or proposal endorsement",
-        "saved choices and model annotations form run-scoped immutable revision chains; stale saves and competing/incomplete chains are refused; process-local locks do not claim cross-process atomic CAS",
+        "saved choices and model annotations form run-scoped immutable revision chains; model annotation history reads that exact model source chain newest first without adding records; stale saves and competing/incomplete chains are refused; process-local locks do not claim cross-process atomic CAS",
         "a source association added later cannot retroactively authorize an older document comment or proposal",
         "only a successfully retained option addition emits working_copy.option_added; stale, duplicate and failed writes emit no addition event",
         "document intents require one edit visual matching the sole saved page reference; selected reference pages do not change the edit base or import historical comments; each PNG is at most 4 MiB and 2048 pixels on its longer side with registered visible-page aspect ratio, with at most 16 MiB total; validation does not prove client pixels were rendered from the source",

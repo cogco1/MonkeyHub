@@ -22,6 +22,8 @@ import { useCommandActions } from "../commands/CommandProvider";
 import { useT } from "../../i18n/useT";
 import { InlineDecision } from "../../notifications/cards/InlineDecision";
 import { usePreferences } from "../settings/preferences";
+import { useCommandActions } from "../commands/CommandProvider";
+import { COMMAND_TREE } from "../commands/tree.generated";
 import { useNoticeRegion } from "../../notifications/regions";
 import type { SceneInspection } from "../../workspaces/monkeyarch/viewer/sceneInspection";
 import {
@@ -245,6 +247,8 @@ export function Stage({
   canUndoGesture,
   canRedoGesture,
   onEraseGestures,
+  onReplaceGesture,
+  onStartPaper,
   modelAnnotations,
   annotationsReady,
   tracingPaperReview,
@@ -336,6 +340,8 @@ export function Stage({
   canUndoGesture: boolean;
   canRedoGesture: boolean;
   onEraseGestures(indices: readonly number[]): void;
+  onReplaceGesture?(index: number, gesture: GestureDto): void;
+  onStartPaper?(): boolean;
   modelAnnotations: ModelAnnotationsHandle | null;
   annotationsReady: boolean;
   tracingPaperReview?: { enabled: boolean; busy: boolean; sent: boolean; error: string | null; onSend(): void };
@@ -479,6 +485,7 @@ export function Stage({
   activeRef.current = active;
   const { developerMode, language } = usePreferences();
   const zh = language === "zh-CN";
+  const commandLabel = (id: string) => COMMAND_TREE.commands.find((command) => command.id === id)?.label[language] ?? id;
   const [annotationStyle, setAnnotationStyle] = useState<AnnotationStyle>({ color: "#e5534b", lineWidth: 2 });
   const [annotationCancel, setAnnotationCancel] = useState(0);
   const documentOpen = documentView.open;
@@ -492,6 +499,23 @@ export function Stage({
   const documentRunId = documentView.runId ?? editingBaseRunId;
   const [eraser, setEraser] = useState(false);
   const [annotationToolsOpen, setAnnotationToolsOpen] = useState(false);
+  const commitPendingInk = useRef<(() => void) | null>(null);
+  const paperSourceKey = `${loadedRunId}:${loadedShas.join(":")}`;
+  const [annotationSourceKey, setAnnotationSourceKey] = useState(paperSourceKey);
+  const tracingOpen = annotationSourceKey === paperSourceKey && (annotationToolsOpen || tool !== null || eraser);
+  useLayoutEffect(() => {
+    if (annotationSourceKey === paperSourceKey) return;
+    setAnnotationToolsOpen(false); setEraser(false); onTool(null);
+    setAnnotationSourceKey(paperSourceKey);
+  }, [annotationSourceKey, paperSourceKey, onTool]);
+  const exitTracingPaper = useCallback(() => {
+    commitPendingInk.current?.();
+    setAnnotationCancel((value) => value + 1);
+    setEraser(false);
+    onTool(null);
+    setAnnotationToolsOpen(false);
+    if (modelAnnotations?.ready) void modelAnnotations.save().then(() => modelAnnotations.refreshHistory()).catch(() => undefined);
+  }, [modelAnnotations, onTool]);
   // #352: Export and More in the bar hold what the view tools' panel held; one opens at a time.
   const [barMenu, setBarMenu] = useState<"export" | "more" | null>(null);
   // How this browser shows models: view state, like a pinned panel, not a Hub setting. The
@@ -1115,11 +1139,68 @@ export function Stage({
     stopMove();
     stopRotate();
     stopScale();
-    setAnnotationToolsOpen(false); setBarMenu(null); setVersionsOpen(false); setParameterLocksOpen(false);
+    if (tracingOpen) exitTracingPaper();
+    setBarMenu(null); setVersionsOpen(false); setParameterLocksOpen(false);
     onTool(null); setEraser(false); setMeasuring(false); stopMeasuring();
     model?.onTool?.("select");
     showSketch({ ...cancelledSketch(interaction.current.sketch), tool: next });
-  }, [onTool, model?.onTool, refuseLockedEdit, showSketch, stopMeasuring, stopPushPull, stopMove, stopRotate, stopScale]);
+  }, [onTool, model?.onTool, refuseLockedEdit, showSketch, stopMeasuring, stopPushPull, stopMove, stopRotate, stopScale, tracingOpen, exitTracingPaper]);
+  const paperSourceRef = useRef(modelAnnotations?.save);
+  paperSourceRef.current = modelAnnotations?.save;
+  const openTracingPaper = async () => {
+    chooseDrawingTool(null);
+    // Queued ink belongs to the old paper until its save has succeeded. A failed
+    // save reopens that draft instead of silently throwing it away for a blank.
+    const source = modelAnnotations?.save;
+    if (modelAnnotations?.ready && (modelAnnotations.dirty || modelAnnotations.saving || modelAnnotations.error)) {
+      try { await modelAnnotations.save(); } catch { /* Reopen the unsaved draft. */ }
+      if (paperSourceRef.current !== source || !activeRef.current) return false;
+    }
+    if (onStartPaper) onStartPaper();
+    else modelAnnotations?.startPaper();
+    setAnnotationToolsOpen(true);
+    onTool("freehand");
+    return true;
+  };
+  const clearTracingPaper = () => {
+    // The focused text editor commits on blur. All marks share one undo.
+    setAnnotationCancel((value) => value + 1);
+    onEraseGestures(gestures.map((_, index) => index));
+  };
+  const restoreTracingPaper = async (revision: string) => {
+    if (!modelAnnotations) return;
+    commitPendingInk.current?.();
+    const source = modelAnnotations.save;
+    try {
+      const paper = await modelAnnotations.restorePaper(revision);
+      if (paperSourceRef.current !== source || !activeRef.current) return;
+      const camera = paper.annotations[0]?.camera;
+      if (camera) viewportRef.current?.applyCamera({ ...camera, projection: camera.projection ?? "perspective", zoom: camera.zoom ?? 1 });
+      chooseDrawingTool(null);
+      setAnnotationToolsOpen(true);
+      onTool("freehand");
+    } catch { /* The existing annotation history status shows the failure. */ }
+  };
+  useEffect(() => {
+    if (versionsOpen) void modelAnnotations?.refreshHistory();
+  }, [versionsOpen, modelAnnotations?.refreshHistory]);
+  const tracingAvailable = () => active && !documentOpen && tracingOpen;
+  useCommandActions(active && !documentOpen ? {
+    "view.markup_tools.tracing_paper": { run: openTracingPaper,
+      available: () => !documentOpen && annotationsReady ? true : t("stage.annotations.loading") },
+    "view.markup_tools.cancel": { run: exitTracingPaper,
+      available: () => tracingAvailable() ? true : t("stage.tracingPaper.openFirst") },
+    "markup.clear": { run: clearTracingPaper,
+      available: () => tracingAvailable() && annotationsReady && gestures.length > 0 ? true : t("stage.tracingPaper.openFirst") },
+    "view.markup_tools.undo": { run: () => { setAnnotationCancel((value) => value + 1); onUndoGesture(); },
+      available: () => tracingAvailable() && canUndoGesture ? true : t("stage.tracingPaper.openFirst") },
+    "view.markup_tools.redo": { run: () => { setAnnotationCancel((value) => value + 1); onRedoGesture(); },
+      available: () => tracingAvailable() && canRedoGesture ? true : t("stage.tracingPaper.openFirst") },
+    "view.markup_tools.text": { run: async () => { if (!tracingOpen && !await openTracingPaper()) return; setEraser(false); onTool("text"); },
+      available: () => !documentOpen && annotationsReady ? true : t("stage.annotations.loading") },
+    "view.markup_tools.restore_paper": { run: ({ args }) => typeof args?.revisionSha256 === "string" && restoreTracingPaper(args.revisionSha256),
+      available: () => modelAnnotations?.ready ? true : t("stage.annotations.loading") },
+  } : {});
   const chooseMeasure = useCallback(() => {
     chooseDrawingTool(null);
     setMeasuring(true);
@@ -1217,10 +1298,28 @@ export function Stage({
     // armed, or the eraser. Not that strokes exist — those are undone from the
     // ink's own buttons, and a mark left on the model from an earlier round
     // does not get to take the keyboard away from the model for good.
-    busy: annotationsReady && (tool !== null || eraser),
+    busy: annotationsReady && tracingOpen,
   };
   const documentOpenRef = useRef(documentOpen);
   documentOpenRef.current = documentOpen;
+  // #614: one stable listener exits the whole paper before the model can take
+  // Escape. A paper's own text editor commits first; other editors keep the key.
+  const tracingPaperRef = useRef({ open: tracingOpen, exit: exitTracingPaper });
+  tracingPaperRef.current = { open: tracingOpen, exit: exitTracingPaper };
+  useEffect(() => {
+    const listen = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.isComposing || event.defaultPrevented || !activeRef.current ||
+          documentOpenRef.current || !tracingPaperRef.current.open) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && !target.closest(".annotate__text") && (target.isContentEditable ||
+          target.closest("input, textarea, select, [contenteditable], [role='dialog']"))) return;
+      if (document.querySelector("dialog[open], [aria-modal='true']")) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      tracingPaperRef.current.exit();
+    };
+    window.addEventListener("keydown", listen);
+    return () => window.removeEventListener("keydown", listen);
+  }, []);
   const cancelInkRef = useRef(setAnnotationCancel);
   cancelInkRef.current = setAnnotationCancel;
   useEffect(() => {
@@ -1270,10 +1369,11 @@ export function Stage({
       if (!keys || event.defaultPrevented) return;
       const target = event.target;
       if (target instanceof HTMLElement && (target.isContentEditable ||
-          target.closest("input, textarea, select, [contenteditable]") !== null)) {
+          target.closest("input, textarea, select, [contenteditable], [role='dialog']") !== null)) {
         // Someone is writing. Delete, Ctrl+Z and the rest belong to the text.
         return;
       }
+      if (document.querySelector("dialog[open], [aria-modal='true']")) return;
       // The drawings workspace owns its own keys while it is open.
       if (documentOpenRef.current) return;
       const control = event.ctrlKey || event.metaKey;
@@ -1465,9 +1565,9 @@ export function Stage({
   </span>;
   const sessionStatus = <>
     {modelAnnotations && <div className="stage-annotations-status" data-model-annotations-status={modelAnnotations.error ? "error" :
-      !modelAnnotations.ready ? "loading" : modelAnnotations.saving || modelAnnotations.dirty ? "saving" : "saved"}>
+      !modelAnnotations.ready ? "loading" : modelAnnotations.saving ? "saving" : modelAnnotations.dirty ? "draft" : "saved"}>
       {!modelAnnotations.error && <span role="status" className={modelAnnotations.ready ? undefined : "wait-late"}>{t(!modelAnnotations.ready ? "stage.annotations.loading" :
-        modelAnnotations.saving || modelAnnotations.dirty ? "stage.annotations.saving" : "stage.annotations.saved")}</span>}
+        modelAnnotations.saving ? "stage.annotations.saving" : modelAnnotations.dirty ? "stage.annotations.draft" : "stage.annotations.saved")}</span>}
       {modelAnnotations.error && <>
         <ErrorPanel error={modelAnnotations.error} what="/api/model-annotations" />
         {/* A conflict reads what is newer; a load or save that failed tries again. */}
@@ -1481,7 +1581,8 @@ export function Stage({
   </>;
   const toggleVersions = () => {
     if (!versionsOpen) onVersionsOpen?.();
-    setVersionsOpen((open) => !open); setAnnotationToolsOpen(false); setBarMenu(null); setParameterLocksOpen(false);
+    if (tracingOpen) exitTracingPaper();
+    setVersionsOpen((open) => !open); setBarMenu(null); setParameterLocksOpen(false);
     setInfoOpen(false);
   };
   // #352: Export and More take the place of the palette's view tools, one open at a time and,
@@ -1491,7 +1592,8 @@ export function Stage({
   const toggleBarMenu = (menu: "export" | "more") => {
     if (barMenu === menu) { setBarMenu(null); return; }
     setBarMenu(menu);
-    setAnnotationToolsOpen(false); setParameterLocksOpen(false); setMoreToolsOpen(false);
+    if (tracingOpen) exitTracingPaper();
+    setParameterLocksOpen(false); setMoreToolsOpen(false);
     if ((workspaceElement.current?.clientWidth ?? 0) <= 560) setVersionsOpen(false);
   };
   const workModelTitle = workModel && (workModel.refusal === "busy-elsewhere"
@@ -2068,7 +2170,7 @@ export function Stage({
           onDoubleClick={(event) => { event.preventDefault(); interaction.current.sketch.tool === "line" ? finishPath() : closePolygon(); }}
         />
       )}
-      <Annotate
+      {tracingOpen && <Annotate key={paperSourceKey}
         viewportRef={viewportRef}
         tool={annotationsReady ? tool : null}
         gestures={gestures}
@@ -2077,7 +2179,16 @@ export function Stage({
         cancelToken={annotationCancel}
         eraser={annotationsReady && eraser}
         onErase={onEraseGestures}
-      />
+        onReplaceGesture={onReplaceGesture}
+        commitPendingRef={commitPendingInk}
+        onClosePaper={modelAnnotations ? () => { void modelAnnotations.save().catch(() => undefined); } : undefined}
+      />}
+      {modelAnnotations?.error && !versionsOpen && <div className="annotate__note" role="alert">
+        <ErrorPanel error={modelAnnotations.error} what="/api/model-annotations" />
+        <button data-command={modelAnnotations.error.status === 409 ? "view.notice.read_latest" : "view.notice.retry"} data-command-arg="model_marks" type="button"
+          onClick={() => void (modelAnnotations.error?.status === 409 ? modelAnnotations.reload() : modelAnnotations.save()).catch(() => undefined)}>
+          {t(modelAnnotations.error.status === 409 ? "stage.annotations.reload" : "stage.annotations.retry")}</button>
+      </div>}
       {/* The shield preserves the stage's loading boundary while the translucent matte
           backing leaves the previous picture legible as context. */}
       {status === "loading" && <LoadingOverlay mode="stage" status={message} />}
@@ -2156,7 +2267,7 @@ export function Stage({
                   <span className="model-tools__more-sep" aria-hidden="true" />
                 </>}
                 <ModelToolButton data-command="view.markup_tools.tracing_paper" icon="annotate" showLabel label={t("stage.tools.annotate")} aria-expanded={annotationToolsOpen} aria-controls="annotation-tools"
-                  onClick={() => { setAnnotationToolsOpen((open) => !open); setBarMenu(null); setVersionsOpen(false); setParameterLocksOpen(false); setMoreToolsOpen(false); }} />
+                  disabled={!annotationsReady} onClick={() => { if (tracingOpen) exitTracingPaper(); else void openTracingPaper(); }} />
                 {onSketch && <span className="model-tools__more-sep" aria-hidden="true" />}
                 {onSketch && <label className="model-tools__more-plane">
                   <span>{t("stage.sketch.workPlane")}</span>
@@ -2187,19 +2298,19 @@ export function Stage({
           </div>
           {annotationToolsOpen && <div id="annotation-tools" className="viewtools viewtools--panel" role="group" aria-label={t("stage.tools.annotate")}>
             <ModelToolButton data-command="view.markup_tools.eraser" icon="erase" label={t("document.tool.eraser")} aria-pressed={eraser} disabled={!annotationsReady}
-              onClick={() => { const next = !eraser; chooseDrawingTool(null); setAnnotationToolsOpen(true); setAnnotationCancel((value) => value + 1); setEraser(next); }} />
+              onClick={() => { setAnnotationCancel((value) => value + 1); onTool(null); setEraser((value) => !value); }} />
             {/* #577: the whole tracing paper in one undoable step, through the eraser's own path. */}
-            <ModelToolButton data-command="markup.clear" icon="clear" label={t("stage.tools.clear.label")} disabled={!annotationsReady || gestures.length === 0}
-              onClick={() => { setAnnotationCancel((value) => value + 1); setEraser(false); onEraseGestures(gestures.map((_, index) => index)); }} />
+            <ModelToolButton data-command="markup.clear" icon="clear" showLabel shortcut="Ctrl+Shift+X" label={commandLabel("markup.clear")} disabled={!annotationsReady || gestures.length === 0}
+              onClick={clearTracingPaper} />
             <ModelToolButton data-command="view.markup_tools.undo" icon="undo" label={t("stage.tools.undo.label")} disabled={!canUndoGesture} onClick={onUndoGesture} />
             <ModelToolButton data-command="view.markup_tools.redo" icon="redo" label={t("document.redo")} disabled={!canRedoGesture} onClick={onRedoGesture} />
-            {(tool !== null || eraser) && <ModelToolButton data-command="view.markup_tools.cancel" icon="close" label={t("stage.tools.cancel.label")}
-              onClick={() => { setAnnotationCancel((value) => value + 1); setEraser(false); onTool(null); }} />}
+            <ModelToolButton data-command="view.markup_tools.cancel" icon="close" showLabel shortcut="Esc" label={commandLabel("view.markup_tools.cancel")}
+              onClick={exitTracingPaper} />
             {GESTURE_TOOLS.map((item) => (
               <button data-command={`view.markup_tools.${item.kind}`} key={item.kind} type="button" disabled={!annotationsReady} title={t(item.titleKey)}
                 aria-pressed={!eraser && tool === item.kind}
                 onClick={() => { setEraser(false); onTool(!eraser && tool === item.kind ? null : item.kind); }}>
-                {item.glyph} {t(item.labelKey)}
+                {item.glyph} {commandLabel(`view.markup_tools.${item.kind}`)}
               </button>
             ))}
             <span className="viewtools__sep" aria-hidden="true" />
@@ -2395,6 +2506,19 @@ export function Stage({
           <button data-command="design.go_to_step.close_versions" type="button" className="btn btn--small" onClick={() => setVersionsOpen(false)}>{t("stage.versions.close")}</button>
         </div>
         <div className="stage__versions-session">{sessionStatus}</div>
+        {modelAnnotations && <div className="versions" aria-label={t("stage.tracingPaper.history")}>
+          <strong>{t("stage.tracingPaper.history")}</strong>
+          {modelAnnotations.historyLoading && <p role="status">{t("stage.annotations.loading")}</p>}
+          {modelAnnotations.historyError && <ErrorPanel error={modelAnnotations.historyError} what="/api/model-annotations/history" />}
+          {!modelAnnotations.historyLoading && modelAnnotations.history.length === 0 && <p className="quiet">{t("stage.tracingPaper.emptyHistory")}</p>}
+          {modelAnnotations.history.map((paper) => <div className="vcard" key={paper.revisionSha256}>
+            <span>{paper.annotations.filter((mark) => mark.kind === "text").map((mark) => mark.label).join(" · ") || t("stage.tracingPaper.marks", { count: paper.annotations.length })}</span>
+            <button data-command="view.markup_tools.restore_paper" data-command-arg={paper.revisionSha256} type="button" className="btn btn--small"
+              disabled={!annotationsReady || modelAnnotations.historyLoading} onClick={() => paper.revisionSha256 && void restoreTracingPaper(paper.revisionSha256)}>
+              {commandLabel("view.markup_tools.restore_paper")}
+            </button>
+          </div>)}
+        </div>}
         <VersionsStrip
           design={designHistory} onOpenTree={onOpenTree}
           workingCopies={workingCopies} onOpenWorkingOption={onOpenWorkingOption}

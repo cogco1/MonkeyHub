@@ -2065,6 +2065,19 @@ button.chip:hover {
   font: inherit;
 }
 
+.annotate__text {
+  position: absolute;
+  z-index: 6;
+  width: 280px;
+  max-width: 80%;
+  padding: 0 2px;
+  border: 1px dashed var(--accent);
+  border-radius: 2px;
+  background: var(--overlay);
+  font-family: system-ui, sans-serif;
+  line-height: 1.2;
+}
+
 .marks {
   display: flex;
   flex-wrap: wrap;

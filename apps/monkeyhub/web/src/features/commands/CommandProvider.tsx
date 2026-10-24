@@ -181,14 +181,17 @@ export function CommandProvider({ children, tree = COMMAND_TREE }: { children: R
         setOpen((was) => !was);
         return;
       }
+      // Local shortcuts (Escape, ink undo/clear) require a live owner. They
+      // must not open another workspace or steal a dialog's editing keys.
+      if (event.defaultPrevented || open || document.querySelector("dialog[open], [aria-modal='true']")) return;
       const command = byShortcut.get(shortcut);
-      if (!command || stateOf(command).kind === "unavailable") return;
+      if (!command || stateOf(command).kind !== "ready") return;
       event.preventDefault(); event.stopPropagation();
       run(command.id, "shortcut");
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [byShortcut, run, stateOf]);
+  }, [byShortcut, run, stateOf, open]);
 
   const note = useCallback((id: string, source: UseSource) => { if (byId.has(id)) setUsage(recordUse(storage(), id, source)); }, [byId]);
   const value = useMemo<CommandsValue>(() => ({ register, run, note, stateOf, openPalette: () => setOpen(true), tree, usage }),

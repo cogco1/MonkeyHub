@@ -342,3 +342,118 @@ test("a missing PUT revision pauses the queue and preserves its unsaved draft", 
   assert.equal(model.getSnapshot().dirty, true);
   await flush(); assert.equal(model.getSnapshot().saving, false);
 });
+
+test("a new paper starts blank without overwriting the retained paper, and Undo stays on that paper", async (t) => {
+  const h = await harness(t);
+  const previous = reply(source, [ink("previous-paper")], "previous comment", revision(4));
+  t.mock.method(h.studio, "modelAnnotations", async () => previous);
+  const put = t.mock.method(h.studio, "saveModelAnnotations", async (body: ModelAnnotationsRequestDto) =>
+    reply(source, body.annotations, body.comment, revision(5)));
+  const model = h.controller.model(scope); await model.load();
+  assert.equal(model.startPaper(), true);
+  assert.deepEqual(model.getSnapshot().annotations, []);
+  assert.equal(model.getSnapshot().comment, "");
+  assert.equal(model.getSnapshot().dirty, false);
+  model.undo(); model.redo();
+  assert.deepEqual(model.getSnapshot().annotations, []);
+  await model.save();
+  assert.equal(put.mock.callCount(), 0, "opening and closing an untouched sheet creates no empty revision");
+  const line = ink("new-paper");
+  model.changeAnnotations([line]); model.undo();
+  await model.save();
+  assert.equal(put.mock.callCount(), 0, "undoing all new strokes does not replace the previous paper with a blank revision");
+  model.changeAnnotations([line]);
+  model.changeAnnotations([line, ink("second")]);
+  model.undo();
+  await flush();
+  assert.equal(put.mock.callCount(), 0, "individual strokes and Undo stay local until the paper is saved on exit");
+  const saved = await model.save();
+  assert.deepEqual(saved.annotations, [line], "exit saves the synchronously committed latest stroke");
+  assert.equal(put.mock.callCount(), 1, "a tracing session retains one revision");
+  assert.equal(put.mock.calls[0].arguments[0].baseRevisionSha256, revision(4));
+  model.changeAnnotations([]);
+  model.undo();
+  assert.deepEqual(model.getSnapshot().annotations, [line], "Clear is undoable on the new sheet");
+  model.undo(); model.undo();
+  assert.deepEqual(model.getSnapshot().annotations, [], "Undo cannot reach the previous sheet");
+  await model.save();
+});
+
+test("starting a paper during initial loading keeps it blank while the response supplies its CAS base", async (t) => {
+  const h = await harness(t);
+  const pending = deferred<ModelAnnotationsDto>();
+  t.mock.method(h.studio, "modelAnnotations", async () => pending.promise);
+  const put = t.mock.method(h.studio, "saveModelAnnotations", async (body: ModelAnnotationsRequestDto) =>
+    reply(source, body.annotations, body.comment, revision(6)));
+  const model = h.controller.model(scope);
+  const loading = model.load();
+  assert.equal(model.startPaper(), true);
+  pending.resolve(reply(source, [ink("last-session")], "", revision(5)));
+  await loading;
+  assert.deepEqual(model.getSnapshot().annotations, []);
+  assert.equal(model.getSnapshot().dirty, false);
+  model.changeAnnotations([ink("first-stroke")]);
+  await model.save();
+  assert.equal(put.mock.calls[0].arguments[0].baseRevisionSha256, revision(5));
+});
+
+test("history restores the chosen paper and camera without resetting the latest CAS base or crossing Undo", async (t) => {
+  const h = await harness(t);
+  const older = reply(source, [ink("older")], "older note", revision(2));
+  const latest = reply(source, [ink("latest")], "older note", revision(7));
+  const get = t.mock.method(h.studio, "modelAnnotations", async (_source: ModelSourceDto, sha?: string) => sha === revision(2) ? older : latest);
+  const historyGet = t.mock.method(h.studio, "modelAnnotationHistory", async () => [latest, older]);
+  const put = t.mock.method(h.studio, "saveModelAnnotations", async (body: ModelAnnotationsRequestDto) =>
+    reply(source, body.annotations, body.comment, revision(8)));
+  const model = h.controller.model(scope); await model.load();
+  await model.refreshHistory();
+  assert.deepEqual(model.getSnapshot().history, [latest, older]);
+  const restored = await model.restorePaper(revision(2));
+  assert.deepEqual(restored.annotations[0].camera, older.annotations[0].camera);
+  assert.deepEqual(get.mock.calls[1].arguments, [source, revision(2)]);
+  assert.deepEqual(model.getSnapshot().annotations, older.annotations);
+  assert.equal(model.getSnapshot().canUndo, false);
+  assert.equal(model.getSnapshot().dirty, false);
+  await model.save();
+  assert.equal(put.mock.callCount(), 0, "reopening history alone is not a new saved revision");
+  restored.annotations[0].camera.position[0] = 999;
+  assert.deepEqual(model.getSnapshot().annotations[0].camera, older.annotations[0].camera);
+  model.changeAnnotations(latest.annotations);
+  await model.save();
+  assert.equal(model.getSnapshot().dirty, false, "matching the latest retained contents acknowledges this sheet without another PUT");
+  assert.equal(put.mock.callCount(), 0);
+  model.changeAnnotations([...older.annotations, ink("continued")]);
+  await flush();
+  assert.equal(put.mock.callCount(), 0, "continuing a restored paper also saves only on exit");
+  await model.save();
+  assert.equal(put.mock.calls[0].arguments[0].baseRevisionSha256, revision(7));
+  assert.equal(historyGet.mock.callCount(), 1, "drawing does not re-fetch the whole revision chain");
+  model.undo(); model.undo();
+  assert.deepEqual(model.getSnapshot().annotations, older.annotations);
+  await model.save();
+});
+
+test("a failed save prevents a new paper from discarding the draft, while history errors do not pause saving", async (t) => {
+  const h = await harness(t);
+  t.mock.method(h.studio, "modelAnnotations", async () => reply());
+  t.mock.method(h.studio, "modelAnnotationHistory", async () => {
+    throw new h.StudioApiError({ status: 0, code: h.NETWORK_ERROR, detail: "history offline" });
+  });
+  let fail = true;
+  t.mock.method(h.studio, "saveModelAnnotations", async (body: ModelAnnotationsRequestDto) => {
+    if (fail) throw new h.StudioApiError({ status: 0, code: h.NETWORK_ERROR, detail: "save offline" });
+    return reply(source, body.annotations, body.comment, revision(1));
+  });
+  const model = h.controller.model(scope); await model.load();
+  model.changeAnnotations([ink("unsaved")]);
+  await assert.rejects(model.save(), { code: h.NETWORK_ERROR });
+  assert.equal(model.startPaper(), false);
+  assert.deepEqual(model.getSnapshot().annotations, [ink("unsaved")]);
+  fail = false; await model.save(); await flush();
+  await model.refreshHistory();
+  assert.equal(model.getSnapshot().historyError.code, h.NETWORK_ERROR);
+  assert.equal(model.getSnapshot().error, null);
+  assert.equal(model.startPaper(), true);
+  model.changeAnnotations([ink("next")]);
+  assert.deepEqual((await model.save()).annotations, [ink("next")]);
+});

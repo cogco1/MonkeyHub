@@ -299,6 +299,35 @@ class RemoveAndUnresolvedTests(GestureTestCase):
 
 
 class DrawingAnnotationTests(GestureTestCase):
+    def test_text_on_a_component_is_read_as_its_description_note(self) -> None:
+        status, payload = self.ask(
+            "set height to 0.8",
+            [gesture("text", hit("obj-portico-base"), screen=[[25, 30]], label="共享厨房", fontSize=18)],
+            targetComponentId="portico", elementId="portico-base",
+        )
+        self.assertEqual(status, 201, payload)
+        self.assertIn('description.note on component portico: "共享厨房"', payload["gestures"][0])
+        self.assertEqual(payload["proposal"]["protected"], [])
+        self.assertEqual(payload["proposal"]["target"]["elementId"], "portico-base")
+
+    def test_unbound_text_stays_paper_text_without_inventing_a_facet_target(self) -> None:
+        status, payload = self.ask(
+            "set height to 0.8",
+            [gesture("text", screen=[[25, 30]], label="这里更开放", fontSize=18)],
+            targetComponentId="portico", elementId="portico-base",
+        )
+        self.assertEqual(status, 201, payload)
+        self.assertIn("这里更开放", payload["gestures"][0])
+        self.assertNotIn("description.note", payload["gestures"][0])
+
+    def test_model_text_requires_a_single_anchor_short_words_and_a_valid_size(self) -> None:
+        for mutation in ({"label": " "}, {"label": "x" * 121}, {"screen": [[1, 2], [3, 4]]}, {"fontSize": 0}):
+            with self.subTest(mutation=mutation):
+                mark = gesture("text", screen=[[25, 30]], label="共享厨房", fontSize=18)
+                status, _ = self.ask("set height to 0.8", [{**mark, **mutation}],
+                                     targetComponentId="portico", elementId="portico-base")
+                self.assertEqual(status, 422)
+
     def test_new_drawing_kinds_are_carried_as_annotations_without_changing_selection(self) -> None:
         status, payload = self.ask(
             "set height to 0.8",

@@ -32,7 +32,7 @@ from ...application.gestures import (
     retain_document_comment, save_document_annotations,
     prepare_document_visuals,
     require_document_model_sources, require_document_comment_source,
-    read_model_annotations, save_model_annotations,
+    read_model_annotations, save_model_annotations, list_model_annotations,
 )
 from ...application.intent import (
     DeterministicIntentProvider,
@@ -95,6 +95,16 @@ from ..dto.artifacts import model_source_from, model_source_dto
 from .proposals import _require_bound_project, _stale_base
 
 router = APIRouter(tags=["intents"])
+
+
+@router.get("/model-annotations/history", response_model=list[ModelAnnotationsDto], response_model_by_alias=True)
+def read_saved_model_annotation_history(
+    request: Request, run_id: str = Query(alias="runId"), state_digest: str = Query(alias="stateDigest"),
+    asset_sha256: str = Query(alias="assetSha256"),
+) -> list[ModelAnnotationsDto]:
+    return [model_annotations_dto(snapshot) for snapshot in list_model_annotations(
+        bound_project(request.app.state), ModelSource(run_id, state_digest, asset_sha256),
+    )]
 
 
 @router.get("/model-annotations", response_model=ModelAnnotationsDto, response_model_by_alias=True)

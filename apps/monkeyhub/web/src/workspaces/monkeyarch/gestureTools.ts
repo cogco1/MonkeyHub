@@ -26,6 +26,7 @@ export const GESTURE_TOOLS: ReadonlyArray<{
     titleKey: "stage.tools.arrow.title",
   },
   { kind: "freehand", glyph: "✎", labelKey: "stage.tools.freehand.label", titleKey: "stage.tools.freehand.title" },
+  { kind: "text", glyph: "T", labelKey: "stage.tools.text.label", titleKey: "stage.tools.text.title" },
   { kind: "line", glyph: "╱", labelKey: "stage.tools.line.label", titleKey: "stage.tools.line.title" },
   { kind: "ruler", glyph: "↔", labelKey: "stage.tools.ruler.label", titleKey: "stage.tools.ruler.title" },
   { kind: "arc", glyph: "⌒", labelKey: "stage.tools.arc.label", titleKey: "stage.tools.arc.title" },
