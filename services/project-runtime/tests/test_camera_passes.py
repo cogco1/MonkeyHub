@@ -6,15 +6,18 @@ import base64
 from io import BytesIO
 from pathlib import Path
 import tempfile
+import pickle
 import time
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from PIL import Image
 
 from archflow.project.record_kinds import STUDIO_CAMERA_PASS, require_registered
+from monkeycad.formats.three_dm_inspector import ThreeDmInspectionError, ThreeDmInspectionErrorCode
 from archflow.project.repository import FilesystemProjectRepository
-from project_runtime.application import artifacts, drawings
+from project_runtime.application import artifacts, camera_passes, drawing_pool, drawings
 from project_runtime.binding import bound_project
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
@@ -115,6 +118,33 @@ class CameraPassRouteTest(unittest.TestCase):
         looking_nowhere = dict(self.camera, target=self.camera["position"])
         self.assertEqual(self.start(status=422, camera=looking_nowhere, size=[100, 100],
                                     sourceAsset=self.asset)["code"], "CAMERA_PASS_INVALID")
+
+
+
+class CameraPassPoolTest(CameraPassRouteTest):
+    """With the Runtime's drawing pool, a pass is read, meshed and drawn by a worker; the Runtime only retains it."""
+
+    def setUp(self):
+        super().setUp()
+        self.assertIsNotNone(drawing_pool.start(1))
+        self.addCleanup(drawing_pool.stop)
+
+    def test_a_worker_draws_the_pass_and_its_images_are_the_same(self):
+        here = patch.object(camera_passes, "run_camera_task", side_effect=AssertionError("drawn in the Runtime"))
+        with here:
+            pooled = self.finish(self.start(camera=self.camera, size=[400, 300], idBy="layer", sourceAsset=self.asset))
+        self.assertEqual(pooled["status"], "succeeded", pooled)
+        drawing_pool.stop()
+        local = self.finish(self.start(camera=self.camera, size=[400, 300], idBy="layer", sourceAsset=self.asset))
+        self.assertEqual((pooled["legend"], pooled["seenObjects"], pooled["triangles"]),
+                         (local["legend"], local["seenObjects"], local["triangles"]))
+        listed = {row["assetSha256"] for row in self.client.get("/api/documents", params={
+            "runId": self.asset["runId"]}).json()["documents"]}
+        self.assertEqual({row["assetSha256"] for row in pooled["documents"].values()} - listed, set())
+
+    def test_a_model_index_refusal_keeps_its_code_across_processes(self):
+        refusal = pickle.loads(pickle.dumps(ThreeDmInspectionError(ThreeDmInspectionErrorCode.INVALID_FILE, "bad")))
+        self.assertEqual((refusal.code, refusal.message), (ThreeDmInspectionErrorCode.INVALID_FILE, "bad"))
 
 
 if __name__ == "__main__":

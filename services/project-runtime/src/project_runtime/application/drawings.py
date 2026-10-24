@@ -39,7 +39,8 @@ from archflow.project.record_kinds import DESIGN_STAGE, SEAT_OCCT_EXECUTION, STU
 from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, record_ref_from_uri, require_identifier
 from monkeydiagram.documentation.sheet_layout import section_line, section_mark, view_labels, view_sheet_scene
 from monkeydiagram.drawing_runs import (
-    CUT_PLAN_KIND, DrawnView, freeze_model_axis_elevation, freeze_section_perspective, read_model_axis_elevation,
+    CUT_PLAN_KIND, DrawnView, freeze_model_axis_elevation, freeze_section_perspective, index_groups,
+    read_model_axis_elevation,
 )
 from monkeydiagram.projection.mesh_views import MeshViewError, mesh_line_view, mesh_pipeline, pixel_size, triangulate
 from monkeydiagram.projection.views import (
@@ -716,13 +717,23 @@ def load_drawing_source(binding: ProjectBinding, *, model_source: ModelSource | 
     return selected, source, receipt, verified
 
 
-def object_groups(binding: ProjectBinding, selected, source, object_ids, by: str) -> dict[str, str]:
-    """Each drawn object's layer path or material name, as the exact model asset's own index names it.
+def camera_source(binding: ProjectBinding, *, model_source: ModelSource | None = None,
+                  source_asset: dict[str, str] | None = None, source_stage_ref: str | None = None):
+    """The exact model a camera pass would draw, by its records alone: nothing is decoded here (#300).
 
-    A block member (a path of GUIDs) is looked up by its own GUID, then by its
-    instance's; an object the index does not name exactly once is grouped as
-    "unknown" rather than given a guessed layer or material.
+    Answers ``(selected, source)``: the model version or imported asset
+    selected as the drawing routes select it, and its exact source for a
+    drawing worker to read.
     """
+
+    selected, stage_ref = _selected_source(binding, source_stage_ref, model_source, source_asset)
+    source, _ = _complete_source(binding, selected, stage_ref, read_only=True, geometry=False)
+    return selected, source
+
+
+def object_groups(binding: ProjectBinding, selected, source, object_ids, by: str) -> dict[str, str]:
+    """Each drawn object's layer path or material name, as the exact model asset's own index names it
+    (``drawing_runs.index_groups``)."""
 
     if by not in ("layer", "material"):
         raise StudioError(422, "CAMERA_PASS_INVALID", "Group the ID image by object, layer or material.")
@@ -731,23 +742,7 @@ def object_groups(binding: ProjectBinding, selected, source, object_ids, by: str
         rows = inspect_three_dm_index(data)["objects"]
     except ThreeDmInspectionError as exc:
         raise StudioError(422, "MODEL_INDEX_UNAVAILABLE", exc.message) from exc
-    native = isinstance(source, NativeModelSource)
-    named: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        named.setdefault(row["object_id"] if native else row["name"], []).append(row)
-    groups = {}
-    for object_id in object_ids:
-        parts = object_id.split("/") if native else [object_id]
-        candidates = [parts[-1], parts[0]] if native else parts
-        row = next((named[key.lower() if native else key][0] for key in candidates
-                    if len(named.get(key.lower() if native else key, ())) == 1), None)
-        if row is None:
-            groups[object_id] = "unknown"
-        elif by == "layer":
-            groups[object_id] = row.get("layer_path") or "unknown"
-        else:
-            groups[object_id] = (row.get("material") or {}).get("name") or "no material"
-    return groups
+    return index_groups(rows, object_ids, by, native=isinstance(source, NativeModelSource))
 
 
 def _worn_materials(binding, model_source: ModelSource, source, object_ids) -> dict[str, dict[str, Any]]:

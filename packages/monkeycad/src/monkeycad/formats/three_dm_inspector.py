@@ -52,6 +52,10 @@ class ThreeDmInspectionError(RuntimeError):
         self.code = code
         self.message = bounded_message
 
+    def __reduce__(self):
+        # Raised in a drawing worker, it reaches the Runtime with its code.
+        return type(self), (self.code, self.message)
+
     def to_dict(self) -> dict[str, str]:
         return {
             "schema": self.SCHEMA,

@@ -4548,14 +4548,24 @@
             "id": "view.shell.workbench",
             "label": "Back to the old shell",
             "label_zh": "回旧版",
-            "aliases": ["old interface", "workbench", "旧界面", "工作台"],
+            "aliases": [
+              "old interface",
+              "workbench",
+              "旧界面",
+              "工作台"
+            ],
             "entries": []
           },
           {
             "id": "view.shell.attention",
             "label": "Back to the new shell",
             "label_zh": "回新版",
-            "aliases": ["new interface", "attention shell", "新界面", "新版"],
+            "aliases": [
+              "new interface",
+              "attention shell",
+              "新界面",
+              "新版"
+            ],
             "entries": []
           },
           {
@@ -9066,7 +9076,11 @@
         "Drawer",
         "run_draw_task",
         "verify_draw_source",
-        "Retaining"
+        "Retaining",
+        "CameraTask",
+        "CameraResult",
+        "run_camera_task",
+        "index_groups"
       ],
       "depends_on": [
         "archflow.project.ports",
@@ -9075,7 +9089,9 @@
         "archflow.project.repository",
         "archflow.project.version_refs",
         "monkeycad.occt",
-        "monkeydiagram.rendering.svg"
+        "monkeydiagram.rendering.svg",
+        "monkeycad.formats",
+        "monkeydiagram.projection.mesh_views"
       ],
       "invariants": [
         "nothing is written before the source verified, the frame checked and the projection and both renderings succeeded",
@@ -10350,7 +10366,8 @@
         "select_drawing_source",
         "tree_model_sources",
         "DrawingPool",
-        "drawing_sources"
+        "drawing_sources",
+        "camera_source"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -11946,7 +11963,9 @@
         "monkeydiagram.projection.mesh_views",
         "project_runtime.binding",
         "project_runtime.documents",
-        "project_runtime.shell"
+        "project_runtime.shell",
+        "monkeycad.formats",
+        "monkeydiagram.drawing_runs"
       ],
       "invariants": [
         "the three images come from one depth buffer and line up pixel for pixel",
