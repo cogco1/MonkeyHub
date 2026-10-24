@@ -10,7 +10,8 @@
  */
 
 import type { StudioApiError } from "../api/project-runtime/client";
-import { MISSING_EDITABLE_CONTROL, NETWORK_ERROR, TRANSPORT_ERROR, UNSUPPORTED_REQUEST } from "../api/project-runtime/error";
+import { asStudioApiError, MISSING_EDITABLE_CONTROL, NETWORK_ERROR, TRANSPORT_ERROR, UNSUPPORTED_REQUEST } from "../api/project-runtime/error";
+import { currentFailureWords } from "./failureWords";
 import { BilingualText } from "../i18n/BilingualText";
 import { useT } from "../i18n/useT";
 import { usePreferences, type Language } from "../features/settings/preferences";
@@ -55,7 +56,7 @@ export function BilingualProse({ source }: { source: string }) {
 
 type FailureKind =
   | "network" | "version" | "crash" | "stale" | "project" | "base" | "pending" | "rejected"
-  | "sectionMisses" | "sectionEye" | "section"
+  | "invariant" | "timeout" | "sectionMisses" | "sectionEye" | "section"
   | "drawingFont" | "drawingEmpty" | "drawingSource" | "drawing"
   | "unsupported" | "write" | "record"
   | "notFound" | "tooLarge" | "conflict" | "invalid" | "server" | "unknown";
@@ -79,6 +80,14 @@ const FAILURES: Record<FailureKind, Record<Language, FailureCopy>> = {
   crash: {
     "zh-CN": { reason: "这部分界面出错，已经停止。", next: "用下面的按钮重新载入。" },
     en: { reason: "This part of the screen stopped after an error.", next: "Reload it with the button below." },
+  },
+  invariant: {
+    "zh-CN": { reason: "这个项目的记录有一处前后不一致，这次改动没能记下来。", next: "交给 AI 修好它，或撤销这次改动。" },
+    en: { reason: "A record in this project does not agree with itself, so this change could not be recorded.", next: "Ask the AI to fix it, or undo this change." },
+  },
+  timeout: {
+    "zh-CN": { reason: "这一步等得太久，没有完成。", next: "稍后重试；如果一直这样，重启 MonkeyHub。" },
+    en: { reason: "This step took too long and did not finish.", next: "Try again in a moment. If it keeps happening, restart MonkeyHub." },
   },
   stale: {
     "zh-CN": { reason: "这一步基于的版本已不是最新。", next: "在最新版本上再做一次。" },
@@ -179,11 +188,22 @@ const SEMANTIC_EDIT_NEXT: Record<Language, string> = {
  */
 const FETCH_FAILED = /failed to fetch|networkerror|load failed|fetch failed/i;
 
-function failureKind(error: StudioApiError): FailureKind {
-  const { code, status } = error;
-  if (code === NETWORK_ERROR || (code === TRANSPORT_ERROR && status === 0 && FETCH_FAILED.test(error.detail))) return "network";
+/** What every place that shows a refusal needs of it: the service's code and words, and the HTTP status when it had one. */
+export interface FailureLike {
+  readonly code: string;
+  readonly detail: string;
+  readonly status?: number;
+}
+
+function failureKind(error: FailureLike): FailureKind {
+  const { code } = error;
+  // The Hub's own errors carry no status, only a code, and for a bare refusal that code is `HTTP_<status>`.
+  const status = error.status ?? Number(/^HTTP_(\d{3})$/.exec(code)?.[1] ?? 0);
+  if (code === NETWORK_ERROR || code === "HUB_UNAVAILABLE" || (code === TRANSPORT_ERROR && status === 0 && FETCH_FAILED.test(error.detail))) return "network";
   if (code === "CLIENT_CRASH") return "crash";
   if (code.startsWith("PROTOCOL_")) return "version";
+  if (/seat '|invariant|owns components/i.test(error.detail) || /INVARIANT/.test(code)) return "invariant";
+  if (/TIMEOUT|TIMED_OUT/.test(code) || status === 504 || status === 408) return "timeout";
   if (code === "CANDIDATE_REJECTED") return "rejected";
   if (code === "CANDIDATE_RUNNING" || code === "CANDIDATE_NOT_READY" || code === "CANDIDATE_NOT_FINISHED") return "pending";
   if (code === "SECTION_PLANE_MISSES_MODEL") return "sectionMisses";
@@ -196,7 +216,7 @@ function failureKind(error: StudioApiError): FailureKind {
   if (code.startsWith("DRAWING_")) return "drawing";
   if (code.endsWith("PROJECT_MISMATCH") || code === "EDITING_PROJECT_CHANGED") return "project";
   if (code === "EDITING_BASE_UNAVAILABLE" || code === "WORKING_DRAFT_SOURCE_CHANGED") return "base";
-  if (code.includes("STALE") || code.endsWith("_CHANGED")) return "stale";
+  if (code.includes("STALE") || code.endsWith("_CHANGED") || code.endsWith("_MOVED")) return "stale";
   // The client also files its own local preconditions under UNSUPPORTED_REQUEST,
   // with no status; only the server's answer means the change itself.
   if (code === MISSING_EDITABLE_CONTROL || (code === UNSUPPORTED_REQUEST && status > 0)) return "unsupported";
@@ -207,7 +227,7 @@ function failureKind(error: StudioApiError): FailureKind {
   if (status === 413) return "tooLarge";
   if (status === 409) return "conflict";
   if (status === 400 || status === 422) return "invalid";
-  if (status >= 500) return "server";
+  if (status >= 500 || /_UNREADABLE$|_UNAVAILABLE$/.test(code)) return "server";
   return "unknown";
 }
 
@@ -225,6 +245,48 @@ function boardSourceFailure(error: StudioApiError, what: string | undefined, lan
       : "This drawing's saved model could not be opened. Your feedback was not sent; the original instruction is kept below.";
   }
   return null;
+}
+
+/** The one sentence and the one next step for a refusal, in the person's language; never the service's own words. */
+export function plainFailure(error: FailureLike, language: Language): FailureCopy {
+  return FAILURES[failureKind(error)][language];
+}
+
+/**
+ * Whatever failed, as the sentence a notice or a line of status can carry: what happened and what to do, in the
+ * reader's language. The service's code and words are added in developer mode only. For code that builds text outside
+ * a component; inside one, use PlainFailure.
+ */
+export function plainFailureText(cause: unknown): string {
+  const { language, developerMode } = currentFailureWords();
+  const error = asStudioApiError(cause);
+  const copy = plainFailure(error, language);
+  // An unnamed failure points at details only a panel has; a line of text just says to try again.
+  const next = failureKind(error) === "unknown" ? (language === "zh-CN" ? "再试一次。" : "Try again.") : copy.next;
+  return `${copy.reason} ${next}${developerMode ? ` (${error.code}: ${error.detail})` : ""}`;
+}
+
+/**
+ * A refusal where there is no room for a whole panel: the sentence and the next step, in plain words. The service's
+ * code and words are for developer mode, folded, as in the panel. Use it wherever a refusal would otherwise print
+ * `error.detail`.
+ */
+export function PlainFailure({ error, className, lead }: { error: FailureLike; className?: string; lead?: string }) {
+  const t = useT();
+  const { developerMode, language } = usePreferences();
+  const copy = plainFailure(error, language);
+  // A failure the Hub cannot name has only the service's words to go on, so they stay folded for whoever wants them.
+  const details = developerMode || failureKind(error) === "unknown";
+  return (
+    <span className={`plain-failure${className ? ` ${className}` : ""}`}>
+      {lead && <>{lead} </>}{copy.reason} {copy.next}
+      {details && <details key={`${error.code}:${error.detail}`} className="card__details" open={developerMode}>
+        <summary>{t("common.technicalDetails")}</summary>
+        <span className="error-panel__code">{error.code}</span>{" "}
+        <span lang="en" translate="no">{error.detail}</span>
+      </details>}
+    </span>
+  );
 }
 
 export function ErrorPanel({

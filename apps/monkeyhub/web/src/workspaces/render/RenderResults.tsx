@@ -9,6 +9,7 @@ import { useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
 import { asStudioApiError } from "../../api/project-runtime/client";
 import type { RenderCameraDto, RenderJobDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { usePreferences } from "../../features/settings/preferences";
+import { plainFailureText } from "../../app/ErrorPanel";
 import { useT } from "../../i18n/useT";
 import { ResultActions } from "../../features/results/ResultActions";
 import { findSource, pageSource, type PageSource } from "../monkeyboard/boardScene";
@@ -34,7 +35,7 @@ export function useDocumentImage(image: SourceDocumentDto | undefined, active: b
         catch { throw new Error("The retained image could not be decoded."); }
         if (live) setLoaded({ key, url: objectUrl, error: null });
       })
-      .catch((cause) => { if (live) setLoaded({ key, url: null, error: asStudioApiError(cause).detail }); });
+      .catch((cause) => { if (live) setLoaded({ key, url: null, error: plainFailureText(cause) }); });
     return () => { live = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [studio, key, active]);
   // A newly selected item must never display the previous item's bytes while reading.

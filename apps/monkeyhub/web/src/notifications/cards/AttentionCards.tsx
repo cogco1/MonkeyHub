@@ -4,6 +4,7 @@ import { useCommands } from "../../features/commands/CommandProvider";
 import { usePreferences } from "../../features/settings/preferences";
 import type { MessageKey } from "../../i18n/messages.en";
 import { useT } from "../../i18n/useT";
+import { PlainFailure } from "../../app/ErrorPanel";
 import { openCard } from "../openChat";
 import { dismissCard, laterCard, queueSnapshot, reopenCard, resolveCard, subscribeQueue, undoCard, type QueueFailure } from "../queue";
 import { answersKey, chosenOption, COMPARE_DECIDE, comparedRuns, isPending, needsWords, orderedOptions, say } from "./cardText";
@@ -117,7 +118,7 @@ function CardFrame({ card, project, fresh = false, compact = false, comparing = 
     {card.state === "done" && <p className="attention-card__status">{chosen
       ? t(card.resolution?.by === "machine" ? "cards.handledForYou" : "cards.chosen", { option: say(chosen.label, chosen.labelZh, language) })
       : t("cards.done")}</p>}
-    {failure && <p className="attention-card__failure" role="alert">{failure.detail}</p>}
+    {failure && <p className="attention-card__failure" role="alert"><PlainFailure error={failure} /></p>}
     <footer className="attention-card__foot">
       {!comparing && <Opens refs={card.opens} cardId={card.id} />}
       <span className="attention-card__queue">

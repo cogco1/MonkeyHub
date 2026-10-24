@@ -142,7 +142,7 @@ import {
 } from "../workspaces/monkeyarch/viewer/ThreeDmViewport";
 import { semanticObjectNames } from "../workspaces/monkeyarch/viewer/modelDisplay";
 import { AppShell } from "./AppShell";
-import { ErrorPanel } from "./ErrorPanel";
+import { ErrorPanel, plainFailure, plainFailureText } from "./ErrorPanel";
 import { EVIDENCE_PINNED_KEY, type EvidenceTab } from "./evidence";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
 import { LoadingOverlay } from "./LoadingOverlay";
@@ -326,7 +326,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const t = useT();
   const viewportOpened = useRef(active);
   viewportOpened.current ||= active;
-  const { developerMode } = usePreferences();
+  const { developerMode, language } = usePreferences();
   const transcript = useTranscript();
   const { append, remove: removeEntry, noteJobStatus: noteTranscriptStatus } = transcript;
   const pushNotice = useCallback(
@@ -379,7 +379,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         setDocumentView((current) => ({ ...current, open: false }));
         onReturnToBoard();
       }
-      catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
+      catch (cause) { setHistoryError(plainFailureText(cause)); }
       finally { leavingToBoard.current = false; }
     })();
   }, [onReturnToBoard]);
@@ -398,7 +398,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         if (live) setDocumentView({ open: true, mounted: true, runId: documentSource.runId,
           sourceSha: documentSource.assetSha256, revisionRef: documentSource.revisionRef,
           pageIndex: documentSource.pageIndex });
-      } catch (cause) { if (live) setHistoryError(asStudioApiError(cause).detail); }
+      } catch (cause) { if (live) setHistoryError(plainFailureText(cause)); }
     })();
     return () => { live = false; };
   }, [documentSource]);
@@ -740,7 +740,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       const accepted = histories.flatMap((history) => history.stages.map((stage) => stage.modelSource));
       setAcceptedHistory({ history: designHistory, sources: accepted });
     })()
-      .catch((cause) => { if (current) setHistoryError(asStudioApiError(cause).detail); });
+      .catch((cause) => { if (current) setHistoryError(plainFailureText(cause)); });
     return () => { current = false; controller.abort(); };
   }, [designHistoryEnabled, designHistory, project?.projectId]);
   const retainedCandidates = useMemo(() => {
@@ -940,7 +940,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       refreshLocalModel();
     } catch (cause) {
       recoveryFailure.current = draftKey;
-      setHistoryError(t("stage.sync.recoveryFailed", { reason: asStudioApiError(cause).detail }));
+      setHistoryError(t("stage.sync.recoveryFailed", { reason: plainFailureText(cause) }));
     }
   }, [workingDraft?.localDraft, draftKey, draftSource?.stateDigest, loadedArtifact?.runId, modelLoading, ensureLocalModel, refreshLocalModel, append, t]);
   // Serialize this workspace's recovery writes; every write still uses P036 CAS
@@ -980,7 +980,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   }, [autosaveEnabled, studio, refreshLocalModel, queueWorkingDraftWrite, t]);
   /** Say an automatic save failed on the draft itself; the next successful save takes it back. */
   const autosaveFailed = useCallback((local: LocalModelSession, cause: unknown) => {
-    local.error = local.autosaveError = t("stage.sync.autosaveFailed", { reason: asStudioApiError(cause).detail });
+    local.error = local.autosaveError = t("stage.sync.autosaveFailed", { reason: plainFailureText(cause) });
     refreshLocalModel();
   }, [refreshLocalModel, t]);
   useEffect(() => {
@@ -1067,7 +1067,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       append({ kind: "system", text: `Tracing Paper review sent to Board · ${review.fileName}` });
     } catch (cause) {
       if (sameModelSource(currentViewSourceRef.current, modelSource)) {
-        setTracingPaperSend({ busy: false, sent: false, error: asStudioApiError(cause).detail });
+        setTracingPaperSend({ busy: false, sent: false, error: plainFailureText(cause) });
       }
     } finally {
       tracingPaperSending.current = false;
@@ -1093,8 +1093,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       append({
         kind: "system",
         ...systemText([
-          { kind: "technical", text: error.code },
-          { kind: "prose", text: ` · ${error.detail}` },
+          { kind: "prose", text: plainFailure(error, language).reason },
+          ...(developerMode ? [{ kind: "technical" as const, text: ` · ${error.code}: ${error.detail}` }] : []),
         ]),
       });
     }
@@ -1245,7 +1245,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     versionRefreshHandled.current = versionRefreshRequest;
     void loadArtifacts(true);
     void refreshWorkingCopies().catch(() => { /* The existing choices remain usable. */ });
-    void refreshWorkingDraft().catch((cause) => setHistoryError(asStudioApiError(cause).detail));
+    void refreshWorkingDraft().catch((cause) => setHistoryError(plainFailureText(cause)));
   }, [versionRefreshRequest, session.status, changingBase, artifacts.status, project?.projectId, loadArtifacts, refreshWorkingCopies, refreshWorkingDraft]);
 
 
@@ -1743,7 +1743,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (outcome === "undone") setFollowNudge((value) => value + 1);
       else setFollowNotice({ ...notice, id: ++followNoticeIds.current, state: outcome, undo: null });
     }, (cause) => {
-      setFollowNotice({ ...notice, id: ++followNoticeIds.current, state: "failed", undo: null, reason: asStudioApiError(cause).detail });
+      setFollowNotice({ ...notice, id: ++followNoticeIds.current, state: "failed", undo: null, reason: plainFailureText(cause) });
     }).finally(() => setFollowUndoing(false));
   }, [project?.projectId, studio]);
   useEffect(() => {
@@ -2504,7 +2504,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     if (historyBusy) return;
     setHistoryBusy(true); setHistoryError(null);
     try { await openDesignStage(await operation()); }
-    catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
+    catch (cause) { setHistoryError(plainFailureText(cause)); }
     finally { setHistoryBusy(false); }
   };
   const selectDesignBranch = async (branchId: string) => {
@@ -2514,7 +2514,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       const head = history.branches.find((branch) => branch.branchId === branchId)?.headStageRef;
       const stage = history.stages.find((item) => item.stageRef === head);
       if (stage) await openDesignStage(stage, branchId);
-    } catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
+    } catch (cause) { setHistoryError(plainFailureText(cause)); }
     finally { setHistoryBusy(false); }
   };
   const forkDesignBranch = async (stage: DesignStageDto, branchId: string) => {
@@ -2523,7 +2523,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     try {
       await studio.forkBranch({ projectId: project.projectId, branchId, parentBranch: designHistory.branchId, stageRef: stage.stageRef });
       await openDesignStage(stage, branchId);
-    } catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
+    } catch (cause) { setHistoryError(plainFailureText(cause)); }
     finally { setHistoryBusy(false); }
   };
   const combineDesignCandidates = async (candidateIds: string[]) => {
@@ -2534,7 +2534,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       const result = await studio.combineCandidates({ projectId: project.projectId, candidateIds });
       if (autoShowRef.current === preview) preview.candidateId = result.candidateId;
       append({ kind: "candidate", candidateId: result.candidateId, jobId: result.jobId, proposalId: null, status: result.status });
-    } catch (cause) { if (autoShowRef.current === preview) autoShowRef.current = null; setHistoryError(asStudioApiError(cause).detail); }
+    } catch (cause) { if (autoShowRef.current === preview) autoShowRef.current = null; setHistoryError(plainFailureText(cause)); }
     finally { setHistoryBusy(false); }
   };
 
@@ -2996,7 +2996,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     } catch (cause) {
       if (!stillCurrent()) return;
       const error = asStudioApiError(cause);
-      setParameterLockError(error.detail);
+      setParameterLockError(plainFailureText(error));
       recoverFromStaleBase(error);
       append({ kind: "refusal", error, what: "POST /api/proposals/parameter-locks" });
     } finally { setParameterLockBusy(false); }
@@ -3063,7 +3063,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       commitLocalCommand({ kind: "delete", elementId: deletableElementId });
       setPicked(null); setSelection(null); setDirectError(null);
       viewportRef.current?.highlight(null);
-    } catch (cause) { setDirectError(asStudioApiError(cause).detail); }
+    } catch (cause) { setDirectError(plainFailureText(cause)); }
   }, [canDeleteModel, deletableElementId, commitLocalCommand, refuseViewedEdit]);
 
   const applyDirectModelAction = useCallback((action: DirectModelAction) => {
@@ -3084,7 +3084,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         setSelection({ componentId: picked.componentId, elementId: copyElementId });
       }
       setDirectError(null); setArtifactError(null);
-    } catch (cause) { setDirectError(asStudioApiError(cause).detail); }
+    } catch (cause) { setDirectError(plainFailureText(cause)); }
   }, [canDeleteModel, deletableElementId, pushPullTarget, commitLocalCommand, picked, refuseViewedEdit]);
 
   // The saved base a finished Sync is still writing, per draft: Record edits and
@@ -3122,7 +3122,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (!accepted) { session.synced = pending.snapshot; session.pending = null; }
       await retainLocalModel(session, !unsynced(session));
     } catch (cause) {
-      session.error = asStudioApiError(cause).detail;
+      session.error = plainFailureText(cause);
     } finally {
       if (!pending.attempt.accepted) { session.busy = false; setModelSyncBusy(false); }
       refreshLocalModel();
@@ -3175,7 +3175,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         let adopted = false;
         if (quiet) {
           try { adopted = await adopt(); }
-          catch (cause) { session.error = asStudioApiError(cause).detail; refreshLocalModel(); }
+          catch (cause) { session.error = plainFailureText(cause); refreshLocalModel(); }
         }
         try {
           // Not adopted into the view, the batch still becomes the saved base without
@@ -3185,7 +3185,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         } catch (cause) {
           // The saved base could not take the batch: its recovery keeps its exact
           // source and synced commands, so reopening still shows the edits.
-          session.error = t("stage.sync.baseNotSaved", { reason: asStudioApiError(cause).detail });
+          session.error = t("stage.sync.baseNotSaved", { reason: plainFailureText(cause) });
           refreshLocalModel();
           await recovered(retainLocalModel(session));
           return;
@@ -3237,7 +3237,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const recordAndRetry = useCallback(async (retry: () => Promise<unknown>) => {
     setRecordingEdits(true); setBaseNotice(null);
     try { await recordEdits(); }
-    catch (cause) { setBaseNotice(t("stage.record.failed", { reason: asStudioApiError(cause).detail })); return; }
+    catch (cause) { setBaseNotice(t("stage.record.failed", { reason: plainFailureText(cause) })); return; }
     finally { setRecordingEdits(false); }
     setRecordRetry(null);
     await retry();
@@ -3246,7 +3246,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const recordDocumentIntent = useCallback(async () => {
     setRecordingEdits(true); setDocumentIntentNotice(null);
     try { await recordEdits(); }
-    catch (cause) { setDocumentIntentNotice(t("stage.record.failed", { reason: asStudioApiError(cause).detail })); return; }
+    catch (cause) { setDocumentIntentNotice(t("stage.record.failed", { reason: plainFailureText(cause) })); return; }
     finally { setRecordingEdits(false); }
     continueDocumentIntent();
   }, [continueDocumentIntent, recordEdits, t]);
@@ -3687,8 +3687,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
               ? t("loading.startingSession")
               : (
                   <>
-                    {t("loading.readingBinding")} ·{" "}
-                    <code lang="en">GET /api/project</code>
+                    {t("loading.readingBinding")}
+                    {developerMode && <> · <code lang="en">GET /api/project</code></>}
                   </>
                 )
           }
@@ -3838,7 +3838,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
                 levels: draftSnapshot?.levels ?? draftProjection?.levels ?? [], onApply: command => {
                   if (modelNavigationBusy || refuseViewedEdit()) return false;
                   try { commitLocalCommand(command); setDirectError(null); return true; }
-                  catch (cause) { setDirectError(asStudioApiError(cause).detail); return false; }
+                  catch (cause) { setDirectError(plainFailureText(cause)); return false; }
                 } } : null,
             }}
             viewportRef={viewportRef}
@@ -3868,7 +3868,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             onDocumentView={(next) => {
               void (async () => {
                 try { await documentSaveRef.current?.(); setDocumentView(next); }
-                catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
+                catch (cause) { setHistoryError(plainFailureText(cause)); }
               })();
             }}
             documentModelSources={modelSources}
@@ -3909,7 +3909,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
                 // The person names this version here, so the save says they did (#575).
                 void studio.workingDraft().then((current) => studio.savePersonsVersion({ projectId: project.projectId,
                   runId, label: label || undefined, baseRevisionSha256: current.revisionSha256 ?? null }))
-                  .then(() => refreshWorkingDraft()).catch((cause) => setHistoryError(asStudioApiError(cause).detail))
+                  .then(() => refreshWorkingDraft()).catch((cause) => setHistoryError(plainFailureText(cause)))
                   .finally(() => setHistoryBusy(false));
               },
               busy: historyBusy || changingBase || selectingWorkingCopy || modelLoading || proposalBusy || candidateBusy ||

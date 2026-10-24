@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createProjectWorkspaceFixture } from "./projectWorkspaceFixture.mjs";
+import { assertPlainScreen } from "./plainScreen.mjs";
 
 // The attention shell (?shell=attention) over the real built Hub: the projects column with what
 // waits on the architect, the Attention, Board and Model tabs over the same open surfaces, the
@@ -256,7 +257,11 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 if (shots) await mkdir(shots, { recursive: true });
 const errors = [];
-const shoot = async (page, name) => { if (shots) await page.screenshot({ path: path.join(shots, `${name}.png`) }); };
+/** Every checkpoint of the walkthrough: the screen carries no raw service error, and (when asked) a picture is kept. */
+const shoot = async (page, name) => {
+  await assertPlainScreen(page, name);
+  if (shots) await page.screenshot({ path: path.join(shots, `${name}.png`) });
+};
 const sidePage = async (page, label) => {
   await page.locator(".attention-shell__search").click();
   await page.locator("dialog.command-palette[open] input").fill(label);

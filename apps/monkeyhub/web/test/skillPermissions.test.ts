@@ -126,12 +126,14 @@ test("withdrawing posts to that grant's route and reads the grants again", async
   assert.equal(state().revoking, null);
 });
 
-test("a refused withdrawal is shown in the Hub's words", async (t) => {
+test("a refused withdrawal is shown in plain words, not the Hub's", async (t) => {
   const { actions, state, render } = await harness(t, { status: 409, body: { code: "SKILL_GRANTS_UNREADABLE", detail: "The skill grants file is damaged." } });
   await actions.load();
   await actions.revoke("g-blender");
   assert.deepEqual(state().revokeError, { grantId: "g-blender", error: { code: "SKILL_GRANTS_UNREADABLE", detail: "The skill grants file is damaged." } });
-  assert.ok(render().includes("The skill grants file is damaged."));
+  const html = render();
+  assert.ok(html.includes("The project service ran into a problem and did not finish this step."));
+  assert.ok(!html.includes("The skill grants file is damaged."), "the service's own words stay off the screen");
 });
 
 const BROKEN: Problem[] = [

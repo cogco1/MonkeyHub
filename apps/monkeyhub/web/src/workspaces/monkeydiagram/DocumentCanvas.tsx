@@ -5,7 +5,7 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
 import { asStudioApiError, type StudioApiError } from "../../api/project-runtime/client";
 import type { DocumentAnnotationRefDto, DocumentCommentDto, DocumentGestureDto, DocumentPageDto, DocumentTracingCalibrationDto, DocumentVisualInputDto, ModelSourceDto, SourceDocumentDto } from "../../api/project-runtime/generated";
-import { ErrorPanel } from "../../app/ErrorPanel";
+import { ErrorPanel, PlainFailure } from "../../app/ErrorPanel";
 import { startClientTiming, type ClientTimingSpan } from "../../app/clientTiming";
 import { useT } from "../../i18n/useT";
 import { InlineDecision } from "../../notifications/cards/InlineDecision";
@@ -978,7 +978,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
             onClick={() => void generateSheet()}>{t(sheetBusy ? "document.drawingGenerating" : "document.drawingGenerate")}</button>
           {sheetBusy && <p role="status">{t("document.drawingGeneratingHint")}</p>}
           {stylesError && <ErrorPanel error={stylesError} what={t("document.drawingGenerate")} />}
-          {sheetError && <p className="document-drawing-styles__error" role="alert">{sheetError.detail}</p>}
+          {sheetError && <p className="document-drawing-styles__error" role="alert"><PlainFailure error={sheetError} /></p>}
           {stylesError && <AutoRetry failure={stylesError} data-command="view.notice.retry" data-command-arg="drawing_styles" retry={() => setStylesRetry((value) => value + 1)}>{t("document.drawingStylesRetry")}</AutoRetry>}
         </section>}
         <label htmlFor="document-comment">{t("document.comment")}</label>

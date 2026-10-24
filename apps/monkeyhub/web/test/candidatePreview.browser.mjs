@@ -1292,7 +1292,7 @@ try {
   await step("failed acceptance preserves the preview; successful acceptance appends S1 on main", async () => {
     const accept = cmd(page, "stage.accept.next");
     await accept.waitFor(); acceptFailure = true; await accept.click();
-    await until(snapshot, (value) => value.historyError?.includes("Candidate kept"), "Acceptance failure was hidden");
+    await until(snapshot, (value) => /no longer current/.test(value.historyError ?? "") && !value.historyError.includes("DESIGN_HEAD_MOVED"), "Acceptance failure was hidden");
     await rendered(historyA.candidateId); assert.equal(stages.size, 1);
     acceptFailure = false; await accept.click();
     await until(snapshot, (value) => value.history?.stages.length === 2, "Accepted candidate did not become S1");
@@ -1408,7 +1408,7 @@ try {
     assert.equal(await page.locator('[data-preview-candidate="history-b"]').count(), 0,
       "Cold candidate classification must wait for the accepted sources from every branch");
     historyGate.resolve();
-    await until(snapshot, (value) => value.historyError?.includes("Other branch history unavailable."), "The branch history failure was hidden");
+    await until(snapshot, (value) => /ran into a problem/.test(value.historyError ?? "") && !value.historyError.includes("Other branch history unavailable."), "The branch history failure was hidden");
     assert.equal(await page.locator('[data-preview-candidate="history-a"]').count(), 0,
       "A failed other-branch read must not turn the accepted main model into a candidate");
     assert.deepEqual(unselectedStateReads(), [], "A failed branch history read must not fall back to projecting unselected candidates");

@@ -12,6 +12,7 @@ import { FabPage } from "./FabPage";
 import { ChatShell, type HubSettings } from "./ChatShell";
 import { CommandProvider } from "./features/commands/CommandProvider";
 import { chooseShell, useShellLayout } from "./app/shellLayout";
+import { plainFailure } from "./app/ErrorPanel";
 import { AttentionHost } from "./notifications/AttentionHost";
 import { queueChanged } from "./notifications/queue";
 
@@ -134,7 +135,7 @@ function ErrorMessage({ issue, language }: { issue: Issue | null; language: Lang
     return () => { cancelled = true; };
   }, [issue?.detail, language]);
   if (!issue) return null;
-  return <div className="error-message" role="alert"><p>{language === "zh-CN" ? knownErrors[issue.code] ?? translated ?? issue.detail : issue.detail}</p>{developer && <details><summary>{copy[language].details}</summary><code>{issue.code}</code><p>{translated ?? issue.detail}</p></details>}</div>;
+  return <div className="error-message" role="alert"><p>{language === "zh-CN" ? knownErrors[issue.code] ?? plainFailure(issue, language).reason : issue.detail}</p>{developer && <details><summary>{copy[language].details}</summary><code>{issue.code}</code><p>{translated ?? issue.detail}</p></details>}</div>;
 }
 
 // Settings save themselves: a choice at once, typed text after this pause.
