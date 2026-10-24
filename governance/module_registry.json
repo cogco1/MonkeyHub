@@ -11120,7 +11120,8 @@
         "the Candidate Pool read for the Design Tree: admitted Candidates and their Studies from admission records and from legacy facts that already prove admission (a committed Stage's run, a retained Exploration's non-base option, an accepted episode's produced run), with lineage-derived continuedFrom and acceptedStageRef and Working Head membership",
         "the attributable, revisioned rejection, archival/restoration and endorsement of an exact retained Candidate or Stage; this changes no design position",
         "the one-call revision (revise over RevisionPorts, POST /api/revisions): base, keep decisions protected, a touched rejected option, conditions in reach that no check can verify, the build, the read-back and comparison, validation, admission and Continue, in that order, answered as landed, admitted, problems, needs_question or refused; every step is an existing route or function",
-        "reading page marks (a circle, outline, stroke or arrow on a drawing or a model view's object-ID image) into the components and elements they cover, with how much of each lies in the mark and why a mark has no clear target, deterministically and without a model call or write"
+        "reading page marks (a circle, outline, stroke or arrow on a drawing or a model view's object-ID image) into the components and elements they cover, with how much of each lies in the mark and why a mark has no clear target, deterministically and without a model call or write",
+        "the edit log: each retained candidate change along a run's line read again against its exact source record, as element and parameter edits with numeric before, after and direction, and gathered per field; a reading, never a new record"
       ],
       "does_not_own": [
         "running the proposal - project_runtime.candidate",
@@ -11356,7 +11357,11 @@
         "subjects_of",
         "MarkReading",
         "read_model_marks",
-        "hit_subjects_of"
+        "hit_subjects_of",
+        "edit_log",
+        "edits_between",
+        "by_target",
+        "EditStep"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -11503,7 +11508,8 @@
         "services/project-runtime/tests/test_indexed_reads.py",
         "services/project-runtime/tests/test_revision_transaction.py",
         "tests/integration/test_capability_registry.py",
-        "services/project-runtime/tests/test_markup.py"
+        "services/project-runtime/tests/test_markup.py",
+        "services/project-runtime/tests/test_edit_log.py"
       ],
       "notes": "ADR-001's record, section 2.1, makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -11544,7 +11550,8 @@
         "tools/benchmarks/benchmark_visual_observation.py",
         "tools/project/export_drawing_recipe.py",
         "services/project-runtime/src/project_runtime/application/revision_transaction.py",
-        "services/project-runtime/src/project_runtime/application/markup.py"
+        "services/project-runtime/src/project_runtime/application/markup.py",
+        "services/project-runtime/src/project_runtime/application/edit_log.py"
       ]
     },
     {
@@ -13518,7 +13525,9 @@
         "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
         "Carrying out a card's answer as the person who chose it (#300, attention/actions.py): Continue onto a run and its undo, archiving and restoring candidates, combining a result with the head, answering a conversation's permission or suggestion, sending the person's reply to the conversation, applying a prepared update and reading a notice; \"all as recommended\" with one undo. The producers (attention/producers.py) that write results, permissions, suggestions, design-loop questions, failed operations and updates as cards. AttentionHub (attention/hub.py) gives the executor its ports on the Hub (the runtime forward, the chat store, the updater), reconciles a project's cards a moment after its events settle, and publishes attention/changed under the project's runtime id.",
         "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
-        "the change list an agent proposes from Board marks: its items (marks, the architect's words, the reading, components touched and kept, unsure, extra, ticked), checked against the Runtime's mark readings (an item citing an unclear mark is unsure; only an extra may touch what no cited mark lies on); an unsure item becomes a which-one question card, and the approval of ticked sure items names the card and items and carries only the architect's words"
+        "the change list an agent proposes from Board marks: its items (marks, the architect's words, the reading, components touched and kept, unsure, extra, ticked), checked against the Runtime's mark readings (an item citing an unclear mark is unsure; only an extra may touch what no cited mark lies on); an unsure item becomes a which-one question card, and the approval of ticked sure items names the card and items and carries only the architect's words",
+        "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
+        "guess rules over the Runtime's edit log: the same element field or parameter changed the same way three times within the line's last five steps becomes one ask card whose answers send a sentence to the project's conversation; a field a person set aside stays quiet until its suppression ends; and the Runtime's drawing recipe suggestions (one pen changed the same way on two drawings or more) as one ask card per pen and direction, saving the value as the person's recipe decision"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -13655,7 +13664,11 @@
         "check_against",
         "unsure_cards",
         "approval",
-        "applies_without_asking"
+        "applies_without_asking",
+        "guesses",
+        "refresh_guesses",
+        "recipe_guesses",
+        "refresh_recipe_guesses"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -13840,7 +13853,8 @@
         "apps/monkeyhub/api/monkeyhub_api/attention/actions.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/hub.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/producers.py",
-        "apps/monkeyhub/api/monkeyhub_api/attention/change_list.py"
+        "apps/monkeyhub/api/monkeyhub_api/attention/change_list.py",
+        "apps/monkeyhub/api/monkeyhub_api/attention/rules.py"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -13914,7 +13928,9 @@
         "apps/monkeyhub/api/tests/test_attention_hub.py",
         "apps/monkeyhub/api/tests/test_attention_producers.py",
         "apps/monkeyhub/api/tests/test_attention_store.py",
-        "apps/monkeyhub/api/tests/test_change_list.py"
+        "apps/monkeyhub/api/tests/test_change_list.py",
+        "apps/monkeyhub/api/tests/test_attention_store.py",
+        "apps/monkeyhub/api/tests/test_attention_rules.py"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
