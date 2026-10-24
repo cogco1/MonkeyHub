@@ -20,6 +20,7 @@ the line it happened at.
 from __future__ import annotations
 
 import copy
+import difflib
 import json
 import math
 import re
@@ -1507,12 +1508,26 @@ class World:
                 raise ShapeError("the project's parameter bindings cannot be read") from exc
         return copy.deepcopy(self._resolved[element_id])
 
+    def not_here(self, identifier: str) -> str:
+        """Why ``identifier`` is not a shape here: an opening a wall hosts, by its parameters, or the nearest ids."""
+
+        for entity in self.entities.values():
+            params = entity.fields.get("params") if entity.schema == "Element@1" else None
+            for opening in (params.get("openings") or ()) if isinstance(params, dict) else ():
+                if isinstance(opening, dict) and opening.get("opening_id") == identifier:
+                    made_of = sorted(set(re.findall(r'"@(\w+)"', json.dumps(opening))))
+                    return (f"{short(identifier)} is an opening in {short(entity.entity_id)}, not a shape a script "
+                            "gets" + (f"; it is made from the parameters {', '.join(made_of)}: change those"
+                                      if made_of else f"; its values are written in {short(entity.entity_id)}"))
+        near = difflib.get_close_matches(identifier, list(self.entities), n=3, cutoff=0.6)
+        return f"{short(identifier)} is not in this project" + (f"; the nearest ids are {', '.join(near)}" if near else "")
+
     def editable(self, identifier: str) -> tuple[str, str, str]:
         """(element id, component id, geometry id) of the existing geometry ``identifier`` names, or a refusal."""
 
         entity = self.entities.get(identifier)
         if entity is None:
-            raise ShapeError(f"{short(identifier)} is not in this project")
+            raise ShapeError(self.not_here(identifier))
         if entity.schema == "Component@1":
             parts = self.elements_of.get(identifier, [])
             if not parts:

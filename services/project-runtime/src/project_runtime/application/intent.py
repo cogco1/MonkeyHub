@@ -298,7 +298,8 @@ def _resolved_keep_ref(ref: str, entities: set[str], parameters: set[str]) -> st
 
 def _unknown_keep_ref(ref: str) -> BlockedNeedsHuman:
     return BlockedNeedsHuman(
-        "the keep ref names nothing in this record",
+        f"keep names {ref}, which is neither an entity nor a parameter of this record; keep takes entity:<id> or "
+        "parameter:<key>",
         question=(
             f"keep names {ref}, which this record declares neither as an "
             "entity nor as a parameter. Which did you mean?"

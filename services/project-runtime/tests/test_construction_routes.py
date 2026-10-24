@@ -512,6 +512,15 @@ class ConstructionParametersTestCase(ConstructionTestCase):
                          ["block_depth", "block_height"])
         self.assertEqual(proposal["change"]["edits"]["entities"], [])
 
+    def test_an_id_the_project_lacks_is_answered_with_the_nearest_ids(self) -> None:
+        body = self.construct("b = get('portico-bse')", expect=422)
+        self.assertIn("portico-bse is not in this project; the nearest ids are portico-base", body["detail"])
+
+    def test_a_keep_ref_that_names_nothing_says_which_and_what_keep_takes(self) -> None:
+        body = self.construct("mass = extrude(rect(0, 0, 4, 4), 3)", keep=["obligation:k1"], expect=422)
+        self.assertEqual(body["code"], "BLOCKED_NEEDS_HUMAN")
+        self.assertIn("keep names obligation:k1, which is neither an entity nor a parameter", body["detail"])
+
     def test_a_value_alone_for_a_derived_parameter_is_refused_with_its_expression(self) -> None:
         # Its expression would give the value back, so the change would change nothing.
         body = self.construct('print("no shapes")', parameters=[{"key": "bay", "value": 3.0, "unit": "m"}], expect=422)
@@ -592,11 +601,12 @@ class ConstructionModelTestCase(ConstructionTestCase):
         self.assertEqual(model["levels"], [{"id": "level-ground", "elevation": 0.0}])
         self.assertEqual({row["key"]: (row["value"], row["unit"]) for row in model["parameters"]},
                          {"module": (1.2, "m"), "bay": (2.4, "m"), "span": (4.8, "m"), "plinth": (0.6, "m")})
+        self.assertEqual(model["declaredParameters"], ["module", "plinth"], "bay and span are derived from module")
         [portico] = model["entities"]
         self.assertEqual(portico, {
             "id": "portico", "form": "solid", "bounds": [[0, 0, 0], [4, 0.9, 2]], "cuts": [], "cutBy": [],
             "hidden": False, "parts": ["portico-base", "portico-cornice"], "facets": {}, "partFacets": {}, "capabilities": [],
-            "openings": [], "alongLine": None,
+            "openings": [], "alongLine": None, "madeFrom": [], "notScriptEditable": [],
         })
 
     def test_forms_bounds_cuts_and_facets_read_back_and_capabilities_follow_facets(self) -> None:
@@ -905,3 +915,22 @@ class LevelChangeTestCase(ConstructionTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OpeningParametersTestCase(unittest.TestCase):
+    """An opening a parameter sizes reads its value from it and names it, so a change knows where to make it."""
+
+    def test_each_value_a_parameter_states_is_read_from_it_and_named(self) -> None:
+        from archflow.state.state_record import Entity
+        from project_runtime.application.construction import _bound_keys, _openings_of
+
+        wall = Entity("wall-south", "Element@1", {"component_id": "walls", "producer": "wall", "params": {
+            "thickness": "@wall_thickness", "openings": [
+                {"opening_id": "door-front", "kind": "door", "along": 9.0, "width": "@door_width", "sill": 0.0,
+                 "head": "@door_head"},
+                {"opening_id": "win-1", "kind": "window", "along": "@nowhere", "width": 1.2, "sill": 0.9, "head": 2.1}]}})
+        door, window = _openings_of(wall, {"door_width": 1.1, "door_head": 2.4, "wall_thickness": 0.3})
+        self.assertEqual(door, {"id": "door-front", "kind": "door", "along": 9.0, "width": 1.1, "sill": 0.0, "head": 2.4,
+                                "parameters": {"width": "door_width", "head": "door_head"}})
+        self.assertEqual((window["along"], window["parameters"]), (None, {}), "a key the project lacks names nothing")
+        self.assertEqual(_bound_keys(wall.fields), {"wall_thickness", "door_width", "door_head", "nowhere"})
