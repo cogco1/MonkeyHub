@@ -3,6 +3,10 @@ import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 
 import { useCommandActions, useCommands } from "../features/commands/CommandProvider";
 import type { MessageKey } from "../i18n/messages.en";
 import { useT } from "../i18n/useT";
+import { AttentionQueue, CardHistory, useAttentionQueue } from "../notifications/cards/AttentionQueue";
+import { pendingFor } from "../notifications/cards/cardText";
+import { OPEN_CARD_EVENT, type OpenCardDetail } from "../notifications/openChat";
+import { useNoticeRegion } from "../notifications/regions";
 import { AdvancedTools } from "./AdvancedTools";
 import "./attentionShell.css";
 
@@ -100,6 +104,34 @@ export function AttentionShell(props: AttentionShellProps) {
   const pageLabel = (page: SidePage) => t(`shell.side.${page}` as MessageKey);
   useCommandActions({ "view.tab.attention": { run: () => props.onView("attention") } });
   const backgroundCount = props.background.running + props.background.queued;
+  // The queue's own counts where the Hub serves it; until then, what the conversations say waits on the architect.
+  const queue = useAttentionQueue();
+  const summary = queue.available ? queue.summary : null;
+  const attentionCount = summary ? summary.open : props.attentionCount;
+  const needs = (project: ShellProject) => pendingFor(summary, project.projectDir) ?? project.needs;
+  const projectName = (projectDir: string) => projects.find((project) => project.projectDir === projectDir)?.name ?? null;
+  // The notices keep clear of the side and of the status line and composer (1-4).
+  const sideRef = useRef<HTMLElement>(null), bottomRef = useRef<HTMLDivElement>(null);
+  useNoticeRegion(sideRef, "right");
+  useNoticeRegion(bottomRef, "bottom");
+  // A card's notice shows the card here, in the queue.
+  const onView = useRef(props.onView);
+  onView.current = props.onView;
+  useEffect(() => {
+    const show = (event: Event) => {
+      const { cardId } = (event as CustomEvent<OpenCardDetail>).detail;
+      event.preventDefault();
+      onView.current("attention");
+      setLeftOpen(false);
+      requestAnimationFrame(() => {
+        const card = document.getElementById(`attention-card-${cardId}`);
+        card?.scrollIntoView({ block: "nearest" });
+        card?.focus({ preventScroll: true });
+      });
+    };
+    window.addEventListener(OPEN_CARD_EVENT, show);
+    return () => window.removeEventListener(OPEN_CARD_EVENT, show);
+  }, []);
   const tabs = [
     { value: "attention", label: t("shell.view.attention") },
     { value: "board", label: t("shell.view.board") },
@@ -123,7 +155,7 @@ export function AttentionShell(props: AttentionShellProps) {
       <button type="button" className="attention-shell__row attention-shell__row--attention" aria-current={view === "attention" ? "page" : undefined}
         data-command="view.tab.attention" onClick={() => { props.onView("attention"); setLeftOpen(false); }}>
         <Glyph path={QUEUE} /><span>{t("shell.view.attention")}</span>
-        {props.attentionCount > 0 && <span className="attention-shell__count">{props.attentionCount}</span>}
+        {attentionCount > 0 && <span className="attention-shell__count">{attentionCount}</span>}
       </button>
       <div className="attention-shell__caption">
         <span>{props.archivedView ? t("shell.archived") : t("shell.projects")}</span>
@@ -136,7 +168,7 @@ export function AttentionShell(props: AttentionShellProps) {
           <button type="button" className="attention-shell__row" aria-current={project.current ? "true" : undefined} title={project.projectDir}
             onClick={() => { props.onSelectProject(project.projectDir); setLeftOpen(false); }}>
             <Icon name="folder" /><span>{project.name}</span>
-            {project.needs > 0 ? <span className="attention-shell__count" aria-label={t("shell.needs", { count: project.needs })}>{project.needs}</span>
+            {needs(project) > 0 ? <span className="attention-shell__count" aria-label={t("shell.needs", { count: needs(project) })}>{needs(project)}</span>
               : project.working ? <span className="attention-shell__working" aria-label={t("shell.working")} /> : null}
           </button>
           <button type="button" className="chat-icon attention-shell__new" aria-label={t("shell.newConversationIn", { project: project.name })}
@@ -180,12 +212,12 @@ export function AttentionShell(props: AttentionShellProps) {
       {props.notices}
       <div className="attention-shell__body">
         <section className="attention-shell__queue" hidden={view !== "attention"} aria-label={t("shell.view.attention")}>
-          <h2>{props.attentionCount ? t("shell.queueCount", { count: props.attentionCount }) : t("shell.queueEmpty")}</h2>
-          <p>{t("shell.queueHint")}</p>
+          <h2>{attentionCount ? t("shell.queueCount", { count: attentionCount }) : t("shell.queueEmpty")}</h2>
+          {queue.available ? <AttentionQueue projectName={projectName} /> : <p>{t("shell.queueHint")}</p>}
         </section>
         <div className="attention-shell__surfaces" hidden={view === "attention"}>{props.surfaces}</div>
       </div>
-      <div className="attention-shell__bottom">
+      <div className="attention-shell__bottom" ref={bottomRef}>
         <div className="status-line attention-shell__status">
           <span className="status-line__start">{backgroundCount
             ? t("shell.backgroundLine", { running: props.background.running, queued: props.background.queued }) : t("shell.backgroundIdle")}</span>
@@ -202,7 +234,7 @@ export function AttentionShell(props: AttentionShellProps) {
       </div>
     </main>
 
-    <aside className="attention-shell__side" aria-label={t("shell.side")}>
+    <aside className="attention-shell__side" ref={sideRef} aria-label={t("shell.side")}>
       {side && <div className="attention-shell__panel">
         <div className="attention-shell__panel-head">
           <div className="menu-tabs attention-shell__side-tabs" role="tablist" aria-label={t("shell.side")}>
@@ -214,6 +246,8 @@ export function AttentionShell(props: AttentionShellProps) {
         <div className="attention-shell__panel-body" role="tabpanel" aria-label={pageLabel(side)}>
           {side === "background" ? <ul className="chat-tasks attention-shell__tasks">{props.taskItems}</ul>
             : side === "tools" ? <AdvancedTools />
+            : queue.available && side === "handled" ? <CardHistory states={["done"]} empty="shell.side.handled.empty" projectName={projectName} />
+            : queue.available && side === "ignored" ? <CardHistory states={["dismissed"]} empty="shell.side.ignored.empty" projectName={projectName} />
             : <p className="attention-shell__empty">{t(`shell.side.${side}.empty` as MessageKey)}</p>}
         </div>
       </div>}

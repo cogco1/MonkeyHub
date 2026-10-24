@@ -19,6 +19,7 @@ import type { EvidenceTab } from "../../app/evidence";
 import { LoadingOverlay } from "../../app/LoadingOverlay";
 import { useT } from "../../i18n/useT";
 import { usePreferences } from "../settings/preferences";
+import { useNoticeRegion } from "../../notifications/regions";
 import type { SceneInspection } from "../../workspaces/monkeyarch/viewer/sceneInspection";
 import {
   ThreeDmViewport,
@@ -519,6 +520,8 @@ export function Stage({
   const recordShown = Boolean(model?.sync && (model.sync.dirty || model.sync.busy || model.sync.error));
   const recordNamed = Boolean(model?.sync && (model.sync.dirty || model.sync.busy));
   const modelToolsElement = useRef<HTMLDivElement>(null);
+  // A notice keeps above the floating toolbar where they share columns (1-4).
+  useNoticeRegion(modelToolsElement, "bottom");
   const recordElement = useRef<HTMLDivElement>(null);
   const [recordAbove, setRecordAbove] = useState(false);
   useLayoutEffect(() => {

@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { ChatSummary } from "../src/api/generated";
+import type { AttentionCard } from "../src/notifications/cards/types.ts";
 import {
-  addNotice, attentionCopy, clearance, GAP, MAX_NOTICES, noticeText, noticeTitle, remember, settle, snapshotOf, titled, transitions,
-  type AttentionEvent,
+  addNotice, attentionCopy, cardNews, clearance, GAP, lasts, MAX_NOTICES, noticeText, noticeTitle, pendingCards, remember, settle, settleCards,
+  snapshotOf, titled, transitions,
+  type AttentionEvent, type EdgeBox,
 } from "../src/notifications/attention.ts";
 
 const chat = (id: string, overrides: Partial<ChatSummary> = {}): ChatSummary => ({
@@ -127,20 +129,75 @@ test("the words name the chat in both languages, short enough for one line", () 
   assert.equal(noticeTitle("a\n  b", en), "a b");
 });
 
-test("the stack sits left of the rail and above the composer when they would share columns", () => {
+test("the stack sits left of what stands at the right edge and above what lies along the bottom where they share columns", () => {
   const viewport = { width: 1440, height: 960 };
-  assert.deepEqual(clearance(viewport, null, null), { right: GAP, bottom: GAP }, "no Hub shell: the corner");
-  const rail = { left: 1364, right: 1440, top: 0, bottom: 960 };
+  const right = (box: Omit<EdgeBox, "edge">): EdgeBox => ({ ...box, edge: "right" });
+  const bottom = (box: Omit<EdgeBox, "edge">): EdgeBox => ({ ...box, edge: "bottom" });
+  assert.deepEqual(clearance(viewport, []), { right: GAP, bottom: GAP }, "nothing registered: the corner");
+  const rail = right({ left: 1364, right: 1440, top: 0, bottom: 960 });
   // A tool panel is open: the conversation, and its composer, end left of the stack.
-  const beside = { left: 244, right: 800, top: 760, bottom: 960 };
-  assert.deepEqual(clearance(viewport, rail, beside), { right: 76 + GAP, bottom: GAP }, "a composer left of the stack stays uncovered");
+  const beside = bottom({ left: 244, right: 800, top: 760, bottom: 960 });
+  assert.deepEqual(clearance(viewport, [rail, beside]), { right: 76 + GAP, bottom: GAP }, "a composer left of the stack stays uncovered");
   // No panel: the centred composer reaches under the stack, Send button and all.
-  const centred = { left: 400, right: 1208, top: 760, bottom: 960 };
-  assert.deepEqual(clearance(viewport, rail, centred), { right: 76 + GAP, bottom: 200 + GAP / 2 });
+  const centred = bottom({ left: 400, right: 1208, top: 760, bottom: 960 });
+  assert.deepEqual(clearance(viewport, [rail, centred]), { right: 76 + GAP, bottom: 200 + GAP / 2 });
   const narrow = { width: 700, height: 900 };
-  const narrowRail = { left: 632, right: 700, top: 0, bottom: 900 };
-  const composer = { left: 12, right: 620, top: 700, bottom: 892 };
-  assert.deepEqual(clearance(narrow, narrowRail, composer), { right: 68 + GAP, bottom: 200 + GAP / 2 }, "lifted above a composer below it");
-  assert.deepEqual(clearance(narrow, narrowRail, { left: 0, right: 0, top: 0, bottom: 0 }), { right: 68 + GAP, bottom: GAP }, "a hidden composer is not avoided");
-  assert.deepEqual(clearance(narrow, { left: 0, right: 60, top: 0, bottom: 900 }, null), { right: GAP, bottom: GAP }, "a rail on the left is not the right rail");
+  const narrowRail = right({ left: 632, right: 700, top: 0, bottom: 900 });
+  const composer = bottom({ left: 12, right: 620, top: 700, bottom: 892 });
+  assert.deepEqual(clearance(narrow, [narrowRail, composer]), { right: 68 + GAP, bottom: 200 + GAP / 2 }, "lifted above a composer below it");
+  assert.deepEqual(clearance(narrow, [narrowRail, bottom({ left: 0, right: 0, top: 0, bottom: 0 })]), { right: 68 + GAP, bottom: GAP }, "a hidden composer is not avoided");
+  assert.deepEqual(clearance(narrow, [right({ left: 0, right: 60, top: 0, bottom: 900 })]), { right: GAP, bottom: GAP }, "a rail on the left is not the right rail");
+});
+
+test("a side panel and its rail push the stack left; a floating toolbar lifts it where they share columns", () => {
+  const viewport = { width: 1440, height: 900 };
+  // The attention shell with its side panel open over the model (the #687 review's case).
+  const side = { left: 1003, right: 1440, top: 44, bottom: 900, edge: "right" as const };
+  const statusAndComposer = { left: 248, right: 1003, top: 790, bottom: 900, edge: "bottom" as const };
+  const toolbar = { left: 413, right: 839, top: 697, bottom: 746, edge: "bottom" as const };
+  assert.deepEqual(clearance(viewport, [side, statusAndComposer]), { right: 437 + GAP, bottom: 110 + GAP / 2 }, "above the status line and composer");
+  assert.deepEqual(clearance(viewport, [side, statusAndComposer, toolbar]), { right: 437 + GAP, bottom: 203 + GAP / 2 }, "and above the toolbar it would cover");
+  // Side panel closed: a toolbar that ends left of the stack leaves it in the corner.
+  const rail = { left: 1364, right: 1440, top: 44, bottom: 900, edge: "right" as const };
+  const toolbarLeftOfStack = { left: 540, right: 960, top: 697, bottom: 746, edge: "bottom" as const };
+  assert.deepEqual(clearance(viewport, [rail, toolbarLeftOfStack]), { right: 76 + GAP, bottom: GAP });
+});
+
+const card = (id: string, overrides: Partial<AttentionCard> = {}): AttentionCard => ({
+  id, projectId: "A", projectDir: "D:\\work\\A", channel: "decide", kind: "ab", state: "open", title: `Pick ${id}`, titleZh: `选 ${id}`,
+  source: { chatSessionId: "chat-1" }, media: [], evidence: [], options: [], opens: [],
+  createdAt: "2026-10-24T10:00:00+00:00", updatedAt: "2026-10-24T10:00:00+00:00", ...overrides,
+});
+
+test("a card that comes to need the person is news once; the first reading is a baseline", () => {
+  assert.deepEqual(cardNews(null, [card("a")]), [], "the first reading raises nothing");
+  const before = pendingCards([card("a")]);
+  const raised = cardNews(before, [card("a"), card("b"), card("c", { state: "later" }), card("d", { state: "working" })]);
+  assert.deepEqual(raised.map((event) => event.card?.id), ["b"], "only a card that needs the person now and did not before");
+  assert.equal(raised[0]!.kind, "card");
+  assert.equal(raised[0]!.chatId, "chat-1", "it opens the conversation it came from where the queue is not on screen");
+  assert.deepEqual(cardNews(pendingCards([card("a")]), [card("b", { state: "review" })]).map((event) => event.card?.id), ["b"], "a change list waiting for review counts");
+  assert.deepEqual(cardNews(before, [card("e")], new Set(["e"])), [], "a card on screen already raises nothing");
+});
+
+test("a card's notice waits when it asks something, and leaves when the card is handled", () => {
+  const decide = cardNews(new Set(), [card("a")])[0]!;
+  const notice = cardNews(new Set(), [card("n", { channel: "notice", kind: "info" })])[0]!;
+  assert.equal(lasts(decide), true);
+  assert.equal(lasts(notice), false, "news that only informs fades");
+  const stack = addNotice(addNotice([], decide), notice);
+  assert.deepEqual(settleCards(stack, [card("a", { state: "done" }), card("n", { channel: "notice", kind: "info" })]).map((event) => event.card?.id), ["n"]);
+  assert.equal(settleCards(stack, [card("a"), card("n", { channel: "notice", kind: "info" })]), stack, "nothing changed: the same stack");
+  // A card holds one notice, apart from the conversation it came from.
+  const permission: AttentionEvent = { key: "chat-1:permission:1", kind: "permission", chatId: "chat-1", projectDir: "D:\\work\\A", title: "Roof" };
+  assert.equal(addNotice(addNotice([], permission), decide).length, 2);
+  assert.deepEqual(settle([decide], []), [decide], "a reading of the conversations leaves card notices alone");
+});
+
+test("a card's notice reads in the person's language", () => {
+  const decide = cardNews(new Set(), [card("a")])[0]!;
+  assert.equal(noticeText(decide, attentionCopy["zh-CN"]), "要你决定：选 a");
+  assert.equal(noticeText(decide, attentionCopy.en), "Your decision: Pick a");
+  const english = cardNews(new Set(), [card("b", { titleZh: null, channel: "guess", kind: "ask" })])[0]!;
+  assert.equal(noticeText(english, attentionCopy["zh-CN"]), "想问你：Pick b", "the English title where no Chinese one was written");
 });

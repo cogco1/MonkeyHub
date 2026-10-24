@@ -28,6 +28,7 @@ import { editFocused, HubMenuBar, type HubMenu, type HubMenuItem } from "./HubMe
 import { ASK_AI_ACTION, openSurfaceAction, useCommandActions, type CommandHandler } from "./features/commands/CommandProvider";
 import { AttentionShell, RECENT_CONVERSATIONS, type CenterView, type ShellProject } from "./app/AttentionShell";
 import { useT } from "./i18n/useT";
+import { useNoticeRegion } from "./notifications/regions";
 import "./ChatShell.css";
 
 type AppId = AppStatus["appId"] | "drawing" | "publish" | "tree";
@@ -1811,6 +1812,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // What the strip says about the conversation it stands for: waiting on the architect, or working.
   const stripState = sessions.find((item) => item.id === chatId)?.attention === "permission" ? "needs" : running ? "running" : null;
   const mainRef = useRef<HTMLElement>(null), browserRef = useRef<HTMLElement>(null), railRef = useRef<HTMLElement>(null);
+  // The notices keep clear of the rail and the composer (1-4).
+  const composerWrapRef = useRef<HTMLDivElement>(null);
+  useNoticeRegion(railRef, "right");
+  useNoticeRegion(composerWrapRef, "bottom");
   /** The conversation beside a workspace, resized from where its column is drawn now. */
   const resizeChat = (next: (main: DOMRect) => number) => {
     const main = mainRef.current?.getBoundingClientRect(), rail = railRef.current?.getBoundingClientRect();
@@ -2145,7 +2150,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       </div>
   </>;
   const composerArea = <>
-      <div className="chat-composer-wrap">
+      <div className="chat-composer-wrap" ref={composerWrapRef}>
         {latest.away && Boolean(shownMessages?.length) && <button type="button" className="chat-jump" onClick={jumpToLatest}
           aria-label={latest.unseen ? t.jumpLatestNew(latest.unseen) : t.jumpLatest} title={latest.unseen ? t.jumpLatestNew(latest.unseen) : t.jumpLatest}>
           <Icon name="down" />{latest.unseen > 0 && <span className="chat-jump__count" aria-hidden="true">{latest.unseen > 99 ? "99+" : latest.unseen}</span>}

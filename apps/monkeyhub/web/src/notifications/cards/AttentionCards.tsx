@@ -1,0 +1,136 @@
+import { useState, type ReactNode } from "react";
+
+import { useCommands } from "../../features/commands/CommandProvider";
+import { usePreferences } from "../../features/settings/preferences";
+import type { MessageKey } from "../../i18n/messages.en";
+import { useT } from "../../i18n/useT";
+import { dismissCard, laterCard, reopenCard, resolveCard, undoCard, type QueueFailure } from "../queue";
+import { chosenOption, isPending, orderedOptions, say } from "./cardText";
+import type { AttentionCard, CommandRef } from "./types";
+import "./cards.css";
+
+/**
+ * The attention queue's cards (1-4): DecisionCard for what needs a decision, MarkupCard for what waits on the
+ * drawing, GuessCard for a question or a suggestion, NoticeCard for news. An answer goes to the Hub, whose
+ * executor carries it out as the person; a command that only opens something (compare, a Board frame, the
+ * conversation) runs here, through the command tree. Later, set aside, bring back and undo are the queue's own
+ * commands (attention.queue). The answer and open buttons are rows of what the card offers (data-command-view),
+ * as Ctrl K's rows are: each records its own use.
+ */
+
+interface CardProps {
+  card: AttentionCard;
+  /** The project a card belongs to, as the shell names it; left out where the page shows one project. */
+  project?: string | null;
+}
+
+/** One card's pending action and the Hub's refusal of the last one, kept with the card. */
+function useCardActions() {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [failure, setFailure] = useState<QueueFailure | null>(null);
+  const act = (name: string, action: () => Promise<unknown>) => {
+    setBusy(name); setFailure(null);
+    void action().catch((cause: QueueFailure) => setFailure({ code: cause?.code ?? "HTTP_ERROR", detail: cause?.detail ?? String(cause) }))
+      .finally(() => setBusy(null));
+  };
+  return { busy, failure, act };
+}
+
+function Opens({ refs }: { refs: readonly CommandRef[] }) {
+  const { tree, run, stateOf } = useCommands();
+  const { language } = usePreferences();
+  const t = useT();
+  if (!refs.length) return null;
+  return <div className="attention-card__opens">{refs.map((ref, index) => {
+    const command = tree.commands.find((item) => item.id === ref.commandId);
+    const state = command ? stateOf(command) : null;
+    const reason = !state ? t("commands.unavailable") : state.kind === "unavailable" ? state.reason ?? t("commands.unavailable") : null;
+    return <button key={`${ref.commandId}:${index}`} type="button" className="menu-command" data-command-view
+      aria-disabled={reason ? true : undefined} title={reason ?? undefined}
+      onClick={() => { if (!reason) run(ref.commandId, "card", { args: ref.args }); }}>{command ? command.label[language] : ref.commandId}</button>;
+  })}</div>;
+}
+
+function CardFrame({ card, project, compact = false, children }: CardProps & { compact?: boolean; children?: ReactNode }) {
+  const { language } = usePreferences();
+  const t = useT();
+  const { busy, failure, act } = useCardActions();
+  const chosen = chosenOption(card);
+  const pending = isPending(card);
+  const reason = card.recommendation ? say(card.recommendation.reason, card.recommendation.reasonZh, language) : null;
+  return <article className="attention-card" id={`attention-card-${card.id}`} tabIndex={-1} data-card={card.id} data-channel={card.channel}
+    data-kind={card.kind} data-state={card.state} aria-labelledby={`attention-card-${card.id}-title`}>
+    <header className="attention-card__head">
+      <p className="attention-card__eyebrow">
+        <span className="attention-card__channel">{t(`cards.channel.${card.channel}` as MessageKey)}</span>
+        {project && <span className="attention-card__project">{project}</span>}
+      </p>
+      <h3 className="attention-card__title" id={`attention-card-${card.id}-title`}>{say(card.title, card.titleZh, language)}</h3>
+      {card.summary && <p className="attention-card__summary">{say(card.summary, card.summaryZh, language)}</p>}
+    </header>
+    {!compact && card.media.some((item) => item.caption) && <ul className="attention-card__media">{card.media.filter((item) => item.caption).map((item, index) =>
+      <li key={index} data-media={item.kind}>{say(item.caption!, item.captionZh, language)}</li>)}</ul>}
+    {!compact && card.evidence.length > 0 && <dl className="attention-card__evidence" aria-label={t("cards.evidence")}>{card.evidence.map((row) =>
+      <div key={row.key} data-status={row.status}><dt>{say(row.label, row.labelZh, language)}</dt><dd>{say(row.text, row.textZh, language)}</dd></div>)}</dl>}
+    {children}
+    {pending && card.options.length > 0 && <div className="attention-card__answers" role="group" aria-label={t("cards.answers")}>
+      {orderedOptions(card).map((option) => <button key={option.id} type="button" data-option={option.id} data-command-view
+        className={option.recommended ? "btn btn--primary attention-card__answer" : "btn attention-card__answer"} disabled={busy !== null}
+        aria-describedby={`attention-card-${card.id}-${option.id}`} onClick={() => act(option.id, () => resolveCard(card.id, option.id))}>
+        <span>{say(option.label, option.labelZh, language)}{option.recommended && <small className="attention-card__recommended">{t("cards.recommended")}</small>}</span>
+        <small id={`attention-card-${card.id}-${option.id}`}>{say(option.consequence, option.consequenceZh, language)}</small>
+      </button>)}
+    </div>}
+    {pending && reason && <p className="attention-card__reason">{reason}</p>}
+    {card.state === "working" && <p className="attention-card__status" role="status">{t("cards.working")}</p>}
+    {card.state === "done" && <p className="attention-card__status">{chosen
+      ? t(card.resolution?.by === "machine" ? "cards.handledForYou" : "cards.chosen", { option: say(chosen.label, chosen.labelZh, language) })
+      : t("cards.done")}</p>}
+    {failure && <p className="attention-card__failure" role="alert">{failure.detail}</p>}
+    <footer className="attention-card__foot">
+      <Opens refs={card.opens} />
+      <span className="attention-card__queue">
+        {pending && <>
+          <button type="button" className="menu-command" data-command="attention.queue.later" disabled={busy !== null}
+            onClick={() => act("later", () => laterCard(card.id))}>{t("cards.later")}</button>
+          <button type="button" className="menu-command" data-command="attention.queue.dismiss" disabled={busy !== null}
+            onClick={() => act("dismiss", () => dismissCard(card.id))}>{t("cards.dismiss")}</button>
+        </>}
+        {card.state === "done" && card.resolution?.undo && <button type="button" className="menu-command" data-command="attention.queue.undo" disabled={busy !== null}
+          onClick={() => act("undo", () => undoCard(card.id))}>{t("cards.undo")}</button>}
+        {(card.state === "dismissed" || card.state === "later") && <button type="button" className="menu-command" data-command="attention.queue.reopen" disabled={busy !== null}
+          onClick={() => act("reopen", () => reopenCard(card.id))}>{t("cards.reopen")}</button>}
+      </span>
+    </footer>
+  </article>;
+}
+
+/** Two results side by side, one question with a few answers, or a large change shown as a plan first. */
+export function DecisionCard(props: CardProps) {
+  return <CardFrame {...props} />;
+}
+
+/** A version waiting on its Board frame, or the changes the marks were read as (their list joins with 3-3). */
+export function MarkupCard(props: CardProps) {
+  return <CardFrame {...props} />;
+}
+
+/** A question with at most three answers, or something the system would do and has not done. */
+export function GuessCard(props: CardProps) {
+  return <CardFrame {...props} />;
+}
+
+/** Finished, failed, or handled for the person and open to undo. */
+export function NoticeCard(props: CardProps) {
+  return <CardFrame {...props} compact />;
+}
+
+/** The card for a queue entry, by the channel it belongs to. */
+export function AttentionCardView(props: CardProps) {
+  switch (props.card.channel) {
+    case "decide": return <DecisionCard {...props} />;
+    case "annotate": return <MarkupCard {...props} />;
+    case "guess": return <GuessCard {...props} />;
+    default: return <NoticeCard {...props} />;
+  }
+}

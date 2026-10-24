@@ -12,6 +12,7 @@ import { FabPage } from "./FabPage";
 import { ChatShell, type HubSettings } from "./ChatShell";
 import { CommandProvider } from "./features/commands/CommandProvider";
 import { AttentionHost } from "./notifications/AttentionHost";
+import { queueChanged } from "./notifications/queue";
 
 type AppId = AppStatus["appId"];
 type Issue = { code: string; detail: string };
@@ -329,6 +330,7 @@ function App() {
   // Every second while a service is starting or stopping; a settled list is read again each minute, on return,
   // at once when a project runtime opens, closes or its worker changes, and at most every ten seconds while other runtime news arrives.
   const runtimeNews = useCallback((kind: string) => {
+    queueChanged(kind);
     if (/^(runtime\/snapshot|project\/(opened|closed)|worker\/)/.test(kind) || Date.now() - appsReadAt.current > 10_000) void refreshApps();
   }, [refreshApps]);
   const appsSettling = busyServices.size > 0 || statusIssue !== null || (apps ?? []).some((app) => app.state === "starting" || app.state === "stopping");
