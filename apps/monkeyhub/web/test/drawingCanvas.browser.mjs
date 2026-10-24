@@ -521,9 +521,9 @@ try {
     await saveButton().waitFor();
     await page.clock.resume();
     await page.locator(".drawing-held").getByText("Appearance changes are not saved yet; fix the marked field or retry.", { exact: true }).waitFor();
-    const details = page.locator("details.error-panel__details");
-    if (!await details.evaluate(node => node.open)) await details.locator("summary").click();
-    await page.getByText("Fixture refused this drawing revision.", { exact: true }).waitFor();
+    // 2-7: the fixture's own words wait for developer mode.
+    assert.equal(await page.locator("details.error-panel__details").count(), 0);
+    assert.equal(await page.getByText("Fixture refused this drawing revision.", { exact: true }).count(), 0);
     assert.equal(await revision().inputValue(), before, "refusal never silently opens the requested revision");
     assert.equal(await scale.inputValue(), editedScale, "the unsaved edit is still visible");
     assert.deepEqual(await page.evaluate(() => window.drawingFixture.documents), documentsBefore,

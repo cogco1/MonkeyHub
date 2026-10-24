@@ -122,7 +122,7 @@ test("verdict cards distinguish no checkable relations from held and refused dep
   }
 });
 
-test("design cards distinguish component edits from scalar controls and fold compiler details", async (t) => {
+test("design cards distinguish component edits from scalar controls; compiler details wait for developer mode", async (t) => {
   const vite = await createServer({
     root: fileURLToPath(new URL("..", import.meta.url)),
     configFile: false,
@@ -132,10 +132,19 @@ test("design cards distinguish component edits from scalar controls and fold com
   t.after(() => vite.close());
   const { ProposalCard } = await vite.ssrLoadModule("/src/features/conversation/cards/ProposalCard.tsx");
   const { QuestionCard } = await vite.ssrLoadModule("/src/features/conversation/cards/QuestionCard.tsx");
+  const { MissingControlCard } = await vite.ssrLoadModule("/src/features/conversation/cards/MissingControlCard.tsx");
   const { Composer } = await vite.ssrLoadModule("/src/features/conversation/Composer.tsx");
   const { ErrorPanel } = await vite.ssrLoadModule("/src/app/ErrorPanel.tsx");
-  const { UserPreferencesProvider } = await vite.ssrLoadModule("/src/features/settings/preferences.tsx");
+  const { UserPreferencesProvider, usePreferences } = await vite.ssrLoadModule("/src/features/settings/preferences.tsx");
   const { StudioApiError } = await vite.ssrLoadModule("/src/api/project-runtime/error.ts");
+  /** One card in a fresh provider; SSR has no settings click, so the switch is set on the provider itself. */
+  const render = (element: ReturnType<typeof createElement>, developerMode = false) => {
+    function Card() {
+      Object.assign(usePreferences(), { developerMode });
+      return element;
+    }
+    return renderToStaticMarkup(createElement(UserPreferencesProvider, { appearance: { language: "en", theme: "light", fontScale: 1 } }, createElement(Card)));
+  };
   const base = {
     proposalId: "proposal-wall-opening",
     status: "proposed",
@@ -169,18 +178,22 @@ test("design cards distinguish component edits from scalar controls and fold com
     kept: ["Keep the stair width and landing level."],
     edits: { entities: [{ entity_id: "new-support-wall" }], parameters: [], relations: [], removeEntityIds: [], removeParameterKeys: [], removeRelationIds: [] },
   };
-  const componentHtml = renderToStaticMarkup(createElement(UserPreferencesProvider, { appearance: { language: "en", theme: "light", fontScale: 1 } },
-    createElement(ProposalCard, { ...cardProps, proposal: { ...base, change: componentChange } }),
-  ));
-  const visibleSummary = componentHtml.split("<details")[0];
-  assert.match(visibleSummary, /Add a supporting wall with an open archway/);
-  assert.match(visibleSummary, /Keep the stair width and landing level/);
-  assert.doesNotMatch(visibleSummary, /new-support-wall|entity:|removeEntityIds/);
+  const componentCard = createElement(ProposalCard, { ...cardProps, proposal: { ...base, change: componentChange } });
+  const componentHtml = render(componentCard);
+  assert.match(componentHtml, /Add a supporting wall with an open archway/);
+  assert.match(componentHtml, /Keep the stair width and landing level/);
+  assert.doesNotMatch(componentHtml, /new-support-wall|entity:|removeEntityIds/);
   assert.doesNotMatch(componentHtml, /type="range"|ghost-mark|undefined|NaN/);
-  assert.match(componentHtml, /<details class="card__row card__details">/);
-  assert.match(componentHtml, /removeEntityIds/);
+  assert.doesNotMatch(componentHtml, /<details/, "outside developer mode the card has no technical details");
+  // What a person decides on stays: each change in words, and what else it moves.
+  assert.match(componentHtml, /Support wall[^]*· [^]*Wall with hosted opening/);
+  assert.match(componentHtml, /<p class="card__row quiet" data-impact="true">This also updates 1 linked part\(s\)\.<\/p>/);
+  const componentDeveloper = render(componentCard, true);
+  assert.ok(componentHtml.startsWith(componentDeveloper.split("<details")[0]!), "developer mode adds details below the same card");
+  assert.match(componentDeveloper, /<details class="card__row card__details">/);
+  assert.match(componentDeveloper, /removeEntityIds/);
 
-  const scalarHtml = renderToStaticMarkup(createElement(UserPreferencesProvider, { appearance: { language: "en", theme: "light", fontScale: 1 } },
+  const scalarHtml = render(
     createElement(ProposalCard, {
       ...cardProps,
       proposal: {
@@ -190,43 +203,53 @@ test("design cards distinguish component edits from scalar controls and fold com
         change: { kind: "set_scalar", old: 3, new: 4, unit: "m" },
       },
     }),
-  ));
+  );
   assert.match(scalarHtml, /height 3 → <b>4<\/b> m/);
   assert.match(scalarHtml, /<details class="card__row card__details"><summary[^>]*>[^<]+<\/summary><div class="card__row refine"/);
   assert.match(scalarHtml, /type="range"/);
   assert.match(scalarHtml, /class="btn btn--primary" disabled=""/);
 
-  const questionHtml = renderToStaticMarkup(createElement(UserPreferencesProvider, { appearance: { language: "en", theme: "light", fontScale: 1 } },
-    createElement(QuestionCard, {
-      error: new StudioApiError({
-        status: 422, code: "BLOCKED_NEEDS_HUMAN", question: "Which side should the opening face?",
-        detail: "missing internal slot: target", acceptedForms: ["set height to <number>"],
-      }),
-      onReply() {}, onChoose() {},
+  const questionCard = createElement(QuestionCard, {
+    error: new StudioApiError({
+      status: 422, code: "BLOCKED_NEEDS_HUMAN", question: "Which side should the opening face?",
+      detail: "missing internal slot: target", acceptedForms: ["set height to <number>"],
     }),
-  ));
-  assert.match(questionHtml.split("<details")[0], /Which side should the opening face/);
-  assert.doesNotMatch(questionHtml.split("<details")[0], /internal slot|set height/);
-  assert.match(questionHtml, /<details class="card__row card__details">/);
-  assert.match(questionHtml, /set height to/);
+    onReply() {}, onChoose() {},
+  });
+  const questionHtml = render(questionCard);
+  assert.match(questionHtml, /Which side should the opening face/);
+  // The accepted forms are answers, so they stay; the server's own detail waits for developer mode.
+  assert.match(questionHtml, /<button data-command="component\.resolve_pick\.reply"[^>]*>[^]*set height to/);
+  assert.doesNotMatch(questionHtml, /internal slot|<details/);
+  const questionDeveloper = render(questionCard, true);
+  assert.match(questionDeveloper, /<details class="card__row card__details">[^]*missing internal slot/);
 
-  const errorHtml = renderToStaticMarkup(createElement(UserPreferencesProvider, { appearance: { language: "en", theme: "light", fontScale: 1 } },
-    createElement(ErrorPanel, {
-      error: new StudioApiError({ status: 422, code: "SEMANTIC_EDIT_INVALID", detail: "entity wall basis_refs must be sorted and unique" }),
-      what: "POST /api/intents",
+  const missingCard = createElement(MissingControlCard, {
+    error: new StudioApiError({
+      status: 422, code: "MISSING_EDITABLE_CONTROL", detail: "The stair has no control for its riser count.",
+      pendingIntent: { targetComponentId: "stair-1", reasonCode: "NO_CONTROL", missingSlots: [], candidates: [], rejectedCandidates: [] },
     }),
-  ));
-  assert.match(errorHtml.split("<details")[0], /No model was generated|尚未生成模型/);
-  assert.doesNotMatch(errorHtml.split("<details")[0], /basis_refs|SEMANTIC_EDIT_INVALID|POST/);
-  // FN-4: the compiler's own words wait, folded, under Technical details.
-  assert.match(errorHtml.split("<details")[1] ?? "", /basis_refs must be sorted and unique/);
-  assert.doesNotMatch(errorHtml, /<details[^>]*\sopen/);
+  });
+  const missingHtml = render(missingCard);
+  assert.match(missingHtml, /The stair has no control for its riser count/);
+  assert.doesNotMatch(missingHtml, /stair-1|NO_CONTROL|<details/, "outside developer mode the card says only what is missing");
+  assert.match(render(missingCard, true), /<details class="card__row card__details">[^]*stair-1[^]*NO_CONTROL/);
 
-  const clarificationHtml = renderToStaticMarkup(createElement(UserPreferencesProvider, { appearance: { language: "en", theme: "light", fontScale: 1 } },
+  const errorPanel = createElement(ErrorPanel, {
+    error: new StudioApiError({ status: 422, code: "SEMANTIC_EDIT_INVALID", detail: "entity wall basis_refs must be sorted and unique" }),
+    what: "POST /api/intents",
+  });
+  const errorHtml = render(errorPanel);
+  assert.match(errorHtml, /No model was generated|尚未生成模型/);
+  assert.doesNotMatch(errorHtml, /basis_refs|SEMANTIC_EDIT_INVALID|POST|<details/);
+  // FN-4, 2-7: the compiler's own words wait for developer mode, under Technical details.
+  assert.match(render(errorPanel, true).split("<details")[1] ?? "", /basis_refs must be sorted and unique/);
+
+  const clarificationHtml = render(
     createElement(ErrorPanel, {
       error: new StudioApiError({ status: 422, code: "BLOCKED_NEEDS_HUMAN", question: "Which side should the opening face?", detail: "missing internal slot: target", acceptedForms: ["set height to <number>"] }),
     }),
-  ));
+  );
   assert.match(clarificationHtml, /Which side should the opening face/);
   assert.match(clarificationHtml, /set height to/);
   assert.doesNotMatch(clarificationHtml.split("<details")[0], /missing internal slot/);

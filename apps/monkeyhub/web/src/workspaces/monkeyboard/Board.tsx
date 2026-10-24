@@ -8,7 +8,7 @@ import { useProjectMoved, useProjectRevision, useStudio } from "../../api/projec
 import type { StudioClient } from "../../api/project-runtime/client";
 import type { BoardDto, FrameLevelDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { CANVAS_APP_STATE, PROJECT_CANVAS_CLASS, ProjectCanvas, useScenePointer, useWheelZoom } from "../../features/canvas/ProjectCanvas";
-import { usePreferences } from "../../features/settings/preferences";
+import { DeveloperOnly, usePreferences } from "../../features/settings/preferences";
 import { renderDocumentVisual } from "../monkeydiagram/documentVisualInput";
 import { createBoardSaveQueue, type BoardSaveState } from "./boardSaveQueue";
 import { BoardFeedbackError, prepareBoardDesignRequest, type BoardDesignRequest } from "./boardFeedback";
@@ -399,12 +399,13 @@ function RenderDialog({ candidates, documents, language, returnFocus, active, th
       <label htmlFor="monkeyboard-render-content">{text.label}</label>
       <textarea id="monkeyboard-render-content" value={content} onChange={(event) => setContent(event.target.value)} placeholder={text.placeholder}
         autoFocus={candidates.length === 1} required rows={4} disabled={sending} />
-      <details className="monkeyboard-render-details"><summary>{text.details}</summary>
+      {/* Each image's run, file hash and revision are for developer mode; the rows above name the images. */}
+      <DeveloperOnly><details className="monkeyboard-render-details"><summary>{text.details}</summary>
         <dl>{[...(source ? [[text.roleSource, source] as const] : []), ...references.map((page) => [text.roleReference, page] as const)].map(([role, page]) => <div key={`${role}:${pageKey(page)}`}>
           <dt>{role} · {describe(page)}</dt>
           <dd><code>{page.runId}</code><br /><code>{page.assetSha256}</code><br /><code>{page.revisionRef ?? "null"}</code> · <code>{page.pageIndex}</code></dd>
         </div>)}</dl>
-      </details>
+      </details></DeveloperOnly>
       {!source && <p className="monkeyboard-render-hint" role="status">{text.chooseSource}</p>}
       {error && <p className="monkeyboard-feedback-error" role="alert">{error}</p>}
       <div className="monkeyboard-feedback-actions"><button type="button" data-command="view.dialog.close" onClick={onCancel} disabled={sending}>{text.cancel}</button>

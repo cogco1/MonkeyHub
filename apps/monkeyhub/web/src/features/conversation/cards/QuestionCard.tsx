@@ -18,6 +18,7 @@ import type { PendingIntentDto } from "../../../api/project-runtime/generated";
 import type { StudioApiError } from "../../../api/project-runtime/client";
 import { BilingualText } from "../../../i18n/BilingualText";
 import { useT } from "../../../i18n/useT";
+import { DeveloperOnly } from "../../settings/preferences";
 
 export interface Choice {
   componentId: string;
@@ -71,7 +72,23 @@ export function QuestionCard({
             {expanded ? "收起" : `查看全部 ${candidates.length} 项`}</button>}
         </div>
       )}
-      {(error.question || error.acceptedForms.length > 0 || pending) && (
+      {/* The forms the server accepts are answers: one click puts one in the composer. */}
+      {error.acceptedForms.length > 0 && (
+        <div className="card__row chips">
+          {error.acceptedForms.map((form) => (
+            <button data-command="component.resolve_pick.reply" data-command-arg={form}
+              key={form}
+              type="button"
+              className="chip"
+              onClick={() => onReply(form)}
+            >
+              <code>{form}</code>
+            </button>
+          ))}
+        </div>
+      )}
+      {/* The server's own detail, the slots still open and the ruled-out candidates are for developer mode. */}
+      {(error.question || (pending && (pending.missingSlots.length > 0 || pending.rejectedCandidates.length > 0))) && <DeveloperOnly>
         <details className="card__row card__details">
           <summary data-command="view.disclosure.toggle" data-command-arg="technical_details">{t("common.technicalDetails")}</summary>
           {error.question && (
@@ -84,18 +101,6 @@ export function QuestionCard({
               {t("question.stillOpen", { slots: pending.missingSlots.join(", ") })}
             </p>
           )}
-          <div className="chips">
-            {error.acceptedForms.map((form) => (
-              <button data-command="component.resolve_pick.reply" data-command-arg={form}
-                key={form}
-                type="button"
-                className="chip"
-                onClick={() => onReply(form)}
-              >
-                <code>{form}</code>
-              </button>
-            ))}
-          </div>
           {pending && pending.rejectedCandidates.length > 0 && (
             <p className="quiet mono">
               {t("question.ruledOut", {
@@ -104,7 +109,7 @@ export function QuestionCard({
             </p>
           )}
         </details>
-      )}
+      </DeveloperOnly>}
     </article>
   );
 }

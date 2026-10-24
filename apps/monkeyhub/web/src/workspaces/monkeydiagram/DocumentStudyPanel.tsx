@@ -72,7 +72,7 @@ const formatted = (value: unknown) => typeof value === "number" ? value.toFixed(
 export function DocumentStudyPanel({ source, sourceName, draft, study, onChange, onSave, onReopen,
   selectedTrace, onSelectEvidence, comparisonTargets = [], onCompare, onPropose,
   proposing, dirty: draftDirty, busy = false, loading = false, error }: DocumentStudyPanelProps) {
-  const { language } = usePreferences();
+  const { language, developerMode } = usePreferences();
   const zh = language === "zh-CN";
   const text = (en: string, cn: string) => zh ? cn : en;
   const [step, setStep] = useState(0);
@@ -116,13 +116,17 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
         <p>{comparisonStudyName(pair.left.studyId)} ↔ {comparisonStudyName(pair.right.studyId)}</p>
         <dl><dt>{text("Topology similarity", "拓扑相似度")}</dt><dd>{formatted(pair.topologySimilarity)}</dd>
           <dt>{text("Largest proportion difference", "最大比例差异")}</dt><dd>{formatted(pair.maxProportionDelta)}</dd></dl>
-        <details><summary data-command="view.disclosure.toggle" data-command-arg="study_exact_versions">{text("Exact saved versions & unique relations", "确切保存版本及独有关系")}</summary>
-          <strong>{text("Left saved version", "左侧保存版本")}</strong><small>{pair.left.ledgerRef}</small>
+        {/* The relations only one side has are for everyone; each side's saved record reference is for developer mode. */}
+        <details><summary data-command="view.disclosure.toggle" data-command-arg="study_exact_versions">{developerMode
+          ? text("Exact saved versions & unique relations", "确切保存版本及独有关系") : text("Unique relations", "独有关系")}</summary>
+          <strong>{developerMode ? text("Left saved version", "左侧保存版本")
+            : text(`Only in ${comparisonStudyName(pair.left.studyId)}`, `只在 ${comparisonStudyName(pair.left.studyId)} 里有`)}</strong>{developerMode && <small>{pair.left.ledgerRef}</small>}
           <ul>{(pair.leftOnlyTopology ?? []).map((item, i) => <li key={i}>{comparisonFact(item)}</li>)}</ul>
-          <strong>{text("Right saved version", "右侧保存版本")}</strong><small>{pair.right.ledgerRef}</small>
+          <strong>{developerMode ? text("Right saved version", "右侧保存版本")
+            : text(`Only in ${comparisonStudyName(pair.right.studyId)}`, `只在 ${comparisonStudyName(pair.right.studyId)} 里有`)}</strong>{developerMode && <small>{pair.right.ledgerRef}</small>}
           <ul>{(pair.rightOnlyTopology ?? []).map((item, i) => <li key={i}>{comparisonFact(item)}</li>)}</ul>
         </details></div>)}
-      <small>{result.method}</small>
+      {developerMode && <small>{result.method}</small>}
     </div>;
   }
 
@@ -257,7 +261,7 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
               <p>{text("These are method-generated suggestions. Author a challengeable explanation in the next step.", "这些是方法生成的提示。请在下一步提出可挑战的解释。")}</p>
               <ul>{study.hypotheses.map(row => <li key={String(row.hypothesisId)}>{String(row.rule).replaceAll("_", " ")}</li>)}</ul>
             </details>
-            <small>{text("Derivation", "推导方法")}: {study.derivationMethod ?? text("Older unstamped revision", "未标注方法的旧版本")}</small>
+            {developerMode && <small>{text("Derivation", "推导方法")}: {study.derivationMethod ?? text("Older unstamped revision", "未标注方法的旧版本")}</small>}
             </details>
           </>}
         </section>}
@@ -359,8 +363,8 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
               <div className="document-study__card-title"><h4>{text("Archived comparison", "归档比较")} {index + 1}</h4>
                 <button data-command="study.run.remove_comparison" data-command-arg={index} type="button" onClick={() => changeResearch({ comparisons: comparisonDefinitions.filter((_, position) => position !== index) })}>
                   {text("Remove archived comparison", "移除归档比较")}</button></div>
-              <details><summary data-command="view.disclosure.toggle" data-command-arg="study_saved_inputs">{text("Saved inputs", "保存的输入版本")}</summary>
-                {definition.studies.map(row => <p key={`${row.studyId}:${row.ledgerRef}`}>{comparisonStudyName(row.studyId)}<small>{row.ledgerRef}</small></p>)}
+              <details><summary data-command="view.disclosure.toggle" data-command-arg="study_saved_inputs">{developerMode ? text("Saved inputs", "保存的输入版本") : text("Studies compared", "参与比较的研究")}</summary>
+                {definition.studies.map(row => <p key={`${row.studyId}:${row.ledgerRef}`}>{comparisonStudyName(row.studyId)}{developerMode && <small>{row.ledgerRef}</small>}</p>)}
               </details>
               {result ? comparisonResult(result) : <p>{text("This comparison has no saved result yet. Save the study to compute and retain it.", "此比较尚无保存结果。保存研究以计算并保留结果。")}</p>}
             </article>;
@@ -420,8 +424,11 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
         </section>}
       </fieldset>
       <details className="document-study__provenance"><summary data-command="view.disclosure.toggle" data-command-arg="study_source">{text("Source & saved revision", "来源与保存版本")}</summary>
-        <dl><dt>{text("Source page", "来源页")}</dt><dd>{source.pageIndex + 1}</dd><dt>{text("Source fingerprint", "来源指纹")}</dt><dd>{source.assetSha256}</dd>
-          <dt>{text("Saved revision", "保存版本")}</dt><dd>{study?.ledgerRef ?? text("Not saved", "尚未保存")}</dd></dl>
+        {/* The page and whether the study is saved are for everyone; the file's fingerprint and the saved record's reference are for developer mode. */}
+        <dl><dt>{text("Source page", "来源页")}</dt><dd>{source.pageIndex + 1}</dd>
+          {developerMode && <><dt>{text("Source fingerprint", "来源指纹")}</dt><dd>{source.assetSha256}</dd></>}
+          <dt>{text("Saved revision", "保存版本")}</dt><dd>{!study ? text("Not saved", "尚未保存") : developerMode ? study.ledgerRef
+            : dirty ? text("Saved; later corrections are not saved yet", "已保存，之后的校正还没保存") : text("Saved", "已保存")}</dd></dl>
       </details>
     </div>
     <footer className="document-study__footer">

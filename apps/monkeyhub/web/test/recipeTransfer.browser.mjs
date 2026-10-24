@@ -24,7 +24,7 @@ function Transfer({projectId}){
 }
 function App(){
  const [project,setProject]=useState('second-project'),preferences=usePreferences();
- window.fixture={setProject,setLanguage:preferences.setLanguage,setTheme:preferences.setTheme};
+ window.fixture={setProject,setLanguage:preferences.setLanguage,setTheme:preferences.setTheme,setDeveloperMode:preferences.setDeveloperMode};
  return <ProjectBar label="Surface menus"><Transfer key={project} projectId={project}/></ProjectBar>;
 }
 createRoot(document.getElementById('root')).render(<UserPreferencesProvider><App/></UserPreferencesProvider>);`;
@@ -105,9 +105,15 @@ try {
   await cmd(page, "drawing.recipe.import_cancel").click();
   assert.equal(writes.length, 0);
   await upload();
+  // 2-7: the file's hash, decision and source revision wait for developer mode.
+  await cmd(page, "drawing.recipe.import_confirm").waitFor();
+  assert.equal(await cmd(page, "view.disclosure.toggle", { arg: "recipe_version", includeHidden: true }).count(), 0, "outside developer mode the row shows no hashes");
+  assert.equal(await page.getByText(document.sha256, { exact: false }).count(), 0);
+  await page.screenshot({ path: join(scratch, "wide.png"), fullPage: true });
+  await page.evaluate(() => window.fixture.setDeveloperMode(true));
   await cmd(page, "view.disclosure.toggle", { arg: "recipe_version" }).click();
   await page.getByText(`Source revision: ${document.source.revisionSha256}`, { exact: true }).waitFor();
-  await page.screenshot({ path: join(scratch, "wide.png"), fullPage: true });
+  await page.evaluate(() => window.fixture.setDeveloperMode(false));
   await cmd(page, "drawing.recipe.import_confirm").click();
   await page.getByText("Imported as a project preference. New drawings can now use it.", { exact: true }).waitFor();
   await page.getByRole("alert").filter({ hasText: "Saved; refresh unavailable." }).waitFor();

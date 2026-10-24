@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { useProjectRevision, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import { DeveloperOnly } from "../settings/preferences";
 import type { BoardDto } from "../../api/project-runtime/generated";
 import { useT } from "../../i18n/useT";
 import { readBoardDatasets } from "./boardDatasets";
@@ -317,7 +318,8 @@ export function ComponentInfoPanel({ subject, onClose }: { subject: ComponentInf
           heading={card.summary.length > 1} t={t} />)}
         {card.sections.map((block) => <Block key={`${card.componentId}\u0000${block.datasetId}`} block={block} heading t={t} />)}
       </>}
-      {card && <Technical card={card} t={t} />}
+      {/* Each field names its own source; the ids and the datasets behind the card are for developer mode. */}
+      {card && <DeveloperOnly><Technical card={card} t={t} /></DeveloperOnly>}
     </div>
   </aside>;
 }

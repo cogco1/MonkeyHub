@@ -1798,7 +1798,11 @@ async function modelComparison() {
   assert.ok(compares.length > 0, "View changes reads the comparison");
   assert.deepEqual([...new Set(compares.map((row) => `${row.compare} against ${row.against}`))], [`${candidateRun} against ${baseRun}`],
     "the comparison is asked for the selected result against its exact original");
+  // 2-7: the count of changes is for everyone; runs, states and files wait for developer mode.
+  await comparison.locator(".model-compare__summary").waitFor();
   const details = page.locator(".model-compare__details");
+  assert.equal(await details.count(), 0, "outside developer mode the comparison shows no technical details");
+  await setDeveloperMode(true);
   await details.locator("dt").filter({ hasText: /^Original run$/ }).waitFor({ state: "attached" });
   const pairs = Object.fromEntries(await details.locator("dt").evaluateAll((terms) =>
     terms.map((term) => [term.textContent.trim(), term.nextElementSibling?.textContent.trim() ?? null])));
@@ -1808,6 +1812,9 @@ async function modelComparison() {
   for (const run of [candidateRun, baseRun]) {
     assert.ok(Object.values(pairs).includes(workspaceFixture.stateDigestOf("A", run)), `the details show ${run}'s exact state digest: ${shown}`);
   }
+  await setDeveloperMode(false);
+  await details.waitFor({ state: "detached" });
+  assert.equal(await comparison.isVisible(), true, "switching developer mode keeps the comparison open");
   await page.screenshot({ path: path.join(temporary, "comparison-en-light-1440.png") });
 
   // The comparison's own menu returns to the conversation it came from, as it was left.

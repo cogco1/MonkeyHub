@@ -113,14 +113,21 @@ try {
     assert.equal(await pub().getByRole('alert').count(), 1, 'the same failure is not announced twice');
     assert.match(await panel.locator('.error-panel__reason').innerText(), reason);
     assert.match(await panel.locator('.error-panel__next').innerText(), next);
+    // 2-7: the code, status and the service's own words wait for developer mode, where they start open.
     const details = panel.locator('details');
-    assert.equal(await details.evaluate((element) => element.open), developer, 'diagnostics follow developer mode');
-    assert.equal(await details.locator('[lang="en"]').isVisible(), developer, 'raw server detail is folded for ordinary use');
-    if (!developer) await details.locator('summary').click();
+    if (!developer) {
+      assert.equal(await details.count(), 0, 'outside developer mode the panel says only what happened and what to do');
+      assert.ok(!(await panel.innerText()).includes(detail), 'the raw server detail is not shown for ordinary use');
+      await page.locator('#developer-mode').click();
+    }
+    assert.equal(await details.evaluate((element) => element.open), true, 'diagnostics start open in developer mode');
     assert.equal(await details.locator('.error-panel__code').innerText(), code);
     assert.equal(await details.locator('.error-panel__status').innerText(), `HTTP ${status}`);
     assert.equal(await details.locator('[lang="en"]').innerText(), detail);
-    if (!developer) await details.locator('summary').click();
+    if (!developer) {
+      await page.locator('#developer-mode').click();
+      assert.equal(await details.count(), 0, 'turning developer mode off folds the diagnostics away again');
+    }
   }
   await step('failed initial publication read explains recovery in both languages and preserves technical details', async () => {
     const detail = 'Publication record fixture-282 could not be read.';
@@ -129,7 +136,7 @@ try {
       ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'PUBLICATION_READ_FAILED', detail }) }) : route.continue());
     for (const language of ['en', 'zh-CN']) {
       await page.goto(vite.resolvedUrls.local[0] + '?lang=' + language);
-      await until(() => pub().innerText().catch(() => ''), (text) => text.includes(detail) || /Technical details|技术详情/.test(text), 'publication read refusal rendered');
+      await until(() => pub().locator('.error-panel__reason').count(), (count) => count === 1, 'publication read refusal rendered');
       await page.screenshot({ path: path.join(temporary, `publish-read-failure-${language}.png`), fullPage: true });
       const refusal = { code: 'PUBLICATION_READ_FAILED', status: 503, detail,
         reason: language === 'en' ? /ran into a problem/ : /项目服务出错/,
