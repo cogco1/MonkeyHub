@@ -966,6 +966,12 @@ export const messagesEn = {
 
   "program.title": "Program",
   "document.modelSource.label": "Linked model",
+  "document.modelSource.linkedTo": "Linked to",
+  "document.modelSource.change": "Change",
+  "document.modelSource.keep": "Keep it",
+  "document.modelSource.changeTo": "Link the selected model instead",
+  "document.modelSource.changing": "Changing…",
+  "document.modelSource.before": "Before: {name}.",
   "document.modelSource.unknown": "This drawing has no linked model. You can still annotate and save it.",
   "document.modelSource.mismatch": "The editing base differs from this drawing's linked model.",
   "document.modelSource.ready": "The editing base matches the linked model.",

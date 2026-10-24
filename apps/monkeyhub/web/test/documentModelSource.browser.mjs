@@ -84,7 +84,7 @@ seed(pdfSha,0,'4'.repeat(64),[],'合成 PDF 第一页');
 seed(pdfSha,1,'5'.repeat(64),[line('rotated-page-line')],'检查旋转裁切页');
 const originalPage=()=>currentPages.get(key({projectId:'ui-project',runId:storageRun,assetSha256:documentSha,pageIndex:0}));
 let revision=8,comments=[];
-const metrics=window.modelFixture={reads:[],writes:[],bindings:[],continues:[],intents:[],fileLoads:0,holdBinding:true,releaseBinding:null,
+const metrics=window.modelFixture={reads:[],writes:[],bindings:[],changes:[],continues:[],intents:[],fileLoads:0,holdBinding:true,releaseBinding:null,
  scope:{projectId:'ui-project',runId:storageRun},holdNext:null,pending:null,releasePending:null,failNext:null};
 const matches=(rule,kind,details)=>rule?.kind===kind&&Object.entries(rule).every(([name,value])=>name==='kind'||name==='mode'||details[name]===value);
 async function boundary(kind,details){
@@ -128,6 +128,13 @@ const overrides={
   source={...source,modelSource:structuredClone(modelSource),modelSourceBindingRef:'binding-1'};
   return structuredClone(source);
  },
+ changeDocumentModelSource:async(projectId,runId,sha,modelSource)=>{
+  metrics.changes.push({projectId,runId,sha,modelSource:structuredClone(modelSource)});
+  const previous=source.modelSource;
+  source={...source,modelSource:structuredClone(modelSource),modelSourceBindingRef:'binding-'+(metrics.changes.length+1),
+   modelSourceHistory:[...(source.modelSourceHistory??[]),{modelSource:structuredClone(previous),bindingRef:source.modelSourceBindingRef,boundAt:null,actorId:null}]};
+  return structuredClone(source);
+ },
  documentComments:async run=>{metrics.reads.push({kind:'comments',runId:run});return {comments:structuredClone(comments)}}
 };
 function App(){
@@ -169,7 +176,7 @@ const errors = [];
 const apiRequests = [];
 const status = () => page.locator(".document-model-source").getAttribute("data-model-source-status");
 const snapshot = () => page.evaluate(() => ({ ...window.modelFixture.state(),
-  reads: window.modelFixture.reads, writes: window.modelFixture.writes, bindings: window.modelFixture.bindings,
+  reads: window.modelFixture.reads, writes: window.modelFixture.writes, bindings: window.modelFixture.bindings, changes: window.modelFixture.changes,
   continues: window.modelFixture.continues, intents: window.modelFixture.intents, fileLoads: window.modelFixture.fileLoads }));
 const submitButton = () => cmd(page, "markup.hand_to_ai.submit_page_note");
 const sourceSelect = () => page.locator(".document-header > select");
@@ -331,7 +338,7 @@ try {
     assert.equal(await page.locator(".document-text-editor textarea").inputValue(), "未完成的页内文字");
     assert.equal(await page.locator(".document-header > select").inputValue(), documentSha);
     assert.equal(await page.locator(".document-model-source strong").textContent(), "模型 A");
-    assert.equal(await page.locator(".document-model-source select").count(), 0, "a known source cannot be reassigned in this UI");
+    assert.equal(await page.locator(".document-model-source select").count(), 0, "the chooser stays closed until the link is asked to change");
     assert.equal(await submitButton().isDisabled(), true);
     await page.locator(".document-text-editor textarea").press("Escape");
   });
@@ -348,6 +355,38 @@ try {
     assert.equal(await page.locator(".document-header > select").inputValue(), documentSha);
     assert.deepEqual(after.saved, before.saved);
     assert.ok(after.reads.every((read) => read.runId === storageRun));
+  });
+
+  await step("the link can be changed from its row, the earlier link stays in view, and nothing else is rewritten", async () => {
+    const before = await snapshot();
+    const line = page.locator(".document-model-source__description");
+    assert.match(await line.textContent(), /已关联\s*模型 A/);
+    const change = cmd(page, "document.model_source.change");
+    await change.click();
+    assert.deepEqual(await page.locator(".document-model-source select option").evaluateAll((options) => options.map((option) => option.textContent)),
+      ["选择模型", "模型 B"], "the model it already has is not offered");
+    assert.equal(await change.textContent(), "不换了");
+    await change.click();
+    assert.equal(await page.locator(".document-model-source select").count(), 0, "keeping the link closes the chooser");
+    await change.click();
+    await page.locator(".document-model-source select").selectOption(JSON.stringify([modelB.runId, modelB.stateDigest, modelB.assetSha256]));
+    await cmd(page, "document.model_source.link").click();
+    await until(snapshot, (value) => value.changes.length === 1, "the link change reached the document port");
+    await until(() => line.textContent(), (value) => /已关联\s*模型 B/.test(value) && value.includes("之前关联：模型 A。"), "the row names both models");
+    assert.equal(await page.locator(".document-model-source select").count(), 0, "the chooser closes once the link is changed");
+    const changed = await snapshot();
+    assert.deepEqual(changed.changes, [{ projectId: "ui-project", runId: storageRun, sha: documentSha, modelSource: modelB }]);
+    assert.deepEqual(changed.saved, before.saved, "changing the link does not write or replace page annotations");
+    assert.equal(changed.fileLoads, before.fileLoads, "the same bytes are not read again");
+    assert.deepEqual(changed.bindings, before.bindings, "the one-time link is not used for a change");
+    assert.equal(await status(), "mismatch", "the editing base is now another model than the link");
+    // Back to the first model: the row keeps naming the one before.
+    await change.click();
+    await page.locator(".document-model-source select").selectOption(JSON.stringify([modelA.runId, modelA.stateDigest, modelA.assetSha256]));
+    await cmd(page, "document.model_source.link").click();
+    await until(snapshot, (value) => value.changes.length === 2, "the second change reached the document port");
+    await until(() => line.textContent(), (value) => /已关联\s*模型 A/.test(value) && value.includes("之前关联：模型 B。"), "the row names the model before");
+    await until(status, (value) => value === "ready", "the link matches the editing base again");
   });
 
   await step("submission requires all three model identity fields to match", async () => {

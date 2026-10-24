@@ -61,6 +61,7 @@ import {
   acceptCommittedDesignApiCandidatesCandidateIdAcceptPost,
   forkCommittedDesignApiDesignBranchesPost,
   associateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePost,
+  changeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePut,
   chooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPut,
   compileIntentApiIntentsPost,
   createDocumentApiDocumentsPost,
@@ -510,6 +511,12 @@ export const createStudioClient = (connection: ServerConnection) => ({
 
   bindDocumentModelSource(projectId: string, runId: string, assetSha256: string, modelSource: ModelSourceDto): Promise<SourceDocumentDto> {
     return call(`POST /api/documents/${assetSha256}/model-source`, associateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePost({ client: connection.client,
+      path: { asset_sha256: assetSha256 }, body: { projectId, runId, modelSource },
+    }));
+  },
+  /** Link an uploaded or imported document to another model. The link it had stays in the document's modelSourceHistory. */
+  changeDocumentModelSource(projectId: string, runId: string, assetSha256: string, modelSource: ModelSourceDto): Promise<SourceDocumentDto> {
+    return call(`PUT /api/documents/${assetSha256}/model-source`, changeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePut({ client: connection.client,
       path: { asset_sha256: assetSha256 }, body: { projectId, runId, modelSource },
     }));
   },

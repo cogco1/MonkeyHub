@@ -385,6 +385,40 @@
             "docs/architecture/project-runtime.md"
           ],
           "depends_on": []
+        },
+        {
+          "id": "doc-model",
+          "status": "active",
+          "branch": "claude/300-b3-doc-model",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-doc-model",
+          "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "A document page links an uploaded file to the model being edited at once (no dropdown, no click) and says 'linked to X · change'; changing the link keeps the earlier link's record (modelSourceHistory) instead of overwriting it. The Board half (3-1) waits for 0-5b. Merged with batch 3.",
+          "modules": [
+            "project_runtime.documents",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/api/project-runtime/client.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/features/commands/tree.generated.ts",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.css",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
+            "apps/monkeyhub/web/test/documentModelSource.browser.mjs",
+            "docs/architecture/system-map.md",
+            "governance/module_registry.json",
+            "packages/archflow/src/archflow/project/record_kinds.py",
+            "services/project-runtime/src/project_runtime/api/dto/artifacts.py",
+            "services/project-runtime/src/project_runtime/api/routes/artifacts.py",
+            "services/project-runtime/src/project_runtime/application/artifacts.py",
+            "services/project-runtime/tests/test_working_copies.py"
+          ],
+          "depends_on": []
         }
       ]
     }
