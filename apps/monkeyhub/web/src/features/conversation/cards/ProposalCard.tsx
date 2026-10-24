@@ -130,7 +130,7 @@ export function ProposalCard({
         </dl>
       </div>}
       <details className="card__row card__details">
-        <summary>{t("common.technicalDetails")}</summary>
+        <summary data-command="view.disclosure.toggle" data-command-arg="technical_details">{t("common.technicalDetails")}</summary>
         <p className="card__title">
           <span className="mono">{subject}</span>
           {target.elementId && (
@@ -171,7 +171,7 @@ export function ProposalCard({
                 · {t("proposal.unknownCoverage", {
                   count: impact.unknownCoverage.count,
                 })}{" "}
-                <button
+                <button data-command="view.evidence.open"
                   type="button"
                   className="btn btn--link"
                   onClick={() => onEvidence("honesty")}
@@ -226,7 +226,7 @@ export function ProposalCard({
         typeof change.new === "number" &&
         change.old > 0 && (
           <details className="card__row card__details">
-            <summary>{t("proposal.refine.ariaLabel")}</summary>
+            <summary data-command="candidate.modify_existing.refine">{t("proposal.refine.ariaLabel")}</summary>
             <Refine
               fieldKey={target.key}
               old={change.old}
@@ -250,7 +250,7 @@ export function ProposalCard({
         </div>
       )}
       <div className="card__row actions">
-        <button
+        <button data-command="candidate.modify_existing.apply"
           type="button"
           className="btn btn--primary"
           disabled={busy || inactive || proposal.status === "conflict"}
@@ -258,7 +258,7 @@ export function ProposalCard({
         >
           {t("common.apply")}
         </button>
-        <button
+        <button data-command="candidate.modify_existing.adjust"
           type="button"
           className="btn"
           onClick={() => onAdjust(compiled)}
@@ -353,7 +353,7 @@ function Refine({
         <span className="quiet refine__meta">{status}</span>
       </div>
       <div className="refine__row">
-        <button
+        <button data-command="candidate.modify_existing.refine_less"
           type="button"
           className="btn btn--small"
           aria-label={t("proposal.refine.less")}
@@ -371,7 +371,7 @@ function Refine({
           aria-label={t("proposal.refine.sliderAria")}
           onChange={(event) => send(Number(event.currentTarget.value))}
         />
-        <button
+        <button data-command="candidate.modify_existing.refine_more"
           type="button"
           className="btn btn--small"
           aria-label={t("proposal.refine.more")}

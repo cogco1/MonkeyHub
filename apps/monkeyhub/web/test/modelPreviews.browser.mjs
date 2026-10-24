@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
+import { cmd } from "./commandLocator.mjs";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = path.resolve(webRoot, "../../..");
@@ -80,11 +81,11 @@ async function step(name, action) { current = name; await action(); passed.push(
 const surface = () => page.locator('[data-project-surface="arch"]:visible');
 const preview = source => api(`/api/model-assets/${source.assetSha256}/preview?runId=${source.runId}&stateDigest=${source.stateDigest}`);
 async function versions() {
-  const toggle = page.locator('.project-bar .stage__versions-toggle');
+  const toggle = cmd(page.locator('.project-bar'), 'design.go_to_step.versions', { includeHidden: true });
   if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
   const panel = surface().getByRole('region', { name: 'Model versions', exact: true });
-  await panel.locator('.vcard__export[aria-pressed="true"]').first().waitFor({state:'attached'});
-  const summary = panel.locator('summary').filter({ hasText: 'Existing models and past runs' });
+  await cmd(panel, 'view.old_results.open', { includeHidden: true }).and(panel.locator('[aria-pressed="true"]')).first().waitFor({state:'attached'});
+  const summary = cmd(panel, 'view.old_results.toggle', { includeHidden: true });
   await summary.waitFor();
   if (!(await summary.evaluate(el => el.parentElement.open))) await summary.click();
   return panel;
@@ -128,8 +129,8 @@ try {
   });
   await step('unseen version falls back to icon, viewed version shows retained PNG', async () => {
     const panel = await versions();
-    await panel.locator('.vcard__export').filter({hasText:'model-a.3dm'}).locator('.model-thumbnail img').waitFor();
-    const next = panel.locator('.vcard__export').filter({hasText:'model-b.3dm'});
+    await cmd(panel, 'view.old_results.open', { includeHidden: true }).filter({hasText:'model-a.3dm'}).locator('.model-thumbnail img').waitFor();
+    const next = cmd(panel, 'view.old_results.open', { includeHidden: true }).filter({hasText:'model-b.3dm'});
     assert.equal(await next.locator('.model-thumbnail svg').count(),1);
     assert.equal(await next.locator('.model-thumbnail img').count(),0);
     await next.click();
@@ -147,7 +148,7 @@ try {
     await surface().locator('.viewport-host').waitFor();
     const panel=await versions();
     for(const fileName of ['model-b.3dm','model-a.3dm']){
-      const version=panel.locator('.vcard__export').filter({hasText:fileName});
+      const version=cmd(panel, 'view.old_results.open', { includeHidden: true }).filter({hasText:fileName});
       await version.scrollIntoViewIfNeeded();
       await version.locator('.model-thumbnail img').waitFor();
     }
@@ -165,13 +166,13 @@ try {
     };
     await page.route(pattern,hold);
     const panel=await versions();
-    const third=panel.locator('.vcard__export').filter({hasText:'model-c.3dm'});
+    const third=cmd(panel, 'view.old_results.open', { includeHidden: true }).filter({hasText:'model-c.3dm'});
     await third.click();
     await until(()=>third.getAttribute('aria-pressed'),value=>value==='true','third model installed');
     await until(()=>blockedReads,value=>value>=1,'preview read suspended');
     // Allow the App's post-load capture lookup to join the thumbnail lookup.
     await delay(350);
-    const original=panel.locator('.vcard__export').filter({hasText:'model-a.3dm'});
+    const original=cmd(panel, 'view.old_results.open', { includeHidden: true }).filter({hasText:'model-a.3dm'});
     await original.click();
     await until(()=>original.getAttribute('aria-pressed'),value=>value==='true','original model restored');
     release();
@@ -186,7 +187,7 @@ try {
     const unreadable=page.waitForResponse(response=>response.url().includes(`/api/documents/${document.assetSha256}/bytes`));
     await page.reload();
     await surface().locator('.viewport-host').waitFor();
-    const panel=await versions(), second=panel.locator('.vcard__export').filter({hasText:'model-b.3dm'});
+    const panel=await versions(), second=cmd(panel, 'view.old_results.open', { includeHidden: true }).filter({hasText:'model-b.3dm'});
     await second.scrollIntoViewIfNeeded();
     await unreadable;
     await second.locator('.model-thumbnail svg').waitFor();
@@ -218,14 +219,14 @@ try {
       new URL(response.url()).pathname === '/api/documents');
     const discovered = waitForDiscovery();
     await page.goto(boardUrl); await waitForBoard(); await discovered;
-    await page.getByRole('button', { name: 'Project documents', exact: true }).click();
+    await cmd(page, 'board.add_document_page.toggle_list').click();
     const source = page.locator('.monkeyboard-source').filter({ hasText: image.fileName });
     await source.waitFor();
     await delay(1000); // Keep the existing save-debounce observation window.
     assert.deepEqual(await api('/api/board'), before, 'automatic preview discovery must preserve the saved scene and revision');
     assert.deepEqual(boardWrites, [], 'automatic previews must not trigger a Board save');
 
-    await source.getByRole('button', { name: 'Add page', exact: true }).click();
+    await cmd(source, 'board.add_document_page.add').click();
     const placed = await until(() => api('/api/board'), board => board.elements.some(element =>
       !element.isDeleted && element.type === 'image' && element.customData?.sourceDocument?.assetSha256 === image.assetSha256), 'explicit thumbnail placement saved');
     const images = placed.elements.filter(element => !element.isDeleted && element.type === 'image');

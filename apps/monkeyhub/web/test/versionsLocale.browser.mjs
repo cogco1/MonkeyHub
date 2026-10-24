@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 import { workspaceFixture } from "./workspaceFixture.mjs";
+import { cmd } from "./commandLocator.mjs";
 
 // Mount the real history panel with its real preference/runtime providers. Only
 // caller-owned inputs and callbacks are fixtures; no production UI is replaced.
@@ -112,11 +113,11 @@ try {
     await name.fill("  用户 {name}  ");
     const recovery = root.locator(":scope > details").first();
     const legacy = root.locator(":scope > details").last();
-    await recovery.locator("summary").click(); await legacy.locator("summary").click();
+    await cmd(recovery, "view.disclosure.toggle", { arg: "recovery_points" }).click(); await cmd(legacy, "view.old_results.toggle").click();
     if (mode === "fallback") {
-      await root.locator('[data-design-stage] button').nth(1).click();
+      await cmd(root.locator('[data-design-stage]'), "design.go_to_step.fork").click();
       await root.locator(":scope > form input").fill("alternate-layout");
-      await root.locator(":scope > details").nth(1).locator("summary").click();
+      await cmd(root.locator(":scope > details").nth(1), "view.disclosure.toggle", { arg: "candidates" }).click();
       await root.locator('[data-preview-candidate="candidate-a"] input').check();
       await root.locator('[data-preview-candidate="candidate-b"] input').check();
     }
@@ -136,14 +137,14 @@ try {
       equal(await root.getAttribute("aria-label"), text.aria, `${prefix} list accessible name`);
       equal(await name.getAttribute("aria-label"), text.name, `${prefix} input accessible name`);
       equal(await name.getAttribute("placeholder"), text.placeholder, `${prefix} input placeholder`);
-      equal(await current.locator("form button").textContent(), text.save, `${prefix} save action`);
+      equal(await cmd(current, "design.go_to_step.save_milestone").textContent(), text.save, `${prefix} save action`);
       equal(await current.locator("strong").textContent(), text.current, `${prefix} current draft`);
       equal(await root.locator('[data-working-draft="draft-saved"] strong').textContent(), "保留 {name}", `${prefix} saved user name`);
       equal(await root.locator('[data-working-draft="draft-unnamed"] strong').textContent(), text.saved, `${prefix} unnamed saved version`);
-      equal(await recovery.locator("summary").textContent(), text.recovery, `${prefix} recovery count`);
+      equal(await cmd(recovery, "view.disclosure.toggle", { arg: "recovery_points" }).textContent(), text.recovery, `${prefix} recovery count`);
       equal(await recovery.locator("p").textContent(), text.guidance, `${prefix} recovery explanation`);
       equal(await recovery.locator("strong").textContent(), text.point, `${prefix} recovery row`);
-      equal(await legacy.locator("summary").textContent(), text.legacy, `${prefix} legacy history`);
+      equal(await cmd(legacy, "view.old_results.toggle").textContent(), text.legacy, `${prefix} legacy history`);
       equal(await legacy.locator(".vcard__filename").textContent(), artifact.fileName, `${prefix} user filename`);
       equal(await state(), before, `${prefix} mounted input/focus/selection and open/selected state`);
       equal(await page.evaluate(() => window.__calls), [], `${prefix} locale never invokes actions`);
@@ -152,13 +153,13 @@ try {
       } else {
         equal(await root.locator(":scope > .vcard > .vcard__head > strong").last().textContent(), text.history, `${prefix} design history`);
         equal(await root.locator("select").getAttribute("aria-label"), text.branch, `${prefix} branch accessible name`);
-        equal(await root.locator('[data-design-stage] button').allTextContents(), [stage.label+text.head,text.fork], `${prefix} stage actions`);
+        equal(await cmd(root.locator('[data-design-stage]'), "design.go_to_step.stage").or(cmd(root.locator('[data-design-stage]'), "design.go_to_step.fork")).allTextContents(), [stage.label+text.head,text.fork], `${prefix} stage actions`);
         equal((await root.locator(":scope > form label").textContent()).trim(), text.forkName, `${prefix} branch label interpolation`);
-        equal(await root.locator(":scope > form button").allTextContents(), [text.create,text.cancel], `${prefix} branch actions`);
+        equal(await cmd(root.locator(":scope > form"), "design.go_to_step.create_branch").or(cmd(root.locator(":scope > form"), "design.go_to_step.cancel_fork")).allTextContents(), [text.create,text.cancel], `${prefix} branch actions`);
         equal(await root.locator('[data-working-copy] strong').textContent(), text.exploration, `${prefix} exploration interpolation`);
         const candidateDetails=root.locator(":scope > details").nth(1);
-        equal(await candidateDetails.locator("summary").textContent(),text.candidates,`${prefix} candidates summary`);
-        equal(await candidateDetails.locator(":scope > .vcard > button").textContent(),text.combine,`${prefix} combine action`);
+        equal(await cmd(candidateDetails, "view.disclosure.toggle", { arg: "candidates" }).textContent(),text.candidates,`${prefix} candidates summary`);
+        equal(await cmd(candidateDetails, "design.go_to_step.combine").textContent(),text.combine,`${prefix} combine action`);
         equal(await candidateDetails.locator(":scope > .vcard > .quiet").textContent(),text.combineHelp,`${prefix} combine guidance`);
         equal(await root.locator('[data-preview-candidate="candidate-a"] input').getAttribute("aria-label"),text.checkbox,`${prefix} candidate accessible name`);
         equal(await root.locator('[data-preview-candidate="candidate-a"] label').textContent(),text.uncommitted,`${prefix} candidate status`);
@@ -167,44 +168,44 @@ try {
       }
     }
     // Explicit actions still receive exactly the existing caller values.
-    await current.locator("form button").click();
+    await cmd(current, "design.go_to_step.save_milestone").click();
     // The save response can also label the current run; it must not replace the input.
     await page.evaluate(workingDraft => window.__setFixture({workingDraft}), {
       ...draft, current: {...draft.current, label: "用户 {name}"},
     });
     assert.equal(await name.evaluate(node => node === window.__nameNode), true, "saving a name keeps the current input mounted");
     assert.equal(await name.inputValue(), "  用户 {name}  ", "save response keeps the entered text");
-    await current.locator(".vcard__exports button").first().click();
-    await recovery.locator("button").click();
-    await current.locator(".vcard__exports button").nth(1).click();
+    await cmd(current, "design.go_to_step.continue").click();
+    await cmd(recovery, "design.go_to_step.continue").click();
+    await cmd(current, "stage.accept.next").click();
     const wanted=[{name:"save",args:["draft-current","用户 {name}"]},{name:"restore",args:["draft-current"]},
       {name:"restore",args:["draft-recovery"]},{name:"accept",args:["draft-current"]}];
-    if(mode==="tree") { await root.locator('[data-design-tree-link] button').click(); wanted.push({name:"tree",args:[]}); }
+    if(mode==="tree") { await cmd(root.locator('[data-design-tree-link]'), "view.design_tree.open").click(); wanted.push({name:"tree",args:[]}); }
     else {
       await root.locator("select").selectOption("alternate"); wanted.push({name:"branch",args:["alternate"]});
-      await root.locator('[data-design-stage] button').first().click(); wanted.push({name:"stage",args:[stage]});
-      await root.locator(":scope > form button").first().click(); wanted.push({name:"fork",args:[stage,"alternate-layout"]});
-      await root.locator('[data-working-copy] button').click(); wanted.push({name:"candidate",args:[copies[0].options[0].modelSource]});
-      await root.locator('[data-preview-candidate="candidate-a"] button').click(); wanted.push({name:"candidate",args:[candidates[0].modelSource]});
-      const combine=root.locator(":scope > details").nth(1).locator(":scope > .vcard > button");
+      await cmd(root.locator('[data-design-stage]'), "design.go_to_step.stage").click(); wanted.push({name:"stage",args:[stage]});
+      await cmd(root.locator(":scope > form"), "design.go_to_step.create_branch").click(); wanted.push({name:"fork",args:[stage,"alternate-layout"]});
+      await cmd(root.locator('[data-working-copy]'), "design.go_to_step.candidate").click(); wanted.push({name:"candidate",args:[copies[0].options[0].modelSource]});
+      await cmd(root.locator('[data-preview-candidate="candidate-a"]'), "design.go_to_step.continue").click(); wanted.push({name:"candidate",args:[candidates[0].modelSource]});
+      const combine=cmd(root.locator(":scope > details").nth(1), "design.go_to_step.combine");
       await combine.click(); wanted.push({name:"combine",args:[["candidate-a","candidate-b"]]});
       await root.locator('[data-preview-candidate="candidate-b"] input').uncheck();
       assert.equal(await combine.isDisabled(),true,"one candidate cannot combine");
-      await root.locator(":scope > form button").last().click();
+      await cmd(root.locator(":scope > form"), "design.go_to_step.cancel_fork").click();
       assert.equal(await root.locator(":scope > form").count(),0,"Cancel dismisses without forking again");
       await page.evaluate(source=>window.__setFixture({currentStageRef:"stage-1",currentModelSource:source}),candidates[0].modelSource);
       const selected=root.locator('[data-preview-candidate="candidate-a"]');
       equal(await selected.locator(".quiet").textContent(),expected[initial].historical,`${mode}/${initial} historical candidate guidance`);
-      assert.equal(await selected.locator("button").nth(1).isDisabled(),true,"historical candidate cannot accept on current branch");
+      assert.equal(await cmd(selected, "stage.accept.next").isDisabled(),true,"historical candidate cannot accept on current branch");
     }
-    await legacy.locator(".vcard__export").click(); wanted.push({name:"open",args:[artifact,"原始 {source}"]});
-    await legacy.locator(".vcard__compare").click(); wanted.push({name:"compare",args:[artifact]});
+    await cmd(legacy, "view.old_results.open").click(); wanted.push({name:"open",args:[artifact,"原始 {source}"]});
+    await cmd(legacy, "candidate.compare.open").click(); wanted.push({name:"compare",args:[artifact]});
     assert.deepEqual(await page.evaluate(()=>window.__calls),wanted);
     await page.evaluate(()=>window.__setFixture({busy:true}));
     for(const button of await root.locator('[data-working-draft] button').all()) assert.equal(await button.isDisabled(),true);
     if(mode==="fallback") for(const control of await root.locator('[data-design-stage] button, [data-preview-candidate] input, [data-preview-candidate] button, select, [data-working-copy] button').all()) assert.equal(await control.isDisabled(),true);
     await page.evaluate(()=>window.__setFixture({history:{projectId:"locale-project",branchId:"main",branches:[],stages:[],candidates:[],studies:[],warnings:[]},currentModelSource:null}));
-    const initialize=mode==="tree"?root.locator('[data-design-tree-link] button').nth(1):root.locator(":scope > .vcard > .vcard__head > button");
+    const initialize=mode==="tree"?cmd(root.locator('[data-design-tree-link]'), "stage.accept.initial"):cmd(root.locator(":scope > .vcard > .vcard__head"), "stage.accept.initial");
     assert.equal(await initialize.isDisabled(),true,"initial acceptance needs a current model");
     await page.evaluate(source=>window.__setFixture({history:{projectId:"locale-project",branchId:"main",branches:[],stages:[],candidates:[],studies:[],warnings:[]},currentModelSource:source}),source("draft-current"));
     await initialize.click(); wanted.push({name:"initialize",args:[]});

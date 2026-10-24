@@ -1,4 +1,5 @@
 import { workspaceFixture } from "./workspaceFixture.mjs";
+import { cmd } from "./commandLocator.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer as createHttpServer } from "node:http";
@@ -212,7 +213,7 @@ try {
         assert.deepEqual(mutations, []);
         assert.ok(stateReads.every((read) => read.run === headSource.runId), JSON.stringify(stateReads));
         const readsBefore = stateReads.length, modelReadsBefore = modelReads.length;
-        await choice().getByRole("button", { name: "Continue from here", exact: true }).click();
+        await cmd(choice(), "design.go_to_step.continue").click();
         if (scenario === "compiled" || scenario === "clarification") {
           await page.locator(scenario === "clarification" ? ".card--question" : ".card--proposal").waitFor();
           assert.equal(intents.length, 1, "The saved request is compiled exactly once");
@@ -249,10 +250,10 @@ try {
             history.branches[0].headStageRef = sourceStageRef;
             const readsAtRecovery = stateReads.length;
             if (await page.locator(".refusal__card").count()) {
-              await page.locator(".refusal__card").getByRole("button", { name: "Retry", exact: true }).click();
+              await cmd(page.locator(".refusal__card"), "view.notice.retry", { arg: "model_open" }).click();
               await page.locator(".refusal__card").waitFor({ state: "hidden" });
             } else {
-              await page.getByRole("button", { name: "Return to default editing base", exact: true }).click();
+              await cmd(page, "design.go_to_step.default_base").click();
             }
             await until(() => stateReads.slice(readsAtRecovery), (reads) => reads.some((read) => read.run === runId),
               "The explicit reopening did not read the note's model");

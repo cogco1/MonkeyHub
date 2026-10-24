@@ -101,31 +101,31 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
     {/* #337 L2: the tree's menus, in the project bar. The rail and the pressed chip already name the surface, so the title is for screen readers. */}
     <h2 className="visually-hidden">{t("designTree.title")}</h2>
     <SurfaceMenus label={t("designTree.title")} active={active} end={tree ? counts : null}>
-      <MenuCommand onClick={onLeave}><span aria-hidden="true">←</span> {back}</MenuCommand>
+      <MenuCommand data-command="view.design_tree.leave" onClick={onLeave}><span aria-hidden="true">←</span> {back}</MenuCommand>
       <MenuSeparator />
       <MenuTabs label={t("designTree.mode.label")} value={mode} onChange={(next) => setMode(next)}
-        options={[{ value: "canvas" as const, label: t("designTree.mode.canvas") }, { value: "list" as const, label: t("designTree.mode.list") }]} />
-      {tree && tree.processedCount > 0 && <><MenuSeparator /><MenuCommand aria-pressed={data.showProcessed}
+        options={[{ value: "canvas" as const, label: t("designTree.mode.canvas"), command: "view.design_tree.canvas" }, { value: "list" as const, label: t("designTree.mode.list"), command: "view.design_tree.list" }]} />
+      {tree && tree.processedCount > 0 && <><MenuSeparator /><MenuCommand data-command="view.handled.toggle" aria-pressed={data.showProcessed}
         onClick={() => data.setShowProcessed(!data.showProcessed)}>{data.showProcessed
           ? t("designTree.processed.hide") : t("designTree.processed.show", { count: tree.processedCount })}</MenuCommand></>}
       {/* #575: Current's earlier steps and the drafts its line superseded fold by default; these open and close them. */}
-      {tree && tree.steps.count > 1 && <><MenuSeparator /><MenuCommand aria-pressed={tree.steps.open}
+      {tree && tree.steps.count > 1 && <><MenuSeparator /><MenuCommand data-command="view.design_tree.toggle_steps" aria-pressed={tree.steps.open}
         onClick={() => tree.steps.open ? setFolds({ ...folds, steps: false }) : expand("steps")}>{tree.steps.open
           ? t("designTree.steps.hide") : t("designTree.steps.show", { count: tree.steps.count })}</MenuCommand></>}
-      {tree && tree.drafts.count > 0 && <><MenuSeparator /><MenuCommand aria-pressed={tree.drafts.open}
+      {tree && tree.drafts.count > 0 && <><MenuSeparator /><MenuCommand data-command="view.design_tree.toggle_drafts" aria-pressed={tree.drafts.open}
         onClick={() => tree.drafts.open ? setFolds({ ...folds, drafts: false }) : expand("drafts")}>{tree.drafts.open
           ? t("designTree.drafts.hide") : t("designTree.drafts.show", { count: tree.drafts.count })}</MenuCommand></>}
-      {mode === "canvas" && tree && <><MenuSeparator /><MenuCommand onClick={() => setFitRequest((value) => value + 1)}>{t("designTree.fit")}</MenuCommand></>}
+      {mode === "canvas" && tree && <><MenuSeparator /><MenuCommand data-command="view.design_tree.fit" onClick={() => setFitRequest((value) => value + 1)}>{t("designTree.fit")}</MenuCommand></>}
     </SurfaceMenus>
     {data.source && !data.admissions && <p className="design-tree__notice">{t("designTree.noAdmissions")}</p>}
     {data.source && data.admissions && (data.source.history.warnings?.length ?? 0) > 0 &&
       <p className="design-tree__notice">{t("designTree.admissionWarnings")}</p>}
     {tree && data.error && <p className="design-tree__notice" role="status">{t("designTree.failed")}
-      <button type="button" className="btn btn--small" onClick={data.reload}>{t("designTree.retry")}</button></p>}
+      <button data-command="view.notice.retry" data-command-arg="design_tree" type="button" className="btn btn--small" onClick={data.reload}>{t("designTree.retry")}</button></p>}
     <div className="design-tree__body">
       {!tree ? <div className="design-tree__state" role="status">
         {!data.available ? t("designTree.unavailable") : data.status === "failed" && data.error ? <><ErrorPanel error={data.error} what="GET /api/design-history" />
-          <button type="button" className="btn btn--small" onClick={data.reload}>{t("designTree.retry")}</button></> : t("designTree.loading")}
+          <button data-command="view.notice.retry" data-command-arg="design_tree" type="button" className="btn btn--small" onClick={data.reload}>{t("designTree.retry")}</button></> : t("designTree.loading")}
       </div> : mode === "canvas" ? <>
         <DesignTreeCanvas tree={tree} source={data.source} words={words} selected={selected} fitRequest={fitRequest} centerOn={center} title={t("designTree.title")}
           onSelect={select} onAccept={acceptFromCanvas} onLevel={setLevel} onExpand={expand} />

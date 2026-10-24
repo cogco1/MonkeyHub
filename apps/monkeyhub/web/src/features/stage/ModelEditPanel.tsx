@@ -65,7 +65,7 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
     }} onSubmit={(event) => { event.preventDefault(); if (!busy && subject) scale.onCommit(); }}>
     <div className="model-edit-panel__distance">
-      <ModelToolButton icon="help" label={scale.hint} />
+      <ModelToolButton data-command="draft.tools.help" icon="help" label={scale.hint} />
       <select aria-label="Scale axes" value={scale.mode} disabled={busy} onChange={(event) => scale.onMode(event.target.value as ScaleMode)}>
         <option value="uniform">XYZ</option><option value="x">X</option><option value="y">Y</option><option value="z">Z</option>
       </select>
@@ -76,8 +76,8 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
           onFocus={(event) => event.currentTarget.select()} onChange={(event) => scale.onChange(index, event.target.value)} />
       </label>)}
       <span className="quiet" aria-hidden="true">×</span>
-      <ModelToolButton icon="check" label={zh ? "应用" : "Apply"} shortcut="Enter" type="submit" disabled={busy || !subject} />
-      <ModelToolButton icon="close" label={zh ? "关闭工具" : "Close tool"} shortcut="Esc" onClick={onClose} />
+      <ModelToolButton data-command="draft.tools.apply" icon="check" label={zh ? "应用" : "Apply"} shortcut="Enter" type="submit" disabled={busy || !subject} />
+      <ModelToolButton data-command="draft.tools.close" icon="close" label={zh ? "关闭工具" : "Close tool"} shortcut="Esc" onClick={onClose} />
     </div>
     {error && <p role="alert" className="model-edit-panel__error">{error}</p>}
   </form>;
@@ -86,15 +86,15 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
     }} onSubmit={(event) => { event.preventDefault(); if (!busy && subject) rotate.onCommit(); }}>
     <div className="model-edit-panel__distance">
-      <ModelToolButton icon="help" label={rotate.hint} />
+      <ModelToolButton data-command="draft.tools.help" icon="help" label={rotate.hint} />
       <input ref={rotate.inputRef} aria-label={zh ? "角度 °" : "Angle °"} type="number" step="any" defaultValue="0" disabled={busy}
         onFocus={(event) => event.currentTarget.select()} onChange={(event) => rotate.onChange(event.target.value)} />
       <span className="quiet" aria-hidden="true">°</span>
       <select aria-label="Rotation axis" value={rotate.axis} disabled={busy} onChange={(event) => rotate.onAxis(event.target.value as "x" | "y" | "z")}>
         <option value="x">X</option><option value="y">Y</option><option value="z">Z</option>
       </select>
-      <ModelToolButton icon="check" label={zh ? "应用" : "Apply"} shortcut="Enter" type="submit" disabled={busy || !subject} />
-      <ModelToolButton icon="close" label={zh ? "关闭工具" : "Close tool"} shortcut="Esc" onClick={onClose} />
+      <ModelToolButton data-command="draft.tools.apply" icon="check" label={zh ? "应用" : "Apply"} shortcut="Enter" type="submit" disabled={busy || !subject} />
+      <ModelToolButton data-command="draft.tools.close" icon="close" label={zh ? "关闭工具" : "Close tool"} shortcut="Esc" onClick={onClose} />
     </div>
     {error && <p role="alert" className="model-edit-panel__error">{error}</p>}
   </form>;
@@ -103,7 +103,7 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
     }} onSubmit={(event) => { event.preventDefault(); if (!busy && subject) move.onCommit(); }}>
     <div className="model-edit-panel__distance">
-      <ModelToolButton icon="help" label={move.hint} />
+      <ModelToolButton data-command="draft.tools.help" icon="help" label={move.hint} />
       <select aria-label={zh ? "世界坐标约束" : "World constraint"} value={move.constraint ?? ""} disabled={busy}
         onChange={(event) => { if (isTranslationConstraint(event.target.value)) move.onConstraint(event.target.value); }}>
         <option value="" disabled>{zh ? "选择轴/平面" : "Axis / plane"}</option>
@@ -115,8 +115,8 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
           onFocus={(event) => event.currentTarget.select()} onChange={(event) => move.onChange(index, event.target.value)} />
       </label>)}
       <span className="quiet" aria-hidden="true">m</span>
-      <ModelToolButton icon="check" label={zh ? "应用" : "Apply"} shortcut="Enter" type="submit" disabled={busy || !subject} />
-      <ModelToolButton icon="close" label={zh ? "关闭工具" : "Close tool"} shortcut="Esc" onClick={onClose} />
+      <ModelToolButton data-command="draft.tools.apply" icon="check" label={zh ? "应用" : "Apply"} shortcut="Enter" type="submit" disabled={busy || !subject} />
+      <ModelToolButton data-command="draft.tools.close" icon="close" label={zh ? "关闭工具" : "Close tool"} shortcut="Esc" onClick={onClose} />
     </div>
     {error && <p role="alert" className="model-edit-panel__error">{error}</p>}
   </form>;
@@ -136,15 +136,15 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
         pushPull.onCommit(distance);
       }}>
       <div className="model-edit-panel__distance">
-        <ModelToolButton icon="help" label={hint} />
+        <ModelToolButton data-command="draft.tools.help" icon="help" label={hint} />
         <label><span className="model-edit-panel__sr">{zh ? "距离 m" : "Distance m"}</span>
           <input ref={inputRef} type="number" step="any" defaultValue="1" disabled={busy}
             onFocus={(event) => event.currentTarget.select()}
             onChange={(event) => pushPull?.onChange(event.target.value)} />
         </label><span className="quiet" aria-hidden="true">m</span>
-        <ModelToolButton icon="check" label={busy ? (zh ? "正在生成模型…" : "Building model…") : (zh ? "应用" : "Apply")}
+        <ModelToolButton data-command="draft.tools.apply" icon="check" label={busy ? (zh ? "正在生成模型…" : "Building model…") : (zh ? "应用" : "Apply")}
           shortcut="Enter" type="submit" disabled={busy || !subject || !pushPull?.active} />
-        <ModelToolButton icon="close" label={zh ? "关闭工具" : "Close tool"} shortcut="Esc" onClick={onClose} />
+        <ModelToolButton data-command="draft.tools.close" icon="close" label={zh ? "关闭工具" : "Close tool"} shortcut="Esc" onClick={onClose} />
       </div>
       {error && <p role="alert" className="model-edit-panel__error">{error}</p>}
     </form>;
