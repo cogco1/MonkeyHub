@@ -31,6 +31,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Receive, Scope, Send
 import uvicorn
 
+from archflow.contracts.failures import failure_body
 from archflow.project.index import IndexCommit, add_commit_listener
 from archflow.project.repository import ProjectWriterBusy
 from archflow.project.writer_lease import WriterLease, hold_writer_lease
@@ -75,9 +76,10 @@ _BEARER = "Bearer "
 
 
 def _error(status: int, code: str, detail: str, headers=None) -> JSONResponse:
+    # A code the shared failure table registers also says its category and whether a resend can succeed.
     return JSONResponse(
         status_code=status,
-        content={"code": code, "detail": detail},
+        content=failure_body(code, detail),
         headers=headers,
     )
 
