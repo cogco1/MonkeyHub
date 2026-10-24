@@ -339,7 +339,7 @@
 .chat-route__says{flex:1 1 12em;margin:0;color:var(--ink)}
 /* 08 加载分档: a job past ten seconds shows how far along it is. */
 .chat-task__progress{display:block;height:3px;margin-top:4px;border-radius:2px;background:var(--line-2);overflow:hidden}
-.chat-task__progress>span{display:block;height:100%;background:var(--accent);transition:width 1s linear}
+.chat-task__progress>span{display:block;height:100%;background:var(--accent);transform-origin:left;transition:transform 1s linear}
 /* A reply that starts within a second shows no thinking mark. */
 .chat-thinking{animation:wait-appear 160ms ease-out 1s both}
 @keyframes wait-appear{from{opacity:0}to{opacity:1}}

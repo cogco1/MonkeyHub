@@ -2115,7 +2115,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
               <span className="chat-thread__dot" data-status={task.state === "running" ? "running" : "idle"} />
               <span className="chat-task__text"><span className="chat-task__title">{title}</span><small>{caption}</small>
                 {timing?.share != null && <span className="chat-task__progress" role="progressbar" aria-valuemin={0} aria-valuemax={100}
-                  aria-valuenow={Math.round(timing.share * 100)} aria-label={timing.text}><span style={{ width: `${Math.round(timing.share * 100)}%` }} /></span>}</span>
+                  aria-valuenow={Math.round(timing.share * 100)} aria-label={timing.text}><span style={{ transform: `scaleX(${timing.share.toFixed(3)})` }} /></span>}</span>
             </button></li>;
           }) : <li className="chat-muted chat-tasks__empty">{t.tasksEmpty}</li>}
   </>;
