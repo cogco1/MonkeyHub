@@ -652,6 +652,8 @@ try {
       await row.getByText(caption).waitFor();
       assert.equal(await row.locator(".chat-task__progress").count(), age < 10 ? 0 : 1, `${age} s: a bar only past ten seconds`);
       if (age >= 10) assert.equal(await row.locator(".chat-task__progress").getAttribute("aria-valuenow"), "30", "15 s of a 50 s job");
+      await waitPage.locator(".attention-shell__panel").evaluate((panel) => Promise.all(panel.getAnimations({ subtree: true })
+        .filter((animation) => animation.effect?.getTiming().iterations !== Infinity).map((animation) => animation.finished)));
       await shoot(waitPage, `attention-wait-${String(age).replace(".", "_")}s-${colour}`);
       await wait.close();
     }
