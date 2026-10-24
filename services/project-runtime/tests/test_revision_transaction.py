@@ -316,6 +316,12 @@ class RevisionOrderTests(unittest.TestCase):
                           direct=("parameter:rise",), propagated=("entity:stair",))
         self.assertEqual(_revise(named).code, "REJECTED_OPTION", "an option rejected for the parameter itself")
 
+    def test_an_avoided_part_a_parameter_carries_along_still_asks(self) -> None:
+        # Avoid asks that the stair not change at all, however the change reaches it.
+        ports = FakePorts(decisions=(Decision("d9", "avoid", "entity:stair", "楼梯别再动"),),
+                          direct=("parameter:rise",), propagated=("entity:stair",))
+        self.assertEqual(_revise(ports).code, "REJECTED_OPTION")
+
     def test_editing_a_whole_reaches_the_option_rejected_for_its_part(self) -> None:
         # Facets on the house could be the glass the architect rejected for its stair.
         ports = FakePorts(decisions=(Decision("d6", "reject", "entity:stair", "楼梯别用玻璃"),), direct=("entity:house",))

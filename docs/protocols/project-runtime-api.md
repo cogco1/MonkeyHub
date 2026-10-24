@@ -1116,8 +1116,9 @@ fields this request supplies. It takes the `accept` grant, and the change itself
    (`REJECTED_OPTION`): it changes the target's own row or the row of a part of it, adds a part under it or
    removes one, changes the row of a whole that holds it, or changes the parameter the decision names. A target
    the change only carries along through parameter bindings, its own row unchanged, is not edited by it (a
-   larger rotunda rebuilds its oculus ring and does not glaze it). What the build added is read on the built
-   record too;
+   larger rotunda rebuilds its oculus ring and does not glaze it). An `avoid` asks that its target not change at
+   all: any change reaching it, a part of it or the whole it belongs to, parameter bindings included, asks. What the
+   build added is read on the built record too;
 5. a live condition in the change's reach (its direct references and their downstream closure) that names
    no executable check is `needs_question` (`UNCHECKED_CONDITION`), unless `confirmed` names it as
    `obligation:<id>` and the request carries the architect's words; nothing is built for a question. In

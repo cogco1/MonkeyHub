@@ -212,7 +212,7 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
                     "Ask the architect before changing it; nothing was admitted.", proposal_id=proposal_id,
                     candidate_id=request.candidate_id, question_refs=conflicts)
     touched = _with_wholes(base, changing)
-    rejected = _revived(records, direct, decisions)
+    rejected = _revived(records, direct, decisions, reaching=_with_wholes(base, changing))
     if rejected:
         return done(NEEDS_QUESTION, "REJECTED_OPTION", "The change edits what the architect rejected: "
                     + "; ".join(f"{d.target_ref}: \"{d.words}\"" for d in rejected) + ". Ask before going back to it; "
@@ -266,7 +266,8 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
         built_reach = tuple(dict.fromkeys((*built_direct, *base.closure(tuple(sorted(built_direct))))))
         built_changing = _changing(base, built_direct, built_reach)
         # What the build edited, read on the built record too: a part it added under a rejected target is there only.
-        rejected = _revived((base, ports.record(candidate_id)), built_direct, decisions)
+        rejected = _revived((base, ports.record(candidate_id)), built_direct, decisions,
+                            reaching=_with_wholes(base, built_changing))
         if rejected:
             return done(NEEDS_QUESTION, "REJECTED_OPTION", "The built change edits what the architect rejected, "
                         "beyond what its proposal said: " + "; ".join(f"{d.target_ref}: \"{d.words}\"" for d in rejected)
@@ -489,11 +490,13 @@ def _changing(record: StateRecord, direct: Sequence[str], reach: Sequence[str]) 
     return tuple(ref for ref in reach if ref in changed or ref not in every)
 
 
-def _revived(records: Sequence[StateRecord], direct: Sequence[str], decisions: Sequence[Decision]) -> list[Decision]:
+def _revived(records: Sequence[StateRecord], direct: Sequence[str], decisions: Sequence[Decision], *,
+             reaching: set[str]) -> list[Decision]:
     """The rejected options a change revives: it edits the rejected target itself (its row, the row of a part of it,
     or a part it adds under it or removes), the row of a whole that holds it, or the parameter the decision names.
     A target the change only carries along through parameter bindings, its own row unchanged, is not edited: a
-    larger rotunda rebuilds the ring of its oculus, and does not glaze it."""
+    larger rotunda rebuilds the ring of its oculus, and does not glaze it. An ``avoid`` asks that its target not
+    change at all, so any change ``reaching`` it, a part of it or the whole it belongs to, goes back to it."""
 
     edited = set(direct)
     reached = set().union(*(_with_wholes(record, direct) for record in records))
@@ -502,7 +505,8 @@ def _revived(records: Sequence[StateRecord], direct: Sequence[str], decisions: S
         if decision.disposition not in REJECTING:
             continue
         wholes = set().union(*(_with_wholes(record, (decision.target_ref,)) for record in records)) - {decision.target_ref}
-        if decision.target_ref in reached or edited & wholes:
+        if decision.target_ref in reached or edited & wholes or (decision.disposition != "reject"
+                                                                  and decision.target_ref in reaching):
             revived.append(decision)
     return revived
 
