@@ -2291,6 +2291,36 @@ class ChatTests(unittest.TestCase):
         self.assertEqual({(row["method"], row["path"]) for row in listing["actions"]},
                          {("GET", "/api/domains"), ("GET", "/api/domains/{domain}/readiness")})
 
+    def test_saved_tracing_paper_notes_and_history_are_bound_chat_reads(self):
+        session = self.create()
+        session.status = "running"
+        paths = ("/api/model-annotations", "/api/model-annotations/history")
+        query = "?runId=run-a&stateDigest=" + "a" * 64 + "&assetSha256=" + "b" * 64
+        saved = {"annotations": [{"kind": "text", "label": "共享厨房"}],
+                 "facetNotes": [{"componentId": "kitchen", "key": "description.note", "value": "共享厨房"}]}
+        document = {"paths": {path: {"get": {"summary": "Read saved tracing paper"}} for path in paths},
+                    "components": {"schemas": {}}}
+        sent = []
+
+        def forward(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            path = self._studio_tool_path(base, path, method, headers, session)
+            if path == "/openapi.json":
+                return json.loads(json.dumps(document))
+            self.assertEqual(base, "http://127.0.0.1:8791")
+            sent.append((method, path))
+            return [saved] if path.startswith(paths[1]) else saved
+
+        with patch.object(preparation, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(transport, "_request_json", side_effect=forward):
+            for path in paths:
+                answer = tool_calls.call_tool(self.store.hub_url, session.id, "studio_request",
+                                              {"method": "GET", "path": path + query})
+                self.assertEqual(answer, [saved] if path == paths[1] else saved)
+            listing = tool_calls.call_tool(self.store.hub_url, session.id, "studio_schema", {"pathPrefix": paths[0]})
+        self.assertEqual(sent, [("GET", path + query) for path in paths])
+        self.assertEqual({(row["method"], row["path"]) for row in listing["actions"]}, {("GET", path) for path in paths})
+        self.assertIsNone(studio_tool._WRITE.fullmatch(paths[0]), "reading a person's paper does not grant changing it")
+
     def test_studio_schema_finds_literal_routes_before_templated_ones(self):
         """A templated route listed earlier in the OpenAPI document must not shadow a literal
         route that also matches it (#419): /api/proposals/{proposal_id} (GET only) must not hide

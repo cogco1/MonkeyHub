@@ -40,15 +40,25 @@ test("every command has one well-formed id, a capability, and a group and surfac
   for (const capability of COMMAND_TREE.capabilities) assert.match(capability.id, ID, capability.id);
 });
 
-test("a shortcut has a modifier, is the only one of its kind, and stays clear of keys already taken", () => {
+test("shortcuts are unique; only tracing's live owner may reuse editing keys", () => {
+  // These commands run only while tracing owns the keys. The browser regression
+  // covers other inputs, dialogs, inactive workspaces and the model after exit.
+  const tracingKeys: Record<string, string> = {
+    "view.markup_tools.cancel": "Esc",
+    "view.markup_tools.undo": "Ctrl+Z",
+    "view.markup_tools.redo": "Ctrl+Shift+Z",
+  };
   const taken = new Map<string, string>();
   for (const command of COMMAND_TREE.commands) {
     if (!command.shortcut) continue;
     const shortcut = normalizeShortcut(command.shortcut);
     assert.equal(command.shortcut, shortcut, `${command.id}: write it as ${shortcut}`);
     assert.notEqual(shortcut, PALETTE_SHORTCUT, `${command.id}: Ctrl+K opens the palette`);
-    assert.ok(/^(Ctrl|Alt)\+/.test(shortcut), `${command.id}: a bare key would fire while typing`);
-    assert.ok(!RESERVED.has(shortcut), `${command.id}: ${shortcut} is already taken`);
+    if (command.id in tracingKeys) assert.equal(shortcut, tracingKeys[command.id]);
+    else {
+      assert.ok(/^(Ctrl|Alt)\+/.test(shortcut), `${command.id}: a bare key would fire while typing`);
+      assert.ok(!RESERVED.has(shortcut), `${command.id}: ${shortcut} is already taken`);
+    }
     assert.ok(!taken.has(shortcut), `${command.id} and ${taken.get(shortcut)} share ${shortcut}`);
     taken.set(shortcut, command.id);
   }

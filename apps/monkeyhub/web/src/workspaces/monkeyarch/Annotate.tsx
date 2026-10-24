@@ -14,7 +14,7 @@
  * camera that goes with them says which viewpoint that was.
  */
 
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type RefObject } from "react";
 
 import type { GestureDto, GestureHitDto, ModelAnnotationsDto } from "../../api/project-runtime/generated";
 import { useT } from "../../i18n/useT";
@@ -36,8 +36,24 @@ const INTERIOR_PX = 14;
 const MAX_SAMPLES = 400;
 /** A pointer that moved less than this drew a mark, not a stroke. */
 const MARK_SLOP_PX = 6;
+const TEXT_FONT_SIZE = 18;
 
 type Point = readonly [number, number];
+
+type TextDraft = { point: Point; label: string; index: number | null; original?: GestureDto };
+type TextDrag = { index: number; start: Point; point: Point; original: GestureDto };
+
+function textBounds(gesture: GestureDto, context?: CanvasRenderingContext2D): readonly [number, number, number, number] {
+  const [x, y] = gesture.screen[0];
+  const size = gesture.fontSize ?? TEXT_FONT_SIZE;
+  const label = gesture.label ?? "";
+  let width = Array.from(label).reduce((sum, char) => sum + (char.charCodeAt(0) > 255 ? size : size * 0.6), 0);
+  if (context) {
+    context.save(); context.font = `${size}px system-ui, sans-serif`;
+    width = context.measureText(label).width; context.restore();
+  }
+  return [x - 4, y - 4, Math.max(size, width) + 8, size * 1.2 + 8];
+}
 
 function colours() {
   const style = getComputedStyle(document.documentElement);
@@ -183,7 +199,7 @@ export function gestureSamplePoints(
   const last = points[points.length - 1];
   if (!first || !last) return null;
   const travelled = Math.hypot(last[0] - first[0], last[1] - first[1]);
-  if (kind === "keep" || kind === "remove") return [last];
+  if (kind === "keep" || kind === "remove" || kind === "text") return [last];
   if (kind === "arrow") return travelled < MARK_SLOP_PX ? null : [last];
   if (kind === "circle") {
     return travelled < MARK_SLOP_PX && points.length < 8
@@ -210,11 +226,17 @@ function segmentsNear(a: Point, b: Point, c: Point, d: Point, radius: number): b
 }
 
 /** Whole-stroke erasing follows the swept cursor, including a fast move's gap. */
-export function annotationIntersectsEraser(gesture: GestureDto, from: Point, to: Point, radius = 10): boolean {
+export function annotationIntersectsEraser(gesture: GestureDto, from: Point, to: Point, radius = 10, context?: CanvasRenderingContext2D): boolean {
   const points = gesture.screen;
   if (points.length === 0) return false;
   const reach = radius + (gesture.lineWidth ?? 2) / 2;
   const last = points[points.length - 1];
+  if (gesture.kind === "text") {
+    const [x, y, width, height] = textBounds(gesture, context);
+    const inside = (point: Point) => point[0] >= x && point[0] <= x + width && point[1] >= y && point[1] <= y + height;
+    const corners: Point[] = [[x, y], [x + width, y], [x + width, y + height], [x, y + height]];
+    return inside(from) || inside(to) || corners.some((corner, index) => segmentsNear(from, to, corner, corners[(index + 1) % 4], reach));
+  }
   if (gesture.kind === "keep" || gesture.kind === "remove") return pointSegmentDistance(last, from, to) <= reach + 9;
   // arcScreenPoints appends the third defining point for model sampling. It
   // is already on the rendered arc; joining it to the endpoint adds a chord.
@@ -293,7 +315,7 @@ export async function renderTracingPaperSnapshotPng(viewportPng: Blob, gestures:
   const palette = { accent: "#2f80ed", held: "#58b368", violated: "#e5534b" };
   for (const gesture of gestures) drawGesture(context, gesture.kind, gesture.screen, palette, false,
     { color: gesture.color ?? palette.accent, lineWidth: gesture.lineWidth === 4 || gesture.lineWidth === 6 ? gesture.lineWidth : 2 },
-    gesture.label ?? null);
+    gesture.label ?? null, gesture.fontSize ?? TEXT_FONT_SIZE);
   context.restore();
   return new Promise((resolve, reject) => canvas.toBlob((blob) => blob && blob.size > 0 ? resolve(blob)
     : reject(new Error("The Tracing Paper snapshot did not produce a PNG.")), "image/png"));
@@ -308,6 +330,9 @@ export function Annotate({
   cancelToken,
   eraser = false,
   onErase,
+  onReplaceGesture,
+  commitPendingRef,
+  onClosePaper,
 }: {
   viewportRef: RefObject<ViewportController | null>;
   /** The armed tool; null lets the pointer through to the orbit. */
@@ -321,6 +346,12 @@ export function Annotate({
   eraser?: boolean;
   /** One completed drag is one undoable deletion; cancel never calls this. */
   onErase?(indices: readonly number[]): void;
+  /** Editing or moving a text mark uses the same undo history as drawing. */
+  onReplaceGesture?(index: number, gesture: GestureDto): void;
+  /** The parent commits unfinished text before saving and closing this paper. */
+  commitPendingRef?: RefObject<(() => void) | null>;
+  /** Retain the old source's ink when its viewport is replaced or unmounted. */
+  onClosePaper?(): void;
 }) {
   const t = useT();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -335,6 +366,10 @@ export function Annotate({
   const arcBaseRef = useRef<readonly [Point, Point] | null>(null);
   const [arcBase, setArcBase] = useState<readonly [Point, Point] | null>(null);
   const [rulerLabel, setRulerLabel] = useState("");
+  const [textDraft, setTextDraft] = useState<TextDraft | null>(null);
+  const textDraftRef = useRef<TextDraft | null>(null);
+  const textDragRef = useRef<TextDrag | null>(null);
+  const [selectedText, setSelectedText] = useState<number | null>(null);
   // Marks are held in the view they were drawn in. When the camera leaves
   // that view the ink no longer sits on what it meant, so it fades and the
   // stage says why; the meaning - the hits and the camera - was kept at
@@ -394,10 +429,10 @@ export function Annotate({
       if (saved) {
         saved.globalAlpha = moved ? 0.3 : 1;
         gestures.forEach((gesture, index) => {
-          if (!erasedRef.current.has(index)) drawGesture(saved, gesture.kind, gesture.screen, palette, false, {
+          if (!erasedRef.current.has(index) && textDragRef.current?.index !== index && textDraftRef.current?.index !== index) drawGesture(saved, gesture.kind, gesture.screen, palette, false, {
             color: gesture.color ?? palette.accent,
             lineWidth: gesture.lineWidth === 4 || gesture.lineWidth === 6 ? gesture.lineWidth : 2,
-          }, gesture.label ?? null);
+          }, gesture.label ?? null, gesture.fontSize ?? TEXT_FONT_SIZE);
         });
       }
       savedDirtyRef.current = false;
@@ -406,7 +441,21 @@ export function Annotate({
     if (!context) return;
     const live = strokeRef.current;
     if (!eraser && tool && live && live.length > 0) drawGesture(context, tool, live, palette, true, style, tool === "ruler" ? rulerLabel : null);
-  }, [gestures, moved, rulerLabel, style, tool, eraser]);
+    const drag = textDragRef.current;
+    if (drag) {
+      const original = drag.original;
+      drawGesture(context, "text", [drag.point], palette, true, {
+        color: original.color ?? palette.accent,
+        lineWidth: original.lineWidth === 4 || original.lineWidth === 6 ? original.lineWidth : 2,
+      }, original.label ?? null, original.fontSize ?? TEXT_FONT_SIZE);
+    }
+    const selected = selectedText === null ? undefined : gestures[selectedText];
+    if (tool === "text" && selected?.kind === "text" && !textDraftRef.current) {
+      context.save(); context.strokeStyle = palette.accent; context.lineWidth = 1; context.setLineDash([3, 3]);
+      context.strokeRect(...textBounds(drag ? { ...selected, screen: [[drag.point[0], drag.point[1]]] } : selected, context));
+      context.restore();
+    }
+  }, [gestures, moved, rulerLabel, style, tool, eraser, selectedText, textDraft]);
   const drawRef = useRef(draw);
   drawRef.current = draw;
   const schedulePaint = useCallback(() => {
@@ -441,12 +490,63 @@ export function Annotate({
     if (pointer !== null && canvas?.hasPointerCapture?.(pointer)) canvas.releasePointerCapture(pointer);
     erasedRef.current.clear();
     erasePointRef.current = null;
+    textDragRef.current = null;
     savedDirtyRef.current = true;
     setArcBase(null);
     schedulePaint();
   }, [schedulePaint]);
 
-  useEffect(() => cancel(), [cancel, cancelToken, tool, eraser]);
+  const makeTextGesture = useCallback((point: Point, label: string, original?: GestureDto): GestureDto | null => {
+    if (original && point[0] === original.screen[0][0] && point[1] === original.screen[0][1]) return { ...original, label };
+    const viewport = viewportRef.current;
+    const camera = viewport?.camera();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!viewport || !camera || !rect) return null;
+    const hit = viewport.sampleAt(point[0] + rect.left, point[1] + rect.top);
+    return {
+      kind: "text", label, fontSize: original?.fontSize ?? TEXT_FONT_SIZE,
+      screen: [[Math.round(point[0]), Math.round(point[1])]],
+      screenSize: [Math.round(rect.width), Math.round(rect.height)],
+      camera, hits: hit ? [toHitDto(hit)] : [],
+      color: original?.color ?? style.color, lineWidth: original?.lineWidth ?? style.lineWidth,
+    };
+  }, [style, viewportRef]);
+
+  const commitPending = useCallback(() => {
+    const draft = textDraftRef.current;
+    if (!draft) return;
+    textDraftRef.current = null;
+    setTextDraft(null);
+    savedDirtyRef.current = true;
+    const label = draft.label.trim();
+    if (!label) {
+      if (draft.index !== null) onErase?.([draft.index]);
+      setSelectedText(null);
+    } else if (label !== draft.original?.label) {
+      const gesture = makeTextGesture(draft.point, label, draft.original);
+      if (gesture) {
+        if (draft.index === null) { onGesture(gesture); setSelectedText(gestures.length); }
+        else onReplaceGesture?.(draft.index, gesture);
+      }
+    }
+    schedulePaint();
+  }, [gestures.length, makeTextGesture, onErase, onGesture, onReplaceGesture, schedulePaint]);
+  useImperativeHandle(commitPendingRef, () => commitPending, [commitPending]);
+  const commitPendingLatestRef = useRef(commitPending);
+  commitPendingLatestRef.current = commitPending;
+  const closePaperRef = useRef(onClosePaper);
+  closePaperRef.current = onClosePaper;
+  useEffect(() => () => {
+    commitPendingLatestRef.current();
+    closePaperRef.current?.();
+  }, []);
+
+  useEffect(() => {
+    commitPendingLatestRef.current();
+    setSelectedText(null);
+    cancel();
+  }, [cancel, cancelToken, tool, eraser]);
+
   useEffect(() => {
     // Pointer capture is missing in some embedded browsers. Their window
     // events still finish/cancel the active stroke when it leaves the overlay.
@@ -469,7 +569,11 @@ export function Annotate({
       if (canvasRef.current?.closest("[inert], [aria-hidden='true']")) return;
       const target = event.target;
       if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
-      if (event.key === "Escape") cancel();
+      if ((event.key === "Delete" || event.key === "Backspace") && tool === "text" && selectedText !== null && gestures[selectedText]?.kind === "text") {
+        event.preventDefault();
+        onErase?.([selectedText]);
+        setSelectedText(null);
+      }
       // Only ink in hand owns temporary orbit. An idle annotation overlay
       // must leave Space to the modeling workspace's selection tool.
       if (event.code === "Space" && !event.repeat && (tool !== null || eraser)) {
@@ -490,7 +594,7 @@ export function Annotate({
       if (paintFrameRef.current !== null) cancelAnimationFrame(paintFrameRef.current);
       paintFrameRef.current = null;
     };
-  }, [cancel, tool, eraser]);
+  }, [cancel, tool, eraser, selectedText, gestures, onErase]);
 
   const local = (event: React.PointerEvent<HTMLCanvasElement>): Point => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -499,8 +603,9 @@ export function Annotate({
 
   const eraseTo = (point: Point) => {
     const previous = erasePointRef.current ?? point;
+    const context = savedCanvasRef.current?.getContext("2d") ?? undefined;
     gestures.forEach((gesture, index) => {
-      if (!erasedRef.current.has(index) && annotationIntersectsEraser(gesture, previous, point)) {
+      if (!erasedRef.current.has(index) && annotationIntersectsEraser(gesture, previous, point, 10, context)) {
         erasedRef.current.add(index);
         savedDirtyRef.current = true;
       }
@@ -610,6 +715,22 @@ export function Annotate({
             eraseTo(local(event));
             return;
           }
+          if (tool === "text") {
+            const point = local(event);
+            const context = savedCanvasRef.current?.getContext("2d") ?? undefined;
+            const index = gestures.findLastIndex((gesture) => {
+              if (gesture.kind !== "text" || gesture.screen.length === 0) return false;
+              const [x, y, width, height] = textBounds(gesture, context);
+              return point[0] >= x && point[0] <= x + width && point[1] >= y && point[1] <= y + height;
+            });
+            setSelectedText(index < 0 ? null : index);
+            if (index >= 0) {
+              textDragRef.current = { index, start: point, point: gestures[index].screen[0], original: gestures[index] };
+              savedDirtyRef.current = true;
+            } else strokeRef.current = [point];
+            schedulePaint();
+            return;
+          }
           if (tool === "arc" && arcBaseRef.current) {
             const points = [...arcBaseRef.current, local(event)];
             strokeRef.current = points;
@@ -622,6 +743,15 @@ export function Annotate({
         }}
         onPointerMove={(event) => {
           if ((!tool && !eraser) || (pointerRef.current !== event.pointerId && !(!eraser && tool === "arc" && arcBaseRef.current && pointerRef.current === null))) return;
+          if (tool === "text" && !eraser) {
+            const drag = textDragRef.current;
+            if (drag) {
+              const point = local(event), anchor = drag.original.screen[0];
+              drag.point = [anchor[0] + point[0] - drag.start[0], anchor[1] + point[1] - drag.start[1]];
+              schedulePaint();
+            }
+            return;
+          }
           const rect = event.currentTarget.getBoundingClientRect();
           const coalesced = event.nativeEvent.getCoalescedEvents?.() ?? [];
           const samples = coalesced.length > 0 ? [...coalesced, event.nativeEvent] : [event.nativeEvent];
@@ -651,6 +781,28 @@ export function Annotate({
             erasePointRef.current = null;
             savedDirtyRef.current = true;
             if (indices.length > 0) onErase?.(indices);
+            schedulePaint();
+            return;
+          }
+          if (tool === "text") {
+            const drag = textDragRef.current;
+            const point = local(event);
+            textDragRef.current = null;
+            savedDirtyRef.current = true;
+            const travelled = drag ? Math.hypot(point[0] - drag.start[0], point[1] - drag.start[1]) : 0;
+            if (drag && travelled >= MARK_SLOP_PX) {
+              const anchor = drag.original.screen[0];
+              const gesture = makeTextGesture([anchor[0] + point[0] - drag.start[0], anchor[1] + point[1] - drag.start[1]], drag.original.label ?? "", drag.original);
+              if (gesture) onReplaceGesture?.(drag.index, gesture);
+            } else {
+              const anchor = strokeRef.current?.[0] ?? point;
+              const draft: TextDraft = drag
+                ? { point: drag.original.screen[0], label: drag.original.label ?? "", index: drag.index, original: drag.original }
+                : { point: anchor, label: "", index: null, original: makeTextGesture(anchor, "") ?? undefined };
+              textDraftRef.current = draft;
+              setTextDraft(draft);
+            }
+            strokeRef.current = null;
             schedulePaint();
             return;
           }
@@ -685,6 +837,27 @@ export function Annotate({
           if (pointerRef.current === event.pointerId) cancel();
         }}
       />
+      {textDraft && (
+        <input
+          className="annotate__text"
+          autoFocus
+          aria-label={t("stage.tools.text.label")}
+          placeholder={t("stage.tools.text.placeholder")}
+          maxLength={120}
+          value={textDraft.label}
+          style={{ left: textDraft.point[0], top: textDraft.point[1], color: textDraft.original?.color ?? style.color, fontSize: textDraft.original?.fontSize ?? TEXT_FONT_SIZE }}
+          onChange={(event) => {
+            const draft = { ...textDraft, label: event.currentTarget.value };
+            textDraftRef.current = draft; setTextDraft(draft);
+          }}
+          onBlur={commitPending}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+              event.preventDefault(); commitPending(); canvasRef.current?.focus({ preventScroll: true });
+            }
+          }}
+        />
+      )}
     </>
   );
 }
@@ -697,6 +870,7 @@ export function drawGesture(
   live = false,
   style: AnnotationStyle = { color: palette.accent, lineWidth: 2 },
   label: string | null = null,
+  fontSize = TEXT_FONT_SIZE,
 ): void {
   if (points.length === 0) return;
   const colour =
@@ -709,6 +883,13 @@ export function drawGesture(
   context.fillStyle = kind === "keep" || kind === "remove" ? colour : style.color;
   context.globalAlpha *= live ? 0.7 : 1;
   const last = points[points.length - 1];
+  if (kind === "text") {
+    context.font = `${fontSize}px system-ui, sans-serif`;
+    context.textAlign = "left"; context.textBaseline = "top";
+    context.fillText(label ?? "", points[0][0], points[0][1]);
+    context.restore();
+    return;
+  }
   if (kind === "freehand" && points.length === 1) {
     context.beginPath();
     context.arc(last[0], last[1], style.lineWidth / 2, 0, Math.PI * 2);

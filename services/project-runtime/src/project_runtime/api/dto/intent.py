@@ -84,7 +84,7 @@ class GestureDto(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
-    kind: Literal["circle", "arrow", "keep", "remove", "freehand", "line", "ruler", "arc"]
+    kind: Literal["circle", "arrow", "keep", "remove", "freehand", "line", "ruler", "arc", "text"]
     screen: list[tuple[float, float]] = Field(min_length=1)
     camera: CameraDto
     hits: list[GestureHitDto] = Field(default_factory=list)
@@ -96,6 +96,17 @@ class GestureDto(BaseModel):
     color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     line_width: int | None = Field(alias="lineWidth", default=None, ge=1, le=8)
     screen_size: tuple[int, int] | None = Field(alias="screenSize", default=None)
+    font_size: float | None = Field(alias="fontSize", default=None, gt=0, le=128, allow_inf_nan=False,
+                                    exclude_if=lambda value: value is None)
+
+    @model_validator(mode="after")
+    def validate_text(self):
+        if self.kind == "text":
+            if len(self.screen) != 1 or not self.label or not self.label.strip():
+                raise ValueError("model text needs one screen anchor and a non-empty label of at most 120 characters")
+        elif self.font_size is not None:
+            raise ValueError("fontSize belongs only to model text")
+        return self
 
 
 def gesture_from(dto: GestureDto) -> Gesture:
@@ -117,6 +128,7 @@ def gesture_from(dto: GestureDto) -> Gesture:
         line_width=dto.line_width,
         camera=dto.camera.model_dump(),
         screen_size=dto.screen_size,
+        font_size=dto.font_size,
     )
 
 
@@ -135,6 +147,15 @@ class ModelAnnotationsRequestDto(BaseModel):
     comment: str = Field(default="", max_length=8000)
 
 
+class ModelAnnotationFacetNoteDto(BaseModel):
+    """The person's text resolved against its saved model, not a StateRecord edit."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    component_id: str = Field(alias="componentId")
+    key: Literal["description.note"] = "description.note"
+    value: str
+
+
 class ModelAnnotationsDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
     project_id: str = Field(alias="projectId")
@@ -142,12 +163,14 @@ class ModelAnnotationsDto(BaseModel):
     revision_sha256: str | None = Field(alias="revisionSha256")
     annotations: list[ModelGestureDto]
     comment: str
+    facet_notes: list[ModelAnnotationFacetNoteDto] = Field(alias="facetNotes", default_factory=list)
 
 
 def model_annotations_dto(snapshot) -> ModelAnnotationsDto:
     return ModelAnnotationsDto(project_id=snapshot.project_id, model_source=model_source_dto(snapshot.model_source),
                                revision_sha256=snapshot.revision_sha256,
-                               annotations=[ModelGestureDto(**row) for row in snapshot.annotations], comment=snapshot.comment)
+                               annotations=[ModelGestureDto(**row) for row in snapshot.annotations], comment=snapshot.comment,
+                               facet_notes=[ModelAnnotationFacetNoteDto(**row) for row in snapshot.facet_notes])
 
 
 PageCoordinate = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
