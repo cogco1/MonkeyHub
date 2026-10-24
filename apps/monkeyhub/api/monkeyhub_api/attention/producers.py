@@ -79,8 +79,8 @@ def results(graph: Mapping[str, Any], *, now: datetime, handled: Iterable[str] =
     are one A/B card. Any other result on its own asks whether to switch to it,
     or to combine it when the combine rule accepts it with the head, and a
     Candidate also offers to archive it. Candidates untouched for a week are one
-    card offering to archive them; a run nobody admitted that old asks nothing,
-    and the project's own cleaning keeps it. A rejected, superseded or archived
+    card offering to archive them; a run nobody admitted that old asks nothing
+    and is left to the project's cleaning. A rejected, superseded or archived
     result asks nothing, nor does one a person already answered for on a card
     (``handled``: the results an answered card listed), unless it is compared
     with a new one.
