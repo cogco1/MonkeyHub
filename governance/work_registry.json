@@ -137,10 +137,13 @@
             "apps/monkeyhub/web/test/attentionCards.test.ts",
             "apps/monkeyhub/web/test/attentionShell.browser.mjs",
             "apps/monkeyhub/web/test/attentionShell.test.ts",
+            "apps/monkeyhub/web/test/canvasChrome.browser.mjs",
             "apps/monkeyhub/web/test/commandPalette.browser.mjs",
             "apps/monkeyhub/web/test/commandPalette.test.ts",
             "apps/monkeyhub/web/test/commandTree.test.ts",
-            "apps/monkeyhub/web/test/notifications.browser.mjs"
+            "apps/monkeyhub/web/test/designTree.browser.mjs",
+            "apps/monkeyhub/web/test/notifications.browser.mjs",
+            "apps/monkeyhub/web/test/settingsAutosave.browser.mjs"
           ],
           "depends_on": []
         }
