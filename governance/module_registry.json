@@ -1901,6 +1901,14 @@
             "id": "attention.answer_guess.save",
             "label": "Save suggestion",
             "label_zh": "保存建议",
+            "args": [
+              "field",
+              "value",
+              "runId",
+              "assetSha256",
+              "revisionRef",
+              "pageIndex"
+            ],
             "aliases": [
               "save as project recipe"
             ],
@@ -1917,6 +1925,16 @@
             "entries": [
               "图20"
             ]
+          },
+          {
+            "id": "drawing.recipe.revoke",
+            "label": "Revoke recipe",
+            "label_zh": "撤销配方",
+            "args": [
+              "decisionId",
+              "expectedRevisionRef"
+            ],
+            "entries": []
           }
         ]
       }
