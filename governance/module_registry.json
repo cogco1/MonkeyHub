@@ -8973,7 +8973,8 @@
         "NativeModelSource: verify original 3DM bytes against their explicit registration and derive drawing shapes without fabricating semantic state or CAD execution provenance",
         "DrawnView: a drawn view's SVG, PNG and what its receipt says about the drawing apart from its source and run; freeze_model_axis_elevation and freeze_section_perspective take an optional cache (DrawingCache) asked for the drawn view once the source verified, so a kept drawing is retained without solving its view again",
         "axonometric_frame: the right, up and look of a parallel view from any non-vertical direction with CAD +Z up; such a view is retained through freeze_model_axis_elevation with the elevation receipt, foreshortened and stated as a display scale",
-        "the difference between two cut-plan view recipes by dotted path - hidden objects, dimensions and dressing by the ids they hold, a material's hatch rule whole - and the class of correction it is, the first of compiler_defect, semantic_rule, recipe and local_override that holds for the difference and the replacement cause (recipe_diff, classify, CLASSES); pure, reading no project"
+        "the difference between two cut-plan view recipes by dotted path - hidden objects, dimensions and dressing by the ids they hold, a material's hatch rule whole - and the class of correction it is, the first of compiler_defect, semantic_rule, recipe and local_override that holds for the difference and the replacement cause (recipe_diff, classify, CLASSES); pure, reading no project",
+        "a drawing's solve as a DrawTask another process can run (run_draw_task: open the project, verify the source, draw; nothing written) and the DrawResult it gives back, the source verified without its shapes; each freeze_* takes a drawer for it and retains the result in its own process"
       ],
       "does_not_own": [
         "the hidden-line solve - monkeycad.occt",
@@ -9045,7 +9046,13 @@
         "projection.views.clean_view_lines",
         "projection.views.finite_number",
         "projection.views.observed_stage",
-        "projection.views.refuse_section"
+        "projection.views.refuse_section",
+        "DrawTask",
+        "DrawResult",
+        "Drawer",
+        "run_draw_task",
+        "verify_draw_source",
+        "Retaining"
       ],
       "depends_on": [
         "archflow.project.ports",
@@ -10194,7 +10201,8 @@
         "drawings as on-demand projections (#368): an elevation's and a section perspective's SVG and PNG, a review sheet's PDF and DXF and a document page's raster are kinds of the same content-keyed cache (drawing-elevation, drawing-section-perspective, drawing-sheet, document-page), keyed by the input asset's sha256, a recipe holding every field that changes the bytes (the complete view and the drawn source content: geometry digest, unit, objects, bounds and semantics) and a renderer digest of the drawing code, fonts and libraries (drawings.drawing_pipeline); ProjectionQueue.on_demand draws one in the request that needs it through the existing generator, at most once per key, and the worker never draws them; issuing reads the cached files back and retains them in P036 byte for byte with a receipt of its own",
         "the retained axonometric: POST /api/drawings/elevations view axon, from a stated direction toward the viewer (default the model view's -X, -Y, +Z), framed on every physical object's bounds like an elevation",
         "view sheets through POST /api/drawings/sheets: same-source plans, vertical sections, elevations, axonometrics and section perspectives, each drawn or read back through its own generator from the sheet's one source (modelSource, Stage or unbound imported asset) and named in the sheet recipe by its exact revision, placed at its own scale where the caller put it, with default titles, subtitles and scale labels from each view's own frame and a section's cut line on a plan, as monkeydiagram.documentation.sheet_layout lays them out; front/right/top requests keep the review sheet's layout and defaults; every sheet is one paper scene retained as PDF, DXF, SVG and PNG beside each other in its source run and registered as its PDF, which names the other three files' digests; GET /api/drawings/{asset_sha256}/files/{file_format} reads a view revision's SVG/PNG, only by its revisionRef (DRAWING_REVISION_REQUIRED), or a sheet's four files, verified",
-        "the state-carrying 3DM (#657), only while the design loop is enforced: POST /api/state-files/export seals an exact revision's model with its State Record and the project's active design decisions in the architect's words, read back like any export; POST /api/state-files/inspect reads such a file without retaining anything and answers the record and decisions its seal keeps, every change made outside MonkeyHub and one question awaiting the architect for each part it touched; POST /api/exports is unchanged in every tier"
+        "the state-carrying 3DM (#657), only while the design loop is enforced: POST /api/state-files/export seals an exact revision's model with its State Record and the project's active design decisions in the architect's words, read back like any export; POST /api/state-files/inspect reads such a file without retaining anything and answers the record and decisions its seal keeps, every change made outside MonkeyHub and one question awaiting the architect for each part it touched; POST /api/exports is unchanged in every tier",
+        "the drawing pool (drawing_pool): worker processes, half the processors from one to four or MONKEY_DRAWING_WORKERS, started only by the serving process, solving elevations, axonometrics, section perspectives and cut plans while the Runtime answers other requests; and drawing_sources, retained_sources for elevations, section perspectives and cut plans: the project's write guard is held while the source is checked and from retention to registration (the source checked again under it), and given back while the view is solved; _document_source_lock is held only to look for a registered revision and to register a new one, which an identical request registered meanwhile answers instead"
       ],
       "does_not_own": [
         "producing the export or its receipt - monkeycad.execution and its backends, through monkeyarch.application.project_runner",
@@ -10326,7 +10334,9 @@
         "save_viewport_capture",
         "seal_model",
         "select_drawing_source",
-        "tree_model_sources"
+        "tree_model_sources",
+        "DrawingPool",
+        "drawing_sources"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -10421,7 +10431,8 @@
         "services/project-runtime/tests/test_projections.py",
         "services/project-runtime/tests/test_drawing_sheets.py",
         "services/project-runtime/tests/test_state_files.py",
-        "services/project-runtime/tests/test_drawing_diagrams.py"
+        "services/project-runtime/tests/test_drawing_diagrams.py",
+        "services/project-runtime/tests/test_drawing_pool.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
@@ -10440,7 +10451,8 @@
         "services/project-runtime/src/project_runtime/api/routes/projections.py",
         "services/project-runtime/src/project_runtime/api/dto/projections.py",
         "services/project-runtime/src/project_runtime/application/state_files.py",
-        "services/project-runtime/src/project_runtime/application/drawing_diagrams.py"
+        "services/project-runtime/src/project_runtime/application/drawing_diagrams.py",
+        "services/project-runtime/src/project_runtime/application/drawing_pool.py"
       ]
     },
     {

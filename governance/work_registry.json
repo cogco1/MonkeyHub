@@ -504,6 +504,31 @@
             "services/project-runtime/tests/test_skill_runs.py"
           ],
           "depends_on": []
+        },
+        {
+          "id": "parallel-drawings",
+          "status": "active",
+          "branch": "claude/300-parallel-drawings",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-parallel-drawings",
+          "base_ref": "bc41a4caecb79198c2b1ea15b755a59169e33617",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "并发出图 for the new Hub's integration branch: a drawing's solve runs in worker processes (monkeydiagram run_draw_task, the Runtime's drawing_pool) and the documents lock is held only to look and to register, so drawings of one project solve at once and reads answer while they do.",
+          "modules": [
+            "monkeydiagram.drawing_runs",
+            "project_runtime.documents",
+            "project_runtime.shell"
+          ],
+          "write_scope": [
+            "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
+            "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
+            "services/project-runtime/src/project_runtime/application/drawing_pool.py",
+            "services/project-runtime/src/project_runtime/application/drawings.py",
+            "services/project-runtime/src/project_runtime/application/drawing_plans.py",
+            "services/project-runtime/src/project_runtime/main.py",
+            "services/project-runtime/tests/test_drawing_pool.py"
+          ],
+          "depends_on": []
         }
       ]
     }
