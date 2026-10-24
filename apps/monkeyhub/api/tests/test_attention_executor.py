@@ -195,7 +195,7 @@ class AttentionExecutorTests(unittest.TestCase):
             {"options": [restart]},
             {"options": [option("go", "重置", "board.reset_canvas")]},
             {"opens": [{"commandId": "design.go_to_step", "args": {"runId": "run-x"}}]},
-            {"opens": [{"commandId": "candidate.compare", "args": {}}]},
+            {"opens": [{"commandId": "candidate.compare.decide", "args": {}}]},
             {"opens": [{"commandId": "chat.open_conversation", "args": {"sessionId": "c1", "messageId": "m1"}}]},
             # The guess cards' first draft: a sentence under another name, and no conversation to send it to.
             {"options": [option("go", "再调小一步", "chat.send_message", text="梁高再降 50")]},
