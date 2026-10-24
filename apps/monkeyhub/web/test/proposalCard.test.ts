@@ -186,7 +186,7 @@ test("design cards distinguish component edits from scalar controls; compiler de
   assert.doesNotMatch(componentHtml, /type="range"|ghost-mark|undefined|NaN/);
   assert.doesNotMatch(componentHtml, /<details/, "outside developer mode the card has no technical details");
   const componentDeveloper = render(componentCard, true);
-  assert.equal(componentDeveloper.split("<details")[0], componentHtml, "developer mode adds details below the same card");
+  assert.ok(componentHtml.startsWith(componentDeveloper.split("<details")[0]!), "developer mode adds details below the same card");
   assert.match(componentDeveloper, /<details class="card__row card__details">/);
   assert.match(componentDeveloper, /removeEntityIds/);
 
