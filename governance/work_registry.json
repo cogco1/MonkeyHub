@@ -278,6 +278,47 @@
             "apps/monkeyhub/web/test/inlineDecision.test.ts"
           ],
           "depends_on": []
+        },
+        {
+          "id": "entry-rules",
+          "status": "active",
+          "branch": "claude/300-entry-rules",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-entry-rules",
+          "base_ref": "919bbf2af07d2ec7b60f71a09cd0229c0f551f7a",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "0-5a: ADR-014 and the 711-entry audit from the local line (B1 now reads the command tree as a view of module_registry capabilities), the Interface entries rules in AGENTS.md, CONTRIBUTING 10-12 and the PR template's 入口去向. Documentation only; merges on 10-27 after the paper freeze.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            ".github/pull_request_template.md",
+            "AGENTS.md",
+            "CONTRIBUTING.md",
+            "docs/README.md",
+            "docs/decisions/014-entries-earn-their-place.md",
+            "docs/decisions/README.md"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "registry-data",
+          "status": "active",
+          "branch": "claude/300-registry-data",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-registry-data",
+          "base_ref": "dee04b0e92b49390ae5b0e3611372c9afab2c3b8",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "2-1a data: the nine surfaces' commands (Board, Modeling, Design tree, Drawings, document page, Render, Layout, Fabrication, Usage) registered as capability groups with ui.commands from the 711-entry audit, every templated id expanded, the audit's command columns and coverage tests. The shell layer stays with GH-300/command-tree. Branched from claude/300-command-tree with #690 merged in; PR after the freeze.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/test/commandTreeCoverage.test.ts",
+            "docs/audits/hub-entries.md",
+            "tools/tests/test_hub_entries_coverage.py"
+          ],
+          "depends_on": []
         }
       ]
     }

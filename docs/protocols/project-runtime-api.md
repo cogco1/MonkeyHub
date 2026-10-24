@@ -382,7 +382,11 @@ One chain, and each arrow is a route.
    and the grammar types them). Either way the answer is the *record's* proposal: a typed
    `DecisionOperator` with the change, the closure it propagates through, and the conflicts it
    reaches. Nothing has run. `POST /api/intents` ends in exactly one of four outcomes (§5.1),
-   and only the first is a proposal.
+   and only the first is a proposal. A parameter row that gives a derived parameter (one with an
+   `expr`) a new value without `expr` is refused (`422 SEMANTIC_EDIT_INVALID`, naming the
+   expression and its value), since the expression would give the old value back: `expr` with a new
+   expression keeps it derived, `expr: null` fixes it at the value and makes it declared. An element a
+   construction script cannot edit, such as a column array, is refused with the parameters it is made from.
 
 For drawn faces and prisms, state element rows also expose optional `drawnShape`:
 `profile`, `height`, `workPlane` in building-world Y-up metres, and
@@ -1104,24 +1108,31 @@ fields this request supplies. It takes the `accept` grant, and the change itself
 
 1. a base that is not the working design is `refused` with `STALE_BASE`, and nothing is proposed;
 2. the change becomes a proposal through its own route, every applicable `keep` decision passed as a
-   protected ref; a refused proposal is `problems`;
+   protected ref, except a keep that live conditions with executable checks state in the decision's own
+   words (compared as lower-case letters and digits): that keep is those conditions, checked on the built
+   change at step 7; a refused proposal is `problems`;
 3. a keep conflict is `needs_question` (`KEEP_CONFLICT`), quoting the decision's words;
 4. a change whose reach (its direct references, what they propagate to, and every whole each touched part
    belongs to) includes the target of an applicable `reject` or `avoid` decision is `needs_question`
    (`REJECTED_OPTION`);
 5. a live condition in the change's reach (its direct references and their downstream closure) that names
    no executable check is `needs_question` (`UNCHECKED_CONDITION`), unless `confirmed` names it as
-   `obligation:<id>` and the request carries the architect's words; nothing is built for a question;
+   `obligation:<id>` and the request carries the architect's words; nothing is built for a question. In
+   steps 4 and 5 the reach is what the change changes: a part a relation reaches only to have it checked
+   again (`requires_revalidation`, such as a support it stands on) does not change;
 6. the candidate is built and waited for (`waitSeconds`, default 240, at most 300); a build that does not
    finish is `problems` with `RUN_TIMEOUT` and keeps building. What the build changed against the base, where
    its proposal's impact did not name it, meets steps 3 to 5 again (`KEEP_CONFLICT`, `REJECTED_OPTION`,
    `UNCHECKED_CONDITION`), before anything is admitted;
-7. a built change that drops or rewrites one of the base's live conditions, or leaves one in reach that
-   the built model still cannot check, is `needs_question` (`CONDITION_CHANGED`, `UNCHECKED_CONDITION`);
+7. a built change that breaks the condition of a keep it reaches (its target, a part of it or the whole it
+   belongs to) is `needs_question` (`KEEP_CONFLICT`), naming the condition and what it measured; one that drops
+   or rewrites one of the base's live conditions, or leaves one in reach, a reached keep's included, that the
+   built model still cannot check, is `needs_question` (`CONDITION_CHANGED`, `UNCHECKED_CONDITION`);
 8. the built model is read back: no object, a readback error, a comparison that fails while the base has a
    model (`COMPARE_UNAVAILABLE`), or a construction or hosted opening that changed nothing against the base
-   (`NO_VISIBLE_CHANGE`) is `problems`. Only a base that never exported a model is excused from the
-   comparison, and `compare.unavailable` with `baseHasNoModel` says so;
+   (`NO_VISIBLE_CHANGE`) is `problems`, and so is a change whose proposal and build both leave the design
+   record as it was (`NO_CHANGE`), whatever the model comparison counts. Only a base that never exported a
+   model is excused from the comparison, and `compare.unavailable` with `baseHasNoModel` says so;
 9. validation runs: a violated or unchecked relation, a condition violated where the base did not violate it,
    or a failing review clause is `problems`, each one named by its `source` (`relation:<id>`,
    `obligation:<id>`, the clause);
@@ -1138,7 +1149,9 @@ Every decision about a condition reads its whole result, never the shortened `ob
 answer is `{outcome, code, detail, proposalId, candidateId, stateDigest, problems: [{source, kind,
 detail}], questionRefs, conditions: [{obligationId, statement, checkable, validatorRef}], compare,
 working: {runId, stateDigest, revisionSha256}, seconds}`. Nothing moves on `problems`, `needs_question`
-or `refused`. A kept target or a rejected option changes only after its decision is revised.
+or `refused`. A kept target no checked condition states, or a rejected option, changes only after its
+decision is revised. When a change reaches a keep a checked condition states, the answer's `detail` and the
+admission's `reason` say which conditions were checked on the built model and what each measured.
 
 `GET /api/revisions/context` is what a change is written from: `working` (runId, stateDigest, revisionSha256, label), `outside` (every change made outside MonkeyHub that a state file brought, newest file first: its words with the part and amount, `subjects` and `fileSha256`; none is in the design, each waits for the architect's answer and asks when a change reaches it), `keep` and `rejected` (each decision's ref, target and the architect's words), `conditions` (each live condition's ref, statement, subjects, `validatorRef`, `checkable` and how it stands on the working design: `onWorkingDesign` held, violated or unchecked, with `detail`), `lastChange` (the working design's own landed change: its summary, the words it answered and its objects before and after against its parent, so that undoing it is an ordinary change), `tried` (results the architect rejected, with their words) and `honesty`. Each list holds at most 40 rows and says how many it left out.
 
