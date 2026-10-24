@@ -3149,6 +3149,10 @@
             "id": "design.go_to_step.continue",
             "label": "Continue from here",
             "label_zh": "从这里继续",
+            "args": [
+              "runId",
+              "branchId"
+            ],
             "entries": [
               "模24",
               "模26",
@@ -3236,6 +3240,9 @@
             "id": "design.go_to_step.combine",
             "label": "Combine candidates",
             "label_zh": "合并候选",
+            "args": [
+              "runIds"
+            ],
             "entries": []
           },
           {
@@ -3412,6 +3419,9 @@
             "id": "candidate.review.archive",
             "label": "Archive candidate",
             "label_zh": "归档候选",
+            "args": [
+              "runIds"
+            ],
             "aliases": [
               "undo archive",
               "取消归档"
@@ -3420,6 +3430,15 @@
             "entries": [
               "树20"
             ]
+          },
+          {
+            "id": "candidate.review.restore",
+            "label": "Restore an archived result",
+            "label_zh": "取消归档",
+            "args": [
+              "runIds"
+            ],
+            "entries": []
           },
           {
             "id": "candidate.restore.show_drafts",

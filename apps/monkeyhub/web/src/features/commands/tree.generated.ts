@@ -4299,7 +4299,10 @@ export const COMMAND_TREE: CommandTree = {
         "树16",
         "栏7"
       ],
-      "args": []
+      "args": [
+        "runId",
+        "branchId"
+      ]
     },
     {
       "id": "design.go_to_step.view_only",
@@ -4494,7 +4497,9 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [
+        "runIds"
+      ]
     },
     {
       "id": "design.undo_last",
@@ -4748,7 +4753,29 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "树20"
       ],
-      "args": []
+      "args": [
+        "runIds"
+      ]
+    },
+    {
+      "id": "candidate.review.restore",
+      "capability": "candidate.review",
+      "label": {
+        "en": "Restore an archived result",
+        "zh-CN": "取消归档"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "design_tree",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "runIds"
+      ]
     },
     {
       "id": "candidate.restore.show_drafts",
