@@ -81,8 +81,9 @@ are [GitHub Issues](https://github.com/cogco1/MonkeyHub/issues); who owns which 
 - [drawing-visuals.md](audits/drawing-visuals.md) — the Drawing consumer's A–D visual benchmark.
 - [drawing-v0.md](audits/drawing-v0.md) — the Drawing audit and minimum V0.
 - [external-model-ingest.md](audits/external-model-ingest.md) — the external model ingestion baseline.
+- [hub-entries.md](audits/hub-entries.md) — every entry the web interface shows, 711 rows: place, when it shows, frequency, source line.
 
-**decisions/** — the architecture decision records, [indexed there](decisions/README.md) (ADR-001 to ADR-011).
+**decisions/** — the architecture decision records, [indexed there](decisions/README.md) (ADR-001 to ADR-012, ADR-014).
 
 **prototypes/** — dev-only studies on fixture data: [candidate-graph](prototypes/candidate-graph/README.md).
 
