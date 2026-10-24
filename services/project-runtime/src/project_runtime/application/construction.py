@@ -45,6 +45,7 @@ from monkeyarch.domain.opening_solver import DoorType, WindowType
 from monkeyarch.authoring.construction.script import ConstructionError
 from monkeyarch.authoring.construction.lowering import ConstructionResult, compile_construction_script, geometry_view
 from monkeyarch.authoring.construction.identity import made_by_construction
+from monkeyarch.authoring.construction.shapes import EDITABLE_PRODUCERS
 
 from .seats import SeatsError, load_seat_pack, seats_of
 from ..errors import StudioError
@@ -566,13 +567,19 @@ def construction_model(projection: StateProjection) -> dict[str, Any]:
     capability's route takes the component (``hosted-opening`` not on a
     cutter or a geometry id of several parts), the ``openings`` a component of
     one element hosts, and the ``alongLine`` a door's or window's ``along`` is
-    measured on, when it can take one. ``levels`` and ``parameters`` are what
-    ``level(id)`` and ``param(key)`` can name.
+    measured on, when it can take one, the parameters its parts are made from
+    (``madeFrom``) and the parts a script cannot edit (``notScriptEditable``),
+    whose shape only those parameters change; both name declared parameters,
+    the ones a change sets. ``levels`` and ``parameters`` are what ``level(id)``
+    and ``param(key)`` can name; ``declaredParameters`` are the ones a change
+    sets, every other one being derived from them.
     """
 
     record = projection.record
     components = {entity.entity_id: entity for entity in record.entities_of("Component@1")}
     opening_hosts = _OpeningHosts(record)
+    values = {parameter.key: parameter.value for parameter in record.parameters}
+    roots = _declared_roots(record)
     entities = []
     for row in geometry_view(record):
         facets = component_facets(components[row["id"]])
@@ -583,8 +590,14 @@ def construction_model(projection: StateProjection) -> dict[str, Any]:
         hosts = element is not None and any(capability["id"] == _HOSTED_OPENING for capability in capabilities)
         entities.append({**row, "parts": row.get("parts"), "facets": facets,
                          "partFacets": component_part_facets(components[row["id"]]), "capabilities": capabilities,
-                         "openings": [] if element is None else _openings_of(element),
-                         "alongLine": _along_line_of(element) if hosts else None})
+                         # Each part's doors and windows, named by the part that hosts them when there are several.
+                         "openings": _openings_of(element, values) if element is not None else [
+                             {**opening, "part": part.entity_id} for part in parts for opening in _openings_of(part, values)],
+                         "alongLine": _along_line_of(element) if hosts else None,
+                         "madeFrom": sorted({root for part in parts for key in _bound_keys(part.fields)
+                                             for root in roots.get(key, (key,))}),
+                         "notScriptEditable": [part.entity_id for part in parts
+                                               if part.fields.get("producer") not in EDITABLE_PRODUCERS]})
     return {
         "projectId": projection.project_id,
         "stateDigest": projection.state_digest,
@@ -593,6 +606,7 @@ def construction_model(projection: StateProjection) -> dict[str, Any]:
                    for level in record.entities_of("Level@1") if _finite(level.fields.get("elevation"))],
         "parameters": [{"key": parameter.key, "value": parameter.value, "unit": parameter.unit}
                        for parameter in record.parameters],
+        "declaredParameters": [parameter.key for parameter in record.parameters if not parameter.expr],
         "entities": entities,
     }
 
@@ -789,17 +803,62 @@ def _opening_family(kind: str, type_id: str, family: Mapping[str, Any]) -> DoorT
         raise StudioError(422, "FAMILY_INVALID", f"the {kind} family: {exc}") from exc
 
 
-def _openings_of(element: Entity) -> list[dict[str, Any]]:
-    """The doors and windows an element realised as a wall hosts, as asked for; never raises."""
+def _openings_of(element: Entity, values: Mapping[str, float]) -> list[dict[str, Any]]:
+    """The doors and windows an element realised as a wall hosts, as asked for, each value a parameter states
+    read from it and named in ``parameters``; never raises."""
 
     params = element.fields.get("params")
     openings = params.get("openings") if isinstance(params, Mapping) and element.fields.get("producer") == "wall" else None
     if not isinstance(openings, (list, tuple)):
         return []
-    return [{"id": opening["opening_id"], "kind": opening["kind"],
-             **{key: float(opening[key]) if _finite(opening.get(key)) else None for key in ("along", "width", "sill", "head")}}
+
+    def bound(value: Any) -> str | None:
+        return value[1:] if isinstance(value, str) and value.startswith("@") and value[1:] in values else None
+
+    def number(value: Any) -> float | None:
+        key = bound(value)
+        value = values[key] if key is not None else value
+        return float(value) if _finite(value) else None
+
+    keys = ("along", "width", "sill", "head")
+    return [{"id": opening["opening_id"], "kind": opening["kind"], **{key: number(opening.get(key)) for key in keys},
+             "parameters": {key: bound(opening.get(key)) for key in keys if bound(opening.get(key)) is not None}}
             for opening in openings if isinstance(opening, Mapping)
             and isinstance(opening.get("opening_id"), str) and isinstance(opening.get("kind"), str)]
+
+
+def _declared_roots(record: StateRecord) -> dict[str, tuple[str, ...]]:
+    """Each parameter's declared parameters: itself when declared, else those its expression comes from, in turn."""
+
+    exprs = {parameter.key: parameter.expr for parameter in record.parameters}
+    roots: dict[str, tuple[str, ...]] = {}
+
+    def root(key: str, seen: frozenset[str]) -> tuple[str, ...]:
+        if key in roots:
+            return roots[key]
+        expr = exprs.get(key)
+        if not expr or key in seen:
+            return (key,)
+        named = [name for name in dict.fromkeys(re.findall(r"[A-Za-z_]\w*", expr)) if name in exprs]
+        found = tuple(sorted({item for name in named for item in root(name, seen | {key})}))
+        roots[key] = found
+        return found
+
+    for key in exprs:
+        roots[key] = root(key, frozenset())
+    return roots
+
+
+def _bound_keys(value: Any) -> set[str]:
+    """The parameter keys a row's fields bind (``@key``)."""
+
+    if isinstance(value, str):
+        return {value[1:]} if value.startswith("@") and len(value) > 1 else set()
+    if isinstance(value, Mapping):
+        return {key for item in value.values() for key in _bound_keys(item)}
+    if isinstance(value, (list, tuple)):
+        return {key for item in value for key in _bound_keys(item)}
+    return set()
 
 
 def _along_line_of(element: Entity) -> dict[str, list[float]] | None:

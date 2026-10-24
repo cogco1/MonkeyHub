@@ -139,7 +139,8 @@ class HostedDoorTestCase(HostedOpeningTestCase):
 
         rows = {row["id"]: row for row in self.model(second)["entities"]}
         self.assertEqual(rows["block"]["openings"],
-                         [{"id": "opening-1", "kind": "door", "along": 1.5, "width": 0.9, "sill": 0, "head": 2.1}])
+                         [{"id": "opening-1", "kind": "door", "along": 1.5, "width": 0.9, "sill": 0, "head": 2.1,
+                           "parameters": {}, "part": None}])
         self.assertEqual(rows["block"]["capabilities"],
                          [{"id": "hosted-opening", "route": "POST /api/proposals/hosted-opening", "needs": {}}])
         self.assertEqual((rows["block"]["form"], rows["block"]["facets"]), ("solid", {"architectural.role": "wall"}))
