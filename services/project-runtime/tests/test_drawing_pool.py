@@ -155,20 +155,35 @@ class NativeDrawingPoolTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.repository, _ = make_project(self.root)
-        self.client = TestClient(create_app(StudioSettings(project_dir=self.root / PROJECT_ID, reference_run=REFERENCE_RUN_ID,
-                                                           cad_export="off")))
+        self.app = create_app(StudioSettings(project_dir=self.root / PROJECT_ID, reference_run=REFERENCE_RUN_ID,
+                                             cad_export="off", cache_dir=self.root / "cache"))
+        self.addCleanup(self.app.state.stop_index_events)
+        self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
+        binding = bound_project(self.app.state)
+        self.addCleanup(binding.close)
+        self.assertIsNotNone(binding.await_index(30), "the index loads")
+        self.addCleanup(lambda: self.app.state.projections and self.app.state.projections.shutdown())
         drawing_pool.start(2)
         self.addCleanup(drawing_pool.stop)
 
-    def test_a_native_model_is_read_only_by_workers(self) -> None:
-        from monkeycad.backends.occt import native_models
-
+    def upload(self) -> dict:
         data = (Path(__file__).parent / "fixtures/model-source-a.3dm").read_bytes()
         asset = self.client.post("/api/model-assets", json={
             "projectId": PROJECT_ID, "fileName": "wall.3dm", "contentBase64": base64.b64encode(data).decode()})
         self.assertEqual(asset.status_code, 201, asset.text)
-        source = {"runId": asset.json()["runId"], "assetSha256": asset.json()["sha256"]}
+        return {"runId": asset.json()["runId"], "assetSha256": asset.json()["sha256"]}
+
+    def elevation(self, source, view="front"):
+        response = self.client.post("/api/drawings/elevations", json={
+            "projectId": PROJECT_ID, "sourceAsset": source, "view": view, "drawingId": f"wall-{view}"})
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def test_a_native_model_is_read_only_by_workers(self) -> None:
+        from monkeycad.backends.occt import native_models
+
+        source = self.upload()
         with patch.object(native_models, "read_three_dm", wraps=native_models.read_three_dm) as here:
             front = self.client.post("/api/drawings/elevations", json={
                 "projectId": PROJECT_ID, "sourceAsset": source, "view": "front", "drawingId": "wall-front"})
@@ -179,6 +194,26 @@ class NativeDrawingPoolTests(unittest.TestCase):
         self.assertEqual(here.call_count, 0, "the Runtime's own process never reads the 3DM's shapes")
         receipt = self.repository.load_json(record_ref_from_uri(front.json()["revisionRef"], PROJECT_ID))
         self.assertTrue(receipt["source"]["geometry_quality"], "each object's geometry quality comes back from the worker")
+
+    def test_a_restarted_runtime_reads_the_model_s_source_from_the_cache_and_answers_a_repeat_at_once(self) -> None:
+        source = self.upload()
+        first = self.elevation(source)
+        # A restart: the pool's memory of what its workers verified is gone; the projection cache is not.
+        drawing_pool.stop()
+        drawing_pool.start(2)
+        solved = []
+        original = drawing_pool.DrawingPool._solve
+
+        def counted(pool, function, *arguments):
+            solved.append(function.__name__)
+            return original(pool, function, *arguments)
+
+        with patch.object(drawing_pool.DrawingPool, "_solve", counted):
+            again = self.elevation(source)
+            right = self.elevation(source, "right")
+        self.assertEqual(again["revisionRef"], first["revisionRef"], "the registered drawing answers the repeat")
+        self.assertEqual(solved, ["run_draw_task"], "only the new view is solved; nobody reads the model to verify it")
+        self.assertNotEqual(right["assetSha256"], first["assetSha256"])
 
 
 if __name__ == "__main__":

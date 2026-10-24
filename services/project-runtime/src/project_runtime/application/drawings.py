@@ -40,6 +40,7 @@ from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, record_r
 from monkeydiagram.documentation.sheet_layout import section_line, section_mark, view_labels, view_sheet_scene
 from monkeydiagram.drawing_runs import (
     CUT_PLAN_KIND, DrawnView, freeze_model_axis_elevation, freeze_section_perspective, read_model_axis_elevation,
+    shapeless_facts, shapeless_source,
 )
 from monkeydiagram.projection.mesh_views import MeshViewError, mesh_line_view, mesh_pipeline, pixel_size, triangulate
 from monkeydiagram.projection.views import (
@@ -60,7 +61,8 @@ from ..binding import retained_sources
 from ..binding import ProjectBinding
 from ..monitoring import StudioMonitor
 from .projection import StateProjection, project_state, require_readable
-from .projections import DOCUMENT_PAGE, ELEVATION, SECTION_PERSPECTIVE, SHEET, ProjectionQueue, on_demand_spec
+from .projections import (DOCUMENT_PAGE, DRAWING_SOURCE, ELEVATION, SECTION_PERSPECTIVE, SHEET, ProjectionQueue,
+                          on_demand_spec)
 from . import drawing_pool
 from ..errors import StudioError
 
@@ -157,6 +159,29 @@ def _selected_source(
     return model_source, stage_ref
 
 
+def _kept_source(binding: ProjectBinding, pool, projections: ProjectionQueue | None, native: NativeModelSource):
+    """A native model as a drawing worker verified it, from the projection cache when one has it, else verified now.
+
+    The key is the model's own bytes, its registration and the reading code
+    (``drawing_pipeline``): a changed model, registration or reader is a new key.
+    """
+
+    root = str(binding.repository.layout.root)
+    if projections is None:
+        return pool.source(root, native)
+
+    def verify():
+        facts = shapeless_facts(pool.source(root, native))
+        return {"json": canonical_json(facts).encode("utf-8")}, facts
+
+    spec = on_demand_spec(DRAWING_SOURCE, {"runId": native.run_id, "assetSha256": native.artifact.sha256},
+                          {"registration": native.registration.to_dict(), "artifact": native.artifact.uri})
+    _, facts, _ = projections.on_demand(spec, verify)
+    verified = shapeless_source(facts)
+    pool.keep(native, verified)
+    return verified
+
+
 def _readable_model_source(
     binding: ProjectBinding, source: ModelSource, projection: StateProjection,
 ) -> ArtifactRecord:
@@ -183,6 +208,7 @@ def _readable_model_source(
 def _complete_source(
     binding: ProjectBinding, model: ModelSource | DrawingAssetSource, stage_ref: ProjectRecordRef | None,
     *, read_only: bool = False, loaded: list | None = None, geometry: bool = True,
+    projections: ProjectionQueue | None = None,
 ) -> tuple[ElevationSource | NativeModelSource, dict[str, Any]]:
     """The exact complete model ``model`` names and its CAD receipt.
 
@@ -196,6 +222,8 @@ def _complete_source(
     the registration, which was checked against the decoded model when it was
     registered, and the shapes are not decoded again (#12: listing a large
     composed model's dimension choices decoded every object each time).
+    With ``projections``, what a worker verified is kept in the projection
+    cache, so a restarted Runtime reads it there rather than the model.
     """
 
     if isinstance(model, DrawingAssetSource):
@@ -216,7 +244,7 @@ def _complete_source(
         pool = drawing_pool.drawer() if loaded is None else None
         try:
             verified = (read_elevation_source(binding.repository, native) if pool is None
-                        else pool.source(str(binding.repository.layout.root), native))
+                        else pool.verified(native) or _kept_source(binding, pool, projections, native))
         except DrawingElevationError as exc:
             raise StudioError(422, "DRAWING_NATIVE_GEOMETRY_UNSUPPORTED", str(exc)) from exc
         if loaded is not None:
@@ -306,6 +334,13 @@ def drawing_pipeline(kind: str) -> dict[str, Any]:
     counts: an edit that changes no byte only costs one more drawing.
     """
 
+    if kind == DRAWING_SOURCE:
+        from monkeycad.backends.occt.kernel import backend_identity
+
+        return {"kind": kind, "code": _source_files("monkeydiagram.sources", "monkeydiagram.drawing_runs",
+                                                     "monkeycad.backends.occt.native_models",
+                                                     "monkeycad.backends.occt.measure"),
+                "backend": backend_identity(), "libraries": {"rhino3dm": _library_version("rhino3dm")}}
     if kind in (ELEVATION, SECTION_PERSPECTIVE):
         from monkeycad.backends.occt.kernel import backend_identity
 
@@ -973,7 +1008,7 @@ def generate_elevation(
         try:
             model_source, stage_ref = _selected_source(binding, source_stage_ref, model_source, source_asset)
             operation["run_id"] = model_source.run_id
-            source, cad_receipt = _complete_source(binding, model_source, stage_ref)
+            source, cad_receipt = _complete_source(binding, model_source, stage_ref, projections=projections)
             require_unit(length_unit, cad_receipt["identity"]["length_unit"])
             recipe = _elevation_view(cad_receipt, view, hidden_lines=hidden_lines, scale_denominator=scale_denominator,
                                      frame=_parallel_frame(view, direction))
@@ -1042,7 +1077,7 @@ def generate_section_perspective(
         try:
             model_source, stage_ref = _selected_source(binding, source_stage_ref, model_source, source_asset)
             operation["run_id"] = model_source.run_id
-            source, cad_receipt = _complete_source(binding, model_source, stage_ref)
+            source, cad_receipt = _complete_source(binding, model_source, stage_ref, projections=projections)
             require_unit(length_unit, cad_receipt["identity"]["length_unit"])
         except StudioError:
             details.update(cache_status="refused", cache_reason="source_unavailable")

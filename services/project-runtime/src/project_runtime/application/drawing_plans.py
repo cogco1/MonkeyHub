@@ -264,7 +264,7 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
                   drawing_id=None, file_name=None, previous_revision_ref=None, cut_height=None, bottom=None, scale_denominator=None,
                   crop_uv=None, cut_line_mm=None, visible_line_mm=None, hatch_spacing_mm=None, hatch=None, beyond=None,
                   hidden_object_ids=None, dimensions=None, dressing=None, dressing_operations=None, follow=None, source_asset=None,
-                  section=None, depth=None, length_unit=None, board=None):
+                  section=None, depth=None, length_unit=None, board=None, projections=None):
     """One cut-plan revision, or the retained one an identical request already made.
 
     ``section`` (a plan line and kept side, or a plane) makes it a vertical
@@ -300,7 +300,7 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
         raise StudioError(422, "DRAWING_SECTION_ANNOTATION_INVALID",
                           "Opening dimensions and plan symbols belong to a horizontal cut plan, not a vertical section.")
     model_source, stage_ref = _plan_source(binding, source_stage_ref, model_source, source_asset)
-    source, cad_receipt = _complete_source(binding, model_source, stage_ref)
+    source, cad_receipt = _complete_source(binding, model_source, stage_ref, projections=projections)
     unit = cad_receipt["identity"]["length_unit"]
     require_unit(length_unit, unit)
     drawing_id = drawing_id or (previous.drawing_id if previous else _new_plan_id(binding, "section" if vertical else "floor-plan"))

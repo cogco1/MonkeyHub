@@ -17,7 +17,7 @@ from archflow.project.repository import ProjectRepositoryError
 from archflow.state.design_portfolio import DesignBranch
 from archflow.state.state_record import StateRecord, StateRecordError, changed_refs, combine_component_changes
 
-from .application.artifacts import ModelSource, list_artifacts, require_complete_model
+from .application.artifacts import ModelSource, SourceDocument, list_artifacts, list_documents, require_complete_model
 from .binding import ProjectBinding, ReferenceRun, RunChanges, record_kind
 from .application.candidate import _receipt
 from .application.design_history import (
@@ -76,6 +76,28 @@ class RuntimeSnapshot:
     errors: tuple[str, ...]
     runs_scanned: int
     has_more: bool
+    drawings: tuple[SourceDocument, ...] = ()
+
+
+#: How many of the project's newest drawings a snapshot names: what the attention page shows as just drawn.
+RECENT_DRAWINGS = 8
+
+
+def recent_drawings(binding: ProjectBinding, limit: int = RECENT_DRAWINGS) -> tuple[SourceDocument, ...]:
+    """The project's newest drawings, newest first, each by its latest revision; read from the project index.
+
+    A drawing is a registered document with a drawing id: a plan, section,
+    elevation, axonometric, section perspective or sheet, from any version.
+    """
+
+    latest: dict[str, SourceDocument] = {}
+    for document in list_documents(binding, indexed=True):
+        if document.drawing_id is None or document.revision_ref is None:
+            continue
+        known = latest.get(document.drawing_id)
+        if known is None or (document.generated_at or "") > (known.generated_at or ""):
+            latest[document.drawing_id] = document
+    return tuple(sorted(latest.values(), key=lambda document: document.generated_at or "", reverse=True)[:limit])
 
 
 def inspect_runtime(
@@ -206,9 +228,14 @@ def inspect_runtime(
         runs.append(row)
     if binding.repository.read_design_branches() != branch_rows:
         raise StudioError(409, "RUNTIME_CHANGED", "Design branches changed during runtime inspection; read the next snapshot.")
+    try:
+        drawings = recent_drawings(binding)
+    except (StudioError, ProjectRepositoryError, OSError, ValueError) as exc:
+        drawings = ()
+        errors.append(f"recent drawings: {exc}")
     return RuntimeSnapshot(binding.project_id, str(binding.project_dir), binding.head(), live,
                            tuple(runs), tuple(branches), tuple(stages.values()), tuple(errors),
-                           len(selected), len(retained) > offset + limit)
+                           len(selected), len(retained) > offset + limit, drawings)
 
 
 # ---- Worktree Graph V0 (#271) ------------------------------------------------

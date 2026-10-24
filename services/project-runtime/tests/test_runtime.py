@@ -1,10 +1,14 @@
 """Recovery reads distinguish retained results, live jobs and prepared commits."""
 
 import base64
+import tempfile
+import unittest
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 import threading
 from unittest.mock import patch
+
+from fastapi.testclient import TestClient
 
 from monkeycad.formats.meshes import GLB, Mesh, Scene, convert
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -13,12 +17,13 @@ from archflow.project.refs import record_ref_from_uri
 from project_runtime.binding import ProjectBinding, bound_project
 from project_runtime.application.artifacts import ModelSource
 from project_runtime.application.design_history import initialize_design_stage
+from project_runtime.main import create_app
 from project_runtime.status import inspect_runtime
 from project_runtime.settings import StudioSettings
 from project_runtime.errors import StudioError
 from project_runtime.api.dto.runtime import runtime_dto
 
-from .support import PROJECT_ID, REFERENCE_RUN_ID
+from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project
 from .test_candidate import CandidateTestCase
 from .test_working_copies import register_model
 
@@ -275,3 +280,43 @@ class RuntimeTests(CandidateTestCase):
                          ("main", candidate_id, initial["stageRef"]))
         self.assertEqual(self.client.post(f"/api/candidates/{candidate_id}/accept", json=payload).json(), committed)
         self.assertEqual(len(self.cold(candidate_id)["stages"]), 2)
+
+
+class RecentDrawingsTests(unittest.TestCase):
+    """GET /api/runtime names the project's newest drawings: what the attention page shows as just drawn."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        make_project(root)
+        self.client = TestClient(create_app(StudioSettings(project_dir=root / PROJECT_ID, reference_run=REFERENCE_RUN_ID,
+                                                           cad_export="off")))
+        self.addCleanup(self.client.close)
+        data = (Path(__file__).parent / "fixtures/model-source-a.3dm").read_bytes()
+        asset = self.client.post("/api/model-assets", json={
+            "projectId": PROJECT_ID, "fileName": "wall.3dm", "contentBase64": base64.b64encode(data).decode()})
+        self.assertEqual(asset.status_code, 201, asset.text)
+        self.source = {"runId": asset.json()["runId"], "assetSha256": asset.json()["sha256"]}
+
+    def plan(self, **body):
+        response = self.client.post("/api/drawings/plans", json={
+            "projectId": PROJECT_ID, "sourceAsset": self.source, "cutHeight": 1.2, "bottom": 0, "scaleDenominator": 50,
+            **body})
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def test_the_newest_drawings_come_with_their_version_time_and_picture(self):
+        self.assertEqual(self.client.get("/api/runtime").json()["drawings"], [])
+        ground = self.plan(drawingId="ground-plan")
+        upper = self.plan(drawingId="upper-plan", cutHeight=2.0)
+        again = self.plan(drawingId="ground-plan", previousRevisionRef=ground["revisionRef"], scaleDenominator=100)
+        drawings = self.client.get("/api/runtime").json()["drawings"]
+        self.assertEqual([(row["drawingId"], row["revisionRef"]) for row in drawings],
+                         [("ground-plan", again["revisionRef"]), ("upper-plan", upper["revisionRef"])],
+                         "newest first, a redrawn drawing once, by its latest revision")
+        row = drawings[0]
+        self.assertEqual((row["kind"], row["runId"], row["assetSha256"]), ("cut-plan", self.source["runId"], again["assetSha256"]))
+        self.assertTrue(row["generatedAt"])
+        picture = self.client.get(row["thumbnailPath"])
+        self.assertEqual((picture.status_code, picture.headers["content-type"]), (200, "image/png"), picture.text[:300])

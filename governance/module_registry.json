@@ -9076,7 +9076,9 @@
         "Drawer",
         "run_draw_task",
         "verify_draw_source",
-        "Retaining"
+        "Retaining",
+        "shapeless_facts",
+        "shapeless_source"
       ],
       "depends_on": [
         "archflow.project.ports",
@@ -10226,7 +10228,8 @@
         "the retained axonometric: POST /api/drawings/elevations view axon, from a stated direction toward the viewer (default the model view's -X, -Y, +Z), framed on every physical object's bounds like an elevation",
         "view sheets through POST /api/drawings/sheets: same-source plans, vertical sections, elevations, axonometrics and section perspectives, each drawn or read back through its own generator from the sheet's one source (modelSource, Stage or unbound imported asset) and named in the sheet recipe by its exact revision, placed at its own scale where the caller put it, with default titles, subtitles and scale labels from each view's own frame and a section's cut line on a plan, as monkeydiagram.documentation.sheet_layout lays them out; front/right/top requests keep the review sheet's layout and defaults; every sheet is one paper scene retained as PDF, DXF, SVG and PNG beside each other in its source run and registered as its PDF, which names the other three files' digests; GET /api/drawings/{asset_sha256}/files/{file_format} reads a view revision's SVG/PNG, only by its revisionRef (DRAWING_REVISION_REQUIRED), or a sheet's four files, verified",
         "the state-carrying 3DM (#657), only while the design loop is enforced: POST /api/state-files/export seals an exact revision's model with its State Record and the project's active design decisions in the architect's words, read back like any export; POST /api/state-files/inspect reads such a file without retaining anything and answers the record and decisions its seal keeps, every change made outside MonkeyHub and one question awaiting the architect for each part it touched; POST /api/exports is unchanged in every tier",
-        "the drawing pool (drawing_pool): worker processes, half the processors from one to four or MONKEY_DRAWING_WORKERS, started only by the serving process, solving elevations, axonometrics, section perspectives and cut plans while the Runtime answers other requests; and drawing_sources, retained_sources for elevations, section perspectives and cut plans: the project's write guard is held while the source is checked and from retention to registration (the source checked again under it), and given back while the view is solved; _document_source_lock is held only to look for a registered revision and to register a new one, which an identical request registered meanwhile answers instead"
+        "the drawing pool (drawing_pool): worker processes, half the processors from one to four or MONKEY_DRAWING_WORKERS, started only by the serving process, solving elevations, axonometrics, section perspectives and cut plans while the Runtime answers other requests; and drawing_sources, retained_sources for elevations, section perspectives and cut plans: the project's write guard is held while the source is checked and from retention to registration (the source checked again under it), and given back while the view is solved; _document_source_lock is held only to look for a registered revision and to register a new one, which an identical request registered meanwhile answers instead",
+        "a native model's drawing source kept in the projection cache (drawing-source, _kept_source): what a drawing worker verified, without its shapes, keyed by the model's bytes, its registration and the reading code, so a restarted Runtime answers a registered drawing without reading the model again"
       ],
       "does_not_own": [
         "producing the export or its receipt - monkeycad.execution and its backends, through monkeyarch.application.project_runner",
@@ -10942,7 +10945,8 @@
         "expiring superseded local recovery in the project's own runtime (prune_recovery over archflow.project.repository's prune_working_draft, its rule unchanged): first in every retention sweep and every 15 minutes while the project is open (RECOVERY_PRUNE_INTERVAL_S), the timer the Hub kept until ADR-012",
         "relation_problems: the violated relations, then the unchecked ones, by relation id, from the run's retained relation reports, at most RELATION_PROBLEMS_SHOWN; a check that held on the pairs it measured but left a pair unmeasured is unchecked",
         "each finished Worktree Graph line's candidate review (unreviewed, rejected, archived) from the retained candidate reviews, read once per graph, so a result the architect archived is not offered again (#300)",
-        "following a job in four steps (#300): generate, check, repair and save, each pending, running, done, skipped or failed with a sentence; the work reports them with report_step from the worker thread it runs on, each change is a job.step event, a step still running when the work ends ends with it, and a job's events carry its lane, what it waits for, its title and its steps"
+        "following a job in four steps (#300): generate, check, repair and save, each pending, running, done, skipped or failed with a sentence; the work reports them with report_step from the worker thread it runs on, each change is a job.step event, a step still running when the work ends ends with it, and a job's events carry its lane, what it waits for, its title and its steps",
+        "a runtime snapshot's recent drawings (recent_drawings, RecentDrawingDto on GET /api/runtime and so in the Hub's project snapshot): the project's newest registered drawings, newest first, each by its latest revision, with the version it was drawn from, when, and its first page's PNG path, read from the project index"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - monkeyarch.application.project_runner",
@@ -11040,7 +11044,10 @@
         "TrashRestoreDto",
         "RelationProblem",
         "relation_problems",
-        "RELATION_PROBLEMS_SHOWN"
+        "RELATION_PROBLEMS_SHOWN",
+        "recent_drawings",
+        "RECENT_DRAWINGS",
+        "RecentDrawingDto"
       ],
       "depends_on": [
         "archflow.project.inputs",

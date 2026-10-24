@@ -2278,6 +2278,58 @@ export type ProjectVersionDto = {
 };
 
 /**
+ * RecentDrawingDto
+ *
+ * One of the project's newest drawings: what it is, which version it was drawn from, when, and its picture.
+ */
+export type RecentDrawingDto = {
+    /**
+     * Drawingid
+     */
+    drawingId: string;
+    /**
+     * Name
+     *
+     * Its file name in the documents list.
+     */
+    name: string;
+    /**
+     * Kind
+     *
+     * Its view kind: cut-plan (a plan or a vertical section), elevation (also an axonometric), section-perspective, review-sheet or view-sheet.
+     */
+    kind: string | null;
+    /**
+     * Runid
+     *
+     * The model version it was drawn from.
+     */
+    runId: string;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef: string | null;
+    /**
+     * Generatedat
+     */
+    generatedAt: string | null;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef: string;
+    /**
+     * Thumbnailpath
+     *
+     * GET path of its first page as a PNG of at most 2048 px (/api/projections/pages), on this runtime.
+     */
+    thumbnailPath: string;
+};
+
+/**
  * Recommendation
  *
  * The answer the card's writer recommends, and on what grounds.
@@ -2478,6 +2530,12 @@ export type RuntimeDto = {
      * Hasmore
      */
     hasMore: boolean;
+    /**
+     * Drawings
+     *
+     * The project's newest drawings, newest first, each by its latest revision (at most 8).
+     */
+    drawings?: Array<RecentDrawingDto>;
 };
 
 /**

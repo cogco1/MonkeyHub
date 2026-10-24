@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Literal
+from urllib.parse import urlencode
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -30,6 +31,33 @@ class RuntimeCandidateDto(BaseModel):
     error: str | None
 
 
+class RecentDrawingDto(BaseModel):
+    """One of the project's newest drawings: what it is, which version it was drawn from, when, and its picture."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    drawing_id: str = Field(alias="drawingId")
+    name: str = Field(description="Its file name in the documents list.")
+    kind: str | None = Field(description="Its view kind: cut-plan (a plan or a vertical section), elevation (also an "
+                                         "axonometric), section-perspective, review-sheet or view-sheet.")
+    run_id: str = Field(alias="runId", description="The model version it was drawn from.")
+    source_stage_ref: str | None = Field(alias="sourceStageRef")
+    generated_at: str | None = Field(alias="generatedAt")
+    asset_sha256: str = Field(alias="assetSha256")
+    revision_ref: str = Field(alias="revisionRef")
+    thumbnail_path: str = Field(alias="thumbnailPath", description="GET path of its first page as a PNG of at most "
+                                                                     "2048 px (/api/projections/pages), on this runtime.")
+
+
+def recent_drawing_dto(document) -> RecentDrawingDto:
+    query = urlencode({"runId": document.run_id, "assetSha256": document.asset_sha256,
+                       "revisionRef": document.revision_ref})
+    return RecentDrawingDto(
+        drawing_id=document.drawing_id, name=document.file_name, kind=(document.view_recipe or {}).get("kind"),
+        run_id=document.run_id, source_stage_ref=document.source_stage_ref, generated_at=document.generated_at,
+        asset_sha256=document.asset_sha256, revision_ref=document.revision_ref,
+        thumbnail_path=f"/api/projections/pages?{query}")
+
+
 class RuntimeDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
     project_id: str = Field(alias="projectId")
@@ -42,6 +70,8 @@ class RuntimeDto(BaseModel):
     errors: list[str]
     runs_scanned: int = Field(alias="runsScanned")
     has_more: bool = Field(alias="hasMore")
+    drawings: list[RecentDrawingDto] = Field(default_factory=list, description="The project's newest drawings, newest "
+                                             "first, each by its latest revision (at most 8).")
 
 
 def runtime_dto(value: RuntimeSnapshot) -> RuntimeDto:
@@ -61,6 +91,7 @@ def runtime_dto(value: RuntimeSnapshot) -> RuntimeDto:
         ) for row in value.runs],
         branches=[branch_dto(branch) for branch in value.branches], stages=[stage_dto(stage) for stage in value.stages],
         errors=list(value.errors), runs_scanned=value.runs_scanned, has_more=value.has_more,
+        drawings=[recent_drawing_dto(document) for document in value.drawings],
     )
 
 

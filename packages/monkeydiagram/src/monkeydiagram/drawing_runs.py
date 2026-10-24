@@ -292,6 +292,23 @@ def _shapeless(verified: VerifiedElevationSource) -> VerifiedElevationSource:
                                            for entry in verified.entries))
 
 
+def shapeless_facts(verified: VerifiedElevationSource) -> dict[str, Any]:
+    """A source as verified, without its shapes, as JSON values: what a cache keeps of it (``shapeless_source``)."""
+
+    return {"run": verified.run.to_dict(), "receipt": deepcopy(dict(verified.receipt)), "lengthUnit": verified.length_unit,
+            "programDigest": verified.program_digest, "stageId": verified.stage_id,
+            "physicalObjectIds": list(verified.physical_object_ids),
+            "objects": [[entry.name, getattr(entry, "geometry_quality", None)] for entry in verified.entries]}
+
+
+def shapeless_source(facts: Mapping[str, Any]) -> VerifiedElevationSource:
+    """The source ``shapeless_facts`` kept: everything a drawing reads of it before it solves, and no shape."""
+
+    return VerifiedElevationSource(
+        RunRef.from_dict(facts["run"]), facts["receipt"], facts["lengthUnit"], facts["programDigest"], facts["stageId"],
+        tuple(facts["physicalObjectIds"]), tuple(_ShapelessEntry(name, quality) for name, quality in facts["objects"]))
+
+
 # A worker opens each project once: opening verifies the project's event chain.
 _OPENED: dict[str, FilesystemProjectRepository] = {}
 
@@ -789,6 +806,8 @@ __all__ = [
     "list_model_axis_elevations",
     "read_model_axis_elevation",
     "run_draw_task",
+    "shapeless_facts",
+    "shapeless_source",
     "verify_draw_source",
 ]
 
