@@ -2,12 +2,13 @@ import { Fragment, useId, useMemo, useRef, useState, type ReactNode } from "reac
 import { marked, type Token, type Tokens } from "marked";
 import type { ChatAttachment, ChatMessage } from "./api/generated";
 import { ChatCard } from "./ChatCard";
+import { useDeveloperMode } from "./features/settings/preferences";
 import "./ChatMessageContent.css";
 
 export type ChatDocument = NonNullable<ChatMessage["documents"]>[number];
 type Labels = { attachments: string; previewImage: string; close: string; download: string;
   imageLoading: string; imageFailed: string; openDocument: string; filesTitle: string;
-  fileCount: (count: number) => string; fileDetails: (count: number) => string;
+  fileCount: (count: number) => string; fileDetails: (count: number) => string; moreFiles: (count: number) => string;
   filePage: (page: number) => string; fileReference: (index: number) => string;
   renderRoleSource: string; renderRoleReference: string };
 
@@ -99,6 +100,7 @@ export function ChatMessageFiles({ sessionId, messageId, attachments = [], docum
   sessionId: string; messageId: string; attachments?: ChatAttachment[]; documents?: ChatDocument[];
   onOpenDocument?: (document: ChatDocument) => void; documentBusy?: boolean; labels: Labels;
 }) {
+  const developer = useDeveloperMode();
   type FileRow = { key: string; name: string; mimeType: string; url: string; downloadUrl: string;
     size?: number; document?: ChatDocument };
   // A document's identity includes its page and revision. Keep its original route index;
@@ -153,9 +155,10 @@ export function ChatMessageFiles({ sessionId, messageId, attachments = [], docum
       </li>;
     })}
   </ul>;
-  const sources = rows.filter((row) => row.document);
+  // Every file stays in reach; the records each one was read from are for developer mode.
+  const sources = developer ? rows.filter((row) => row.document) : [];
   return <ChatCard className="chat-files" title={labels.filesTitle} status={labels.fileCount(rows.length)}
-    details={remaining.length || sources.length ? { label: labels.fileDetails(remaining.length), children: <>
+    details={remaining.length || sources.length ? { label: developer ? labels.fileDetails(remaining.length) : labels.moreFiles(remaining.length), children: <>
       {remaining.length > 0 && list(remaining)}
       {sources.length > 0 && <dl className="chat-file-sources">{sources.map((row) => <div key={row.key}>
         <dt>{row.name} · {labels.filePage((row.document!.pageIndex ?? 0) + 1)}{reference(row) && <> · {reference(row)}</>}</dt>

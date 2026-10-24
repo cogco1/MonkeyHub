@@ -15,6 +15,7 @@ import { MODEL_PREVIEW_RETAINED, previewSourceKey } from "./features/artifacts/u
 import type { WorkspaceDesignContext, WorkspacePosition } from "./app/ProjectWorkspace";
 import { MonitorPage } from "./MonitorPage";
 import { ChatCard, ChatCardDetails } from "./ChatCard";
+import { DeveloperOnly, useDeveloperMode } from "./features/settings/preferences";
 import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessageContent";
 import { ChatSuggestionCard } from "./ChatSuggestionCard";
 import { findSource, type PageSource } from "./workspaces/monkeyboard/boardScene";
@@ -265,6 +266,7 @@ const renderPage = (page: RenderPageRefDto): PageSource => ({ runId: page.runId,
 function RenderContextCard({ context, documents, words, running, onRemove }: {
   context: RenderDraft; documents: readonly SourceDocumentDto[] | null; words: RenderWords; running: boolean; onRemove(): void;
 }) {
+  const developer = useDeveloperMode();
   const rows = [{ role: words.renderRoleSource, page: context.source }, ...context.references.map((page) => ({ role: words.renderRoleReference, page }))];
   // A page replaced since it was handed over is still named, and said to be replaced: sending it would be refused.
   const replaced = new Set((documents ?? []).flatMap((document) => (document.replacesPages ?? [])
@@ -272,10 +274,10 @@ function RenderContextCard({ context, documents, words, running, onRemove }: {
   return <ChatCard className="chat-render-context" title={words.renderContextTitle}
     status={<span className="chat-render-context__status">{running ? words.renderContextAfterReply : words.renderContextNext}</span>}
     actions={<button type="button" className="chat-activity__open" onClick={onRemove}>{words.renderContextRemove}</button>}
-    details={{ label: words.renderContextDetails, children: <dl className="chat-file-sources">{rows.map(({ role, page }) => <div key={`${role}:${page.runId}:${page.assetSha256}:${page.revisionRef ?? ""}:${page.pageIndex}`}>
+    details={developer ? { label: words.renderContextDetails, children: <dl className="chat-file-sources">{rows.map(({ role, page }) => <div key={`${role}:${page.runId}:${page.assetSha256}:${page.revisionRef ?? ""}:${page.pageIndex}`}>
       <dt>{role} · {documents ? findSource(documents, renderPage(page))?.fileName ?? words.renderContextUnavailable : page.runId}</dt>
       <dd><code>{page.runId}</code><br /><code>{page.assetSha256}</code><br /><code>{page.revisionRef ?? "null"}</code> · <code>{page.pageIndex}</code></dd>
-    </div>)}</dl> }}>
+    </div>)}</dl> } : undefined}>
     <ul className="chat-render-context__pages">{rows.map(({ role, page }) => {
       const document = documents ? findSource(documents, renderPage(page)) : undefined;
       const stale = replaced.has(`${page.runId}:${page.assetSha256}:${page.revisionRef ?? ""}:${page.pageIndex}`);
@@ -433,8 +435,8 @@ function Failure({ failure, language, labels, connection, onClose, onChangeModel
       {/* Offered only when the failure itself named the model, and it moves to
           the picker this conversation already has. Nothing is switched here. */}
       {shown.modelRejected && onChangeModel && <button type="button" className="chat-error__action" onClick={onChangeModel}>{labels.changeModel}</button>}
-      {/* A new failure starts folded rather than inheriting the last one. */}
-      <details className="chat-error__details" key={shown.technical}><summary>{labels.errorDetails}</summary><pre lang="en" translate="no">{shown.technical}</pre></details>
+      {/* A new failure starts folded rather than inheriting the last one; the technical text is for developer mode. */}
+      <DeveloperOnly><details className="chat-error__details" key={shown.technical}><summary>{labels.errorDetails}</summary><pre lang="en" translate="no">{shown.technical}</pre></details></DeveloperOnly>
     </div>
     {onClose && <button className="chat-icon" aria-label={labels.close} onClick={onClose}><Icon name="close" /></button>}
   </div>;
@@ -533,12 +535,12 @@ function ProcessRow({ turn, running, open, t, onToggle }: {
         <span className="chat-process__mark" aria-hidden="true">{stepMark(step.status)}</span>
         <span>{stepText(describeStep(step), names)}{step.status === "failed" && <span className="chat-process__step-failed"> · {t.processStepFailed}</span>}</span>
       </li>)}</ol>
-      <ChatCardDetails className="chat-process__technical" summary={t.processTechnical}>
+      <DeveloperOnly><ChatCardDetails className="chat-process__technical" summary={t.processTechnical}>
         <ol>{turn.steps.map((step) => <li key={step.id}>
           <code lang="en" translate="no">{rawLine(step)}</code>
           {rawDetail(step) && <pre lang="en" translate="no">{rawDetail(step)}</pre>}
         </li>)}</ol>
-      </ChatCardDetails>
+      </ChatCardDetails></DeveloperOnly>
     </div>}
   </div>;
 }
@@ -574,6 +576,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const runtimeEventRef = useRef(onRuntimeEvent);
   runtimeEventRef.current = onRuntimeEvent;
   const t = words[preferences.language], w = composerWords[preferences.language], s = shellWords[preferences.language];
+  const developer = useDeveloperMode();
   const [initial] = useState(readView);
   const [projects, setProjects] = useState<ChatProject[]>([]);
   const [sessions, setSessions] = useState<ChatSummary[]>([]);
@@ -2208,8 +2211,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
                         {compareButton(option, t.studyOption(index + 1), t.studyCompareOption(index + 1))}</li>)}</ul>
                     </ChatCardDetails>}
                 </>}
-                details={{ label: t.processTechnical, children: <ul className="chat-study__ids">
-                  {options.map((option) => <li key={option}><code lang="en" translate="no">{option}</code></li>)}</ul> }}>
+                details={developer ? { label: t.processTechnical, children: <ul className="chat-study__ids">
+                  {options.map((option) => <li key={option}><code lang="en" translate="no">{option}</code></li>)}</ul> } : undefined}>
                 {projectRuntime ? <ProjectRuntimeProvider key={projectRuntime.runtimeId} runtimeId={projectRuntime.runtimeId} baseUrl={`${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`}>
                   <StudyThumbnails candidates={options} />
                 </ProjectRuntimeProvider> : <Icon name="tree" />}
@@ -2409,9 +2412,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             {status.unreadable > 0 && <li data-state="stale" title={graph?.warnings.join("\n")}>{t.workUnreadable(status.unreadable)}</li>}
           </ul></dd></>}
         </dl> : <><p>{t.projectNone}</p><p className="chat-muted">{t.projectNoneHint}</p></>}
-        {/* The local address of the page on the right is a connection detail:
-            available when it is asked for, not on screen all the time. */}
-        {Boolean(projectRuntime?.operations?.length) && <details className="chat-project-card__connection" open={Boolean(unfinishedOperation) || undefined}>
+        {/* The local address of the page on the right is a connection detail, and finished operations a record:
+            both for developer mode. An unfinished operation stays in sight for everyone. */}
+        {Boolean(projectRuntime?.operations?.length) && (developer || unfinishedOperation) && <details className="chat-project-card__connection" open={Boolean(unfinishedOperation) || undefined}>
           <summary>{t.recoveryDetails}</summary>
           <p className="chat-muted">{t.runtimeOperations}</p>
           {projectRuntime!.operations!.map((operation) => <div className="chat-project-card__operation" key={operation.operationId}>
@@ -2419,17 +2422,21 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             {operation.candidateId && <button type="button" className="chat-activity__open" disabled={Boolean(toolBusy)} onClick={() => void openTool("monkeyarch", { candidate: operation.candidateId! })}>{t.openCandidate}</button>}
           </div>)}
         </details>}
-        <details className="chat-project-card__connection">
-          <summary>{t.connectionDetails}</summary>
-          {selectedTab ? <>
-            <label className="sr-only" htmlFor="tool-url">{t.toolUrl}</label>
-            <input id="tool-url" className="chat-project-card__url" readOnly value={selectedTab.url} onFocus={(event) => event.currentTarget.select()} />
-            <div className="chat-project-card__connection-actions">
-              <button type="button" className="chat-activity__open" onClick={() => setTabs((items) => items.map((item) => item === selectedTab ? { ...item, revision: item.revision + 1 } : item))}><Icon name="refresh" /><span>{t.refresh}</span></button>
-              <span className="chat-muted">{t[tools.find((tool) => tool.id === activeTool)!.label]}</span>
-            </div>
-          </> : <p className="chat-muted">{t.connectionNone}</p>}
-        </details>
+        {/* Reloading the page on the right is for everyone until the service heals itself; its address is for developer mode. */}
+        {(() => {
+          const reloadPage = selectedTab && <div className="chat-project-card__connection-actions">
+            <button type="button" className="chat-activity__open" onClick={() => setTabs((items) => items.map((item) => item === selectedTab ? { ...item, revision: item.revision + 1 } : item))}><Icon name="refresh" /><span>{t.refresh}</span></button>
+            <span className="chat-muted">{t[tools.find((tool) => tool.id === activeTool)!.label]}</span>
+          </div>;
+          return developer ? <details className="chat-project-card__connection">
+            <summary>{t.connectionDetails}</summary>
+            {selectedTab ? <>
+              <label className="sr-only" htmlFor="tool-url">{t.toolUrl}</label>
+              <input id="tool-url" className="chat-project-card__url" readOnly value={selectedTab.url} onFocus={(event) => event.currentTarget.select()} />
+              {reloadPage}
+            </> : <p className="chat-muted">{t.connectionNone}</p>}
+          </details> : reloadPage;
+        })()}
         {/* A whole project moved as one file: written from what is retained,
             and read back into a folder of its own. Neither touches this view. */}
         <div className="chat-project-card__archive">

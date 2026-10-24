@@ -221,6 +221,12 @@ try {
     await status.filter({ hasText: /^Saved$/ }).waitFor();
     assert.equal(launchWrites.at(-1).workspaceDir, "D:\\fixture\\new-projects");
     await dialog.getByText("More launch options", { exact: true }).click();
+    // The port, the reference run, model export and the service controls are for developer mode.
+    assert.equal(await page.locator("#studio-port, #reference-run, #cad-export").count(), 0, "launch internals wait for developer mode");
+    await dialog.screenshot({ path: path.join(screenshots, "settings-launch-ordinary-en.png") });
+    await dialog.getByRole("checkbox", { name: "Developer / Research Mode", exact: true }).check();
+    await page.locator("#studio-port").waitFor();
+    await dialog.screenshot({ path: path.join(screenshots, "settings-launch-developer-en.png") });
     await page.locator("#studio-port").fill("80");
     await dialog.getByRole("alert").filter({ hasText: "The project runtime port must be a whole number from 1024 to 65535." }).waitFor();
     await page.locator("#studio-port").fill("18788");
@@ -353,10 +359,11 @@ try {
     await status.filter({ hasText: /^已保存$/ }).waitFor();
   });
 
-  // A reload shows what was saved, with nothing left to save.
+  // A reload shows what was saved, with nothing left to save; developer mode is kept, so the port is still there.
   await page.reload();
   await openSettings("Hub 设置");
   await status.filter({ hasText: /^已保存$/ }).waitFor();
+  assert.equal(await page.locator("#developer-mode").isChecked(), true, "developer mode is kept across a reload");
   assert.equal(await page.locator("#render-model").inputValue(), "gemini-3.1-flash-image-preview");
   assert.equal(await page.locator("#studio-port").inputValue(), "18791");
   assert.deepEqual(errors, []);

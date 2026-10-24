@@ -1383,6 +1383,7 @@ export const chatCopy = {
     previewImage: "Enlarge image", download: "Download", imageLoading: "Loading image…", imageFailed: "This image could not be loaded. You can still download the file.", openDocument: "Open document",
     filesTitle: "Files from this message", fileCount: (count: number) => count === 1 ? "1 file" : `${count} files`,
     fileDetails: (count: number) => !count ? "Technical details" : `Technical details and ${count === 1 ? "1 more file" : `${count} more files`}`,
+    moreFiles: (count: number) => count === 1 ? "1 more file" : `${count} more files`,
     filePage: (page: number) => `Page ${page}`, fileReference: (index: number) => `Item ${index}`,
     // #253: a Board's image discussion in the composer, and the role each image plays in a message.
     renderContextTitle: "Image discussion", renderContextNext: "Goes with your next message, and with each correction until you remove it.",
