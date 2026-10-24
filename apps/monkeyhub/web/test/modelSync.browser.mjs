@@ -1011,7 +1011,7 @@ await page.keyboard.press('Control+y');await wait(s=>!s.view.drafts.some(o=>o.id
 await page.keyboard.press('Control+z');await wait(s=>s.view.drafts.some(o=>o.id===block),'local second undo');
 await pick('seed-block');await page.keyboard.press('Delete');await wait(s=>s.view.hidden.some(o=>o.name==='obj-seed-block'&&!o.visible),'base hide');
 await page.keyboard.press('Control+z');await wait(s=>!s.view.hidden.some(o=>o.name==='obj-seed-block'),'base restore');
-assert.equal(sent.length,beforeWrites,'local modeling wrote to the API');assert.deepEqual(await runIds(),originalRuns);
+assert.equal(sent.length,beforeWrites,`local modeling wrote to the API: ${JSON.stringify(sent.slice(beforeWrites).map(row=>row.path))}`);assert.deepEqual(await runIds(),originalRuns);
 console.log('3b · selection, text, repeated keys and camera gestures retain their original owners');
 await pick(block);await page.keyboard.press('Escape');await wait(s=>!s.picked&&!s.selection&&s.view.highlighted===0,'Esc selection');
 await pick(block);const empty=await page.evaluate(()=>window.__view.blank());assert.ok(empty);await page.mouse.click(empty.x,empty.y);
