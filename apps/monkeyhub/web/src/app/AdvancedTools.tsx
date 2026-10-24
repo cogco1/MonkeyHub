@@ -35,7 +35,8 @@ export function AdvancedTools() {
         : state.kind === "opens" ? t("commands.opens", { surface: t(`commands.surface.${state.surface}` as MessageKey) })
         : state.kind === "locate" ? t("commands.locate") : null;
       return <li key={command.id}>
-        <button type="button" className="advanced-tools__command" data-row={command.id} aria-disabled={state.kind === "unavailable" || undefined}
+        {/* A row of the command tree (data-command-view), as in Ctrl K: it records its own use and is not an entry on the page. */}
+        <button type="button" className="advanced-tools__command" data-row={command.id} data-command-view aria-disabled={state.kind === "unavailable" || undefined}
           title={reason ?? undefined} onClick={() => { if (state.kind !== "unavailable") run(command.id, "tools"); }}>
           <span>{command.label[language]}</span>
           {reason && <small>{reason}</small>}
