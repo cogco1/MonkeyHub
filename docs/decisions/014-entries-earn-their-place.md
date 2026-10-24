@@ -10,7 +10,9 @@ is a control a person can see and click, fill or switch, counted as in [the entr
    a result card, the selection's card) → an existing menu → a standing button. The further along the order, the
    more reason the PR gives; a low-frequency entry does not take a standing place.
 3. **Budgets,** counted per surface over the places the command tree's commands stand in; going over fails.
-   Each row's key is the one `ui_entries.budgets` in `governance/architecture_policy.json` uses.
+   Each row's key is the one `ui_entries.budgets` in `governance/architecture_policy.json` uses. CI counts the
+   commands of the command tree; fields in a panel (most of the Drawings parameter panel's 32) are not commands,
+   and acceptances such as B6 check them on screenshots.
 
    | Place | At most | Policy key |
    |---|---|---|
@@ -25,6 +27,10 @@ is a control a person can see and click, fill or switch, counted as in [the entr
    \* Added by the coordinating session from the interface review's section 3.3; not yet confirmed by Kaiwen,
    who chose the other five; their policy keys are `project_bar_state` and `sidebar_top`. Removed if Kaiwen
    declines them.
+
+   The new shell's places have provisional budgets from prototype v2, confirmed when 2-3a settles its layout:
+   `left_column` 6, `center_tabs` 3, `side_panel` 6, `card` 4, `status_line` 2, `composer` 3 (the model choice
+   included). Whether the left column folds two of its six into Ctrl+K is Kaiwen's call.
 
    Over budget at the audit: Modeling's More (15 controls of five kinds), the Board's More board actions (9, three
    kinds), the rail (9), the tracing-paper tool row (about 21), the document page's right column (22), the
