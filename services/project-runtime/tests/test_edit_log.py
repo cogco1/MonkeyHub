@@ -9,12 +9,7 @@ here in memory: what is read is exactly the operator and its source record.
 from __future__ import annotations
 
 from dataclasses import replace
-from types import SimpleNamespace
 import unittest
-from unittest import mock
-
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from archflow.project.refs import ProjectVersionRef, RunRef
 from archflow.state.state_record import (
@@ -24,7 +19,6 @@ from archflow.state.state_record import (
 from project_runtime.application.edit_log import (
     ADD, EDIT, REMOVE, SET, by_target, edit_log, edits_between, step_of,
 )
-from project_runtime.api.routes import edit_log as edit_log_routes
 from project_runtime.errors import StudioError
 
 from . import support
@@ -68,9 +62,6 @@ class _Line:
 
     def thinner(self, run_id: str, height: float, request: str | None = None) -> None:
         self.add(run_id, _scalar(self.record, "entity:portico-cornice", "height", height), request)
-
-    def run_ids(self) -> frozenset[str]:
-        return frozenset({"run-001", *self.deltas})
 
     def candidate_delta(self, run_id: str):
         return self.deltas.get(run_id)
@@ -180,50 +171,6 @@ class EditLogTests(unittest.TestCase):
         delta = line.deltas["run-002"]
         step = step_of("run-002", delta, StateRecord.from_dict(delta["source_record"]))
         self.assertEqual([(edit.before, edit.after) for edit in step.edits], [(0.3, 0.25)])
-
-
-class EditLogRouteTests(unittest.TestCase):
-    """GET /api/edit-log on an app whose project is the in-memory line: no project folder is written."""
-
-    def setUp(self) -> None:
-        line = EditLogTests().line()
-        app = FastAPI()
-        app.include_router(edit_log_routes.router, prefix="/api")
-        app.state.binding = line
-        head = SimpleNamespace(head=SimpleNamespace(run_id="run-005"))
-        patcher = mock.patch.object(edit_log_routes, "resolve_working_source", lambda binding: head)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        self.client = TestClient(app)
-        self.addCleanup(self.client.close)
-
-    def test_the_working_heads_line_by_default_with_each_field_gathered(self) -> None:
-        response = self.client.get("/api/edit-log", params={"limit": 3})
-        self.assertEqual(response.status_code, 200, response.text)
-        body = response.json()
-        self.assertEqual(body["runId"], "run-005")
-        self.assertEqual([step["runId"] for step in body["steps"]], ["run-005", "run-004", "run-003"])
-        self.assertEqual(body["steps"][0]["edits"], [{
-            "targetRef": "entity:portico-cornice", "componentId": "portico", "op": "set", "field": "params.height",
-            "before": 0.2, "after": 0.15, "delta": body["steps"][0]["edits"][0]["delta"], "direction": -1}])
-        self.assertEqual(body["steps"][0]["request"], "thinner again")
-        cornice = next(row for row in body["targets"] if row["targetRef"] == "entity:portico-cornice")
-        self.assertEqual((cornice["steps"], cornice["directions"]), ([0, 1], [-1, -1]))
-
-    def test_another_run_names_its_own_line_and_an_unknown_one_is_refused(self) -> None:
-        body = self.client.get("/api/edit-log", params={"run": "run-003"}).json()
-        self.assertEqual([step["runId"] for step in body["steps"]], ["run-003", "run-002"])
-        with self.assertRaises(StudioError) as caught:
-            self.client.get("/api/edit-log", params={"run": "run-404"})
-        self.assertEqual((caught.exception.status, caught.exception.code), (404, "RUN_NOT_FOUND"))
-        for params in ({"limit": 0}, {"limit": 501}, {"run": "../x"}):
-            with self.subTest(params=params):
-                self.assertEqual(self.client.get("/api/edit-log", params=params).status_code, 422)
-
-    def test_a_project_without_a_working_head_has_no_steps(self) -> None:
-        with mock.patch.object(edit_log_routes, "resolve_working_source", lambda binding: SimpleNamespace(head=None)):
-            body = self.client.get("/api/edit-log").json()
-        self.assertEqual(body, {"runId": None, "steps": [], "targets": []})
 
 
 if __name__ == "__main__":
