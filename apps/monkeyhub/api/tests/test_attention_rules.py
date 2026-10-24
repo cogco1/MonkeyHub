@@ -56,7 +56,7 @@ class GuessTests(unittest.TestCase):
         self.assertIn("0.3 → 0.25 → 0.2 → 0.15", card.summary)
         self.assertIn("0.3 → 0.25 → 0.2 → 0.15", card.summaryZh)
         again, back = card.options
-        self.assertEqual((again.id, again.action.commandId), ("again", "chat.send_message"))
+        self.assertEqual((again.id, again.action.commandId), ("again", "chat.composer.send"))
         self.assertEqual((again.label, again.labelZh), ("Make it smaller again", "再调小一步"))
         self.assertEqual(again.action.args, {"content": "Change params.height of portico-cornice from 0.15 to 0.1"})
         self.assertEqual(back.action.args, {"content": "Change params.height of portico-cornice back to 0.3"})

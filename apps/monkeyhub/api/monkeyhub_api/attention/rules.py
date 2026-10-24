@@ -11,7 +11,7 @@ point coordinates (a profile's vertices) are never a field it asks about. The
 producer reads the log with ``limit=WINDOW``.
 
 Its answers send a sentence to the project's conversation as the person
-(``chat.send_message`` with its ``content``; the executor sends it to the
+(``chat.composer.send`` with its ``content``; the executor sends it to the
 project's attention conversation); the change itself is the agent's to make
 there, under the usual checks. No answer is recommended: a repeated direction
 is a reason to ask, not grounds to prefer one answer.
@@ -191,13 +191,13 @@ def _card(target: str, moves: list, labels: Mapping[str, str]) -> AttentionDraft
             id="again", label=f"Make it {way} again", labelZh=f"再{way_zh}一步",
             consequence=f"Ask the AI in the conversation for {_number(next_at)}",
             consequenceZh=f"在对话里请 AI 改到 {_number(next_at)}",
-            action=CommandRef(commandId="chat.send_message", args={
+            action=CommandRef(commandId="chat.composer.send", args={
                 "content": f"Change {field} of {name} from {_number(now_at)} to {_number(next_at)}"})))
     options.append(AttentionOption(
         id="back", label="Go back to the start", labelZh="改回最初",
         consequence=f"Ask the AI in the conversation for {_number(start)} again",
         consequenceZh=f"在对话里请 AI 改回 {_number(start)}",
-        action=CommandRef(commandId="chat.send_message", args={
+        action=CommandRef(commandId="chat.composer.send", args={
             "content": f"Change {field} of {name} back to {_number(start)}"})))
     return AttentionDraft(
         channel="guess", kind="ask",
