@@ -163,10 +163,12 @@ class OpeningRhinoTestCase(unittest.TestCase):
             return subprocess.CompletedProcess(args, 0, self.rhino_processes, "")
         return subprocess.CompletedProcess(args, 0, self.listed, "")
 
+    launch_adds: dict = {"pipeId": "rhinocode_remotepipe_99", "processId": 99}
+
     def launch(self, command_line: str) -> None:
         self.launched.append(command_line)
-        self.listed = json.dumps([{"pipeId": "rhinocode_remotepipe_99", "processId": 99,
-                                   "activeDoc": {"title": self.document.name, "location": str(self.document)}}])
+        rows = json.loads(self.listed)
+        self.listed = json.dumps(rows + [{**self.launch_adds, "activeDoc": {"title": self.document.name, "location": str(self.document)}}])
 
     def test_rhino_starts_with_the_script_server_command_and_the_document_and_is_waited_for(self) -> None:
         instance, opened = live_rhino.open_connected(document_path=str(self.document), runner=self.run_command)
@@ -195,6 +197,25 @@ class OpeningRhinoTestCase(unittest.TestCase):
             live_rhino.open_connected(runner=self.run_command)
         self.assertEqual(refused.exception.code, "LIVE_RHINO_ALREADY_OPEN")
         self.assertIn("StartScriptServer", refused.exception.detail)
+        self.assertEqual(self.launched, [])
+
+    def test_a_connected_rhino_holding_another_file_does_not_stop_this_one_from_opening(self) -> None:
+        # Rhino 11 answers RhinoCode with a.3dm open; the person asks for site.3dm. Rhino 11 is the only Rhino running.
+        self.listed = json.dumps([{"pipeId": "rhinocode_remotepipe_11", "processId": 11,
+                                   "activeDoc": {"title": "a.3dm", "location": r"D:\work\a.3dm"}}])
+        self.rhino_processes = '"Rhino.exe","11","Console","1","300,000 K"'
+        self.launch_adds = {"pipeId": "rhinocode_remotepipe_99", "processId": 99}
+        instance, opened = live_rhino.open_connected(document_path=str(self.document), runner=self.run_command)
+        self.assertEqual((instance.pipe_id, opened), ("rhinocode_remotepipe_99", True))
+        self.assertEqual(len(self.launched), 1)
+        # A second Rhino the person has open, which RhinoCode cannot reach, still stops it.
+        self.launched.clear()
+        self.rhino_processes += '\n"Rhino.exe","4321","Console","1","200,000 K"'
+        other = self.document.with_name("other.3dm")
+        other.write_bytes(b"3dm")
+        with self.assertRaises(StudioError) as refused:
+            live_rhino.open_connected(document_path=str(other), runner=self.run_command)
+        self.assertEqual(refused.exception.code, "LIVE_RHINO_ALREADY_OPEN")
         self.assertEqual(self.launched, [])
 
     def test_a_rhino_that_never_answers_is_said_not_to_have_connected(self) -> None:
