@@ -382,7 +382,12 @@
             "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
             "apps/monkeyhub/web/src/api/generated/index.ts",
             "apps/monkeyhub/web/src/api/generated/types.gen.ts",
-            "docs/architecture/project-runtime.md"
+            "docs/architecture/project-runtime.md",
+            "apps/monkeyhub/api/monkeyhub_api/attention/actions.py",
+            "apps/monkeyhub/api/tests/test_attention_executor.py",
+            "governance/module_registry.json",
+            "docs/architecture/system-map.md",
+            "apps/monkeyhub/web/src/features/commands/tree.generated.ts"
           ],
           "depends_on": []
         },

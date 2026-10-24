@@ -4058,6 +4058,13 @@
               "optionId"
             ],
             "entries": []
+          },
+          {
+            "id": "attention.queue.restart_service",
+            "label": "Restart the project service",
+            "label_zh": "重新启动项目服务",
+            "args": [],
+            "entries": []
           }
         ]
       },

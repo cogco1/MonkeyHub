@@ -77,10 +77,10 @@ class RepairRecord(BaseModel):
 
     model_config = ConfigDict(frozen=True)
     repairId: str
-    kind: Literal["studio-restarted", "studio-restart-held"] = Field(description=(
+    kind: Literal["studio-restarted", "studio-start-retried", "studio-restart-held"] = Field(description=(
         "studio-restarted: the project's Studio stopped unexpectedly and was started again with the same binding "
-        "and port. studio-restart-held: it stopped again too often to be restarted again by itself; a person "
-        "recovers it."))
+        "and port. studio-start-retried: it did not become ready in time (START_TIMEOUT) and was started again. "
+        "studio-restart-held: it went down again too often to be started again by itself; a person restarts it."))
     at: str = Field(description="When, in UTC.")
     detail: str = Field(description="How it had stopped, as its supervisor saw it.")
 

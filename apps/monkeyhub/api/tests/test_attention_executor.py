@@ -101,6 +101,9 @@ class FakeHub:
     def apply_update(self):
         self.applied += 1
 
+    def restart_project(self, project_id, project_dir):
+        self.restarted = (project_id, project_dir)
+
 
 def option(option_id, label, command, *, undoable=False, recommended=False, **args):
     return {"id": option_id, "label": label, "consequence": label + "，看后果", "undoable": undoable,
@@ -222,6 +225,13 @@ class AttentionExecutorTests(unittest.TestCase):
         result = self.executor.bulk([unchecked])
         self.assertEqual([(row.id, row.code) for row in result.skipped], [(unchecked, "ATTENTION_NOT_UNDOABLE")])
         self.assertEqual(self.hub.applied, 0)
+
+    def test_restarting_from_a_card_starts_its_own_projects_service(self):
+        card = self.card(AttentionDraft.model_validate({
+            "channel": "notice", "kind": "info", "title": "项目服务停着", "dedupeKey": "repair:r9",
+            "options": [option("restart", "重新启动", "attention.queue.restart_service")]}))
+        self.assertEqual(self.executor.resolve(card, "restart").item.state, "done")
+        self.assertEqual(self.hub.restarted, ("thi-hemp", self.project_dir))
 
     def test_unrecorded_edits_hold_a_continue_back(self):
         card = self.card(ab_card())

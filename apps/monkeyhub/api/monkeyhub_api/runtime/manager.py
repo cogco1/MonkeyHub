@@ -230,7 +230,15 @@ def _failure_code(result: HttpResult) -> str | None:
 #: What the Hub puts right without asking a person (#300 4-2, 03 Q6): only what is listed here.
 REPAIRS = {
     "studio-restarted": "A project's Studio that stopped unexpectedly is started again with the same binding and port.",
+    "studio-start-retried": "A project's Studio that did not become ready in time (START_TIMEOUT) is started again.",
 }
+
+
+def _start_timed_out(worker) -> bool:
+    """A launch that never became ready and has exited: a start that failed, not a stop anyone asked for."""
+
+    return (worker.state == "unavailable" and worker.desired_state == "stopped" and worker.process_id is None
+            and worker.error is not None and worker.error.code == "START_TIMEOUT")
 # A Studio that stops this often within the window is left for a person to recover.
 _RESTARTS_PER_WINDOW = 3
 _RESTART_WINDOW_S = 600.0
@@ -1151,9 +1159,11 @@ class ProjectRuntimeManager:
 
         if not self.restart_stopped:
             return False
-        stopped = next((row for row in workers if row.state == "crashed" and row.desired_state == "running"), None)
+        stopped = next((row for row in workers if (row.state == "crashed" and row.desired_state == "running")
+                        or _start_timed_out(row)), None)
         if stopped is None or runtime.state != "open":
             return False
+        retried = _start_timed_out(stopped)
         detail = (stopped.error.detail if stopped.error is not None else "The project's Studio stopped unexpectedly.")[:600]
         now = time.monotonic()
         with runtime.lock:
@@ -1168,8 +1178,8 @@ class ProjectRuntimeManager:
                 self.recover(runtime)
             except (HubFailure, StudioError, OSError, HTTPException, ValueError):
                 return False  # it stays stopped, with its own error, for the next pass or a person
-        record = RepairRecord(repairId=str(uuid4()), kind="studio-restart-held" if held else "studio-restarted",
-                              at=datetime.now(timezone.utc).isoformat(), detail=detail)
+        kind = "studio-restart-held" if held else "studio-start-retried" if retried else "studio-restarted"
+        record = RepairRecord(repairId=str(uuid4()), kind=kind, at=datetime.now(timezone.utc).isoformat(), detail=detail)
         with runtime.lock:
             runtime.repairs[:] = [*runtime.repairs, record][-_REPAIRS_KEPT:]
         self.emit("repair/applied", runtime.runtime_id)
@@ -1182,7 +1192,11 @@ class ProjectRuntimeManager:
             # Inspect while the old process is dead, before any replacement can
             # invalidate a cache. This action never calls a mutation route.
             self.refresh(runtime, cold=True)
-            self.applications.recover(project_dir=runtime.project_dir)
+            if any(_start_timed_out(row) for row in self.applications.worker_snapshots(project_dir=runtime.project_dir)):
+                # A start that timed out is started again as a person's start is (POST /api/apps/monkeyarch/start).
+                self.applications.start("monkeyarch", project_dir=runtime.project_dir)
+            else:
+                self.applications.recover(project_dir=runtime.project_dir)
             runtime.projection = "rebuilding"
             self.emit("worker/recovering", runtime.runtime_id)
         runtime.wake.set()

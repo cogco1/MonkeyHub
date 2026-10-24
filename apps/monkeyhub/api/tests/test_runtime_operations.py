@@ -11,7 +11,7 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
@@ -1139,6 +1139,29 @@ class StudioRestartTests(unittest.TestCase):
             self.runtime.state = "closed"
             self.hub._restart_stopped(self.runtime, [self.stopped])
         self.assertEqual((recovered.call_count, self.runtime.repairs), (0, []))
+
+    def test_a_start_that_timed_out_is_started_again_but_a_rejected_one_is_not(self):
+        def rejected(code):
+            return SimpleNamespace(state="unavailable", desired_state="stopped", process_id=None,
+                                   error=SimpleNamespace(code=code, detail="The application did not become ready."))
+
+        with patch.object(self.hub, "recover") as recovered, patch.object(self.hub, "emit"):
+            self.assertFalse(self.hub._restart_stopped(self.runtime, [rejected("SERVICE_IDENTITY_MISMATCH")]),
+                             "another source version needs the Hub restarted, not the Studio")
+            exiting = rejected("START_TIMEOUT")
+            exiting.process_id = 4242
+            self.assertFalse(self.hub._restart_stopped(self.runtime, [exiting]), "started again once it has exited")
+            self.assertTrue(self.hub._restart_stopped(self.runtime, [rejected("START_TIMEOUT")]))
+        self.assertEqual((recovered.call_count, [row.kind for row in self.runtime.repairs]), (1, ["studio-start-retried"]))
+
+    def test_restarting_a_start_that_timed_out_starts_it_as_a_person_would(self):
+        timed_out = SimpleNamespace(state="unavailable", desired_state="stopped", process_id=None,
+                                    error=SimpleNamespace(code="START_TIMEOUT", detail="not ready"))
+        self.hub.applications = SimpleNamespace(worker_snapshots=lambda **_: [timed_out], start=Mock(), recover=Mock())
+        with patch.object(self.hub, "refresh"), patch.object(self.hub, "emit"),                 patch.object(self.hub, "project_snapshot", return_value="snapshot"):
+            self.assertEqual(self.hub.recover(self.runtime), "snapshot")
+        self.hub.applications.start.assert_called_once_with("monkeyarch", project_dir=self.runtime.project_dir)
+        self.hub.applications.recover.assert_not_called()
 
 
 if __name__ == "__main__":
