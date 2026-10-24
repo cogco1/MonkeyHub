@@ -618,10 +618,15 @@ try {
   assert.ok(await queuePage.locator(".attention-shell__drawer").isHidden());
   assert.equal(await queuePage.locator(".attention-shell__recent .chat-thread[aria-current]").count(), 0, "no conversation is chosen");
   assert.equal(await queuePage.locator(".attention-shell .chat-target__to").textContent(), "发到：关注对话");
-  await queuePage.locator(".attention-shell #chat-input").fill("楼板再薄一点");
-  await queuePage.keyboard.press("Enter");
+  // 18: under the empty input, sentences made from this project (its last two versions, what was asked here before);
+  // one click says it, and the sentence goes where any typed one goes.
+  const suggested = queuePage.locator(".attention-shell .chat-suggest");
+  await suggested.getByText("说一句话，会放进三类之一").waitFor();
+  assert.deepEqual(await suggested.locator(".chat-suggest__chip").allTextContents(), ["V2 和 V3 哪个好", "楼板再薄一点", "斜撑留不留", "现在做到哪了"]);
+  await suggested.getByRole("button", { name: "楼板再薄一点" }).click();
   await queuePage.locator(".attention-shell__drawer").getByText("楼板再薄一点").waitFor();
   assert.deepEqual(chatPosts, [["att-conv-A", "楼板再薄一点"]]);
+  assert.equal(await queuePage.locator(".attention-shell .chat-suggest").count(), 1, "the sentences stay for the next one");
   // A conversation chosen in the column takes the next message, with its drawer closed too; the line above the
   // composer says where it goes.
   const sendTo = queuePage.locator(".attention-shell .chat-target__to");
