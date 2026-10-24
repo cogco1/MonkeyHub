@@ -1370,7 +1370,7 @@ export function Stage({
   // status line; a different model, a refused act or an unsaved choice asks in one row above the canvas.
   const baseQuestion = Boolean(baseNotice || baseRecord || baseNotSaved) || (editingBaseRunId !== null && (!sameSource || Boolean(baseError)));
   const baseWords = editingBaseRunId !== null && <span role="status" aria-live="polite">
-    {changingBase ? t("stage.base.loading") : sameSource ? t("stage.base.sameSource") : t("stage.base.current")}
+    {changingBase ? <span className="wait-late">{t("stage.base.loading")}</span> : sameSource ? t("stage.base.sameSource") : t("stage.base.current")}
     {!sameSource && <strong className="editing-base__name" title={editingLabel ?? undefined}> {editingLabel}</strong>}
   </span>;
   const editingStatus = baseQuestion ? (
@@ -1463,7 +1463,7 @@ export function Stage({
   const sessionStatus = <>
     {modelAnnotations && <div className="stage-annotations-status" data-model-annotations-status={modelAnnotations.error ? "error" :
       !modelAnnotations.ready ? "loading" : modelAnnotations.saving || modelAnnotations.dirty ? "saving" : "saved"}>
-      {!modelAnnotations.error && <span role="status">{t(!modelAnnotations.ready ? "stage.annotations.loading" :
+      {!modelAnnotations.error && <span role="status" className={modelAnnotations.ready ? undefined : "wait-late"}>{t(!modelAnnotations.ready ? "stage.annotations.loading" :
         modelAnnotations.saving || modelAnnotations.dirty ? "stage.annotations.saving" : "stage.annotations.saved")}</span>}
       {modelAnnotations.error && <>
         <ErrorPanel error={modelAnnotations.error} what="/api/model-annotations" />

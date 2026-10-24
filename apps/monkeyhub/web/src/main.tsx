@@ -222,7 +222,7 @@ function CredentialField({ id, inputId, title, status, language, link, linkLabel
     : status.source === "saved" ? words.fromStore : status.source === "claude-config" ? words.fromClaude
     : status.storeAvailable === false ? words.noStore(variable) : words.notSet;
   return <div className="settings-row settings-row--wide settings-key">
-    <div className="settings-row__text"><label htmlFor={inputId}>{title}</label><p className="settings-row__hint" id={`${inputId}-state`}>{where}</p></div>
+    <div className="settings-row__text"><label htmlFor={inputId}>{title}</label><p className={status ? "settings-row__hint" : "settings-row__hint wait-late"} id={`${inputId}-state`}>{where}</p></div>
     <div className="settings-key__controls">
       <input data-command="preference.secret.key" data-command-arg={id} id={inputId} type="password" autoComplete="off" spellCheck={false} value={draft} disabled={busy || status?.storeAvailable === false}
         placeholder={status?.saved ? words.replace : placeholder} aria-describedby={`${inputId}-state ${inputId}-hint`}

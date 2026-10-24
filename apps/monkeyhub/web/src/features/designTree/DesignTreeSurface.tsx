@@ -125,7 +125,7 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
     <div className="design-tree__body">
       {!tree ? <div className="design-tree__state" role="status">
         {!data.available ? t("designTree.unavailable") : data.status === "failed" && data.error ? <><ErrorPanel error={data.error} what="GET /api/design-history" />
-          <button data-command="view.notice.retry" data-command-arg="design_tree" type="button" className="btn btn--small" onClick={data.reload}>{t("designTree.retry")}</button></> : t("designTree.loading")}
+          <button data-command="view.notice.retry" data-command-arg="design_tree" type="button" className="btn btn--small" onClick={data.reload}>{t("designTree.retry")}</button></> : <span className="wait-late">{t("designTree.loading")}</span>}
       </div> : mode === "canvas" ? <>
         <DesignTreeCanvas tree={tree} source={data.source} words={words} selected={selected} fitRequest={fitRequest} centerOn={center} title={t("designTree.title")}
           onSelect={select} onAccept={acceptFromCanvas} onLevel={setLevel} onExpand={expand} />

@@ -76,7 +76,7 @@ fixed place, and every surface stacks the same six rows.
 
    | Wait | Shown |
    |---|---|
-   | under 1 s | nothing: a loading mark appears only after a second (`.boot`, `.chat-thinking`), though input stays blocked meanwhile |
+   | under 1 s | nothing: a loading mark appears only after a second (`.boot`, `.chat-thinking`; a reading or loading line takes the class `wait-late` from `base.css`: its words are in the page at once, it is shown after a second), though input stays blocked meanwhile |
    | first load of a whole page | a skeleton in the final layout (`LoadingOverlay`), not a spinner in the middle |
    | one module | a spinner or reading line in that module only |
    | over 10 s (drawing, export, model sync, a candidate's job) | a measured bar and the time left, from this project's earlier jobs in the same lane (the median `wallTimeS`); with no history, the time so far; past the estimate, 「比平常久 · 已 N 秒」 |

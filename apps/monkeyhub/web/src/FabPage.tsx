@@ -174,7 +174,7 @@ export function FabPage({ preferences, client, readResult }: Props) {
       </div>
     </main></div>
     <StatusLine className="fab-status" end={<span title={t.intro}>{t.intro}</span>}>
-      <span role="status">MonkeyFab{profiles ? ` · ${t.profiles(Object.keys(profiles).length)}` : !profileError ? ` · ${t.loading}` : ""}
+      <span role="status">MonkeyFab{profiles ? ` · ${t.profiles(Object.keys(profiles).length)}` : !profileError ? <span className="wait-late">{` · ${t.loading}`}</span> : ""}
         {/* A narrow window has no room for it at the bar's end. */}
         {working && <span className="fab-status__state"> · {working}</span>}</span>
     </StatusLine>
