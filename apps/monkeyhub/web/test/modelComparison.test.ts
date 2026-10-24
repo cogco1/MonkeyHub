@@ -65,6 +65,27 @@ test("the original is the run whose models carry the candidate's retained base s
   assert.deepEqual(result.pair.candidate.models.map((row) => row.sha256), [candidateModel.sha256]);
 });
 
+test("a decision sets one result beside the other it is weighed against, each at its own result, or beside the current design", () => {
+  const other = model("cand-wall", "d".repeat(64)), otherStale = model("cand-wall", HEAD_STATE);
+  const rows = runtime(candidateRow(), candidateRow({ candidateId: "cand-wall", resultStateDigest: "d".repeat(64), baseStateDigest: null }));
+  const result = resolveComparisonPair(PROJECT, "cand-roof", rows, listing(headModel, candidateModel, other, otherStale, baseModel), "cand-wall");
+  assert.ok("pair" in result);
+  assert.equal(result.pair.base.runId, "cand-wall");
+  assert.deepEqual(result.pair.base.models.map((row) => row.sha256), [other.sha256], "the other result at its own state, not a stale export");
+  assert.equal(result.pair.candidate.runId, "cand-roof");
+  const current = resolveComparisonPair(PROJECT, "cand-roof", rows, listing(headModel, candidateModel, baseModel), "head-run");
+  assert.ok("pair" in current);
+  assert.equal(current.pair.base.runId, "head-run");
+  assert.equal(current.pair.base.stateDigest, HEAD_STATE);
+  const refused = (against: string, list = listing(headModel, candidateModel, baseModel)) => {
+    const answer = resolveComparisonPair(PROJECT, "cand-roof", rows, list, against);
+    return "refusal" in answer ? answer.refusal : null;
+  };
+  assert.equal(refused("cand-roof"), "base-ambiguous", "a result is not compared with itself");
+  assert.equal(refused("nowhere"), "base-no-model");
+  assert.equal(refused("head-run", listing(headModel, model("head-run", "9".repeat(64)), candidateModel)), "base-ambiguous", "two states of one run");
+});
+
 test("a candidate's model is only the one at its own result state", () => {
   const stale = model("cand-roof", HEAD_STATE);
   const result = resolveComparisonPair(PROJECT, "cand-roof", runtime(candidateRow()), listing(stale, candidateModel, baseModel));
