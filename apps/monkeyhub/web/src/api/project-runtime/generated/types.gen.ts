@@ -7947,6 +7947,31 @@ export type ModelLoadTimingDto = {
 };
 
 /**
+ * ModelSourceBindingDto
+ *
+ * A model a document was linked to earlier, with what its record says of when and by whom.
+ */
+export type ModelSourceBindingDto = {
+    modelSource: ModelSourceDto;
+    /**
+     * Bindingref
+     */
+    bindingRef?: string | null;
+    /**
+     * Boundat
+     *
+     * UTC time the link was made; null for a link made before it was recorded.
+     */
+    boundAt?: string | null;
+    /**
+     * Actorid
+     *
+     * Who made the link; null for a link made before it was recorded.
+     */
+    actorId?: string | null;
+};
+
+/**
  * ModelSourceDto
  */
 export type ModelSourceDto = {
@@ -13311,6 +13336,12 @@ export type SourceDocumentDto = {
      */
     modelSourceBindingRef?: string | null;
     /**
+     * Modelsourcehistory
+     *
+     * Read only: the models this document was linked to before modelSource, oldest first. Changing the link keeps the one it replaced.
+     */
+    modelSourceHistory?: Array<ModelSourceBindingDto>;
+    /**
      * Drawingid
      */
     drawingId?: string | null;
@@ -16705,6 +16736,46 @@ export type AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostRe
 };
 
 export type AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostResponse = AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostResponses[keyof AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostResponses];
+
+export type ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutData = {
+    body: DocumentModelSourceRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Asset Sha256
+         */
+        asset_sha256: string;
+    };
+    query?: never;
+    url: '/api/documents/{asset_sha256}/model-source';
+};
+
+export type ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutError = ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutErrors[keyof ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutErrors];
+
+export type ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutResponses = {
+    /**
+     * Successful Response
+     */
+    200: SourceDocumentDto;
+};
+
+export type ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutResponse = ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutResponses[keyof ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutResponses];
 
 export type ReadDocumentsApiDocumentsGetData = {
     body?: never;

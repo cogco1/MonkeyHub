@@ -2032,6 +2032,24 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
+      "id": "document.model_source.change",
+      "capability": "document.sources",
+      "label": {
+        "en": "Change linked model",
+        "zh-CN": "换一个模型"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "board",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
       "id": "view.markup_tools.tracing_paper",
       "capability": "markup.draw",
       "label": {

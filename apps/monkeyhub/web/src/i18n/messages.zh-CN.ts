@@ -929,6 +929,12 @@ export const messagesZhCN = {
 
   "program.title": "任务书",
   "document.modelSource.label": "关联模型",
+  "document.modelSource.linkedTo": "已关联",
+  "document.modelSource.change": "换一个",
+  "document.modelSource.keep": "不换了",
+  "document.modelSource.changeTo": "改为所选模型",
+  "document.modelSource.changing": "正在更换…",
+  "document.modelSource.before": "之前关联：{name}。",
   "document.modelSource.unknown": "这份图纸尚未关联模型，仍可批注和保存。",
   "document.modelSource.mismatch": "当前修改起点与这份图纸关联的模型不同。",
   "document.modelSource.ready": "修改起点与关联模型一致。",
