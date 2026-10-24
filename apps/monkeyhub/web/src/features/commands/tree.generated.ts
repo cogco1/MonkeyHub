@@ -645,6 +645,33 @@ export const COMMAND_TREE: CommandTree = {
       ]
     },
     {
+      "id": "attention.queue",
+      "owner": "hub.shell",
+      "kind": "manage",
+      "status": "PARTIAL",
+      "host": "hub",
+      "purpose": {
+        "en": "Work through the attention queue: put a card off for later, dismiss it, bring it back, undo what it did, or take every recommendation at once and undo that.",
+        "zh-CN": "处理关注队列：把一张卡放到稍后、忽略、找回、撤销它做过的事，或者一次全部按建议，再撤销这一次。"
+      },
+      "terms": [
+        "put a card off for later",
+        "dismiss a card",
+        "bring a card back",
+        "undo a card",
+        "take every recommendation",
+        "稍后再看",
+        "忽略这张卡",
+        "找回卡片",
+        "撤销",
+        "全部按建议",
+        "attention queue",
+        "cards",
+        "关注队列",
+        "关注卡片"
+      ]
+    },
+    {
       "id": "chat.conversation",
       "owner": "hub.shell",
       "kind": "manage",
@@ -5431,6 +5458,122 @@ export const COMMAND_TREE: CommandTree = {
       "args": [
         "form"
       ]
+    },
+    {
+      "id": "attention.queue.later",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Later",
+        "zh-CN": "稍后"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "cardId"
+      ]
+    },
+    {
+      "id": "attention.queue.dismiss",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Dismiss the card",
+        "zh-CN": "忽略这张卡"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "cardId"
+      ]
+    },
+    {
+      "id": "attention.queue.reopen",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Bring the card back",
+        "zh-CN": "找回这张卡"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "cardId"
+      ]
+    },
+    {
+      "id": "attention.queue.undo",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Undo the card",
+        "zh-CN": "撤销这张卡"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "cardId"
+      ]
+    },
+    {
+      "id": "attention.queue.bulk_recommended",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Take every recommendation",
+        "zh-CN": "全部按建议"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "attention.queue.bulk_undo",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Undo taking every recommendation",
+        "zh-CN": "撤销全部按建议"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
     },
     {
       "id": "chat.new_conversation",

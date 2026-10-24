@@ -3874,6 +3874,104 @@
       }
     },
     {
+      "capability_id": "attention.queue",
+      "owner": "hub.shell",
+      "execution_owner": "hub.shell",
+      "host": "hub",
+      "kind": "manage",
+      "status": "PARTIAL",
+      "purpose": "Work through the attention queue: put a card off for later, dismiss it, bring it back, undo what it did, or take every recommendation at once and undo that.",
+      "purpose_zh": "处理关注队列：把一张卡放到稍后、忽略、找回、撤销它做过的事，或者一次全部按建议，再撤销这一次。",
+      "goals": [
+        "put a card off for later",
+        "dismiss a card",
+        "bring a card back",
+        "undo a card",
+        "take every recommendation",
+        "稍后再看",
+        "忽略这张卡",
+        "找回卡片",
+        "撤销",
+        "全部按建议"
+      ],
+      "aliases": [
+        "attention queue",
+        "cards",
+        "关注队列",
+        "关注卡片"
+      ],
+      "requires": [
+        "the Hub serving the attention queue"
+      ],
+      "entrypoints": [],
+      "works": [
+        "later, dismiss, bring back and undo on each card of the attention page"
+      ],
+      "missing": [
+        "the Hub serving the queue on main: until it does, notices come from the conversations"
+      ],
+      "ui": {
+        "surface": "hub",
+        "group": "shell",
+        "tier": "basic",
+        "channel": "front",
+        "commands": [
+          {
+            "id": "attention.queue.later",
+            "label": "Later",
+            "label_zh": "稍后",
+            "args": [
+              "cardId"
+            ],
+            "entries": []
+          },
+          {
+            "id": "attention.queue.dismiss",
+            "label": "Dismiss the card",
+            "label_zh": "忽略这张卡",
+            "args": [
+              "cardId"
+            ],
+            "entries": []
+          },
+          {
+            "id": "attention.queue.reopen",
+            "label": "Bring the card back",
+            "label_zh": "找回这张卡",
+            "args": [
+              "cardId"
+            ],
+            "entries": []
+          },
+          {
+            "id": "attention.queue.undo",
+            "label": "Undo the card",
+            "label_zh": "撤销这张卡",
+            "args": [
+              "cardId"
+            ],
+            "entries": []
+          },
+          {
+            "id": "attention.queue.bulk_recommended",
+            "label": "Take every recommendation",
+            "label_zh": "全部按建议",
+            "entries": []
+          },
+          {
+            "id": "attention.queue.bulk_undo",
+            "label": "Undo taking every recommendation",
+            "label_zh": "撤销全部按建议",
+            "entries": []
+          }
+        ]
+      },
+      "tests": [
+        "apps/monkeyhub/web/test/attentionCards.test.ts",
+        "apps/monkeyhub/web/test/attentionShell.browser.mjs"
+      ]
+    },
+    {
       "capability_id": "chat.conversation",
       "owner": "hub.shell",
       "execution_owner": "hub.shell",
