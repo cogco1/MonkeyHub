@@ -22,7 +22,6 @@ import { useCommandActions } from "../commands/CommandProvider";
 import { useT } from "../../i18n/useT";
 import { InlineDecision } from "../../notifications/cards/InlineDecision";
 import { usePreferences } from "../settings/preferences";
-import { useCommandActions } from "../commands/CommandProvider";
 import { COMMAND_TREE } from "../commands/tree.generated";
 import { useNoticeRegion } from "../../notifications/regions";
 import type { SceneInspection } from "../../workspaces/monkeyarch/viewer/sceneInspection";
