@@ -84,6 +84,8 @@ export interface AttentionShellProps {
   /** The open surfaces; they show while the view is not the attention queue. */
   surfaces: ReactNode;
   taskItems: ReactNode;
+  /** The open project's 修改历史 page (2-6), bound to its runtime by the host; absent without an open project. */
+  historyPage?: ReactNode;
   dialogs: ReactNode;
   /** The left column's Attention: no conversation is chosen, so the next message goes to the attention conversation. */
   onAttentionConversation(): void;
@@ -258,6 +260,7 @@ export function AttentionShell(props: AttentionShellProps) {
         <div className="attention-shell__panel-body" role="tabpanel" aria-label={pageLabel(side)}>
           {side === "background" ? <ul className="chat-tasks attention-shell__tasks">{props.taskItems}</ul>
             : side === "tools" ? <AdvancedTools />
+            : side === "history" && props.historyPage ? props.historyPage
             : queue.available && side === "handled" ? <CardHistory states={["done"]} empty="shell.side.handled.empty" projectName={projectName} />
             : queue.available && side === "ignored" ? <CardHistory states={["dismissed"]} empty="shell.side.ignored.empty" projectName={projectName} />
             : <p className="attention-shell__empty">{t(`shell.side.${side}.empty` as MessageKey)}</p>}

@@ -16,6 +16,7 @@ import type { WorkspaceDesignContext, WorkspacePosition } from "./app/ProjectWor
 import { MonitorPage } from "./MonitorPage";
 import { ChatCard, ChatCardDetails } from "./ChatCard";
 import { DeveloperOnly, useDeveloperMode } from "./features/settings/preferences";
+import { HistoryPage } from "./features/designHistory/HistoryPage";
 import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessageContent";
 import { ChatSuggestionCard } from "./ChatSuggestionCard";
 import { findSource, type PageSource } from "./workspaces/monkeyboard/boardScene";
@@ -2386,7 +2387,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       background={{ running: tasks.filter((task) => task.state === "running").length, queued: tasks.filter((task) => task.state !== "running").length }}
       conversationActive={running || sending !== null}
       notices={statusNotices} conversation={conversationLog} composer={composerArea} surfaces={workspacePages(panel)}
-      taskItems={taskItems} dialogs={dialogs} onAttentionConversation={() => { setChatId(null); setChat(null); setFreshChat(false); }} />;
+      taskItems={taskItems} dialogs={dialogs}
+      historyPage={projectRuntime && projectDir ? <ProjectRuntimeProvider key={`history:${projectRuntime.runtimeId}`} runtimeId={projectRuntime.runtimeId}
+        baseUrl={`${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`}><HistoryPage projectDir={projectDir} active /></ProjectRuntimeProvider> : null}
+      onAttentionConversation={() => { setChatId(null); setChat(null); setFreshChat(false); }} />;
   }
   return <div className="chat-shell" data-sidebar={sidebar} data-panel={panel} data-focus={focused} style={{ "--chat-width": `${chatWidth}px` } as CSSProperties}>
     {/* #337 L0: the Hub's text menu row, as desktop apps have it: back, forward, the sidebar, then words. */}
