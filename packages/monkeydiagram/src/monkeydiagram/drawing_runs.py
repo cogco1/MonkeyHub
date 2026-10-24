@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import math
 import re
+from contextlib import AbstractContextManager, nullcontext
 from copy import deepcopy
 from dataclasses import asdict, dataclass, is_dataclass, replace
 from io import BytesIO
@@ -274,6 +275,8 @@ class DrawResult:
 
 #: Solves a ``DrawTask``, in this process or another (``run_draw_task``).
 Drawer = Callable[[DrawTask], DrawResult]
+#: Entered just before a freeze retains what it drew: the caller's guard over the write.
+Retaining = Callable[[], AbstractContextManager]
 
 
 class _ShapelessEntry(NamedTuple):
@@ -553,7 +556,7 @@ def freeze_cut_plan(
     repository: FilesystemProjectRepository, *, source: ElevationSource | NativeModelSource, recipe: Mapping,
     drawing_run_id: str, dimensions: tuple[Mapping, ...] = (), previous_revision_ref: str | None = None,
     attribution: Mapping[str, Any] | None = None, reason: str | None = None, source_kind: str | None = None,
-    drawer: Drawer | None = None,
+    drawer: Drawer | None = None, retaining: Retaining | None = None,
 ) -> ElevationDrawing:
     """Retain a horizontal (or vertical model-axis) section and the exact beyond-cut visibility in the existing drawing envelope.
 
@@ -562,7 +565,9 @@ def freeze_cut_plan(
     Coordinates are the verified STEP's CAD Z-up frame and length unit, never Program Y-up.
     ``attribution``, ``reason`` and ``source_kind`` say who asked for this revision, why and as
     what kind of asker (``_revision_provenance``). ``drawer``, when given, solves the plan
-    from a ``DrawTask`` (in another process); retaining it stays here.
+    from a ``DrawTask`` (in another process); retaining it stays here. ``retaining``, when
+    given, is entered just before anything is written, and the project's HEAD is read
+    under it rather than before the solve.
     """
     if not isinstance(repository, FilesystemProjectRepository):
         raise TypeError("repository must be FilesystemProjectRepository")
@@ -575,10 +580,13 @@ def freeze_cut_plan(
     else:
         solved = drawer(DrawTask(CUT_PLAN_KIND, str(repository.layout.root), source, plan.recipe, tuple(plan.dimensions)))
         verified, drawn = solved.verified, solved.drawn
-    return _retain_projection(
-        repository, source=source, verified=verified, drawn=drawn, name=plan.view.name, drawing_run_id=drawing_run_id,
-        head_before=head_before, previous_revision_ref=previous_revision_ref, provenance=provenance,
-    )
+    with nullcontext() if retaining is None else retaining():
+        if retaining is not None:
+            head_before = repository.read_head()
+        return _retain_projection(
+            repository, source=source, verified=verified, drawn=drawn, name=plan.view.name, drawing_run_id=drawing_run_id,
+            head_before=head_before, previous_revision_ref=previous_revision_ref, provenance=provenance,
+        )
 
 
 def _draw_elevation(verified: VerifiedElevationSource, view: ElevationView, backend, observer, parent_event_id) -> DrawnView:
@@ -595,6 +603,7 @@ def freeze_model_axis_elevation(
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     parent_event_id: str | None = None, attribution: Mapping[str, Any] | None = None, reason: str | None = None,
     cache: DrawingCache | None = None, drawer: Drawer | None = None, verified: VerifiedElevationSource | None = None,
+    retaining: Retaining | None = None,
 ) -> ElevationDrawing:
     """Project retained STEP or native 3DM and retain SVG, PNG and receipt in the drawing run.
 
@@ -608,7 +617,8 @@ def freeze_model_axis_elevation(
     ``drawer``, when given, solves the view from a ``DrawTask`` (in another
     process) and this process never reads the source's shapes; ``verified``
     is that source as a drawer verified it before, so the cache can answer
-    without a solve.
+    without a solve. ``retaining``, when given, is entered just before
+    anything is written, and the project's HEAD is read under it.
     """
 
     if not isinstance(repository, FilesystemProjectRepository):
@@ -637,7 +647,10 @@ def freeze_model_axis_elevation(
     drawn, verified = _solved(
         DrawTask(ELEVATION_KIND, str(repository.layout.root), source, view, parent_event_id=parent_event_id), known,
         lambda: _draw_elevation(known, view, backend, observer, parent_event_id), cache=cache, drawer=drawer, observer=observer)
-    with observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
+    with nullcontext() if retaining is None else retaining(), \
+            observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
+        if retaining is not None:
+            head_before = repository.read_head()
         drawing = _retain_projection(
             repository, source=source, verified=verified, drawn=drawn, name=view.name,
             drawing_run_id=drawing_run_id, head_before=head_before, provenance=provenance,
@@ -661,6 +674,7 @@ def freeze_section_perspective(
     drawing_run_id: str, operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     parent_event_id: str | None = None, attribution: Mapping[str, Any] | None = None, reason: str | None = None,
     cache: DrawingCache | None = None, drawer: Drawer | None = None, verified: VerifiedElevationSource | None = None,
+    retaining: Retaining | None = None,
 ) -> ElevationDrawing:
     """Draw a section perspective of verified STEP or native geometry and retain SVG, PNG and receipt.
 
@@ -670,7 +684,7 @@ def freeze_section_perspective(
     retains the receipt with the exact plane and camera.  A repeat with the
     same source and view writes the same bytes and returns the same refs.
     ``attribution`` and ``reason`` say who asked and why (``_revision_provenance``);
-    ``cache``, ``drawer`` and ``verified`` are as in ``freeze_model_axis_elevation``.
+    ``cache``, ``drawer``, ``verified`` and ``retaining`` are as in ``freeze_model_axis_elevation``.
     """
 
     if not isinstance(repository, FilesystemProjectRepository):
@@ -701,7 +715,10 @@ def freeze_section_perspective(
         DrawTask(SECTION_PERSPECTIVE_KIND, str(repository.layout.root), source, view, parent_event_id=parent_event_id),
         known, lambda: _draw_section_perspective(known, view, backend, observer, parent_event_id),
         cache=cache, drawer=drawer, observer=observer)
-    with observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
+    with nullcontext() if retaining is None else retaining(), \
+            observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
+        if retaining is not None:
+            head_before = repository.read_head()
         drawing = _retain_projection(
             repository, source=source, verified=verified, drawn=drawn, name=view.name,
             drawing_run_id=drawing_run_id, head_before=head_before, provenance=provenance,
@@ -760,6 +777,7 @@ __all__ = [
     "DrawResult",
     "DrawTask",
     "Drawer",
+    "Retaining",
     "DrawingCache",
     "DrawnView",
     "ElevationDrawing",

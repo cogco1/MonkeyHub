@@ -107,10 +107,16 @@ class DrawingPool:
         except TypeError:  # a source that cannot be a key is verified again each time
             return None
 
-    def warm(self) -> None:
-        """Start one worker now, so the first drawing does not wait for it; the others start when drawings overlap."""
+    def warm(self, count: int = 2) -> None:
+        """Start ``count`` workers now, so neither the first drawing nor two at once wait for one to start.
 
-        self._running().submit(_ready)
+        A worker takes several seconds to start and load OCCT; the rest of the
+        pool starts only when more drawings overlap.
+        """
+
+        executor = self._running()
+        for _ in range(min(count, self.workers)):
+            executor.submit(_ready)
 
     def close(self) -> None:
         with self._lock:
@@ -148,7 +154,7 @@ _pool: DrawingPool | None = None
 
 
 def start(workers: int | None = None, *, warm: bool = False) -> DrawingPool | None:
-    """Start this process's drawing pool; none when the size is 0. ``warm`` starts its first worker now."""
+    """Start this process's drawing pool; none when the size is 0. ``warm`` starts two workers now."""
 
     global _pool
     size = pool_size() if workers is None else workers
