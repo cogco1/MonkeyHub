@@ -112,10 +112,7 @@
           ],
           "write_scope": [
             "services/project-runtime/src/project_runtime/api/dto/runtime.py",
-            "services/project-runtime/src/project_runtime/api/dto/working_draft.py",
             "services/project-runtime/src/project_runtime/api/routes/__init__.py",
-            "services/project-runtime/src/project_runtime/api/routes/working_design.py",
-            "services/project-runtime/src/project_runtime/application/working_draft.py",
             "services/project-runtime/src/project_runtime/status.py"
           ],
           "depends_on": []
@@ -354,6 +351,27 @@
             "apps/monkeyhub/web/test/settingsAutosave.browser.mjs",
             "docs/audits/hub-entries.md",
             "tools/tests/test_hub_entries_coverage.py"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "history",
+          "status": "active",
+          "branch": "claude/300-history",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-history",
+          "base_ref": "97a1eb2fa712a4a098002dafb7c404936a33bdf3",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "2-6 on top of GH-300/review-moves (#693) and GH-300/shell-tests: POST /api/working-design/switch and /undo in the Runtime (the web page and the attention executor share them; continueUndo.ts becomes a thin shell), and the history page's content (features/designHistory/) that the shell's side panel mounts. Stage rows follow decision 7's recommendation. GH-300/review-moves hands over the working-design route, its DTOs and the working-draft application here; whichever merges second reconciles the claims.",
+          "modules": [
+            "project_runtime.binding",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/features/designHistory/",
+            "services/project-runtime/src/project_runtime/api/dto/working_draft.py",
+            "services/project-runtime/src/project_runtime/api/routes/working_design.py",
+            "services/project-runtime/src/project_runtime/application/working_draft.py"
           ],
           "depends_on": []
         }
