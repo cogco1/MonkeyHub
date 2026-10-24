@@ -320,18 +320,126 @@ class FormatTests(unittest.TestCase):
         self.assertIn("millimetres", info["losses"]["units"].lower())
         self.assertEqual(info["outputValidation"]["status"], "passed")
 
+    def test_what_the_file_hides_is_left_out_of_glb_and_stl(self):
+        # Gap 31: a wall's opening is saved as a hidden cutter on the wall's own layer; exported as a
+        # solid it filled the doorway. A hidden layer, or one under a hidden parent, is left out too.
+        import rhino3dm as r
+        model = r.File3dm()
+        model.Settings.ModelUnitSystem = r.UnitSystem.Meters
+
+        def layer(name, visible=True, parent=None):
+            native = r.Layer()
+            native.Name, native.Visible = name, visible
+            if parent is not None:
+                native.ParentLayerId = model.Layers[parent].Id
+            return model.Layers.Add(native)
+
+        def cube(name, index, shift=0.0, visible=True):
+            mesh = r.Mesh()
+            for x, y, z in CUBE:
+                mesh.Vertices.Add(x + shift, y, z)
+            for quad in CUBE_QUADS:
+                mesh.Faces.AddFace(*quad)
+            attributes = r.ObjectAttributes()
+            attributes.Name, attributes.LayerIndex, attributes.Visible = name, index, visible
+            model.Objects.AddMesh(mesh, attributes)
+
+        wall, reference = layer("wall"), layer("reference", visible=False)
+        cube("wall", wall)
+        cube("obj-wall-body-aperture-opening-1", wall, shift=0.5, visible=False)
+        cube("reference", reference, shift=5)
+        cube("site", layer("site", parent=reference), shift=9)
+        hidden_line = r.ObjectAttributes()
+        hidden_line.Visible = False
+        model.Objects.AddCurve(r.LineCurve(r.Point3d(0, 0, 0), r.Point3d(1, 0, 0)), hidden_line)
+        data = base64.b64decode(model.Encode())
+
+        output, info = convert(data, "3dm", "glb")
+        self.assertEqual([mesh.name for mesh in GLB().read(output).meshes], ["wall"])
+        self.assertEqual(info["omitted"], {"hidden object": 4})
+        self.assertIn("Left out of the export: 4 hidden object.", info["warnings"])
+        self.assertEqual(info["outputValidation"]["status"], "passed")
+        output, info = convert(data, "3dm", "stl")
+        self.assertEqual(struct.unpack_from("<I", output, 80)[0], 12)
+        self.assertEqual(info["omitted"], {"hidden object": 4})
+
+    def test_glb_turns_z_up_into_y_up_without_mirroring(self):
+        # Gap 32: the model's north (+Y) becomes glTF's -Z and its up (+Z) glTF's +Y. That is a
+        # rotation, not a mirror: an outward closed cube stays outward.
+        scene = Scene([Mesh("Cube", [(x + 10, y + 20, z) for x, y, z in CUBE], CUBE_TRIANGLES)], "Meters", [])
+        output, _ = convert(ThreeDM().write(scene), "3dm", "glb")
+        json_size = struct.unpack_from("<I", output, 12)[0]
+        document, binary = json.loads(output[20:20 + json_size]), output[28 + json_size:]
+        positions, indices = document["accessors"][:2]
+        points = [struct.unpack_from("<3f", binary, document["bufferViews"][positions["bufferView"]]["byteOffset"] + 12 * i)
+                  for i in range(positions["count"])]
+        flat = struct.unpack_from(f"<{indices['count']}I", binary, document["bufferViews"][indices["bufferView"]]["byteOffset"])
+        self.assertEqual((positions["min"], positions["max"]), ([10, 0, -22], [12, 2, -20]))
+        volume = sum(a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])
+                     for a, b, c in ((points[flat[i]], points[flat[i + 1]], points[flat[i + 2]]) for i in range(0, len(flat), 3))) / 6
+        self.assertAlmostEqual(volume, 8.0, places=4)
+
+    @staticmethod
+    def two_objects():
+        from monkeycad.formats.meshes import Material
+        cube = Mesh("Cube", [(x + 10, y + 20, z) for x, y, z in CUBE], CUBE_TRIANGLES, "Walls",
+                    material=Material("Plaster", (230, 220, 200, 255)))
+        return Scene([cube, Mesh("Offset triangle", [(1, 2, 3), (2, 2, 3), (1, 3, 3)], [(0, 1, 2)], "Structure")],
+                      "Meters", [])
+
+    def test_3dm_to_obj_keeps_each_object_in_metres_y_up_with_normals(self):
+        # Gap 35: the UE plugin imports only FBX and OBJ.
+        output, info = convert(ThreeDM().write(self.two_objects()), "3dm", "obj")
+        text = output.decode("utf-8")
+        self.assertTrue(text.startswith("# MonkeyHub OBJ"))
+        lines = text.splitlines()
+        self.assertEqual([line for line in lines if line.startswith("o ")], ["o Cube", "o Offset triangle"])
+        self.assertEqual(sum(line.startswith("v ") for line in lines), 11)
+        self.assertEqual(sum(line.startswith("vn ") for line in lines), 11)
+        self.assertEqual(sum(line.startswith("f ") for line in lines), 13)
+        self.assertIn("v 10 0 -20", lines, "the model's (10, 20, 0) is glTF's (10, 0, -20): north is -Z")
+        self.assertIn("usemtl Plaster", lines)
+        self.assertTrue(all(len(line.split()) == 4 and all("//" in corner for corner in line.split()[1:])
+                            for line in lines if line.startswith("f ")))
+        self.assertEqual(info["outputValidation"]["status"], "passed")
+        self.assertEqual(info["outputMetrics"]["objectCount"], 2)
+        self.assertEqual(info["outputMetrics"]["boundsMetersZUp"], info["sourceMetrics"]["boundsMetersZUp"])
+        self.assertIn("Y up", info["losses"]["units"])
+
+    def test_3dm_to_fbx_is_in_centimetres_and_y_up_and_reopens(self):
+        # The UE plugin's import_file reads FBX numbers as centimetres, whatever UnitScaleFactor says.
+        output, info = convert(ThreeDM().write(self.two_objects()), "3dm", "fbx")
+        text = output.decode("utf-8")
+        self.assertTrue(text.startswith("; FBX 7.4.0 project file"))
+        for setting in ('P: "UpAxis", "int", "Integer", "",1', 'P: "FrontAxis", "int", "Integer", "",2',
+                        'P: "CoordAxis", "int", "Integer", "",0', 'P: "UnitScaleFactor", "double", "Number", "",1\n'):
+            self.assertIn(setting, text)
+        self.assertEqual(text.count('"Model::'), 2)
+        self.assertEqual(text.count('"Geometry::'), 2)
+        self.assertIn('"Material::Plaster"', text)
+        self.assertEqual(text.count("LayerElementNormal: 0"), 2)
+        # Each triangle's last index is written as -(i + 1), as FBX ends a polygon.
+        self.assertIn("PolygonVertexIndex: *3 {\n\t\t\ta: 0,1,-3\n\t\t}", text)
+        self.assertEqual(info["outputValidation"]["status"], "passed")
+        self.assertEqual((info["outputMetrics"]["objectCount"], info["outputMetrics"]["triangleCount"]), (2, 13))
+        self.assertEqual(info["outputMetrics"]["boundsMetersZUp"], info["sourceMetrics"]["boundsMetersZUp"])
+        self.assertIn("centimetres", info["losses"]["units"].lower())
+        # The model's (10, 20, 0) is (1000, 0, -2000) centimetres, Y up.
+        self.assertIn("a: 1000,0,-2000,", text)
+
     def test_stl_is_written_never_read_as_a_source(self):
         with self.assertRaises(ConversionError):
             convert(b"solid", "stl", "glb")
 
-    def test_all_ten_unavailable_routes_are_explicit(self):
+    def test_every_unavailable_route_is_explicit(self):
         from monkeycad.formats.conversion import ConversionCoordinator, NO_EXECUTOR
         routes = ConversionCoordinator().capabilities()
-        self.assertEqual(len(routes), 16)
+        self.assertEqual(len(routes), 24)
         available = sorted((r["sourceFormat"], r["targetFormat"]) for r in routes if r["available"])
-        self.assertEqual(available, [("3dm", "glb"), ("3dm", "stl"), ("glb", "3dm"), ("glb", "stl")])
+        self.assertEqual(available, [("3dm", "fbx"), ("3dm", "glb"), ("3dm", "obj"), ("3dm", "stl"),
+                                     ("glb", "3dm"), ("glb", "fbx"), ("glb", "obj"), ("glb", "stl")])
         blocked = [r for r in routes if not r["available"]]
-        self.assertEqual(len(blocked), 12)
+        self.assertEqual(len(blocked), 16)
         for route in blocked:
             with self.assertRaisesRegex(ConversionError, NO_EXECUTOR):
                 convert(b"anything", route["sourceFormat"], route["targetFormat"])

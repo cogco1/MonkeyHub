@@ -57,7 +57,9 @@ const updateStatus = () => ({ currentVersion: "fixture-desktop", currentRevision
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
+// 2-3c: the new shell is the default; these passes are the old one's, the way back (attentionShell.browser.mjs has the new).
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+await page.addInitScript(() => localStorage.setItem("monkeyhub.shell", "workbench"));
 page.setDefaultTimeout(12000);
 page.on("pageerror", (error) => errors.push(error.message));
 await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {

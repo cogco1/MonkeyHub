@@ -365,8 +365,10 @@ def render_pdf(source, font_mapping: Mapping[str, str | Path] | None = None) -> 
     from reportlab.pdfgen import canvas as pdf_canvas
     scenes, fonts = _input(source, font_mapping)
     aliases = {}
-    for index, (name, path) in enumerate(fonts.items()):
-        alias = f"AF_Drawing_{index}"
+    for name, path in fonts.items():
+        # Named for its file: reportlab keeps the first face registered under a name, so a name shared by
+        # different files would give every later sheet the font of the first one drawn in this process.
+        alias = "AF_Drawing_" + hashlib.sha256(str(Path(path).resolve()).encode("utf-8")).hexdigest()[:12]
         pdfmetrics.registerFont(TTFont(alias, str(path)))
         aliases[name] = alias
     buffer = BytesIO()

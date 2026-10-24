@@ -63,7 +63,7 @@ class SkillRoutesTest(unittest.TestCase):
         self.assertEqual(index, {"projectId": PROJECT_ID, "skills": [{
             "id": "skill:hatch-review", "version": 1, "name": "hatch-review",
             "description": "Review a plan's hatching against the project recipe.",
-            "codeSha256": code_sha256(BODY, None, {}), "runnable": False, "approved": False, "access": None}]})
+            "codeSha256": code_sha256(BODY, None, {}), "runnable": False, "access": None}]})
 
         second = self.add(skill(description="Review hatching and poché against the recipe.",
                                 body=BODY + "3. Check poché.\n", supersedesVersion=1))

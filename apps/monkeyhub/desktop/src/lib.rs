@@ -524,6 +524,28 @@ impl OwnedRuntime {
     pub fn try_wait(&mut self) -> Result<Option<ExitStatus>, String> {
         self.child.try_wait().map_err(|e| e.to_string())
     }
+    /// Ends the Hub and every process it started, at once (gap 24). Only a
+    /// person's confirmed second close calls this: work still running is lost.
+    pub fn force_stop(&mut self) {
+        let pid = self.child.id();
+        self.log.write(&format!("event=force-stop pid={pid}"));
+        #[cfg(windows)]
+        {
+            let taskkill = env::var_os("SystemRoot")
+                .map(|root| PathBuf::from(root).join("System32").join("taskkill.exe"))
+                .unwrap_or_else(|| PathBuf::from("taskkill.exe"));
+            let mut command = Command::new(taskkill);
+            hide_console(&mut command);
+            let status = command
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            self.log.write(&format!("event=force-stop-tree pid={pid} result={status:?}"));
+        }
+        let _ = self.child.kill();
+    }
     pub fn request_stop(&mut self) {
         // Taking and closing the sole writer also delivers EOF after a failed write.
         if let Some(mut stdin) = self.child.stdin.take() {
@@ -539,6 +561,52 @@ impl Drop for OwnedRuntime {
     fn drop(&mut self) {
         self.request_stop();
     }
+}
+
+/// The projects a closing Hub (the process ``process_id``) last noted it is
+/// still waiting for, each with whether it is computing (gap 24). A note from
+/// another process, or none, is no list.
+pub fn closing_projects(runtime_root: &Path, process_id: u32) -> Vec<(String, bool)> {
+    let Ok(text) = fs::read_to_string(runtime_root.join("runtime/closing.json")) else {
+        return Vec::new();
+    };
+    let Ok(note) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return Vec::new();
+    };
+    if note.get("processId").and_then(|value| value.as_u64()) != Some(u64::from(process_id)) {
+        return Vec::new();
+    }
+    let Some(rows) = note.get("waiting").and_then(|value| value.as_array()) else {
+        return Vec::new();
+    };
+    rows.iter()
+        .filter_map(|row| {
+            let name = row
+                .get("projectId")
+                .and_then(|value| value.as_str())
+                .or_else(|| row.get("service").and_then(|value| value.as_str()))?;
+            let busy = row.get("busy").and_then(|value| value.as_bool()).unwrap_or(false);
+            Some((name.to_owned(), busy))
+        })
+        .collect()
+}
+
+/// One sentence naming what a closing Hub still waits for, for the window and the force-close dialog.
+pub fn waiting_text(waiting: &[(String, bool)]) -> String {
+    if waiting.is_empty() {
+        return "MonkeyHub 还在等它的服务停下。".into();
+    }
+    let names: Vec<String> = waiting
+        .iter()
+        .map(|(name, busy)| {
+            if *busy {
+                format!("「{name}」（正在计算）")
+            } else {
+                format!("「{name}」")
+            }
+        })
+        .collect();
+    format!("MonkeyHub 还在等这些项目的服务停下：{}。", names.join("、"))
 }
 
 pub fn is_status_url(url: &Url) -> bool {

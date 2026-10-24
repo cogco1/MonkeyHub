@@ -188,6 +188,16 @@ class CutPlanTests(CandidateTestCase):
             self.assertEqual(again.json(), vector.json())
         self.assertEqual(self.status(second)["status"], "current")
 
+    def test_a_drawing_asked_for_on_request_stays_off_the_board_through_its_revisions(self):
+        # G5 step 3: a section drawn from the viewport waits for "Put on Board"; its later revisions keep waiting.
+        first = self.generate(drawingId="viewport-cut", board="on-request")
+        self.assertEqual(first["viewRecipe"]["board"], "on-request")
+        kept = self.generate(drawingId="viewport-cut", previousRevisionRef=first["revisionRef"], cutLineMm=.4)
+        self.assertEqual(kept["viewRecipe"]["board"], "on-request")
+        placed = self.generate(drawingId="viewport-cut", previousRevisionRef=kept["revisionRef"], board="automatic")
+        self.assertNotIn("board", placed["viewRecipe"])
+        self.assertNotIn("board", self.generate(drawingId="ordinary-plan")["viewRecipe"], "a drawing is automatic by default")
+
     def test_human_readable_name_is_display_metadata_and_survives_revisions_and_reopen(self):
         first = self.generate(drawingId="stable-ascii-id", fileName="首层平面 A")
         self.assertEqual(first["fileName"], "首层平面 A.png")

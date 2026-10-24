@@ -1,7 +1,7 @@
 use monkeyhub_desktop::{
-    available_port, fetch_health, hub_reports_worker_origin, is_status_url, verify_source_revision,
-    DiagnosticLog, ExpectedIdentity, HealthError, HubHealth, LaunchConfig, OwnedRuntime,
-    SOURCE_REVISION,
+    available_port, closing_projects, fetch_health, hub_reports_worker_origin, is_status_url,
+    verify_source_revision, waiting_text, DiagnosticLog, ExpectedIdentity, HealthError, HubHealth,
+    LaunchConfig, OwnedRuntime, SOURCE_REVISION,
 };
 use std::{
     fs,
@@ -187,6 +187,55 @@ fn navigation_is_limited_to_the_exact_hub_origin() {
     assert!(!is_status_url(
         &"http://tauri.localhost/unrelated.html".parse().unwrap()
     ));
+}
+
+#[test]
+fn a_forced_close_ends_a_draining_hub_and_what_it_started() {
+    // Gap 24: the person's confirmed second close ends a Hub still draining.
+    let fixture = Fixture::new(serde_json::json!({"drain_seconds": 120, "child_heartbeat": true}));
+    let mut owned = fixture.spawn();
+    wait_ready(&mut owned);
+    let heartbeat = fixture.config.runtime_root.join("child-heartbeat");
+    let started = Instant::now();
+    while !heartbeat.is_file() {
+        assert!(started.elapsed() < Duration::from_secs(10), "the fixture's child never started");
+        thread::sleep(Duration::from_millis(50));
+    }
+    owned.request_stop();
+    thread::sleep(Duration::from_millis(500));
+    assert!(owned.try_wait().unwrap().is_none(), "the Hub is still draining");
+    owned.force_stop();
+    assert!(!wait_exit(&mut owned).success());
+    thread::sleep(Duration::from_millis(500));
+    let beat = fs::read_to_string(&heartbeat).unwrap();
+    thread::sleep(Duration::from_millis(800));
+    assert_eq!(fs::read_to_string(&heartbeat).unwrap(), beat, "the Hub's child outlived a forced close");
+    assert!(!fixture.config.runtime_root.join("operation-finished").exists());
+}
+
+#[test]
+fn a_closing_note_names_what_the_hub_still_waits_for() {
+    let fixture = Fixture::new(serde_json::json!({}));
+    let root = &fixture.config.runtime_root;
+    assert!(closing_projects(root, 42).is_empty());
+    assert_eq!(waiting_text(&[]), "MonkeyHub 还在等它的服务停下。");
+    fs::create_dir_all(root.join("runtime")).unwrap();
+    fs::write(
+        root.join("runtime/closing.json"),
+        serde_json::json!({"processId": 42, "waiting": [
+            {"service": "studio", "projectId": "0925", "projectDir": "C:/p/0925", "busy": true},
+            {"service": "monitor", "projectId": null, "projectDir": null, "busy": false}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let waiting = closing_projects(root, 42);
+    assert_eq!(waiting, vec![("0925".to_owned(), true), ("monitor".to_owned(), false)]);
+    assert_eq!(
+        waiting_text(&waiting),
+        "MonkeyHub 还在等这些项目的服务停下：「0925」（正在计算）、「monitor」。"
+    );
+    assert!(closing_projects(root, 43).is_empty(), "another process's note is not this Hub's");
 }
 
 #[test]

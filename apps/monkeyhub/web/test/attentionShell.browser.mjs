@@ -385,7 +385,61 @@ try {
   await page.locator(".attention-shell__side-tabs .menu-tab[aria-selected=true]").filter({ hasText: "已忽略" }).waitFor();
   await page.getByRole("button", { name: "收起侧栏" }).first().click();
 
+  // 08: a sentence that names one command is offered as that command before it goes to the model.
+  const said = page.locator(".attention-shell #chat-input"), posted = chatPosts.length;
+  await said.fill("打开设置");
+  await said.press("Enter");
+  const offer = page.locator(".chat-route");
+  await offer.getByText("这句话可以直接做：「设置」").waitFor();
+  await offer.getByRole("button", { name: "直接做" }).click();
+  await page.locator("dialog.chat-dialog--settings[open]").waitFor();
+  await page.keyboard.press("Escape");
+  assert.equal(await said.inputValue(), "", "done, the words are gone");
+  assert.equal(chatPosts.length, posted, "and nothing went to the model");
+  // Sent as written, it goes to the conversation.
+  await said.fill("打开设置");
+  await said.press("Enter");
+  await offer.getByRole("button", { name: "还是发给 AI" }).click();
+  await offer.waitFor({ state: "detached" });
+  for (let wait = 0; chatPosts.length === posted && wait < 100; wait += 1) await page.waitForTimeout(50);
+  assert.equal(chatPosts.at(-1)?.[1], "打开设置", "sent as written");
+  // A sentence that is a request, not a command, goes to the conversation without an offer.
+  await said.fill("这个方案怎么样");
+  await said.press("Enter");
+  for (let wait = 0; chatPosts.at(-1)?.[1] !== "这个方案怎么样" && wait < 100; wait += 1) await page.waitForTimeout(50);
+  assert.equal(chatPosts.at(-1)?.[1], "这个方案怎么样");
+  assert.equal(await offer.count(), 0);
+  // The later passes count what reached the conversations from here on.
+  const sent = chatPosts.splice(posted);
+  for (const [id] of sent) sessions.find((row) => row.id === id)?.messages.pop();
+
   await context.close();
+
+  // 2-3c: the Hub opens in the new shell; 回旧版 goes back to the workbench at once and for next time, and the
+  // workbench's 回新版 comes back.
+  const chosen = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const hub = await chosen.newPage(); hub.setDefaultTimeout(15_000);
+  hub.on("pageerror", (error) => errors.push(error.message));
+  await hub.route((url) => url.pathname.startsWith("/api/"), route);
+  await hub.goto(`${origin}/`);
+  await hub.locator(".attention-shell").waitFor();
+  await hub.locator(".attention-shell__search").click();
+  await hub.locator("dialog.command-palette[open] input").fill("回旧版");
+  await hub.keyboard.press("Enter");
+  await hub.locator(".chat-shell").waitFor();
+  assert.equal(await hub.evaluate(() => localStorage.getItem("monkeyhub.shell")), "workbench");
+  await hub.reload();
+  await hub.locator(".chat-shell").waitFor();
+  await shoot(hub, "workbench-back-to-new-desktop-light");
+  await hub.locator('.chat-menubar [data-command="view.shell.attention"]').click();
+  await hub.locator(".attention-shell").waitFor();
+  await hub.reload();
+  await hub.locator(".attention-shell").waitFor();
+  // A link that names a shell shows it without changing the choice.
+  await hub.goto(`${origin}/?shell=workbench`);
+  await hub.locator(".chat-shell").waitFor();
+  assert.equal(await hub.evaluate(() => localStorage.getItem("monkeyhub.shell")), "attention");
+  await chosen.close();
   preferredTheme = "dark";
   const dark = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const darkPage = await dark.newPage(); darkPage.setDefaultTimeout(15_000);

@@ -1082,6 +1082,7 @@ def _codex_version(executable: str) -> str:
     try:
         completed = subprocess.run(
             [executable, "--version"],
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -1526,6 +1527,7 @@ def _kill_tree(process: subprocess.Popen[str]) -> None:
     if os.name == "nt":
         subprocess.run(
             ["taskkill", "/T", "/F", "/PID", str(process.pid)],
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             check=False,
         )

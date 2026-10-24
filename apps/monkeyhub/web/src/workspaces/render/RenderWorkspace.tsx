@@ -142,7 +142,8 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
     try {
       const captured = await renderViewImage(view);
       const retained = await studio.retainRenderView({ projectId, modelSource: view.modelSource,
-        sourceStageRef: view.sourceStageRef ?? null, camera: captured.camera, screenSize: captured.screenSize }, captured.png);
+        sourceStageRef: view.sourceStageRef ?? null, camera: captured.camera, screenSize: captured.screenSize,
+        ...(view.clip ? { clip: view.clip } : {}) }, captured.png);
       if (retained.projectId !== projectId) throw new Error("The captured view belongs to another project.");
       if (!alive.current) return;
       ++readEpoch.current;
@@ -250,7 +251,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
     {/* ADR-014 B3: Render's mode is words in the project bar, as every surface's menus are; it keeps no bar of its own. */}
     <SurfaceMenus label="Render" active={active}>
       <MenuTabs<"ai" | "physical"> label={zh ? "工作模式" : "Render mode"} value={mode} onChange={setMode}
-        options={[{ value: "ai", label: "AI", command: "render.run.mode_ai" }, { value: "physical", label: "Physical", command: "render.run.mode_physical" }]} />
+        options={[{ value: "ai", label: t("render.mode.ai"), command: "render.run.mode_ai" }, { value: "physical", label: t("render.mode.physical"), command: "render.run.mode_physical" }]} />
     </SurfaceMenus>
     <ModelPreview active={active} readView={readModelView} onModeling={onModeling} onCapture={() => void captureModelView()} onReady={setModelViewReady}
       capturing={uploading || sending} zh={zh} />

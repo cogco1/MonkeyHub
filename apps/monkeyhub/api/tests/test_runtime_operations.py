@@ -36,6 +36,7 @@ from project_runtime.api.dto.runtime import runtime_dto
 from monkeyhub_api.models import HubFailure
 from monkeyhub_api.runtime.manager import ProjectRuntime, ProjectRuntimeManager
 from monkeyhub_api.runtime.operations import OperationManager
+from monkeyhub_api.runtime.workers import earlier_project_keys, project_key
 from monkeyhub_api.runtime.worker_http import HttpResult
 
 from test_monkeyhub_lifecycle import project_fixture
@@ -978,6 +979,71 @@ class OperationRecoveryTests(unittest.TestCase):
         record = next(row for row in accepting.records() if row.candidateId == candidate_id and row.source == "studio")
         self.assertEqual(record.status, "completed")
         self.assertTrue(record.committed)
+
+
+class JournalSpellingTests(unittest.TestCase):
+    """Gap 26: one folder, one journal, however an earlier Hub spelled it."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.project = self.root / "Project Folder"
+        self.project.mkdir()
+        self.journals = self.root / "operations"
+        self.journals.mkdir()
+
+    @staticmethod
+    def row(operation_id, status):
+        return {"record": {"operationId": operation_id, "projectId": "spelled", "kind": "POST /api/program",
+                           "source": "hub", "status": status},
+                "signature": ["POST", "/api/program", "0" * 64], "expectedStage": None,
+                "branchId": "main", "acceptingCandidate": False}
+
+    def write(self, name, project_dir, rows, acknowledged=None):
+        path = self.journals / name
+        saved = {"projectId": "spelled", "projectDir": project_dir, "operations": rows}
+        if acknowledged:
+            saved["acknowledged"] = acknowledged
+        path.write_text(json.dumps(saved), encoding="utf-8")
+        return path
+
+    @unittest.skipUnless(sys.platform == "win32", "the extended-length spelling is a Windows one")
+    def test_both_spellings_of_a_folder_have_one_key(self):
+        plain = str(self.project)
+        self.assertEqual(project_key("\\\\?\\" + plain), project_key(plain))
+        self.assertEqual(project_key(plain.upper()), project_key(plain))
+        self.assertFalse(project_key(plain).startswith("\\\\?\\"))
+        self.assertEqual(earlier_project_keys(plain), ("\\\\?\\" + project_key(plain),))
+
+    @unittest.skipUnless(sys.platform == "win32", "the extended-length spelling is a Windows one")
+    def test_an_earlier_journal_joins_this_one_and_is_kept_under_another_name(self):
+        only_earlier, both = str(uuid4()), str(uuid4())
+        earlier = self.write("earlier.json", "\\\\?\\" + project_key(str(self.project)),
+                             [self.row(only_earlier, "failed"), self.row(both, "failed")],
+                             {only_earlier: {"acknowledgedAt": "2026-10-01T00:00:00Z", "status": "failed"}})
+        current = self.write("current.json", project_key(str(self.project)), [self.row(both, "refused")])
+        manager = OperationManager("spelled", project_dir=str(self.project), journal_path=current)
+        manager.merge([earlier, self.journals / "missing.json", current])
+        shown = {row.operationId: row for row in manager.records()}
+        self.assertEqual(set(shown), {only_earlier, both})
+        self.assertEqual(shown[both].status, "refused", "this journal wins where both name an operation")
+        self.assertEqual(shown[only_earlier].acknowledgedAt, "2026-10-01T00:00:00Z")
+        self.assertFalse(earlier.exists())
+        self.assertTrue((self.journals / "earlier.json.merged-into-current").is_file())
+        again = OperationManager("spelled", project_dir=str(self.project), journal_path=current)
+        self.assertEqual({row.operationId for row in again.records()}, {only_earlier, both})
+
+    def test_an_unreadable_or_foreign_earlier_journal_is_left_where_it_is(self):
+        broken = self.journals / "broken.json"
+        broken.write_text("{not json", encoding="utf-8")
+        foreign = self.write("foreign.json", project_key(str(self.root)), [self.row(str(uuid4()), "failed")])
+        current = self.journals / "current.json"
+        manager = OperationManager("spelled", project_dir=str(self.project), journal_path=current)
+        manager.merge([broken, foreign])
+        self.assertEqual(manager.records(), [])
+        self.assertTrue(broken.is_file() and foreign.is_file())
+        self.assertFalse(current.exists(), "nothing was taken in, so nothing was written")
 
 
 if __name__ == "__main__":

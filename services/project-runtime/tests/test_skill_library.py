@@ -1,8 +1,8 @@
-"""Skill packages shipped with MonkeyHub and the user's own, registered into a project as its skills.
+"""The skills installed on this machine: the ones shipped with MonkeyHub and the user's own (S-1).
 
-A package is a folder (skill.json, SKILL.md, text files). Importing one adds a
-version only when its content differs from the project's current version, and
-grants nothing.
+A package is a folder (skill.json, SKILL.md, text files). Every project can use
+it without importing it; the project retains a version only when a run uses one
+whose content differs from its current version, and retaining allows nothing.
 """
 
 from __future__ import annotations
@@ -17,7 +17,9 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from archflow.project.repository import FilesystemProjectRepository
-from project_runtime.application import skill_library
+from project_runtime.application import skill_library, skills
+from project_runtime.binding import bound_project
+from project_runtime.authentication import ActorAttribution
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 
@@ -63,10 +65,12 @@ class SkillLibraryTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return {(row["source"], row["name"]): row for row in response.json()["packages"]}
 
-    def import_(self, source: str, name: str, status: int = 200) -> dict:
-        response = self.client.post("/api/skills/import", json={"projectId": PROJECT_ID, "source": source, "name": name})
-        self.assertEqual(response.status_code, status, response.text)
-        return response.json()
+    def retain(self, name: str):
+        """What a run does first: the project's version of exactly the package the folders hold."""
+
+        binding = bound_project(self.client.app.state)
+        return skill_library.retain(binding, skill_library.installed().find(name),
+                                    attribution=ActorAttribution("person", False, "local"))
 
     def test_both_places_are_listed_with_what_the_project_holds(self):
         write_package(self.bundled / "site-palette", frontmatter=True)
@@ -82,38 +86,52 @@ class SkillLibraryTest(unittest.TestCase):
         self.assertEqual(rows[("user", "rule-study")]["access"]["read"], ["C:\\Windows\\Fonts"])
         self.assertEqual(rows[("user", "broken")]["error"]["code"], "SKILL_PACKAGE_INVALID")
 
-    def test_an_import_adds_a_version_only_when_the_package_changed(self):
+    def test_a_version_is_retained_only_when_the_package_changed(self):
         write_package(self.user / "rule-study")
-        first = self.import_("user", "rule-study")
-        self.assertEqual((first["imported"], first["skill"]["version"], first["skill"]["body"]),
-                         (True, 1, "Run it on one image.\n"))
-        self.assertFalse(first["skill"]["approved"], "importing grants nothing")
-        again = self.import_("user", "rule-study")
-        self.assertEqual((again["imported"], again["skill"]["version"]), (False, 1))
+        first = self.retain("rule-study")
+        self.assertEqual((first.version, first.payload["body"]), (1, "Run it on one image.\n"))
+        self.assertEqual(self.retain("rule-study").ref, first.ref, "the same package is the same version")
         self.assertTrue(self.library()[("user", "rule-study")]["upToDate"])
         write_package(self.user / "rule-study", script=RUN + "print('changed')\n")
         self.assertFalse(self.library()[("user", "rule-study")]["upToDate"])
-        changed = self.import_("user", "rule-study")
-        self.assertEqual((changed["imported"], changed["skill"]["version"], changed["skill"]["latestVersion"]),
-                         (True, 2, 2))
-        self.assertNotEqual(changed["skill"]["codeSha256"], first["skill"]["codeSha256"])
+        changed = self.retain("rule-study")
+        self.assertEqual(changed.version, 2)
+        self.assertNotEqual(changed.code_sha256, first.code_sha256)
 
-    def test_a_partial_access_declaration_is_compared_in_its_checked_form(self):
+    def test_the_users_package_comes_before_a_shipped_one_of_the_same_name(self):
         write_package(self.bundled / "site-palette", access={"programs": ["blender"]})
-        self.import_("bundled", "site-palette")
-        self.assertEqual(self.import_("bundled", "site-palette")["imported"], False)
+        self.assertEqual(skill_library.installed().find("site-palette").source, "bundled")
+        write_package(self.user / "site-palette")
+        found = skill_library.installed()
+        self.assertEqual(found.find("site-palette").source, "user")
+        self.assertEqual([(row.source, row.name) for row in found.current()], [("user", "site-palette")])
+        self.assertTrue(self.library()[("bundled", "site-palette")]["shadowed"])
 
-    def test_an_unknown_or_invalid_package_is_refused(self):
-        self.assertEqual(self.import_("user", "missing", status=404)["code"], "SKILL_PACKAGE_NOT_FOUND")
-        self.assertEqual(self.import_("user", "../x", status=422)["code"], "REQUEST_INVALID")
+    def test_what_a_run_would_need_is_read_without_running_or_retaining(self):
+        write_package(self.user / "rule-study", access={"programs": ["Blender.exe"], "read": ["C:\\Windows\\Fonts"]})
+        with patch.dict(os.environ, {"MONKEYHUB_SKILL_GRANTS": str(self.user.parent / "none.json")}):
+            answer = self.client.get("/api/skills/skill:rule-study/needs")
+        self.assertEqual(answer.status_code, 200, answer.text)
+        body = answer.json()
+        self.assertEqual((body["skill"], body["needs"], body["broad"]),
+                         ({"name": "rule-study", "source": "user"}, {"programs": ["blender"]}, {}))
+        binding = bound_project(self.client.app.state)
+        self.assertIsNone(skills.latest_version(binding, "skill:rule-study"), "nothing was retained")
+        self.assertEqual(self.client.get("/api/skills/skill:missing/needs").json()["code"], "SKILL_NOT_INSTALLED")
+
+    def test_an_invalid_package_is_listed_with_why_and_runs_nothing(self):
         write_package(self.user / "bad-name")
         (self.user / "bad-name" / "skill.json").write_text(json.dumps({"name": "Bad Name", "description": "x"}),
                                                            encoding="utf-8")
-        self.assertEqual(self.import_("user", "bad-name", status=422)["code"], "SKILL_INVALID")
         (self.user / "binary").mkdir()
         write_package(self.user / "binary")
         (self.user / "binary" / "logo.png").write_bytes(b"\x89PNG\xff\xfe")
-        self.assertEqual(self.import_("user", "binary", status=422)["code"], "SKILL_PACKAGE_INVALID")
+        rows = self.library()
+        self.assertEqual(rows[("user", "bad-name")]["error"]["code"], "SKILL_INVALID")
+        self.assertEqual(rows[("user", "binary")]["error"]["code"], "SKILL_PACKAGE_INVALID")
+        for name, code in (("bad-name", "SKILL_INVALID"), ("binary", "SKILL_PACKAGE_INVALID")):
+            response = self.client.post(f"/api/skills/skill:{name}/run", json={"projectId": PROJECT_ID})
+            self.assertEqual((response.status_code, response.json()["code"]), (422, code))
 
 
 if __name__ == "__main__":

@@ -896,7 +896,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模118"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "选一个构件来改",
+        "我要改这根梁，先选中它",
+        "指定要修改的构件",
+        "Pick the component to modify",
+        "Select which element to change"
+      ],
+      "aliases": [
+        "选构件",
+        "挑构件",
+        "点选构件",
+        "pick element",
+        "select component"
+      ]
     },
     {
       "id": "candidate.modify_existing.propose",
@@ -917,7 +931,21 @@ export const COMMAND_TREE: CommandTree = {
         "模127",
         "模128"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "给选中构件提个改动",
+        "把这个尺寸改成新数值",
+        "提一个修改方案",
+        "Propose a change to this component",
+        "Suggest a new value for it"
+      ],
+      "aliases": [
+        "提改动",
+        "提修改",
+        "改动建议",
+        "suggest change",
+        "draft change"
+      ]
     },
     {
       "id": "candidate.modify_existing.apply",
@@ -937,7 +965,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模129"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "确认应用这个改动",
+        "按提案生成新候选",
+        "就按这个提案改吧",
+        "Apply the proposed change",
+        "Run the proposal as new candidate"
+      ],
+      "aliases": [
+        "采纳提案",
+        "执行改动",
+        "确认修改",
+        "accept proposal",
+        "run change"
+      ]
     },
     {
       "id": "candidate.modify_existing.adjust",
@@ -957,7 +999,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模130"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "提案再改一下",
+        "修改刚才的改动方案",
+        "应用前先调整提案",
+        "Edit the proposal before applying",
+        "Revise the pending change"
+      ],
+      "aliases": [
+        "改提案",
+        "修改方案",
+        "重调提案",
+        "revise proposal",
+        "edit proposal"
+      ]
     },
     {
       "id": "candidate.modify_existing.refine",
@@ -977,7 +1033,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模131"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "数值再微调一点",
+        "把这个尺寸细调一下",
+        "小幅调整构件数值",
+        "Fine-tune the value slightly",
+        "Nudge this dimension a bit"
+      ],
+      "aliases": [
+        "微调",
+        "细调",
+        "小调数值",
+        "fine-tune",
+        "nudge value"
+      ]
     },
     {
       "id": "candidate.modify_existing.refine_less",
@@ -997,7 +1067,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模131"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "数值减小百分之一",
+        "再小一点点",
+        "尺寸缩小1%",
+        "Decrease the value by one percent",
+        "Make it one percent smaller"
+      ],
+      "aliases": [
+        "减1%",
+        "缩小一点",
+        "调小一点",
+        "minus 1%",
+        "slightly less"
+      ]
     },
     {
       "id": "candidate.modify_existing.refine_more",
@@ -1017,7 +1101,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模131"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "数值增加百分之一",
+        "再大一点点",
+        "尺寸放大1%",
+        "Increase the value by one percent",
+        "Make it one percent bigger"
+      ],
+      "aliases": [
+        "加1%",
+        "放大一点",
+        "调大一点",
+        "plus 1%",
+        "slightly more"
+      ]
     },
     {
       "id": "frame.set_level.apply",
@@ -1063,7 +1161,23 @@ export const COMMAND_TREE: CommandTree = {
         "模43",
         "模44"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "新加一个楼层",
+        "把二层标高改到4米",
+        "调整楼层标高",
+        "Add a new floor level",
+        "Move a level to new elevation"
+      ],
+      "aliases": [
+        "楼层标高",
+        "加楼层",
+        "改标高",
+        "层高基准",
+        "level datum",
+        "floor level",
+        "set elevation"
+      ]
     },
     {
       "id": "board.add_document_page.toggle_list",
@@ -1086,7 +1200,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "板3"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "打开项目资料列表",
+        "看看项目里有哪些资料",
+        "展开资料面板",
+        "Open the project documents list",
+        "Show the project sources panel"
+      ],
+      "aliases": [
+        "资料列表",
+        "项目文档",
+        "资料库",
+        "sources",
+        "documents list",
+        "project files"
+      ]
     },
     {
       "id": "board.add_document_page.close_list",
@@ -1106,7 +1235,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "板26"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "收起资料列表",
+        "关掉项目资料面板",
+        "把资料栏隐藏起来",
+        "Hide the project documents list",
+        "Close the sources panel"
+      ],
+      "aliases": [
+        "收起资料",
+        "关资料栏",
+        "隐藏资料",
+        "close sources",
+        "hide documents"
+      ]
     },
     {
       "id": "board.add_document_page.add",
@@ -1130,7 +1273,21 @@ export const COMMAND_TREE: CommandTree = {
         "板27",
         "板28"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把这页图放到画板上",
+        "这张图纸上画板",
+        "资料页加到画板",
+        "Place this page on the board",
+        "Add document page to board"
+      ],
+      "aliases": [
+        "放图纸",
+        "图页上板",
+        "加到画板",
+        "place page",
+        "pin page"
+      ]
     },
     {
       "id": "board.add_document_page.work_copy",
@@ -1153,7 +1310,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "板31"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "复制一份可编辑的",
+        "给我这页的工作副本",
+        "拿个副本来改",
+        "Get an editable copy of this",
+        "Make a work copy to edit"
+      ],
+      "aliases": [
+        "工作副本",
+        "可编辑副本",
+        "复制一份",
+        "work copy",
+        "editable copy",
+        "duplicate"
+      ]
     },
     {
       "id": "board.manage.add_to_publish",
@@ -1176,7 +1348,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "板12"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把选中的图放进汇报",
+        "这几张送去排版",
+        "加到汇报文件里",
+        "Add selected drawings to the presentation",
+        "Send these to layout"
+      ],
+      "aliases": [
+        "送到排版",
+        "加入汇报",
+        "进汇报",
+        "send to layout",
+        "add to deck"
+      ]
     },
     {
       "id": "board.manage.import_component_info",
@@ -1199,7 +1385,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "板5"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "导入构件资料卡",
+        "把构件信息卡放上画板",
+        "导入构件说明资料",
+        "Import component info cards",
+        "Bring component data onto board"
+      ],
+      "aliases": [
+        "构件资料卡",
+        "构件信息",
+        "构件卡片",
+        "component cards",
+        "element info"
+      ]
     },
     {
       "id": "board.place_image",
@@ -1222,7 +1422,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "渲22"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把这张渲染图放到画板",
+        "渲染结果上墙",
+        "效果图送到画板",
+        "Send this render to the board",
+        "Put rendered image on board"
+      ],
+      "aliases": [
+        "渲染图上墙",
+        "效果图上板",
+        "图片上板",
+        "pin render",
+        "render to board"
+      ]
     },
     {
       "id": "board.export.run",
@@ -1247,7 +1461,22 @@ export const COMMAND_TREE: CommandTree = {
         "板14",
         "板15"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把画板图纸导出成PDF",
+        "导出画板上所有图页",
+        "打包画板图纸发给别人",
+        "Export board pages as PDF",
+        "Download board drawings as images"
+      ],
+      "aliases": [
+        "画板导出",
+        "图纸打包",
+        "导出图页",
+        "export board",
+        "zip drawings",
+        "board to pdf"
+      ]
     },
     {
       "id": "sketch.to_model.new_frame",
@@ -1270,7 +1499,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "板9"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "在画板上新建草图框",
+        "开个框画草图",
+        "加一个手绘草图区",
+        "Create a new sketch frame",
+        "Start a sketch area on board"
+      ],
+      "aliases": [
+        "草图框",
+        "新草图",
+        "画草图",
+        "sketch frame",
+        "new sketch"
+      ]
     },
     {
       "id": "sketch.to_model.calibrate",
@@ -1326,7 +1569,21 @@ export const COMMAND_TREE: CommandTree = {
         "文33",
         "文36"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把草图生成3D模型",
+        "草图拉成体块",
+        "按这个平面起模",
+        "Turn this sketch into 3D",
+        "Generate a 3D candidate from sketch"
+      ],
+      "aliases": [
+        "草图起模",
+        "生成体块",
+        "转成3D",
+        "sketch to 3D",
+        "extrude sketch"
+      ]
     },
     {
       "id": "render.run.adjust_view",
@@ -1346,7 +1603,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "渲3"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "回建模里调一下视角",
+        "去3D里换个角度",
+        "渲染视角不对去调",
+        "Go adjust the camera in Modeling",
+        "Change render angle in 3D view"
+      ],
+      "aliases": [
+        "调视角",
+        "调相机",
+        "换角度",
+        "adjust camera",
+        "set viewpoint"
+      ]
     },
     {
       "id": "render.run.capture_view",
@@ -1369,7 +1640,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "渲4"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "用现在的模型视角当底图",
+        "截取当前视角来渲染",
+        "拿当前画面做底图",
+        "Use current model view as base",
+        "Capture the view for rendering"
+      ],
+      "aliases": [
+        "截取视角",
+        "视角底图",
+        "当前视图",
+        "capture view",
+        "base image"
+      ]
     },
     {
       "id": "render.run.generate",
@@ -1400,7 +1685,23 @@ export const COMMAND_TREE: CommandTree = {
         "渲15",
         "渲16"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "出一张效果图",
+        "开始AI渲染",
+        "帮我渲染一下",
+        "Generate an AI render",
+        "Make a rendering of this"
+      ],
+      "aliases": [
+        "渲染",
+        "出效果图",
+        "AI渲染",
+        "效果图",
+        "render",
+        "AI render",
+        "visualize"
+      ]
     },
     {
       "id": "render.run.mode_ai",
@@ -1550,7 +1851,22 @@ export const COMMAND_TREE: CommandTree = {
         "排1",
         "排2"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把排版导出成PPT",
+        "导出可编辑幻灯片",
+        "汇报存成PPT",
+        "Export layout as PowerPoint",
+        "Save presentation as PPTX"
+      ],
+      "aliases": [
+        "导出PPT",
+        "幻灯片",
+        "存PPT",
+        "powerpoint",
+        "slides",
+        "ppt"
+      ]
     },
     {
       "id": "publication.export.pdf",
@@ -1570,7 +1886,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "排3"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把排版导出成PDF",
+        "汇报文件存成PDF",
+        "排版页面输出PDF",
+        "Export layout pages as PDF",
+        "Save presentation as PDF"
+      ],
+      "aliases": [
+        "排版PDF",
+        "汇报PDF",
+        "存PDF",
+        "layout pdf",
+        "deck pdf"
+      ]
     },
     {
       "id": "document.upload",
@@ -1593,7 +1923,21 @@ export const COMMAND_TREE: CommandTree = {
         "板4",
         "板59"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "上传一张图纸",
+        "导入PDF到项目",
+        "把参考图片传进来",
+        "Upload a PDF or image",
+        "Import a drawing file"
+      ],
+      "aliases": [
+        "上传图纸",
+        "导入图片",
+        "传资料",
+        "import drawing",
+        "upload file"
+      ]
     },
     {
       "id": "document.replace_page.open",
@@ -1614,7 +1958,21 @@ export const COMMAND_TREE: CommandTree = {
         "板30",
         "板62"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "这页原图要换新版",
+        "替换这一页的图纸",
+        "更新这页的原文件",
+        "Replace this page with new version",
+        "Update the source file of this page"
+      ],
+      "aliases": [
+        "换页",
+        "替换原图",
+        "更新原图",
+        "replace page",
+        "swap page"
+      ]
     },
     {
       "id": "document.replace_page.submit",
@@ -1636,7 +1994,21 @@ export const COMMAND_TREE: CommandTree = {
         "板74",
         "板76"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "确认原位替换这页",
+        "新图直接覆盖这一页",
+        "提交替换页面",
+        "Confirm replacing the page in place",
+        "Overwrite page with new file"
+      ],
+      "aliases": [
+        "原位替换",
+        "确认替换",
+        "覆盖此页",
+        "replace in place",
+        "confirm replace"
+      ]
     },
     {
       "id": "document.model_source.link",
@@ -1677,7 +2049,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模59"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "在模型上铺张描图纸",
+        "打开草图纸画批注",
+        "蒙一层硫酸纸",
+        "Lay tracing paper over the model",
+        "Sketch over the 3D view"
+      ],
+      "aliases": [
+        "硫酸纸",
+        "草图纸",
+        "描图层",
+        "trace paper",
+        "overlay sketch"
+      ]
     },
     {
       "id": "view.markup_tools.select",
@@ -1697,7 +2083,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文14"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "选中画好的线来改",
+        "编辑已画的批注线",
+        "调整批注线条形状",
+        "Select and edit a drawn line",
+        "Edit an existing markup stroke"
+      ],
+      "aliases": [
+        "选线",
+        "改线条",
+        "编辑批注",
+        "select stroke",
+        "edit markup"
+      ]
     },
     {
       "id": "view.markup_tools.freehand",
@@ -1720,7 +2120,22 @@ export const COMMAND_TREE: CommandTree = {
         "模67",
         "文14"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "用画笔随手画",
+        "手绘批注一下",
+        "拿笔在图上画",
+        "Draw freehand markup",
+        "Use the pen tool"
+      ],
+      "aliases": [
+        "手绘",
+        "自由笔",
+        "铅笔",
+        "freehand",
+        "pencil",
+        "brush"
+      ]
     },
     {
       "id": "view.markup_tools.line",
@@ -1741,7 +2156,21 @@ export const COMMAND_TREE: CommandTree = {
         "模67",
         "文14"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "画一条直线批注",
+        "拉条直线",
+        "在图上画直线",
+        "Draw a straight line",
+        "Add a straight markup line"
+      ],
+      "aliases": [
+        "画直线",
+        "直线工具",
+        "拉线",
+        "straight line",
+        "line tool"
+      ]
     },
     {
       "id": "view.markup_tools.polyline",
@@ -1763,7 +2192,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文14"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "画多段线轮廓",
+        "勾出一个轮廓",
+        "连续点画折线",
+        "Draw a polyline outline",
+        "Trace an outline with points"
+      ],
+      "aliases": [
+        "多段线",
+        "折线",
+        "勾轮廓",
+        "polyline",
+        "outline tool"
+      ]
     },
     {
       "id": "view.markup_tools.arrow",
@@ -1784,7 +2227,21 @@ export const COMMAND_TREE: CommandTree = {
         "模67",
         "文14"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "画个箭头指一下",
+        "加指向箭头",
+        "用箭头标出来",
+        "Draw an arrow markup",
+        "Point at something with an arrow"
+      ],
+      "aliases": [
+        "画箭头",
+        "指示箭头",
+        "引线",
+        "arrow tool",
+        "pointer"
+      ]
     },
     {
       "id": "view.markup_tools.circle",
@@ -1805,7 +2262,21 @@ export const COMMAND_TREE: CommandTree = {
         "模67",
         "文14"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把这块圈出来",
+        "画圈标出问题",
+        "圈一下这个地方",
+        "Circle an area on the page",
+        "Draw a circle around it"
+      ],
+      "aliases": [
+        "画圈",
+        "圈注",
+        "圈出来",
+        "circle tool",
+        "ring"
+      ]
     },
     {
       "id": "view.markup_tools.arc",
@@ -1825,7 +2296,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模67"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "画一段圆弧",
+        "三点画弧线",
+        "在描图纸上画弧",
+        "Draw an arc",
+        "Sketch a curved arc segment"
+      ],
+      "aliases": [
+        "弧线",
+        "画弧",
+        "曲线弧",
+        "arc tool",
+        "curve"
+      ]
     },
     {
       "id": "view.markup_tools.ruler",
@@ -1848,7 +2333,23 @@ export const COMMAND_TREE: CommandTree = {
         "模67",
         "模71"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "量一下这段长度",
+        "标个尺寸",
+        "拉尺子标距离",
+        "Mark a dimension with the ruler",
+        "Measure a distance on the sketch"
+      ],
+      "aliases": [
+        "量尺寸",
+        "尺子",
+        "尺寸标注",
+        "测距",
+        "dimension mark",
+        "measure",
+        "ruler tool"
+      ]
     },
     {
       "id": "view.markup_tools.keep",
@@ -1870,7 +2371,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模67"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "标出这里不许改",
+        "圈住要保留的部分",
+        "这块保持不动",
+        "Mark this part must not change",
+        "Keep this element as is"
+      ],
+      "aliases": [
+        "不许改",
+        "保持不变",
+        "锁定保留",
+        "must not change",
+        "keep as is",
+        "protect"
+      ]
     },
     {
       "id": "view.markup_tools.remove",
@@ -1892,7 +2408,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模67"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "标出这个要去掉",
+        "这块应该拆掉",
+        "圈出要删的部分",
+        "Mark this part to remove",
+        "Flag element that should go"
+      ],
+      "aliases": [
+        "要拆掉",
+        "去掉",
+        "标记删除",
+        "should go",
+        "mark removal",
+        "take out"
+      ]
     },
     {
       "id": "view.markup_tools.text",
@@ -1915,7 +2446,23 @@ export const COMMAND_TREE: CommandTree = {
         "文14",
         "文20"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "在图上写字批注",
+        "加一段文字说明",
+        "调文字大小",
+        "Add a text note on page",
+        "Write text markup"
+      ],
+      "aliases": [
+        "写字",
+        "文字批注",
+        "文本",
+        "注字",
+        "text note",
+        "label",
+        "text size"
+      ]
     },
     {
       "id": "view.markup_tools.pan",
@@ -1935,7 +2482,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文14"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "拖动画面平移",
+        "移动一下视图",
+        "抓手拖动页面",
+        "Pan around the page",
+        "Drag to move the view"
+      ],
+      "aliases": [
+        "抓手",
+        "拖动视图",
+        "移屏",
+        "hand tool",
+        "drag view"
+      ]
     },
     {
       "id": "view.markup_tools.eraser",
@@ -1956,7 +2517,21 @@ export const COMMAND_TREE: CommandTree = {
         "模62",
         "文14"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "擦掉画错的线",
+        "用橡皮擦批注",
+        "把这笔擦了",
+        "Erase markup strokes",
+        "Use the eraser tool"
+      ],
+      "aliases": [
+        "橡皮",
+        "擦除",
+        "擦掉",
+        "erase",
+        "rubber"
+      ]
     },
     {
       "id": "view.markup_tools.close_outline",
@@ -1976,7 +2551,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文15"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把轮廓首尾连上",
+        "闭合这条多段线",
+        "封闭轮廓线",
+        "Close the open outline",
+        "Connect outline end to start"
+      ],
+      "aliases": [
+        "闭合",
+        "封口",
+        "首尾相连",
+        "close shape",
+        "close polyline"
+      ]
     },
     {
       "id": "view.markup_tools.delete_path",
@@ -1996,7 +2585,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文16"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "删掉选中的这条线",
+        "把选中批注删了",
+        "删除这根线",
+        "Delete the selected markup line",
+        "Remove the selected stroke"
+      ],
+      "aliases": [
+        "删线",
+        "删批注",
+        "删除线条",
+        "delete stroke",
+        "delete line"
+      ]
     },
     {
       "id": "view.markup_tools.undo",
@@ -2017,7 +2620,21 @@ export const COMMAND_TREE: CommandTree = {
         "模64",
         "文17"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "撤销刚画的批注",
+        "批注画错了退回一步",
+        "把上一笔标注撤掉",
+        "undo my last annotation",
+        "take back the last markup stroke"
+      ],
+      "aliases": [
+        "撤回批注",
+        "撤销标注",
+        "退一笔",
+        "undo markup",
+        "undo stroke"
+      ]
     },
     {
       "id": "view.markup_tools.redo",
@@ -2038,7 +2655,21 @@ export const COMMAND_TREE: CommandTree = {
         "模65",
         "文18"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "恢复刚撤销的批注",
+        "把撤掉的标注再还原",
+        "重做上一笔批注",
+        "redo the annotation I undid",
+        "bring back the undone markup"
+      ],
+      "aliases": [
+        "恢复批注",
+        "重做标注",
+        "还原笔画",
+        "redo markup",
+        "redo stroke"
+      ]
     },
     {
       "id": "view.markup_tools.cancel",
@@ -2058,7 +2689,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模66"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "退出当前批注工具",
+        "不画了把画笔放下",
+        "按Esc取消画笔",
+        "cancel the current markup tool",
+        "stop drawing and drop the pen"
+      ],
+      "aliases": [
+        "退出画笔",
+        "取消画笔",
+        "收起工具",
+        "exit tool",
+        "cancel pen",
+        "drop tool"
+      ]
     },
     {
       "id": "view.markup_tools.colour",
@@ -2128,7 +2774,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文26"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "改一下批注里的文字",
+        "编辑这条文字标注",
+        "修改标注文字内容",
+        "edit the text of this note",
+        "change the annotation text"
+      ],
+      "aliases": [
+        "改批注文字",
+        "编辑文字框",
+        "改标注字",
+        "edit note text",
+        "edit label"
+      ]
     },
     {
       "id": "view.markup_tools.text_done",
@@ -2211,7 +2871,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文13"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "回到刚才在画的批注",
+        "继续编辑当前批注",
+        "返回正在改的标注",
+        "go back to my current annotation",
+        "resume editing this markup"
+      ],
+      "aliases": [
+        "回到批注",
+        "继续批注",
+        "返回编辑",
+        "back to markup",
+        "resume markup"
+      ]
     },
     {
       "id": "markup.hand_to_ai.open",
@@ -2233,7 +2907,21 @@ export const COMMAND_TREE: CommandTree = {
         "板65",
         "板66"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "打开设计反馈面板",
+        "我要给设计提反馈",
+        "把画板批注整理成反馈",
+        "open the design feedback panel",
+        "start giving design feedback"
+      ],
+      "aliases": [
+        "反馈面板",
+        "提反馈",
+        "写反馈",
+        "feedback panel",
+        "give feedback"
+      ]
     },
     {
       "id": "markup.hand_to_ai.send",
@@ -2254,7 +2942,22 @@ export const COMMAND_TREE: CommandTree = {
         "板69",
         "板72"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "确认把反馈发到设计",
+        "把意见交给AI改模型",
+        "反馈写好了发出去",
+        "send this feedback to the design",
+        "submit feedback so AI revises model"
+      ],
+      "aliases": [
+        "发到设计",
+        "交给AI改",
+        "确认发送",
+        "hand to AI",
+        "submit feedback",
+        "push to design"
+      ]
     },
     {
       "id": "markup.hand_to_ai.discuss",
@@ -2274,7 +2977,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "板63"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "跟AI聊聊这张渲染图",
+        "讨论一下这张图片",
+        "让AI点评这张效果图",
+        "discuss this render with AI",
+        "talk about this image"
+      ],
+      "aliases": [
+        "聊这张图",
+        "讨论渲染",
+        "看图讨论",
+        "点评效果图",
+        "discuss image",
+        "discuss render",
+        "ask about image"
+      ]
     },
     {
       "id": "markup.hand_to_ai.continue_in_chat",
@@ -2319,7 +3038,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "板10"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "进入评图模式",
+        "开始crit评图",
+        "让AI像老师一样评图",
+        "start a crit on this board",
+        "enter crit review mode"
+      ],
+      "aliases": [
+        "评图",
+        "开评图",
+        "进入Crit",
+        "评图会",
+        "crit",
+        "start crit",
+        "design review"
+      ]
     },
     {
       "id": "markup.hand_to_ai.exit_crit",
@@ -2339,7 +3074,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "板68"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "退出评图模式",
+        "结束这轮crit",
+        "评图结束回到画板",
+        "exit crit mode",
+        "end the crit session"
+      ],
+      "aliases": [
+        "结束评图",
+        "退出Crit",
+        "关闭评图",
+        "end crit",
+        "leave crit",
+        "stop crit"
+      ]
     },
     {
       "id": "markup.hand_to_ai.send_review",
@@ -2359,7 +3109,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模70"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把描图纸意见发到画板",
+        "模型上的批注送到画板",
+        "审阅意见同步到画板",
+        "send tracing review to the Board",
+        "push model markup to the board"
+      ],
+      "aliases": [
+        "意见上画板",
+        "审阅发画板",
+        "批注转画板",
+        "review to board",
+        "markup to board"
+      ]
     },
     {
       "id": "markup.hand_to_ai.submit_page_note",
@@ -2383,7 +3147,22 @@ export const COMMAND_TREE: CommandTree = {
         "文46",
         "文47"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "提交这一页的意见",
+        "本页批注改完了提交",
+        "把这页的修改意见交上去",
+        "submit notes for this page",
+        "send comments on this page"
+      ],
+      "aliases": [
+        "交本页意见",
+        "提交页意见",
+        "本页反馈",
+        "page notes",
+        "page feedback",
+        "page comments"
+      ]
     },
     {
       "id": "markup.clear",
@@ -2405,7 +3184,23 @@ export const COMMAND_TREE: CommandTree = {
         "板11",
         "板67"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把批注全部擦掉",
+        "清空画板上的标注",
+        "删掉所有圈注",
+        "clear all annotations",
+        "wipe every markup off the board"
+      ],
+      "aliases": [
+        "清空批注",
+        "擦掉标注",
+        "全部擦除",
+        "清除圈注",
+        "clear markup",
+        "wipe marks",
+        "erase all"
+      ]
     },
     {
       "id": "drawing.plan.generate",
@@ -2443,7 +3238,23 @@ export const COMMAND_TREE: CommandTree = {
         "图48",
         "图57"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "出一张平面图",
+        "从模型切个平面",
+        "按这个高度剖平面图",
+        "generate a floor plan from model",
+        "cut a plan at this height"
+      ],
+      "aliases": [
+        "出平面",
+        "平面图",
+        "剖平面",
+        "切平面",
+        "floor plan",
+        "plan cut",
+        "make plan"
+      ]
     },
     {
       "id": "drawing.plan.import_model",
@@ -2463,7 +3274,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "图4"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "导入犀牛模型出图",
+        "把SU模型导进来",
+        "导入3dm文件",
+        "import a Rhino or SketchUp file",
+        "load a 3dm model for drawings"
+      ],
+      "aliases": [
+        "导入模型",
+        "导入犀牛",
+        "导入SU",
+        "导入草图大师",
+        "import Rhino",
+        "import SketchUp",
+        "load model"
+      ]
     },
     {
       "id": "drawing.plan.open_latest",
@@ -2483,7 +3310,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "图15"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "打开最新版的图纸",
+        "回到当前版本平面图",
+        "看最新那版图",
+        "open the latest drawing revision",
+        "go to the current plan version"
+      ],
+      "aliases": [
+        "最新版",
+        "当前版图纸",
+        "打开最新图",
+        "latest revision",
+        "newest drawing"
+      ]
     },
     {
       "id": "drawing.plan.refresh",
@@ -2523,7 +3364,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "图35"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把这套线型存成项目设定",
+        "保存这张图的表达方式",
+        "以后都按这个线型出图",
+        "save these line styles for the project",
+        "make this the project drawing style"
+      ],
+      "aliases": [
+        "存线型",
+        "保存表达",
+        "存成模板",
+        "保存配方",
+        "save recipe",
+        "save style",
+        "drawing preset"
+      ]
     },
     {
       "id": "drawing.plan.hide_object",
@@ -2545,7 +3402,21 @@ export const COMMAND_TREE: CommandTree = {
         "图36",
         "图37"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "平面图里不显示这个构件",
+        "把这个东西从图里藏掉",
+        "图上隐藏选中的物体",
+        "hide this object in the plan",
+        "keep this element out of drawing"
+      ],
+      "aliases": [
+        "隐藏构件",
+        "藏掉物体",
+        "图中隐藏",
+        "hide element",
+        "hide in plan"
+      ]
     },
     {
       "id": "drawing.plan.show_object",
@@ -2609,7 +3480,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "图50"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "切到剖透视模式",
+        "打开剖透视面板",
+        "我想做剖透视",
+        "switch to section perspective mode",
+        "turn on section perspective view"
+      ],
+      "aliases": [
+        "剖透视模式",
+        "剖面透视",
+        "切剖透",
+        "section persp",
+        "sectional perspective"
+      ]
     },
     {
       "id": "drawing.section_perspective.generate",
@@ -2634,7 +3519,21 @@ export const COMMAND_TREE: CommandTree = {
         "图55",
         "图56"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "生成一张剖透视图",
+        "沿X轴剖开出剖透视",
+        "按这个视高出剖透视",
+        "generate the section perspective now",
+        "make a section perspective along X"
+      ],
+      "aliases": [
+        "出剖透视",
+        "做剖透视图",
+        "生成剖透",
+        "make section persp",
+        "cut perspective"
+      ]
     },
     {
       "id": "drawing.recipe.refresh",
@@ -2739,7 +3638,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "图16"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "图纸跟着模型自动更新",
+        "让这张图跟随最新模型",
+        "模型改了图也跟着变",
+        "keep drawing synced to live model",
+        "make this sheet track model changes"
+      ],
+      "aliases": [
+        "跟随模型",
+        "自动同步",
+        "跟最新模型",
+        "follow live",
+        "live sync",
+        "track model"
+      ]
     },
     {
       "id": "drawing.recipe.rebuild",
@@ -2759,7 +3673,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "图17"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "用这个版本重新出图",
+        "固定在这一版重建图纸",
+        "按这版模型重画一遍",
+        "rebuild the drawing on this version",
+        "regenerate from this fixed revision"
+      ],
+      "aliases": [
+        "按版重建",
+        "固定版本",
+        "重新出图",
+        "pin revision",
+        "regenerate"
+      ]
     },
     {
       "id": "attention.answer_guess.save",
@@ -2850,7 +3778,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "图39"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "图里加个人做比例",
+        "放个配景人",
+        "平面上加人物",
+        "add a scale figure",
+        "put a person in the drawing"
+      ],
+      "aliases": [
+        "加人",
+        "配景人",
+        "比例人",
+        "放人物",
+        "scale figure",
+        "add people",
+        "human figure"
+      ]
     },
     {
       "id": "drawing.entourage.add_tree",
@@ -2870,7 +3814,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "图40"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "图里加棵树",
+        "放个配景树",
+        "在平面上种几棵树",
+        "add a tree to the drawing",
+        "place entourage trees"
+      ],
+      "aliases": [
+        "加树",
+        "配景树",
+        "种树",
+        "放植物",
+        "place tree",
+        "add plants",
+        "landscape tree"
+      ]
     },
     {
       "id": "drawing.entourage.flip",
@@ -2891,7 +3851,22 @@ export const COMMAND_TREE: CommandTree = {
         "图41",
         "图46"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把配景人左右翻过来",
+        "让这棵树镜像一下",
+        "配景人物换个朝向",
+        "flip this figure left to right",
+        "mirror the entourage horizontally"
+      ],
+      "aliases": [
+        "左右翻转",
+        "镜像配景",
+        "换朝向",
+        "flip",
+        "mirror",
+        "flip figure"
+      ]
     },
     {
       "id": "drawing.entourage.remove",
@@ -2911,7 +3886,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "图47"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "删掉这个配景人",
+        "把这棵配景树去掉",
+        "移除选中的配景",
+        "delete this person or tree",
+        "remove the selected entourage"
+      ],
+      "aliases": [
+        "删配景",
+        "去掉人物",
+        "删树",
+        "remove figure",
+        "delete tree"
+      ]
     },
     {
       "id": "drawing.export.svg",
@@ -2931,7 +3920,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "图13"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把图纸导出成SVG",
+        "下载矢量图",
+        "存一份矢量文件排版用",
+        "export drawing as SVG",
+        "download vector file of the plan"
+      ],
+      "aliases": [
+        "导出SVG",
+        "矢量图",
+        "存SVG",
+        "下载矢量",
+        "export SVG",
+        "vector export",
+        "save SVG"
+      ]
     },
     {
       "id": "drawing.sheet.generate",
@@ -2955,7 +3960,22 @@ export const COMMAND_TREE: CommandTree = {
         "文39",
         "文40"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "在这页生成一张图纸",
+        "按选的风格出图",
+        "按一比一百出张图",
+        "make a sheet on this page",
+        "generate a drawing in this style"
+      ],
+      "aliases": [
+        "出图",
+        "做图纸",
+        "排一张图",
+        "make sheet",
+        "new sheet",
+        "create drawing"
+      ]
     },
     {
       "id": "study.run.step",
@@ -2997,7 +4017,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文87"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "先例研究进行下一步",
+        "这步好了继续往下",
+        "研究流程往下走",
+        "continue to the next study step",
+        "move on in the precedent study"
+      ],
+      "aliases": [
+        "下一步",
+        "继续研究",
+        "往下走",
+        "proceed",
+        "continue study"
+      ]
     },
     {
       "id": "study.run.use_trace",
@@ -3015,7 +4049,22 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "phrases": [
+        "用我选的这个轮廓",
+        "拿选中的闭合线当证据",
+        "就用这条描好的边界",
+        "use the selected closed outline",
+        "take this trace as evidence"
+      ],
+      "aliases": [
+        "用此轮廓",
+        "采用描线",
+        "选定轮廓",
+        "use outline",
+        "pick trace",
+        "accept trace"
+      ]
     },
     {
       "id": "study.run.propose_traces",
@@ -3035,7 +4084,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文51"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "让AI帮我描轮廓",
+        "自动识别先例图轮廓",
+        "AI先描一版边界",
+        "let AI propose traces",
+        "auto trace outlines on the precedent"
+      ],
+      "aliases": [
+        "自动描图",
+        "AI描轮廓",
+        "智能描边",
+        "auto trace",
+        "AI trace",
+        "suggest outlines"
+      ]
     },
     {
       "id": "study.run.locate_evidence",
@@ -3077,7 +4141,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文56"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "加一条历史出处",
+        "补充文献依据",
+        "这里引用一下史料",
+        "add a historical source",
+        "cite a reference for this"
+      ],
+      "aliases": [
+        "加出处",
+        "加文献",
+        "引用史料",
+        "添参考",
+        "add citation",
+        "add reference",
+        "cite source"
+      ]
     },
     {
       "id": "study.run.propose_explanations",
@@ -3097,7 +4177,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文58"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "让AI提几个可验证的解释",
+        "为什么这样布局给几种说法",
+        "生成可检验的假设",
+        "suggest testable explanations",
+        "have AI propose hypotheses to test"
+      ],
+      "aliases": [
+        "提假设",
+        "AI解释",
+        "生成假说",
+        "propose hypotheses",
+        "suggest explanations"
+      ]
     },
     {
       "id": "study.run.add_hypothesis",
@@ -3117,7 +4211,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文62"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "我再加一种解释",
+        "添加另一个竞争假说",
+        "手动写一条对立解释",
+        "add a competing explanation",
+        "add an alternative hypothesis"
+      ],
+      "aliases": [
+        "加假说",
+        "另一解释",
+        "对立解释",
+        "竞争假说",
+        "add hypothesis",
+        "rival explanation",
+        "alternative reading"
+      ]
     },
     {
       "id": "study.run.add_gap",
@@ -3137,7 +4247,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文64"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "记一下这里缺证据",
+        "标注资料缺口",
+        "这块还没有依据先记下",
+        "note a missing piece of evidence",
+        "add an evidence gap"
+      ],
+      "aliases": [
+        "缺证据",
+        "资料缺口",
+        "记缺口",
+        "missing evidence",
+        "log gap",
+        "unknowns"
+      ]
     },
     {
       "id": "study.run.add_counterfactual",
@@ -3157,7 +4282,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文72"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "假如这里不这么做会怎样",
+        "加一个反事实改动",
+        "试试去掉这个要素",
+        "what if this element changed",
+        "add a counterfactual change"
+      ],
+      "aliases": [
+        "反事实",
+        "假如改动",
+        "假设改动",
+        "如果不这样",
+        "what if",
+        "counterfactual",
+        "test change"
+      ]
     },
     {
       "id": "study.run.remove_counterfactual",
@@ -3200,7 +4341,22 @@ export const COMMAND_TREE: CommandTree = {
         "文73",
         "文74"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "对比两版研究",
+        "看看前后版本差在哪",
+        "比较保存过的研究版本",
+        "compare saved study revisions",
+        "diff two versions of this study"
+      ],
+      "aliases": [
+        "版本对比",
+        "比对版本",
+        "前后对比",
+        "compare versions",
+        "diff revisions",
+        "version compare"
+      ]
     },
     {
       "id": "study.run.remove_comparison",
@@ -3242,7 +4398,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文76"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "总结出一个构成模式",
+        "把这个规律存成模式",
+        "归纳这个先例的构图",
+        "create a composition pattern",
+        "turn this into a reusable pattern"
+      ],
+      "aliases": [
+        "归纳模式",
+        "构成规律",
+        "存成模式",
+        "提炼构图",
+        "new pattern",
+        "composition rule",
+        "extract pattern"
+      ]
     },
     {
       "id": "study.run.create_prior",
@@ -3262,7 +4434,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文78"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "存成设计先验",
+        "把研究结论变成设计依据",
+        "提炼一条设计先验给AI用",
+        "create a design prior from study",
+        "save this as a design prior"
+      ],
+      "aliases": [
+        "设计经验",
+        "先验规则",
+        "设计依据",
+        "prior",
+        "learned rule",
+        "design heuristic"
+      ]
     },
     {
       "id": "study.run.change_conditions",
@@ -3282,7 +4469,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文80"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "改一下这条规律的适用条件",
+        "这个模式适用于什么场景",
+        "调整先验的适用范围",
+        "change when this pattern applies",
+        "edit applicability conditions"
+      ],
+      "aliases": [
+        "适用范围",
+        "改条件",
+        "适用场景",
+        "edit conditions",
+        "scope",
+        "when applies"
+      ]
     },
     {
       "id": "study.run.save",
@@ -3319,7 +4521,21 @@ export const COMMAND_TREE: CommandTree = {
         "文81",
         "文83"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "保存这份先例研究",
+        "存好研究再跑一遍",
+        "研究保存并运行",
+        "save the study and run it",
+        "save precedent study and execute"
+      ],
+      "aliases": [
+        "存研究",
+        "保存并跑",
+        "存档运行",
+        "save study",
+        "run study"
+      ]
     },
     {
       "id": "study.run.reopen",
@@ -3420,7 +4636,22 @@ export const COMMAND_TREE: CommandTree = {
         "文22",
         "图23"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "放大一点看细节",
+        "页面拉近一些",
+        "把图放大看清楚",
+        "zoom in on the page",
+        "make the drawing bigger"
+      ],
+      "aliases": [
+        "拉近",
+        "放大视图",
+        "放大页面",
+        "magnify",
+        "zoom closer",
+        "enlarge"
+      ]
     },
     {
       "id": "view.canvas.zoom_out",
@@ -3441,7 +4672,21 @@ export const COMMAND_TREE: CommandTree = {
         "文22",
         "图21"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把页面缩小一点",
+        "画板缩小看全一些",
+        "图纸缩小显示",
+        "zoom out on the page",
+        "make the drawing smaller on screen"
+      ],
+      "aliases": [
+        "缩小页面",
+        "缩小视图",
+        "拉远",
+        "zoom out page",
+        "shrink view"
+      ]
     },
     {
       "id": "view.canvas.fit",
@@ -3466,7 +4711,22 @@ export const COMMAND_TREE: CommandTree = {
         "文23",
         "图22"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "整页放进窗口",
+        "让画板适合屏幕",
+        "看整张图纸",
+        "fit the whole page to window",
+        "show the entire board"
+      ],
+      "aliases": [
+        "整页显示",
+        "适合页面",
+        "全图显示",
+        "fit to window",
+        "zoom to page",
+        "whole page"
+      ]
     },
     {
       "id": "view.canvas.previous_page",
@@ -3486,7 +4746,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文6"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "翻到上一页",
+        "回到前一页图纸",
+        "往前翻一页",
+        "go to the previous page",
+        "flip back one page"
+      ],
+      "aliases": [
+        "前一页",
+        "上翻",
+        "往前翻",
+        "page up",
+        "prev page",
+        "back a page"
+      ]
     },
     {
       "id": "view.canvas.next_page",
@@ -3506,7 +4781,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文6"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "翻到下一页",
+        "看下一页图纸",
+        "往后翻一页",
+        "go to the next page",
+        "flip forward one page"
+      ],
+      "aliases": [
+        "后一页",
+        "下翻",
+        "往后翻",
+        "page down",
+        "next sheet",
+        "forward a page"
+      ]
     },
     {
       "id": "draft.tools.select",
@@ -3530,7 +4820,22 @@ export const COMMAND_TREE: CommandTree = {
         "模33",
         "模47"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "切回选择工具",
+        "点选一个物体",
+        "用箭头选中构件",
+        "switch to the select tool",
+        "pick an object in the model"
+      ],
+      "aliases": [
+        "选择工具",
+        "箭头工具",
+        "选取",
+        "pointer",
+        "selection tool",
+        "pick tool"
+      ]
     },
     {
       "id": "draft.tools.line",
@@ -3552,7 +4857,22 @@ export const COMMAND_TREE: CommandTree = {
         "模60",
         "模72"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "画一条直线",
+        "用直线工具画线",
+        "在模型里画线段",
+        "draw a straight line",
+        "use the line tool"
+      ],
+      "aliases": [
+        "画线",
+        "线段工具",
+        "直线工具",
+        "draw line",
+        "line segment",
+        "pencil"
+      ]
     },
     {
       "id": "draft.tools.rectangle",
@@ -3572,7 +4892,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模49"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "画一个矩形",
+        "拉一个长方形",
+        "画个方框当平面",
+        "draw a rectangle",
+        "sketch a rectangular face"
+      ],
+      "aliases": [
+        "画矩形",
+        "长方形",
+        "方框",
+        "rect",
+        "box outline",
+        "draw rectangle"
+      ]
     },
     {
       "id": "draft.tools.circle",
@@ -3592,7 +4927,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模50"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "画一个圆",
+        "按半径画圆形",
+        "画个圆当柱子底",
+        "draw a circle",
+        "sketch a round outline by radius"
+      ],
+      "aliases": [
+        "画圆",
+        "圆形工具",
+        "圆圈",
+        "draw circle",
+        "round shape"
+      ]
     },
     {
       "id": "draft.tools.polygon",
@@ -3615,7 +4964,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模56"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "画一个闭合多边形",
+        "逐点画封闭轮廓",
+        "用多段线围个形状",
+        "draw a closed polygon outline",
+        "click points to draw a polygon"
+      ],
+      "aliases": [
+        "画多边形",
+        "多段线",
+        "折线围合",
+        "polyline",
+        "closed shape",
+        "draw polygon"
+      ]
     },
     {
       "id": "draft.tools.arc",
@@ -3635,7 +4999,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模57"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "画一段圆弧",
+        "两点画弧线",
+        "画个拱形弧",
+        "draw a two-point arc",
+        "sketch an arc between points"
+      ],
+      "aliases": [
+        "圆弧",
+        "弧线",
+        "画弧",
+        "arc",
+        "curved segment",
+        "draw arc"
+      ]
     },
     {
       "id": "draft.tools.freehand",
@@ -3655,7 +5034,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模58"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "徒手画曲线",
+        "随手画一条线",
+        "用自由线勾草图",
+        "draw a freehand curve",
+        "sketch freely by hand"
+      ],
+      "aliases": [
+        "手绘线",
+        "徒手画",
+        "自由线",
+        "freeform line",
+        "sketch curve",
+        "free draw"
+      ]
     },
     {
       "id": "draft.tools.push_pull",
@@ -3678,7 +5072,27 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模51"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把面推拉起来",
+        "把这个面拉高",
+        "拉伸成体块",
+        "把面往上拉",
+        "把墙往外推一点",
+        "往外推一下",
+        "push or pull a face",
+        "extrude this face upward"
+      ],
+      "aliases": [
+        "推拉面",
+        "挤出",
+        "拉高",
+        "往外推",
+        "往上拉",
+        "push pull",
+        "pull face",
+        "extrude face"
+      ]
     },
     {
       "id": "draft.tools.move",
@@ -3698,7 +5112,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模52"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把物体挪个位置",
+        "移动选中的构件",
+        "把体块平移过去",
+        "move the selected object",
+        "drag this element elsewhere"
+      ],
+      "aliases": [
+        "平移",
+        "挪动",
+        "移位",
+        "translate",
+        "move tool",
+        "shift object"
+      ]
     },
     {
       "id": "draft.tools.rotate",
@@ -3716,7 +5145,22 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把物体转个角度",
+        "旋转选中的体块",
+        "绕轴转90度",
+        "rotate the selected object",
+        "turn this element by an angle"
+      ],
+      "aliases": [
+        "转动",
+        "旋转工具",
+        "转角度",
+        "rotate tool",
+        "spin",
+        "turn object"
+      ]
     },
     {
       "id": "draft.tools.scale",
@@ -3734,7 +5178,21 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把物体放大缩小",
+        "按比例缩放构件",
+        "把体块整体缩一圈",
+        "scale the selected object",
+        "resize this element proportionally"
+      ],
+      "aliases": [
+        "比例缩放",
+        "缩放工具",
+        "改大小",
+        "resize",
+        "scale tool"
+      ]
     },
     {
       "id": "draft.tools.copy",
@@ -3752,7 +5210,22 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "phrases": [
+        "复制一个物体",
+        "把这个构件再复制一份",
+        "复制体块挪到旁边",
+        "copy the selected object",
+        "duplicate this element"
+      ],
+      "aliases": [
+        "复制物体",
+        "拷贝",
+        "再来一个",
+        "duplicate",
+        "clone",
+        "copy object"
+      ]
     },
     {
       "id": "draft.tools.measure",
@@ -3773,7 +5246,22 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "phrases": [
+        "量一下距离",
+        "测两点之间多长",
+        "量这面墙的长度",
+        "measure distance between two points",
+        "use the tape measure"
+      ],
+      "aliases": [
+        "卷尺",
+        "测距",
+        "量尺寸",
+        "measure distance",
+        "dimension check",
+        "ruler"
+      ]
     },
     {
       "id": "draft.tools.undo",
@@ -3793,7 +5281,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模53"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "撤销上一步建模",
+        "模型退回一步",
+        "刚才画错了撤回",
+        "undo the last model edit",
+        "step back one modeling change"
+      ],
+      "aliases": [
+        "撤回",
+        "后退一步",
+        "撤销建模",
+        "undo",
+        "step back",
+        "revert edit"
+      ]
     },
     {
       "id": "draft.tools.redo",
@@ -3813,7 +5316,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模54"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "重做刚撤销的建模",
+        "模型前进一步",
+        "把撤回的操作恢复",
+        "redo the undone model edit",
+        "step forward one modeling change"
+      ],
+      "aliases": [
+        "恢复操作",
+        "前进一步",
+        "重做建模",
+        "redo",
+        "step forward"
+      ]
     },
     {
       "id": "draft.tools.apply",
@@ -3838,7 +5355,22 @@ export const COMMAND_TREE: CommandTree = {
         "模80",
         "模81"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "应用这次建模修改",
+        "确认这次改动生效",
+        "把手动修改提交进模型",
+        "apply my manual edit to the model",
+        "commit this direct edit"
+      ],
+      "aliases": [
+        "提交修改",
+        "确认修改",
+        "改动生效",
+        "apply changes",
+        "commit edit",
+        "confirm edit"
+      ]
     },
     {
       "id": "draft.tools.close",
@@ -3858,7 +5390,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模82"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "退出当前绘图工具",
+        "关掉建模工具栏",
+        "不画了收起工具",
+        "exit the current drawing tool",
+        "close the modeling tool"
+      ],
+      "aliases": [
+        "退出工具",
+        "收起工具",
+        "结束绘制",
+        "exit tool",
+        "quit tool",
+        "done drawing"
+      ]
     },
     {
       "id": "draft.tools.help",
@@ -3878,7 +5425,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模83"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "这个工具怎么用",
+        "看建模工具说明",
+        "看当前工具的操作提示",
+        "how does this tool work",
+        "show help for the modeling tool"
+      ],
+      "aliases": [
+        "工具帮助",
+        "使用说明",
+        "操作提示",
+        "tool guide",
+        "tool tips",
+        "how to use"
+      ]
     },
     {
       "id": "draft.tools.lock_x",
@@ -3898,7 +5460,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模73"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "锁定U方向画线",
+        "只沿U轴移动",
+        "约束到U轴方向",
+        "lock drawing to the U axis",
+        "constrain movement along U"
+      ],
+      "aliases": [
+        "锁U轴",
+        "U向锁定",
+        "U轴约束",
+        "锁X方向",
+        "U constraint",
+        "lock X",
+        "U direction"
+      ]
     },
     {
       "id": "draft.tools.lock_y",
@@ -3918,7 +5496,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模73"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "锁定V方向画线",
+        "只沿V轴移动",
+        "约束到V轴方向",
+        "lock drawing to the V axis",
+        "constrain movement along V"
+      ],
+      "aliases": [
+        "锁V轴",
+        "V向锁定",
+        "V轴约束",
+        "锁Y方向",
+        "V constraint",
+        "lock Y",
+        "V direction"
+      ]
     },
     {
       "id": "draft.tools.close_outline",
@@ -3938,7 +5532,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模74"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把正在画的轮廓闭合",
+        "首尾连起来封口",
+        "闭合当前线框",
+        "close the outline I am drawing",
+        "join the last point to start"
+      ],
+      "aliases": [
+        "封口",
+        "首尾相连",
+        "闭合线框",
+        "close loop",
+        "close shape",
+        "finish outline"
+      ]
     },
     {
       "id": "draft.tools.make_face",
@@ -3958,7 +5567,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模75"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "只生成面不拉伸",
+        "把轮廓变成一个面",
+        "封面但不要体块",
+        "make a flat face without extruding",
+        "turn the outline into a face only"
+      ],
+      "aliases": [
+        "生成面",
+        "封面",
+        "成面",
+        "只要面",
+        "make face",
+        "flat face",
+        "face only"
+      ]
     },
     {
       "id": "view.model_camera.top",
@@ -3978,7 +5603,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模10"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "切到顶视图",
+        "从上往下看模型",
+        "看模型的俯视",
+        "switch to top view",
+        "look down at the model from above"
+      ],
+      "aliases": [
+        "俯视图",
+        "顶视",
+        "上视图",
+        "平面视角",
+        "plan view",
+        "top-down",
+        "overhead view"
+      ]
     },
     {
       "id": "view.model_camera.front",
@@ -3999,7 +5640,22 @@ export const COMMAND_TREE: CommandTree = {
         "模10",
         "模36"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "切到正视图",
+        "从正面看模型",
+        "看主立面方向",
+        "switch to front view",
+        "look at the model head-on"
+      ],
+      "aliases": [
+        "正视图",
+        "前视图",
+        "正立面视角",
+        "front",
+        "front elevation view",
+        "head-on view"
+      ]
     },
     {
       "id": "view.model_camera.right",
@@ -4023,7 +5679,22 @@ export const COMMAND_TREE: CommandTree = {
         "模10",
         "模36"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "切到右视图",
+        "从右侧看模型",
+        "看侧立面方向",
+        "switch to right side view",
+        "look at the model from the right"
+      ],
+      "aliases": [
+        "右视图",
+        "侧视图",
+        "右侧面",
+        "right side",
+        "right elevation view",
+        "side camera"
+      ]
     },
     {
       "id": "view.model_camera.iso",
@@ -4046,7 +5717,22 @@ export const COMMAND_TREE: CommandTree = {
         "模10",
         "模36"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "切到轴测视图",
+        "看等轴测",
+        "斜上方看模型轴测",
+        "switch to isometric view",
+        "show an axonometric angle"
+      ],
+      "aliases": [
+        "轴测",
+        "等轴测",
+        "轴测视角",
+        "iso",
+        "isometric",
+        "axo view"
+      ]
     },
     {
       "id": "view.model_camera.perspective",
@@ -4066,7 +5752,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模10"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "切到透视视图",
+        "用透视看模型",
+        "换成人视透视",
+        "switch to perspective view",
+        "turn on the perspective camera"
+      ],
+      "aliases": [
+        "透视",
+        "透视相机",
+        "近大远小",
+        "perspective",
+        "persp camera",
+        "3d perspective"
+      ]
     },
     {
       "id": "view.model_camera.fit",
@@ -4086,7 +5787,22 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "phrases": [
+        "整个模型放进窗口",
+        "看全整个模型",
+        "模型找不到了显示全部",
+        "fit the whole model in view",
+        "zoom to show the entire model"
+      ],
+      "aliases": [
+        "模型全显",
+        "缩放到全部",
+        "看全貌",
+        "fit all",
+        "frame model",
+        "show whole model"
+      ]
     },
     {
       "id": "view.model_camera.fit_selected",
@@ -4106,7 +5822,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模11"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "聚焦到选中物体",
+        "放大看选中的构件",
+        "镜头对准选中对象",
+        "zoom to the selected object",
+        "frame the selection in view"
+      ],
+      "aliases": [
+        "聚焦",
+        "对准选中",
+        "缩放到选中",
+        "zoom selected",
+        "frame selection",
+        "focus"
+      ]
     },
     {
       "id": "view.model_display.materials",
@@ -4127,7 +5858,22 @@ export const COMMAND_TREE: CommandTree = {
         "模12",
         "模37"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "显示材料图例",
+        "看模型用了哪些材料",
+        "材质颜色对照表",
+        "show the materials legend",
+        "which materials are in the model"
+      ],
+      "aliases": [
+        "材质图例",
+        "材料表",
+        "材料说明",
+        "material key",
+        "material list",
+        "legend"
+      ]
     },
     {
       "id": "view.model_display.clear",
@@ -4147,6 +5893,45 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模19"
       ],
+      "args": []
+    },
+    {
+      "id": "drawing.live_section.draw",
+      "capability": "model.view",
+      "label": {
+        "en": "Draw this section",
+        "zh-CN": "出这张剖面"
+      },
+      "terms": [
+        "section from the cut",
+        "剖切出图"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "drawing.live_section.place_on_board",
+      "capability": "model.view",
+      "label": {
+        "en": "Put the section on Board",
+        "zh-CN": "剖面放到 Board"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
       "args": []
     },
     {
@@ -4194,7 +5979,24 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模18"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "截个图",
+        "把现在这个视角存成图片",
+        "导出当前画面",
+        "帮我截一张图",
+        "截一张图",
+        "take a screenshot of the model",
+        "save the current view as PNG"
+      ],
+      "aliases": [
+        "存图",
+        "截屏",
+        "视图截图",
+        "snapshot",
+        "capture view",
+        "save PNG"
+      ]
     },
     {
       "id": "model.export_3dm.editable",
@@ -4216,7 +6018,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模7"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "导出成Rhino文件",
+        "把模型导出3dm",
+        "导出到犀牛继续改",
+        "export the model as editable 3dm",
+        "send the model to Rhino"
+      ],
+      "aliases": [
+        "导出犀牛",
+        "导出3dm",
+        "转Rhino",
+        "3dm export",
+        "Rhino file",
+        "export model"
+      ]
     },
     {
       "id": "model.export_3dm.save",
@@ -4237,7 +6054,22 @@ export const COMMAND_TREE: CommandTree = {
         "模8",
         "模100"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把3dm存到电脑上",
+        "保存导出的Rhino文件",
+        "3dm另存到本地",
+        "save the 3dm file to disk",
+        "download the exported Rhino file"
+      ],
+      "aliases": [
+        "保存3dm",
+        "另存3dm",
+        "存犀牛文件",
+        "save 3dm",
+        "save Rhino file",
+        "download 3dm"
+      ]
     },
     {
       "id": "model.import_asset.open_file",
@@ -4264,7 +6096,23 @@ export const COMMAND_TREE: CommandTree = {
         "模34",
         "模35"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "打开一个3dm文件",
+        "导入SketchUp模型",
+        "把本地模型拖进来",
+        "open a 3dm or skp file",
+        "import a local model file"
+      ],
+      "aliases": [
+        "导入模型",
+        "打开skp",
+        "导入犀牛文件",
+        "载入模型",
+        "import model",
+        "load 3dm",
+        "import SketchUp"
+      ]
     },
     {
       "id": "design.go_to_step.versions",
@@ -4288,7 +6136,22 @@ export const COMMAND_TREE: CommandTree = {
         "模1",
         "模29"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看看有哪些版本",
+        "打开版本列表",
+        "选从哪个版本接着改",
+        "show the version list",
+        "pick which version to edit from"
+      ],
+      "aliases": [
+        "版本列表",
+        "历史版本",
+        "选版本",
+        "version history",
+        "versions list",
+        "history"
+      ]
     },
     {
       "id": "design.go_to_step.close_versions",
@@ -4308,7 +6171,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模89"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "收起版本列表",
+        "关掉版本面板",
+        "不看版本了收回去",
+        "hide the version list",
+        "close the versions panel"
+      ],
+      "aliases": [
+        "关闭版本",
+        "隐藏版本",
+        "收起历史",
+        "hide versions",
+        "close history"
+      ]
     },
     {
       "id": "design.go_to_step.continue",
@@ -4357,7 +6234,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模23"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "只看这个版本不改",
+        "只读查看旧版本",
+        "看一眼不从这里改",
+        "view this version without editing",
+        "look at an old version read-only"
+      ],
+      "aliases": [
+        "只读查看",
+        "只看不改",
+        "预览版本",
+        "read only",
+        "preview version",
+        "look only"
+      ]
     },
     {
       "id": "design.go_to_step.default_base",
@@ -4380,7 +6272,22 @@ export const COMMAND_TREE: CommandTree = {
         "模3",
         "模113"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "改回默认的修改起点",
+        "回到当前方案继续改",
+        "取消选的起点回默认",
+        "go back to the default editing base",
+        "edit from the current design again"
+      ],
+      "aliases": [
+        "默认起点",
+        "回到当前",
+        "恢复起点",
+        "default base",
+        "reset base",
+        "back to current"
+      ]
     },
     {
       "id": "design.go_to_step.back_to_current",
@@ -4400,7 +6307,20 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "栏6"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "回到最新版本",
+        "别看旧版了回到现在",
+        "跳回当前这一步",
+        "go back to the latest version",
+        "return to the current step"
+      ],
+      "aliases": [
+        "回到最新",
+        "返回当前版",
+        "latest version",
+        "jump to current"
+      ]
     },
     {
       "id": "design.go_to_step.save_milestone",
@@ -4420,7 +6340,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模93"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把这版存成里程碑",
+        "标记一下这个重要版本",
+        "保存这一版作为节点",
+        "save this version as a milestone",
+        "mark this step as important"
+      ],
+      "aliases": [
+        "里程碑",
+        "存重点版",
+        "标记版本",
+        "milestone",
+        "bookmark version"
+      ]
     },
     {
       "id": "design.go_to_step.stage",
@@ -4458,7 +6392,21 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "phrases": [
+        "从这一步岔出去试试",
+        "从这个旧版本另起一支",
+        "在这里分叉做新方案",
+        "branch off from this step",
+        "fork a new branch here"
+      ],
+      "aliases": [
+        "分叉",
+        "从此分支",
+        "另起一支",
+        "fork",
+        "branch here"
+      ]
     },
     {
       "id": "design.go_to_step.create_branch",
@@ -4476,7 +6424,21 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "phrases": [
+        "从当前方案开个新分支",
+        "新建一条设计分支",
+        "开个分支并行试方案",
+        "create a new design branch",
+        "start a parallel design branch"
+      ],
+      "aliases": [
+        "新分支",
+        "开分支",
+        "并行方案",
+        "new branch",
+        "add branch"
+      ]
     },
     {
       "id": "design.go_to_step.cancel_fork",
@@ -4559,7 +6521,21 @@ export const COMMAND_TREE: CommandTree = {
         "模21",
         "栏8"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "撤销刚才那次修改",
+        "退回之前的模型",
+        "刚才改错了撤回去",
+        "undo the last change",
+        "go back to the previous model"
+      ],
+      "aliases": [
+        "撤回修改",
+        "退一步",
+        "上一个模型",
+        "undo",
+        "revert last"
+      ]
     },
     {
       "id": "draft.record.save",
@@ -4625,7 +6601,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "栏5"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看看生成好的几个方案",
+        "方案出好了没",
+        "列出等我挑的方案",
+        "show the options ready to pick",
+        "which design options are ready"
+      ],
+      "aliases": [
+        "待选方案",
+        "方案好了",
+        "可选方案",
+        "ready options",
+        "options to pick"
+      ]
     },
     {
       "id": "stage.accept.next",
@@ -4645,7 +6635,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模92"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把这个结果定为下一阶段",
+        "接受并进入下一个阶段",
+        "这版通过进下一 Stage",
+        "accept this as the next stage",
+        "promote result to the next stage"
+      ],
+      "aliases": [
+        "进下一阶段",
+        "推进阶段",
+        "定稿进阶",
+        "next stage",
+        "promote stage"
+      ]
     },
     {
       "id": "stage.accept.initial",
@@ -4665,7 +6669,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模96"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把这个定为初始阶段",
+        "接受为第一个 Stage",
+        "设成起点方案",
+        "accept this as the starting stage",
+        "set as stage zero"
+      ],
+      "aliases": [
+        "初始阶段",
+        "起点方案",
+        "零号阶段",
+        "stage zero",
+        "initial stage"
+      ]
     },
     {
       "id": "stage.accept.current",
@@ -4686,7 +6704,21 @@ export const COMMAND_TREE: CommandTree = {
         "树10",
         "树23"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "在状态树里把它定为 Stage",
+        "这个节点接受为阶段",
+        "把这个候选升成 Stage",
+        "accept this tree node as a stage",
+        "make this candidate a stage"
+      ],
+      "aliases": [
+        "设为阶段",
+        "定为阶段",
+        "升为阶段",
+        "accept stage",
+        "mark as stage"
+      ]
     },
     {
       "id": "stage.accept.confirm",
@@ -4746,7 +6778,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "树18"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "这个方向可以继续",
+        "认可这个候选的方向",
+        "我觉得这个思路对",
+        "endorse this design direction",
+        "this direction looks right"
+      ],
+      "aliases": [
+        "点赞方向",
+        "赞同方案",
+        "方向通过",
+        "endorse",
+        "approve direction",
+        "thumbs up"
+      ]
     },
     {
       "id": "candidate.review.reject",
@@ -4766,7 +6813,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "树19"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "这个候选不要了",
+        "否掉这个方案",
+        "拒绝这个候选结果",
+        "reject this candidate",
+        "throw out this candidate option"
+      ],
+      "aliases": [
+        "否决",
+        "不要这个",
+        "毙掉",
+        "reject",
+        "decline option",
+        "thumbs down"
+      ]
     },
     {
       "id": "candidate.review.archive",
@@ -4831,7 +6893,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "树21"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看看被替换掉的旧草稿",
+        "显示被清理的草稿",
+        "把隐藏的旧稿列出来",
+        "list drafts that were replaced",
+        "show hidden old drafts"
+      ],
+      "aliases": [
+        "旧草稿",
+        "被取代稿",
+        "隐藏草稿",
+        "old drafts",
+        "hidden drafts"
+      ]
     },
     {
       "id": "candidate.restore.draft",
@@ -4851,7 +6927,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "树22"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把这个旧草稿找回来",
+        "恢复被清理掉的草稿",
+        "这个草稿还要用救回来",
+        "bring back this cleared draft",
+        "recover the superseded draft"
+      ],
+      "aliases": [
+        "找回草稿",
+        "还原草稿",
+        "捞回草稿",
+        "recover draft",
+        "undelete draft"
+      ]
     },
     {
       "id": "attention.decide.preview",
@@ -4897,7 +6987,22 @@ export const COMMAND_TREE: CommandTree = {
         "模45",
         "模102"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "对比一下改前改后",
+        "看修改前后的差别",
+        "前后渐变对比一下",
+        "compare before and after the change",
+        "cross-fade old and new"
+      ],
+      "aliases": [
+        "前后对比",
+        "渐变对比",
+        "改前改后",
+        "before after",
+        "cross-fade",
+        "diff view"
+      ]
     },
     {
       "id": "candidate.compare.done",
@@ -4917,7 +7022,20 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模46"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "对比看完了",
+        "前后对比结束关掉",
+        "比完了不用对比了",
+        "finished comparing the two versions",
+        "close the before and after comparison"
+      ],
+      "aliases": [
+        "对比完成",
+        "关闭对比",
+        "finish compare",
+        "close compare"
+      ]
     },
     {
       "id": "candidate.compare.in_model",
@@ -4937,7 +7055,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模142"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "直接在三维模型里对比",
+        "在模型里叠着比两版",
+        "在建模视图里比较",
+        "compare inside the 3D model",
+        "overlay both versions in the model"
+      ],
+      "aliases": [
+        "模型内对比",
+        "三维对比",
+        "叠加对比",
+        "in-model compare",
+        "3D compare"
+      ]
     },
     {
       "id": "candidate.compare.view",
@@ -4957,7 +7089,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "树15"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "去建模里看这个候选",
+        "看这个候选的三维模型",
+        "在三维里预览这个方案",
+        "view this candidate in modeling",
+        "preview candidate model in 3D"
+      ],
+      "aliases": [
+        "预览模型",
+        "看三维",
+        "建模预览",
+        "preview model",
+        "open in 3D"
+      ]
     },
     {
       "id": "candidate.compare.with_original",
@@ -4977,7 +7123,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "树17"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "在状态树里和原方案比",
+        "这个候选跟原版对照",
+        "和它的原方案比一比",
+        "compare with the original scheme",
+        "check candidate against its base"
+      ],
+      "aliases": [
+        "对比原方案",
+        "对照原版",
+        "比原稿",
+        "vs original",
+        "compare to base"
+      ]
     },
     {
       "id": "candidate.compare.back",
@@ -4997,7 +7157,20 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模145"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "从对比返回模型",
+        "离开对比回原来视图",
+        "不比了返回上一页",
+        "back from comparison view",
+        "leave compare mode"
+      ],
+      "aliases": [
+        "离开对比",
+        "返回原视图",
+        "exit compare",
+        "back to model"
+      ]
     },
     {
       "id": "candidate.compare.linked",
@@ -5017,7 +7190,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模146"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "两边视角一起转",
+        "并排对比时同步视角",
+        "让两个视图联动",
+        "link the two side by side views",
+        "sync camera between both sides"
+      ],
+      "aliases": [
+        "同步视角",
+        "视角联动",
+        "镜头同步",
+        "sync views",
+        "link cameras"
+      ]
     },
     {
       "id": "candidate.compare.outline",
@@ -5037,7 +7224,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模147"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "叠上原方案的轮廓线",
+        "显示改之前的外轮廓",
+        "把旧方案轮廓套上来",
+        "overlay the original outline",
+        "show old scheme as outline"
+      ],
+      "aliases": [
+        "原轮廓",
+        "旧轮廓",
+        "轮廓叠加",
+        "ghost outline",
+        "original ghost"
+      ]
     },
     {
       "id": "candidate.compare.fit",
@@ -5057,7 +7258,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模148"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "两边视图重新对齐",
+        "两侧都缩放到全显示",
+        "并排两边重新居中",
+        "fit both comparison views to model",
+        "re-align both comparison sides"
+      ],
+      "aliases": [
+        "两侧对齐",
+        "全部缩放",
+        "重新居中",
+        "zoom both",
+        "reframe both"
+      ]
     },
     {
       "id": "candidate.compare.mark_object",
@@ -5142,7 +7357,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模5"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看看这个构件的信息卡",
+        "这个构件是什么",
+        "打开构件信息卡",
+        "show the info card for this component",
+        "what is this component"
+      ],
+      "aliases": [
+        "信息卡",
+        "构件卡片",
+        "构件详情",
+        "info card",
+        "component details"
+      ]
     },
     {
       "id": "component.inspect.close",
@@ -5183,7 +7412,20 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模103"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把构件信息复制下来",
+        "拷贝这个构件的信息",
+        "复制信息卡内容",
+        "copy the component info",
+        "copy info card text"
+      ],
+      "aliases": [
+        "拷贝信息",
+        "复制信息卡",
+        "copy info",
+        "copy details"
+      ]
     },
     {
       "id": "component.inspect.copy_link",
@@ -5203,7 +7445,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模106"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "复制这个构件的链接",
+        "拷贝构件链接发给别人",
+        "要这个构件的引用链接",
+        "copy a link to this component",
+        "share a link to the component"
+      ],
+      "aliases": [
+        "构件链接",
+        "分享链接",
+        "拷贝地址",
+        "component link",
+        "share link"
+      ]
     },
     {
       "id": "component.inspect.toggle_notes",
@@ -5223,7 +7479,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模105"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "展开构件说明文字",
+        "看看信息卡里的备注",
+        "显示这个构件的注释",
+        "show the component notes",
+        "expand the info card notes"
+      ],
+      "aliases": [
+        "构件备注",
+        "说明文字",
+        "展开备注",
+        "notes",
+        "expand notes"
+      ]
     },
     {
       "id": "component.lock_params.open",
@@ -5243,7 +7513,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模20"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "打开参数锁定面板",
+        "看哪些参数被锁了",
+        "管理构件的参数锁",
+        "open the parameter locks panel",
+        "which parameters are locked"
+      ],
+      "aliases": [
+        "锁参数",
+        "参数锁定",
+        "锁定面板",
+        "param locks",
+        "lock panel"
+      ]
     },
     {
       "id": "component.lock_params.close",
@@ -5285,7 +7569,21 @@ export const COMMAND_TREE: CommandTree = {
         "模84",
         "模85"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把选中的参数锁住",
+        "这些尺寸别让它改",
+        "锁定选中的参数",
+        "lock the selected parameters",
+        "keep these values fixed"
+      ],
+      "aliases": [
+        "锁住",
+        "固定参数",
+        "上锁",
+        "lock params",
+        "freeze values"
+      ]
     },
     {
       "id": "component.lock_params.unlock",
@@ -5305,7 +7603,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模86"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把选中的参数解锁",
+        "这些参数可以改了",
+        "取消所选参数的锁定",
+        "unlock the selected parameters",
+        "let these values change again"
+      ],
+      "aliases": [
+        "解锁",
+        "放开参数",
+        "取消锁定",
+        "unlock params",
+        "unfreeze values"
+      ]
     },
     {
       "id": "component.find.pick",
@@ -5393,7 +7705,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模122"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "这个构件能调哪些参数",
+        "看看可以改的参数",
+        "列出构件可编辑参数",
+        "which parameters can I edit",
+        "list editable component parameters"
+      ],
+      "aliases": [
+        "可调参数",
+        "参数列表",
+        "可改参数",
+        "editable params",
+        "parameter list"
+      ]
     },
     {
       "id": "component.find.toggle_controls",
@@ -5413,7 +7739,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模123"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "展开构件的控制项",
+        "显示参数控制滑块",
+        "把控制项都展开看",
+        "expand the component controls",
+        "show the parameter control sliders"
+      ],
+      "aliases": [
+        "控制项",
+        "展开控件",
+        "控制面板",
+        "controls",
+        "expand controls"
+      ]
     },
     {
       "id": "component.find.set_value",
@@ -5455,7 +7795,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模125"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "给构件加一个可调参数",
+        "补一个控制项",
+        "这个尺寸也要能调",
+        "add a new control to component",
+        "make this dimension adjustable"
+      ],
+      "aliases": [
+        "新增控制",
+        "加参数",
+        "声明控制",
+        "add control",
+        "new parameter"
+      ]
     },
     {
       "id": "component.find.remove_mark",
@@ -5520,7 +7874,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模134"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "可能的构件都列出来",
+        "把所有匹配的构件列出",
+        "指的是哪个全显示出来",
+        "show all matching components",
+        "list every possible component match"
+      ],
+      "aliases": [
+        "全部匹配",
+        "所有候选构件",
+        "更多候选",
+        "all matches",
+        "more options"
+      ]
     },
     {
       "id": "component.resolve_pick.reply",
@@ -5705,7 +8073,22 @@ export const COMMAND_TREE: CommandTree = {
         "壳5",
         "壳26"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "开一个新对话",
+        "重新开个聊天",
+        "和代理新聊一轮",
+        "start a new chat",
+        "begin a fresh conversation"
+      ],
+      "aliases": [
+        "新聊天",
+        "开新对话",
+        "重开对话",
+        "new chat",
+        "fresh chat",
+        "new thread"
+      ]
     },
     {
       "id": "chat.open_conversation",
@@ -5816,7 +8199,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳81"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "给代理发个附件",
+        "上传图片到聊天里",
+        "输入框加号菜单",
+        "attach a file to my message",
+        "open the composer attachment menu"
+      ],
+      "aliases": [
+        "加附件",
+        "上传文件",
+        "传图片",
+        "attach",
+        "add file",
+        "upload"
+      ]
     },
     {
       "id": "chat.composer.attach",
@@ -6011,7 +8409,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳37"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看看归档的旧对话",
+        "找以前归档的聊天",
+        "打开对话归档列表",
+        "show archived conversations",
+        "find my old archived chats"
+      ],
+      "aliases": [
+        "归档对话",
+        "旧对话",
+        "聊天归档",
+        "archived chats",
+        "chat archive"
+      ]
     },
     {
       "id": "chat.archive.restore",
@@ -6117,7 +8529,21 @@ export const COMMAND_TREE: CommandTree = {
         "壳28",
         "壳39"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "新建一个设计项目",
+        "开个新项目",
+        "从零建一个项目",
+        "create a new project",
+        "start a new design project"
+      ],
+      "aliases": [
+        "建项目",
+        "新项目",
+        "开项目",
+        "start project",
+        "blank project"
+      ]
     },
     {
       "id": "project.create.add_existing",
@@ -6142,7 +8568,21 @@ export const COMMAND_TREE: CommandTree = {
         "壳31",
         "壳40"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把已有项目文件夹加进来",
+        "导入之前的项目文件夹",
+        "打开本地的项目文件夹",
+        "add an existing project folder",
+        "open a project folder from disk"
+      ],
+      "aliases": [
+        "导入项目",
+        "打开文件夹",
+        "添加文件夹",
+        "open folder",
+        "import project"
+      ]
     },
     {
       "id": "project.archive.export",
@@ -6166,7 +8606,22 @@ export const COMMAND_TREE: CommandTree = {
         "壳10",
         "壳107"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把整个项目打包导出",
+        "备份一下这个项目",
+        "导出项目压缩包",
+        "export the project as an archive",
+        "back up this project"
+      ],
+      "aliases": [
+        "备份",
+        "打包项目",
+        "项目备份",
+        "backup",
+        "export project",
+        "pack project"
+      ]
     },
     {
       "id": "project.archive.restore",
@@ -6187,7 +8642,21 @@ export const COMMAND_TREE: CommandTree = {
         "壳11",
         "壳108"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "从备份恢复项目",
+        "导入项目归档包",
+        "把打包的项目还原",
+        "restore a project from archive",
+        "import a project backup"
+      ],
+      "aliases": [
+        "还原备份",
+        "恢复项目",
+        "导入备份",
+        "restore backup",
+        "unpack project"
+      ]
     },
     {
       "id": "project.open",
@@ -6339,7 +8808,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳1"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "回到上一个对话",
+        "切回刚才那个聊天",
+        "往前翻一个对话",
+        "go to the previous conversation",
+        "back to the last chat"
+      ],
+      "aliases": [
+        "前一个对话",
+        "上个聊天",
+        "对话后退",
+        "previous chat",
+        "chat back"
+      ]
     },
     {
       "id": "view.conversation_history.forward",
@@ -6359,7 +8842,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳2"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "切到下一个对话",
+        "往后翻一个聊天",
+        "回到后面那个对话",
+        "go to the next conversation",
+        "forward to the next chat"
+      ],
+      "aliases": [
+        "后一个对话",
+        "下个聊天",
+        "对话前进",
+        "next chat",
+        "chat forward"
+      ]
     },
     {
       "id": "view.left_column.toggle",
@@ -6381,7 +8878,94 @@ export const COMMAND_TREE: CommandTree = {
         "壳20",
         "壳41"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "收起左边的项目栏",
+        "把项目列表展开",
+        "隐藏左侧项目列表",
+        "hide the project list on the left",
+        "toggle the projects column"
+      ],
+      "aliases": [
+        "项目列表",
+        "左侧栏",
+        "收起项目",
+        "project sidebar",
+        "left column",
+        "projects pane"
+      ]
+    },
+    {
+      "id": "view.shell.workbench",
+      "capability": "shell.layout",
+      "label": {
+        "en": "Back to the old shell",
+        "zh-CN": "回旧版"
+      },
+      "terms": [
+        "old interface",
+        "workbench",
+        "旧界面",
+        "工作台"
+      ],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "回到旧版界面",
+        "换回原来的工作台",
+        "用回以前的样子",
+        "go back to the old interface",
+        "switch to the old workbench"
+      ],
+      "aliases": [
+        "旧版",
+        "老界面",
+        "old shell",
+        "classic layout"
+      ]
+    },
+    {
+      "id": "view.shell.attention",
+      "capability": "shell.layout",
+      "label": {
+        "en": "Back to the new shell",
+        "zh-CN": "回新版"
+      },
+      "terms": [
+        "new interface",
+        "attention shell",
+        "新界面",
+        "新版"
+      ],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "回到新版界面",
+        "换成新的界面",
+        "打开新版",
+        "go back to the new interface",
+        "switch to the new shell"
+      ],
+      "aliases": [
+        "新版界面",
+        "关注页界面",
+        "new shell",
+        "new layout"
+      ]
     },
     {
       "id": "view.side_panel",
@@ -6402,7 +8986,22 @@ export const COMMAND_TREE: CommandTree = {
         "壳21",
         "壳99"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把工具面板收起来",
+        "打开右侧工具栏",
+        "显示工具面板",
+        "hide the tools panel",
+        "open the side tools panel"
+      ],
+      "aliases": [
+        "工具栏",
+        "侧边面板",
+        "工具面板",
+        "tool panel",
+        "side panel",
+        "toolbox"
+      ]
     },
     {
       "id": "view.tab.attention",
@@ -6424,7 +9023,23 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": "Alt+1",
       "entries": [],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看看有哪些待我处理",
+        "切到关注页",
+        "有什么需要我拍板的",
+        "show items waiting for my decision",
+        "go to the attention queue"
+      ],
+      "aliases": [
+        "待处理",
+        "待决定",
+        "提醒",
+        "关注队列",
+        "inbox",
+        "pending decisions",
+        "todo queue"
+      ]
     },
     {
       "id": "view.tab.board",
@@ -6454,7 +9069,22 @@ export const COMMAND_TREE: CommandTree = {
         "文3",
         "栏3"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "切到画板",
+        "回到白板那边",
+        "打开画板工作面",
+        "switch to the board",
+        "go to the whiteboard"
+      ],
+      "aliases": [
+        "白板",
+        "画板页",
+        "看板",
+        "whiteboard",
+        "canvas board",
+        "moodboard"
+      ]
     },
     {
       "id": "view.tab.modeling",
@@ -6479,7 +9109,23 @@ export const COMMAND_TREE: CommandTree = {
         "壳91",
         "壳102"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "切到建模",
+        "回到三维模型",
+        "打开建模工作面",
+        "switch to modeling",
+        "go back to the 3D model"
+      ],
+      "aliases": [
+        "三维",
+        "模型",
+        "3D视图",
+        "建模页",
+        "3D model",
+        "modeling tab",
+        "model view"
+      ]
     },
     {
       "id": "view.left_column.pin",
@@ -6499,7 +9145,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳27"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把项目栏钉住别收起",
+        "让项目栏一直开着",
+        "固定左侧项目列表",
+        "keep the project list always open",
+        "pin the projects column"
+      ],
+      "aliases": [
+        "钉住",
+        "固定项目栏",
+        "常驻项目栏",
+        "pin sidebar",
+        "dock projects",
+        "keep open"
+      ]
     },
     {
       "id": "view.conversation.steps",
@@ -6582,7 +9243,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "栏3"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "切到排版",
+        "去排图纸版面",
+        "打开排版工作面",
+        "switch to the layout tab",
+        "go to page layout"
+      ],
+      "aliases": [
+        "排版页",
+        "版面",
+        "图版",
+        "排图",
+        "page layout",
+        "sheet layout",
+        "presentation board"
+      ]
     },
     {
       "id": "view.settings.open",
@@ -6603,7 +9280,22 @@ export const COMMAND_TREE: CommandTree = {
         "壳13",
         "壳38"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "打开设置",
+        "去改一下软件设置",
+        "偏好设置在哪",
+        "open settings",
+        "open app preferences"
+      ],
+      "aliases": [
+        "偏好",
+        "选项",
+        "配置",
+        "preferences",
+        "options",
+        "config"
+      ]
     },
     {
       "id": "view.design_tree.open",
@@ -6630,7 +9322,23 @@ export const COMMAND_TREE: CommandTree = {
         "壳42",
         "壳54"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "打开状态树",
+        "看看之前的版本",
+        "查看方案的历史版本",
+        "open the design tree",
+        "show earlier design versions"
+      ],
+      "aliases": [
+        "版本树",
+        "历史版本",
+        "方案树",
+        "版本记录",
+        "version tree",
+        "history",
+        "design history"
+      ]
     },
     {
       "id": "view.drawings",
@@ -6655,7 +9363,23 @@ export const COMMAND_TREE: CommandTree = {
         "模114",
         "文2"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "打开图纸页",
+        "去看平立剖图纸",
+        "查看出的图",
+        "open the drawings page",
+        "show plans and sections"
+      ],
+      "aliases": [
+        "出图",
+        "图纸",
+        "平立剖",
+        "施工图",
+        "plans",
+        "drawing sheets",
+        "sections"
+      ]
     },
     {
       "id": "view.render.open",
@@ -6678,7 +9402,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳95"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "打开渲染页",
+        "去做效果图",
+        "我要出渲染图",
+        "open the render page",
+        "make a rendering"
+      ],
+      "aliases": [
+        "效果图",
+        "出效果",
+        "渲染页",
+        "rendering",
+        "visualization",
+        "render page"
+      ]
     },
     {
       "id": "view.usage.open",
@@ -6703,7 +9442,23 @@ export const COMMAND_TREE: CommandTree = {
         "壳35",
         "壳97"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看看花了多少钱",
+        "打开用量页",
+        "查一下用了多少额度",
+        "open the usage page",
+        "how much have I spent"
+      ],
+      "aliases": [
+        "花费",
+        "额度",
+        "用量",
+        "账单",
+        "tokens",
+        "spending",
+        "cost"
+      ]
     },
     {
       "id": "view.render.compare",
@@ -6723,7 +9478,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "渲17"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "渲染图和底图对比一下",
+        "对比原图和效果图",
+        "前后对比看看",
+        "compare render with the source image",
+        "before and after comparison"
+      ],
+      "aliases": [
+        "对比",
+        "前后对比",
+        "对照底图",
+        "compare",
+        "side by side",
+        "before after"
+      ]
     },
     {
       "id": "view.render.download",
@@ -6743,7 +9513,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "渲21"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把渲染图下载下来",
+        "保存这张效果图",
+        "导出渲染结果图片",
+        "download the rendered image",
+        "save this render to disk"
+      ],
+      "aliases": [
+        "下载图片",
+        "保存效果图",
+        "导出渲染",
+        "save image",
+        "export render",
+        "download"
+      ]
     },
     {
       "id": "view.render.fit",
@@ -6763,7 +9548,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "渲19"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "渲染图铺满窗口",
+        "让效果图适应窗口大小",
+        "整张渲染图显示全",
+        "fit the render to the window",
+        "show the whole render image"
+      ],
+      "aliases": [
+        "适应窗口",
+        "全图显示",
+        "铺满",
+        "fit view",
+        "fit to window",
+        "full image"
+      ]
     },
     {
       "id": "view.render.recapture",
@@ -6783,7 +9583,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "渲28"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "用现在的模型重新截底图",
+        "模型改了重新截一下",
+        "重新截取渲染视角",
+        "recapture from the current model",
+        "retake the base view from model"
+      ],
+      "aliases": [
+        "重新截取",
+        "重截底图",
+        "重新取景",
+        "recapture",
+        "retake view",
+        "new capture"
+      ]
     },
     {
       "id": "view.render.result",
@@ -6803,7 +9618,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "渲17"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看渲染出来的结果",
+        "切回效果图结果",
+        "显示生成的渲染图",
+        "show the render result",
+        "view the finished rendering"
+      ],
+      "aliases": [
+        "渲染结果",
+        "成品图",
+        "看结果",
+        "result",
+        "output image",
+        "final render"
+      ]
     },
     {
       "id": "view.render.reuse_inputs",
@@ -6823,7 +9653,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "渲25"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "用这次的参数再渲一张",
+        "载入这次渲染的输入",
+        "照这次设置重新渲染",
+        "reuse the inputs from this render",
+        "load this prompt and settings again"
+      ],
+      "aliases": [
+        "复用参数",
+        "沿用设置",
+        "载入输入",
+        "reuse settings",
+        "same prompt",
+        "load inputs"
+      ]
     },
     {
       "id": "view.render.select_job",
@@ -6865,7 +9710,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "渲27"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "在模型里看这个视角",
+        "回建模定位到这个机位",
+        "跳到建模里这个角度",
+        "show this camera view in modeling",
+        "open this viewpoint in the model"
+      ],
+      "aliases": [
+        "定位视角",
+        "回到机位",
+        "模型视角",
+        "go to camera",
+        "view in model",
+        "camera view"
+      ]
     },
     {
       "id": "view.render.source",
@@ -6885,7 +9745,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "渲17"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看渲染用的底图",
+        "显示原始截图",
+        "切到底图看看",
+        "show the source image",
+        "view the base capture"
+      ],
+      "aliases": [
+        "底图",
+        "原图",
+        "截图源",
+        "source image",
+        "base image",
+        "original"
+      ]
     },
     {
       "id": "view.render.use_updated_source",
@@ -6905,7 +9780,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "渲26"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "换成更新后的底图",
+        "用最新模型的截图渲染",
+        "底图更新了就用新的",
+        "use the updated source image",
+        "switch to the newer base capture"
+      ],
+      "aliases": [
+        "新底图",
+        "更新底图",
+        "换新来源",
+        "updated source",
+        "newer base",
+        "refresh source"
+      ]
     },
     {
       "id": "view.render.zoom_in",
@@ -6925,7 +9815,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "渲20"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把渲染图放大",
+        "放大看效果图细节",
+        "效果图拉近一点",
+        "zoom into the render",
+        "enlarge the rendering"
+      ],
+      "aliases": [
+        "放大",
+        "拉近",
+        "看细节",
+        "zoom in",
+        "magnify",
+        "closer"
+      ]
     },
     {
       "id": "view.render.zoom_out",
@@ -6945,7 +9850,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "渲18"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把渲染图缩小",
+        "效果图缩小一点",
+        "缩小看整张渲染",
+        "zoom out of the render",
+        "shrink the rendering view"
+      ],
+      "aliases": [
+        "缩小",
+        "拉远",
+        "缩一点",
+        "zoom out",
+        "shrink",
+        "further"
+      ]
     },
     {
       "id": "view.layout.add_page",
@@ -6965,7 +9885,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "排8"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "排版里加一页",
+        "新建一张版面",
+        "再加一页图版",
+        "add a new layout page",
+        "insert another sheet"
+      ],
+      "aliases": [
+        "新建页",
+        "加页",
+        "新版面",
+        "new page",
+        "add sheet",
+        "insert page"
+      ]
     },
     {
       "id": "view.layout.add_text",
@@ -6987,7 +9922,23 @@ export const COMMAND_TREE: CommandTree = {
         "排19",
         "排20"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "在版面上加段文字",
+        "加个文本框",
+        "图版上写说明文字",
+        "add a text box to the page",
+        "put a caption on the sheet"
+      ],
+      "aliases": [
+        "文本框",
+        "加文字",
+        "说明文字",
+        "标题字",
+        "text box",
+        "caption",
+        "add label"
+      ]
     },
     {
       "id": "view.layout.apply_layout",
@@ -7007,7 +9958,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "排18"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "套用图文排版模板",
+        "自动排一下图和字",
+        "应用这个版式",
+        "apply an image and text layout",
+        "auto arrange images on page"
+      ],
+      "aliases": [
+        "版式",
+        "套模板",
+        "自动排版",
+        "图文布局",
+        "template",
+        "auto layout",
+        "page grid"
+      ]
     },
     {
       "id": "view.layout.center",
@@ -7030,7 +9997,22 @@ export const COMMAND_TREE: CommandTree = {
         "排21",
         "排22"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把这个放到页面中间",
+        "版面上水平居中",
+        "左右居中对齐",
+        "center this horizontally on the page",
+        "align to page center"
+      ],
+      "aliases": [
+        "居中",
+        "水平居中",
+        "居中对齐",
+        "center",
+        "align center",
+        "middle"
+      ]
     },
     {
       "id": "view.layout.delete_object",
@@ -7050,7 +10032,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "排27"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "删掉版面上选中的东西",
+        "把这张图从页面删掉",
+        "删除选中的文字框",
+        "delete the selected item on page",
+        "remove this image from the sheet"
+      ],
+      "aliases": [
+        "删除选中",
+        "删元素",
+        "移除对象",
+        "remove item",
+        "delete element",
+        "remove object"
+      ]
     },
     {
       "id": "view.layout.delete_page",
@@ -7070,7 +10067,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "排11"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "删掉这一页版面",
+        "这张图版不要了",
+        "删除当前排版页",
+        "delete this layout page",
+        "remove the current sheet"
+      ],
+      "aliases": [
+        "删页",
+        "删除版面",
+        "去掉此页",
+        "remove page",
+        "delete sheet",
+        "drop page"
+      ]
     },
     {
       "id": "view.layout.move_page_up",
@@ -7090,7 +10102,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "排10"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把这页往前挪",
+        "这一页上移一位",
+        "调整页序往前",
+        "move this page up one",
+        "move the sheet earlier"
+      ],
+      "aliases": [
+        "上移",
+        "前移页",
+        "调页序",
+        "move up",
+        "reorder page",
+        "page earlier"
+      ]
     },
     {
       "id": "view.layout.place_image",
@@ -7111,7 +10138,23 @@ export const COMMAND_TREE: CommandTree = {
         "排16",
         "排17"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把这张图放到当前页",
+        "图片排进这一页",
+        "插入到这页版面",
+        "place this image on the page",
+        "put the drawing onto this sheet"
+      ],
+      "aliases": [
+        "放图",
+        "插图",
+        "放入版面",
+        "贴图",
+        "place image",
+        "insert image",
+        "put on page"
+      ]
     },
     {
       "id": "view.layout.place_result",
@@ -7179,7 +10222,22 @@ export const COMMAND_TREE: CommandTree = {
         "排25",
         "排26"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "版面上的图换成最新版",
+        "更新这张图的来源",
+        "图纸改了同步到排版",
+        "update this image from its source",
+        "refresh the placed image to latest"
+      ],
+      "aliases": [
+        "刷新图片",
+        "同步图源",
+        "更新图片",
+        "refresh image",
+        "relink",
+        "sync image"
+      ]
     },
     {
       "id": "view.design_tree.close_details",
@@ -7199,7 +10257,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "树14"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "关掉右边的详情",
+        "收起这个版本的详情",
+        "不看节点详情了",
+        "close the version details",
+        "hide the node details panel"
+      ],
+      "aliases": [
+        "关详情",
+        "收起详情",
+        "关闭信息",
+        "close details",
+        "hide info",
+        "dismiss details"
+      ]
     },
     {
       "id": "view.design_tree.fit",
@@ -7220,7 +10293,22 @@ export const COMMAND_TREE: CommandTree = {
         "树6",
         "树11"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "整棵状态树都显示出来",
+        "缩放看全部版本",
+        "版本树全部看一眼",
+        "fit the whole design tree",
+        "show all versions at once"
+      ],
+      "aliases": [
+        "全览",
+        "看全部",
+        "整棵树",
+        "fit tree",
+        "overview",
+        "show all"
+      ]
     },
     {
       "id": "view.design_tree.leave",
@@ -7240,7 +10328,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "树1"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "退出状态树",
+        "从版本树回去",
+        "关掉状态树页面",
+        "leave the design tree",
+        "exit version history"
+      ],
+      "aliases": [
+        "退出树",
+        "返回",
+        "离开版本树",
+        "exit tree",
+        "go back",
+        "close tree"
+      ]
     },
     {
       "id": "view.design_tree.select_row",
@@ -7283,7 +10386,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "树5"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "显示被替换掉的草稿",
+        "把旧草稿也列出来",
+        "隐藏已取代的草稿",
+        "show superseded drafts",
+        "include replaced draft versions"
+      ],
+      "aliases": [
+        "旧草稿",
+        "废弃草稿",
+        "被取代版本",
+        "old drafts",
+        "replaced drafts",
+        "superseded"
+      ]
     },
     {
       "id": "view.design_tree.toggle_steps",
@@ -7304,7 +10422,22 @@ export const COMMAND_TREE: CommandTree = {
         "树4",
         "树12"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "展开之前的步骤",
+        "把折叠的早期步骤打开",
+        "看看之前每一步怎么改的",
+        "unfold the earlier steps",
+        "expand collapsed history steps"
+      ],
+      "aliases": [
+        "展开步骤",
+        "早期步骤",
+        "历史步骤",
+        "expand steps",
+        "earlier steps",
+        "unfold history"
+      ]
     },
     {
       "id": "view.design_tree.canvas",
@@ -7324,7 +10457,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "树2"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "状态树用画布显示",
+        "版本树切成图形视图",
+        "用节点图看版本",
+        "show the design tree as canvas",
+        "graph view of versions"
+      ],
+      "aliases": [
+        "画布",
+        "节点图",
+        "图形视图",
+        "canvas",
+        "graph view",
+        "node view"
+      ]
     },
     {
       "id": "view.design_tree.list",
@@ -7344,7 +10492,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "树2"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "状态树用列表显示",
+        "版本按列表排出来",
+        "切成列表看版本",
+        "show the design tree as a list",
+        "list view of versions"
+      ],
+      "aliases": [
+        "列表",
+        "清单视图",
+        "列表模式",
+        "list",
+        "list mode",
+        "table view"
+      ]
     },
     {
       "id": "view.usage.apply_sources",
@@ -7390,7 +10553,22 @@ export const COMMAND_TREE: CommandTree = {
         "量16",
         "量17"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "算一下花了多少钱",
+        "估算这次的费用",
+        "按用量算成本",
+        "calculate the cost",
+        "estimate spending from usage"
+      ],
+      "aliases": [
+        "费用估算",
+        "算钱",
+        "成本计算",
+        "cost estimate",
+        "price it",
+        "compute cost"
+      ]
     },
     {
       "id": "view.usage.refresh",
@@ -7430,7 +10608,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "量18"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "用量汇总恢复成当前的",
+        "费用按当前总数重算",
+        "撤销修改回到当前汇总",
+        "reset to the current usage totals",
+        "use current totals for cost"
+      ],
+      "aliases": [
+        "恢复汇总",
+        "重置总数",
+        "当前合计",
+        "reset totals",
+        "current totals",
+        "restore totals"
+      ]
     },
     {
       "id": "view.usage.show_more",
@@ -7450,7 +10643,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "量12"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "用量记录再多显示20条",
+        "加载更多用量明细",
+        "往下多列一些记录",
+        "show 20 more usage rows",
+        "load more usage records"
+      ],
+      "aliases": [
+        "加载更多",
+        "显示更多",
+        "更多记录",
+        "load more",
+        "show more",
+        "more rows"
+      ]
     },
     {
       "id": "view.usage.span",
@@ -7470,7 +10678,20 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "量8"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看每个阶段花了多少",
+        "用量按阶段展开",
+        "查看阶段用量详情",
+        "usage breakdown by stage",
+        "show stage details in usage"
+      ],
+      "aliases": [
+        "阶段明细",
+        "分段用量",
+        "stage breakdown",
+        "span details"
+      ]
     },
     {
       "id": "view.usage.calls",
@@ -7491,7 +10712,22 @@ export const COMMAND_TREE: CommandTree = {
         "量1",
         "量11"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看每次模型调用记录",
+        "列出所有模型调用",
+        "用量里看调用明细",
+        "list every model call",
+        "show usage call list"
+      ],
+      "aliases": [
+        "调用记录",
+        "调用列表",
+        "请求明细",
+        "call log",
+        "API calls",
+        "requests"
+      ]
     },
     {
       "id": "view.usage.timeline",
@@ -7512,7 +10748,21 @@ export const COMMAND_TREE: CommandTree = {
         "量1",
         "量6"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "按时间看用量",
+        "用量随时间的变化",
+        "看看什么时候花的额度",
+        "usage over time",
+        "show usage on a timeline"
+      ],
+      "aliases": [
+        "时间轴",
+        "用量曲线",
+        "用量走势",
+        "usage timeline",
+        "time view"
+      ]
     },
     {
       "id": "view.usage.scope_project",
@@ -7533,7 +10783,20 @@ export const COMMAND_TREE: CommandTree = {
         "量2",
         "量3"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "只看本项目的用量",
+        "用量筛到当前项目",
+        "这个项目花了多少",
+        "usage for this project only",
+        "filter usage to current project"
+      ],
+      "aliases": [
+        "本项目用量",
+        "当前项目用量",
+        "project usage",
+        "current project scope"
+      ]
     },
     {
       "id": "view.usage.scope_all",
@@ -7553,7 +10816,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "量2"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看全部项目的用量",
+        "所有项目一共花了多少",
+        "用量不分项目汇总",
+        "usage across all projects",
+        "total usage for every project"
+      ],
+      "aliases": [
+        "总用量",
+        "全部用量",
+        "所有项目用量",
+        "all usage",
+        "global usage",
+        "total usage"
+      ]
     },
     {
       "id": "view.old_results.open",
@@ -7615,7 +10893,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模98"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "显示这次运行的全部导出",
+        "把所有导出文件列出来",
+        "看历史运行导出的模型",
+        "show every export of this run",
+        "list all exported files"
+      ],
+      "aliases": [
+        "导出文件",
+        "导出列表",
+        "所有导出",
+        "all exports",
+        "export list"
+      ]
     },
     {
       "id": "view.old_results.toggle",
@@ -7635,7 +10927,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模97"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看以前跑过的模型",
+        "打开历史运行记录",
+        "找回之前生成的模型",
+        "show past model runs",
+        "open earlier generated results"
+      ],
+      "aliases": [
+        "历史运行",
+        "旧结果",
+        "以前的模型",
+        "old results",
+        "run history",
+        "previous runs"
+      ]
     },
     {
       "id": "view.handled.submitted_notes",
@@ -7655,7 +10962,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文48"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看我已经提交的意见",
+        "已经发出去的批注",
+        "查看提交过的修改意见",
+        "show notes I submitted",
+        "view my submitted comments"
+      ],
+      "aliases": [
+        "已发意见",
+        "已提交批注",
+        "提交记录",
+        "sent notes",
+        "submitted comments"
+      ]
     },
     {
       "id": "view.handled.toggle",
@@ -7675,7 +10996,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "树3"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看已经处理完的事项",
+        "显示已处理的卡片",
+        "展开已处理列表",
+        "show handled items",
+        "view resolved cards in tree"
+      ],
+      "aliases": [
+        "已完成",
+        "处理过的",
+        "已解决",
+        "resolved",
+        "done items",
+        "handled list"
+      ]
     },
     {
       "id": "view.handled.view_page",
@@ -7718,7 +11054,23 @@ export const COMMAND_TREE: CommandTree = {
         "文4",
         "文5"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "打开一份PDF",
+        "打开一张参考图看看",
+        "打开本地图片文件",
+        "open a PDF file",
+        "open an image to view"
+      ],
+      "aliases": [
+        "打开PDF",
+        "看图片",
+        "打开文档",
+        "看参考图",
+        "open PDF",
+        "open image",
+        "view file"
+      ]
     },
     {
       "id": "view.open_document.link_model",
@@ -7764,7 +11116,22 @@ export const COMMAND_TREE: CommandTree = {
         "板61",
         "板70"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "编辑这张图页",
+        "在MonkeyDiagram里改这页",
+        "用图纸编辑器打开此页",
+        "edit this page in MonkeyDiagram",
+        "open page in diagram editor"
+      ],
+      "aliases": [
+        "编辑此页",
+        "进图页编辑",
+        "改图页",
+        "edit page",
+        "diagram editor",
+        "MonkeyDiagram"
+      ]
     },
     {
       "id": "view.study.toggle",
@@ -7784,7 +11151,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文7"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "研究一下这张图",
+        "分析这页图纸",
+        "帮我读懂这页图",
+        "study this drawing page",
+        "analyze what this page shows"
+      ],
+      "aliases": [
+        "读图",
+        "分析此页",
+        "图页研究",
+        "study page",
+        "analyze page",
+        "read drawing"
+      ]
     },
     {
       "id": "view.background.open",
@@ -7804,7 +11186,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "文37"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看模型做到哪了",
+        "查看后台建模进度",
+        "打开正在生成的模型",
+        "view model and its progress",
+        "check how modeling is going"
+      ],
+      "aliases": [
+        "建模进度",
+        "看进度",
+        "后台进度",
+        "model progress",
+        "progress"
+      ]
     },
     {
       "id": "view.attention.dismiss",
@@ -7844,7 +11240,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "板19"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看这条新变动",
+        "查看板上的更新提醒",
+        "打开刚来的更新通知",
+        "view this change notice",
+        "open the board update card"
+      ],
+      "aliases": [
+        "更新提醒",
+        "变动通知",
+        "新动态",
+        "change notice",
+        "update card",
+        "notification"
+      ]
     },
     {
       "id": "view.evidence.close",
@@ -8011,7 +11422,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "栏4"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看设计改过哪些地方",
+        "打开修改历史",
+        "查看之前的改动记录",
+        "show design change history",
+        "view past edits to design"
+      ],
+      "aliases": [
+        "修改记录",
+        "改动历史",
+        "历史版本",
+        "edit history",
+        "change log",
+        "revisions"
+      ]
     },
     {
       "id": "view.background.toggle",
@@ -8031,7 +11457,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳29"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看看后台在跑什么",
+        "展开正在运行的任务",
+        "打开后台任务列表",
+        "show running background tasks",
+        "expand the task list"
+      ],
+      "aliases": [
+        "后台任务",
+        "运行中任务",
+        "任务队列",
+        "running tasks",
+        "task list",
+        "jobs"
+      ]
     },
     {
       "id": "view.ignored.toggle",
@@ -8049,7 +11490,22 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看被我忽略的卡片",
+        "找回放一边的卡",
+        "显示已忽略的提醒",
+        "show cards I set aside",
+        "view ignored cards"
+      ],
+      "aliases": [
+        "已忽略",
+        "搁置的卡",
+        "隐藏卡片",
+        "ignored cards",
+        "set aside",
+        "dismissed"
+      ]
     },
     {
       "id": "view.advanced_tools.toggle",
@@ -8067,7 +11523,22 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "phrases": [
+        "显示高级工具",
+        "把专业工具也调出来",
+        "打开更多高级功能",
+        "show advanced tools",
+        "reveal expert tools"
+      ],
+      "aliases": [
+        "高级功能",
+        "专业工具",
+        "更多工具",
+        "advanced",
+        "expert mode",
+        "more tools"
+      ]
     },
     {
       "id": "view.background.open_task",
@@ -8109,7 +11580,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳98"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "看这个项目的基本信息",
+        "项目信息在哪看",
+        "查看项目名称和位置",
+        "show info about this project",
+        "view project details"
+      ],
+      "aliases": [
+        "项目信息",
+        "项目详情",
+        "项目资料",
+        "project info",
+        "project details"
+      ]
     },
     {
       "id": "view.settings.page",
@@ -8216,7 +11701,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳22"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "主题跟随系统",
+        "颜色跟着电脑设置走",
+        "自动切换深浅色",
+        "match system theme",
+        "follow OS light or dark"
+      ],
+      "aliases": [
+        "跟随系统",
+        "自动主题",
+        "系统主题",
+        "system theme",
+        "auto theme"
+      ]
     },
     {
       "id": "preference.appearance.theme_dark",
@@ -8239,7 +11738,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳22"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "切换深色模式",
+        "界面改成黑底",
+        "换成暗色主题",
+        "switch to dark mode",
+        "use the dark theme"
+      ],
+      "aliases": [
+        "暗色",
+        "黑色主题",
+        "暗黑模式",
+        "dark",
+        "dark theme"
+      ]
     },
     {
       "id": "preference.appearance.theme_light",
@@ -8262,7 +11775,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳22"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "切换浅色模式",
+        "界面改成白底",
+        "换回亮色主题",
+        "switch to light mode",
+        "use the light theme"
+      ],
+      "aliases": [
+        "亮色",
+        "白色主题",
+        "日间模式",
+        "light",
+        "light theme",
+        "day mode"
+      ]
     },
     {
       "id": "preference.appearance.style_classic",
@@ -8283,7 +11811,21 @@ export const COMMAND_TREE: CommandTree = {
         "壳23",
         "窗51"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "界面换成经典风格",
+        "用回经典界面",
+        "切到经典样式",
+        "classic interface style",
+        "switch to the Classic look"
+      ],
+      "aliases": [
+        "经典风格",
+        "经典样式",
+        "传统界面",
+        "classic",
+        "classic look"
+      ]
     },
     {
       "id": "preference.appearance.style_quiet",
@@ -8304,7 +11846,23 @@ export const COMMAND_TREE: CommandTree = {
         "壳23",
         "窗51"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "界面换成静默仪表",
+        "要一个安静素净的界面",
+        "切到低调简洁风格",
+        "quiet interface style",
+        "switch to calm minimal look"
+      ],
+      "aliases": [
+        "静默仪表",
+        "安静风格",
+        "素净界面",
+        "极简风格",
+        "quiet",
+        "minimal look",
+        "calm"
+      ]
     },
     {
       "id": "preference.appearance.style_titleblock",
@@ -8325,7 +11883,21 @@ export const COMMAND_TREE: CommandTree = {
         "壳23",
         "窗51"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "界面换成图签风格",
+        "像图纸标题栏的界面",
+        "切到图签样式",
+        "title block interface style",
+        "drawing title block look"
+      ],
+      "aliases": [
+        "图签风格",
+        "标题栏风格",
+        "图框样式",
+        "title block",
+        "drawing sheet look"
+      ]
     },
     {
       "id": "preference.appearance.style_night",
@@ -8346,7 +11918,21 @@ export const COMMAND_TREE: CommandTree = {
         "壳23",
         "窗51"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "界面换成夜航风格",
+        "切到夜航样式",
+        "要夜航那套配色",
+        "night interface style",
+        "switch to the Night look"
+      ],
+      "aliases": [
+        "夜航",
+        "夜航风格",
+        "夜航配色",
+        "night style",
+        "night look"
+      ]
     },
     {
       "id": "preference.appearance.size_compact",
@@ -8366,7 +11952,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳24"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "字调小一点",
+        "界面排得紧凑些",
+        "字号改成紧凑",
+        "smaller compact text",
+        "set text size to compact"
+      ],
+      "aliases": [
+        "小字号",
+        "紧凑",
+        "字小点",
+        "small text",
+        "compact",
+        "dense"
+      ]
     },
     {
       "id": "preference.appearance.size_normal",
@@ -8386,7 +11987,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳24"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "字号恢复标准",
+        "字体大小调回正常",
+        "用标准字号",
+        "standard text size",
+        "reset text to normal size"
+      ],
+      "aliases": [
+        "标准字号",
+        "正常字号",
+        "默认字号",
+        "normal text",
+        "default size"
+      ]
     },
     {
       "id": "preference.appearance.size_large",
@@ -8406,7 +12021,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳24"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "字调大一点",
+        "字太小看不清",
+        "字号改成大",
+        "make text larger",
+        "set text size to large"
+      ],
+      "aliases": [
+        "大字号",
+        "大字",
+        "放大字体",
+        "big text",
+        "large font",
+        "bigger text"
+      ]
     },
     {
       "id": "preference.appearance.language",
@@ -8510,7 +12140,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳84"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "换一个对话模型",
+        "这个对话用哪个AI模型",
+        "切换聊天用的大模型",
+        "choose model for this chat",
+        "switch conversation AI model"
+      ],
+      "aliases": [
+        "选模型",
+        "切换模型",
+        "对话模型",
+        "chat model",
+        "pick model",
+        "LLM"
+      ]
     },
     {
       "id": "preference.chat_model.custom_apply",
@@ -8921,7 +12566,22 @@ export const COMMAND_TREE: CommandTree = {
         "壳25",
         "壳36"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "检查软件有没有新版本",
+        "升级MonkeyHub",
+        "看看有没有新版",
+        "check for app updates",
+        "update MonkeyHub to latest version"
+      ],
+      "aliases": [
+        "版本升级",
+        "软件升级",
+        "新版本",
+        "software update",
+        "upgrade app",
+        "new version"
+      ]
     },
     {
       "id": "hub.update_apply",
@@ -9028,7 +12688,23 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳96"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "打开3D打印制作页",
+        "我要把模型打印出来",
+        "进入打印制作工作区",
+        "open fabrication workspace",
+        "3D print the model"
+      ],
+      "aliases": [
+        "3D打印",
+        "打模型",
+        "实体模型",
+        "制作页",
+        "3D printing",
+        "fabrication page",
+        "physical model"
+      ]
     },
     {
       "id": "fab.prepare_parts.tab",
@@ -9048,7 +12724,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "制1"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "切到准备分件页",
+        "准备打印用的分件",
+        "去分件那一步",
+        "go to prepare parts tab",
+        "prepare parts for printing"
+      ],
+      "aliases": [
+        "分件页",
+        "准备零件",
+        "分件标签",
+        "parts tab",
+        "prep parts"
+      ]
     },
     {
       "id": "fab.send_to_printer.tab",
@@ -9068,7 +12758,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "制1"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "切到发送切片页",
+        "去上传打印任务那一步",
+        "打开发送切片标签",
+        "go to upload job tab",
+        "open the slice upload tab"
+      ],
+      "aliases": [
+        "切片上传",
+        "上传任务页",
+        "发送页",
+        "upload tab",
+        "job upload"
+      ]
     },
     {
       "id": "fab.prepare_parts.create",
@@ -9098,7 +12802,23 @@ export const COMMAND_TREE: CommandTree = {
         "制11",
         "制12"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "把模型拆成打印分件",
+        "生成可打印的封闭网格",
+        "开始拆件",
+        "split model into printable parts",
+        "generate closed print meshes"
+      ],
+      "aliases": [
+        "拆件",
+        "模型拆分",
+        "生成网格",
+        "分块",
+        "split model",
+        "make parts",
+        "watertight mesh"
+      ]
     },
     {
       "id": "fab.prepare_parts.display_settings",
@@ -9118,7 +12838,21 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "制2"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "调分件的显示方式",
+        "分件预览显示设置",
+        "改打印预览的显示选项",
+        "parts preview display settings",
+        "adjust how parts are displayed"
+      ],
+      "aliases": [
+        "显示选项",
+        "预览设置",
+        "分件显示",
+        "view options",
+        "preview display"
+      ]
     },
     {
       "id": "fab.send_to_printer.check",
@@ -9138,7 +12872,22 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "制19"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "检查切片文件能不能打",
+        "上传前先验一下文件",
+        "看看切片文件有没有问题",
+        "check slice file before upload",
+        "validate the print job file"
+      ],
+      "aliases": [
+        "文件检查",
+        "验文件",
+        "切片检查",
+        "validate file",
+        "file check",
+        "preflight"
+      ]
     },
     {
       "id": "fab.send_to_printer.send",
@@ -9166,7 +12915,23 @@ export const COMMAND_TREE: CommandTree = {
         "制18",
         "制20"
       ],
-      "args": []
+      "args": [],
+      "phrases": [
+        "发给拓竹打印机",
+        "把切片传到打印机",
+        "开始上传打印任务",
+        "send job to Bambu printer",
+        "upload sliced file to printer"
+      ],
+      "aliases": [
+        "发打印",
+        "传打印机",
+        "上传切片",
+        "拓竹打印",
+        "send print",
+        "upload to printer",
+        "Bambu upload"
+      ]
     },
     {
       "id": "view.notice.retry",

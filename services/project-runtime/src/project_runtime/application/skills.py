@@ -16,12 +16,13 @@ never enforced by anything here or in the agent that follows it.
 
 A version may also carry script files, name one of them as its ``entry`` and
 declare the ``access`` it needs (programs it calls, network, ssh hosts,
-places it writes, Python packages). Such a version is runnable once a person
-has granted it on the Hub page: once, or for this version until revoked. A
-grant binds the SHA-256 of body, entry, files and access (``codeSha256``), so
-changed code or a wider declaration needs a new grant. Grants and their
-revocations are retained beside the versions; ``project_runtime.skill_runs``
-runs only a granted code hash and holds the script to what was granted.
+places it writes, Python packages). Which access a run may have is a person's
+to allow, in the Hub and for every project (``skill_access``); the project
+retains the exact version each run used (``skill_library.retain``), and
+``codeSha256`` names body, entry, files and access together. A project's own
+approvals of one version's code, from before S-1, stay retained with their
+revocations: they allow no run, and the Hub reads those still in force once to
+carry them over as grants for that skill.
 """
 
 from __future__ import annotations
@@ -32,7 +33,6 @@ import hashlib
 import json
 from pathlib import PureWindowsPath, PurePosixPath
 import re
-import uuid
 from typing import Any, Mapping, Sequence
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -374,7 +374,7 @@ def add_skill(
     return SkillVersion(ref.uri, payload)
 
 
-# ---- approval: a person binds one exact code hash ---------------------------
+# ---- approvals from before S-1: retained, read to carry them over ---------
 
 
 def revocations(binding: ProjectBinding) -> dict[str, Mapping[str, Any]]:
@@ -413,128 +413,6 @@ def approvals(binding: ProjectBinding, skill_id: str | None = None, *,
 
 def _scope(approval: Mapping[str, Any]) -> str:
     return str(approval.get("scope") or "version")
-
-
-def is_approved(row: SkillVersion, retained: Sequence[Mapping[str, Any]]) -> bool:
-    """Whether a grant in force lets this exact version run until it is revoked."""
-
-    code = row.code_sha256
-    return any(item.get("version") == row.version and item.get("codeSha256") == code and _scope(item) == "version"
-               for item in retained)
-
-
-def require_granted(binding: ProjectBinding, skill_id: str, version: int | None, *,
-                    used_once: set[str], allow_once: bool = True,
-                    grant_id: str | None = None) -> tuple[SkillVersion, Mapping[str, Any]]:
-    """The version to run and the grant that lets it, or the refusal that names why it may not run.
-
-    A "version" grant is used first; a "once" grant no earlier run has used is
-    used otherwise, unless ``allow_once`` is false (an agent's run). An agent's
-    run may use one once grant: the one named by ``grant_id`` that a person
-    gave in the Hub chat in answer to that run's request (method "hub-chat").
-    """
-
-    row, _ = read_skill(binding, skill_id, version)
-    if row.entry is None:
-        raise StudioError(422, "SKILL_NOT_RUNNABLE", f"{skill_id} version {row.version} carries no entry script.")
-    retained = [item for item in approvals(binding, skill_id) if item.get("version") == row.version]
-    matching = [item for item in retained if item.get("codeSha256") == row.code_sha256]
-    lasting = [item for item in matching if _scope(item) == "version"]
-    if lasting:
-        return row, lasting[0]
-    single = [item for item in matching if _scope(item) == "once" and str(item.get("approvalId")) not in used_once]
-    answered = [item for item in single if grant_id is not None and str(item.get("approvalId")) == grant_id
-                and item.get("method") == "hub-chat"]
-    if answered and not allow_once:
-        return row, answered[0]
-    if single and allow_once:
-        return row, single[0]
-    if single:
-        raise StudioError(403, "SKILL_NOT_APPROVED",
-                          f"{skill_id} version {row.version} is allowed once, for a person's own run; "
-                          "an agent runs only a version that is always allowed.")
-    if matching:
-        raise StudioError(403, "SKILL_NOT_APPROVED",
-                          f"{skill_id} version {row.version} was allowed once and that run has been made. "
-                          "Allow it again on the Hub page.")
-    if retained:
-        raise StudioError(409, "SKILL_CODE_CHANGED",
-                          f"{skill_id} version {row.version} no longer has the code that was approved. "
-                          "Its code must be approved again before it runs.")
-    raise StudioError(403, "SKILL_NOT_APPROVED",
-                      f"{skill_id} version {row.version} (code {row.code_sha256[:12]}) has not been approved. "
-                      "A person approves it on the Hub page before it runs.")
-
-
-def require_approved(binding: ProjectBinding, skill_id: str, version: int | None) -> SkillVersion:
-    """The version a person may run now, or why not."""
-
-    return require_granted(binding, skill_id, version, used_once=set())[0]
-
-
-@retained_sources
-def approve_skill(binding: ProjectBinding, skill_id: str, *, version: int, code: str, method: str,
-                  attribution: ActorAttribution, scope: str = "version") -> Mapping[str, Any]:
-    """Retain a person's grant of exactly this version's code and access, once or until revoked.
-
-    Asking again for a version grant answers the one in force; each once grant is new.
-    """
-
-    if method not in APPROVAL_METHODS:
-        raise _invalid(f"method must be one of {sorted(APPROVAL_METHODS)}.")
-    if scope not in APPROVAL_SCOPES:
-        raise _invalid(f"scope must be one of {sorted(APPROVAL_SCOPES)}.")
-    row, _ = read_skill(binding, skill_id, version)
-    if row.entry is None:
-        raise StudioError(422, "SKILL_NOT_RUNNABLE", f"{skill_id} version {version} carries no entry script to approve.")
-    if code != row.code_sha256:
-        raise StudioError(409, "SKILL_CODE_CHANGED",
-                          f"{skill_id} version {version} has code {row.code_sha256}, not the {code} that was shown.")
-    existing = next((item for item in approvals(binding, skill_id)
-                     if item.get("version") == version and item.get("codeSha256") == code
-                     and _scope(item) == "version"), None)
-    if existing is not None and scope == "version":
-        return existing
-    payload = {
-        "schema": APPROVAL_SCHEMA, "projectId": binding.project_id, "approvalId": uuid.uuid4().hex,
-        "skillId": skill_id, "version": version, "scope": scope, "access": row.access,
-        "skillVersionRef": row.ref, "codeSha256": code, "method": method,
-        "approvedAt": datetime.now(timezone.utc).isoformat(),
-        "approvedBy": {"actorId": attribution.actor_id, "authenticated": attribution.authenticated,
-                       "origin": attribution.origin},
-    }
-    run = _run(binding, create=True)
-    try:
-        binding.repository.put_json(run=run, destination=_destination(), record_kind=STUDIO_SKILL_APPROVAL,
-                                    payload=payload)
-    except (ProjectRepositoryError, OSError) as exc:
-        raise StudioError(409, "SKILL_WRITE_FAILED", "The approval could not be retained in its project.") from exc
-    return payload
-
-
-
-@retained_sources
-def revoke_approval(binding: ProjectBinding, approval_id: str, *, attribution: ActorAttribution) -> Mapping[str, Any]:
-    """Withdraw one grant; its record stays, and no later run may use it."""
-
-    grant = next((item for item in approvals(binding, include_revoked=True)
-                  if str(item.get("approvalId")) == approval_id), None)
-    if grant is None:
-        raise StudioError(404, "SKILL_APPROVAL_NOT_FOUND", f"No retained skill approval {approval_id}.")
-    existing = revocations(binding).get(approval_id)
-    if existing is not None:
-        return existing
-    payload = {"schema": REVOCATION_SCHEMA, "projectId": binding.project_id, "approvalId": approval_id,
-               "skillId": grant["skillId"], "revokedAt": datetime.now(timezone.utc).isoformat(),
-               "revokedBy": {"actorId": attribution.actor_id, "authenticated": attribution.authenticated,
-                             "origin": attribution.origin}}
-    run = _run(binding, create=True)
-    try:
-        binding.repository.put_json(run=run, destination=_destination(), record_kind=STUDIO_SKILL_REVOCATION,
-                                    payload=payload)
-    except (ProjectRepositoryError, OSError) as exc:
-        raise StudioError(409, "SKILL_WRITE_FAILED", "The revocation could not be retained in its project.") from exc
-    return payload
 
 
 def grant_rows(binding: ProjectBinding, used_once: set[str]) -> list[dict[str, Any]]:

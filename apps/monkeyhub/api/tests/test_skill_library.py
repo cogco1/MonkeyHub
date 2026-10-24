@@ -1,12 +1,14 @@
-"""The library project's skills reach Claude through its own plugin mechanism (#252).
+"""The skills installed on this machine reach every Claude chat through its own plugin mechanism (S-1, #252).
 
-The Hub reads the library through its Runtime API, writes a plugin directory
-into its own cache - never into a project - and passes it with --plugin-dir.
-With no library set, the Claude command has no Skill tool (#463).
+The Hub reads the skill folders itself - no project and no Project Runtime -
+writes a plugin directory into its own cache, never into a project, and passes
+it with --plugin-dir. With no skill installed, the Claude command has no Skill
+tool (#463). A person's answer to a skill question is kept by the Hub as a grant.
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -26,20 +28,15 @@ source_roots.put_first(ROOT)
 from fastapi.testclient import TestClient
 
 from archflow.project.repository import FilesystemProjectRepository
-from project_runtime.main import create_app as create_studio
-from project_runtime.settings import StudioSettings
+from project_runtime.application import skill_access, skill_library
 from monkeyhub_api.chat import preparation, providers, skill_plugins, store as chat, transport
 from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest
-from monkeyhub_api.settings.models import ApplicationSettingsDto
-from monkeyhub_api.settings.store import save_application_settings
+from monkeyhub_api.settings import skill_grants
 
-LIBRARY_ID = "skill-library"
-HATCH = {"projectId": LIBRARY_ID, "name": "hatch-review",
-         "description": "Review a plan's hatching: \"double\" hatches, poché and the recipe.",
+HATCH = {"name": "hatch-review", "description": "Review a plan's hatching: \"double\" hatches, poché and the recipe.",
          "body": "1. Read the drawing recipe.\n2. List every region hatched twice.\n"}
-SHEET = {"projectId": LIBRARY_ID, "name": "section-sheet",
-         "description": "Lay out a section sheet at 1:50.", "body": "Start from the A1 title block.\n"}
+SHEET = {"name": "section-sheet", "description": "Lay out a section sheet at 1:50.", "body": "Start from the A1 title block.\n"}
 
 
 def snapshot(root: Path) -> dict[str, bytes]:
@@ -53,46 +50,32 @@ class SkillLibraryTest(unittest.TestCase):
         self.root = Path(temporary.name)
         self.runtime = self.root / "runtime"
         self.project = self.root / "chat-project"
-        self.library = self.root / LIBRARY_ID
-        for path, name in ((self.project, "chat-project"), (self.library, LIBRARY_ID)):
-            FilesystemProjectRepository.initialize(path, project_id=name,
-                                                   initial_state={"project_id": name, "version": 0})
-        environment = patch.dict(os.environ, {
-            "CODEX_HOME": str(self.root / "codex"), "CLAUDE_CONFIG_DIR": str(self.root / "claude"),
-            "APPDATA": str(self.root / "roaming"), "LOCALAPPDATA": str(self.root / "local"),
-        })
-        environment.start()
-        self.addCleanup(environment.stop)
-        self.studio = TestClient(create_studio(StudioSettings(project_dir=self.library, cad_export="off")))
-        self.addCleanup(self.studio.close)
-        self.fetched: list[str] = []
+        FilesystemProjectRepository.initialize(self.project, project_id="chat-project",
+                                               initial_state={"project_id": "chat-project", "version": 0})
+        self.user = self.root / "local" / "MonkeyHub" / "skill-packages"
+        self.bundled = self.root / "bundled"
+        self.bundled.mkdir()
+        for value in (patch.dict(os.environ, {
+                "CODEX_HOME": str(self.root / "codex"), "CLAUDE_CONFIG_DIR": str(self.root / "claude"),
+                "APPDATA": str(self.root / "roaming"), "LOCALAPPDATA": str(self.root / "local")}),
+                patch.object(skill_library, "BUNDLED", self.bundled)):
+            value.start()
+            self.addCleanup(value.stop)
+        os.environ.pop("MONKEYHUB_SKILL_PACKAGES", None)
 
-    def add(self, payload: dict) -> dict:
-        response = self.studio.post("/api/skills", json=payload)
-        self.assertEqual(response.status_code, 201, response.text)
-        return response.json()
+    def install(self, skill: dict) -> None:
+        """Put a skill's folder in the user's skill folder, as a person does."""
+        folder = self.user / skill["name"]
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "skill.json").write_text(json.dumps({"name": skill["name"], "description": skill["description"]}),
+                                           encoding="utf-8")
+        (folder / "SKILL.md").write_text(skill["body"], encoding="utf-8")
 
-    def index(self) -> dict:
-        return self.studio.get("/api/skills").json()
-
-    def fetch(self, skill_id: str, version: int) -> dict:
-        self.fetched.append(f"{skill_id}@{version}")
-        return self.studio.get(f"/api/skills/{skill_id}", params={"version": version}).json()
-
-    def request_json(self, base, path, method="GET", body=None, timeout=180, **_):
-        """The library Runtime's API, as transport._request_json reaches it."""
-        self.assertEqual((base, method), ("http://127.0.0.1:9001", "GET"))
-        if path.startswith("/api/skills/"):
-            self.fetched.append(path)
-        response = self.studio.get(path)
-        self.assertEqual(response.status_code, 200, response.text)
-        return response.json()
-
-    def test_the_plugin_layout_is_built_once_per_index(self):
-        self.add(HATCH)
-        self.add(SHEET)
+    def test_the_plugin_layout_is_built_once_per_state_of_the_folders(self):
+        self.install(HATCH)
+        self.install(SHEET)
         cache = self.runtime / "cache" / "skill-plugins"
-        built = skill_plugins.materialize(cache, self.index(), self.fetch)
+        built = skill_plugins.materialize(cache, skill_plugins.installed_library())
         self.assertEqual(built.parent, cache)
         self.assertEqual(json.loads((built / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))["name"],
                          "monkeyhub-library")
@@ -101,31 +84,28 @@ class SkillLibraryTest(unittest.TestCase):
             "---\nname: hatch-review\n"
             "description: \"Review a plan's hatching: \\\"double\\\" hatches, poché and the recipe.\"\n"
             "---\n\n1. Read the drawing recipe.\n2. List every region hatched twice.\n"))
-        self.assertEqual(sorted(self.fetched), ["skill:hatch-review@1", "skill:section-sheet@1"])
         self.assertEqual([path.name for path in cache.iterdir()], [built.name], "no staging directory is left")
 
-        # An unchanged index reads no body and writes nothing.
+        # Unchanged folders write nothing.
         before = snapshot(cache)
-        self.fetched.clear()
-        self.assertEqual(skill_plugins.materialize(cache, self.index(), self.fetch), built)
-        self.assertEqual((self.fetched, snapshot(cache)), ([], before))
+        self.assertEqual(skill_plugins.materialize(cache, skill_plugins.installed_library()), built)
+        self.assertEqual(snapshot(cache), before)
 
-        # A new version is a new index, and a new directory built from it.
-        self.add({**HATCH, "body": "Check poché first.\n", "supersedesVersion": 1})
-        rebuilt = skill_plugins.materialize(cache, self.index(), self.fetch)
+        # A changed skill is a new directory built from it.
+        self.install({**HATCH, "body": "Check poché first.\n"})
+        rebuilt = skill_plugins.materialize(cache, skill_plugins.installed_library())
         self.assertNotEqual(rebuilt, built)
-        self.assertEqual(sorted(self.fetched), ["skill:hatch-review@2", "skill:section-sheet@1"])
         self.assertIn("Check poché first.", (rebuilt / "skills/hatch-review/SKILL.md").read_text(encoding="utf-8"))
 
-        # A library with no skills has nothing to load.
-        self.assertIsNone(skill_plugins.materialize(cache, {"projectId": LIBRARY_ID, "skills": []}, self.fetch))
+        # Nothing installed has nothing to load.
+        self.assertIsNone(skill_plugins.materialize(cache, skill_plugins.Library(())))
 
         # A name read back is a folder name: one project_runtime.skills would not accept is refused, not written.
         before = snapshot(cache)
-        forged = {"id": "skill:../escape", "version": 1, "name": "../escape", "description": "x"}
+        forged = {"id": "skill:../escape", "name": "../escape", "description": "x", "code": "0" * 12,
+                  "source": "user", "body": "x"}
         with self.assertRaises(chat.HubFailure) as refused:
-            skill_plugins.materialize(cache, {"projectId": LIBRARY_ID, "skills": [forged]},
-                                      lambda skill_id, version: {**forged, "body": "x"})
+            skill_plugins.materialize(cache, skill_plugins.Library((forged,)))
         self.assertEqual(refused.exception.error.code, "CHAT_SKILL_LIBRARY_INVALID")
         self.assertEqual(snapshot(cache), before)
         self.assertFalse((self.runtime / "cache" / "escape").exists())
@@ -136,59 +116,44 @@ class SkillLibraryTest(unittest.TestCase):
             command, _ = store._command(store._sessions[self.session.id])
         return command
 
-    def test_the_claude_command_gains_the_plugin_only_when_a_library_is_set(self):
+    def test_every_chat_is_given_the_installed_skills_without_a_runtime(self):
         commands = {name: (sys.executable, "-c", "pass") for name in ("codex", "claude")}
         store = chat.ChatStore(self.runtime, "http://127.0.0.1:8790", commands=commands)
         self.addCleanup(store.shutdown)
         self.session = store.create(ChatCreateRequest(projectDir=str(self.project), provider="claude"))
-        self.add(HATCH)
+        nobody = {"side_effect": AssertionError("the skills are read from the folders, not through a Runtime")}
 
-        # No library: nothing is read, and the chat has no Skill tool at all (#463).
-        with patch.object(transport, "_request_json", side_effect=AssertionError("no library, no call")):
+        # Nothing installed: the chat has no Skill tool at all (#463), and no user settings either.
+        with patch.object(transport, "_request_json", **nobody), patch.object(preparation, "_prepare_studio", **nobody):
             plain = self.claude_command(store)
         self.assertIn("--disable-slash-commands", plain)
-        # No user settings either: installed plugins' hooks would still inject their text (#463).
         self.assertEqual(plain[plain.index("--disable-slash-commands"):plain.index("--disable-slash-commands") + 3],
                          ["--disable-slash-commands", "--setting-sources", "project,local"])
         for flag in ("--plugin-dir", "--settings"):
             self.assertNotIn(flag, plain)
 
-        save_application_settings(self.runtime, ApplicationSettingsDto(libraryDir=str(self.library)))
-        projects = snapshot(self.project), snapshot(self.library)
-        prepared = []
-        with patch.object(preparation, "_prepare_studio", side_effect=lambda hub, session, budget: prepared.append(session)), \
-                patch.object(preparation, "_bound_studio", return_value=("http://127.0.0.1:9001", {})), \
-                patch.object(transport, "_request_json", side_effect=self.request_json):
+        # Installed once, in every chat of every project.
+        self.install(HATCH)
+        project = snapshot(self.project)
+        with patch.object(transport, "_request_json", **nobody), patch.object(preparation, "_prepare_studio", **nobody):
             loaded = self.claude_command(store)
             again = self.claude_command(store)
-        self.assertEqual(prepared[0], {"projectId": LIBRARY_ID, "projectDir": str(self.library.resolve())})
         plugin = Path(loaded[loaded.index("--plugin-dir") + 1])
         self.assertTrue(plugin.is_relative_to(self.runtime / "cache" / "skill-plugins"))
         self.assertTrue((plugin / "skills/hatch-review/SKILL.md").is_file())
         self.assertEqual(again[again.index("--plugin-dir") + 1], str(plugin))
-        self.assertEqual(self.fetched, ["/api/skills/skill:hatch-review?version=1"], "the second chat fetched no body")
-        # Only the library's skills: no user settings, no bundled skills, and
-        # the known leftovers turned off with the one value the CLI accepts.
-        # A wrong shape makes the CLI ignore the whole --settings value.
+        # Only these skills: no user settings, no bundled skills, and the known
+        # leftovers turned off with the one value the CLI accepts.
         position = loaded.index("--plugin-dir")
         self.assertEqual(loaded[position:position + 6], [
             "--plugin-dir", str(plugin), "--setting-sources", "project,local", "--settings",
             json.dumps({"disableBundledSkills": True, "skillOverrides": {"design": "off", "doctor": "off"}})])
-        self.assertEqual(json.loads(loaded[position + 5]),
-                         {"disableBundledSkills": True, "skillOverrides": {"design": "off", "doctor": "off"}})
         self.assertNotIn("--disable-slash-commands", loaded)
         without = plain.index("--disable-slash-commands")
         self.assertEqual(loaded[:position] + loaded[position + 6:], plain[:without] + plain[without + 3:])
-        # Starting the chat changed no project: not its own, not the library.
-        self.assertEqual((snapshot(self.project), snapshot(self.library)), projects)
+        self.assertEqual(snapshot(self.project), project, "starting the chat changed no project")
 
-        # A library that cannot be read says so; the turn does not go without it.
-        with patch.object(preparation, "_prepare_studio", side_effect=chat.HubFailure(503, "CHAT_STUDIO_UNAVAILABLE", "Not ready.")):
-            with self.assertRaises(chat.HubFailure) as refused:
-                self.claude_command(store)
-        self.assertEqual(refused.exception.error.code, "CHAT_SKILL_LIBRARY_UNAVAILABLE")
-
-    def test_a_library_chat_carries_only_sign_in_and_network_from_user_settings(self):
+    def test_a_chat_with_skills_carries_only_sign_in_and_network_from_user_settings(self):
         commands = {name: (sys.executable, "-c", "pass") for name in ("codex", "claude")}
         store = chat.ChatStore(self.runtime, "http://127.0.0.1:8790", commands=commands)
         self.addCleanup(store.shutdown)
@@ -198,8 +163,8 @@ class SkillLibraryTest(unittest.TestCase):
             "env": {"HTTPS_PROXY": "http://proxy.example.invalid:8080"}, "apiKeyHelper": "fixture-helper",
             "enabledPlugins": {"superpowers@market": True}, "hooks": {"Stop": []}, "theme": "dark",
         }), encoding="utf-8")
-        self.add(HATCH)
-        library = skill_plugins.Library(self.index(), self.fetch)
+        self.install(HATCH)
+        library = skill_plugins.installed_library()
         plan = {"ANTHROPIC_BASE_URL": "https://fixture.example.invalid", "ANTHROPIC_AUTH_TOKEN": "fixture-plan-token"}
         for provider in ("claude", "coding-plan"):
             with self.subTest(provider=provider), patch.object(providers, "_coding_plan_env", return_value=plan):
@@ -224,25 +189,55 @@ class SkillLibraryTest(unittest.TestCase):
         self.addCleanup(store.shutdown)
         plan = {"ANTHROPIC_BASE_URL": "https://fixture.example.invalid", "ANTHROPIC_AUTH_TOKEN": "fixture-plan-token"}
         for provider, expected in (("claude", "1"), ("coding-plan", "1"), ("codex", None)):
-            with self.subTest(provider=provider), patch.object(providers, "_coding_plan_env", return_value=plan),                     patch.dict(os.environ, {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": ""}):
+            with self.subTest(provider=provider), patch.object(providers, "_coding_plan_env", return_value=plan), \
+                    patch.dict(os.environ, {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": ""}):
                 os.environ.pop("CLAUDE_CODE_DISABLE_AUTO_MEMORY")
                 session = store.create(ChatCreateRequest(projectDir=str(self.project), provider=provider))
                 with store._lock, patch.object(store, "_codex_mcp", return_value={}):
                     _, environment = store._command(store._sessions[session.id], library=lambda: None)
                 self.assertEqual(environment.get("CLAUDE_CODE_DISABLE_AUTO_MEMORY"), expected)
 
-    def test_the_library_setting_names_a_complete_project(self):
+    def test_a_persons_answer_is_kept_by_the_hub_as_a_grant(self):
+        commands = {name: (sys.executable, "-c", "pass") for name in ("codex", "claude")}
+        store = chat.ChatStore(self.runtime.resolve(), "http://127.0.0.1:8790", commands=commands)
+        self.addCleanup(store.shutdown)
+        ask = {"access": {"ssh": ["renou-win"]}, "broad": {}, "skill": {"name": "blender-render", "source": "user"},
+               "projectId": "housing-13-units", "codeSha256": "c" * 64}
+        once = store._allow_skill(ask, once=True, ref="question-1")
+        always = store._allow_skill(ask, once=False, ref="question-2")
+        wide = store._allow_skill({**ask, "access": {"programs": ["python"]}, "broad": {"programs": ["python"]}},
+                                  once=False, ref="question-3")
+        rows = {row.grant_id: row for row in skill_grants.read(self.runtime.resolve()).grants}
+        self.assertEqual((rows[once].skill.name, rows[once].once["projectId"], rows[once].once["codeSha256"]),
+                         ("blender-render", "housing-13-units", "c" * 64), "only this time: this run's project and code")
+        self.assertIsNone(rows[always].skill, "always allow: every skill and project")
+        self.assertEqual(rows[wide].skill.name, "blender-render", "what allows anything: this skill only")
+        grants = skill_access.read_grants(skill_grants.grants_path(self.runtime.resolve()))
+        self.assertEqual(skill_access.needed({"ssh": ["renou-win"]}, grants, skill_access.SkillRef("other", "user"),
+                                             resolve=str), {})
+        self.assertTrue(all(row.method == "card" for row in rows.values()))
+        self.assertLessEqual(datetime.fromisoformat(rows[once].granted_at), datetime.now(timezone.utc))
+
+    def test_the_settings_page_lists_and_withdraws_grants_without_a_project(self):
         app = create_app(HubSettings(runtime_root=self.runtime))
         with TestClient(app, base_url="http://127.0.0.1:8790") as client:
-            settings = client.get("/api/settings/apps").json()
-            self.assertIsNone(settings.get("libraryDir"))
-            missing = client.put("/api/settings/apps", json={**settings, "libraryDir": str(self.root / "missing")})
-            self.assertEqual((missing.status_code, missing.json()["code"]), (422, "CHAT_PROJECT_INVALID"))
-            relative = client.put("/api/settings/apps", json={**settings, "libraryDir": "library"})
-            self.assertEqual(relative.status_code, 422)
-            saved = client.put("/api/settings/apps", json={**settings, "libraryDir": str(self.library)})
-            self.assertEqual(saved.status_code, 200, saved.text)
-            self.assertEqual(saved.json()["libraryDir"], str(self.library.resolve()))
+            self.assertEqual(client.get("/api/settings/skill-grants").json()["grants"], [])
+            row = skill_grants.allow(self.runtime.resolve(), {"programs": ["blender"]}, method="card")
+            listed = client.get("/api/settings/skill-grants").json()["grants"]
+            self.assertEqual([(item["grantId"], item["access"]["programs"]) for item in listed], [(row.grant_id, ["blender"])])
+            withdrawn = client.post(f"/api/settings/skill-grants/{row.grant_id}/revoke")
+            self.assertEqual(withdrawn.status_code, 200, withdrawn.text)
+            self.assertIsNotNone(withdrawn.json()["revokedAt"])
+            self.assertEqual(client.post("/api/settings/skill-grants/nobody/revoke").status_code, 404)
+            self.install({**HATCH, "name": "blender-render"})
+            carried = client.post("/api/settings/skill-grants/carry", json={"projectId": "0925", "approvals": [
+                {"approvalId": "a1", "skillId": "skill:blender-render", "version": 1, "scope": "version",
+                 "status": "active", "access": {"programs": ["blender"], "ssh": ["renou-win"]}},
+                {"approvalId": "a2", "skillId": "skill:blender-render", "version": 1, "scope": "version",
+                 "status": "revoked", "access": {"network": True}}]})
+            self.assertEqual(carried.status_code, 200, carried.text)
+            self.assertEqual([(item["ref"], item["skill"]) for item in carried.json()],
+                             [("a1", {"name": "blender-render", "source": "user"})])
 
 
 if __name__ == "__main__":

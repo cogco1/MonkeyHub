@@ -75,8 +75,10 @@ class AttentionHub:
         headers = {"content-type": "application/json"}
         if operation_id is not None:
             headers["idempotency-key"] = operation_id
+        # A person's request all the same; the journal says it was a card's answer.
         result = self.runtimes.forward(runtime, path, method,
-                                       b"" if body is None else json.dumps(body).encode("utf-8"), headers)
+                                       b"" if body is None else json.dumps(body).encode("utf-8"), headers,
+                                       source="attention")
         answer = result.json()
         if result.status >= 400:
             raise HubFailure(result.status, str(answer.get("code") or "STUDIO_REQUEST_FAILED"),
@@ -231,7 +233,11 @@ class AttentionHub:
     def _follow(self) -> None:
         dirty: dict[str, float] = {}
         hub_due = 0.0
-        with self.runtimes.events.subscribe() as (_, inbox):
+        with self.runtimes.events.subscribe() as (earlier, inbox):
+            # What the Hub did before the queue followed it, a project it reopened at start among it, is read too.
+            for event in earlier:
+                if event.get("kind") != CHANGED and event.get("runtimeId"):
+                    dirty[event["runtimeId"]] = time.monotonic() + SETTLE_S
             while not self._stop.is_set():
                 if time.monotonic() >= hub_due:
                     hub_due = time.monotonic() + HUB_EVERY_S

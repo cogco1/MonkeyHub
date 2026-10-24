@@ -215,6 +215,19 @@ class CapabilityIndexTestCase(unittest.TestCase):
         matched, _, _ = capability_module.match_capabilities(entries, "平面图")
         self.assertEqual([row["capability_id"] for row in matched], ["drawing.orthographic"], "a short goal still finds its entry")
 
+    def test_the_sentences_the_web_search_answers_find_the_same_capabilities(self) -> None:
+        # One rule for the Hub's command search and this index: both suites read the same sentences.
+        cases = json.loads((capability_module.registry_path().parent / "command_search_cases.json").read_text(encoding="utf-8"))
+        entries, phrases = capability_module.capability_index(), capability_module.command_phrases()
+        for row in cases["cases"]:
+            if "capability" in row:
+                matched, _, _ = capability_module.match_capabilities(entries, row["say"], phrases)
+                self.assertEqual(matched[0]["capability_id"] if matched else None, row["capability"], row["say"])
+        for said in cases["nothing"]:
+            matched, _, note = capability_module.match_capabilities(entries, said, phrases)
+            self.assertEqual(matched, (), said)
+            self.assertIn("not the list of everything the system does", note)
+
     def test_a_goal_this_index_has_no_words_for_still_answers_honestly(self) -> None:
         body = self.client.get("/api/capabilities", params={"goal": "出一套施工图纸并送审"}).json()
         self.assertEqual(body["matchCount"], 0)

@@ -258,13 +258,14 @@ class AcpChatTests(unittest.TestCase):
             self.assertEqual(client.get(f"{ask}/{question}").json()["status"], "waiting")
             shown = next(m.permission for m in self.store.get(session.id).messages
                          if m.permission and m.permission.id == question)
-            self.assertEqual([o.optionId for o in shown.options], ["allow_once", "allow_always", "reject"])
+            self.assertEqual([o.optionId for o in shown.options], ["allow_always", "allow_once", "reject"])
             self.assertIn("blender", shown.title)
             answer = client.post(f"/api/chat/sessions/{session.id}/permissions/{question}",
                                  json={"projectId": session.projectId, "optionId": "allow_always"})
             self.assertEqual(answer.status_code, 200, answer.text)
             self.assertEqual(client.get(f"{ask}/{question}?wait=5").json(),
-                             {"permissionId": question, "status": "answered", "optionId": "allow_always"})
+                             {"permissionId": question, "status": "answered", "optionId": "allow_always",
+                              "grantId": None})
             self.assertEqual(client.get(f"{ask}/{question}").status_code, 404, "an answer is read once")
             unanswered = client.post(ask, json={"title": "Run again"}).json()["permissionId"]
             client.post(f"/api/chat/sessions/{session.id}/permissions/{acp.id}",

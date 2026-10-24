@@ -40,6 +40,20 @@ class RenderCameraDto(BaseModel):
         return self
 
 
+class SectionClipDto(BaseModel):
+    """A live section plane (G5): a point on it and the normal toward the side that stays drawn, in the model's frame."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid", allow_inf_nan=False)
+    origin: tuple[float, float, float]
+    normal: tuple[float, float, float]
+
+    @model_validator(mode="after")
+    def _normal(self):
+        if not any(self.normal):
+            raise ValueError("a section plane's normal is not the zero vector")
+        return self
+
+
 class RenderViewSourceRequestDto(BaseModel):
     """Freeze the visible camera image against one exact retained model."""
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
@@ -49,6 +63,8 @@ class RenderViewSourceRequestDto(BaseModel):
     camera: RenderCameraDto
     screen_size: tuple[int, int] = Field(alias="screenSize")
     png_base64: str = Field(alias="pngBase64", min_length=1, max_length=44739244)
+    clip: SectionClipDto | None = Field(default=None, description=(
+        "The live section the view was cut at, kept in its recipe so a camera pass of it is cut the same way."))
 
     @model_validator(mode="after")
     def valid_size(self):
@@ -91,6 +107,9 @@ class CameraPassRequestDto(BaseModel):
     source_asset: dict[str, str] | None = Field(alias="sourceAsset", default=None,
                                                 description="{runId, assetSha256} of an imported or snapshot model")
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
+    clip: SectionClipDto | None = Field(default=None, description=(
+        "Cut the model at a live section plane first, as the Modeling viewport does; a saved view's own cut "
+        "applies when none is given. Its outline is drawn as lines; its cut faces are not filled."))
 
 
 class RenderCapabilityDto(BaseModel):

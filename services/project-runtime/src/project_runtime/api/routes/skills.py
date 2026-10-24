@@ -1,10 +1,11 @@
-"""Add, grant and run the bound project's skills: named procedures in immutable versions.
+"""The skills installed on this machine, run on the bound project, and the versions it retains.
 
-The Hub reads these routes on the library project's Runtime and hands the
-current versions to the agents through their native skill mechanism. A
-runnable version declares the access it needs; it runs only under a grant a
-person gives on the Hub page (once, or for this version until revoked), and
-the chat's tools reach neither the grant nor the revocation.
+A skill is a folder in the skill folders; every project can run it, and the
+project retains the exact version each run used. What a runnable skill
+declares is allowed by a person in the Hub, for every project (S-1); these
+routes read those grants and never write one. ``GET /skills/approvals`` lists
+the project's own approvals from before S-1, which the Hub reads once to carry
+them over.
 """
 
 from fastapi import APIRouter, Query
@@ -16,13 +17,9 @@ from ...authentication import request_attribution
 from ...binding import bound_project
 from ...errors import StudioError
 from ..dto.skills import (
-    SkillApprovalDto,
-    SkillApprovalRequestDto,
     SkillDto,
-    SkillImportRequestDto,
     SkillIndexDto,
     SkillRequestDto,
-    SkillRevokeRequestDto,
     SkillRunRequestDto,
     approval_dto,
     skill_dto,
@@ -40,38 +37,13 @@ def read_skill_library(request: Request) -> dict:
     return skill_library.library(bound_project(request.app.state))
 
 
-@router.post("/skills/import")
-def import_skill(request: Request, payload: SkillImportRequestDto) -> dict:
-    """Register one package as this project's skill; an unchanged package adds no version. It grants nothing."""
-
-    binding = bound_project(request.app.state)
-    if payload.project_id != binding.project_id:
-        raise StudioError(403, "PROJECT_MISMATCH", "The import names another project.")
-    row, imported = skill_library.import_package(binding, payload.source, payload.name,
-                                                 attribution=request_attribution(request))
-    latest = skills.latest_version(binding, row.skill_id)
-    return {"imported": imported, "skill": skill_dto(row, latest.version, list(skills.approvals(binding, row.skill_id)))
-            .model_dump(by_alias=True)}
-
-
 @router.get("/skills/approvals")
 def read_skill_grants(request: Request) -> dict:
-    """Every grant of the project with its status: active, used (a once grant a run took) or revoked."""
+    """The project's approvals from before S-1 with their status: active, used (a once grant a run took) or revoked."""
 
     binding = bound_project(request.app.state)
     rows = skills.grant_rows(binding, skill_runs.used_once_grants(binding))
     return {"projectId": binding.project_id, "approvals": [approval_dto(row).model_dump(by_alias=True) for row in rows]}
-
-
-@router.post("/skills/approvals/{approval_id}/revoke")
-def revoke_skill_grant(request: Request, approval_id: str, payload: SkillRevokeRequestDto) -> dict:
-    """A person withdraws a grant on the Hub page; later runs cannot use it. The chat's tools cannot reach this."""
-
-    binding = bound_project(request.app.state)
-    if payload.project_id != binding.project_id:
-        raise StudioError(403, "PROJECT_MISMATCH", "The revocation names another project.")
-    row = skills.revoke_approval(binding, approval_id, attribution=request_attribution(request))
-    return {"approvalId": row["approvalId"], "revokedAt": row["revokedAt"], "revokedBy": row["revokedBy"]}
 
 
 @router.get("/skills/runs/{run_id}")
@@ -94,9 +66,7 @@ def read_skill_index(request: Request) -> SkillIndexDto:
     """Every skill's current version: id, version, name and description, and no body."""
 
     binding = bound_project(request.app.state)
-    retained = list(skills.approvals(binding))
-    return SkillIndexDto(projectId=binding.project_id,
-                         skills=[skill_index_row(row, retained) for row in skills.list_skills(binding)])
+    return SkillIndexDto(projectId=binding.project_id, skills=[skill_index_row(row) for row in skills.list_skills(binding)])
 
 
 @router.get("/skills/{skill_id}", response_model=SkillDto, response_model_by_alias=True)
@@ -113,8 +83,8 @@ def read_skill(request: Request, skill_id: str,
 def add_skill(request: Request, payload: SkillRequestDto) -> SkillDto:
     """Retain a new skill, or a version superseding the one the caller read.
 
-    The old version stays readable. Retaining a skill grants no permission;
-    its declared ``permissions`` are for a reader and are never enforced.
+    The old version stays readable. Retaining a skill allows nothing; what a
+    run may do is a person's to allow in the Hub.
     """
 
     binding = bound_project(request.app.state)
@@ -130,30 +100,14 @@ def add_skill(request: Request, payload: SkillRequestDto) -> SkillDto:
     return skill_dto(row, row.version, [])
 
 
-@router.post("/skills/{skill_id}/approvals", response_model=SkillApprovalDto, response_model_by_alias=True,
-             status_code=201)
-def approve_skill(request: Request, skill_id: str, payload: SkillApprovalRequestDto) -> SkillApprovalDto:
-    """A person approves one version's exact code (codeSha256) so it may run.
-
-    The Hub page sends this when the architect presses Approve; the chat's
-    tools cannot reach it. Code that differs from the hash shown is refused.
-    """
-
-    binding = bound_project(request.app.state)
-    if payload.project_id != binding.project_id:
-        raise StudioError(403, "PROJECT_MISMATCH", "The approval names another project.")
-    return approval_dto(skills.approve_skill(binding, skill_id, version=payload.version, code=payload.code_sha256,
-                                             method=payload.method, scope=payload.scope,
-                                             attribution=request_attribution(request)))
-
-
 @router.post("/skills/{skill_id}/run", status_code=202)
 def run_skill(request: Request, skill_id: str, payload: SkillRunRequestDto) -> dict:
-    """Start a granted version on project inputs as a background job; read it at statusPath.
+    """Start the installed skill on project inputs as a background job; read it at statusPath.
 
-    Refused before anything runs with SKILL_NOT_APPROVED, SKILL_CODE_CHANGED or
-    SKILL_NOT_RUNNABLE. A run the code makes beyond its grant fails with
-    SKILL_PERMISSION_NEEDED and names what it needed.
+    Refused before anything runs with SKILL_NOT_INSTALLED, SKILL_NOT_RUNNABLE,
+    SKILL_CHANGED or SKILL_ACCESS_NEEDED (what a person still has to allow). A
+    run that tries what it did not declare fails with SKILL_PERMISSION_NEEDED
+    and names what it tried.
     """
 
     binding = bound_project(request.app.state)
@@ -165,6 +119,13 @@ def run_skill(request: Request, skill_id: str, payload: SkillRunRequestDto) -> d
         parameters=payload.parameters, attribution=request_attribution(request), agent=payload.agent_run,
         grant_id=payload.grant_id,
     )
+
+
+@router.get("/skills/{skill_id}/needs")
+def read_skill_needs(request: Request, skill_id: str) -> dict:
+    """What a run of the installed skill would need a person to allow now; nothing runs and nothing is retained."""
+
+    return skill_runs.run_needs(bound_project(request.app.state), skill_id)
 
 
 @router.get("/skills/{skill_id}/runs")

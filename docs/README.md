@@ -61,6 +61,8 @@ are [GitHub Issues](https://github.com/cogco1/MonkeyHub/issues); who owns which 
 - [blender-projection.md](design/blender-projection.md) — Blender Projection V1: running it, its boundary and its verification.
 - [candidate-graph.md](design/candidate-graph.md) — Candidate Graph interaction: research and recommendation.
 - [hub-interaction.md](design/hub-interaction.md) — the Hub-level interaction proposal and its delivery slices.
+- [viewport-live-section.md](design/viewport-live-section.md) — a live cutting plane in the Modeling viewport (G5): design and steps.
+- [data-diagrams.md](design/data-diagrams.md) — topology, section and timeline diagrams drawn from data in MonkeyDiagram (gap 38): design and steps.
 
 **research/** — studies, plans and charters.
 

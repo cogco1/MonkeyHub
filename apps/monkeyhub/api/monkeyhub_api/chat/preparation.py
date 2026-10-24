@@ -18,6 +18,7 @@ from .. import projects
 from . import transport
 
 from ..models import HubFailure
+from ..runtime.workers import project_key
 
 
 # One preparation per project at a time in this process. A call that finds a
@@ -65,7 +66,7 @@ def _prepare_studio(hub: str, session: Mapping, budget: float) -> dict:
 
     query = urlencode({"projectDir": session["projectDir"]})
     with _PREPARING:
-        held = _PREPARATIONS.setdefault(os.path.normcase(session["projectDir"]), threading.Lock())
+        held = _PREPARATIONS.setdefault(project_key(session["projectDir"]), threading.Lock())
     if not held.acquire(timeout=max(0.0, left())):
         raise unready()
     try:
@@ -117,10 +118,16 @@ def _not_running(session: Mapping) -> HubFailure:
     Before its first user message a chat has no turn at all, and calling that
     "no longer running" sent a caller looking for a turn that had stopped.
     """
+    # An external source's turn begins with the user's own words, which only it
+    # has: Hub cannot start that turn for it, so the refusal says the one call
+    # that does, in full, and that nothing was done.
+    publish = ("Publish the user's request with chat_present kind=user, a new UUID turnId and messageId and their words "
+               "as content, then call this project tool again within that turn. Nothing was called.")
     if not any(row.get("role") == "user" for row in session.get("messages", ())):
-        waiting = ("Publish the user's message with chat_present kind=user first; project tools then answer within that turn."
-                   if session.get("sourceSessionId") else "Project tools answer once a user message starts a turn.")
+        waiting = publish if session.get("sourceSessionId") else "Project tools answer once a user message starts a turn."
         return HubFailure(409, "CHAT_NOT_RUNNING", f"This chat has not started a turn yet. {waiting}")
+    if session.get("sourceSessionId"):
+        return HubFailure(409, "CHAT_NOT_RUNNING", f"This chat's turn has ended. For a new request: {publish}")
     return HubFailure(409, "CHAT_NOT_RUNNING", "This chat's turn has ended; project tools answer only while a turn runs.")
 
 

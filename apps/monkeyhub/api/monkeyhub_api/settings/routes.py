@@ -1,4 +1,4 @@
-"""The settings routes: this Hub's launch choices, the provider keys, and the local account's preferences.
+"""The settings routes: this Hub's launch choices, what skills may do, the provider keys, and the account's preferences.
 
 No project is opened by any of them. The Hub serves the three apart, each where
 its routes stand in the Hub's route order.
@@ -15,7 +15,10 @@ from ..chat import providers
 from ..models import (
     CredentialCheck, CredentialId, CredentialStatus, CredentialWrite, HubError, HubFailure, ProviderLinkId,
 )
-from . import credentials
+from project_runtime.api.dto.skill_grants import SkillGrantDto, SkillGrantsDto
+from project_runtime.application.skill_library import installed
+
+from . import credentials, skill_grants
 from .models import ApplicationSettingsDto, UserSettingsDto
 from .store import SettingsError, read_application_settings, read_user_settings, save_user_settings
 
@@ -36,6 +39,32 @@ def app_settings_router(settings, applications, chats) -> APIRouter:
             body = body.model_copy(update={"library_dir": library})
         with chats.project_configuration(body.project_dir):
             return applications.configure(body)
+
+    @routes.get("/api/settings/skill-grants", response_model=SkillGrantsDto, response_model_by_alias=True,
+                response_model_exclude_none=True)
+    def read_skill_grants() -> SkillGrantsDto:
+        """What a person allowed skills to do on this machine (S-1), withdrawn grants included; no project is read."""
+        return skill_grants.read(settings.runtime_root)
+
+    @routes.post("/api/settings/skill-grants/{grant_id}/revoke", response_model=SkillGrantDto,
+                 response_model_by_alias=True, response_model_exclude_none=True)
+    def revoke_skill_grant(grant_id: str) -> SkillGrantDto:
+        """Withdraw one grant in Settings; its record stays and no later run is allowed by it."""
+        return skill_grants.revoke(settings.runtime_root, grant_id, by="settings")
+
+    @routes.post("/api/settings/skill-grants/carry", response_model=list[SkillGrantDto], response_model_by_alias=True,
+                 response_model_exclude_none=True)
+    def carry_skill_grants(body: skill_grants.SkillGrantCarryRequest) -> list[SkillGrantDto]:
+        """A project's version approvals from before S-1, carried over once each as grants for that skill."""
+        found = installed()
+
+        def source_of(name: str) -> str | None:
+            row = found.find(name)
+            return None if row is None or row.content is None else row.source
+
+        return skill_grants.migrate(settings.runtime_root, body.project_id,
+                                    [row for row in body.approvals if row.get("status", "active") == "active"],
+                                    source_of=source_of)
 
     return routes
 

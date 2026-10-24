@@ -2920,6 +2920,22 @@
             ]
           },
           {
+            "id": "drawing.live_section.draw",
+            "label": "Draw this section",
+            "label_zh": "出这张剖面",
+            "aliases": [
+              "section from the cut",
+              "剖切出图"
+            ],
+            "entries": []
+          },
+          {
+            "id": "drawing.live_section.place_on_board",
+            "label": "Put the section on Board",
+            "label_zh": "剖面放到 Board",
+            "entries": []
+          },
+          {
             "id": "view.reference_model.show",
             "label": "Show reference model",
             "label_zh": "显示参考模型",
@@ -4527,6 +4543,20 @@
               "壳20",
               "壳41"
             ]
+          },
+          {
+            "id": "view.shell.workbench",
+            "label": "Back to the old shell",
+            "label_zh": "回旧版",
+            "aliases": ["old interface", "workbench", "旧界面", "工作台"],
+            "entries": []
+          },
+          {
+            "id": "view.shell.attention",
+            "label": "Back to the new shell",
+            "label_zh": "回新版",
+            "aliases": ["new interface", "attention shell", "新界面", "新版"],
+            "entries": []
           },
           {
             "id": "view.side_panel",
@@ -8957,7 +8987,8 @@
         "NativeModelSource: verify original 3DM bytes against their explicit registration and derive drawing shapes without fabricating semantic state or CAD execution provenance",
         "DrawnView: a drawn view's SVG, PNG and what its receipt says about the drawing apart from its source and run; freeze_model_axis_elevation and freeze_section_perspective take an optional cache (DrawingCache) asked for the drawn view once the source verified, so a kept drawing is retained without solving its view again",
         "axonometric_frame: the right, up and look of a parallel view from any non-vertical direction with CAD +Z up; such a view is retained through freeze_model_axis_elevation with the elevation receipt, foreshortened and stated as a display scale",
-        "the difference between two cut-plan view recipes by dotted path - hidden objects, dimensions and dressing by the ids they hold, a material's hatch rule whole - and the class of correction it is, the first of compiler_defect, semantic_rule, recipe and local_override that holds for the difference and the replacement cause (recipe_diff, classify, CLASSES); pure, reading no project"
+        "the difference between two cut-plan view recipes by dotted path - hidden objects, dimensions and dressing by the ids they hold, a material's hatch rule whole - and the class of correction it is, the first of compiler_defect, semantic_rule, recipe and local_override that holds for the difference and the replacement cause (recipe_diff, classify, CLASSES); pure, reading no project",
+        "a drawing's solve as a DrawTask another process can run (run_draw_task: open the project, verify the source, draw; nothing written) and the DrawResult it gives back, the source verified without its shapes; each freeze_* takes a drawer for it and retains the result in its own process"
       ],
       "does_not_own": [
         "the hidden-line solve - monkeycad.occt",
@@ -9029,7 +9060,13 @@
         "projection.views.clean_view_lines",
         "projection.views.finite_number",
         "projection.views.observed_stage",
-        "projection.views.refuse_section"
+        "projection.views.refuse_section",
+        "DrawTask",
+        "DrawResult",
+        "Drawer",
+        "run_draw_task",
+        "verify_draw_source",
+        "Retaining"
       ],
       "depends_on": [
         "archflow.project.ports",
@@ -10178,7 +10215,8 @@
         "drawings as on-demand projections (#368): an elevation's and a section perspective's SVG and PNG, a review sheet's PDF and DXF and a document page's raster are kinds of the same content-keyed cache (drawing-elevation, drawing-section-perspective, drawing-sheet, document-page), keyed by the input asset's sha256, a recipe holding every field that changes the bytes (the complete view and the drawn source content: geometry digest, unit, objects, bounds and semantics) and a renderer digest of the drawing code, fonts and libraries (drawings.drawing_pipeline); ProjectionQueue.on_demand draws one in the request that needs it through the existing generator, at most once per key, and the worker never draws them; issuing reads the cached files back and retains them in P036 byte for byte with a receipt of its own",
         "the retained axonometric: POST /api/drawings/elevations view axon, from a stated direction toward the viewer (default the model view's -X, -Y, +Z), framed on every physical object's bounds like an elevation",
         "view sheets through POST /api/drawings/sheets: same-source plans, vertical sections, elevations, axonometrics and section perspectives, each drawn or read back through its own generator from the sheet's one source (modelSource, Stage or unbound imported asset) and named in the sheet recipe by its exact revision, placed at its own scale where the caller put it, with default titles, subtitles and scale labels from each view's own frame and a section's cut line on a plan, as monkeydiagram.documentation.sheet_layout lays them out; front/right/top requests keep the review sheet's layout and defaults; every sheet is one paper scene retained as PDF, DXF, SVG and PNG beside each other in its source run and registered as its PDF, which names the other three files' digests; GET /api/drawings/{asset_sha256}/files/{file_format} reads a view revision's SVG/PNG, only by its revisionRef (DRAWING_REVISION_REQUIRED), or a sheet's four files, verified",
-        "the state-carrying 3DM (#657), only while the design loop is enforced: POST /api/state-files/export seals an exact revision's model with its State Record and the project's active design decisions in the architect's words, read back like any export; POST /api/state-files/inspect reads such a file without retaining anything and answers the record and decisions its seal keeps, every change made outside MonkeyHub and one question awaiting the architect for each part it touched; POST /api/exports is unchanged in every tier"
+        "the state-carrying 3DM (#657), only while the design loop is enforced: POST /api/state-files/export seals an exact revision's model with its State Record and the project's active design decisions in the architect's words, read back like any export; POST /api/state-files/inspect reads such a file without retaining anything and answers the record and decisions its seal keeps, every change made outside MonkeyHub and one question awaiting the architect for each part it touched; POST /api/exports is unchanged in every tier",
+        "the drawing pool (drawing_pool): worker processes, half the processors from one to four or MONKEY_DRAWING_WORKERS, started only by the serving process, solving elevations, axonometrics, section perspectives and cut plans while the Runtime answers other requests; and drawing_sources, retained_sources for elevations, section perspectives and cut plans: the project's write guard is held while the source is checked and from retention to registration (the source checked again under it), and given back while the view is solved; _document_source_lock is held only to look for a registered revision and to register a new one, which an identical request registered meanwhile answers instead"
       ],
       "does_not_own": [
         "producing the export or its receipt - monkeycad.execution and its backends, through monkeyarch.application.project_runner",
@@ -10310,7 +10348,9 @@
         "save_viewport_capture",
         "seal_model",
         "select_drawing_source",
-        "tree_model_sources"
+        "tree_model_sources",
+        "DrawingPool",
+        "drawing_sources"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -10404,7 +10444,9 @@
         "services/project-runtime/tests/test_indexed_reads.py",
         "services/project-runtime/tests/test_projections.py",
         "services/project-runtime/tests/test_drawing_sheets.py",
-        "services/project-runtime/tests/test_state_files.py"
+        "services/project-runtime/tests/test_state_files.py",
+        "services/project-runtime/tests/test_drawing_diagrams.py",
+        "services/project-runtime/tests/test_drawing_pool.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
@@ -10422,7 +10464,9 @@
         "services/project-runtime/src/project_runtime/application/projections.py",
         "services/project-runtime/src/project_runtime/api/routes/projections.py",
         "services/project-runtime/src/project_runtime/api/dto/projections.py",
-        "services/project-runtime/src/project_runtime/application/state_files.py"
+        "services/project-runtime/src/project_runtime/application/state_files.py",
+        "services/project-runtime/src/project_runtime/application/drawing_diagrams.py",
+        "services/project-runtime/src/project_runtime/application/drawing_pool.py"
       ]
     },
     {
@@ -10504,7 +10548,8 @@
         "the one raster of a registered document page (page_raster, cached_page, #368): at most 2048 px with transparency, a bounded PNG served as its own bytes; Board previews, Publish images and the publication exports' raster previews read it from the projection cache (GET /api/projections/pages) instead of each rasterising the page",
         "handing one explicitly chosen registered image page, up to three reference pages and the person's words to the host conversation as an image discussion (#253), re-verified against the registered documents on confirmation, without reading the Board scene for it or saving the Board; the dialog closes only once the host took the request, and a host's refusal keeps it open with the reason",
         "the export raster of a registered document page (page_export_png): the PNG a Board PNG export writes at full size, a PDF page at 144 dpi over white; a view sheet's retained PNG is this export of its PDF",
-        "showing the selected page against the editing base as project_runtime.binding's representation status answers it for that exact page (#288), read again only when the selection or what that status is derived from moves, with the page's own Stage label and generation time; the Board compares no sources itself, and showing the status never changes, rebinds or sends a page"
+        "showing the selected page against the editing base as project_runtime.binding's representation status answers it for that exact page (#288), read again only when the selection or what that status is derived from moves, with the page's own Stage label and generation time; the Board compares no sources itself, and showing the status never changes, rebinds or sends a page",
+        "drawing one frame or region of a scene revision as the Board shows it for an agent to read (view_board, gap 28): its exact registered pages under the person's strokes, shapes, text and tracing-paper snapshots, at most 2048 px and 4 MiB, with every mark listed by type, colours, box, last change, frame and, for each page under it, the shared part in page fractions; it approximates Excalidraw's drawing and writes nothing"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (project_runtime.documents and monkeydiagram.drawing_runs)",
@@ -10517,18 +10562,23 @@
         "one selected registered edit drawing or frame, selected board marks and text, optional registered reference pages joined by explicit selected connectors, and an explicitly reviewed design comment",
         "Caller-ordered exact registered document pages and export format; optional maxEdge (1-2048) bounds transient PNG/JPEG previews without changing ordinary export defaults",
         "an optional exact scene revision sha256 to read instead of the latest",
+        "a frame's element id or a scene-coordinate region and maxEdge (64-2048) for a board view",
         "Optional explicit exact-page navigation request and transient requestId from the Render workspace"
       ],
       "outputs": [
         "BoardDto",
         "retained single-operator board scene revision",
         "transient merged or per-page PDF, PNG, JPEG, or ZIP board export bytes",
-        "page-normalized geometric annotations, selected text in deterministic Board reading order, and a one-time BoardDesignRequest for the existing Studio conversation"
+        "page-normalized geometric annotations, selected text in deterministic Board reading order, and a one-time BoardDesignRequest for the existing Studio conversation",
+        "BoardViewDto: the drawn region as a PNG with its frames, pages and marks"
       ],
       "public_api": [
         "GET /api/board",
         "PUT /api/board",
         "POST /api/board/export",
+        "POST /api/board/view",
+        "view_board",
+        "BoardView",
         "read_board",
         "save_board",
         "export_board_pages",
@@ -11559,7 +11609,7 @@
       "owner_path": "services/project-runtime/src/project_runtime/application/memory.py",
       "purpose": "Remember how this project works - where its retained content is and where to look first for a topic - as its own revisioned records, apart from what the project settled.",
       "owns": [
-        "project memory items (StudioMemoryRecord@1) in the one fixed explicit studio-memory P036 run: key, kind (locator | source_policy | recipe, whose value names a library skill as skill:<name>@<version> that the Hub pins from the configured library; preference, habit and standard reserved), scope (project; organization, team and user reserved for the library project), appliesWhen (domains, topics, keys, optional Stage), a kind-specific value, authority (explicit; observed and inferred reserved), provenance (the user's raw words, messageSource, sourceKind, evidence refs), version and status",
+        "project memory items (StudioMemoryRecord@1) in the one fixed explicit studio-memory P036 run: key, kind (locator | source_policy | recipe, whose value names a skill as skill:<name>@<code>, the first 12 hex digits of its codeSha256 that the Hub fills in from the installed skill (S-1), or a library version, skill:<name>@<version>, from before S-1; preference, habit and standard reserved), scope (project; organization, team and user reserved for the library project), appliesWhen (domains, topics, keys, optional Stage), a kind-specific value, authority (explicit; observed and inferred reserved), provenance (the user's raw words, messageSource, sourceKind, evidence refs), version and status",
         "the locator: the user's label for one piece of retained project content (a registered document page at its exact revision, an artifact by sha256, a board revision element), refusing an absolute machine path or a URL with its reason, and re-verifying the target through P036 on every read",
         "the source policy: a research topic in the user's words, its normalized keys (materials, regulations, products, precedents), ordered prefer and avoid sources and a note",
         "memory retrieval: scope, then appliesWhen, then deterministic lexical matching (NFKC, casefold, CJK bigrams; no embeddings); memory_for, the one read ContextPack.memory is compiled from, and locate, the where-is read",
@@ -11717,19 +11767,19 @@
     {
       "module_id": "project_runtime.skills",
       "owner_path": "services/project-runtime/src/project_runtime/application/skills.py",
-      "purpose": "Retain reusable agent procedures (skills) as immutable versions in a project, read by the Hub from the library project. CREATE: no owner held reusable procedures; a scoped decision is a judgement compiled into later turns and a recipe is typed paper-space values, and neither carries a procedure (#252).",
+      "purpose": "Retain reusable agent procedures (skills) as immutable versions in a project, the versions the project's runs used (S-1: skills are installed in folders, not imported). CREATE: no owner held reusable procedures; a scoped decision is a judgement compiled into later turns and a recipe is typed paper-space values, and neither carries a procedure (#252).",
       "status": "canonical",
       "owns": [
         "The StudioSkill@1 record: id skill:<kebab-name>, version, name, description, SKILL.md body without frontmatter (at most 64 KiB) and an optional declared manifest of inputs, outputs and permissions",
         "The fixed studio-skills run, created only by the first added skill, and the per-skill version chain 1..n with each version naming the ref it supersedes",
         "POST /api/skills, GET /api/skills (the index, no bodies) and GET /api/skills/{skill_id} with ?version=",
         "optional script files and an entry per version, and its codeSha256 over body, entry and files",
-        "a person's approval of one version's exact code hash (StudioSkillApproval@1 in studio-skills) and the refusals SKILL_NOT_APPROVED, SKILL_CODE_CHANGED and SKILL_NOT_RUNNABLE"
+        "a project's approvals of one version's exact code from before S-1 (StudioSkillApproval@1 and their revocations), retained and listed by GET /api/skills/approvals for the Hub to carry over; they allow no run",
+        "What a person allows skills to do (S-1, skill_access): an access in the form a person allows it (network, programs by name, ssh hosts, write folders, packages by distribution; reading is not asked), the items that allow anything and are never allowed for every skill, and reading MonkeyHubSkillGrants@1 at the path MONKEYHUB_SKILL_GRANTS names to say what a run of one skill still needs or which one-run grant covers it"
       ],
       "does_not_own": [
-        "Loading skills into an agent: hub.shell materializes the library's current versions into a plugin directory in its cache and the agent's native mechanism loads it",
-        "Any permission or grant: a skill is a procedure, and its manifest's permissions are declared and never enforced",
-        "Which project is the library: the Hub's ApplicationSettingsDto libraryDir",
+        "Loading skills into an agent: hub.shell materializes the installed skills into a plugin directory in its cache and the agent's native mechanism loads it",
+        "Writing a grant: hub.shell keeps skill-grants.json and writes it only when a person answers a card or changes Settings",
         "Recipes and scoped decisions: project_runtime.intent"
       ],
       "public_api": [
@@ -11738,24 +11788,33 @@
         "GET /api/skills/library",
         "GET /api/skills/{skill_id}",
         "POST /api/skills",
-        "POST /api/skills/approvals/{approval_id}/revoke",
-        "POST /api/skills/import",
-        "POST /api/skills/{skill_id}/approvals",
         "add_skill",
         "approvals",
-        "approve_skill",
         "code_sha256",
         "grant_rows",
         "latest_version",
         "list_skills",
         "read_skill",
-        "require_approved",
-        "require_granted",
         "revocations",
-        "revoke_approval",
         "same_content",
         "skill_content",
-        "skill_versions"
+        "skill_versions",
+        "access_added",
+        "access_within",
+        "asked",
+        "broad",
+        "needed",
+        "once_grant",
+        "read_grants",
+        "parse_grants",
+        "lasting",
+        "merged",
+        "describe_added",
+        "describe_added_zh",
+        "SkillGrantsDto",
+        "SkillGrantDto",
+        "SkillAccessDto",
+        "SkillRefDto"
       ],
       "depends_on": [
         "project_runtime.binding",
@@ -11767,11 +11826,14 @@
       "files": [
         "services/project-runtime/src/project_runtime/application/skills.py",
         "services/project-runtime/src/project_runtime/api/routes/skills.py",
-        "services/project-runtime/src/project_runtime/api/dto/skills.py"
+        "services/project-runtime/src/project_runtime/api/dto/skills.py",
+        "services/project-runtime/src/project_runtime/application/skill_access.py",
+        "services/project-runtime/src/project_runtime/api/dto/skill_grants.py"
       ],
       "tests": [
         "services/project-runtime/tests/test_skills.py",
-        "apps/monkeyhub/api/tests/test_skill_library.py"
+        "apps/monkeyhub/api/tests/test_skill_library.py",
+        "services/project-runtime/tests/test_skill_access.py"
       ],
       "inputs": [
         "An explicit skill version: name, description, body, optional manifest and, for a successor, the version it supersedes"
@@ -11783,19 +11845,20 @@
         "A retained version is never rewritten; a superseded version stays readable by its number",
         "Adding an existing name without superseding, or superseding a version that is not the latest, refuses",
         "Competing or missing versions refuse on read rather than being resolved by picking a file",
-        "No skill operation accepts a Stage, moves HEAD or grants a permission"
+        "No skill operation accepts a Stage, moves HEAD or allows anything a run does"
       ]
     },
     {
       "module_id": "project_runtime.skill_runs",
       "owner_path": "services/project-runtime/src/project_runtime/application/skill_runs.py",
-      "purpose": "Run one granted skill version as a background job in the person's own environment, held to its grant by an audit hook, and retain the run: version, code hash, grant, inputs and outputs, programs started, hosts reached, writes outside its folders, and what it needed beyond the grant.",
+      "purpose": "Run one installed skill, as far as a person allowed what it declares, as a background job in the person's own environment, held to its declaration by an audit hook, and retain the run: version, code hash, grant, inputs and outputs, programs started, hosts reached, writes outside its folders, and what it needed beyond the grant.",
       "owns": [
         "the run contract: python -B -X utf8 <bootstrap> <entry> --inputs <dir> --params <file> --outputs <dir>, without isolation, in the user's environment",
-        "the audit-hook bootstrap that checks programs, ssh, network and writes against the grant and records them",
+        "the audit-hook bootstrap that checks programs, ssh, network and writes against what the skill declares and records them",
         "one P036 run skill-run-<id> per execution with StudioSkillRun@1 records from queued to succeeded or failed",
         "each skill's own package folder installed with an external pip for the runtime's Python",
-        "registering PDF/PNG/JPEG outputs as documents, 3dm outputs as model assets with an undrawable report, small text in the record and other files as P036 objects"
+        "registering PDF/PNG/JPEG outputs as documents, 3dm outputs as model assets with an undrawable report, small text in the record and other files as P036 objects",
+        "before a run starts, what the skill declares read against the grants the Hub keeps (MONKEYHUB_SKILL_GRANTS) and a one-run grant bound to the project, skill and code, refused with SKILL_ACCESS_NEEDED naming what still needs allowing; the run record keeps the folder it came from and each grant it went ahead on"
       ],
       "does_not_own": [
         "approving a version - project_runtime.skills",
@@ -11819,7 +11882,10 @@
         "run_report",
         "list_skill_runs",
         "output_bytes",
-        "used_once_grants"
+        "used_once_grants",
+        "allowed",
+        "GET /api/skills/{skill_id}/needs",
+        "run_needs"
       ],
       "depends_on": [
         "archflow.project.ports",
@@ -11898,12 +11964,61 @@
       ]
     },
     {
+      "module_id": "project_runtime.quantities",
+      "owner_path": "services/project-runtime/src/project_runtime/application/quantities.py",
+      "purpose": "Read the quantities of one exact model member by member (G4): volume, area, closure, role and material, with sums by material and role and a CSV table.",
+      "owns": [
+        "one row per physical member of the model the drawing routes select: closure, solid count and volume as its CAD receipt recorded of the cold read (measured on the same exact shape where an imported model's receipt keeps only bounds), area measured on that shape, in the model's unit and in metres",
+        "a member's role and material from the construction facets of the geometry id it belongs to by the one naming rule (part_of_object), else the material the model asset gives it",
+        "the sums of closed members by material and role, open members counted apart and adding only area, and the CSV form of both"
+      ],
+      "does_not_own": [
+        "selecting and reading the model - project_runtime.documents (drawings)",
+        "the facets - project_runtime.construction",
+        "measuring a shape - monkeycad.occt"
+      ],
+      "inputs": [
+        "a model version (modelSource), an imported or snapshot model (sourceAsset) or a committed Stage",
+        "json or csv"
+      ],
+      "outputs": [
+        "members, summary and totals, or the same as CSV"
+      ],
+      "public_api": [
+        "POST /api/quantities",
+        "model_quantities",
+        "quantities_csv",
+        "CSV_COLUMNS"
+      ],
+      "depends_on": [
+        "archflow.state.state_record",
+        "monkeycad.occt",
+        "project_runtime.binding",
+        "project_runtime.construction",
+        "project_runtime.documents",
+        "project_runtime.shell"
+      ],
+      "invariants": [
+        "nothing is retained",
+        "a volume is a closed member's; an open surface or a curve has none"
+      ],
+      "status": "canonical",
+      "tests": [
+        "services/project-runtime/tests/test_quantities.py"
+      ],
+      "files": [
+        "services/project-runtime/src/project_runtime/application/quantities.py"
+      ]
+    },
+    {
       "module_id": "project_runtime.skill_library",
       "owner_path": "services/project-runtime/src/project_runtime/application/skill_library.py",
-      "purpose": "Read the skill packages shipped with MonkeyHub (apps/monkeyhub/skills, at the same path in the release) and the user's own (%LOCALAPPDATA%\\MonkeyHub\\skill-packages), and register one into the bound project as a version of its skill.",
+      "purpose": "Read the skill packages shipped with MonkeyHub (apps/monkeyhub/skills, at the same path in the release) and the user's own (%LOCALAPPDATA%\\MonkeyHub\\skill-packages): the skills installed on this machine, which every project can use without importing them (S-1)",
       "owns": [
         "the package folder: skill.json, SKILL.md without frontmatter, and its other UTF-8 text files",
-        "the two package places and the MONKEYHUB_SKILL_PACKAGES override",
+        "the two package places and the MONKEYHUB_SKILL_PACKAGES override; a name found in both is the user's",
+        "the skills installed on this machine (installed), read without a project, which the Hub reads to list them for its chats (architecture_policy: the Runtime's declared read API)",
+        "the project retaining the exact version a run uses the first time it runs there (retain); no import step",
         "listing every package with the version the project holds and whether it matches"
       ],
       "does_not_own": [
@@ -11918,8 +12033,11 @@
         "a StudioSkill@1 version when the package changed"
       ],
       "public_api": [
+        "installed",
+        "Installed",
+        "InstalledSkill",
+        "retain",
         "library",
-        "import_package",
         "read_package",
         "roots",
         "user_root"
@@ -13510,7 +13628,7 @@
         "The project Design Tree (状态树) surface and its Stage chip: a planar growth tree of Stages, admitted Candidates and Studies (the #294 design-history contract), the Working Head and running work, Current's line drawn as one chain of steps whose earlier ones fold behind one control and the drafts it superseded folded where it moved on, those the project cleaned into its trash with them, each restorable from the drafts card's inspector (#575); View is read-only, Continue (to an option, a Stage, a step or a draft) uses the working-draft route and Accept as next Stage the existing accept route, on Current only",
         "The shared project canvas host (features/canvas): Excalidraw mount defaults, the local font path, theme mapping, wheel zoom and scene-point click hit testing, used by MonkeyBoard and the Design Tree",
         "Hub-local integration diagnostic snapshot and explicit bounded rescan; qualification and bridge execution stay with the existing adapter owner.",
-        "The configured skill library (#252): reading the library project's current skills through its Runtime and materializing them into a Claude plugin directory under <runtime root>/cache/skill-plugins/<index digest>/, passed with --plugin-dir; nothing is written into any project, and no library means an unchanged command",
+        "The skills installed on this machine (S-1, #252): read from the skill folders without a project or a Project Runtime (skill_plugins.installed_library) and materialized into a Claude plugin directory under <runtime root>/cache/skill-plugins/<index digest>/, passed with --plugin-dir to every Claude chat; a recipe pins a skill as skill:<name>@<code>; nothing is written into any project",
         "Binding a chat message's selected images (ChatPostRequest.renderContext, #253) to exact registered PNG/JPEG pages of the conversation's own project before anything is kept or a CLI starts, keeping them on the user message with the roles the user chose and handing roles and exact pages to the native turn, whose Agent reads each page through the registered-page export and reaches the existing project_runtime.render routes through the operation admission",
         "Render provider/model/timeout preferences remain in UserSettingsDto; explicit launch environment supplies the secret only to the configured Runtime adapter, with no project or HTTP key field",
         "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement (monkeyhub_api/settings); the resolved values reach a Project Runtime only through its launch environment",
@@ -13527,7 +13645,9 @@
         "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
         "the change list an agent proposes from Board marks: its items (marks, the architect's words, the reading, components touched and kept, unsure, extra, ticked), checked against the Runtime's mark readings (an item citing an unclear mark is unsure; only an extra may touch what no cited mark lies on); an unsure item becomes a which-one question card, and the approval of ticked sure items names the card and items and carries only the architect's words",
         "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
-        "guess rules over the Runtime's edit log: the same element field or parameter changed the same way three times within the line's last five steps becomes one ask card whose answers send a sentence to the project's conversation; a field a person set aside stays quiet until its suppression ends; and the Runtime's drawing recipe suggestions (one pen changed the same way on two drawings or more) as one ask card per pen and direction, saving the value as the person's recipe decision"
+        "guess rules over the Runtime's edit log: the same element field or parameter changed the same way three times within the line's last five steps becomes one ask card whose answers send a sentence to the project's conversation; a field a person set aside stays quiet until its suppression ends; and the Runtime's drawing recipe suggestions (one pen changed the same way on two drawings or more) as one ask card per pen and direction, saving the value as the person's recipe decision",
+        "What a person allowed skills to do on this machine (S-1): <runtime root>/config/skill-grants.json (MonkeyHubSkillGrants@1) beside applications.json, outside every project and never synced with a team; one grant per answer, for every skill, one skill by name and source, or one run bound to its project and code; withdrawn grants kept with when; a project's version grants from before S-1 carried over once as grants for that skill only; written only through monkeyhub_api/settings",
+        "An Agent's skill run (S-1): the project's approvals from before carried over, what the run still needs read from its Runtime (GET /api/skills/{id}/needs), and only that put to the person in the chat as one question (always allow, only this time, no); the Hub writes the grant from the answer, the Agent never names one"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -13626,6 +13746,7 @@
         "ProjectRuntimeProvider / useStudio / useConnection: project-bound client and protocol identity",
         "ProjectWorkspace: Arch/Board/Design tree navigation, exact Board page visit and candidate preview without editing-base change; Drawing mounts explicit recipe export, file inspection and confirmed import via RecipeTransfer; comparisonRequest {candidateRunId, requestId} / onComparisonClose and the Design tree Compare open one read-only before/after against the exact retained base, once per request id: ids only grow, and null withdraws a requested comparison, loading or shown, without onComparisonClose; onRenderChatRequest passes a Board image discussion naming this workspace's own project to the host conversation composer, which sends nothing until the architect sends; a request naming another project, or one the composer shown cannot take, is refused back to the Board's dialog as a BoardRenderError",
         "studio_request POST /api/board/export: one registered clean-source page as a native MCP PNG image; studio_schema exposes the existing export request",
+        "studio_request POST /api/board/view: one Board frame or region with what the person drew on its pages as a native MCP PNG image, and its marks listed as text (gap 28); a read, never admitted",
         "visual_review: the Agent's bounded look through POST /api/visual-reviews; Hub fills projectId and the per-user-message allowance; native delivery defaults to frames, validates exact source/digest/PNG/dimensions and returns native images to the current model with no findings; explicit observation delivery retains configured-provider findings and marks preserve findings escalate",
         "studio_request POST /api/drawings/plans (dressingOperations place and edit entourage; marked sourceKind agent unless the request names a kind) with the reads GET /api/drawings/plans/vector, GET /api/drawings/plans/dimensions and POST /api/drawings/plans/status",
         "POST /api/chat/presentation/bind",
@@ -13643,6 +13764,7 @@
         "POST /api/updates/check",
         "PUT /api/updates/settings",
         "GET /api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source",
+        "GET /api/chat/sessions/{session_id}/attachments/{attachment_id}/document-source",
         "GET /api/integrations",
         "ChatSuggestion via chat_present / ChatPresentationRequest; ChatPostRequest.suggestionSelection resolves one retained card into the existing native user-turn admission",
         "src/api/project-runtime/projectStore.ts: ProjectStore and projectStores, one ref-counted client store per open project fed by the Hub's one stream (#366), with each entity's last move (moved, movedAt) and each project's kept Studio events known by <stream>:<seq>; useProjectStore / useProjectRevision / useProjectMoved / useProjectStoreInstance / useRuntimeKey",
@@ -13668,28 +13790,37 @@
         "guesses",
         "refresh_guesses",
         "recipe_guesses",
-        "refresh_recipe_guesses"
+        "refresh_recipe_guesses",
+        "skill_grants.allow",
+        "skill_grants.revoke",
+        "skill_grants.migrate",
+        "skill_grants.read",
+        "skill_grants.grants_path",
+        "GET /api/settings/skill-grants",
+        "POST /api/settings/skill-grants/{grant_id}/revoke",
+        "POST /api/settings/skill-grants/carry",
+        "skill_plugins.installed_library"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
         "Within each project Arch, Diagram and Board share one service; projects have independent Studio processes and ports, and switching does not rewrite launch settings",
         "Only this Hub's stdin pipes can stop its children; a occupied port or mismatched service is never adopted",
         "Every process the Hub starts names its child's stdin, DEVNULL or a pipe the Hub owns, so none waits on the managed stdin the desktop keeps a read pending on (#58); apps/monkeyhub/api/tests/test_applications.py scans the package's syntax trees for it",
-        "Accepted work is allowed to finish; no taskkill or forced process termination is a normal exit path",
+        "Accepted work is allowed to finish; no taskkill or forced process termination is a normal exit path. The one exception is the person's: after the desktop has shown how long the Hub has waited to close, closing the window again and confirming a dialog that names the unfinished work ends the Hub's process tree (gap 24)",
         "Settings and logs have explicit nonproject locations; retained building writes use the existing project interfaces",
         "Fab uses the existing CLI, never duplicates its geometry or file-output implementation; it does not create a second project store",
         "Printer access codes are request-local environment values, never command arguments, saved settings or error response payloads; file upload does not start printing",
         "CLI tools resolve the chat's project-specific Studio and verify process and project identity; retained design changes use existing Studio/P036 APIs, and stopping one project never interrupts another",
         "No new provider gateway or credential store; native CLI configuration owns authentication and provider routing",
         "Chat attachment bytes stay under runtime/chats/<session>/attachments, outside the project; transcripts retain metadata only. Native images use provider image blocks or CLI image inputs; the existing MCP connection reads only the bound chat's attachments, with bounded text or binary chunks and single-page PDF text. Attachment delivery itself does not widen sandbox or filesystem permissions, and later turns do not resend earlier attachment bytes",
-        "The bound project folder is read-only to the agent's file tools (ADR-012): a Claude-compatible turn carries one --disallowedTools rule, Edit(//<drive letter>/<path>/**) with pattern characters escaped, which the CLI applies to Write and Edit, while scratch and a source checkout stay writable; Codex is given no writable root in the project. Bash is not confined, nor is Codex started in the project by an installed Hub (its sandbox writes the folder it starts in); what they write there is a change from elsewhere, not design state",
+        "The bound project folder is read-only to the agent's file tools (ADR-012): a Claude-compatible turn carries one --disallowedTools rule, Edit(//<drive letter>/<path>/**) with pattern characters escaped, which the CLI applies to Write and Edit, while scratch and a source checkout stay writable; Codex is given no writable root in the project. Bash is not confined, nor is Codex started in the project by an installed Hub (its sandbox writes the folder it starts in); what they write there is a change from elsewhere, not design state With the Hub's runtime root (S-1), the same rules also cover the account's Hub settings folder, the runtime root's folders (a chat's records and attachments, never its scratch), the skill folders, Claude Code's own configuration and an installed Hub's files.",
         "A request is sent once. Waiting for its result only reads: a wait that runs out, a read that fails and a job that failed all answer with the identifiers and the reads that find them, and none of them sends the request again",
         "What is reported is what was read: a run whose candidate or comparison could not be read is never presented as a read-back candidate, and relation counts travel as the run stated them",
         "Runtime records and the admission journal are observations, not another project repository; completed candidate and Stage outcomes require existing retained proof, and a prepared unreachable Stage never proves a commit",
         "An operation id cannot bind a different request; duplicate requests and worker recovery do not replay mutations. Hub cold startup restores admitted request signatures and reconstructs outcomes from P036; journal write failure prevents dispatch, and requests that never reached durable admission remain outside recovery",
         "An operation that needs recovery is recoverable only while retained evidence could still resolve it: the run it named with that run's runner receipt, and for an acceptance its named parent Stage still at its branch head; one that named no run is not. A person can dismiss only a failed, stale or unrecoverable operation's notice, and a dismissal holds only while the operation reads as the status it dismissed",
         "A Hub-assigned candidate run identity is bound to the managed Studio instance before submission; any existing retained run prevents executing that identity again",
-        "Desktop exposes no arbitrary WebView command bridge, never adopts a port occupant, and waits for its owned Hub to drain; installation assets and disposable WebView cache are separate from P036 project data",
+        "Desktop exposes no arbitrary WebView command bridge, never adopts a port occupant, and waits for its owned Hub to drain, saying after 20 seconds how long and for which projects; it forces nothing on its own. Installation assets and disposable WebView cache are separate from P036 project data",
         "The actual Hub CLI holds runtime/hub.lock until server and owned workers finish draining; browser and desktop entrypoints cannot concurrently load/save the same Hub runtime directory",
         "Every production Studio and Monitor process is created, monitored and stopped by this Hub; Studio keeps no launcher, configuration file or tray of its own, and a development start is an explicit --project-dir (scripts/dev/run-project-runtime.ps1)",
         "No project workspace iframe or shared mutable API client; a request remains bound to its original project when another project is selected.",
@@ -13727,12 +13858,14 @@
         "apps/monkeyhub/api/monkeyhub_api/app/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
         "apps/monkeyhub/api/monkeyhub_api/app/main.py",
+        "apps/monkeyhub/api/monkeyhub_api/app/locator.py",
         "apps/monkeyhub/api/monkeyhub_api/models.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/models.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/store.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/credentials.py",
+        "apps/monkeyhub/api/monkeyhub_api/settings/skill_grants.py",
         "apps/monkeyhub/api/monkeyhub_api/project_archive.py",
         "apps/monkeyhub/api/monkeyhub_api/projects.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime/__init__.py",
@@ -13858,6 +13991,7 @@
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
+        "apps/monkeyhub/api/tests/test_hub_locator.py",
         "apps/monkeyhub/api/tests/test_launch_hub.py",
         "apps/monkeyhub/api/tests/test_applications.py",
         "apps/monkeyhub/api/tests/test_settings.py",
@@ -13930,7 +14064,9 @@
         "apps/monkeyhub/api/tests/test_attention_store.py",
         "apps/monkeyhub/api/tests/test_change_list.py",
         "apps/monkeyhub/api/tests/test_attention_store.py",
-        "apps/monkeyhub/api/tests/test_attention_rules.py"
+        "apps/monkeyhub/api/tests/test_attention_rules.py",
+        "apps/monkeyhub/api/tests/test_skill_grants.py",
+        "apps/monkeyhub/api/tests/test_agent_write_paths.py"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -14398,12 +14534,14 @@
       "files": [
         "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
         "packages/monkeydiagram/src/monkeydiagram/rendering/paper.py",
-        "packages/monkeydiagram/src/monkeydiagram/documentation/sheet_layout.py"
+        "packages/monkeydiagram/src/monkeydiagram/documentation/sheet_layout.py",
+        "packages/monkeydiagram/src/monkeydiagram/diagrams.py"
       ],
       "tests": [
         "packages/monkeydiagram/tests/test_drawing_styles.py",
         "packages/monkeydiagram/tests/test_drawing_output.py",
-        "packages/monkeydiagram/tests/test_sheet_layout.py"
+        "packages/monkeydiagram/tests/test_sheet_layout.py",
+        "packages/monkeydiagram/tests/test_diagrams.py"
       ],
       "notes": "CREATE justified in docs/design/drawing-standard.md: existing CAD execution explicitly excludes drawing styles and sheets. The first consumer is the externally configured interior cabinet project; no project content or second persistence path enters the framework. #517 retired the Drawing Standard v0.1 validator (documentation/drawings.py) and its two JSON files: no production reader (topology audit Q13). The sheet styles and the paper scene remain."
     },

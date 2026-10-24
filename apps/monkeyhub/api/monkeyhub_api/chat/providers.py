@@ -67,18 +67,72 @@ def _claude_approved(runtime_root: Path) -> tuple[str, ...]:
 _RULE_PATTERN = re.compile(r"([\\*?\[\]])")
 
 
-def _claude_denied(project_dir: str) -> tuple[str, ...]:
-    """What a headless turn may not do although its tools are approved: write the bound project.
+# The runtime root's own folders, named whether or not they exist yet. ``chats``
+# is not among them: a chat's scratch is below it.
+_RUNTIME_FOLDERS = ("cache", "config", "diagnostics", "logs", "runtime", "skill-packages", "updates", "versions",
+                    "workspace")
 
-    The agent reads the project where it is, and its design changes go
-    studio_request -> Hub -> runtime (ADR-012). One Edit rule denies every
-    built-in tool that writes a file there, Write included. Measured with the
-    installed CLI 2.1.283 (#599): a Write rule gates no path at all, an
-    absolute Windows path is matched as //<drive letter>/<path>, and
-    //D:/<path> silently matches nothing. Bash is not a file tool, so this
-    does not confine it.
+
+def _claude_denied(project_dir: str, runtime_root: Path | None = None) -> tuple[str, ...]:
+    """What a headless turn may not write although its tools are approved.
+
+    The bound project: the agent reads the project where it is, and its design
+    changes go studio_request -> Hub -> runtime (ADR-012). With the Hub's
+    ``runtime_root``, also the places that hold this Hub's own configuration and
+    records (``_guarded``): they change only through the Hub.
+
+    One Edit rule denies every built-in tool that writes a file there, Write
+    included. Measured with the installed CLI 2.1.283 (#599): a Write rule
+    gates no path at all, an absolute Windows path is matched as
+    //<drive letter>/<path>, and //D:/<path> silently matches nothing. Measured
+    again for S-1: a folder rule holds below it and before the folder exists,
+    whatever case, slashes, ``..`` steps, relative path, ``\\\\?\\`` prefix or
+    junction the path is written with, and ``<folder>/*.json`` leaves the
+    folders below it writable. Bash is not a file tool, so this does not
+    confine it.
     """
-    text = str(project_dir)
+    rules = [_edit_rule(project_dir, "/**")]
+    if runtime_root is not None:
+        rules += [_edit_rule(path, suffix) for path, suffix in _guarded(Path(runtime_root))]
+    return tuple(dict.fromkeys(rules))
+
+
+def _guarded(runtime_root: Path) -> list[tuple[Path, str]]:
+    """The places outside the project a turn may not write, each with the pattern below it.
+
+    The account's Hub settings folder; the runtime root's folders (configuration,
+    diagnostics, caches, updates, the projects area and anything else found
+    there) except ``chats``, where a chat's records and attachments are guarded
+    and its scratch is not; the skill folders; Claude Code's own configuration;
+    and an installed Hub's own files. A source checkout is not guarded: there
+    the assistant changes the code it runs (``_source_checkout``).
+    """
+    from ..settings.store import SettingsError, user_settings_path
+
+    places = [(runtime_root / name, "/**") for name in _RUNTIME_FOLDERS]
+    try:
+        children = sorted(runtime_root.iterdir())
+    except OSError:
+        children = []
+    places += [(child, "/**" if child.is_dir() else "") for child in children if child.name != "chats"]
+    places += [(runtime_root / "chats", "/*.json"), (runtime_root / "chats", "/*/attachments/**")]
+    try:
+        places.append((user_settings_path().parent, "/**"))
+    except SettingsError:
+        pass
+    if os.environ.get("MONKEYHUB_SKILL_PACKAGES"):
+        places.append((Path(os.environ["MONKEYHUB_SKILL_PACKAGES"]), "/**"))
+    places.append((Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude"), "/**"))
+    if _source_checkout() is None:
+        release = Path(__file__).resolve().parents[5]
+        # An installed version sits in <install root>/versions/<version>; the install root holds every version.
+        places.append((release.parent.parent if release.parent.name == "versions" else release, "/**"))
+    return places
+
+
+def _edit_rule(location: str | Path, suffix: str) -> str:
+    """The Edit rule for ``location`` and the gitignore pattern ``suffix`` below it ("" for the file itself)."""
+    text = str(location)
     if text.startswith("\\\\?\\UNC\\"):
         text = "\\\\" + text[8:]
     elif text.startswith("\\\\?\\"):
@@ -91,7 +145,7 @@ def _claude_denied(project_dir: str) -> tuple[str, ...]:
     else:
         root, path = "/", text
     escaped = _RULE_PATTERN.sub(r"\\\1", path).rstrip("/")
-    return (f"Edit({root}{escaped}/**)",)
+    return f"Edit({root}{escaped}{suffix})"
 
 
 def _source_checkout() -> Path | None:

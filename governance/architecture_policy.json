@@ -243,6 +243,52 @@
   ],
   "allowed_write_sites": [
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/runtime/applications.py",
+      "function": "_remember_studio",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "replace"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Atomically notes which projects' Studios this Hub runs (projectId and folder only) at runtime/studios.json under the nonproject Hub runtime root, so the next start brings them back (gap 18). No project data is written."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/runtime/applications.py",
+      "function": "_note_closing",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "replace"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Atomically notes, while the Hub closes, which of its children are still running (service, projectId, folder, busy) and its process id at runtime/closing.json under the nonproject Hub runtime root, for the desktop to name what a forced close would end (gap 24). No project data is written."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/app/locator.py",
+      "function": "write",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "replace"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Atomically notes where the running Hub listens (its local URL, process id, managed instance id and start time) at runtime/hub.json under the nonproject Hub runtime root, so a process the Hub did not start finds it after a restart on a new port (gap 44). No project data is written."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/app/locator.py",
+      "function": "remove",
+      "operations": [
+        "unlink"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Removes runtime/hub.json under the nonproject Hub runtime root when the Hub that wrote it quits normally, and only a file whose process id is its own (gap 44)."
+    },
+    {
       "path": "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
       "function": "_save",
       "operations": [
@@ -267,6 +313,16 @@
       "kind": "application_attention",
       "owner": "hub.shell",
       "reason": "Atomically saves one project's attention cards (what a person was asked to look at and how they handled it) at attention/<runtimeId>.json under the caller-supplied nonproject Hub runtime root. A card names project facts by reference and never writes them; P036 alone holds design outcomes."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
+      "function": "merge",
+      "operations": [
+        "replace"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Renames an operation journal an earlier Hub kept under a folder's long-path spelling to <name>.merged-into-<runtimeId> once _save has taken its entries in (gap 26), under the nonproject Hub runtime root. Nothing is deleted and no project data is written."
     },
     {
       "path": "apps/monkeyhub/api/monkeyhub_api/settings/store.py",
@@ -1589,9 +1645,10 @@
         "project_runtime.application.artifacts.DocumentWorkCopy",
         "project_runtime.application.artifacts.WORK_COPY_WORKSPACE",
         "project_runtime.application.boards.export_board_pages",
-        "project_runtime.application.boards.BoardExportPage"
+        "project_runtime.application.boards.BoardExportPage",
+        "project_runtime.application.skill_library.installed"
       ],
-      "reason": "MonkeyHub starts the Runtime (main), shares its refusals (errors) and embeds its wire shapes (api.dto); it reads a project in process only through the Runtime's declared read API (#519): ProjectBinding and ReadToken, the event log, the runtime status, the document and work-copy readers and the Board page export. Everything else in project_runtime is reached over the Hub's forwarding path, so the Runtime can change its insides without the Hub following them."
+      "reason": "MonkeyHub starts the Runtime (main), shares its refusals (errors) and embeds its wire shapes (api.dto); it reads a project in process only through the Runtime's declared read API (#519): ProjectBinding and ReadToken, the event log, the runtime status, the document and work-copy readers and the Board page export. Everything else in project_runtime is reached over the Hub's forwarding path, so the Runtime can change its insides without the Hub following them. The skills installed on this machine (skill_library.installed, S-1) are read the same way: the skill folders and what a person allowed are this machine's, not a project's, and listing them reads those folders only and touches no project."
     },
     {
       "source": "services/project-runtime/src/project_runtime/binding",
@@ -1664,7 +1721,7 @@
       "apps/monkeyhub/web/src/HubMenu.tsx": 1,
       "apps/monkeyhub/web/src/app/AttentionShell.tsx": 12,
       "apps/monkeyhub/web/src/features/skills/SkillPermissions.tsx": 3,
-      "apps/monkeyhub/web/src/features/skills/SkillsPanel.tsx": 6,
+      "apps/monkeyhub/web/src/features/skills/SkillsPanel.tsx": 2,
       "apps/monkeyhub/web/src/i18n/BilingualText.tsx": 1,
       "apps/monkeyhub/web/src/main.tsx": 1
     }

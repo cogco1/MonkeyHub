@@ -475,15 +475,17 @@ def hosted_opening_proposal(
     projection: StateProjection,
     host: str,
     *,
-    kind: str,
-    along: float,
-    width: float,
-    sill: float,
-    head: float,
+    kind: str | None = None,
+    along: float | None = None,
+    width: float | None = None,
+    sill: float | None = None,
+    head: float | None = None,
     shape: str | None = None,
     spring_height: float | None = None,
     family: Mapping[str, Any] | None = None,
     interface_ref: str | None = None,
+    opening: str | None = None,
+    remove: bool = False,
     summary: str | None = None,
     keep_refs: Sequence[str] = (),
 ) -> Proposal:
@@ -504,8 +506,18 @@ def hosted_opening_proposal(
     the component-edit path every design edit takes; the record's refusal of it
     (an opening outside the host, above its top, a family that does not fit)
     answers ``OPENING_INVALID`` in construction words.
+
+    With ``opening``, the id of an opening the host has (gap 36), the fields given replace that opening's own and
+    the rest stay; a ``family`` given replaces its type. With ``remove``, the opening and a type no other opening
+    uses go. An id the host does not have is ``OPENING_UNKNOWN``, naming the ones it has.
     """
 
+    if opening is not None:
+        return _changed_opening(projection, host, opening, remove=remove, summary=summary, keep_refs=keep_refs,
+                                values={"kind": kind, "along": along, "width": width, "sill": sill, "head": head,
+                                        "shape": shape, "spring_height": spring_height,
+                                        "interface_ref": interface_ref},
+                                family=family)
     element = _OpeningHosts(projection.record).element(host)
     fields = dict(element.fields)
     if fields.get("producer") != "wall":
@@ -543,18 +555,69 @@ def hosted_opening_proposal(
     params["openings"] = [*openings, opening]
     if types:
         params["types"] = types
-    said = summary or f"hosted opening: {kind} {opening_id} in {host}"
+    return _opening_edit(projection, host, element, fields, params, kind,
+                         summary or f"hosted opening: {kind} {opening_id} in {host}", keep_refs)
+
+
+def _opening_edit(projection: StateProjection, host: str, element: Entity, fields: Mapping[str, Any],
+                  params: Mapping[str, Any], kind: str, said: str, keep_refs: Sequence[str]) -> Proposal:
+    """The host's element with ``params`` as one component edit; the record's refusal in construction words."""
+
     edit = _edit(said, entities=[{"entity_id": element.entity_id, "schema": "Element@1",
-                                  "parent_id": element.parent_id, "fields": {**fields, "params": params}}],
+                                  "parent_id": element.parent_id, "fields": {**fields, "params": dict(params)}}],
                  kept=keep_refs)
     try:
         return proposal_from(component_edit_proposal(projection, edit, utterance=said, component_id=host,
                                                      keep_refs=keep_refs))
     except StudioError as exc:
         if exc.code == "SEMANTIC_EDIT_INVALID":
-            said = in_construction_words(exc.detail.removeprefix(f"{element.entity_id}: "))
-            raise StudioError(422, "OPENING_INVALID", f"{host} cannot take this {kind}: {said}") from exc
+            reason = in_construction_words(exc.detail.removeprefix(f"{element.entity_id}: "))
+            raise StudioError(422, "OPENING_INVALID", f"{host} cannot take this {kind}: {reason}") from exc
         raise
+
+
+def _changed_opening(projection: StateProjection, host: str, opening_id: str, *, remove: bool,
+                     values: Mapping[str, Any], family: Mapping[str, Any] | None, summary: str | None,
+                     keep_refs: Sequence[str]) -> Proposal:
+    """One of the host's openings resized, reshaped, refilled or removed (gap 36)."""
+
+    element = _OpeningHosts(projection.record).element(host)
+    fields = dict(element.fields)
+    params = dict(fields.get("params") or {}) if fields.get("producer") == "wall" else {}
+    openings = [dict(item) for item in params.get("openings") or ()]
+    current = next((item for item in openings if item.get("opening_id") == opening_id), None)
+    if current is None:
+        listed = ", ".join(str(item.get("opening_id")) for item in openings)
+        raise StudioError(404, "OPENING_UNKNOWN", f"{host} has no opening {opening_id}; "
+                          + (f"its openings are {listed}" if listed else "it has no openings yet"))
+    types = [dict(item) for item in params.get("types") or ()]
+    old_type = current.get("type_id")
+
+    def unused(type_id: Any) -> bool:
+        return not any(item.get("type_id") == type_id for item in openings if item is not current)
+
+    if remove:
+        openings = [item for item in openings if item is not current]
+        types = [item for item in types if item.get("type_id") != old_type or not unused(old_type)]
+        said = summary or f"hosted opening: {opening_id} removed from {host}"
+    else:
+        current.update({key: value for key, value in values.items() if value is not None})
+        if values.get("shape") == "rectangular":
+            current.pop("shape", None)
+            current.pop("spring_height", None)
+        if family is not None:
+            filling = _opening_family(current["kind"], f"{opening_id}-type", family)
+            types = [item for item in types if item.get("type_id") not in
+                     {filling.type_id, *([old_type] if old_type and unused(old_type) else [])}]
+            types.append(filling.to_dict())
+            current["type_id"] = filling.type_id
+        said = summary or f"hosted opening: {current['kind']} {opening_id} in {host} changed"
+    params["openings"] = openings
+    if types:
+        params["types"] = types
+    else:
+        params.pop("types", None)
+    return _opening_edit(projection, host, element, fields, params, current["kind"], said, keep_refs)
 
 
 def construction_model(projection: StateProjection) -> dict[str, Any]:
@@ -787,20 +850,43 @@ def _voids_named(element: Entity) -> tuple[str, ...]:
     return tuple(void for void in voids if isinstance(void, str)) if isinstance(voids, (list, tuple)) else ()
 
 
+# What each family field takes. The sizes have no neutral value and are always
+# stated; an offset, gap or clearance left out is 0, which places the part flush
+# with the host's face or leaves no gap, so no size is made up for the caller.
+_FAMILY_VALUES = {
+    "frame_width": "metres > 0", "frame_depth": "metres > 0", "leaf_thickness": "metres > 0",
+    "glazing_thickness": "metres > 0", "leaf_count": "1 or 2",
+    "frame_projection": "metres, 0 when left out", "leaf_offset": "metres, 0 when left out",
+    "glazing_offset": "metres, 0 when left out", "leaf_gap": "metres >= 0, 0 when left out",
+    "clearance_bottom": "metres >= 0, 0 when left out", "clearance_top": "metres >= 0, 0 when left out",
+}
+_FAMILY_ZERO = frozenset({"frame_projection", "leaf_offset", "glazing_offset", "leaf_gap", "clearance_bottom",
+                          "clearance_top"})
+
+
 def _opening_family(kind: str, type_id: str, family: Mapping[str, Any]) -> DoorType | WindowType:
-    """The family that fills a door or window, checked by constructing the type the opening solver fills it with."""
+    """The family that fills a door or window, checked by constructing the type the opening solver fills it with.
+
+    A refusal names each field that is missing or not taken with what it takes, and that leaving the family out
+    makes an empty passage, so a caller can complete the request in one more call (gap found by the benchmark).
+    """
 
     kind_type = DoorType if kind == "door" else WindowType
     takes = [item.name for item in dataclasses.fields(kind_type) if item.name != "type_id"]
-    unknown, missing = sorted(set(family) - set(takes)), [name for name in takes if name not in family]
+    filled = {**{name: 0.0 for name in takes if name in _FAMILY_ZERO}, **family}
+    unknown, missing = sorted(set(family) - set(takes)), [name for name in takes if name not in filled]
     if unknown or missing:
-        raise StudioError(422, "FAMILY_INVALID", f"a {kind} family takes {', '.join(takes)}"
-                          + (f"; not {', '.join(unknown)}" if unknown else "")
-                          + (f"; {', '.join(missing)} missing" if missing else ""))
+        detail = [f"a {kind} family takes " + ", ".join(f"{name} ({_FAMILY_VALUES[name]})" for name in takes)]
+        if missing:
+            detail.append(f"missing: {', '.join(missing)}")
+        if unknown:
+            detail.append(f"not taken: {', '.join(unknown)}")
+        raise StudioError(422, "FAMILY_INVALID", "; ".join(detail) + ". Leave family out for an empty passage "
+                          "with no frame or leaf. Nothing was proposed.")
     try:
-        return kind_type(type_id=type_id, **family)
+        return kind_type(type_id=type_id, **filled)
     except (TypeError, ValueError) as exc:
-        raise StudioError(422, "FAMILY_INVALID", f"the {kind} family: {exc}") from exc
+        raise StudioError(422, "FAMILY_INVALID", f"the {kind} family: {exc}. Nothing was proposed.") from exc
 
 
 def _openings_of(element: Entity, values: Mapping[str, float]) -> list[dict[str, Any]]:
