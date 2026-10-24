@@ -110,12 +110,12 @@
         {
           "id": "shell",
           "status": "active",
-          "branch": "claude/300-attention-cards",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-attention-cards",
+          "branch": "claude/300-shell-gaps",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-shell-gaps",
           "base_ref": "0238ac43ec505e263642abd153fd983f06fbedeb",
           "contributor": "Claude",
           "reviewer": null,
-          "handoff": "The attention shell (?shell=attention, #687) and on it 1-4: the attention cards (notifications/cards/) in its Attention page, the queue read from /api/attention, notices from new cards when the queue answers, and the regions notices keep clear of registered by the shells and the Modeling toolbar instead of looked up by class. Stacked on GH-300/command-tree; the last of these PRs to merge releases the lane. Draft only during the paper freeze: nothing merges into main until the relay ends and the coordinator says so.",
+          "handoff": "The attention shell (?shell=attention, #687), its attention cards (1-4, #695), and the rest of 2-3a on them: the composer sends to the project's attention conversation while no conversation is open, and All as recommended answers the recommended decisions at once with one undo. Stacked on GH-300/command-tree; the last of these PRs to merge releases the lane. Draft only during the paper freeze: nothing merges into main until the relay ends and the coordinator says so.",
           "modules": [
             "hub.shell"
           ],
