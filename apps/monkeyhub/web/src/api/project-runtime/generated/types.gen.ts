@@ -3004,6 +3004,70 @@ export type ContextPackRequestDto = {
 };
 
 /**
+ * ContinueMoveDto
+ *
+ * One move of the Working Head onto a run, newest first.
+ */
+export type ContinueMoveDto = {
+    /**
+     * Occurredat
+     */
+    occurredAt: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Previousrunid
+     *
+     * The run the Working Head stood on before this move; null when no run did (a fresh project's first Continue). Going back to it is the same Continue onto this run id.
+     */
+    previousRunId: string | null;
+    /**
+     * Actorid
+     */
+    actorId: string;
+    /**
+     * Origin
+     *
+     * The surface the move came through, as the design.continued event names it.
+     */
+    origin: string;
+    /**
+     * Messagesessionid
+     *
+     * The Hub conversation whose user's words asked for it.
+     */
+    messageSessionId?: string | null;
+    /**
+     * Messageid
+     */
+    messageId?: string | null;
+};
+
+/**
+ * ContinueMovesDto
+ */
+export type ContinueMovesDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Moves
+     *
+     * The moves that brought the Working Head where it stands, newest first, back to the project's first head or a return to the default (a Continue onto no run leaves no event).
+     */
+    moves: Array<ContinueMoveDto>;
+    /**
+     * Warnings
+     *
+     * Where the walk back could not read further.
+     */
+    warnings?: Array<string>;
+};
+
+/**
  * CountsDto
  *
  * How much the record declares, before anyone asks what it means.
@@ -5690,6 +5754,22 @@ export type HttpValidationError = {
 };
 
 /**
+ * HeadEntryDto
+ *
+ * A working-position entry: an exact run, on the line it was named on.
+ */
+export type HeadEntryDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Branchid
+     */
+    branchId?: string | null;
+};
+
+/**
  * HostedOpeningRequestDto
  *
  * A door or a window on geometry whose meaning is architectural.role = wall, against one exact state.
@@ -6300,6 +6380,26 @@ export type JobDto = {
      * where this job lives; it is not version history
      */
     persistence: string;
+};
+
+/**
+ * JobStepDto
+ *
+ * One of a job's four steps, as its work last reported it.
+ */
+export type JobStepDto = {
+    /**
+     * Name
+     */
+    name: 'generate' | 'check' | 'repair' | 'save';
+    /**
+     * State
+     */
+    state: 'pending' | 'running' | 'done' | 'skipped' | 'failed';
+    /**
+     * Text
+     */
+    text?: string | null;
 };
 
 /**
@@ -13240,7 +13340,7 @@ export type StudioEventDto = {
     /**
      * Type
      *
-     * candidate.queued | candidate.running | candidate.succeeded | candidate.failed | validation.computed | model_asset.registered | working_copy.option_added
+     * candidate.queued | candidate.running | candidate.succeeded | candidate.failed | candidate.waiting | job.step | validation.computed | model_asset.registered | working_copy.option_added
      */
     type: string;
     /**
@@ -13267,6 +13367,52 @@ export type StudioEventDto = {
      * Error
      */
     error?: string | null;
+    /**
+     * Lane
+     *
+     * on a job's events, the queue lane it runs in: parallel or exclusive
+     */
+    lane?: string | null;
+    /**
+     * Waitingfor
+     *
+     * on a queued job's events, the run it waits for; null when it waits only for a free worker
+     */
+    waitingFor?: string | null;
+    /**
+     * Waitingreason
+     */
+    waitingReason?: string | null;
+    /**
+     * Title
+     *
+     * on a job's events, what a person calls the job, when it says
+     */
+    title?: string | null;
+    /**
+     * Steps
+     *
+     * on a job's events, its four steps (generate, check, repair, save) once its work reported one, an empty list until then; null on an event that is not a job's
+     */
+    steps?: Array<JobStepDto> | null;
+    /**
+     * Step
+     *
+     * on job.step, the step that changed
+     */
+    step?: 'generate' | 'check' | 'repair' | 'save' | null;
+    /**
+     * Stepstate
+     *
+     * on job.step, that step's state
+     */
+    stepState?: 'pending' | 'running' | 'done' | 'skipped' | 'failed' | null;
+    /**
+     * Steptext
+     *
+     * on job.step, a sentence a person can read
+     */
+    stepText?: string | null;
     /**
      * Reviewready
      *
@@ -13700,6 +13846,28 @@ export type StudyViewDto = {
      * Canonicalstatechanged
      */
     canonicalStateChanged: boolean;
+};
+
+/**
+ * SwitchUndoDto
+ */
+export type SwitchUndoDto = {
+    /**
+     * The Current this Switch replaced, which POST /api/working-design/undo puts back; null when no working-position entry named it (the line's accepted Stage or the reference run answered for the head), so there is no exact Undo.
+     */
+    previous: HeadEntryDto | null;
+    /**
+     * Continued
+     *
+     * The run this Switch moved Current onto; Undo holds only while Current is still there.
+     */
+    continued: string;
+    /**
+     * Revisionafter
+     *
+     * The working position's revision this Switch wrote.
+     */
+    revisionAfter: string | null;
 };
 
 /**
@@ -14836,6 +15004,67 @@ export type WorkingCopySelectionRequestDto = {
 };
 
 /**
+ * WorkingDesignSwitchDto
+ */
+export type WorkingDesignSwitchDto = {
+    position: WorkingDraftDto;
+    undo: SwitchUndoDto;
+};
+
+/**
+ * WorkingDesignSwitchRequestDto
+ *
+ * Switch: the Continue onto one run, answered with its Undo (#300, 2-6).
+ */
+export type WorkingDesignSwitchRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Baserevisionsha256
+     */
+    baseRevisionSha256: string | null;
+    /**
+     * Runid
+     *
+     * The run the Working Head moves onto; returning to the default stays PUT /api/working-draft with none.
+     */
+    runId: string;
+    /**
+     * Branchid
+     */
+    branchId?: string | null;
+    /**
+     * The chat message the Hub Agent continued on, as the Hub binds it; provenance, never a credential. Only a Hub-managed Runtime takes it, and the architect's own Continue has none.
+     */
+    messageSource?: MessageSourceDto | null;
+    /**
+     * Rawlanguage
+     *
+     * The user's own words in that message that ask for this Continue; required with messageSource. The retained design.continued event names the message by id, not these words.
+     */
+    rawLanguage?: string | null;
+};
+
+/**
+ * WorkingDesignUndoRequestDto
+ *
+ * Undo one Switch: its ``undo`` as the Switch answered it.
+ */
+export type WorkingDesignUndoRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    previous: HeadEntryDto;
+    /**
+     * Continued
+     */
+    continued: string;
+};
+
+/**
  * WorkingDraftDto
  */
 export type WorkingDraftDto = {
@@ -15207,6 +15436,12 @@ export type WorktreeLineDto = {
      * The Study that verdict grouped the run into, if any.
      */
     studyId: string | null;
+    /**
+     * Review
+     *
+     * The architect's retained review of this run as a Candidate (POST /api/candidate-reviews): archived and rejected results are put away, and restoring an archived one returns it to what it was before. Only an admitted Candidate can be reviewed; running work and a run nobody admitted are unreviewed. unknown on every finished line while the reviews cannot be read (the graph's warnings say why).
+     */
+    review?: 'unreviewed' | 'rejected' | 'archived' | 'unknown';
     /**
      * Supersededby
      *
@@ -21133,6 +21368,116 @@ export type ReadRepresentationStatusApiRepresentationStatusGetResponses = {
 };
 
 export type ReadRepresentationStatusApiRepresentationStatusGetResponse = ReadRepresentationStatusApiRepresentationStatusGetResponses[keyof ReadRepresentationStatusApiRepresentationStatusGetResponses];
+
+export type ReadWorkingDesignMovesApiWorkingDesignMovesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/working-design/moves';
+};
+
+export type ReadWorkingDesignMovesApiWorkingDesignMovesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadWorkingDesignMovesApiWorkingDesignMovesGetError = ReadWorkingDesignMovesApiWorkingDesignMovesGetErrors[keyof ReadWorkingDesignMovesApiWorkingDesignMovesGetErrors];
+
+export type ReadWorkingDesignMovesApiWorkingDesignMovesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ContinueMovesDto;
+};
+
+export type ReadWorkingDesignMovesApiWorkingDesignMovesGetResponse = ReadWorkingDesignMovesApiWorkingDesignMovesGetResponses[keyof ReadWorkingDesignMovesApiWorkingDesignMovesGetResponses];
+
+export type SwitchWorkingDesignRouteApiWorkingDesignSwitchPostData = {
+    body: WorkingDesignSwitchRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/working-design/switch';
+};
+
+export type SwitchWorkingDesignRouteApiWorkingDesignSwitchPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SwitchWorkingDesignRouteApiWorkingDesignSwitchPostError = SwitchWorkingDesignRouteApiWorkingDesignSwitchPostErrors[keyof SwitchWorkingDesignRouteApiWorkingDesignSwitchPostErrors];
+
+export type SwitchWorkingDesignRouteApiWorkingDesignSwitchPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkingDesignSwitchDto;
+};
+
+export type SwitchWorkingDesignRouteApiWorkingDesignSwitchPostResponse = SwitchWorkingDesignRouteApiWorkingDesignSwitchPostResponses[keyof SwitchWorkingDesignRouteApiWorkingDesignSwitchPostResponses];
+
+export type UndoWorkingDesignRouteApiWorkingDesignUndoPostData = {
+    body: WorkingDesignUndoRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/working-design/undo';
+};
+
+export type UndoWorkingDesignRouteApiWorkingDesignUndoPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UndoWorkingDesignRouteApiWorkingDesignUndoPostError = UndoWorkingDesignRouteApiWorkingDesignUndoPostErrors[keyof UndoWorkingDesignRouteApiWorkingDesignUndoPostErrors];
+
+export type UndoWorkingDesignRouteApiWorkingDesignUndoPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkingDraftDto;
+};
+
+export type UndoWorkingDesignRouteApiWorkingDesignUndoPostResponse = UndoWorkingDesignRouteApiWorkingDesignUndoPostResponses[keyof UndoWorkingDesignRouteApiWorkingDesignUndoPostResponses];
 
 export type ReadMemoryApiMemoryGetData = {
     body?: never;
