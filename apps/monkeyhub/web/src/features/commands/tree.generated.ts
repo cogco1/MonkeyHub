@@ -2775,7 +2775,14 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "图19"
       ],
-      "args": []
+      "args": [
+        "field",
+        "value",
+        "runId",
+        "assetSha256",
+        "revisionRef",
+        "pageIndex"
+      ]
     },
     {
       "id": "attention.answer_guess.ignore",
@@ -2796,6 +2803,27 @@ export const COMMAND_TREE: CommandTree = {
         "图20"
       ],
       "args": []
+    },
+    {
+      "id": "drawing.recipe.revoke",
+      "capability": "drawing.recipe",
+      "label": {
+        "en": "Revoke recipe",
+        "zh-CN": "撤销配方"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "decisionId",
+        "expectedRevisionRef"
+      ]
     },
     {
       "id": "drawing.entourage.add_person",
@@ -4299,7 +4327,10 @@ export const COMMAND_TREE: CommandTree = {
         "树16",
         "栏7"
       ],
-      "args": []
+      "args": [
+        "runId",
+        "branchId"
+      ]
     },
     {
       "id": "design.go_to_step.view_only",
@@ -4494,7 +4525,9 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [
+        "runIds"
+      ]
     },
     {
       "id": "design.undo_last",
@@ -4748,7 +4781,29 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "树20"
       ],
-      "args": []
+      "args": [
+        "runIds"
+      ]
+    },
+    {
+      "id": "candidate.review.restore",
+      "capability": "candidate.review",
+      "label": {
+        "en": "Restore an archived result",
+        "zh-CN": "取消归档"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "design_tree",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "runIds"
+      ]
     },
     {
       "id": "candidate.restore.show_drafts",
@@ -5596,6 +5651,28 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
+      "id": "attention.queue.answer_permission",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Answer a permission request",
+        "zh-CN": "答复授权请求"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "sessionId",
+        "permissionId",
+        "optionId"
+      ]
+    },
+    {
       "id": "chat.new_conversation",
       "capability": "chat.conversation",
       "label": {
@@ -5655,14 +5732,17 @@ export const COMMAND_TREE: CommandTree = {
       "group": "shell",
       "channel": "front",
       "tier": "basic",
-      "place": null,
+      "place": "composer",
       "when": [],
       "shortcut": null,
       "entries": [
         "壳80",
         "壳89"
       ],
-      "args": []
+      "args": [
+        "sessionId",
+        "content"
+      ]
     },
     {
       "id": "chat.composer.interject",
@@ -5716,7 +5796,7 @@ export const COMMAND_TREE: CommandTree = {
       "group": "shell",
       "channel": "front",
       "tier": "basic",
-      "place": null,
+      "place": "composer",
       "when": [],
       "shortcut": null,
       "entries": [
@@ -8358,7 +8438,7 @@ export const COMMAND_TREE: CommandTree = {
       "group": "settings",
       "channel": "side",
       "tier": "basic",
-      "place": null,
+      "place": "composer",
       "when": [],
       "shortcut": null,
       "entries": [
