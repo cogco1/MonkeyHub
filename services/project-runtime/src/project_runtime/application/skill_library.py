@@ -156,7 +156,9 @@ def package_problem(package: dict[str, Any]) -> dict[str, Any] | None:
     entry, files = package.get("entry"), package.get("files") or {}
     if entry is not None and entry in files:
         try:
-            compile(files[entry], entry, "exec", dont_inherit=True)
+            # A script saved by a Windows editor starts with a byte order mark: Python runs the file, so it is no
+            # reason to refuse the package. Only the check drops it; the file and its digest stay as they are.
+            compile(files[entry].removeprefix("\ufeff"), entry, "exec", dont_inherit=True)
         except SyntaxError as failure:
             return {"kind": "entry_syntax", "file": entry, "line": failure.lineno,
                     "detail": f"{entry} does not compile: line {failure.lineno}, {failure.msg}."}
