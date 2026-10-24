@@ -2775,7 +2775,14 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "图19"
       ],
-      "args": []
+      "args": [
+        "field",
+        "value",
+        "runId",
+        "assetSha256",
+        "revisionRef",
+        "pageIndex"
+      ]
     },
     {
       "id": "attention.answer_guess.ignore",
@@ -2796,6 +2803,27 @@ export const COMMAND_TREE: CommandTree = {
         "图20"
       ],
       "args": []
+    },
+    {
+      "id": "drawing.recipe.revoke",
+      "capability": "drawing.recipe",
+      "label": {
+        "en": "Revoke recipe",
+        "zh-CN": "撤销配方"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "decisionId",
+        "expectedRevisionRef"
+      ]
     },
     {
       "id": "drawing.entourage.add_person",

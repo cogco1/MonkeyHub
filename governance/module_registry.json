@@ -1372,7 +1372,8 @@
             "channel": "front",
             "entries": [
               "文25"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "view.markup_tools.text_cancel",
@@ -1381,7 +1382,8 @@
             "channel": "front",
             "entries": [
               "文24"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "view.markup_tools.text_delete",
@@ -1390,7 +1392,8 @@
             "channel": "front",
             "entries": [
               "文27"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "view.markup_tools.return_to_edit",
@@ -1501,7 +1504,8 @@
               "板79",
               "板80",
               "板83"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "markup.hand_to_ai.enter_crit",
@@ -1868,7 +1872,8 @@
             "entries": [
               "图9",
               "图10"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "drawing.recipe.import_cancel",
@@ -1877,7 +1882,8 @@
             "channel": "front",
             "entries": [
               "图11"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "drawing.recipe.follow_live",
@@ -1901,6 +1907,14 @@
             "id": "attention.answer_guess.save",
             "label": "Save suggestion",
             "label_zh": "保存建议",
+            "args": [
+              "field",
+              "value",
+              "runId",
+              "assetSha256",
+              "revisionRef",
+              "pageIndex"
+            ],
             "aliases": [
               "save as project recipe"
             ],
@@ -1916,7 +1930,18 @@
             "channel": "front",
             "entries": [
               "图20"
-            ]
+            ],
+            "in_place": true
+          },
+          {
+            "id": "drawing.recipe.revoke",
+            "label": "Revoke recipe",
+            "label_zh": "撤销配方",
+            "args": [
+              "decisionId",
+              "expectedRevisionRef"
+            ],
+            "entries": []
           }
         ]
       }
@@ -3225,7 +3250,8 @@
             "id": "design.go_to_step.cancel_fork",
             "label": "Cancel branch",
             "label_zh": "取消新建分支",
-            "entries": []
+            "entries": [],
+            "in_place": true
           },
           {
             "id": "design.go_to_step.candidate",
@@ -3719,7 +3745,8 @@
             "channel": "front",
             "entries": [
               "模104"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "component.inspect.copy",
@@ -3763,7 +3790,8 @@
             "label_zh": "关闭参数锁",
             "entries": [
               "模88"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "component.lock_params.lock",
@@ -5301,7 +5329,8 @@
             "surface": "modeling",
             "entries": [
               "模117"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "view.chat_drawer.open",
@@ -6051,7 +6080,8 @@
               "文12",
               "模90"
             ],
-            "channel": "front"
+            "channel": "front",
+            "in_place": true
           },
           {
             "id": "view.notice.dismiss",
