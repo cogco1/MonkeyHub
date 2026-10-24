@@ -623,6 +623,7 @@ try {
   const suggested = queuePage.locator(".attention-shell .chat-suggest");
   await suggested.getByText("说一句话，会放进三类之一").waitFor();
   assert.deepEqual(await suggested.locator(".chat-suggest__chip").allTextContents(), ["V2 和 V3 哪个好", "楼板再薄一点", "斜撑留不留", "现在做到哪了"]);
+  assert.deepEqual(chatPosts, [], "nothing was sent before the sentence was chosen");
   await suggested.getByRole("button", { name: "楼板再薄一点" }).click();
   await queuePage.locator(".attention-shell__drawer").getByText("楼板再薄一点").waitFor();
   assert.deepEqual(chatPosts, [["att-conv-A", "楼板再薄一点"]]);
