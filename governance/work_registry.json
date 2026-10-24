@@ -34,6 +34,41 @@
             "docs/protocols/project-runtime-api.md"
           ],
           "depends_on": []
+        },
+        {
+          "id": "b3-change-list",
+          "status": "active",
+          "branch": "claude/300-b3-change-list",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-change-list",
+          "base_ref": "af05e0907",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "第三批第 9 条「圈一下说一句就改」第 2 步 (03 3-3): a message carries its marks; the design loop reads what they lie on and asks with a change list; the card runs the ticked items through design_submit, and an unsure item asks which part was meant. Built on claude/300-b3-markup (POST /api/markup/resolve); merge that first.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/models.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/design_loop.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/turn_context.py",
+            "apps/monkeyhub/api/monkeyhub_api/attention/models.py",
+            "apps/monkeyhub/api/monkeyhub_api/attention/hub.py",
+            "apps/monkeyhub/api/monkeyhub_api/attention/actions.py",
+            "apps/monkeyhub/api/monkeyhub_api/attention/change_list.py",
+            "apps/monkeyhub/api/tests/test_change_list.py",
+            "apps/monkeyhub/api/tests/test_change_list_flow.py",
+            "apps/monkeyhub/api/tests/test_design_loop.py",
+            "apps/monkeyhub/api/tests/test_attention_executor.py",
+            "apps/monkeyhub/web/src/api/generated/index.ts",
+            "apps/monkeyhub/web/src/api/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/features/commands/tree.generated.ts",
+            "governance/module_registry.json",
+            "docs/architecture/system-map.md",
+            "docs/protocols/project-runtime-api.md"
+          ],
+          "depends_on": []
         }
       ]
     }
