@@ -618,7 +618,7 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
 
 def plan_dimension_choices(binding, model_source=None, source_stage_ref=None, source_asset=None):
     model, stage_ref = _plan_source(binding, source_stage_ref, model_source, source_asset)
-    _, receipt = _complete_source(binding, model, stage_ref)
+    _, receipt = _complete_source(binding, model, stage_ref, geometry=False)
     return {"lengthUnit": receipt["identity"]["length_unit"],
             "dimensions": [] if isinstance(model, DrawingAssetSource) else list(list_plan_dimension_intents(binding, model, stage_ref))}
 

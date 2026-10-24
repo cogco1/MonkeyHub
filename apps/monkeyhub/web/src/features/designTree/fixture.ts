@@ -437,6 +437,26 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
       state.revision += 1;
       return this.workingDraft();
     },
+    /** POST /api/working-design/switch: Continue, refused while Modeling holds unrecorded edits, with the Undo of what it replaced. */
+    switchWorkingDesign(body: { projectId: string; runId: string; baseRevisionSha256: string | null; branchId?: string | null }) {
+      if (body.projectId !== FIXTURE_PROJECT) throw new FixtureRefusal(409, "PROJECT_MISMATCH", "The request belongs to another project.");
+      if (body.baseRevisionSha256 !== revision()) throw new FixtureRefusal(409, "WORKING_DRAFT_STALE", "The working position changed; read it before selecting another source.");
+      if (state.localDraft) throw new FixtureRefusal(409, "DESIGN_TREE_UNSYNCED_EDITS", "Modeling holds edits not yet recorded on the current source.");
+      const replaced = this.workingDraft().current;
+      const position = this.selectWorkingDraft(body);
+      const previous = replaced && replaced.runId !== body.runId ? { runId: replaced.runId, branchId: replaced.branchId ?? null } : null;
+      return { position, undo: { previous, continued: body.runId, revisionAfter: position.revisionSha256 ?? null } };
+    },
+    /** POST /api/working-design/undo: the replaced Current back while Current still stands where the Switch left it. */
+    undoWorkingDesign(body: { projectId: string; previous: { runId: string; branchId: string | null }; continued: string }): WorkingDraftDto {
+      if (body.projectId !== FIXTURE_PROJECT) throw new FixtureRefusal(409, "PROJECT_MISMATCH", "The request belongs to another project.");
+      const position = this.workingDraft(), current = position.current?.runId ?? null;
+      if (current === body.previous.runId) return position;
+      if (current !== body.continued) throw new FixtureRefusal(409, "DESIGN_TREE_UNDO_MOVED", "The working design moved on since that switch.");
+      if (state.localDraft) throw new FixtureRefusal(409, "DESIGN_TREE_UNSYNCED_EDITS", "Modeling holds edits not yet recorded on the current source.");
+      return this.selectWorkingDraft({ projectId: body.projectId, runId: body.previous.runId, branchId: body.previous.branchId,
+        baseRevisionSha256: position.revisionSha256 ?? null });
+    },
     /** POST /api/candidates/{id}/accept: a Stage from the Working Head, on the line's newest Stage only. */
     accept(candidateId: string, body: { projectId: string; branchId?: string; expectedHeadStageRef: string; label?: string | null }): DesignStageDto {
       if (body.projectId !== FIXTURE_PROJECT) throw new FixtureRefusal(409, "PROJECT_MISMATCH", "The request belongs to another project.");

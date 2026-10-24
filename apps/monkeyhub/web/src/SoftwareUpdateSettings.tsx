@@ -18,6 +18,8 @@ const localCopy = {
     verifying: (version: string) => `verifying and preparing ${version}…`,
     failed: "The update did not finish.",
     checkAgain: "Check again",
+    workshopOn: "Workshop mode: On", workshopOff: "Workshop mode: Off",
+    workshopHelp: "For a computer that keeps one version for a whole workshop. MonkeyHub neither checks for nor downloads updates; a patch chosen here is still applied only by Restart to update. From the next start, this account opens one MonkeyHub at a time, at the same address every start (port 8790 while it is free), so an open page reconnects after a restart.",
   },
   "zh-CN": {
     readyNextLaunch: (version: string) => `${tagged(version)} 已准备好 · 下次启动生效`,
@@ -25,6 +27,8 @@ const localCopy = {
     verifying: (version: string) => `正在校验并准备 ${version}…`,
     failed: "更新未完成。",
     checkAgain: "重新检查",
+    workshopOn: "工作坊模式：开", workshopOff: "工作坊模式：关",
+    workshopHelp: "用于整场工作坊都保持同一个版本的电脑。MonkeyHub 不检查、不下载更新；在这里选择的补丁仍只在点“重启并更新”时生效。下次启动起，这个账户同时只能开一个 MonkeyHub，每次启动都用同一个地址（端口 8790 空闲时就用它），重启后已打开的页面会自己连回来。",
   },
 } satisfies Record<Language, unknown>;
 
@@ -40,7 +44,7 @@ export function SoftwareUpdateSettings({ language, open, restartBlocker, onResta
   const t = hubCopyCatalog[language];
   const copy = localCopy[language];
   const [status, setStatus] = useState<UpdateStatus | null>(null);
-  const [request, setRequest] = useState<"status" | "upload" | "apply" | "check" | "auto" | null>(null);
+  const [request, setRequest] = useState<"status" | "upload" | "apply" | "check" | "auto" | "workshop" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [restartRequested, setRestartRequested] = useState(false);
@@ -79,7 +83,7 @@ export function SoftwareUpdateSettings({ language, open, restartBlocker, onResta
     return () => window.clearInterval(timer);
   }, [open, status?.state, restartRequested, checking, refresh]);
 
-  async function send(kind: "check" | "auto", path: string, options: RequestInit) {
+  async function send(kind: "check" | "auto" | "workshop", path: string, options: RequestInit) {
     if (requestLock.current || restartRequested) return;
     requestLock.current = true; setRequest(kind); setError(null);
     try { setStatus(await updateRequest(path, options)); }
@@ -156,6 +160,9 @@ export function SoftwareUpdateSettings({ language, open, restartBlocker, onResta
   </>;
   // The next action after a failure is to check again.
   const retry = failed || check?.state === "error";
+  // 工作坊模式 (#668): nothing is checked for, so neither the check nor the automatic switch is offered.
+  const workshop = Boolean(status?.workshopMode);
+  const putSettings = (body: object): RequestInit => ({ method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   return <section className="settings software-update" aria-labelledby="software-update-heading">
     <div className="settings-section">
       <h2 id="software-update-heading">{t.softwareUpdate}</h2>
@@ -180,25 +187,33 @@ export function SoftwareUpdateSettings({ language, open, restartBlocker, onResta
           const file = event.target.files?.[0]; event.target.value = ""; if (file) void prepare(file);
         }} />
       <div className="actions software-update__actions">
-        {prepared && <button type="button" className="btn btn--primary" disabled={Boolean(request) || working || !status?.canApply || Boolean(blocked) || Boolean(error)}
+        {prepared && <button data-command="hub.update_apply" type="button" className="btn btn--primary" disabled={Boolean(request) || working || !status?.canApply || Boolean(blocked) || Boolean(error)}
           aria-describedby={blocked ? "software-update-blocker" : "software-update-recovery"} onClick={() => void apply()}>{t.updateRestart}</button>}
-        {status?.mode === "local" && <button type="button" className={retry && !prepared ? "btn btn--primary" : "btn"}
+        {status?.mode === "local" && !workshop && <button data-command="hub.update_check_now" type="button" className={retry && !prepared ? "btn btn--primary" : "btn"}
           disabled={Boolean(request) || working || checking}
           onClick={() => void send("check", "check", { method: "POST" })}>{retry ? copy.checkAgain : t.updateCheckNow}</button>}
-        <button type="button" className="btn" disabled={Boolean(request) || working} onClick={() => void refresh()}>{t.updateRefresh}</button>
-        {status?.mode === "local" && <button type="button" className="btn" disabled={Boolean(request) || working}
+        <button data-command="view.notice.retry" data-command-arg="update_status" type="button" className="btn" disabled={Boolean(request) || working} onClick={() => void refresh()}>{t.updateRefresh}</button>
+        {status?.mode === "local" && <button data-command="hub.update_patch" type="button" className="btn" disabled={Boolean(request) || working}
           aria-describedby="software-update-trust" onClick={() => fileInput.current?.click()}>{t.updateChoosePatch}</button>}
       </div>
       {status?.mode === "local" && <div className="software-update__auto">
         <label className="software-update__toggle">
-          <input type="checkbox" role="switch" checked={Boolean(status.autoUpdate)} disabled={Boolean(request) || working}
-            aria-describedby="software-update-auto-help" onChange={(event) => void send("auto", "settings", {
-              method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ autoUpdate: event.target.checked }),
-            })} />
+          <input data-command="hub.update_auto" type="checkbox" role="switch" checked={Boolean(status.autoUpdate)} disabled={Boolean(request) || working || workshop}
+            aria-describedby="software-update-auto-help"
+            onChange={(event) => void send("auto", "settings", putSettings({ autoUpdate: event.target.checked }))} />
           <span>{status.autoUpdate ? t.updateAutoOn : t.updateAutoOff}</span>
         </label>
         {phase !== null && lastCheck && <><p className="software-update__check">{lastCheck}</p>{checkDetails}</>}
         <p className="help" id="software-update-auto-help">{t.updateAutoHelp}</p>
+      </div>}
+      {status?.mode === "local" && <div className="software-update__auto">
+        <label className="software-update__toggle">
+          <input type="checkbox" role="switch" checked={workshop} disabled={Boolean(request) || working}
+            aria-describedby="software-update-workshop-help"
+            onChange={(event) => void send("workshop", "settings", putSettings({ workshopMode: event.target.checked }))} />
+          <span>{workshop ? copy.workshopOn : copy.workshopOff}</span>
+        </label>
+        <p className="help" id="software-update-workshop-help">{copy.workshopHelp}</p>
       </div>}
       {status?.mode === "local" && <p className="help" id="software-update-trust">{t.updateTrustLocal}</p>}
       <p className="help" id="software-update-recovery">{t.updateRecovery}</p>

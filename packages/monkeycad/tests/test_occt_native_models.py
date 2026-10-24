@@ -16,7 +16,7 @@ import rhino3dm as rhino
 from monkeycad.backends.occt.errors import OcctBackendError, OcctBuildError, OcctCapabilityError
 from monkeycad.backends.occt.kernel import _occt, occt_available
 from monkeycad.backends.occt.measure import measure_shape
-from monkeycad.backends.occt.native_models import _native_mesh_shape, read_three_dm
+from monkeycad.backends.occt.native_models import _native_mesh_shape, _native_wire, read_three_dm
 from monkeycad.backends.occt.projection import project_occt_lines
 from monkeycad.backends.occt.section import section_occt_regions
 
@@ -333,6 +333,40 @@ class NativeThreeDmTests(unittest.TestCase):
         self.assertEqual(len(entries), 2)
         self.assertEqual(_section(entries), ())
         self.assertTrue(_project(entries))
+
+
+
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
+class ReversedTrimTests(unittest.TestCase):
+    """Gap 15: a trim loop that uses a polyline edge backwards must close."""
+
+    def test_a_polyline_used_backwards_closes_its_loop(self):
+        # The loop of a gable-like wall face: its three-point eave polyline is
+        # used backwards between other reversed edges. Reversing the built wire
+        # kept the polyline's edges in their stored order and left it open.
+        occ = _occt()
+        point = lambda x, y: rhino.Point3d(x, y, 0)
+        loop = [([point(8, 1), point(9, 1)], False), ([point(9, 1), point(9, 0)], False),
+                ([point(0, 0), point(9, 0)], True), ([point(0, 1), point(0, 0)], True),
+                ([point(2, 3), point(1, 2), point(0, 1)], True), ([point(6, 3), point(2, 3)], True),
+                ([point(7, 1.5), point(6, 3)], True), ([point(8, 1), point(7, 1.5)], True)]
+        wire = occ.BRepBuilderAPI.BRepBuilderAPI_MakeWire()
+        for points, reverse in loop:
+            wire.Add(_native_wire(occ, rhino.PolylineCurve(points), "trim", reverse=reverse))
+        self.assertTrue(wire.IsDone())
+        self.assertTrue(occ.BRep.BRep_Tool.IsClosed_s(wire.Wire()))
+
+    def test_one_unreadable_object_is_named_and_the_rest_are_read(self):
+        model = _model()
+        model.Objects.AddBrep(_box(), rhino.ObjectAttributes())
+        model.Objects.AddTextDot("label", rhino.Point3d(0, 0, 0), rhino.ObjectAttributes())
+        with self.assertRaises(OcctBackendError):
+            read_three_dm(_bytes(model))
+        omitted = []
+        entries, unit = read_three_dm(_bytes(model), omitted=omitted)
+        self.assertEqual((len(entries), unit, len(omitted)), (1, "meter", 1))
+        self.assertIn("TextDot", omitted[0]["reason"])
+        self.assertNotIn("no objects were omitted", omitted[0]["reason"])
 
 
 if __name__ == "__main__":

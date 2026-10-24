@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
+import { cmd } from "./commandLocator.mjs";
 
 // The real DocumentCanvas with contract-shaped, in-memory ports. This checks
 // UI binding and callback behavior; backend ownership is covered by its tests.
@@ -170,7 +171,7 @@ const status = () => page.locator(".document-model-source").getAttribute("data-m
 const snapshot = () => page.evaluate(() => ({ ...window.modelFixture.state(),
   reads: window.modelFixture.reads, writes: window.modelFixture.writes, bindings: window.modelFixture.bindings,
   continues: window.modelFixture.continues, intents: window.modelFixture.intents, fileLoads: window.modelFixture.fileLoads }));
-const submitButton = () => page.getByRole("button", { name: "提交本页意见", exact: true });
+const submitButton = () => cmd(page, "markup.hand_to_ai.submit_page_note");
 const sourceSelect = () => page.locator(".document-header > select");
 const pageSelect = () => page.locator(".document-pages select");
 const referencePanel = () => page.locator(".document-references");
@@ -220,7 +221,7 @@ async function selectDocument(sha, pageIndex = 0) {
   await pageReady(sha, pageIndex);
 }
 async function openReferences() {
-  if (await referencePanel().getAttribute("open") === null) await referencePanel().locator("summary").click();
+  if (await referencePanel().getAttribute("open") === null) await cmd(referencePanel(), "view.disclosure.toggle", { arg: "document_references" }).click();
 }
 async function clearReferences() {
   await openReferences();
@@ -290,13 +291,13 @@ try {
   await page.route((url) => url.pathname.startsWith("/api/"), (route) => route.abort("blockedbyclient"));
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/?lang=zh-CN`);
   await page.locator('.document-viewport[data-ready="true"]').waitFor();
-  await page.waitForFunction(() => document.querySelector(".document-tools button")?.disabled === false);
+  await page.waitForFunction(() => document.querySelector('.document-tools [data-command="view.markup_tools.select"]')?.disabled === false);
 
   await step("an unknown drawing remains annotatable and saveable, but cannot submit a model change", async () => {
     assert.equal(await status(), "unknown");
     assert.equal(await submitButton().isDisabled(), true);
     assert.equal(await page.locator("#document-comment").isEditable(), true, "the page stays editable and saves itself");
-    await page.locator(".document-tools").getByRole("button", { name: "画笔", exact: true }).click();
+    await cmd(page.locator(".document-tools"), "view.markup_tools.freehand").click();
     await page.mouse.move(...await at([0.2, 0.55])); await page.mouse.down();
     await page.mouse.move(...await at([0.4, 0.6])); await page.mouse.up();
     const saved = await until(snapshot, (value) => value.saved.annotations.length === 2, "unknown source stroke saved");
@@ -312,11 +313,11 @@ try {
     await page.locator(".document-save-state").filter({ hasText: "已保存" }).waitFor();
     const before = await snapshot();
     await page.evaluate(() => { window.modelFixture.canvasBefore = document.querySelector(".document-page__raster"); });
-    await page.locator(".document-tools").getByRole("button", { name: "文字", exact: true }).click();
+    await cmd(page.locator(".document-tools"), "view.markup_tools.text").click();
     await page.mouse.click(...await at([0.45, 0.65]));
     await page.locator(".document-text-editor textarea").fill("未完成的页内文字");
     await page.locator(".document-model-source select").selectOption(JSON.stringify([modelA.runId, modelA.stateDigest, modelA.assetSha256]));
-    await page.getByRole("button", { name: "关联所选模型", exact: true }).click();
+    await cmd(page, "document.model_source.link").click();
     await page.waitForFunction(() => window.modelFixture.releaseBinding !== null);
     const pending = await snapshot();
     assert.equal(await status(), "unknown");
@@ -339,7 +340,7 @@ try {
     const before = await snapshot();
     assert.deepEqual(before.continues, []);
     assert.deepEqual(before.editing, modelB);
-    await page.getByRole("button", { name: "从这里继续", exact: true }).click();
+    await cmd(page, "design.go_to_step.continue").click();
     await until(status, (value) => value === "ready", "explicit model continuation resolved");
     const after = await snapshot();
     assert.deepEqual(after.continues, [modelA]);
@@ -354,7 +355,7 @@ try {
       await page.evaluate((source) => window.modelFixture.setEditing(source), mismatch);
       await until(status, (value) => value === "mismatch", "one differing identity field blocks submission");
       assert.equal(await submitButton().isDisabled(), true);
-      assert.equal(await page.locator(".document-tools").getByRole("button", { name: "画笔", exact: true }).isEnabled(), true);
+      assert.equal(await cmd(page.locator(".document-tools"), "view.markup_tools.freehand").isEnabled(), true);
       assert.equal(await page.locator("#document-comment").isEditable(), true, "the page stays editable and saves itself");
     }
     await page.evaluate((source) => window.modelFixture.setEditing(source), modelA);
@@ -521,7 +522,7 @@ try {
       assert.equal(await sourceSelect().isDisabled(), true);
       assert.equal(await pageSelect().isDisabled(), true);
       assert.equal(await page.locator("#document-comment").isDisabled(), true);
-      const history = page.locator(".document-submitted article button");
+      const history = cmd(page.locator(".document-submitted article"), "view.handled.view_page", { includeHidden: true });
       assert.ok(await history.count() > 0);
       assert.ok((await history.evaluateAll((buttons) => buttons.map((button) => button.disabled))).every(Boolean),
         "Historical page entry points remain disabled during visual preparation");

@@ -2017,12 +2017,18 @@ export type UpdateCheck = {
 
 /**
  * UpdateSettings
+ *
+ * One switch per request: autoUpdate or workshopMode.
  */
 export type UpdateSettings = {
     /**
      * Autoupdate
      */
-    autoUpdate: boolean;
+    autoUpdate?: boolean | null;
+    /**
+     * Workshopmode
+     */
+    workshopMode?: boolean | null;
 };
 
 /**
@@ -2072,6 +2078,10 @@ export type UpdateStatus = {
      */
     nextLaunch?: boolean;
     check?: UpdateCheck;
+    /**
+     * Workshopmode
+     */
+    workshopMode?: boolean;
 };
 
 /**
@@ -2125,6 +2135,10 @@ export type UserSettingsDto = {
      */
     chatProvider?: 'codex' | 'claude' | 'coding-plan' | null;
     /**
+     * Skillagentruns
+     */
+    skillAgentRuns?: 'ask' | 'granted' | 'never' | null;
+    /**
      * Chatmodel
      */
     chatModel?: string | null;
@@ -2136,6 +2150,10 @@ export type UserSettingsDto = {
      * Autoupdate
      */
     autoUpdate?: boolean | null;
+    /**
+     * Workshopmode
+     */
+    workshopMode?: boolean | null;
     /**
      * Sidebarpinned
      */
@@ -3561,6 +3579,76 @@ export type ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionId
 };
 
 export type ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponse = ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponses[keyof ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponses];
+
+export type AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostData = {
+    /**
+     * Body
+     */
+    body: {
+        [key: string]: unknown;
+    };
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/skill-permissions';
+};
+
+export type AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostError = AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostErrors[keyof AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostErrors];
+
+export type AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: unknown;
+};
+
+export type ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+        /**
+         * Permission Id
+         */
+        permission_id: string;
+    };
+    query?: {
+        /**
+         * Wait
+         */
+        wait?: number;
+    };
+    url: '/api/chat/sessions/{session_id}/skill-permissions/{permission_id}';
+};
+
+export type ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetError = ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetErrors[keyof ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetErrors];
+
+export type ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
 
 export type InspectComputerApiComputerInspectPostData = {
     body: ComputerInspectRequest;

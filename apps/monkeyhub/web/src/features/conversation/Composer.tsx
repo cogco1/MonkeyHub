@@ -110,7 +110,7 @@ export function Composer({
             {t(hasAgent ? "composer.context.describe" : "composer.context.nothingSelected")}
           </span>
         )}
-        <button
+        <button data-command="candidate.modify_existing.choose_component"
           type="button"
           className="btn btn--link"
           disabled={projection === null}
@@ -135,7 +135,7 @@ export function Composer({
       )}
       {controls && (hasAgent ? (
         <details className="card__details">
-          <summary>{t("composer.controls")}</summary>
+          <summary data-command="component.find.view_parameters">{t("composer.controls")}</summary>
           {controls}
         </details>
       ) : controls)}
@@ -145,7 +145,7 @@ export function Composer({
           {gestures.map((gesture, index) => (
             <span key={index} className={"gesture-chip gesture-chip--" + gesture.kind}>
               {MARK_GLYPH[gesture.kind]} {markLabel(gesture, t)}
-              <button
+              <button data-command="component.find.remove_mark" data-command-arg={index}
                 type="button"
                 className="gesture-chip__x"
                 aria-label={t("composer.mark.removeAria", {
@@ -176,7 +176,7 @@ export function Composer({
             }
           }}
         />
-        <button
+        <button data-command="candidate.modify_existing.propose"
           type="submit"
           className="btn btn--primary"
           disabled={disabled || draft.trim() === ""}

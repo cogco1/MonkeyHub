@@ -26,6 +26,7 @@ import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 import { createProjectWorkspaceFixture } from "./projectWorkspaceFixture.mjs";
 import { workspaceFixture } from "./workspaceFixture.mjs";
+import { cmd } from "./commandLocator.mjs";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
 const output = process.env.SCREENSHOT_DIR ? path.resolve(process.env.SCREENSHOT_DIR) : await mkdtemp(path.join(tmpdir(), "presentation-style-"));
@@ -171,7 +172,7 @@ try {
     runtime?.model?.traverse((object) => { if (object.name === "roof") found = true; });
     return found;
   }, null, { polling: "raf" });
-  const moreMenu = page.locator('button[aria-controls="stage-more-menu"]');
+  const moreMenu = cmd(page, "view.menu.toggle", { arg: "modeling_more", includeHidden: true });
   const chooseStyle = async (style) => {
     if (await moreMenu.getAttribute("aria-expanded") !== "true") await moreMenu.click();
     await page.locator("#stage-more-menu select[data-display-style]").selectOption(style);
@@ -258,11 +259,11 @@ try {
     ["glazing", "infill", "plinth", "roof", "timber"]);
   assert.equal(await legend.locator("li[data-undeclared]").textContent(), "No declared material · 1");
   assert.equal(await legend.getAttribute("open"), null, "the legend starts folded, so the picture stays clear");
-  assert.match(await legend.locator("summary").textContent(), /^Materials · 5\s*1$/, "folded, it still counts the hatched objects");
-  assert.equal(await legend.locator("summary [title]").getAttribute("title"), "No declared material · 1");
-  await legend.locator("summary").click();
+  assert.match(await cmd(legend, "view.model_display.materials").textContent(), /^Materials · 5\s*1$/, "folded, it still counts the hatched objects");
+  assert.equal(await cmd(legend, "view.model_display.materials").locator("[title]").getAttribute("title"), "No declared material · 1");
+  await cmd(legend, "view.model_display.materials").click();
   await page.screenshot({ path: path.join(output, "presentation-legend.png") });
-  await legend.locator("summary").click();
+  await cmd(legend, "view.model_display.materials").click();
   assert.equal(await page.locator("#stage-more-menu").count(), 0);
   await moreMenu.click();
   assert.match(await page.locator("#stage-more-menu label.stage-menu__field").getAttribute("title"), /declare.*shadows.*hatched/s,
@@ -270,7 +271,7 @@ try {
   await moreMenu.click();
 
   // The axonometric preset: orthographic, the whole model framed.
-  await page.locator('[data-presentation-view="axonometric"]').click();
+  await cmd(page.locator("[data-presentation]"), "view.model_camera.iso").click();
   await settle();
   const axonometric = await state();
   assert.equal(axonometric.projection, "orthographic");
@@ -285,22 +286,22 @@ try {
   const hatch = await run([1.4, 3.1, 0.75]);
   assert.ok(Math.max(...hatch) - Math.min(...hatch) > 0.1 * Math.max(...hatch), `the bench's hatch has lines: ${hatch}`);
   for (const view of ["front", "side"]) {
-    await page.locator(`[data-presentation-view="${view}"]`).click();
+    await cmd(page.locator("[data-presentation]"), { front: "view.model_camera.front", side: "view.model_camera.right" }[view]).click();
     await settle();
     assert.equal((await state()).projection, "orthographic", view);
     await page.screenshot({ path: path.join(output, `presentation-${view}.png`) });
   }
-  await page.locator('[data-presentation-view="axonometric"]').click();
+  await cmd(page.locator("[data-presentation]"), "view.model_camera.iso").click();
   await settle();
 
   // Render keeps the view as a still bound to the exact model source and its camera, shadows included.
   const home = [...fixture.projects.get("M").assets.values()].map((row) => row.dto).find((dto) => dto.runId === "home-M");
   await page.evaluate(() => window.__workspaceFixture.setWorkspace("render"));
-  const capture = page.getByRole("button", { name: "Use current view as source", exact: true });
+  const capture = cmd(page, "render.run.capture_view");
   await capture.waitFor();
   try {
-    await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) =>
-      button.textContent === "Use current view as source" && !button.disabled));
+    await page.waitForFunction(() => [...document.querySelectorAll('[data-command="render.run.capture_view"]')].some((button) =>
+      !button.disabled));
   } catch (error) {
     await page.screenshot({ path: path.join(output, "render-preview-failure.png") });
     throw new Error(`${error.message}: ${await page.locator(".render-model-preview").innerText()}`);
@@ -361,8 +362,8 @@ try {
   assert.equal(original.worn.roof.style, "file");
   assert.equal(original.worn.roof.colour, "687073", "the file's material, decoded");
   assert.deepEqual([original.shadows, original.ground, original.lights.presentation], [false, false, false]);
-  await page.locator('button[aria-controls="stage-more-menu"]').click();
-  await page.locator("#stage-more-menu").getByRole("button", { name: "Isometric", exact: true }).click();
+  await cmd(page, "view.menu.toggle", { arg: "modeling_more", includeHidden: true }).click();
+  await cmd(page.locator("#stage-more-menu"), "view.model_camera.iso").click();
   await moreMenu.click();
   await settle();
   const [originalPlinth] = await sample([[0.8, 0.8, 0.3]]);

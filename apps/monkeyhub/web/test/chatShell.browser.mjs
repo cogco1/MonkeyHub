@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createProjectWorkspaceFixture } from "./projectWorkspaceFixture.mjs";
+import { cmd, commandLabel, waitForCommandLabel } from "./commandLocator.mjs";
 import { createServer } from "node:http";
 import { readFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -588,6 +589,8 @@ const hubApi = async (route) => {
     }
     return json(session);
   }
+  // A Hub that does not serve the attention queue yet (1-4), as main's does.
+  if (url.pathname.startsWith("/api/attention")) return json({ code: "NOT_FOUND", detail: "This Hub does not serve the attention queue yet." }, 404);
   errors.push(`Unexpected request: ${method} ${url.pathname}`); return json({ detail: "Unexpected fixture request" }, 404);
 };
 await page.route((url) => url.pathname.startsWith("/api/"), hubApi);
@@ -595,7 +598,36 @@ const railWidth = () => page.evaluate(() => document.querySelector(".chat-rail")
 // GH-302: Hub settings have no Save button; each change saves itself and the status line says Saved.
 const settingsSaved = () => page.waitForFunction(() => document.querySelector("#settings-save-state")?.dataset.state === "saved");
 // #328: Settings is paged; each page opens from the list beside it.
-const settingsPage = (name) => page.getByRole("dialog").getByRole("tab", { name, exact: true }).click();
+const SETTINGS_PAGES = { Display: "display", Conversations: "chat", "AI Render": "render", Workspace: "workspace", "Software update": "update",
+  显示: "display", 对话: "chat", "AI 渲染": "render", 工作区: "workspace", 软件更新: "update" };
+const settingsPage = (name) => clickLabelled(cmd(page.getByRole("dialog"), "view.settings.page", { arg: SETTINGS_PAGES[name] }), name);
+// #300: controls are found by the command they render. A step that also relied on the name a control shows (the
+// language on screen, or the state a toggle names: Hide projects, Show tools, Archived chats) waits for that name.
+const clickLabelled = async (control, label) => { await waitForCommandLabel(control, label); await control.click(); };
+// The rail's tools. Board's mode switch, the sidebar's Usage, the header's Stage chip and the project card render some
+// of the same commands, so a tool is found within the rail's groups. RAIL maps the names the walk uses to commands.
+const RAIL = { Modeling: "view.tab.modeling", Board: "view.tab.board", "Design tree": "view.design_tree.open", Drawings: "view.drawings",
+  Render: "view.render.open", Fabrication: "fab.prepare_parts.open", Usage: "view.usage.open" };
+const railTool = (id, scope = page) => cmd(scope.locator(".chat-rail__group"), id);
+const panelToggle = (scope = page) => cmd(scope.locator(".chat-rail"), "view.side_panel");
+/** 2-7: technical details, raw lines and the page's address show in developer mode, switched in Hub settings. */
+/** The same switch written into the saved preferences, for the next page load at any width. */
+const developerModeOnNextLoad = (on) => page.evaluate((mode) => {
+  const key = "archflow-studio.user-preferences", saved = JSON.parse(localStorage.getItem(key) ?? '{"version":1}');
+  localStorage.setItem(key, JSON.stringify({ ...saved, version: 1, developer: { mode, eventStream: true } }));
+}, on);
+async function setDeveloperMode(on) {
+  await page.getByRole("button", { name: /^(Hub settings|Hub 设置)$/ }).first().click();
+  const settings = page.locator("dialog.chat-dialog--settings");
+  await settings.locator("#settings-tab-workspace").click();
+  const advanced = settings.locator("details.advanced");
+  const wasOpen = await advanced.evaluate((element) => element.open);
+  if (!wasOpen) await advanced.locator(":scope > summary").click();
+  if (on) await settings.locator("#developer-mode").check(); else await settings.locator("#developer-mode").uncheck();
+  if (!wasOpen) await advanced.locator(":scope > summary").click();
+  await page.keyboard.press("Escape");
+  await settings.waitFor({ state: "hidden" });
+}
 const boxOf = (selector) => page.evaluate((value) => {
   const node = document.querySelector(value);
   return node ? node.getBoundingClientRect().width : 0;
@@ -643,11 +675,11 @@ const assertSameScreenshotPixels = async (actual, expected, message) => {
 };
 // #285: the composer's + menu holds Add attachments and New topic; the composer
 // names the design context the next message carries.
-const composerMenu = (name = "Attachments and new topic") => page.getByRole("button", { name, exact: true });
+const composerMenu = () => cmd(page, "chat.composer.menu");
 const addAttachments = async (files) => {
   const chooser = page.waitForEvent("filechooser");
   await composerMenu().click();
-  await page.getByRole("menuitem", { name: "Add attachments", exact: true }).click();
+  await cmd(page, "chat.composer.attach").click();
   await (await chooser).setFiles(files);
 };
 /**
@@ -674,7 +706,7 @@ const waitWorkspace = async (kind = "arch") => {
  * entry on screen, which the press then closes; one more press brings it back.
  */
 const showEntry = async (name) => {
-  const entry = page.getByRole("button", { name, exact: true });
+  const entry = railTool(RAIL[name]);
   await page.waitForFunction((label) => {
     const node = document.querySelector(`.chat-rail__tool[aria-label="${label}"]`);
     return node && !node.disabled && !node.hasAttribute("aria-busy");
@@ -763,9 +795,9 @@ const autosavedModelRestart = async () => {
     for (const end = Date.now() + 12000; !done(); await page.waitForTimeout(50)) if (Date.now() > end) assert.fail(message);
   };
   const blocker = "A model draft is still being saved. Wait a moment before restarting.";
-  const restart = page.getByRole("button", { name: "Restart to update", exact: true });
-  const openSettings = async () => { await page.getByRole("button", { name: "Hub settings", exact: true }).click(); await settingsPage("Software update"); };
-  const closeSettings = () => page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  const restart = cmd(page, "hub.update_apply");
+  const openSettings = async () => { await cmd(page, "view.settings.open").click(); await settingsPage("Software update"); };
+  const closeSettings = () => cmd(page.getByRole("dialog"), "view.dialog.close").click();
   const restartAllowed = async (message) => {
     await page.waitForFunction(() => [...document.querySelectorAll("button")].find((button) => button.textContent === "Restart to update")?.disabled === false);
     assert.equal(await page.locator("#software-update-blocker").count(), 0, message);
@@ -777,9 +809,9 @@ const autosavedModelRestart = async () => {
 
   await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
   await page.reload();
-  await page.getByRole("button", { name: "Project D", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Project D" }).first().click();
   await studioReady();
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await railTool("view.tab.modeling").click();
   await waitWorkspace();
   const status = visibleWorkspace().locator(".model-tools__sync-status");
   await status.filter({ hasText: /^Unrecorded edits · saved automatically$/ }).waitFor();
@@ -787,18 +819,18 @@ const autosavedModelRestart = async () => {
   await until(() => draft.writes.length === 1, "the restored draft was never retained again");
   assert.deepEqual(draft.writes[0].draft.commands, commands);
   assert.deepEqual(draft.writes[0].draft.source, draft.localDraft.source);
-  assert.equal(await visibleWorkspace().getByRole("button", { name: "Record", exact: true }).isEnabled(), true);
+  assert.equal(await cmd(visibleWorkspace(), "draft.record.save").isEnabled(), true);
   // Restored edits are still not a candidate: a New topic asks for them to be recorded first,
   // and offers the one click that does it (#302) instead of a dead end.
   await page.waitForFunction(() => document.querySelector(".chat-composer")?.dataset.context === "unsynced");
   await composerMenu().click();
-  const newTopic = page.getByRole("menuitemcheckbox", { name: "New topic", exact: true });
+  const newTopic = cmd(page, "chat.composer.topic");
   assert.equal(await newTopic.getAttribute("aria-description"), "Model edits are not recorded yet. Record them to start a new context from project state, or undo them in Modeling. You can still continue this conversation.");
   await newTopic.click();
   const recordOffer = page.locator(".chat-composer .chat-record");
   assert.equal(await recordOffer.innerText(), "Record edits and continue", "the refused New topic offers Record edits and continue");
   assert.equal(await page.locator(".chat-composer [role=status]").filter({ hasText: "Model edits are not recorded yet." }).count(), 1);
-  await page.getByRole("button", { name: "Remove New topic", exact: true }).click();
+  await cmd(page, "chat.composer.remove_topic").click();
   await recordOffer.waitFor({ state: "detached" });
   await openSettings();
   await restartAllowed("edits the working draft already holds do not block the update restart");
@@ -807,7 +839,7 @@ const autosavedModelRestart = async () => {
   // An autosave still being written holds the restart until it lands.
   let releaseSave;
   draft.hold = new Promise((resolve) => { releaseSave = resolve; });
-  await visibleWorkspace().getByRole("button", { name: "Undo model", exact: true }).click();
+  await cmd(visibleWorkspace(), "draft.tools.undo").click();
   await until(() => draft.writes.length === 2, "undoing a push/pull was not autosaved");
   await openSettings();
   await restartBlocked("an autosave still being written blocks the update restart");
@@ -819,14 +851,14 @@ const autosavedModelRestart = async () => {
 
   // A refused autosave holds it too, and the next accepted save releases it.
   draft.failure = "Fixture working draft is unavailable.";
-  await visibleWorkspace().getByRole("button", { name: "Redo model", exact: true }).click();
+  await cmd(visibleWorkspace(), "draft.tools.redo").click();
   await status.filter({ hasText: "Fixture working draft is unavailable." }).waitFor();
   await openSettings();
   await restartBlocked("a refused autosave blocks the update restart");
   await closeSettings();
   draft.failure = null;
-  await visibleWorkspace().getByRole("button", { name: "Undo model", exact: true }).click();
-  await visibleWorkspace().getByRole("button", { name: "Redo model", exact: true }).click();
+  await cmd(visibleWorkspace(), "draft.tools.undo").click();
+  await cmd(visibleWorkspace(), "draft.tools.redo").click();
   await until(() => draft.localDraft.commands.length === commands.length, "the redone push/pull was not autosaved");
   await status.filter({ hasText: /^Unrecorded edits · saved automatically$/ }).waitFor();
   assert.deepEqual(draft.localDraft.commands, commands);
@@ -885,14 +917,14 @@ async function idleMinute() {
   const sequenceAtLoad = runtimeSequence;
   try {
     await idle.goto(origin);
-    await idle.getByRole("button", { name: "Tree project", exact: true }).first().click();
+    await cmd(idle, "project.open", { arg: "Tree project" }).first().click();
     await idle.waitForFunction(() => ["Modeling", "Board"].every((label) =>
       document.querySelector(`.chat-rail__tool[aria-label="${label}"]`)?.dataset.state === "running"));
     await idle.waitForFunction(() => document.querySelector(".chat-composer")?.dataset.context === "ready");
-    await idle.getByRole("button", { name: "Design tree", exact: true }).click();
+    await railTool("view.design_tree.open", idle).click();
     const surface = idle.locator(".chat-project-workspace:not([hidden]) .design-tree");
     await surface.waitFor();
-    await idle.locator(".chat-project-workspace:not([hidden]) .project-bar").getByRole("button", { name: "List", exact: true }).click();
+    await cmd(idle.locator(".chat-project-workspace:not([hidden]) .project-bar"), "view.design_tree.list").click();
     const stage = (run) => surface.locator(`[role="treeitem"][data-node="stage:project://T/runs/${run}/review/design-stage.json"]`);
     await stage("tree-s2").waitFor();
     idle.off("request", onLoad);
@@ -920,12 +952,12 @@ async function idleMinute() {
 
     // Switching surfaces on an unchanged project asks the project for nothing, once each has been shown.
     for (const label of ["Board", "Modeling", "Design tree"]) {
-      await idle.getByRole("button", { name: label, exact: true }).click();
+      await railTool(RAIL[label], idle).click();
       await seconds(3);
     }
     asked = [];
     for (const label of ["Board", "Modeling", "Design tree", "Board", "Modeling", "Design tree"]) {
-      await idle.getByRole("button", { name: label, exact: true }).click();
+      await railTool(RAIL[label], idle).click();
       await seconds(1);
     }
     await stage("tree-s2").waitFor();
@@ -974,9 +1006,9 @@ async function idleMinute() {
 /**
  * #575: a change the person asked for lands on their working design. The Agent's Continue moves the
  * project's working position, and the runtime's index says so in one event; Modeling follows it, shows
- * its model and says so at the project bar's right end with Undo. Undo is the Design Tree's own Undo
- * write: the same Continue back onto the base the follow came from, against the revision read now. A
- * move back says so and offers nothing more, and a base no position entry named offers no Undo. A
+ * its model and says so at the project bar's right end with Undo. Undo is the Design Tree's own Undo:
+ * the Runtime's Undo puts back the base the follow came from, while Current still stands where the
+ * follow found it. A move back says so and offers nothing more, and a base no position entry named offers no Undo. A
  * Continue from the Design Tree confirms itself in the tree's toast with Undo, and Modeling follows it
  * without a second notice: one write, one Undo.
  */
@@ -990,7 +1022,9 @@ async function requestedChangeLands() {
   const entry = (runId) => ({ runId, sourceStageRef: null, branchId: "main", updatedAt: "2026-10-01T00:00:00Z", label: null });
   const draft = { revisionSha256: "1".repeat(64), current: entry("home-L"), localDraft: null, writes: [], hold: null, failure: null };
   workspaceFixture.workingDrafts.set(projectId, draft);
-  const continues = () => workspaceFixture.requests.filter((row) => row.projectId === projectId && row.method === "PUT" && row.name === "/api/working-draft");
+  // The person's moves of the working position: Continue (PUT /api/working-draft, or the Runtime's Switch) and Undo (2-6).
+  const continues = () => workspaceFixture.requests.filter((row) => row.projectId === projectId
+    && ((row.method === "PUT" && row.name === "/api/working-draft") || (row.method === "POST" && row.name.startsWith("/api/working-design/"))));
   const land = await browser.newPage({ viewport: { width: 1440, height: 960 } });
   land.setDefaultTimeout(15000);
   land.on("pageerror", (error) => errors.push(error.message));
@@ -999,10 +1033,10 @@ async function requestedChangeLands() {
   const notice = bar.locator("[data-follow-notice]"), undo = bar.locator('[data-action="follow-undo"]');
   const openModeling = async () => {
     await land.goto(origin);
-    await land.getByRole("button", { name, exact: true }).first().click();
+    await cmd(land, "project.open", { arg: name }).first().click();
     await land.waitForFunction(() => ["Modeling", "Board"].every((label) =>
       document.querySelector(`.chat-rail__tool[aria-label="${label}"]`)?.dataset.state === "running"));
-    const modeling = land.getByRole("button", { name: "Modeling", exact: true });
+    const modeling = railTool("view.tab.modeling", land);
     if (await modeling.getAttribute("aria-pressed") !== "true") await modeling.click();
     await land.locator('.chat-project-workspace:not([hidden]) [data-project-surface="arch"]:not([hidden]) .stage canvas').first().waitFor();
     await land.waitForFunction(() => !document.querySelector(".chat-project-workspace:not([hidden]) .boot"));
@@ -1029,11 +1063,12 @@ async function requestedChangeLands() {
     assert.deepEqual(continues(), [], "following writes nothing");
     await land.screenshot({ path: path.join(temporary, "follow-undo.png") });
 
-    // Undo: one Continue back onto the base and its line, against the position's revision as read now.
+    // Undo: the Runtime's Undo puts the base and its line back, while Current still stands where the follow found it.
     await undo.click();
     await notice.filter({ hasText: "Back to the previous model" }).waitFor();
     const [back] = continues();
-    assert.deepEqual(back.body, { projectId, runId: "home-L", baseRevisionSha256: "2".repeat(64), branchId: "main" });
+    assert.deepEqual([back.name, back.body], ["/api/working-design/undo",
+      { projectId, previous: { runId: "home-L", branchId: "main" }, continued: "land-change" }]);
     assert.equal(continues().length, 1);
     assert.equal(draft.current.runId, "home-L", "the head is back where it was");
     assert.equal(await undo.count(), 0, "a move back offers no undo of its own");
@@ -1051,7 +1086,7 @@ async function requestedChangeLands() {
     // Modeling, back on screen, follows it without a notice or an Undo of its own.
     await bar.locator(".stage-chip").click();
     const tree = land.locator('.chat-project-workspace:not([hidden]) [data-project-surface="tree"]');
-    await bar.getByRole("button", { name: "List", exact: true }).click();
+    await cmd(bar, "view.design_tree.list").click();
     await tree.locator('[role="treeitem"][data-kind="stage"]').click();
     const marker = workspaceFixture.requests.length;
     await tree.locator('.design-tree-inspector[data-kind="stage"] [data-action="continue"]').click();
@@ -1108,7 +1143,7 @@ async function boardImageDiscussion() {
   await page.setViewportSize({ width: 1440, height: 960 });
   if (page.url().startsWith(origin)) await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
   await page.goto(origin);
-  await page.getByRole("button", { name, exact: true }).first().click();
+  await cmd(page, "project.open", { arg: name }).first().click();
   await studioReady();
   await showEntry("Board");
   await waitWorkspace("board");
@@ -1127,8 +1162,8 @@ async function boardImageDiscussion() {
   const boardWritesBefore = boardWrites(), chatWritesBefore = chatWrites().length;
 
   await visibleWorkspace().locator("summary").filter({ hasText: "More board actions" }).click();
-  await visibleWorkspace().getByRole("button", { name: "Fit board", exact: true }).click();
-  const discuss = visibleWorkspace().getByRole("button", { name: "Discuss image / render", exact: true });
+  await cmd(visibleWorkspace(), "view.canvas.fit").click();
+  const discuss = cmd(visibleWorkspace(), "markup.hand_to_ai.discuss");
   const canvas = await visibleWorkspace().locator(".monkeyboard-canvas").boundingBox();
   for (const across of [0.5, 0.42, 0.58]) {
     await page.mouse.click(canvas.x + canvas.width * across, canvas.y + canvas.height / 2);
@@ -1143,7 +1178,7 @@ async function boardImageDiscussion() {
   assert.equal(await dialog.getByRole("checkbox", { name: "Material.png · Page 1/1", exact: true }).isChecked(), true);
   const words = "Keep the roof and the viewpoint; make the concrete warmer, like the reference.";
   await dialog.getByLabel("What would you like to discuss or render?", { exact: true }).fill(words);
-  await dialog.getByRole("button", { name: "Continue in chat", exact: true }).click();
+  await cmd(dialog, "markup.hand_to_ai.continue_in_chat").click();
   await dialog.waitFor({ state: "hidden" });
 
   // The draft waits in the composer; the Board saved nothing and nothing was sent.
@@ -1162,7 +1197,7 @@ async function boardImageDiscussion() {
   await page.screenshot({ path: path.join(temporary, "board-image-discussion.png") });
   // The Board's own retry saves the change once the runtime takes it again.
   workspaceFixture.boardWriteFailures.delete(projectId);
-  await refused.getByRole("button", { name: "Retry", exact: true }).click();
+  await cmd(refused, "view.notice.retry", { arg: "board_save" }).click();
   await refused.waitFor({ state: "hidden" });
   assert.equal(board().title, "Render board, retitled");
 
@@ -1187,13 +1222,13 @@ async function boardImageDiscussion() {
   const correction = "Not the light: the concrete is too cold.";
   const dialogWords = dialog.getByLabel("What would you like to discuss or render?", { exact: true });
   await dialogWords.fill(correction);
-  await dialog.getByRole("button", { name: "Continue in chat", exact: true }).click();
+  await cmd(dialog, "markup.hand_to_ai.continue_in_chat").click();
   await dialog.getByRole("alert").filter({ hasText: "A message is still being sent. Hand the images over again once it has gone." }).waitFor();
   assert.equal(await dialog.isVisible(), true, "the dialog stays open while a message is being sent");
   assert.equal(await dialogWords.inputValue(), correction, "the dialog keeps its words");
   assert.equal(await composer.inputValue(), words, "the composer still shows only the message being sent");
   releaseSend(); chatMessageResponseGate = Promise.resolve();
-  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await cmd(page, "chat.composer.stop").waitFor();
   assert.deepEqual(messagePosts().slice(postsBefore).map(([, , body]) => body), [{ content: words, projectId, renderContext }]);
   const chat = sessions.find((row) => row.projectId === projectId && row.messages.some((message) => message.content === words));
   assert.equal(chat.status, "running");
@@ -1202,12 +1237,12 @@ async function boardImageDiscussion() {
   // Once the message has gone, the same dialog hands over: during the running reply the images and
   // words are held for the next message. Nothing goes into the running turn, and the composer never
   // says a mid-turn message is about them.
-  await dialog.getByRole("button", { name: "Continue in chat", exact: true }).click();
+  await cmd(dialog, "markup.hand_to_ai.continue_in_chat").click();
   await dialog.waitFor({ state: "hidden" });
   assert.equal(await composer.inputValue(), correction);
   await card.locator(".chat-render-context__status").filter({ hasText: "Goes with your next message after this reply." }).waitFor();
   assert.notEqual(await target.innerText(), "About the attached images, not a model change");
-  const interject = page.getByRole("button", { name: "Interject", exact: true });
+  const interject = cmd(page, "chat.composer.interject");
   assert.equal(await interject.isDisabled(), true, "a draft holding images does not interject");
   assert.equal(await interject.getAttribute("aria-description"), "Goes with your next message after this reply.");
   await composer.press("Enter");
@@ -1224,15 +1259,15 @@ async function boardImageDiscussion() {
     content: "The source reads as a cool courtyard. Which surface should warm?" });
   chat.status = "idle";
   emitRuntime();
-  await page.getByRole("button", { name: "Send", exact: true }).waitFor();
+  await cmd(page, "chat.composer.send").waitFor();
   await hold.waitFor({ state: "detached", timeout: 3000 });
   await page.waitForFunction(() => document.querySelector(".chat-target__text")?.textContent === "About the attached images, not a model change");
   await composer.press("Enter");
-  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await cmd(page, "chat.composer.stop").waitFor();
   assert.deepEqual(messagePosts().slice(postsBefore + 1).map(([, , body]) => body), [{ content: correction, projectId, renderContext }]);
   chat.status = "idle";
   emitRuntime();
-  await page.getByRole("button", { name: "Send", exact: true }).waitFor();
+  await cmd(page, "chat.composer.send").waitFor();
 }
 /** GH-432: retained structured suggestions in the real built UI, with synthetic local APIs. */
 async function suggestionCards() {
@@ -1296,7 +1331,7 @@ async function suggestionCards() {
   assert.equal(await card.locator('[data-suggestion-action="accept"]').count(), 1, "one recommended execution action per card");
   assert.equal(await card.locator(".chat-suggestion__estimates").count(), 0, "unknown estimates are not shown as figures");
   const details = card.locator(".chat-card__details");
-  assert.equal(await details.count(), 1, "rationale and method are progressively disclosed");
+  assert.equal(await details.count(), 1, "why it is offered, and the request it sends, are progressively disclosed");
   assert.equal(await details.getAttribute("open"), null);
   assert.equal(await card.getByText("To be assessed").first().isVisible(), false, "unknown effort waits in the folded details");
   // The keyboard opens the shared disclosure.
@@ -1305,8 +1340,15 @@ async function suggestionCards() {
   await card.getByText(available.suggestion.rationale, { exact: true }).waitFor();
   assert.deepEqual(await details.locator("p").filter({ hasText: "To be assessed" }).allInnerTexts(),
     ["Estimated time · To be assessed", "Estimated cost · To be assessed"], "unknown effort and cost remain unknown");
-  for (const text of [...available.suggestion.tools, ...available.suggestion.deliverables]) assert.ok((await card.innerText()).includes(text));
+  await card.locator(".chat-suggestion__request").filter({ hasText: available.suggestion.prompt }).waitFor();
+  for (const text of available.suggestion.deliverables) assert.ok((await card.innerText()).includes(text));
+  // The tools it would use are for developer mode.
+  for (const text of available.suggestion.tools) assert.ok(!(await card.innerText()).includes(text), `${text} waits for developer mode`);
+  await setDeveloperMode(true);
+  if (await details.getAttribute("open") === null) await details.locator(":scope > summary").click();
+  for (const text of available.suggestion.tools) assert.ok((await card.innerText()).includes(text));
   await details.first().locator("summary").click();
+  await setDeveloperMode(false);
   assert.equal(postWrites().length, before, "reading a recommendation does not execute it");
 
   // Adjust keeps an unfinished draft and its attachments, and never sends for the architect.
@@ -1328,7 +1370,7 @@ async function suggestionCards() {
   await selectionRequest;
   assert.equal(await action(card).isDisabled(), true);
   releaseSelection(); chatMessageResponseGate = Promise.resolve();
-  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await cmd(page, "chat.composer.stop").waitFor();
   assert.equal(postWrites().length, before + 1, "rapid double selection sends exactly once");
   const selectionWrite = postWrites().at(-1);
   assert.deepEqual(selectionWrite.slice(0, 3), ["POST", `/api/chat/sessions/${sessionA.id}/messages`,
@@ -1346,11 +1388,11 @@ async function suggestionCards() {
   const choiceB = suggestion("Project B recommendation", "suggestion-B-user");
   const sessionB = makeSession("B", [user("suggestion-B-user"), choiceB], { projectId: "B" });
   emitRuntime();
-  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Project B" }).first().click();
   await cardFor(choiceB.suggestion.title).waitFor();
   await contextReady();
   await action(cardFor(choiceB.suggestion.title)).click();
-  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await cmd(page, "chat.composer.stop").waitFor();
   assert.deepEqual(postWrites().at(-1).slice(0, 3), ["POST", `/api/chat/sessions/${sessionB.id}/messages`,
     { projectId: "B", suggestionSelection: { messageId: choiceB.id, revision: 1 } }]);
   sessionB.status = "idle";
@@ -1400,8 +1442,8 @@ async function suggestionCards() {
     const estimateCard = cardFor(estimated.suggestion.title);
     await estimateCard.waitFor();
     // The mobile sidebar is an intentional overlay; close it through its real control.
-    const hideProjects = page.getByRole("button", { name: language === "en" ? "Hide projects" : "收起项目栏", exact: true }).first();
-    if (await hideProjects.isVisible()) await hideProjects.click();
+    const hideProjects = cmd(page, "view.left_column.toggle").first();
+    if (await hideProjects.isVisible() && await commandLabel(hideProjects) === (language === "en" ? "Hide projects" : "收起项目栏")) await hideProjects.click();
     assert.match(await estimateCard.innerText(), language === "en" ? /estimat/i : /估算/);
     assert.match(await estimateCard.innerText(), language === "en" ? /New capability to assess/i : /需要评估新能力/);
     for (const estimate of [estimated.suggestion.timeEstimate, estimated.suggestion.costEstimate]) {
@@ -1417,10 +1459,21 @@ async function suggestionCards() {
       assert.deepEqual(overflow, { card: false, page: false }, `${language} suggestions fit at ${width}px`);
       await estimateCard.screenshot({ path: path.join(temporary, `suggestion-${language}-${theme}-${width}.png`) });
     }
+    // The bases wait for developer mode.
+    for (const disclosure of await estimateCard.locator("details").all()) {
+      if (!await disclosure.getAttribute("open")) await disclosure.locator(":scope > summary").click();
+    }
+    for (const estimate of [estimated.suggestion.timeEstimate, estimated.suggestion.costEstimate]) {
+      assert.equal(await estimateCard.getByText(estimate.basis).count(), 0, "outside developer mode the bases are not offered");
+    }
+    await developerModeOnNextLoad(true);
+    await visit(estimatesSession);
+    await estimateCard.waitFor();
     for (const disclosure of await estimateCard.locator("details").all()) {
       if (!await disclosure.getAttribute("open")) await disclosure.locator(":scope > summary").click();
     }
     for (const estimate of [estimated.suggestion.timeEstimate, estimated.suggestion.costEstimate]) await estimateCard.getByText(estimate.basis).waitFor();
+    await developerModeOnNextLoad(false);
   }
 
   preferences = { ...preferences, language: "en", theme: "light" };
@@ -1442,7 +1495,7 @@ async function suggestionCards() {
   ], { status: "running" });
   await visit(permissionSession);
   await blocked(cardFor("Permission-time recommendation"), "suggestions do not replace runtime permission");
-  await page.getByRole("group", { name: "Allow this protected action?", exact: true }).getByRole("button", { name: "Allow once", exact: true }).click();
+  await cmd(page.getByRole("group", { name: "Allow this protected action?", exact: true }), "chat.permission.choose", { arg: "allow" }).click();
   await page.getByRole("group", { name: "Allow this protected action?", exact: true }).waitFor({ state: "detached" });
   assert.equal(postWrites().length, beforeDismiss, "a permission choice does not accept a suggestion");
 
@@ -1451,14 +1504,14 @@ async function suggestionCards() {
   await page.getByRole("menuitem", { name: "Help", exact: true }).click();
   assert.equal(await page.getByRole("menuitem", { name: "Usage and task records", exact: true }).count(), 0);
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "This project: Project A", exact: true }).click();
+  await clickLabelled(cmd(page, "view.project_info.toggle"), "This project: Project A");
   const projectCard = page.locator(".chat-project-card");
   await projectCard.waitFor();
   assert.equal(await projectCard.getByRole("button", { name: "Open in Design tree", exact: true }).count(), 0);
   await projectCard.getByText("Version 3", { exact: true }).waitFor();
   await page.keyboard.press("Escape");
   assert.equal(await page.getByRole("button", { name: "Design tree", exact: true }).count(), 1);
-  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await railTool("view.usage.open").click();
   await page.locator(".monitor-page:visible").waitFor();
   await page.waitForFunction(() => document.querySelector('.monitor-scope [aria-pressed="true"]')?.textContent === "Project A");
   await page.locator(".chat-usage").click();
@@ -1511,8 +1564,8 @@ async function conversationCards() {
   };
   // The narrow project list is an overlay; close it through its real control.
   const hideProjects = async () => {
-    const toggle = page.locator(".chat-menubar").getByRole("button", { name: /^(Hide projects|收起项目栏)$/ });
-    if ((await page.viewportSize()).width <= 900 && await toggle.count() && await toggle.first().isVisible()) await toggle.first().click();
+    const toggle = cmd(page.locator(".chat-menubar"), "view.left_column.toggle");
+    if ((await page.viewportSize()).width <= 900 && await toggle.count() && await toggle.first().isVisible() && /^(Hide projects|收起项目栏)$/.test(await commandLabel(toggle.first()))) await toggle.first().click();
   };
 
   preferences = { ...preferences, language: "en", theme: "light", fontScale: 1 };
@@ -1534,7 +1587,7 @@ async function conversationCards() {
   assert.equal(await files.getByText("revision-2", { exact: true }).isVisible(), false, "raw bindings stay folded");
   assert.equal(await files.getByText("notes.txt", { exact: true }).isVisible(), false);
   const detailsSummary = details.locator(":scope > summary");
-  assert.equal(await detailsSummary.innerText(), "Technical details and 4 more files");
+  assert.equal(await detailsSummary.innerText(), "4 more files");
   await detailsSummary.focus();
   await page.keyboard.press("Enter");
   await files.getByText("notes.txt", { exact: true }).waitFor();
@@ -1544,18 +1597,25 @@ async function conversationCards() {
   assert.deepEqual(await rows.locator(".chat-file-row__actions a").evaluateAll((links) => links.map((link) => link.getAttribute("href"))), [
     `${route(0)}?download=true`, `${route(2)}?download=true`, `${route(3)}?download=true`, `${route(4)}?download=true`,
     `/api/chat/sessions/${session.id}/attachments/cards-facade`, `/api/chat/sessions/${session.id}/attachments/cards-notes`]);
+  for (const binding of ["document-run", sha("a"), "revision-1", "revision-2"]) {
+    assert.equal(await files.getByText(binding, { exact: true }).count(), 0, `${binding} waits for developer mode`);
+  }
+  // Developer mode stays on through the result ids and the CLI's lines below.
+  await setDeveloperMode(true);
+  assert.equal(await detailsSummary.innerText(), "Technical details and 4 more files");
+  if (await details.getAttribute("open") === null) await detailsSummary.click();
   for (const binding of ["document-run", sha("a"), "revision-1", "revision-2"]) await files.getByText(binding, { exact: true }).first().waitFor();
   // A document image previews from its own route; its dialog downloads the same file.
-  await files.getByRole("button", { name: "Enlarge image: section.png", exact: true }).click();
+  await cmd(rows.filter({ hasText: "section.png" }), "view.open_file.image").click();
   const documentDialog = page.getByRole("dialog", { name: "section.png", exact: true });
   await documentDialog.waitFor();
-  assert.equal(await documentDialog.getByRole("link", { name: "Download", exact: true }).getAttribute("href"), `${route(4)}?download=true`);
+  assert.equal(await cmd(documentDialog, "view.open_file.download").getAttribute("href"), `${route(4)}?download=true`);
   const documentDownload = page.waitForEvent("download");
-  await documentDialog.getByRole("link", { name: "Download", exact: true }).click();
+  await cmd(documentDialog, "view.open_file.download").click();
   assert.equal((await documentDownload).suggestedFilename(), "section.png");
   await page.keyboard.press("Escape");
   await documentDialog.waitFor({ state: "hidden" });
-  const facadePreview = files.getByRole("button", { name: "Enlarge image: facade.png", exact: true });
+  const facadePreview = cmd(rows.filter({ hasText: "facade.png" }), "view.open_file.image");
   await facadePreview.click();
   const facadeDialog = page.getByRole("dialog", { name: "facade.png", exact: true });
   await facadeDialog.waitFor();
@@ -1564,7 +1624,7 @@ async function conversationCards() {
   await facadeDialog.waitFor({ state: "hidden" });
   assert.equal(await facadePreview.evaluate((button) => button === document.activeElement), true, "closing the preview returns focus");
   const notesDownload = page.waitForEvent("download");
-  await rows.filter({ hasText: "notes.txt" }).getByRole("link", { name: "Download", exact: true }).click();
+  await cmd(rows.filter({ hasText: "notes.txt" }), "view.open_file.download").click();
   assert.equal((await notesDownload).suggestedFilename(), "notes.txt");
   await detailsSummary.focus();
   await page.keyboard.press("Enter");
@@ -1582,7 +1642,7 @@ async function conversationCards() {
   assert.equal(await study.locator('[data-candidate="cand-A-1"] .model-thumbnail').getAttribute("data-preview-source"),
     JSON.stringify([sourceA.runId, sourceA.stateDigest, sourceA.assetSha256]), "the thumbnail is the result's exact source");
   assert.equal(await study.locator('[data-candidate="cand-A-unpreviewed"] img').count(), 0, "an option without its own preview borrows none");
-  assert.equal(await study.getByRole("button", { name: "View", exact: true }).count(), 1, "the existing View action stays");
+  assert.equal(await cmd(study, "view.design_tree.open").count(), 1, "the existing View action stays");
   assert.equal(await study.getByText("cand-A-1", { exact: true }).isVisible(), false, "raw result ids stay folded");
   await study.locator(".chat-card__details:not(.chat-study__compare) > summary").focus();
   await page.keyboard.press("Enter");
@@ -1601,6 +1661,10 @@ async function conversationCards() {
   await technical.getByText("studio_request · GET /api/jobs/job-2 · completed", { exact: true }).waitFor();
   await process.locator(".chat-process__row").click();
   assert.equal(await process.locator(".chat-process__body").count(), 0);
+  await setDeveloperMode(false);
+  await process.locator(".chat-process__row").click();
+  assert.equal(await process.locator(".chat-process__technical").count(), 0, "outside developer mode a turn shows its steps in words only");
+  await process.locator(".chat-process__row").click();
 
   const layout = (locator) => locator.evaluate((node) => ({ card: node.scrollWidth > node.clientWidth + 1,
     page: document.documentElement.scrollWidth > window.innerWidth + 1 }));
@@ -1643,7 +1707,7 @@ async function conversationCards() {
   const comments = (url) => url.pathname.endsWith("/studio/api/document-comments");
   const answerComments = (route) => { commentReads.push(Object.fromEntries(new URL(route.request().url()).searchParams)); return route.fulfill({ json: { comments: [] } }); };
   await page.route(comments, answerComments);
-  await rows.nth(2).getByRole("button", { name: "Open document", exact: true }).click();
+  await cmd(rows.nth(2), "view.open_file.document").click();
   await urlParamIs("view", "board", "Open document switches to Board only when pressed");
   await page.waitForFunction(() => document.querySelector(".chat-shell")?.dataset.panel === "true");
   await page.waitForTimeout(600);
@@ -1709,7 +1773,7 @@ async function modelComparison() {
   const study = page.locator(`.chat-study[data-candidates="${candidateRun}"]`);
   await study.waitFor();
   assert.equal(await page.locator(".chat-study").count(), 1, "one result card for the one request");
-  const viewChanges = study.getByRole("button", { name: "View changes", exact: true });
+  const viewChanges = cmd(study, "candidate.compare.option");
   await viewChanges.waitFor();
   assert.equal(await viewChanges.getAttribute("data-compare"), candidateRun, "View changes names the result it compares");
   // Arrival leaves the completed result a card: no workspace opens and neither model is read.
@@ -1737,7 +1801,11 @@ async function modelComparison() {
   assert.ok(compares.length > 0, "View changes reads the comparison");
   assert.deepEqual([...new Set(compares.map((row) => `${row.compare} against ${row.against}`))], [`${candidateRun} against ${baseRun}`],
     "the comparison is asked for the selected result against its exact original");
+  // 2-7: the count of changes is for everyone; runs, states and files wait for developer mode.
+  await comparison.locator(".model-compare__summary").waitFor();
   const details = page.locator(".model-compare__details");
+  assert.equal(await details.count(), 0, "outside developer mode the comparison shows no technical details");
+  await setDeveloperMode(true);
   await details.locator("dt").filter({ hasText: /^Original run$/ }).waitFor({ state: "attached" });
   const pairs = Object.fromEntries(await details.locator("dt").evaluateAll((terms) =>
     terms.map((term) => [term.textContent.trim(), term.nextElementSibling?.textContent.trim() ?? null])));
@@ -1747,10 +1815,13 @@ async function modelComparison() {
   for (const run of [candidateRun, baseRun]) {
     assert.ok(Object.values(pairs).includes(workspaceFixture.stateDigestOf("A", run)), `the details show ${run}'s exact state digest: ${shown}`);
   }
+  await setDeveloperMode(false);
+  await details.waitFor({ state: "detached" });
+  assert.equal(await comparison.isVisible(), true, "switching developer mode keeps the comparison open");
   await page.screenshot({ path: path.join(temporary, "comparison-en-light-1440.png") });
 
   // The comparison's own menu returns to the conversation it came from, as it was left.
-  await page.getByRole("button", { name: /^(←\s*)?Back$/ }).click();
+  await clickLabelled(cmd(page, "candidate.compare.back"), "← Back");
   await comparison.waitFor({ state: "hidden" });
   await page.waitForFunction(() => document.querySelector(".chat-shell")?.dataset.panel === "false").catch(() => {});
   assert.equal(await shell.getAttribute("data-panel"), "false", "Back restores the closed panel");
@@ -1762,7 +1833,7 @@ async function modelComparison() {
 
   // Navigating the same Design Tree cancels an open comparison inside the open panel; nothing reopens it or collapses the panel.
   studyPreviews.get("A").set("home-A", "ready"); // the Stage opened below already has its retained preview
-  const viewResult = study.getByRole("button", { name: "View", exact: true });
+  const viewResult = cmd(study, "view.design_tree.open");
   const tree = visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])');
   const cancelledOnTree = async (message) => {
     await comparison.waitFor({ state: "hidden" });
@@ -1815,7 +1886,7 @@ async function modelComparison() {
   }
   await outlined.waitFor({ state: "attached" });
   await page.screenshot({ path: path.join(temporary, "comparison-with-outline-en-light-1440.png") });
-  await page.getByRole("button", { name: /^(←\s*)?Back$/ }).click();
+  await clickLabelled(cmd(page, "candidate.compare.back"), "← Back");
   await comparison.waitFor({ state: "hidden" });
   await visibleWorkspace().locator('[data-project-surface="arch"]:not([hidden])').waitFor();
   assert.equal(await shell.getAttribute("data-panel"), "true", "Back returns to the open Modeling panel");
@@ -1907,7 +1978,7 @@ async function externalConversation() {
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B",
     "a deep link takes its project from the selected chat, not stale local preferences");
   assert.equal(await page.locator("#chat-input").count(), 0);
-  assert.equal(await page.getByRole("button", { name: "Send", exact: true }).count(), 0);
+  assert.equal(await cmd(page, "chat.composer.send").count(), 0);
   assert.equal(await page.locator(".chat-prose strong").innerText(), "retained");
   assert.deepEqual(await page.locator(".chat-prose li").allTextContents(), ["First option", "Second option"]);
   assert.equal(await page.locator(".chat-prose table tbody").innerText(), "A\tReview");
@@ -1919,45 +1990,45 @@ async function externalConversation() {
   assert.equal(await externalFiles.locator(".chat-card__body .chat-saved-file").count(), 2, "two files show; the rest fold");
   await externalFiles.locator(".chat-card__details > summary").click();
   await page.getByText("This image could not be loaded. You can still download the file.", { exact: true }).waitFor();
-  assert.equal(await page.getByRole("button", { name: "Enlarge image: diagram.svg", exact: true }).count(), 0);
-  const preview = page.getByRole("button", { name: "Enlarge image: facade.png", exact: true });
+  assert.equal(await cmd(externalFiles.locator(".chat-saved-file").filter({ hasText: "diagram.svg" }), "view.open_file.image").count(), 0);
+  const preview = cmd(externalFiles.locator(".chat-saved-file").filter({ hasText: "facade.png" }), "view.open_file.image");
   await preview.click();
   const imageDialog = page.getByRole("dialog", { name: "facade.png", exact: true });
   await imageDialog.waitFor();
   assert.equal(await imageDialog.getByRole("img").evaluate((image) => image.complete && image.naturalWidth > 0), true);
   const imageDownload = page.waitForEvent("download");
-  await imageDialog.getByRole("link", { name: "Download", exact: true }).click();
+  await cmd(imageDialog, "view.open_file.download").click();
   const savedImage = await imageDownload;
   assert.equal(savedImage.suggestedFilename(), "facade.png");
   assert.deepEqual(await readFile(await savedImage.path()), Buffer.from(externalImage, "base64"));
   await page.keyboard.press("Escape");
   await imageDialog.waitFor({ state: "hidden" });
   assert.equal(await preview.evaluate((button) => button === document.activeElement), true);
-  await page.getByRole("button", { name: "Enlarge image: registered.png", exact: true }).click();
+  await cmd(externalFiles.locator(".chat-saved-file").filter({ hasText: "registered.png" }), "view.open_file.image").click();
   const documentDialog = page.getByRole("dialog", { name: "registered.png", exact: true });
-  assert.equal(await documentDialog.getByRole("link", { name: "Download", exact: true }).getAttribute("href"),
+  assert.equal(await cmd(documentDialog, "view.open_file.download").getAttribute("href"),
     `/api/chat/sessions/${externalSession.id}/documents/external-result/0?download=true`);
   const documentDownload = page.waitForEvent("download");
-  await documentDialog.getByRole("link", { name: "Download", exact: true }).click();
+  await cmd(documentDialog, "view.open_file.download").click();
   const savedDocument = await documentDownload;
   assert.equal(savedDocument.suggestedFilename(), "registered.png");
   assert.deepEqual(await readFile(await savedDocument.path()), Buffer.from(externalImage, "base64"));
-  await documentDialog.getByRole("button", { name: "Close", exact: true }).click();
+  await cmd(documentDialog, "view.dialog.close").click();
   await page.screenshot({ path: path.join(temporary, "external-presentation.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator(".chat-menubar").getByRole("button", { name: /^(Hide|Show) projects$/ }).click();
+  await cmd(page.locator(".chat-menubar"), "view.left_column.toggle").click();
   await preview.click();
   const previewBounds = await imageDialog.boundingBox();
   assert.ok(previewBounds.x >= 0 && previewBounds.x + previewBounds.width <= 390, "the image dialog fits a narrow viewport");
   await page.screenshot({ path: path.join(temporary, "external-image-mobile.png") });
   await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 1440, height: 960 });
-  await page.locator(".chat-menubar").getByRole("button", { name: /^(Hide|Show) projects$/ }).click();
+  await cmd(page.locator(".chat-menubar"), "view.left_column.toggle").click();
   await page.reload();
-  await page.getByRole("button", { name: "Enlarge image: facade.png", exact: true }).waitFor();
-  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await cmd(externalFiles.locator(".chat-saved-file").filter({ hasText: "facade.png" }), "view.open_file.image").waitFor();
+  await cmd(page, "project.open", { arg: "Project A" }).first().click();
   await page.locator("#chat-input").waitFor();
-  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Project B" }).first().click();
   await page.locator(".chat-external-notice").waitFor();
   assert.equal(writes.filter(([, name]) => /\/(messages|stop|model)$/.test(name)).length, beforeExternalTurns);
 }
@@ -1995,26 +2066,29 @@ try {
       // #337: the sidebar toggle sits in the menu row; its name says what a click does.
       const sidebarToggle = page.locator(".chat-menubar").getByRole("button", { name: names.sidebarToggle });
       if (await page.locator(".chat-shell").getAttribute("data-sidebar") === "true") await sidebarToggle.click();
-      for (const name of [names.archive, names.settings]) {
-        const button = page.getByRole("button", { name, exact: true });
+      for (const [id, name] of [["chat.archive.view", names.archive], ["view.settings.open", names.settings]]) {
+        const button = cmd(page, id);
+        await waitForCommandLabel(button, name);
         await button.focus(); await focused(button);
         await accessible("button", name);
       }
-      await page.getByRole("button", { name: names.archive, exact: true }).press("Enter");
+      await cmd(page, "chat.archive.view").press("Enter");
       const active = page.locator(".chat-archive-toggle");
       assert.equal(await active.getAttribute("aria-pressed"), "true");
       await accessible("button", await active.getAttribute("aria-label"));
       await active.press("Enter");
-      await page.getByRole("button", { name: names.settings, exact: true }).press("Enter");
+      await cmd(page, "view.settings.open").press("Enter");
       await page.locator(".chat-dialog--settings").waitFor({ state: "visible" });
       await page.keyboard.press("Escape");
       await page.locator(".chat-dialog--settings").waitFor({ state: "hidden" });
 
-      const projectButton = page.getByRole("button", { name: names.project, exact: true });
+      const projectButton = cmd(page, "view.project_info.toggle");
+      await waitForCommandLabel(projectButton, names.project);
       const projectName = await accessible("button", names.project);
       assert.equal(projectName.name.value.includes(projects[0].projectDir), false);
       await projectButton.focus(); await projectButton.press("Enter");
-      const close = page.locator(".chat-project-card__head").getByRole("button", { name: names.close, exact: true });
+      const close = cmd(page.locator(".chat-project-card__head"), "view.dialog.close");
+      await waitForCommandLabel(close, names.close);
       await focused(close);
       assert.equal(await projectButton.getAttribute("aria-controls"), "chat-project-info");
       await page.keyboard.press("Escape");
@@ -2039,7 +2113,8 @@ try {
       assert.equal(await page.locator(".chat-project-card").count(), 1);
       await page.keyboard.press("Escape"); await focused(projectButton);
 
-      const send = page.getByRole("button", { name: names.send, exact: true });
+      const send = cmd(page, "chat.composer.send");
+      await waitForCommandLabel(send, names.send);
       assert.equal(await send.isDisabled(), true);
       assert.equal((await accessible("button", names.send)).description.value, names.empty);
       assert.equal(await send.getAttribute("title"), names.empty);
@@ -2050,10 +2125,12 @@ try {
       assert.equal(await page.locator("#chat-input").inputValue(), "First line\n");
       assert.equal(writes.filter(([, route]) => route.endsWith("/messages")).length, 0);
       await page.locator("#chat-input").fill("");
-      const menu = composerMenu(names.menu);
+      const menu = composerMenu();
+      await waitForCommandLabel(menu, names.menu);
       await menu.focus(); await menu.press("Enter");
       await page.keyboard.press("ArrowDown");
-      const topic = page.getByRole("menuitemcheckbox", { name: names.topic, exact: true });
+      const topic = cmd(page, "chat.composer.topic");
+      await waitForCommandLabel(topic, names.topic);
       await focused(topic);
       const topicAX = await accessible("menuitemcheckbox", names.topic);
       assert.equal(topicAX.properties.find((property) => property.name === "checked").value.value, "false");
@@ -2066,7 +2143,7 @@ try {
     await page.waitForFunction(() => document.querySelector("#chat-input") && !document.querySelector("#chat-input").disabled);
     await page.locator("#chat-input").fill("Check keyboard sending");
     await page.locator("#chat-input").press("Enter");
-    await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+    await cmd(page, "chat.composer.stop").waitFor();
     assert.equal(writes.filter(([, route]) => route.endsWith("/messages")).length, 1, "Enter sends once");
     assert.equal((await accessible("combobox", "Model")).description.value, "The model can be changed once this reply finishes.");
     assert.equal((await accessible("button", "Interject")).description.value, "Write a message to interject first.");
@@ -2074,19 +2151,19 @@ try {
     assert.equal(await archive.isDisabled(), true);
     assert.ok((await accessible("button", await archive.getAttribute("aria-label"))).description.value.length > 0);
     await composerMenu().click();
-    const blockedTopic = page.getByRole("menuitemcheckbox", { name: "New topic", exact: true });
+    const blockedTopic = cmd(page, "chat.composer.topic");
     assert.equal((await accessible("menuitemcheckbox", "New topic")).description.value, "Wait for this reply to finish before starting a new topic.");
     await blockedTopic.focus(); await page.keyboard.press("Enter");
     assert.equal(await blockedTopic.getAttribute("aria-checked"), "false", "the disabled choice does not activate by keyboard");
     await page.keyboard.press("Escape");
-    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    await cmd(page, "chat.composer.stop").click();
 
     projects.splice(0); sessions.splice(0); settings.projectDir = null;
     await page.evaluate(() => { localStorage.removeItem("monkeyhub.chat-view.v1"); localStorage.removeItem("monkeyhub.chat-drafts.v1"); });
     await page.goto(origin);
-    await page.getByRole("button", { name: "This project", exact: true }).waitFor();
+    await waitForCommandLabel(cmd(page, "view.project_info.toggle"), "This project");
     for (const name of ["Send", "Attachments and new topic", "Modeling", "Board", "Drawings", "Render", "Design tree"]) {
-      const button = page.getByRole("button", { name, exact: true });
+      const button = name === "Send" ? cmd(page, "chat.composer.send") : name === "Attachments and new topic" ? composerMenu() : railTool(RAIL[name]);
       assert.equal(await button.isDisabled(), true);
       assert.equal((await accessible("button", name)).description.value, "Add or choose a project first.");
     }
@@ -2098,8 +2175,8 @@ try {
         preferences = { ...preferences, theme, fontScale };
         await page.goto(origin);
         await page.waitForFunction(() => document.querySelector("#chat-input") && !document.querySelector("#chat-input").disabled);
-        if (await page.getByRole("button", { name: "Hide projects", exact: true }).first().isVisible()) {
-          await page.getByRole("button", { name: "Hide projects", exact: true }).first().click();
+        if (await cmd(page, "view.left_column.toggle").first().isVisible() && await commandLabel(cmd(page, "view.left_column.toggle").first()) === "Hide projects") {
+          await cmd(page, "view.left_column.toggle").first().click();
         }
         for (const width of [1440, 900, 375]) {
           await page.setViewportSize({ width, height: 960 });
@@ -2136,12 +2213,12 @@ try {
           });
           assert.deepEqual(layout, { overflow: false, clipped: false, attachmentOverflow: false }, `${theme} at ${width}px`);
           await composer.screenshot({ path: path.join(temporary, `attachments-${theme}-${width}-${fontScale}.png`) });
-          const remove = page.getByRole("button", { name: "Remove attachment: notes.txt", exact: true });
+          const remove = cmd(page, "chat.composer.remove_attachment", { arg: "notes.txt" });
           await remove.focus();
           await page.keyboard.press("Enter");
           assert.equal(await composer.locator(".chat-attachments li").count(), 1);
           restoredFocus.push(await page.locator("#chat-input").evaluate((node) => node === document.activeElement));
-          await composer.getByRole("button", { name: "Remove attachment: roof-section-review-with-a-very-long-file-name.pdf", exact: true }).click();
+          await cmd(composer, "chat.composer.remove_attachment", { arg: "roof-section-review-with-a-very-long-file-name.pdf" }).click();
           assert.equal(await composer.locator(".chat-attachments li").count(), 0);
         }
       }
@@ -2151,7 +2228,7 @@ try {
     preferences = { ...preferences, language: "zh-CN", theme: "dark", fontScale: 1 };
     await page.setViewportSize({ width: 1440, height: 960 });
     await page.goto(origin);
-    await composerMenu("附件与新话题").waitFor();
+    await waitForCommandLabel(composerMenu(), "附件与新话题");
     await page.locator(".chat-composer").screenshot({ path: path.join(temporary, "composer-zh.png") });
   } else if (process.env.MONKEYHUB_UI_FOCUS === "idle") {
     await idleMinute();
@@ -2197,23 +2274,24 @@ try {
     "project preparation starts the shared Runtime through Render without seeding Arch");
 
   // A new project is made in the workspace and opens straight into a chat.
-  await page.getByRole("button", { name: "New project", exact: true }).first().click();
+  await cmd(page, "project.create.new").first().click();
   const create = page.getByRole("dialog").filter({ hasText: "New project" });
   assert.equal(await create.locator("#new-project-workspace").inputValue(), "D:\\fixture");
   await create.locator("#new-project-name").fill("harbour study");
   await create.getByText("harbour study", { exact: false }).first().waitFor();
   await create.locator("#new-project-name").fill("A");
-  await create.getByRole("button", { name: "Create and start chatting" }).click();
-  await create.getByRole("alert").filter({ hasText: "already exists" }).waitFor();
+  await cmd(create, "project.create.new_confirm").click();
+  // The person reads the Hub's sentence; the folder's own words are for developer mode.
+  await create.getByRole("alert").filter({ hasText: "This project name is already in use." }).waitFor();
   await create.locator("#new-project-name").fill("harbour-study");
-  await create.getByRole("button", { name: "Create and start chatting" }).click();
+  await cmd(create, "project.create.new_confirm").click();
   await page.waitForFunction(() => document.querySelectorAll(".chat-project").length === 3);
   assert.equal(sessions.length, 1, "the new project opened its own conversation");
   assert.equal(sessions[0].projectDir, "D:\\fixture\\harbour-study");
   assert.equal(sessions[0].provider, "codex", "a new conversation takes the saved default connection");
   await studioReady();
   assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "harbour-study").length, 0);
-  await page.getByRole("button", { name: "Fabrication", exact: true }).click();
+  await railTool("fab.prepare_parts.open").click();
   await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   const fabFrame = page.frameLocator('iframe:not([hidden])');
   await fabFrame.locator('#fab-printer option[value="h2s"]').waitFor({ state: "attached" });
@@ -2221,7 +2299,7 @@ try {
   assert.equal(await fabFrame.locator("#fab-source").isEnabled(), true, "the real Fab page loaded its printer profiles from the API fixture");
   // #351: Fabrication's two steps are words in its bar. A step keeps what was typed in it while the other is
   // shown, and a step whose file operation ends comes back into view with its result or failure.
-  const fabStep = (name) => fabFrame.locator(".surface-bar").getByRole("button", { name, exact: true });
+  const fabStep = (name) => cmd(fabFrame.locator(".surface-bar"), { "Prepare parts": "fab.prepare_parts.tab", "Upload job": "fab.send_to_printer.tab" }[name]);
   const [fabModel, fabJob] = [String.raw`D:\fixture\model.stl`, String.raw`D:\fixture\model.gcode.3mf`];
   await fabFrame.locator("#fab-source").fill(fabModel);
   await fabStep("Upload job").click();
@@ -2234,7 +2312,7 @@ try {
   let releaseFabSend;
   fabSendGate = new Promise((resolve) => { releaseFabSend = resolve; });
   fabSendFailures = 1;
-  await fabFrame.getByRole("button", { name: "Check file", exact: true }).click();
+  await cmd(fabFrame, "fab.send_to_printer.check").click();
   await fabFrame.locator(".surface-bar__end").getByText("Checking…", { exact: true }).waitFor();
   await fabStep("Prepare parts").click();
   assert.equal(await fabFrame.locator("#fab-source").isDisabled(), true, "the other step waits while a file operation runs");
@@ -2242,39 +2320,39 @@ try {
   await fabFrame.getByRole("alert").filter({ hasText: "Fixture: the sliced file is missing." }).waitFor();
   assert.equal(await fabStep("Upload job").getAttribute("aria-pressed"), "true", "a check that failed brings its step back into view");
   fabSendGate = Promise.resolve();
-  await fabFrame.getByRole("button", { name: "Check file", exact: true }).click();
+  await cmd(fabFrame, "fab.send_to_printer.check").click();
   await fabFrame.getByRole("status").filter({ hasText: "Local check passed; file not sent" }).waitFor();
   assert.equal(await fabFrame.getByRole("alert").count(), 0, "the passing check replaces the failure");
   assert.equal(await fabFrame.locator("#fab-source").inputValue(), fabModel, "the parts step still holds its input");
   assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/fab/send" && body.dryRun && body.source === fabJob).length, 2,
     "both checks sent the upload step's own file");
-  await fabFrame.getByRole("button", { name: "Display settings", exact: true }).click();
+  await cmd(fabFrame, "fab.prepare_parts.display_settings").click();
   const hubSettings = page.getByRole("dialog").filter({ hasText: "Hub settings (global)" });
   await hubSettings.waitFor();
-  assert.equal(await hubSettings.getByRole("tab", { name: "Display", exact: true }).getAttribute("aria-selected"), "true",
+  assert.equal(await cmd(hubSettings, "view.settings.page", { arg: "display" }).getAttribute("aria-selected"), "true",
     "Fab opens the existing Hub Display settings page");
   assert.equal(await fabFrame.getByRole("heading", { name: "MonkeyFab", exact: true }).count(), 1,
     "opening settings leaves the hosted Fab page mounted instead of loading a second Hub in its iframe");
-  await hubSettings.getByRole("button", { name: "Close", exact: true }).click();
+  await cmd(hubSettings, "view.dialog.close").click();
   assert.ok(!writes.some(([, pathname]) => pathname === "/api/project/modeling"),
     "new-project creation and independent tools leave modeling inputs alone");
-  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Project A" }).first().click();
   const beforeIndependent = writes.length;
   const beforeIndependentProject = settings.projectDir;
-  await page.getByRole("button", { name: "Fabrication", exact: true }).click();
+  await railTool("fab.prepare_parts.open").click();
   await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   const beforeMonitorNavigation = documentLoads;
   const composer = page.getByRole("textbox", { name: "What would you like to do in this project?" });
   await composer.fill("Keep this conversation while viewing usage");
-  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await railTool("view.usage.open").click();
   await waitMonitor();
   // #351: Usage's bar holds its views (Calls | Timeline) and its scope as words: the project it was opened
   // from, by the name the sidebar shows, All, and a list of every project.
   const usageBar = page.locator(".monitor-page .surface-bar");
   const scopeNow = () => usageBar.locator('.monitor-scope [aria-pressed="true"]').innerText();
-  const scopeTo = (name) => usageBar.locator(".monitor-scope .menu-tabs").getByRole("button", { name, exact: true }).click();
+  const scopeTo = (name) => clickLabelled(cmd(usageBar.locator(".monitor-scope .menu-tabs"), name === "All" ? "view.usage.scope_all" : "view.usage.scope_project"), name);
   const otherProject = usageBar.getByRole("combobox", { name: "Choose a project", exact: true });
-  const usageView = (name) => usageBar.getByRole("group", { name: "View", exact: true }).getByRole("button", { name, exact: true }).click();
+  const usageView = (name) => cmd(usageBar.getByRole("group", { name: "View", exact: true }), { Calls: "view.usage.calls", Timeline: "view.usage.timeline" }[name]).click();
   const scopeIs = (name) => page.waitForFunction((value) => document.querySelector('.monitor-scope [aria-pressed="true"]')?.textContent === value, name);
   assert.equal(await scopeNow(), "Project A", "Usage opened from Project A starts in that project's scope, named as the sidebar names it");
   const callCard = page.locator(".monitor-stat").filter({ has: page.getByText("Model calls", { exact: true }) }).locator("strong");
@@ -2283,7 +2361,7 @@ try {
     "Project A's task timeline excludes Project B");
   await scopeTo("All");
   assert.equal(await callCard.innerText(), "38", "All projects includes the separate Project B fixture record");
-  await page.locator(".monitor-page").getByRole("button", { name: "Refresh", exact: true }).click();
+  await cmd(page.locator(".monitor-page"), "view.usage.refresh").click();
   await waitMonitor();
   assert.equal(await scopeNow(), "All", "refreshing and polling do not restore the opening project's filter");
   await scopeTo("Project A");
@@ -2294,7 +2372,7 @@ try {
   assert.match(await displayedTokens.innerText(), /^1,000\s+20 recorded$/);
   assert.match(await allTokens.innerText(), /^1,850\s+37 recorded$/);
   assert.equal(await page.getByLabel("Total input", { exact: true }).inputValue(), "7400", "task rows do not erase the estimate's known counters");
-  await page.getByRole("button", { name: "Show 20 more", exact: true }).click();
+  await cmd(page, "view.usage.show_more").click();
   await page.getByText("Showing 37 of 37 records", { exact: true }).waitFor();
   assert.equal(await displayedTokens.innerText(), await allTokens.innerText(), "all visible model rows sum to the dashboard total");
   await page.getByLabel("Include tools and local operations").check();
@@ -2330,7 +2408,7 @@ try {
   await sourceForm.locator("select").selectOption("claude-code");
   assert.equal(await sourceText.inputValue(), "", "another agent's selection starts from its own files");
   await sourceText.fill("D:\\fixture\\claude-session.jsonl");
-  await sourceForm.getByRole("button", { name: "Apply sources", exact: true }).click();
+  await cmd(sourceForm, "view.usage.apply_sources").click();
   await sourceForm.getByText("Sources updated", { exact: true }).waitFor();
   assert.ok(writes.some(([method, pathname, body]) => method === "PUT" && pathname === "/api/sources/claude-code"
     && JSON.stringify(body) === JSON.stringify({ paths: ["D:\\fixture\\claude-session.jsonl"] })), "Apply writes only the chosen agent's files");
@@ -2338,7 +2416,7 @@ try {
   await sourceForm.locator("select").selectOption("codex");
   assert.equal(await sourceText.inputValue(), "D:\\fixture\\usage.jsonl", "Codex's selection is untouched");
   await usageView("Timeline");
-  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await cmd(page, "view.settings.open").click();
   await page.locator("#language").selectOption("zh-CN");
   assert.equal(await missingEndSpan.locator("dd").first().textContent(), "结束时间未观测");
   assert.deepEqual(await page.locator('.chat-rail__group[aria-label="工作面"] .chat-rail__tool').evaluateAll((nodes) =>
@@ -2348,25 +2426,25 @@ try {
   assert.equal(await page.locator(".chat-rail").getByRole("button", { name: "排版", exact: true }).count(), 0, "no rail 排版");
   assert.equal(await page.locator(".monitor-trace-summary > span").filter({ has: page.getByText("首个候选", { exact: true }) }).locator("strong").textContent(), "—");
   await page.locator("#language").selectOption("en");
-  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await clickLabelled(cmd(page.getByRole("dialog"), "view.dialog.close"), "Close");
   // Failed data reads stay visible and do not drive a base/effect retry loop.
   monitorFailure = true;
   const beforeFailedRead = monitorReads.filter((route) => route === "/api/events").length;
-  await page.locator(".monitor-page").getByRole("button", { name: "Refresh", exact: true }).click();
+  await cmd(page.locator(".monitor-page"), "view.usage.refresh").click();
   await page.locator(".monitor-page").getByRole("alert").filter({ hasText: "Monitor fixture is temporarily unavailable." }).waitFor();
   await page.waitForTimeout(750);
   assert.ok(monitorReads.filter((route) => route === "/api/events").length - beforeFailedRead <= 2,
     "a failed Monitor read does not immediately restart itself through effect dependencies");
   monitorFailure = false;
-  await page.locator(".monitor-page").getByRole("button", { name: "Reconnect", exact: true }).click();
+  await cmd(page.locator(".monitor-page"), "view.notice.retry", { arg: "usage" }).click();
   await waitMonitor();
   // Project navigation is separate from the independent-tool lifecycle above.
-  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Project B" }).first().click();
   await page.waitForFunction(() => document.querySelector(".chat-header__project")?.textContent === "Project B");
   await studioReady();
   assert.equal(writes.filter(([, pathname, , target]) => pathname === "/api/apps/monkeyrender/start" && target === "D:\\fixture\\B").length, 1,
     "Project B starts its Runtime once on the first project navigation");
-  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await railTool("view.usage.open").click();
   await waitMonitor();
   await scopeIs("Project B");
   assert.equal(await scopeNow(), "Project B", "reopening Usage from Project B establishes Project B's initial scope");
@@ -2377,9 +2455,9 @@ try {
   await page.locator('.monitor-section__head select').selectOption("project-B-task");
   await usageView("Calls");
   assert.equal(await page.locator(".monitor-table tbody tr").count(), 1, "Project B's records exclude Project A");
-  await page.getByRole("button", { name: "harbour-study", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "harbour-study" }).first().click();
   await page.waitForFunction(() => document.querySelector(".chat-header__project")?.textContent === "harbour-study");
-  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await railTool("view.usage.open").click();
   await waitMonitor();
   await scopeIs("harbour-study");
   assert.equal(await scopeNow(), "harbour-study");
@@ -2392,9 +2470,9 @@ try {
   assert.equal(await callCard.innerText(), "38");
   await scopeTo("harbour-study");
   assert.equal(await callCard.innerText(), "0", "the opening project remains selectable after choosing All even with no records");
-  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Project A" }).first().click();
   await page.waitForFunction(() => document.querySelector(".chat-header__project")?.textContent === "Project A");
-  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await railTool("view.usage.open").click();
   await waitMonitor();
   await page.locator(".chat-usage").click();
   await waitMonitor();
@@ -2428,41 +2506,41 @@ try {
   assert.equal(await scopeNow(), "All", "the retained sidebar entry opens all projects");
   await otherProject.selectOption("A");
   // A hidden mounted Monitor must not poll or take top-level navigation back.
-  await page.getByRole("button", { name: "Hide tools" }).click();
+  await clickLabelled(panelToggle(), "Hide tools");
   await page.locator(".monitor-page").waitFor({ state: "hidden" });
   const hiddenMonitorReads = monitorReads.length;
   await page.waitForTimeout(5200);
   assert.equal(monitorReads.length, hiddenMonitorReads, "Monitor suspends its five-second polling while the panel is hidden");
   assert.equal(documentLoads, beforeMonitorNavigation, "hiding Monitor cannot reload or redirect the Hub");
-  await page.getByRole("button", { name: "Show tools" }).click();
+  await clickLabelled(panelToggle(), "Show tools");
   await waitMonitor();
   assert.equal(await page.locator(".monitor-page").getByRole("button", { name: "Back to chat", exact: true }).count(), 0);
-  await page.getByRole("button", { name: "Hide tools" }).click();
+  await clickLabelled(panelToggle(), "Hide tools");
   await page.locator(".monitor-page").waitFor({ state: "hidden" });
   assert.equal(await composer.inputValue(), "Keep this conversation while viewing usage",
     "returning from Monitor preserves the existing conversation draft");
   assert.equal(documentLoads, beforeMonitorNavigation, "closing the tool panel does not reload the Hub into a restored Monitor tab");
-  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await railTool("view.usage.open").click();
   await waitMonitor();
   for (const [label, workspace] of [["Board", "board"], ["Modeling", "arch"]]) {
-    await page.getByRole("button", { name: label, exact: true }).click();
+    await railTool(RAIL[label]).click();
     await waitWorkspace(workspace);
     assert.equal(await page.locator(".monitor-page").isVisible(), false);
     assert.equal(documentLoads, beforeMonitorNavigation, "switching from Monitor to a project workspace preserves the Hub document");
   }
   await page.screenshot({ path: path.join(temporary, "new-project.png") });
   // Back to the first project's conversation for the rest of this walk.
-  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Project A" }).first().click();
 
   // #302: the architect is marking up on Board when the Agent's result arrives.
-  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await railTool("view.tab.board").click();
   await waitWorkspace("board");
   const surfaceNow = () => page.evaluate(() => ({ panel: document.querySelector(".chat-shell")?.dataset.panel,
     pressed: [...document.querySelectorAll(".chat-rail__tool[aria-pressed=true]")].map((node) => node.getAttribute("aria-label")) }));
   const surfaceBeforeResult = await surfaceNow();
   await page.getByRole("textbox", { name: "What would you like to do in this project?" }).fill("Widen the courtyard");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
-  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await cmd(page, "chat.composer.send").click();
+  await cmd(page, "chat.composer.stop").waitFor();
   assert.equal(sessions.length, 2);
   const firstContext = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2].designContext;
   assert.equal(firstContext.sourceRunId, "home-A", "the first task is bound before the architect opens any modeling workspace");
@@ -2487,8 +2565,8 @@ try {
   const steered = sessions.find((row) => row.messages.some((message) => message.content === "Widen the courtyard"));
   const composerInput = page.getByRole("textbox", { name: "What would you like to do in this project?" });
   assert.equal(await composerInput.isEnabled(), true, "the composer stays usable while the Agent works");
-  assert.equal(await page.getByRole("button", { name: "Stop", exact: true }).isVisible(), true);
-  assert.equal(await page.getByRole("button", { name: "Interject", exact: true }).isDisabled(), true, "an empty draft interjects nothing");
+  assert.equal(await cmd(page, "chat.composer.stop").isVisible(), true);
+  assert.equal(await cmd(page, "chat.composer.interject").isDisabled(), true, "an empty draft interjects nothing");
   const messagesBefore = writes.filter(([, pathname]) => pathname.endsWith("/messages")).length;
   await composerInput.fill("Keep the courtyard square instead");
   await composerInput.press("Enter");
@@ -2501,7 +2579,7 @@ try {
   assert.equal(await composerInput.inputValue(), "", "the composer clears and stays open for the next message");
   assert.equal(await composerInput.isEnabled(), true);
   assert.equal(steered.status, "running", "interjecting never stops the turn");
-  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await cmd(page, "chat.composer.stop").waitFor();
   steered.messages.find((message) => message.content === "Keep the courtyard square instead").interjection = "delivered";
   emitRuntime();
   await interjected.getByText("Interjected · Delivered", { exact: true }).waitFor();
@@ -2538,6 +2616,7 @@ try {
     /^Working · \d+:\d{2} · Prepare to read the model state… · 3 steps · 1 failed$/);
   assert.equal(await firstProcess.locator(".chat-process__row").getAttribute("aria-expanded"), "false", "a running turn stays folded");
   assert.equal(await page.getByText("studio_request · POST /api/issue · failed").count(), 0, "no raw request line in the conversation");
+  await setDeveloperMode(true);
   await firstProcess.locator(".chat-process__row").click();
   assert.deepEqual(await firstProcess.locator(".chat-process__steps li > span:last-child").allInnerTexts(),
     ["Prepare to read the model state", "Update project data · failed", "Check progress"]);
@@ -2547,6 +2626,7 @@ try {
   await page.getByText("HubFailure(422): This action is not exposed to the chat.").waitFor();
   await firstProcess.locator(".chat-process__row").click();
   assert.equal(await firstProcess.locator(".chat-process__body").count(), 0, "folding leaves nothing behind");
+  await setDeveloperMode(false);
 
   // The agent's permission choices appear in its activity row and wait for an
   // actual choice. Repeated clicks cannot answer the same request twice.
@@ -2567,10 +2647,10 @@ try {
   const waitingThread = page.locator(".chat-thread-row").filter({ hasText: "Widen the courtyard" });
   await waitingThread.locator(".chat-needs").filter({ hasText: /^Needs you$/ }).waitFor();
   assert.equal(await waitingThread.locator(".chat-thread").getAttribute("aria-description"), "Needs your permission");
-  const projectAHead = page.locator(".chat-project__head").filter({ has: page.getByRole("button", { name: "Project A", exact: true }) });
+  const projectAHead = page.locator(".chat-project__head").filter({ has: cmd(page, "project.open", { arg: "Project A", includeHidden: true }) });
   assert.equal(await projectAHead.locator('.chat-project__badge[data-kind="needs"]').innerText(), "Needs you");
   assert.equal(await projectAHead.locator('.chat-project__badge[data-kind="running"]').count(), 0, "the mark stands in for Running");
-  assert.match(await projectAHead.getByRole("button", { name: "Project A", exact: true }).getAttribute("aria-description"), /1 chat needs you$/);
+  assert.match(await cmd(projectAHead, "project.open", { arg: "Project A" }).getAttribute("aria-description"), /1 chat needs you$/);
   await waitingThread.locator(".chat-thread").focus();
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-description")), "Needs your permission");
   assert.equal(await page.locator(".chat-thread-row[data-attention]").count(), 1, "only the conversation that asked is marked");
@@ -2578,7 +2658,7 @@ try {
   let releasePermission;
   permissionResponseGate = new Promise((resolve) => { releasePermission = resolve; });
   const selected = page.waitForRequest((req) => req.url().endsWith("/permissions/permission-1"));
-  await choices.getByRole("button", { name: "Allow once" }).evaluate((button) => { button.click(); button.click(); });
+  await cmd(choices, "chat.permission.choose", { arg: "allow-once" }).evaluate((button) => { button.click(); button.click(); });
   await selected;
   await page.waitForFunction(() => [...document.querySelectorAll(".chat-permission button")].every((button) => button.disabled));
   assert.equal(permissionWrites().length, 1);
@@ -2593,7 +2673,7 @@ try {
   pendingActivity.permission = { ...permission, id: "permission-cancel" };
   emitRuntime();
   await choices.waitFor();
-  await choices.getByRole("button", { name: "Cancel", exact: true }).click();
+  await cmd(choices, "chat.permission.cancel").click();
   await choices.waitFor({ state: "hidden" });
   assert.deepEqual(permissionWrites().at(-1)[2], { projectId: "A", optionId: null });
 
@@ -2601,20 +2681,20 @@ try {
   permissionFailure = 409;
   emitRuntime();
   await choices.waitFor();
-  await choices.getByRole("button", { name: "Reject", exact: true }).click();
-  const permissionError = page.getByRole("alert").filter({ hasText: "CHAT_PERMISSION_EXPIRED" });
+  await cmd(choices, "chat.permission.choose", { arg: "reject-once" }).click();
+  const permissionError = page.getByRole("alert").filter({ hasText: "This permission request is no longer pending." });
   await permissionError.waitFor();
-  assert.equal(await choices.getByRole("button", { name: "Reject", exact: true }).isEnabled(), true);
-  await permissionError.getByRole("button", { name: "Close", exact: true }).click();
+  assert.equal(await cmd(choices, "chat.permission.choose", { arg: "reject-once" }).isEnabled(), true);
+  await cmd(permissionError, "view.notice.dismiss").click();
   pendingActivity.permission = null; permissionFailure = null;
   emitRuntime();
   await choices.waitFor({ state: "hidden" });
 
   // The Study card's View opens the Design Tree on the request's options; the
   // option itself opens read-only when the architect chooses it.
-  await study.getByRole("button", { name: "View", exact: true }).click();
+  await cmd(study, "view.design_tree.open").click();
   await visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])').waitFor();
-  assert.equal(await page.getByRole("button", { name: "Design tree", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal(await railTool("view.design_tree.open").getAttribute("aria-pressed"), "true");
   await urlParamIs("view", "tree");
   await viewCandidate("cand-A-1");
   const originalPanelWidth = await boxOf('.chat-browser');
@@ -2659,13 +2739,13 @@ try {
   await visibleWorkspace().locator("#stage-more-menu").waitFor({ state: "detached" });
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-controls")), "stage-more-menu");
   await visibleWorkspace().locator('.project-bar button[aria-controls="stage-more-menu"]').click();
-  await visibleWorkspace().locator("#stage-more-menu").getByRole("button", { name: "Top", exact: true }).click();
+  await cmd(visibleWorkspace().locator("#stage-more-menu"), "view.model_camera.top").click();
   await visibleWorkspace().locator('.project-bar button[aria-controls="stage-more-menu"]').click();
   await page.mouse.move(10, 10);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const preservedView = await visibleWorkspace().locator(".stage canvas").first().screenshot();
   const beforePeerWorkspaces = writes.length;
-  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await railTool("view.tab.board").click();
   await waitWorkspace("board");
   // #337: the Board's title is a word in the project bar.
   assert.equal(await visibleWorkspace().locator('.project-bar input.monkeyboard-title').count(), 1);
@@ -2681,10 +2761,10 @@ try {
   await upload.click(); await chooser;
   await visibleWorkspace().locator('.monkeyboard').screenshot({ path: path.join(temporary, 'board-welcome.png') });
   await visibleWorkspace().getByLabel("Board title", { exact: true }).fill("Board A retained");
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await railTool("view.tab.modeling").click();
   await waitWorkspace();
   for (const [label, kind] of [["Drawings", "drawing"], ["Board", "board"], ["Modeling", "arch"]]) {
-    await page.getByRole("button", { name: label, exact: true }).click();
+    await railTool(RAIL[label]).click();
     await waitWorkspace(kind);
     if (kind === "board") assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board A retained");
     if (kind === "drawing") {
@@ -2697,12 +2777,12 @@ try {
   // project workspace, and reads this project's Working Head. Pressing it again
   // leaves it for that surface, with the editing base and the Board unchanged.
   const runtimeA = runtimes.get("D:\\fixture\\A").runtimeId;
-  const drawingTool = page.getByRole("button", { name: "Drawings", exact: true });
+  const drawingTool = railTool("view.drawings");
   const editingBase = async () => [(await visibleWorkspace().locator(".editing-base__name").innerText()).trim(),
     await visibleWorkspace().locator(".editing-base").getAttribute("data-source-match")];
   const baseBeforeDrawing = await editingBase();
   for (const [label, kind] of [["Board", "board"], ["Modeling", "arch"]]) {
-    const surface = page.getByRole("button", { name: label, exact: true });
+    const surface = railTool(RAIL[label]);
     await surface.click();
     await waitWorkspace(kind);
     const readsBefore = workspaceFixture.requests.length;
@@ -2746,15 +2826,21 @@ try {
   // it is not on screen, and it is in the project card when asked for.
   assert.equal(await page.locator(".chat-browser__address").count(), 0);
   assert.equal(await page.getByText(origin, { exact: false }).count(), 0, "no raw tool URL is on screen");
-  await page.getByRole("button", { name: /Project A/ }).last().click();
+  await clickLabelled(cmd(page, "view.project_info.toggle"), "This project: Project A");
   const connection = page.getByRole("dialog", { name: "Project" });
-  await connection.getByText("Connection details").waitFor();
+  await cmd(connection, "view.notice.retry", { arg: "tool_page" }).waitFor();
+  assert.equal(await connection.getByText("Connection details").count(), 0);
+  assert.equal(await connection.locator("#tool-url").count(), 0, "the address is for developer mode");
+  await cmd(connection, "view.notice.retry", { arg: "tool_page" }).click();
+  await cmd(connection, "view.dialog.close").click();
+  await waitWorkspace();
+  await setDeveloperMode(true);
+  await page.getByRole("button", { name: /Project A/ }).last().click();
   assert.equal(await connection.locator("#tool-url").isVisible(), false, "the address stays folded away");
   await connection.getByText("Connection details").click();
   assert.match(await connection.locator("#tool-url").inputValue(), /runtimeId=/);
-  await connection.getByRole("button", { name: "Reload page" }).click();
   await connection.getByRole("button", { name: "Close" }).click();
-  await waitWorkspace();
+  await setDeveloperMode(false);
 
   // A — dragging really moves the boundary: the conversation and the tool page
   // both change width, and the conversation keeps its floor. Beside a workspace the
@@ -2792,14 +2878,14 @@ try {
     assert.ok(layout.panelRight <= layout.railLeft + 1, "the embedded tool ends before the rail");
     assert.ok(layout.scrollWidth <= layout.viewport + 1, "the shell has no hidden horizontal overflow");
   };
-  await page.getByRole("button", { name: "Hide projects", exact: true }).first().click();
+  await clickLabelled(cmd(page, "view.left_column.toggle").first(), "Hide projects");
   const collapsedHandle = await handle.boundingBox();
   await page.mouse.move(collapsedHandle.x + collapsedHandle.width / 2, collapsedHandle.y + 200);
   await page.mouse.down();
   await page.mouse.move(80, collapsedHandle.y + 200, { steps: 12 });
   await page.mouse.up();
   const collapsedFrame = await boxOf(".chat-browser");
-  await page.getByRole("button", { name: "Show projects", exact: true }).first().click();
+  await clickLabelled(cmd(page, "view.left_column.toggle").first(), "Show projects");
   await assertFitted();
   assert.ok(await boxOf(".chat-browser") < collapsedFrame - 100, "an expanded sidebar leaves less space for the tool");
   for (const width of [1180, 1000, 901]) {
@@ -2817,18 +2903,18 @@ try {
   await waitWorkspace();
   const mountedProjects = await page.locator(".chat-project-workspace").count();
   await visibleWorkspace().evaluate((element) => { element.collapseMarker = "retained"; });
-  await page.getByRole("button", { name: "Hide tools" }).click();
+  await clickLabelled(panelToggle(), "Hide tools");
   await page.locator(".chat-browser").waitFor({ state: "hidden" });
   assert.equal(await page.locator(".chat-project-workspace").count(), mountedProjects, "collapsing retains project components");
   assert.ok(await railWidth() > 40);
-  await page.getByRole("button", { name: "Show tools" }).click();
+  await clickLabelled(panelToggle(), "Show tools");
   await waitWorkspace();
   assert.equal(await visibleWorkspace().evaluate((element) => element.collapseMarker), "retained");
 
   // IA-6: pressing the entry on screen steps back one level. A surface leaves the panel and keeps its
   // workspace; a Tool returns to the surface it was opened over, or leaves the panel when it was
   // opened from the conversation. The keyboard does the same, and says what a press will do.
-  const entry = (name) => page.getByRole("button", { name, exact: true });
+  const entry = (name) => railTool(RAIL[name]);
   const panelClosed = () => page.waitForFunction(() => document.querySelector(".chat-shell")?.dataset.panel === "false");
   const treeShown = () => visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])').waitFor();
   assert.equal(await entry("Modeling").getAttribute("aria-description"), "Close Modeling");
@@ -2884,7 +2970,7 @@ try {
   await waitWorkspace();
 
   // C — the project gear answers for the bound project, not for the tools.
-  await page.getByRole("button", { name: /Project A/ }).last().click();
+  await clickLabelled(cmd(page, "view.project_info.toggle"), "This project: Project A");
   const card = page.getByRole("dialog", { name: "Project" });
   await card.waitFor();
   await card.getByText("D:\\fixture\\A").waitFor();
@@ -2899,10 +2985,10 @@ try {
   assert.equal(await card.getByRole("button", { name: "Open in Design tree", exact: true }).count(), 0);
   await page.keyboard.press("Escape");
   await card.waitFor({ state: "detached" });
-  await page.getByRole("button", { name: "Design tree", exact: true }).click();
+  await railTool("view.design_tree.open").click();
   await visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])').waitFor();
-  assert.equal(await page.getByRole("button", { name: "Design tree", exact: true }).getAttribute("aria-pressed"), "true");
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  assert.equal(await railTool("view.design_tree.open").getAttribute("aria-pressed"), "true");
+  await railTool("view.tab.modeling").click();
   await waitWorkspace();
 
   // The saved frame comes back after a reload, with the conversation.
@@ -2943,21 +3029,21 @@ try {
   assert.ok(folded.workspace >= 850, `at 1440 the workspace is at least 850 px wide: ${JSON.stringify(folded)}`);
   await page.screenshot({ path: path.join(temporary, "workspace-1440.png") });
   // Closing the workspace gives the list back and opening it folds the list again; opened by hand, it stays open.
-  await page.getByRole("button", { name: "Hide tools", exact: true }).click();
+  await clickLabelled(panelToggle(), "Hide tools");
   await frameIs("sidebar", "true");
-  await page.getByRole("button", { name: "Show tools", exact: true }).click();
+  await clickLabelled(panelToggle(), "Show tools");
   await waitWorkspace();
   await frameIs("sidebar", "false");
-  await page.getByRole("button", { name: "Show projects", exact: true }).first().click();
+  await clickLabelled(cmd(page, "view.left_column.toggle").first(), "Show projects");
   await frameIs("sidebar", "true");
-  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await railTool("view.tab.board").click();
   await waitWorkspace("board");
   assert.equal(await shell.getAttribute("data-sidebar"), "true", "a list opened by hand stays open from one workspace to the next");
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await railTool("view.tab.modeling").click();
   await waitWorkspace();
   // The pin keeps the list open beside a workspace. It is saved with every other preference, and after a restart
   // the list is still open beside the workspace.
-  const pin = page.getByRole("button", { name: "Keep projects open", exact: true });
+  const pin = cmd(page, "view.left_column.pin");
   assert.equal(await pin.getAttribute("aria-pressed"), "false");
   const beforePin = { ...preferences }, pinWrite = userSettingsSaved();
   await pin.click();
@@ -2972,7 +3058,7 @@ try {
   preferences = { ...preferences, language: "zh-CN" };
   await page.reload();
   await waitWorkspace();
-  await page.getByRole("button", { name: "钉住项目栏", exact: true }).waitFor();
+  await waitForCommandLabel(cmd(page, "view.left_column.pin"), "钉住项目栏");
   await page.waitForFunction(() => document.querySelector(".chat-pin")?.getAttribute("aria-pressed") === "true");
   await page.getByRole("button", { name: "专注", exact: true }).click();
   await frameIs("focus", "true");
@@ -3009,7 +3095,7 @@ try {
   await frameIs("sidebar", "false");
   await focusCheck("focus");
   // Opened by hand in Focus, the list leads to a conversation, and the conversation chosen comes out of Focus.
-  await page.getByRole("button", { name: "Show projects", exact: true }).first().click();
+  await clickLabelled(cmd(page, "view.left_column.toggle").first(), "Show projects");
   await frameIs("sidebar", "true");
   await page.locator('.chat-thread[aria-current="page"]').click();
   await frameIs("focus", "false");
@@ -3017,14 +3103,14 @@ try {
   // Focus also ends with its workspace: hiding the tools brings the conversation back as it was.
   await focusButton.click();
   await frameIs("focus", "true");
-  await page.getByRole("button", { name: "Hide tools", exact: true }).click();
+  await clickLabelled(panelToggle(), "Hide tools");
   await frameIs("panel", "false");
   await frameIs("focus", "false");
   assert.equal(await page.locator(".chat-main").evaluate((node) => node.inert), false);
   // The rest of the walk keeps the list pinned, as it was.
-  await page.getByRole("button", { name: "Show tools", exact: true }).click();
+  await clickLabelled(panelToggle(), "Show tools");
   await waitWorkspace();
-  await page.getByRole("button", { name: "Show projects", exact: true }).first().click();
+  await clickLabelled(cmd(page, "view.left_column.toggle").first(), "Show projects");
   const repinWrite = userSettingsSaved();
   await pin.click();
   assert.equal((await repinWrite).postDataJSON().sidebarPinned, true);
@@ -3043,22 +3129,22 @@ try {
   await fileMenu.waitFor({ state: "detached" });
   await page.waitForFunction(() => document.activeElement?.id === "hub-menu-file"); // Escape returns to the menu's word
   await page.getByRole("menuitem", { name: "View", exact: true }).click();
-  await page.getByRole("menuitemradio", { name: "Dark", exact: true }).click();
+  await cmd(page, "preference.appearance.theme_dark").click();
   await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
   await page.screenshot({ path: path.join(temporary, "menu-row-dark.png") });
   await page.getByRole("menuitem", { name: "View", exact: true }).click();
-  await page.getByRole("menuitemradio", { name: "Light", exact: true }).click();
+  await cmd(page, "preference.appearance.theme_light").click();
   await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
   // Every interface style draws the same row; the crops are for review by eye.
   for (const [style, name] of [["quiet", "Quiet instrument"], ["titleblock", "Title block"], ["night", "Night flight"], ["classic", "Classic"]]) {
     await page.getByRole("menuitem", { name: "View", exact: true }).click();
-    await page.getByRole("menuitemradio", { name, exact: true }).click();
+    await cmd(page, `preference.appearance.style_${style}`).click();
     await page.waitForFunction((value) => (document.documentElement.getAttribute("data-ui-style") ?? "classic") === value, style);
     await page.screenshot({ path: path.join(temporary, `menu-row-${style}.png`), clip: { x: 0, y: 0, width: 760, height: 180 } });
   }
 
   // B — the global defaults live in the bottom-left Hub settings only.
-  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await cmd(page, "view.settings.open").click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Hub settings (global)" });
   await settingsPage("Conversations");
   await dialog.getByRole("heading", { name: "New conversation defaults" }).waitFor();
@@ -3088,7 +3174,7 @@ try {
   assert.equal(await page.locator("#save-appearance, #save-launch").count(), 0, "Hub settings have no Save buttons");
   await page.waitForFunction(() => document.querySelector("#render-timeout")?.value === "75");
   await settingsSaved();
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await cmd(dialog, "view.dialog.close").click();
   assert.ok(providerReads.filter((value) => value === "true").length > rechecks, "checking again asks the CLIs again");
   assert.ok(providerReads.filter((value) => value !== "true").length > 3, "the polling path never asks for a new check");
   const savedPreferences = writes.filter(([method, pathname]) => method === "PUT" && pathname === "/api/settings/user").at(-1);
@@ -3101,12 +3187,22 @@ try {
 
   // The existing conversation keeps the connection it was created with.
   await page.locator(".chat-connection").filter({ hasText: "Codex CLI" }).waitFor();
-  await page.reload();
+  // The reload reopens the saved workspaces; Stop reaches the conversation while one is still opening.
+  let releaseReopen;
+  runtimeOpenGate = new Promise((resolve) => { releaseReopen = resolve; });
+  const reopenHeld = new Promise((resolve) => { runtimeOpenCaptured = resolve; });
+  await Promise.all([reopenHeld, page.reload()]);
   await page.locator(".chat-connection").filter({ hasText: "Codex CLI" }).waitFor();
+  await page.locator('.chat-rail__tool[aria-busy="true"]').waitFor();
+  const beforeStop = writes.length;
+  await cmd(page, "chat.composer.stop").click();
+  await cmd(page, "chat.composer.send").waitFor();
+  assert.ok(writes.slice(beforeStop).some(([method, pathname]) => method === "POST" && pathname.endsWith("/stop")),
+    "Stop is sent while a workspace reopens");
+  releaseReopen();
+  await page.waitForFunction(() => !document.querySelector('.chat-rail__tool[aria-busy="true"]'));
 
   // A new conversation takes the new default; the old one is untouched.
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
-  await page.getByRole("button", { name: "Send", exact: true }).waitFor();
 
   // This conversation picks its own model: saved for it, not for everyone.
   const picker = page.locator("#chat-model");
@@ -3125,17 +3221,17 @@ try {
   // A model this connection does not list can still be entered by hand.
   await picker.selectOption("__custom__");
   await page.locator("#chat-custom-model").fill("hand-entered-model");
-  await page.getByRole("button", { name: "Use", exact: true }).click();
+  await cmd(page, "preference.chat_model.custom_apply").click();
   await page.waitForFunction(() => document.querySelector("#chat-model")?.value === "hand-entered-model");
   assert.equal(sessions.find((row) => row.id === "chat-2").model, "hand-entered-model");
   const runningA = sessions.find((row) => row.projectId === "A");
   runningA.status = "running";
   const beforeSwitchWrites = writes.length;
-  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Project B" }).first().click();
   await page.locator(".chat-connection").filter({ hasText: "Claude Code" }).waitFor();
   await page.getByRole("textbox", { name: "What would you like to do in this project?" }).fill("Keep this draft");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
-  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await cmd(page, "chat.composer.send").click();
+  await cmd(page, "chat.composer.stop").waitFor();
   assert.equal(sessions.length, 3);
   assert.equal(sessions[0].provider, "claude");
   assert.equal(sessions[0].model, "claude-opus-5");
@@ -3149,63 +3245,63 @@ try {
     "Project B has still started exactly once");
 
   // C — the gear follows the conversation's project rather than keeping the old one.
-  await page.getByRole("button", { name: /Project B/ }).last().click();
+  await clickLabelled(cmd(page, "view.project_info.toggle"), "This project: Project B");
   const second = page.getByRole("dialog", { name: "Project" });
   await second.getByText("D:\\fixture\\B").waitFor();
   await second.getByText("Version 0").waitFor();
   await second.getByText("No confirmed Stage").waitFor();
   assert.equal(await second.getByText("D:\\fixture\\A").count(), 0, "no stale project is left in the card");
-  await second.getByRole("button", { name: "Close" }).click();
+  await cmd(second, "view.dialog.close").click();
 
   // Two mounted projects keep separate Board state and project API clients.
-  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await railTool("view.tab.board").click();
   await waitWorkspace("board");
   assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B");
   await visibleWorkspace().getByLabel("Board title", { exact: true }).fill("Board B retained");
-  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
-  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await cmd(page, "project.open", { arg: "Project A" }).first().click();
+  await railTool("view.tab.board").click();
   await waitWorkspace("board");
   assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board A retained");
-  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Project B" }).first().click();
   // Back in B, its Board is on screen again; pressing it now would step out of the panel (IA-6).
   await showEntry("Board");
   await waitWorkspace("board");
   assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B retained");
   assert.equal(runningA.status, "running", "Board navigation does not interrupt another project's task");
   const modelReadsBeforeRender = workspaceFixture.requests.filter((row) => /\/api\/artifacts/.test(row.name)).length;
-  await page.getByRole("button", { name: "Render", exact: true }).click(); await waitWorkspace("render");
+  await railTool("view.render.open").click(); await waitWorkspace("render");
   await visibleWorkspace().getByRole("textbox", { name: "Visual direction", exact: true }).fill("Keep this Render draft");
-  await page.getByRole("button", { name: "Board", exact: true }).click(); await waitWorkspace("board");
+  await railTool("view.tab.board").click(); await waitWorkspace("board");
   assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B retained");
-  await page.getByRole("button", { name: "Render", exact: true }).click(); await waitWorkspace("render");
+  await railTool("view.render.open").click(); await waitWorkspace("render");
   assert.equal(await visibleWorkspace().getByRole("textbox", { name: "Visual direction", exact: true }).inputValue(), "Keep this Render draft");
   assert.equal(workspaceFixture.requests.filter((row) => /\/api\/artifacts/.test(row.name)).length, modelReadsBeforeRender, "Render and Board switches keep the loaded model");
   assert.equal(await page.locator('.chat-project-workspace:not([hidden])').count(), 1);
-  await page.getByRole("button", { name: "Board", exact: true }).click(); await waitWorkspace("board");
+  await railTool("view.tab.board").click(); await waitWorkspace("board");
   assert.deepEqual(new Set(workspaceFixture.requests.filter((row) => row.name === "/api/board").map((row) => row.projectId)), new Set(["A", "B"]));
   await page.screenshot({ path: path.join(temporary, "hub-board.png") });
   // #300: Layout is Board's second mode. The Board | Layout switch moves between
   // the two mounted surfaces; the rail keeps Board pressed and has no Layout entry.
   const boardModes = visibleWorkspace().getByRole("radiogroup", { name: "Board mode", exact: true });
   assert.deepEqual(await boardModes.getByRole("radio").allInnerTexts(), ["Board", "Layout"]);
-  assert.equal(await boardModes.getByRole("radio", { name: "Board", exact: true }).getAttribute("aria-checked"), "true");
-  await boardModes.getByRole("radio", { name: "Layout", exact: true }).click();
+  assert.equal(await cmd(boardModes, "view.tab.board").getAttribute("aria-checked"), "true");
+  await cmd(boardModes, "view.tab.layout").click();
   const layoutTitle = visibleWorkspace().getByLabel("Publication title", { exact: true });
   await layoutTitle.waitFor();
   await urlParamIs("view", "publish");
-  assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true", "Board stays pressed in Layout");
-  assert.equal(await boardModes.getByRole("radio", { name: "Layout", exact: true }).getAttribute("aria-checked"), "true");
+  assert.equal(await railTool("view.tab.board").getAttribute("aria-pressed"), "true", "Board stays pressed in Layout");
+  assert.equal(await cmd(boardModes, "view.tab.layout").getAttribute("aria-checked"), "true");
   await layoutTitle.fill("Layout B draft");
   await page.screenshot({ path: path.join(temporary, "board-layout-mode.png") });
-  await boardModes.getByRole("radio", { name: "Layout", exact: true }).press("ArrowLeft");
+  await cmd(boardModes, "view.tab.layout").press("ArrowLeft");
   await waitWorkspace("board");
   assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B retained", "Board keeps its state across Layout");
-  await boardModes.getByRole("radio", { name: "Layout", exact: true }).click();
+  await cmd(boardModes, "view.tab.layout").click();
   await layoutTitle.waitFor();
   assert.equal(await layoutTitle.inputValue(), "Layout B draft", "Layout keeps its unsaved draft across Board");
-  await boardModes.getByRole("radio", { name: "Board", exact: true }).click();
+  await cmd(boardModes, "view.tab.board").click();
   await waitWorkspace("board");
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await railTool("view.tab.modeling").click();
   await waitWorkspace();
 
   // #302: a result read back while the same turn keeps working takes nothing on
@@ -3245,13 +3341,13 @@ try {
   const resultLeftViewAlone = async (message) => {
     await page.waitForTimeout(800);
     assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, bytesBeforeResult, message);
-    assert.equal(await page.getByRole("button", { name: "Modeling", exact: true }).getAttribute("aria-pressed"), "true", message);
+    assert.equal(await railTool("view.tab.modeling").getAttribute("aria-pressed"), "true", message);
     assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once", message);
   };
   await resultLeftViewAlone("a result read back during the turn loads and switches nothing");
   completing.status = "idle";
   emitRuntime();
-  await page.getByRole("button", { name: "Send", exact: true }).waitFor();
+  await cmd(page, "chat.composer.send").waitFor();
   await resultLeftViewAlone("finishing the turn does not open its result either");
   await studyB.evaluate((element) => { element.captureMarker = "waiting"; });
   await viewCandidate("cand-B-final", () => studyB.locator('[data-candidate="cand-B-final"] img').waitFor());
@@ -3266,18 +3362,17 @@ try {
 
   // Refreshing a completed readback preserves the user's later camera view.
   await visibleWorkspace().locator('.project-bar button[aria-controls="stage-more-menu"]').click();
-  await visibleWorkspace().locator("#stage-more-menu").getByRole("button", { name: "Top", exact: true }).click();
+  await cmd(visibleWorkspace().locator("#stage-more-menu"), "view.model_camera.top").click();
   await visibleWorkspace().locator('.project-bar button[aria-controls="stage-more-menu"]').click();
   await page.mouse.move(10, 10);
   const beforeRefreshCanvas = await visibleWorkspace().locator(".stage canvas").first().screenshot();
   const beforeRefreshBytes = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
-  await page.getByRole("button", { name: /Project B/ }).last().click();
+  await clickLabelled(cmd(page, "view.project_info.toggle"), "This project: Project B");
   const refreshConnection = page.getByRole("dialog", { name: "Project", exact: true });
-  await refreshConnection.getByText("Connection details").click();
   const refreshedListing = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/studio/api/artifacts"));
-  await refreshConnection.getByRole("button", { name: "Reload page", exact: true }).click();
+  await cmd(refreshConnection, "view.notice.retry", { arg: "tool_page" }).click();
   await refreshedListing;
-  await refreshConnection.getByRole("button", { name: "Close", exact: true }).click();
+  await cmd(refreshConnection, "view.dialog.close").click();
   await page.mouse.move(10, 10);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once");
@@ -3304,7 +3399,7 @@ try {
   const failedJob = headlessJob("cand-B-headless-failed", 40, "failed");
   const projectBFixture = workspaceFixture.projects.get("B");
   for (const job of [oldJob, newJob, pendingJob]) projectBFixture.artifact(job.candidateId);
-  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await railTool("view.tab.board").click();
   await waitWorkspace("board");
   await visibleWorkspace().evaluate((element) => { element.headlessBoardMarker = "retained"; });
   const boardBeforeHeadless = structuredClone(projectBFixture.board);
@@ -3319,7 +3414,7 @@ try {
     headlessOperation(headlessJob("cand-A-wrong-project", 40), { projectId: "A" })];
   emitRuntime();
   await page.waitForTimeout(1000);
-  assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true",
+  assert.equal(await railTool("view.tab.board").getAttribute("aria-pressed"), "true",
     "a headless result never switches the surface");
   assert.equal(await visibleWorkspace().evaluate((element) => element.headlessBoardMarker), "retained");
   assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B retained");
@@ -3373,19 +3468,19 @@ try {
     app.state = "error"; app.error = { code: "WORKER_EXITED", detail: "Fixture worker exited unexpectedly." };
   }
   emitRuntime();
-  await page.getByRole("button", { name: "Recover project service", exact: true }).waitFor();
+  await cmd(page, "view.notice.retry", { arg: "project_service" }).waitFor();
   const lateOpenReply = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/runtime/projects/open");
   releaseRuntimeOpen();
   await lateOpenReply;
   // Later GET snapshots stay pending so they cannot repair an overwritten
   // event before this assertion. Let the released response render first.
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  assert.equal(await page.getByRole("button", { name: "Recover project service", exact: true }).isVisible(), true,
+  assert.equal(await cmd(page, "view.notice.retry", { arg: "project_service" }).isVisible(), true,
     "an unversioned late open response cannot hide a newer crashed SSE snapshot");
   assert.equal(writes.length, beforeLateOpen, "a stale open reply cannot start or modify the crashed project");
   runtimeReadGate = null; releaseRuntimeReads();
   await page.locator(".chat-error").waitFor();
-  await page.getByRole("button", { name: "Recover project service", exact: true }).click();
+  await cmd(page, "view.notice.retry", { arg: "project_service" }).click();
   await studioReady();
   await viewCandidate("cand-B-final");
   const beforeCrash = writes.length;
@@ -3393,12 +3488,12 @@ try {
     app.state = "error"; app.error = { code: "WORKER_EXITED", detail: "Fixture worker exited unexpectedly." };
   }
   emitRuntime();
-  await page.getByRole("button", { name: "Recover project service", exact: true }).waitFor();
+  await cmd(page, "view.notice.retry", { arg: "project_service" }).waitFor();
   assert.equal(writes.length, beforeCrash, "a crash event only reads state");
   await page.reload();
-  await page.getByRole("button", { name: "Recover project service", exact: true }).waitFor();
+  await cmd(page, "view.notice.retry", { arg: "project_service" }).waitFor();
   assert.ok(writes.slice(beforeCrash).every(([, pathname]) => pathname === "/api/runtime/projects/open"), "refreshing a crashed project only reattaches it");
-  await page.getByRole("button", { name: "Recover project service", exact: true }).click();
+  await cmd(page, "view.notice.retry", { arg: "project_service" }).click();
   await viewCandidate("cand-B-final");
   assert.ok(workspaceFixture.requests.some((row) => row.runtimeId === runtimeB.runtimeId && row.name === "/api/protocol"), "restored workspace uses the same project runtime prefix");
   assert.equal(writes.slice(beforeCrash).filter(([, pathname]) => pathname.endsWith("/recover")).length, 1);
@@ -3409,18 +3504,24 @@ try {
   const beforeRecoverReads = workspaceFixture.requests.length;
   for (const app of appsFor(runtimeB.projectDir).filter((app) => app.serviceId === "studio")) app.state = "error";
   emitRuntime();
-  await page.getByRole("button", { name: "Recover project service", exact: true }).click();
+  await cmd(page, "view.notice.retry", { arg: "project_service" }).click();
   await waitCandidate("cand-B-final");
   assert.equal(await visibleWorkspace().evaluate((element) => element.oldInstanceMarker), true, "runtime recovery preserves the mounted workspace and draft");
   assert.ok(workspaceFixture.requests.slice(beforeRecoverReads).every((row) => row.method === "GET"), "recovery only refreshes workspace reads");
   assert.equal(writes.slice(beforeCrash).filter(([, pathname]) => pathname.endsWith("/recover")).length, 2);
   assert.ok(writes.slice(beforeCrash).every(([, pathname]) => pathname === "/api/runtime/projects/open" || pathname.endsWith("/recover")));
   await page.screenshot({ path: path.join(temporary, "runtime-recovered.png") });
-  await page.getByRole("button", { name: /Project B/ }).last().click();
-  // Completed operations are recovery details, disclosed on request (#271).
-  await page.getByRole("dialog", { name: "Project", exact: true }).getByText("Recovery details", { exact: true }).click();
-  await page.getByRole("dialog", { name: "Project", exact: true }).getByText("Committed", { exact: true }).waitFor();
-  await page.getByRole("dialog", { name: "Project", exact: true }).getByRole("button", { name: "Close", exact: true }).click();
+  const projectDialog = page.getByRole("dialog", { name: "Project", exact: true });
+  await clickLabelled(cmd(page, "view.project_info.toggle"), "This project: Project B");
+  // Completed operations are recovery details (#271): a record, shown in developer mode.
+  assert.equal(await projectDialog.getByText("Recovery details", { exact: true }).count(), 0);
+  await cmd(projectDialog, "view.dialog.close").click();
+  await setDeveloperMode(true);
+  await clickLabelled(cmd(page, "view.project_info.toggle"), "This project: Project B");
+  await projectDialog.getByText("Recovery details", { exact: true }).click();
+  await projectDialog.getByText("Committed", { exact: true }).waitFor();
+  await cmd(projectDialog, "view.dialog.close").click();
+  await setDeveloperMode(false);
   const beforeReconnect = writes.length;
   allowRuntimeEvents = false;
   for (const stream of streams) stream.end();
@@ -3466,6 +3567,8 @@ try {
   const summary = await banner.locator("p").first().innerText();
   assert.equal(summary, "The current model is not available through Claude Code. Choose another model.");
   assert.ok(!summary.includes("{"), `no JSON body is used as the message: ${summary}`);
+  assert.equal(await banner.locator("pre").count(), 0, "the technical text is for developer mode");
+  await setDeveloperMode(true);
   assert.equal(await banner.locator("pre").isVisible(), false, "the technical detail stays folded away");
   await banner.getByText("Technical details").click();
   const technical = await banner.locator("pre").innerText();
@@ -3478,7 +3581,7 @@ try {
     "JSON-looking content is not handled as a failure");
   // The offer moves to the picker this conversation already has; it switches nothing.
   const modelBefore = sessions.find((row) => row.id === failed).model;
-  await banner.getByRole("button", { name: "Change the model" }).click();
+  await cmd(banner, "preference.chat_model.change").click();
   assert.equal(await page.evaluate(() => document.activeElement?.id), "chat-model");
   assert.equal(sessions.find((row) => row.id === failed).model, modelBefore, "nothing is switched for the person");
 
@@ -3486,7 +3589,7 @@ try {
   await post("limit");
   await banner.locator("p").first().filter({ hasText: "usage and limits page" }).waitFor();
   assert.match(await banner.locator("p").first().innerText(), /resets 7pm \(UTC\)/);
-  assert.equal(await banner.getByRole("button", { name: "Change the model" }).count(), 0,
+  assert.equal(await cmd(banner, "preference.chat_model.change").count(), 0,
     "a limit is not blamed on the chosen model");
   assert.equal(sessions.find((row) => row.id === failed).model, modelBefore);
   assert.deepEqual(writes.slice(writesBeforeLimit), [["POST", `/api/chat/sessions/${failed}/fail`, { kind: "limit" }, null]],
@@ -3496,7 +3599,7 @@ try {
   await banner.locator("p").first().filter({ hasText: "This step did not finish" }).waitFor();
   const unknownSummary = await banner.locator("p").first().innerText();
   assert.match(unknownSummary, /This step did not finish/, unknownSummary);
-  assert.equal(await banner.getByRole("button", { name: "Change the model" }).count(), 0,
+  assert.equal(await cmd(banner, "preference.chat_model.change").count(), 0,
     "an unrecognised failure is not blamed on the model");
   await banner.getByText("Technical details").click();
   assert.match(await banner.locator("pre").innerText(), /CHAT_SOMETHING_NEW: \{"trace":"unrecognised"/);
@@ -3509,7 +3612,7 @@ try {
   assert.equal(workspaceFixture.requests.filter((row) => row.name === "/api/settings/user").length, 0);
 
   await page.screenshot({ path: path.join(temporary, "desktop.png"), fullPage: true });
-  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await cmd(page, "view.settings.open").click();
   await settingsPage("Workspace");
   await page.getByText("More launch options", { exact: true }).click();
   const diagnostics = page.getByRole("checkbox", { name: "Developer / Research Mode", exact: true });
@@ -3538,25 +3641,25 @@ try {
   await page.waitForFunction(() => document.querySelector("#settings-save-state")?.dataset.state !== "saving");
   assert.equal(await page.locator("#settings-save-state").getAttribute("data-state"), "saved");
   assert.equal(preferences.language, "en", "the last language chosen is the one the Hub keeps");
-  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await clickLabelled(cmd(page.getByRole("dialog"), "view.dialog.close"), "Close");
   await page.screenshot({ path: path.join(temporary, "dark.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Hide projects", exact: true }).first().click();
+  await clickLabelled(cmd(page, "view.left_column.toggle").first(), "Hide projects");
   await page.screenshot({ path: path.join(temporary, "mobile.png"), fullPage: true });
   assert.ok(await railWidth() > 40, "the rail survives a phone-sized window");
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   // Modeling refusal occurs only on explicit Arch entry; project creation
   // and the first Render visit remain usable without modeling inputs.
   await page.setViewportSize({ width: 1440, height: 960 });
-  await page.getByRole("button", { name: "Show projects", exact: true }).first().click();
+  await clickLabelled(cmd(page, "view.left_column.toggle").first(), "Show projects");
   modelingFailure = { code: "PROJECT_INPUTS_CONFLICT", detail: "Existing inputs need review." };
-  await page.getByRole("button", { name: "New project", exact: true }).first().click();
+  await cmd(page, "project.create.new").first().click();
   await page.locator("#new-project-name").fill("needs-review");
-  await create.getByRole("button", { name: "Create and start chatting" }).click();
+  await cmd(create, "project.create.new_confirm").click();
   await studioReady();
-  await page.getByRole("button", { name: "Render", exact: true }).click(); await waitWorkspace("render");
+  await railTool("view.render.open").click(); await waitWorkspace("render");
   assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "needs-review").length, 0);
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await railTool("view.tab.modeling").click();
   await page.locator(".chat-error").filter({ hasText: "Existing inputs need review." }).waitFor();
   assert.equal(await create.isVisible(), false);
   assert.equal(projects.filter((item) => item.projectId === "needs-review").length, 1);
@@ -3567,7 +3670,7 @@ try {
   let releaseModeling;
   modelingResponseGate = new Promise((resolve) => { releaseModeling = resolve; });
   const delayedStart = page.waitForRequest((req) => req.url().includes("/api/project/modeling"));
-  const modelingEntry = page.getByRole("button", { name: "Modeling", exact: true });
+  const modelingEntry = railTool("view.tab.modeling");
   await modelingEntry.click();
   await delayedStart;
   // PP-1: over the surface on screen, after a moment, the skeleton of the one being opened names the step it waits on.
@@ -3576,13 +3679,13 @@ try {
   assert.equal(await openingSkeleton.locator("h2").innerText(), "Modeling");
   assert.equal(await page.locator(".chat-composer-note").textContent(), "", "the composer no longer says it is connecting");
   assert.equal(await modelingEntry.getAttribute("aria-pressed"), "true");
-  assert.equal(await page.getByRole("button", { name: "Render", exact: true }).getAttribute("aria-pressed"), "false");
+  assert.equal(await railTool("view.render.open").getAttribute("aria-pressed"), "false");
   // Pressing the entry being opened cancels it and gives back the surface under it (IA-6).
   assert.equal(await modelingEntry.getAttribute("aria-description"), "Cancel opening Modeling");
   await modelingEntry.click();
   await openingSkeleton.waitFor({ state: "detached" });
   await waitWorkspace("render");
-  assert.equal(await page.getByRole("button", { name: "Render", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal(await railTool("view.render.open").getAttribute("aria-pressed"), "true");
   assert.equal(await modelingEntry.getAttribute("aria-busy"), null);
   // Opening it again waits on the same modeling start, which Cancel never withdrew.
   const modelingStarts = () => writes.filter(([, pathname]) => pathname === "/api/project/modeling").length;
@@ -3602,47 +3705,47 @@ try {
   const activeBeforeArchive = sessions.find((row) => row.projectId === "A");
   activeBeforeArchive.status = "running";
   emitRuntime();
-  const archiveRunning = page.getByRole("button", { name: `Archive: ${activeBeforeArchive.title}`, exact: true });
-  await archiveRunning.waitFor();
+  const archiveRunning = cmd(page, "chat.archive.toggle", { arg: activeBeforeArchive.id });
+  await waitForCommandLabel(archiveRunning, `Archive: ${activeBeforeArchive.title}`);
   await page.waitForFunction((title) => [...document.querySelectorAll(".chat-thread-action")].some((button) => button.getAttribute("aria-label") === `Archive: ${title}` && button.disabled), activeBeforeArchive.title);
   assert.equal(await archiveRunning.isDisabled(), true);
   const keptTranscript = JSON.stringify(archivable.messages), archiveWrites = writes.length;
   await page.locator(".chat-thread").filter({ hasText: archivable.title }).click();
   await page.getByRole("heading", { level: 1, name: archivable.title, exact: true }).waitFor();
-  await page.getByRole("button", { name: `Archive: ${archivable.title}`, exact: true }).click();
+  await clickLabelled(cmd(page, "chat.archive.toggle", { arg: archivable.id }), `Archive: ${archivable.title}`);
   await page.getByText("This chat is archived. Its messages and candidates are kept. Restore it to continue.", { exact: true }).waitFor();
   await page.waitForFunction((title) => ![...document.querySelectorAll(".chat-thread")].some((node) => node.textContent === title), archivable.title);
   assert.equal(await page.locator("#chat-input").count(), 0, "an archived chat has no send composer");
   assert.equal(JSON.stringify(archivable.messages), keptTranscript);
   assert.equal(activeBeforeArchive.status, "running");
   assert.ok(!writes.slice(archiveWrites).some(([, pathname]) => pathname.endsWith("/stop") || pathname.endsWith("/messages")), "archiving never stops or starts accepted work");
-  await page.getByRole("button", { name: "Archived chats", exact: true }).click();
+  await clickLabelled(cmd(page, "chat.archive.view"), "Archived chats");
   const archivedEntry = page.locator(".chat-thread").filter({ hasText: archivable.title });
   await archivedEntry.waitFor();
   await archivedEntry.click();
   await page.locator(".chat-message--user").filter({ hasText: archivable.messages[0].content }).waitFor();
   await page.screenshot({ path: path.join(temporary, "archived-chat.png"), fullPage: true });
   await page.reload();
-  await page.getByRole("button", { name: "Restore this chat", exact: true }).waitFor();
+  await cmd(page, "chat.archive.restore").waitFor();
   assert.equal(JSON.stringify(archivable.messages), keptTranscript);
-  await page.getByRole("button", { name: "Archived chats", exact: true }).click();
-  await page.getByRole("button", { name: `Restore: ${archivable.title}`, exact: true }).click();
+  await clickLabelled(cmd(page, "chat.archive.view"), "Archived chats");
+  await clickLabelled(cmd(page, "chat.archive.toggle", { arg: archivable.id }), `Restore: ${archivable.title}`);
   await page.locator("#chat-input").waitFor();
   await page.locator(".chat-thread").filter({ hasText: archivable.title }).waitFor();
   await page.screenshot({ path: path.join(temporary, "restored-chat.png"), fullPage: true });
   assert.equal(archivable.archived, false);
   assert.equal(JSON.stringify(archivable.messages), keptTranscript);
   assert.equal(activeBeforeArchive.status, "running");
-  await page.getByRole("button", { name: "Archived chats", exact: true }).click();
+  await clickLabelled(cmd(page, "chat.archive.view"), "Archived chats");
   await page.getByText("No archived chats.", { exact: true }).waitFor();
   // Adding an existing cold project prepares its three workspaces before any
   // page is opened. A later externally stopped Studio invalidates that result.
   const beforeAdd = writes.length;
-  await page.getByRole("button", { name: "Add an existing project", exact: true }).click();
+  await cmd(page, "project.create.add_existing").click();
   const add = page.getByRole("dialog").filter({ hasText: "Add an existing project" });
   await add.getByLabel("Project folder", { exact: true }).fill("D:\\fixture\\C");
-  await add.getByRole("button", { name: "Add project", exact: true }).click();
-  await page.getByRole("button", { name: "Project C", exact: true }).first().waitFor();
+  await cmd(add, "project.create.add_existing_confirm").click();
+  await cmd(page, "project.open", { arg: "Project C" }).first().waitFor();
   await studioReady();
   assert.equal(writes.slice(beforeAdd).filter(([, pathname, , target]) => pathname === "/api/project/modeling" && target === "D:\\fixture\\C").length, 0);
   assert.ok(!writes.slice(beforeAdd).some(([, pathname]) => pathname === "/api/chat/projects" || pathname === "/api/project/modeling"));
@@ -3653,7 +3756,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.chat-rail__tool[aria-label="Modeling"]')?.dataset.state === "stopped");
   const beforeReopen = writes.length;
   for (const [label, id] of [["Modeling", "arch"], ["Board", "board"]]) {
-    await page.getByRole("button", { name: label, exact: true }).click();
+    await railTool(RAIL[label]).click();
     await waitWorkspace(id);
   }
   assert.equal(writes.slice(beforeReopen).filter(([, pathname]) => pathname === "/api/project/modeling").length, 1,
@@ -3664,10 +3767,10 @@ try {
   projectListGate = new Promise(resolve => { releaseProjectList = resolve; });
   await Promise.all([page.waitForRequest(request => request.method() === "GET" && new URL(request.url()).pathname === "/api/chat/projects"), Promise.resolve().then(emitRuntime)]);
   chatCreationFailureFor = "D:\\fixture\\provider-recovery";
-  await page.getByRole("button", { name: "New project", exact: true }).first().click();
+  await cmd(page, "project.create.new").first().click();
   await page.locator("#new-project-name").fill("provider-recovery");
-  await create.getByRole("button", { name: "Create and start chatting" }).click();
-  await page.locator(".chat-error").filter({ hasText: "The CLI connection is temporarily unavailable." }).waitFor();
+  await cmd(create, "project.create.new_confirm").click();
+  await page.locator(".chat-error").filter({ hasText: "The CLI connection is unavailable." }).waitFor();
   assert.equal(await create.isVisible(), false);
   releaseProjectList();
   for (let refresh = 0; refresh < 2; refresh++) await Promise.all([page.waitForResponse(response =>
@@ -3677,16 +3780,16 @@ try {
   assert.equal(projects.filter(item => item.projectId === "provider-recovery").length, 1);
   chatCreationFailureFor = null;
   await page.getByRole("textbox", { name: "What would you like to do in this project?" }).fill("Continue in the project that was already created");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
-  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await cmd(page, "chat.composer.send").click();
+  await cmd(page, "chat.composer.stop").waitFor();
   assert.equal(sessions.filter(item => item.projectId === "provider-recovery").length, 1);
   assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/chat/projects" && body.name === "provider-recovery").length, 1,
     "retrying the connection never repeats project creation");
   assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "provider-recovery").length, 0);
   // Attachments stay in the selected draft until its message is sent. Every
   // file here is synthetic; these routes never call a provider or model.
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
-  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await cmd(page, "chat.composer.stop").click();
+  await cmd(page, "project.open", { arg: "Project A" }).first().click();
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
   await page.locator("#chat-input").fill("Attachment draft A");
   const beforeAttachmentDrafts = writes.filter(([, pathname]) => pathname.endsWith("/messages")).length;
@@ -3694,10 +3797,10 @@ try {
     { name: "outline.txt", mimeType: "text/plain", buffer: Buffer.from("Synthetic outline A") },
     { name: "remove-me.txt", mimeType: "text/plain", buffer: Buffer.from("Remove this draft file") },
   ]);
-  await page.getByRole("button", { name: "Remove attachment: remove-me.txt", exact: true }).click();
+  await cmd(page, "chat.composer.remove_attachment", { arg: "remove-me.txt" }).click();
   assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 1);
   assert.ok(await page.locator("#chat-input").evaluate((node) => node === document.activeElement));
-  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Project B" }).first().click();
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
   assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 0);
   await page.locator("#chat-input").fill("Attachment draft B");
@@ -3711,12 +3814,12 @@ try {
     dataTransfer.items.add(new File(["Dropped notes B"], "notes.txt", { type: "text/plain" }));
     composer.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
   });
-  await page.getByRole("button", { name: "Remove attachment: notes.txt", exact: true }).waitFor();
-  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await cmd(page, "chat.composer.remove_attachment", { arg: "notes.txt" }).waitFor();
+  await cmd(page, "project.open", { arg: "Project A" }).first().click();
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
   assert.equal(await page.locator("#chat-input").inputValue(), "Attachment draft A");
   assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["outline.txt"]);
-  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Project B" }).first().click();
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
   assert.equal(await page.locator("#chat-input").inputValue(), "Attachment draft B");
   assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["clipboard.png", "notes.txt"]);
@@ -3724,33 +3827,33 @@ try {
   // A staged update cannot discard drafts, including a different project's
   // hidden composer. Opening/closing settings must preserve the actual files.
   updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
-  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await cmd(page, "view.settings.open").click();
   await settingsPage("Software update");
   await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").waitFor();
-  assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true);
+  assert.equal(await cmd(page, "hub.update_apply").isDisabled(), true);
   assert.equal(appliedPatches, 0);
-  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await cmd(page.getByRole("dialog"), "view.dialog.close").click();
   assert.equal(await page.locator("#chat-input").inputValue(), "Attachment draft B");
   assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["clipboard.png", "notes.txt"]);
   updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false };
   await page.locator("#chat-input").fill("");
   chatMessageFailureFor = "D:\\fixture\\B";
-  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await cmd(page, "chat.composer.send").click();
   await page.locator(".chat-error").filter({ hasText: "Fixture upload failed. Try again." }).waitFor();
   assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["clipboard.png", "notes.txt"]);
-  assert.equal(await page.getByRole("button", { name: "Send", exact: true }).isEnabled(), true);
-  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  assert.equal(await cmd(page, "chat.composer.send").isEnabled(), true);
+  await cmd(page, "project.open", { arg: "Project A" }).first().click();
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
   assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["outline.txt"]);
-  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Project B" }).first().click();
   assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["clipboard.png", "notes.txt"]);
   chatMessageFailureFor = null;
   let releaseAttachmentPost;
   chatMessageResponseGate = new Promise((resolve) => { releaseAttachmentPost = resolve; });
   const attachmentRequest = page.waitForRequest((req) => req.method() === "POST" && new URL(req.url()).pathname.endsWith("/messages"));
-  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await cmd(page, "chat.composer.send").click();
   const sentAttachmentRequest = await attachmentRequest;
-  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Project A" }).first().click();
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
   assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["outline.txt"]);
   const attachmentReply = page.waitForResponse((response) => response.request() === sentAttachmentRequest);
@@ -3759,17 +3862,17 @@ try {
   await page.waitForFunction(() => !document.querySelector("#chat-input")?.disabled);
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project A");
   assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["outline.txt"]);
-  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
-  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await cmd(page, "project.open", { arg: "Project B" }).first().click();
+  await cmd(page, "chat.composer.stop").waitFor();
   assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 0);
   updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
   assert.equal(await page.locator("#chat-input").inputValue(), "");
-  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await cmd(page, "view.settings.open").click();
   await settingsPage("Software update");
   await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").waitFor();
-  assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true,
+  assert.equal(await cmd(page, "hub.update_apply").isDisabled(), true,
     "Project A's hidden draft blocks restart even though B's visible composer is empty");
-  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await cmd(page.getByRole("dialog"), "view.dialog.close").click();
   updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false };
   const attachmentPost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1);
   assert.equal(attachmentPost[2].content, "");
@@ -3805,18 +3908,20 @@ try {
   await readingTurn.locator(".chat-process__current").filter({ hasText: "Look through files" }).waitFor();
   assert.match(await readingTurn.locator(".chat-process__row").innerText(), /4 steps/);
   assert.equal(await readingTurn.locator(".chat-process__body").count(), 0);
+  await setDeveloperMode(true);
   await readingTurn.locator(".chat-process__row").click();
   const toolDetails = readingTurn.locator(".chat-process__technical");
   assert.equal(await toolDetails.getAttribute("open"), null);
   await toolDetails.locator("summary").click();
   assert.equal(await toolDetails.locator("li").filter({ hasText: "Read project files · in_progress" }).locator("pre").innerText(), "Synthetic tool diagnostics");
   await readingTurn.locator(".chat-process__row").click();
+  await setDeveloperMode(false);
   publicProgress.content += "\nThe opening comparison is ready to review.";
   publicProgress.status = "complete";
   emitRuntime();
   await progressCard.getByText("The opening comparison is ready to review.", { exact: false }).waitFor();
-  await page.getByRole("button", { name: "Hide tools", exact: true }).click();
-  await page.getByRole("button", { name: "Hide projects", exact: true }).first().click();
+  await clickLabelled(panelToggle(), "Hide tools");
+  await clickLabelled(cmd(page, "view.left_column.toggle").first(), "Hide projects");
   const originalViewport = page.viewportSize();
   for (const width of [1440, 900, 375]) {
     await page.setViewportSize({ width, height: 960 });
@@ -3832,13 +3937,13 @@ try {
     assert.ok(menuBox && menuBox.x >= 0 && menuBox.x + menuBox.width <= width, "the + menu fits the window at " + width + "px");
     await page.keyboard.press("Enter");
     await (await chooser).setFiles({ name: "next-turn.txt", mimeType: "text/plain", buffer: Buffer.from("Next turn attachment") });
-    await page.getByRole("button", { name: "Remove attachment: next-turn.txt", exact: true }).click();
+    await cmd(page, "chat.composer.remove_attachment", { arg: "next-turn.txt" }).click();
     await page.screenshot({ path: path.join(temporary, `chat-progress-upload-${width}.png`), fullPage: true });
   }
   await page.setViewportSize(originalViewport);
-  await page.getByRole("button", { name: "Show projects", exact: true }).first().click();
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
-  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await clickLabelled(cmd(page, "view.left_column.toggle").first(), "Show projects");
+  await cmd(page, "chat.composer.stop").click();
+  await cmd(page, "project.open", { arg: "Project A" }).first().click();
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
   assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["outline.txt"]);
   // Local validation leaves the already-selected draft untouched.
@@ -3858,18 +3963,18 @@ try {
   for (const session of sessions) session.status = "idle";
   await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
   await page.goto(origin);
-  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await cmd(page, "project.open", { arg: "Project A" }).first().click();
+  await railTool("view.tab.modeling").click();
   await waitWorkspace();
   await page.waitForFunction((runtimeId) => new URLSearchParams(location.search).get("runtimeId") === runtimeId, runtimes.get("D:\\fixture\\A").runtimeId);
-  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Project B" }).first().click();
   await page.waitForFunction(() => !new URLSearchParams(location.search).has("runtimeId"));
   await page.reload();
   await page.waitForFunction(() => document.querySelector('.chat-project[data-selected="true"] .chat-project__name')?.textContent === "Project B");
   assert.equal(await visibleWorkspace().count(), 0, "an unopened B workspace stays unopened after refreshing from A");
   // #295: opened straight from the conversation, Drawing has no surface to go
   // back to; leaving it closes the panel again and keeps the project selected.
-  const drawingsB = page.getByRole("button", { name: "Drawings", exact: true });
+  const drawingsB = railTool("view.drawings");
   await drawingsB.click();
   await waitWorkspace("drawing");
   assert.equal(await drawingsB.getAttribute("title"), "Close Drawings");
@@ -3877,21 +3982,21 @@ try {
   await page.waitForFunction(() => document.querySelector(".chat-shell")?.dataset.panel === "false");
   assert.equal(await drawingsB.getAttribute("aria-pressed"), "false");
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B");
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await railTool("view.tab.modeling").click();
   await waitWorkspace();
-  await page.getByRole("button", { name: "Fabrication", exact: true }).click();
+  await railTool("fab.prepare_parts.open").click();
   await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   await urlParamIs("runtimeId", null);
   await page.reload();
   await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("view=fab"));
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B");
-  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await railTool("view.usage.open").click();
   await waitMonitor();
   await page.reload();
   await waitMonitor();
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B",
     "restoring Monitor also retains its surrounding project navigation");
-  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await railTool("view.tab.board").click();
   await waitWorkspace("board");
   // A deliberate system-page link wins even with a retained headless model.
   runtimeB.retained = { projectId: "B", projectDir: runtimeB.projectDir, jobs: [], candidates: [headlessCandidate(newJob)] };
@@ -3902,13 +4007,13 @@ try {
   assert.equal(await scopeNow(), "All", "a direct Monitor link opens all projects");
   emitRuntime();
   await page.waitForTimeout(600);
-  assert.equal(await page.getByRole("button", { name: "Usage", exact: true }).getAttribute("aria-pressed"), "true",
+  assert.equal(await railTool("view.usage.open").getAttribute("aria-pressed"), "true",
     "a retained headless result never overrides an explicit Monitor deep link");
   runtimeB.retained = null; runtimeB.operations = []; emitRuntime();
   assert.equal(await page.getByRole("textbox", { name: "What would you like to do in this project?" }).isVisible(), true,
     "a legacy Monitor deep link opens a panel without replacing the conversation");
   const afterMonitorLink = documentLoads;
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await railTool("view.tab.modeling").click();
   await waitWorkspace();
   assert.equal(documentLoads, afterMonitorLink, "a legacy Monitor link can be left without navigating the document");
   // An explicit link is deliberate navigation, and overrides the previous B/Fab view.
@@ -3917,20 +4022,20 @@ try {
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project A");
   await contextReady();
   assert.equal(await visibleWorkspace().locator(".stage canvas").count(), 0, "Board-first context uses the same session without opening Arch");
-  assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal(await railTool("view.tab.board").getAttribute("aria-pressed"), "true");
   await urlParamIs("view", "board");
 
   // archive export and restore dialogs show the summary — a whole project
   // leaves and comes back as one file, and each dialog states what that file
   // actually holds rather than only that something was written.
-  await page.getByRole("button", { name: /Project A/ }).last().click();
+  await clickLabelled(cmd(page, "view.project_info.toggle"), "This project: Project A");
   const archiveCard = page.getByRole("dialog", { name: "Project", exact: true });
-  await archiveCard.getByRole("button", { name: "Export archive…" }).click();
+  await cmd(archiveCard, "project.archive.export").click();
   const exported = page.getByRole("dialog").filter({ hasText: "Export project archive" });
   await exported.getByText("Project A · Version 3").waitFor();
   // Explorer copies a path with its quotes; the API is given the plain path.
   await exported.getByLabel("Archive file").fill('"D:\\backups\\fixture-A.monkeyhub.zip"');
-  await exported.getByRole("button", { name: "Export", exact: true }).click();
+  await cmd(exported, "project.archive.export_confirm").click();
   await exported.getByText("Archive written").waitFor();
   assert.deepEqual(writes.at(-1).slice(0, 3), ["POST", "/api/project/archive/export",
     { projectDir: "D:\\fixture\\A", archivePath: "D:\\backups\\fixture-A.monkeyhub.zip" }]);
@@ -3941,30 +4046,30 @@ try {
   await exported.getByText("None", { exact: true }).waitFor();
   await exported.getByText("Verified by re-reading the archive").waitFor();
   await page.screenshot({ path: path.join(temporary, "archive-export.png") });
-  await exported.getByRole("button", { name: "Close", exact: true }).last().click();
+  await cmd(exported, "view.dialog.close").last().click();
 
-  await archiveCard.getByRole("button", { name: "Restore archive…" }).click();
+  await cmd(archiveCard, "project.archive.restore").click();
   const restored = page.getByRole("dialog").filter({ hasText: "Restore project archive" });
   assert.equal(await restored.getByLabel("Restore into folder").inputValue(), "D:\\fixture",
     "the restore target starts at the workspace new projects are made in");
   await restored.getByLabel("Archive file").fill("D:\\backups\\fixture-A.monkeyhub.zip");
-  await restored.getByRole("button", { name: "Restore", exact: true }).click();
+  await cmd(restored, "project.archive.restore_confirm").click();
   await restored.getByText("Project restored and verified through normal project readers").waitFor();
   assert.deepEqual(writes.at(-1).slice(0, 3), ["POST", "/api/project/archive/restore",
     { archivePath: "D:\\backups\\fixture-A.monkeyhub.zip", targetParent: "D:\\fixture" }]);
   await restored.getByText("D:\\fixture\\restored-demo").waitFor();
-  await restored.getByRole("button", { name: "Open restored project" }).waitFor();
+  await cmd(restored, "project.archive.open_restored").waitFor();
   await page.waitForFunction(() => [...document.querySelectorAll(".chat-project__name")]
     .some((item) => item.textContent === "restored-demo"));
   await page.screenshot({ path: path.join(temporary, "archive-restored.png") });
-  await restored.getByRole("button", { name: "Close", exact: true }).last().click();
-  await archiveCard.getByRole("button", { name: "Close", exact: true }).click();
+  await cmd(restored, "view.dialog.close").last().click();
+  await cmd(archiveCard, "view.dialog.close").click();
 
   // The user may reset model context without deleting the visible conversation.
   // Viewing a prior result stays separate from deliberately continuing it.
-  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Project A" }).first().click();
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
-  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await railTool("view.tab.modeling").click();
   await waitWorkspace();
   await contextReady();
   assert.equal(await page.locator('.chat-composer > .chat-muted').count(), 0,
@@ -3975,7 +4080,7 @@ try {
   await visibleWorkspace().locator('.vcard__export').filter({ hasText: "cand-A-1.3dm" }).click();
   await visibleWorkspace().locator(".stage__versions-toggle").click();
   await composerMenu().click();
-  const newTopic = page.getByRole("menuitemcheckbox", { name: "New topic", exact: true });
+  const newTopic = cmd(page, "chat.composer.topic");
   assert.equal(await newTopic.getAttribute("aria-checked"), "false");
   assert.equal(await newTopic.getAttribute("aria-description"), "The next message starts from the project state, without this conversation's context");
   await newTopic.click();
@@ -3984,7 +4089,7 @@ try {
   assert.equal(await topicChip.getAttribute("title"), "The next message starts a new model context from the saved editing state. This conversation stays visible.");
   assert.equal(await page.locator(".chat-composer .chat-topic-refusal").count(), 0, "a New topic with a saved state to start from has no refusal to show");
   // The chip is removable, and the menu shows the choice as checked while it stands.
-  await page.getByRole("button", { name: "Remove New topic", exact: true }).click();
+  await cmd(page, "chat.composer.remove_topic").click();
   await topicChip.waitFor({ state: "detached" });
   await composerMenu().click();
   await newTopic.click();
@@ -3994,22 +4099,22 @@ try {
   await page.getByRole("menu").waitFor({ state: "detached" });
   assert.ok(await composerMenu().evaluate((node) => node === document.activeElement), "Escape returns to the + button");
   await page.locator("#chat-input").fill("Compare the courtyard from the saved project state");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
-  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await cmd(page, "chat.composer.send").click();
+  await cmd(page, "chat.composer.stop").waitFor();
   const resetPost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2];
   assert.equal(resetPost.contextMode, "project");
   assert.equal(resetPost.designContext.sourceRunId, "home-A", "history browsing does not silently become the editing base");
   assert.equal(resetPost.designContext.stateDigest, workspaceFixture.projects.get("A").assets.get("home-A").dto.designStateDigest);
   await page.locator(".chat-message--user").getByText("Project context", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await cmd(page, "chat.composer.stop").click();
   await visibleWorkspace().locator(".stage__versions-toggle").click();
-  await visibleWorkspace().getByRole("button", { name: "Continue from here", exact: true }).click();
+  await cmd(visibleWorkspace(), "design.go_to_step.continue").click();
   await page.waitForFunction(() => document.querySelector('.chat-project-workspace:not([hidden]) .editing-base')?.dataset.sourceMatch === "same");
   await visibleWorkspace().locator(".stage__versions-toggle").click();
   assert.equal(await page.locator(".chat-composer .chat-topic").count(), 0, "New topic applies to one message");
   await page.locator("#chat-input").fill("Revise this candidate now");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
-  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await cmd(page, "chat.composer.send").click();
+  await cmd(page, "chat.composer.stop").waitFor();
   const continuePost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2];
   assert.equal(continuePost.contextMode, "stage", "the default checks for an accepted boundary without forcing a candidate reset");
   assert.equal(continuePost.designContext.sourceRunId, "cand-A-1", "explicit continuation changes the bound context");
@@ -4017,18 +4122,18 @@ try {
   assert.equal(await page.locator(".chat-message--user").count(), 2, "starting model context retains the visible chat");
   assert.equal(await page.getByText("Continuing from confirmed stage:", { exact: false }).count(), 0,
     "requesting automatic handoff alone does not label a candidate as accepted");
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await cmd(page, "chat.composer.stop").click();
 
   await page.reload();
   await waitWorkspace();
   await contextReady();
   await page.locator("#chat-input").fill("Continue the saved candidate after reopening");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
-  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await cmd(page, "chat.composer.send").click();
+  await cmd(page, "chat.composer.stop").waitFor();
   const reopenedPost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2];
   assert.equal(reopenedPost.designContext.sourceRunId, "cand-A-1", "reopening retains the explicitly chosen candidate as the chat base");
   assert.equal(reopenedPost.designContext.stateDigest, continuePost.designContext.stateDigest);
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await cmd(page, "chat.composer.stop").click();
 
   // The Runtime/ChatStore tests verify acceptance and rotation. Here the UI
   // receives the actual confirmed boundary, not a client-inferred acceptance.
@@ -4036,13 +4141,13 @@ try {
   assert.equal(await page.locator('.chat-composer > .chat-muted').count(), 0,
     "stage handoff works without a permanent explanatory caption");
   await page.locator("#chat-input").fill("Continue with the walls from the confirmed massing");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
-  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await cmd(page, "chat.composer.send").click();
+  await cmd(page, "chat.composer.stop").waitFor();
   const stagePost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2];
   assert.equal(stagePost.contextMode, "stage");
   assert.equal(stagePost.designContext.sourceRunId, "cand-A-1");
   await page.getByText("Continuing from confirmed stage: Massing approved", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await cmd(page, "chat.composer.stop").click();
   await page.reload();
   await page.getByText("Continuing from confirmed stage: Massing approved", { exact: true }).waitFor();
   await page.waitForFunction(() => document.querySelectorAll(".chat-message--user").length === 4);
@@ -4087,6 +4192,7 @@ try {
   assert.equal(await lastRow.getAttribute("aria-expanded"), "false", "a finished turn starts folded");
   await page.locator(".chat-message--assistant").filter({ hasText: "revision 12" }).waitFor();
   assert.equal(await page.getByText("studio_request · GET /api/board · completed").count(), 0, "raw request lines stay out of the conversation");
+  await setDeveloperMode(true);
   const rowTop = () => lastRow.evaluate((node) => node.getBoundingClientRect().top);
   const beforeOpen = await rowTop();
   await lastRow.click();
@@ -4104,6 +4210,7 @@ try {
   assert.equal(await lastTurn.locator(".chat-process__body").count(), 0, "folding leaves no space behind");
   assert.ok(Math.abs(await rowTop() - beforeFold) < 1 || await longList.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight < 2),
     "folding keeps the row in place unless the list ends above it");
+  await setDeveloperMode(false);
   // A turn in the middle of the conversation opens and folds in place as well.
   const middleRow = page.locator(".chat-process").nth(5).locator(".chat-process__row");
   await middleRow.evaluate((node) => node.scrollIntoView({ block: "center", behavior: "instant" }));
@@ -4115,7 +4222,7 @@ try {
   assert.ok(Math.abs(await middleTop() - middleBefore) < 1, "folding a middle turn keeps it where it was");
   // Switching away and back lands at the latest message again, folded.
   await lastRow.click();
-  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Project B" }).first().click();
   await page.locator(".chat-thread").filter({ hasText: "Long review" }).click();
   await page.locator(".chat-header h1").filter({ hasText: "Long review" }).waitFor();
   await atLatest();
@@ -4160,9 +4267,9 @@ try {
   emitRuntime();
   await page.waitForFunction(() => !document.querySelector('.chat-process[data-running="true"]'));
   // The same conversation in Chinese, at desktop and phone widths.
-  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await cmd(page, "view.settings.open").click();
   await page.locator("#language").selectOption("zh-CN");
-  await page.getByRole("dialog").getByRole("button", { name: "关闭", exact: true }).click();
+  await clickLabelled(cmd(page.getByRole("dialog"), "view.dialog.close"), "关闭");
   await atLatest();
   assert.equal((await lastRow.innerText()).replace(/\s+/g, " ").trim(), "用时 1分30秒 · 4 步 · 1 步失败");
   await lastRow.click();
@@ -4173,17 +4280,17 @@ try {
   assert.equal(await jump.getAttribute("aria-label"), "跳到最新消息");
   await page.screenshot({ path: path.join(temporary, "process-zh-1440.png") });
   await page.setViewportSize({ width: 375, height: 812 });
-  if (await page.getByRole("button", { name: "收起项目栏", exact: true }).first().isVisible()) {
-    await page.getByRole("button", { name: "收起项目栏", exact: true }).first().click();
+  if (await cmd(page, "view.left_column.toggle").first().isVisible() && await commandLabel(cmd(page, "view.left_column.toggle").first()) === "收起项目栏") {
+    await cmd(page, "view.left_column.toggle").first().click();
   }
   await page.screenshot({ path: path.join(temporary, "process-zh-375.png") });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "no sideways scroll at 375 px");
   await page.setViewportSize({ width: 1440, height: 960 });
-  await page.getByRole("button", { name: "展开项目栏", exact: true }).first().click();
+  await clickLabelled(cmd(page, "view.left_column.toggle").first(), "展开项目栏");
   await lastRow.click();
-  await page.getByRole("button", { name: "Hub 设置", exact: true }).click();
+  await clickLabelled(cmd(page, "view.settings.open"), "Hub 设置");
   await page.locator("#language").selectOption("en");
-  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await clickLabelled(cmd(page.getByRole("dialog"), "view.dialog.close"), "Close");
 
   // #300: Tasks lists the Agent work running or waiting in every open project,
   // and opens its project and conversation; project rows carry a running badge.
@@ -4200,12 +4307,12 @@ try {
   await page.waitForFunction(() => document.querySelector(".chat-tasks-toggle .chat-count")?.textContent === "2");
   assert.equal(await tasksEntry.getAttribute("aria-expanded"), "false", "Tasks starts folded");
   assert.match(await tasksEntry.innerText(), /^Tasks/);
-  const projectBadge = (name) => page.locator(".chat-project__head").filter({ has: page.getByRole("button", { name, exact: true }) }).locator('.chat-project__badge[data-kind="running"]');
+  const projectBadge = (name) => page.locator(".chat-project__head").filter({ has: cmd(page, "project.open", { arg: name, includeHidden: true }) }).locator('.chat-project__badge[data-kind="running"]');
   await projectBadge("Project B").waitFor();
   await projectBadge("Project A").waitFor();
   assert.equal(await projectBadge("harbour-study").count(), 0, "an idle project has no badge");
   assert.equal(await page.locator('.chat-project__badge[data-kind="new"]').count(), 0, "no new-schemes number is guessed before #294");
-  assert.equal(await page.getByRole("button", { name: "Project B", exact: true }).first().getAttribute("aria-description"), "1 task running or waiting");
+  assert.equal(await cmd(page, "project.open", { arg: "Project B" }).first().getAttribute("aria-description"), "1 task running or waiting");
   await tasksEntry.click();
   const taskList = page.getByRole("list", { name: "Tasks", exact: true });
   assert.deepEqual(await taskList.locator(".chat-task__title").allInnerTexts(), [bChat.title, "Make a drawing sheet"]);
@@ -4233,7 +4340,7 @@ try {
   // A ready update is one click from Software Update.
   updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
   await page.reload();
-  const updateEntry = page.getByRole("button", { name: "New version ready", exact: true });
+  const updateEntry = cmd(page, "hub.update_check");
   await updateEntry.waitFor();
   await page.locator(".chat-sidebar").screenshot({ path: path.join(temporary, "sidebar-footer-en.png") });
   await updateEntry.click();
@@ -4246,7 +4353,7 @@ try {
     return box.top >= frame.top - 1 && box.bottom <= frame.bottom + 1;
   });
   updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false };
-  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await cmd(page.getByRole("dialog"), "view.dialog.close").click();
   await updateEntry.waitFor({ state: "detached" });
   // The footer's usage opens the Usage tool.
   await usageEntry.click();
@@ -4254,16 +4361,16 @@ try {
   // A Layout link still lands on Layout, with Board pressed in the rail.
   await page.goto(`${origin}/?${new URLSearchParams({ runtimeId: tasksB.runtimeId, view: "publish" })}`);
   await visibleWorkspace().getByLabel("Publication title", { exact: true }).waitFor();
-  assert.equal(await visibleWorkspace().getByRole("radio", { name: "Layout", exact: true }).getAttribute("aria-checked"), "true");
-  assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal(await cmd(visibleWorkspace(), "view.tab.layout").getAttribute("aria-checked"), "true");
+  assert.equal(await railTool("view.tab.board").getAttribute("aria-pressed"), "true");
   // The same sidebar in Chinese, at desktop and phone widths.
   tasksB.operations.push({ operationId: "task-running-zh", projectId: "B", kind: "POST /api/proposals/prop-9/candidate", source: "hub",
     status: "executing", committed: false, sessionId: bChat.id });
   emitRuntime();
-  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await cmd(page, "view.settings.open").click();
   await page.locator("#language").selectOption("zh-CN");
-  await page.getByRole("dialog").getByRole("button", { name: "关闭", exact: true }).click();
-  await page.getByRole("button", { name: "收起工具", exact: true }).click();
+  await clickLabelled(cmd(page.getByRole("dialog"), "view.dialog.close"), "关闭");
+  await clickLabelled(panelToggle(), "收起工具");
   await tasksEntry.click();
   await page.getByRole("list", { name: "任务", exact: true }).locator(".chat-task small").filter({ hasText: "Project B · 进行中 · 生成方案" }).waitFor();
   await page.waitForFunction(() => document.querySelector(".chat-usage")?.getAttribute("aria-label") === "用量：近 7 天 8,510 tokens");
@@ -4271,16 +4378,16 @@ try {
   assert.equal(await projectBadge("Project B").innerText(), "运行中");
   await page.screenshot({ path: path.join(temporary, "sidebar-zh-1440.png") });
   await page.setViewportSize({ width: 375, height: 812 });
-  if (!(await page.locator(".chat-sidebar").isVisible())) await page.getByRole("button", { name: "展开项目栏", exact: true }).first().click();
+  if (!(await page.locator(".chat-sidebar").isVisible())) await clickLabelled(cmd(page, "view.left_column.toggle").first(), "展开项目栏");
   await page.screenshot({ path: path.join(temporary, "sidebar-zh-375.png") });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "no sideways scroll at 375 px");
   await page.setViewportSize({ width: 1440, height: 960 });
   await tasksEntry.click();
   tasksB.operations = tasksB.operations.filter((row) => row.operationId !== "task-running-zh");
   emitRuntime();
-  await page.getByRole("button", { name: "Hub 设置", exact: true }).click();
+  await clickLabelled(cmd(page, "view.settings.open"), "Hub 设置");
   await page.locator("#language").selectOption("en");
-  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await clickLabelled(cmd(page.getByRole("dialog"), "view.dialog.close"), "Close");
 
   // #285, on a project whose runtime has a Design Tree. DC-9: the composer names what the
   // next message changes and where Current stands, as the Stage chip does, and says so
@@ -4288,7 +4395,7 @@ try {
   projects.push({ projectId: "T", projectDir: "D:\\fixture\\T", name: "Tree project", chatCount: 0, version: 2, stage: "S2" });
   workspaceFixture.designTrees.set("T", { stages: ["tree-s0", "tree-s1", "tree-s2"], edits: ["tree-e2", "tree-e1"] });
   emitRuntime();
-  await page.getByRole("button", { name: "Tree project", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Tree project" }).first().click();
   await studioReady();
   await contextReady();
   const target = page.locator(".chat-composer .chat-target");
@@ -4296,17 +4403,17 @@ try {
   assert.equal(await target.getAttribute("data-viewing"), "false");
   assert.equal(await page.locator("#chat-input").getAttribute("aria-describedby"), "chat-target", "the input is described by what it changes");
   assert.doesNotMatch(await target.innerText(), /tree-|project:\/\/|[0-9a-f]{12}/, "the target label shows no raw ids");
-  await page.getByRole("button", { name: "Design tree", exact: true }).click();
+  await railTool("view.design_tree.open").click();
   const treeSurface = visibleWorkspace().locator(".design-tree");
   await treeSurface.waitFor();
   // #337: the tree's menus sit in the project bar.
-  await visibleWorkspace().locator(".project-bar").getByRole("button", { name: "List", exact: true }).click();
+  await cmd(visibleWorkspace().locator(".project-bar"), "view.design_tree.list").click();
   await treeSurface.locator('[role="treeitem"][data-node="stage:project://T/runs/tree-s0/review/design-stage.json"]').click();
-  await treeSurface.getByRole("button", { name: "View", exact: true }).click();
+  await cmd(treeSurface, "candidate.compare.view").click();
   await target.locator(".chat-target__viewing").filter({ hasText: "Viewing S0; this message still changes Current" }).waitFor();
   assert.equal(await target.getAttribute("data-viewing"), "true");
   assert.equal(await target.locator(".chat-target__text").innerText(), "Changes: Current · 3 edits after S2");
-  await visibleWorkspace().getByRole("button", { name: "Back to Current", exact: true }).click();
+  await cmd(visibleWorkspace(), "design.go_to_step.back_to_current").click();
   await target.locator(".chat-target__viewing").waitFor({ state: "detached" });
   assert.equal(await target.getAttribute("data-viewing"), "false");
   // PP-3: a send says Sending… while its message is on the way; connecting a project keeps its own words.
@@ -4314,13 +4421,13 @@ try {
   chatMessageResponseGate = new Promise((resolve) => { releaseSend = resolve; });
   await page.locator("#chat-input").fill("Widen the reading room by one bay");
   const heldSend = page.waitForRequest((req) => req.method() === "POST" && new URL(req.url()).pathname.endsWith("/messages"));
-  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await cmd(page, "chat.composer.send").click();
   await heldSend;
   await page.waitForFunction(() => document.querySelector(".chat-composer-note")?.textContent === "Sending…");
   releaseSend(); chatMessageResponseGate = Promise.resolve();
-  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await cmd(page, "chat.composer.stop").waitFor();
   await page.waitForFunction(() => document.querySelector(".chat-composer-note")?.textContent === "");
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await cmd(page, "chat.composer.stop").click();
   // SS-9: unsent text is kept per conversation in this browser and comes back after a
   // reload; it no longer holds the update restart (chosen files still do). Sending clears it.
   const treeChat = sessions.find((row) => row.projectId === "T");
@@ -4330,18 +4437,18 @@ try {
   await page.reload();
   await page.waitForFunction(() => document.querySelector("#chat-input")?.value === "Keep this sentence through a reload");
   updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
-  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await cmd(page, "view.settings.open").click();
   await settingsPage("Software update");
-  await page.getByRole("button", { name: "Restart to update", exact: true }).waitFor();
+  await cmd(page, "hub.update_apply").waitFor();
   assert.equal(await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").count(), 0,
     "kept text alone does not hold the update restart");
-  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await cmd(page.getByRole("dialog"), "view.dialog.close").click();
   updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false };
   assert.equal(appliedPatches, 0);
-  await page.getByRole("button", { name: "Send", exact: true }).click();
-  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await cmd(page, "chat.composer.send").click();
+  await cmd(page, "chat.composer.stop").waitFor();
   assert.equal(await keptDraft(treeChat.id), null, "a sent message leaves no kept draft");
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await cmd(page, "chat.composer.stop").click();
 
   // #285: the unfinished-operation notice names the operation and when it was asked for,
   // links the chat that asked, and Dismiss is recorded with the operation in the Hub
@@ -4364,22 +4471,22 @@ try {
   await notice.locator("p").filter({ hasText: "An operation did not complete" }).waitFor();
   assert.equal(await notice.locator("small").innerText(), `Make a drawing sheet · ${askedAt} · 2 more`);
   assert.doesNotMatch(await notice.innerText(), /sheet-failed|POST|\/api\//, "the notice names the operation in words, not its id or route");
-  await notice.getByRole("button", { name: "Open chat: Earlier drawing request", exact: true }).click();
+  await cmd(notice, "chat.open_conversation", { arg: "tree-earlier" }).click();
   await page.locator(".chat-header h1").filter({ hasText: "Earlier drawing request" }).waitFor();
-  assert.equal(await notice.getByRole("button", { name: /^Open chat/ }).count(), 0, "the chat it came from is the one on screen");
+  assert.equal(await cmd(notice, "chat.open_conversation").count(), 0, "the chat it came from is the one on screen");
   const beforeDismiss = writes.length;
-  await notice.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await cmd(notice, "view.notice.dismiss").click();
   await notice.locator("p").filter({ hasText: "An operation has an outdated base" }).waitFor();
   assert.equal(await notice.locator("small").innerText(), "Draft a model change · 1 more");
   assert.deepEqual(writes.slice(beforeDismiss).filter(([, pathname]) => pathname.includes("/acknowledge")),
     [["POST", "/api/runtime/operations/sheet-failed/acknowledge", { runtimeId: runtimeT.runtimeId, projectId: "T" }, null]]);
   await page.reload();
   await notice.locator("p").filter({ hasText: "An operation has an outdated base" }).waitFor();
-  await notice.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await cmd(notice, "view.notice.dismiss").click();
   await notice.locator("p").filter({ hasText: "An operation needs recovery review" }).waitFor();
   assert.equal(await notice.locator("small").innerText(), `Generate a scheme · ${await page.evaluate(() => new Date("2026-09-25T05:00:00Z")
     .toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }))}`);
-  assert.equal(await notice.getByRole("button", { name: "Dismiss", exact: true }).count(), 0, "one that needs recovery cannot be dismissed");
+  assert.equal(await cmd(notice, "view.notice.dismiss").count(), 0, "one that needs recovery cannot be dismissed");
   assert.ok(runtimeT.operations.filter((row) => row.status !== "needs_recovery").every((row) => row.acknowledgedAt));
   // GH-58: one the Hub marks unrecoverable says so beside Dismiss, and once dismissed it leaves; the
   // one that can still be recovered stays without Dismiss. Rows that say nothing keep today's rule.
@@ -4389,7 +4496,7 @@ try {
   const unrecoverableNote = notice.getByText("Cannot be recovered automatically", { exact: true });
   await unrecoverableNote.waitFor();
   assert.equal(await notice.locator("p").innerText(), "An operation needs recovery review");
-  const dismissLost = notice.getByRole("button", { name: "Dismiss", exact: true });
+  const dismissLost = cmd(notice, "view.notice.dismiss");
   assert.equal(await dismissLost.getAttribute("aria-describedby"), await unrecoverableNote.getAttribute("id"), "Dismiss is described by why");
   const beforeLost = writes.length;
   await dismissLost.click();
@@ -4397,58 +4504,58 @@ try {
   assert.deepEqual(writes.slice(beforeLost).filter(([, pathname]) => pathname.includes("/acknowledge")).map(([, pathname]) => pathname),
     ["/api/runtime/operations/candidate-lost/acknowledge"]);
   await notice.locator("p").filter({ hasText: "An operation needs recovery review" }).waitFor();
-  assert.equal(await notice.getByRole("button", { name: "Dismiss", exact: true }).count(), 0, "the one that can still be recovered stays");
+  assert.equal(await cmd(notice, "view.notice.dismiss").count(), 0, "the one that can still be recovered stays");
 
   // The same composer states and notice in Chinese, for review.
-  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await cmd(page, "view.settings.open").click();
   await page.locator("#language").selectOption("zh-CN");
-  await page.getByRole("dialog").getByRole("button", { name: "关闭", exact: true }).click();
+  await clickLabelled(cmd(page.getByRole("dialog"), "view.dialog.close"), "关闭");
   runtimeT.operations.push({ operationId: "sheet-failed-again", projectId: "T", kind: "POST /api/drawings/sheets", source: "chat",
     status: "failed", committed: false, admissionSequence: 4, createdAt: sheetAskedAt, sessionId: treeChat.id });
   emitRuntime();
   const askedAtZh = await page.evaluate((value) => new Date(value).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), sheetAskedAt);
   await notice.locator("p").filter({ hasText: "有操作未完成" }).waitFor();
   assert.equal(await notice.locator("small").innerText(), `出图 · ${askedAtZh} · 另有 1 个`);
-  await notice.getByRole("button", { name: `打开对话: ${treeChat.title}`, exact: true }).waitFor();
-  await notice.getByRole("button", { name: "知道了", exact: true }).waitFor();
+  await waitForCommandLabel(cmd(notice, "chat.open_conversation", { arg: treeChat.id }), `打开对话: ${treeChat.title}`);
+  await waitForCommandLabel(cmd(notice, "view.notice.dismiss"), "知道了");
   await contextReady();
   await page.locator(".chat-composer .chat-target").filter({ hasText: "将修改：当前 · S2 之后 3 次修改" }).waitFor();
   // A loading model's status shows through a hidden panel (BilingualText sets visibility: visible); wait it out.
   const modelSettled = () => page.waitForFunction(() => !document.querySelector(".chat-browser")?.innerText.includes("Parsing"));
   await modelSettled();
-  if (await page.getByRole("button", { name: "收起工具", exact: true }).count()) await page.getByRole("button", { name: "收起工具", exact: true }).click();
+  if (await panelToggle().count() && await commandLabel(panelToggle()) === "收起工具") await panelToggle().click();
   await page.locator(".chat-main").screenshot({ path: path.join(temporary, "composer-notice-zh.png") });
-  await composerMenu("附件与新话题").click();
-  await page.getByRole("menuitemcheckbox", { name: "新话题", exact: true }).waitFor();
+  await clickLabelled(composerMenu(), "附件与新话题");
+  await waitForCommandLabel(cmd(page, "chat.composer.topic"), "新话题");
   await page.locator(".chat-main").screenshot({ path: path.join(temporary, "composer-menu-zh.png") });
-  await page.getByRole("menuitemcheckbox", { name: "新话题", exact: true }).click();
+  await clickLabelled(cmd(page, "chat.composer.topic"), "新话题");
   await page.locator(".chat-composer .chat-topic").filter({ hasText: "新话题" }).waitFor();
-  await page.getByRole("button", { name: "状态树", exact: true }).click();
+  await clickLabelled(railTool("view.design_tree.open"), "状态树");
   const treeSurfaceZh = visibleWorkspace().locator(".design-tree");
-  await visibleWorkspace().locator(".project-bar").getByRole("button", { name: "列表", exact: true }).click();
+  await clickLabelled(cmd(visibleWorkspace().locator(".project-bar"), "view.design_tree.list"), "列表");
   await treeSurfaceZh.locator('[role="treeitem"][data-node="stage:project://T/runs/tree-s0/review/design-stage.json"]').click();
-  await treeSurfaceZh.getByRole("button", { name: "查看", exact: true }).click();
+  await clickLabelled(cmd(treeSurfaceZh, "candidate.compare.view"), "查看");
   await page.locator(".chat-composer .chat-target__viewing").filter({ hasText: "正在查看 S0，这条消息仍会修改当前" }).waitFor();
   await visibleWorkspace().locator(".boot").waitFor({ state: "hidden" });
   await modelSettled();
-  await page.getByRole("button", { name: "收起工具", exact: true }).click();
+  await clickLabelled(panelToggle(), "收起工具");
   await page.locator(".chat-main").screenshot({ path: path.join(temporary, "composer-viewing-topic-zh.png") });
-  await page.getByRole("button", { name: "展开工具", exact: true }).click();
-  await visibleWorkspace().getByRole("button", { name: "回到当前", exact: true }).click();
+  await clickLabelled(panelToggle(), "展开工具");
+  await clickLabelled(cmd(visibleWorkspace(), "design.go_to_step.back_to_current"), "回到当前");
   await page.locator(".chat-composer .chat-target__viewing").waitFor({ state: "detached" });
-  await page.getByRole("button", { name: "移除新话题", exact: true }).click();
-  await page.getByRole("button", { name: "收起工具", exact: true }).click();
+  await clickLabelled(cmd(page, "chat.composer.remove_topic"), "移除新话题");
+  await clickLabelled(panelToggle(), "收起工具");
   let releaseZhSend;
   chatMessageResponseGate = new Promise((resolve) => { releaseZhSend = resolve; });
   await page.locator("#chat-input").fill("把阅览室加宽一跨");
   const heldZhSend = page.waitForRequest((req) => req.method() === "POST" && new URL(req.url()).pathname.endsWith("/messages"));
-  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await clickLabelled(cmd(page, "chat.composer.send"), "发送");
   await heldZhSend;
   await page.waitForFunction(() => document.querySelector(".chat-composer-note")?.textContent === "发送中…");
   await page.locator(".chat-main").screenshot({ path: path.join(temporary, "composer-sending-zh.png") });
   releaseZhSend(); chatMessageResponseGate = Promise.resolve();
-  await page.getByRole("button", { name: "停止", exact: true }).waitFor();
-  await page.getByRole("button", { name: "停止", exact: true }).click();
+  await waitForCommandLabel(cmd(page, "chat.composer.stop"), "停止");
+  await clickLabelled(cmd(page, "chat.composer.stop"), "停止");
   runtimeT.operations = []; emitRuntime();
   await notice.waitFor({ state: "detached" });
 
@@ -4476,7 +4583,7 @@ try {
   await notice.getByText("无法自动恢复", { exact: true }).waitFor();
   assert.equal(await notice.locator("p").innerText(), "有操作需要检查恢复结果");
   await page.locator(".chat-main").screenshot({ path: path.join(temporary, "operation-unrecoverable-zh.png") });
-  await notice.getByRole("button", { name: "知道了", exact: true }).click();
+  await clickLabelled(cmd(notice, "view.notice.dismiss"), "知道了");
   await notice.waitFor({ state: "detached" });
 
   // FN-2: a conversation waiting on the architect's permission is marked 需要你 in words and colour,
@@ -4490,9 +4597,9 @@ try {
   const waitingRowZh = page.locator(".chat-thread-row").filter({ hasText: waitingChat.title });
   await waitingRowZh.locator(".chat-needs").filter({ hasText: /^需要你$/ }).waitFor();
   assert.equal(await waitingRowZh.locator(".chat-thread").getAttribute("aria-description"), "需要你的授权");
-  const treeHead = page.locator(".chat-project__head").filter({ has: page.getByRole("button", { name: "Tree project", exact: true }) });
+  const treeHead = page.locator(".chat-project__head").filter({ has: cmd(page, "project.open", { arg: "Tree project", includeHidden: true }) });
   assert.equal(await treeHead.locator('.chat-project__badge[data-kind="needs"]').innerText(), "需要你");
-  assert.match(await treeHead.getByRole("button", { name: "Tree project", exact: true }).getAttribute("aria-description"), /1 个对话需要你$/);
+  assert.match(await cmd(treeHead, "project.open", { arg: "Tree project" }).getAttribute("aria-description"), /1 个对话需要你$/);
   // The notice layer announces the same moment; it is only waited for here, for the picture.
   await page.locator('.attention-toast[data-kind="permission"]').waitFor({ timeout: 6000 }).catch(() => {});
   await treeHead.scrollIntoViewIfNeeded();
@@ -4508,24 +4615,24 @@ try {
   projects.push({ projectId: "S", projectDir: "D:\\fixture\\S", name: "Slow project", chatCount: 0, version: 0, stage: null });
   studioStartHold = { held: [] };
   emitRuntime();
-  await page.getByRole("button", { name: "Slow project", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Slow project" }).first().click();
   for (const until = Date.now() + 12000; !studioStartHold.held.length; await page.waitForTimeout(50)) {
     if (Date.now() > until) assert.fail("the project service was never asked to start");
   }
-  const modelingZh = page.getByRole("button", { name: "建模", exact: true }), skeletonZh = page.locator(".chat-skeleton");
-  await modelingZh.click();
+  const modelingZh = railTool("view.tab.modeling"), skeletonZh = page.locator(".chat-skeleton");
+  await clickLabelled(modelingZh, "建模");
   await skeletonZh.waitFor();
   assert.equal(await skeletonZh.locator("h2").innerText(), "建模");
   await skeletonZh.getByText("正在启动项目服务…", { exact: true }).waitFor();
   assert.equal(await modelingZh.getAttribute("aria-pressed"), "true");
   assert.equal(await modelingZh.getAttribute("aria-busy"), "true");
   assert.equal(await modelingZh.getAttribute("aria-description"), "取消打开建模");
-  assert.equal(await skeletonZh.getByRole("button", { name: "取消", exact: true }).count(), 0, "no Cancel in the first 3 s");
-  await skeletonZh.getByRole("button", { name: "取消", exact: true }).waitFor();
+  assert.equal(await cmd(skeletonZh, "view.tab.cancel").count(), 0, "no Cancel in the first 3 s");
+  await waitForCommandLabel(cmd(skeletonZh, "view.tab.cancel"), "取消");
   assert.match(await skeletonZh.locator(".chat-skeleton__slow").innerText(), /^已等待 \d+秒/);
   await page.screenshot({ path: path.join(temporary, "tool-skeleton-zh.png") });
   const beforeCancel = writes.length;
-  await skeletonZh.getByRole("button", { name: "取消", exact: true }).click();
+  await clickLabelled(cmd(skeletonZh, "view.tab.cancel"), "取消");
   await skeletonZh.waitFor({ state: "detached" });
   assert.equal(await page.locator(".chat-shell").getAttribute("data-panel"), "false", "Cancel returns to the conversation the tool was opened from");
   assert.equal(await modelingZh.getAttribute("aria-pressed"), "false");
@@ -4538,7 +4645,7 @@ try {
 
   // NA-2: below 900 px the chat header stays above an open panel and names the project; the Stage chip
   // is in whichever header is on top: the project surface's own bar when one is open, else this header.
-  await page.getByRole("button", { name: "Tree project", exact: true }).first().click();
+  await cmd(page, "project.open", { arg: "Tree project" }).first().click();
   const onTop = (locator) => locator.evaluate((node) => {
     const box = node.getBoundingClientRect();
     if (!box.width || !box.height) return false;
@@ -4549,15 +4656,15 @@ try {
   const barChip = visibleWorkspace().locator(".stage-chip");
   for (const [width, height] of [[800, 900], [390, 844]]) {
     await page.setViewportSize({ width, height });
-    if (await page.locator(".chat-sidebar").isVisible()) await page.getByRole("button", { name: "收起项目栏", exact: true }).first().click();
-    if (await page.locator(".chat-shell").getAttribute("data-panel") === "true") await page.getByRole("button", { name: "收起工具", exact: true }).click();
+    if (await page.locator(".chat-sidebar").isVisible()) await clickLabelled(cmd(page, "view.left_column.toggle").first(), "收起项目栏");
+    if (await page.locator(".chat-shell").getAttribute("data-panel") === "true") await clickLabelled(panelToggle(), "收起工具");
     await headerChipZh.waitFor();
     assert.equal(await headerProject.innerText(), "Tree project");
     const chipWords = await headerChipZh.innerText();
     assert.match(chipWords, /^S2\b.* · 当前$/);
     assert.ok(await onTop(headerProject) && await onTop(headerChipZh), `${width} px: the conversation's header names the project and carries the chip`);
     if (width === 390) await page.screenshot({ path: path.join(temporary, "narrow-chat-390-zh.png") });
-    await page.getByRole("button", { name: "建模", exact: true }).click();
+    await clickLabelled(railTool("view.tab.modeling"), "建模");
     await waitWorkspace();
     await barChip.waitFor();
     assert.equal(await headerChipZh.count(), 0, `${width} px: one chip on screen`);
@@ -4566,23 +4673,24 @@ try {
     assert.ok(await onTop(barChip), `${width} px: the Stage chip stays in view over Modeling`);
     await page.screenshot({ path: path.join(temporary, `narrow-modeling-${width}-zh.png`) });
     // Over a Tool without a project bar the chip is back in the header; IA-6 then returns to Modeling.
-    await page.getByRole("button", { name: "用量", exact: true }).click();
+    await clickLabelled(railTool("view.usage.open"), "用量");
     await page.locator(".chat-browser .monitor-page").waitFor();
     await headerChipZh.waitFor();
     assert.ok(await onTop(headerProject) && await onTop(headerChipZh), `${width} px: over Usage the chip is in the header`);
-    await page.getByRole("button", { name: "用量", exact: true }).click();
+    await clickLabelled(railTool("view.usage.open"), "用量");
     await waitWorkspace();
-    await page.getByRole("button", { name: "收起工具", exact: true }).click();
+    await clickLabelled(panelToggle(), "收起工具");
   }
   // The header's chip opens the Design Tree, as the chip does.
   await headerChipZh.click();
   await visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])').waitFor();
-  assert.equal(await page.getByRole("button", { name: "状态树", exact: true }).getAttribute("aria-pressed"), "true");
+  await waitForCommandLabel(railTool("view.design_tree.open"), "状态树");
+  assert.equal(await railTool("view.design_tree.open").getAttribute("aria-pressed"), "true");
   await page.setViewportSize({ width: 1440, height: 960 });
-  await page.getByRole("button", { name: "展开项目栏", exact: true }).first().click();
-  await page.getByRole("button", { name: "Hub 设置", exact: true }).click();
+  await clickLabelled(cmd(page, "view.left_column.toggle").first(), "展开项目栏");
+  await clickLabelled(cmd(page, "view.settings.open"), "Hub 设置");
   await page.locator("#language").selectOption("en");
-  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await clickLabelled(cmd(page.getByRole("dialog"), "view.dialog.close"), "Close");
 
   // With no building project, machine tools remain available and report a
   // missing dependency directly instead of asking the person to bind Studio.
@@ -4593,17 +4701,17 @@ try {
     error: { code: "FAB_UNAVAILABLE", detail: "MonkeyFab fixture dependency is missing." } });
   await page.reload();
   await page.waitForFunction(() => document.querySelector('.chat-rail__tool[aria-label="Fabrication"]')?.textContent.includes("Unavailable"));
-  assert.equal(await page.getByRole("button", { name: "Modeling", exact: true }).isDisabled(), true);
-  assert.equal(await page.getByRole("button", { name: "Fabrication", exact: true }).isEnabled(), true);
+  assert.equal(await railTool("view.tab.modeling").isDisabled(), true);
+  assert.equal(await railTool("fab.prepare_parts.open").isEnabled(), true);
   const beforeNoProject = writes.length;
-  await page.getByRole("button", { name: "Fabrication", exact: true }).click();
+  await railTool("fab.prepare_parts.open").click();
   await page.locator(".chat-error").filter({ hasText: "MonkeyFab fixture dependency is missing." }).waitFor();
-  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await railTool("view.usage.open").click();
   await waitMonitor();
   assert.ok(writes.slice(beforeNoProject).every(([, pathname]) => ["/api/apps/monkeyfab/start", "/api/apps/monkeymonitor/start"].includes(pathname)));
   await page.reload();
   await waitMonitor();
-  assert.equal(await page.getByRole("button", { name: "Modeling", exact: true }).isDisabled(), true,
+  assert.equal(await railTool("view.tab.modeling").isDisabled(), true,
     "restoring the system Monitor panel does not require or invent a project");
   } else {
     await page.goto(origin);
@@ -4611,22 +4719,22 @@ try {
     // A fresh page: reloading would follow the address's link to Project D's Modeling, which
     // selects D again until it has opened, and could undo the click on Project A below.
     await page.goto(origin);
-    await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+    await cmd(page, "project.open", { arg: "Project A" }).first().click();
     await page.waitForFunction(() => document.querySelector("#chat-input") && !document.querySelector("#chat-input").disabled);
     await page.waitForFunction(() => document.querySelector(".chat-header__project")?.textContent === "Project A");
     await page.locator("#chat-input").fill("Keep this hidden project draft");
     await page.locator('.chat-composer input[type="file"]').setInputFiles({ name: "keep.txt", mimeType: "text/plain", buffer: Buffer.from("Retain these exact draft bytes") });
-    await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+    await cmd(page, "project.open", { arg: "Project B" }).first().click();
     await page.waitForFunction(() => document.querySelector("#chat-input")?.value === "");
     assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 0);
     updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
-    await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+    await cmd(page, "view.settings.open").click();
     await settingsPage("Software update");
     await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").waitFor();
-    assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true);
+    assert.equal(await cmd(page, "hub.update_apply").isDisabled(), true);
     assert.equal(appliedPatches, 0);
-    await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
-    await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+    await cmd(page.getByRole("dialog"), "view.dialog.close").click();
+    await cmd(page, "project.open", { arg: "Project A" }).first().click();
     assert.equal(await page.locator("#chat-input").inputValue(), "Keep this hidden project draft");
     assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["keep.txt"]);
     // This is an explicit fixture reset, never a production update reload.
@@ -4636,7 +4744,7 @@ try {
   }
   // Patch preparation transfers the ZIP bytes exactly, polls until ready,
   // preserves settings edits, and delegates restart without a document reload.
-  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await cmd(page, "view.settings.open").click();
   await settingsPage("Software update");
   await page.getByText("fixture-current-desktop", { exact: true }).waitFor();
   // Automatic updates are on by default and named as the unsigned prerelease
@@ -4652,42 +4760,42 @@ try {
   await page.getByText("Automatic updates: On · Unsigned prerelease channel", { exact: true }).waitFor();
   assert.deepEqual(autoUpdateWrites, [{ autoUpdate: false }, { autoUpdate: true }]);
   const beforeCheckLoads = documentLoads;
-  await page.getByRole("button", { name: "Check now", exact: true }).click();
+  await cmd(page, "hub.update_check_now").click();
   await page.getByText("Last check: downloading 0.1.6…", { exact: true }).waitFor();
-  assert.equal(await page.getByRole("button", { name: "Check now", exact: true }).isDisabled(), true);
+  assert.equal(await cmd(page, "hub.update_check_now").isDisabled(), true);
   await page.getByText("0.1.6 is ready and takes effect the next time MonkeyHub starts.", { exact: true }).waitFor();
   await page.getByText(/^Last check: .+ · 0\.1\.6 prepared$/).waitFor();
   await page.getByText("0.1.6 · fixture-next-desktop", { exact: true }).waitFor();
-  assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isEnabled(), true, "restart now stays available");
+  assert.equal(await cmd(page, "hub.update_apply").isEnabled(), true, "restart now stays available");
   assert.equal(updateChecks, 1); assert.equal(documentLoads, beforeCheckLoads, "a check never reloads the page");
   updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false, nextLaunch: false,
     check: { state: "needs-full-update", checkedAt: "2026-09-25T10:05:00+00:00", latestVersion: "0.1.9", detail: null, releaseUrl: "https://github.com/cogco1/MonkeyHub/releases/tag/v0.1.9" } };
-  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await cmd(page, "view.notice.retry", { arg: "update_status" }).click();
   await page.getByText(/^Last check: .+ · 0\.1\.9 needs a full update$/).waitFor();
   await page.getByText("https://github.com/cogco1/MonkeyHub/releases/tag/v0.1.9", { exact: true }).waitFor();
   updateStatus = { ...updateStatus, check: { ...updateStatus.check, state: "error", detail: "GitHub releases could not be read: fixture offline" } };
-  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await cmd(page, "view.notice.retry", { arg: "update_status" }).click();
   await page.getByText(/^Last check: .+ · did not succeed$/).waitFor();
   await page.getByText("GitHub releases could not be read: fixture offline", { exact: true }).waitFor();
   updateStatus = { ...updateStatus, check: { state: "never", checkedAt: null, latestVersion: null, detail: null, releaseUrl: null } };
   updateStatus = { ...updateStatus, mode: "unsupported" };
-  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await cmd(page, "view.notice.retry", { arg: "update_status" }).click();
   await page.getByText("Patch updates require the installed MonkeyHub desktop app.").waitFor();
-  assert.equal(await page.getByRole("button", { name: "Choose patch ZIP", exact: true }).count(), 0);
-  assert.equal(await page.getByRole("button", { name: "Check now", exact: true }).count(), 0);
+  assert.equal(await cmd(page, "hub.update_patch").count(), 0);
+  assert.equal(await cmd(page, "hub.update_check_now").count(), 0);
   assert.equal(await page.getByRole("switch").count(), 0);
   updateStatus = { ...updateStatus, mode: "local" };
-  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
-  await page.getByRole("button", { name: "Choose patch ZIP", exact: true }).waitFor();
+  await cmd(page, "view.notice.retry", { arg: "update_status" }).click();
+  await cmd(page, "hub.update_patch").waitFor();
   await page.locator('.software-update input[type="file"]').setInputFiles({ name: "not-a-patch.txt", mimeType: "text/plain", buffer: Buffer.from("not a patch") });
   await page.getByText("Choose a patch ZIP file.", { exact: true }).waitFor();
   assert.equal(patchUploads.length, 0, "invalid local selection never reaches the update API");
   const patchBytes = Buffer.from([80, 75, 3, 4, 0, 255, 13, 10, 42]);
   const patchChooser = page.waitForEvent("filechooser");
-  await page.getByRole("button", { name: "Choose patch ZIP", exact: true }).click();
+  await cmd(page, "hub.update_patch").click();
   await (await patchChooser).setFiles({ name: "fixture-update.zip", mimeType: "application/zip", buffer: patchBytes });
   await page.getByText("Verifying and preparing the patch…", { exact: true }).waitFor();
-  assert.equal(await page.getByRole("button", { name: "Choose patch ZIP", exact: true }).isDisabled(), true);
+  assert.equal(await cmd(page, "hub.update_patch").isDisabled(), true);
   await page.getByText("fixture-next-desktop", { exact: true }).waitFor();
   assert.equal(patchUploads.length, 1); assert.deepEqual(patchUploads[0], patchBytes);
   assert.ok(patchPolls >= 2); await page.getByText("1.0 MiB", { exact: true }).waitFor();
@@ -4697,7 +4805,7 @@ try {
   await page.locator("#theme").selectOption(await page.locator("#theme").inputValue() === "dark" ? "light" : "dark");
   await settingsPage("Software update");
   await page.getByText("A settings change is still being saved or could not be saved. Wait, or fix the marked setting, before restarting.", { exact: true }).waitFor();
-  assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true);
+  assert.equal(await cmd(page, "hub.update_apply").isDisabled(), true);
   settingsWriteGate = null; releaseSettings();
   await settingsSaved();
   await settingsPage("Display");
@@ -4727,20 +4835,20 @@ try {
   await page.locator("#language").selectOption("en"); await settingsSaved();
   await settingsPage("Software update");
   updateApplyFailure = true;
-  await page.getByRole("button", { name: "Restart to update", exact: true }).click();
+  await cmd(page, "hub.update_apply").click();
   await page.getByText("A task started before restart. Wait and retry.", { exact: true }).waitFor();
   assert.equal(appliedPatches, 1);
   await page.waitForFunction(() => !document.querySelector('.chat-dialog--settings button[aria-label="Close"]')?.disabled);
-  assert.equal(await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).isEnabled(), true);
+  assert.equal(await cmd(page.getByRole("dialog"), "view.dialog.close").isEnabled(), true);
   updateApplyFailure = false;
-  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await cmd(page, "view.notice.retry", { arg: "update_status" }).click();
   await page.getByText("A task started before restart. Wait and retry.", { exact: true }).waitFor({ state: "hidden" });
   const beforeUpdateLoads = documentLoads;
-  await page.getByRole("button", { name: "Restart to update", exact: true }).click();
+  await cmd(page, "hub.update_apply").click();
   await page.getByText("Restarting to update…", { exact: true }).waitFor();
   assert.equal(appliedPatches, 2); assert.equal(documentLoads, beforeUpdateLoads);
-  assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true);
-  assert.equal(await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).isDisabled(), true);
+  assert.equal(await cmd(page, "hub.update_apply").isDisabled(), true);
+  assert.equal(await cmd(page.getByRole("dialog"), "view.dialog.close").isDisabled(), true);
   await page.keyboard.press("Escape");
   assert.equal(await page.getByRole("dialog").isVisible(), true, "accepted restart cannot expose a composer for new unsaved work");
   // The desktop can reject a prepared target after /apply was accepted. A disconnected old
@@ -4750,43 +4858,43 @@ try {
   updateReadFailures = 1; await disconnectedStatus;
   await page.waitForResponse((response) => new URL(response.url()).pathname === "/api/updates/status" && response.ok());
   assert.equal(await page.locator(".software-update .error-message").count(), 0);
-  assert.equal(await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).isDisabled(), true);
+  assert.equal(await cmd(page.getByRole("dialog"), "view.dialog.close").isDisabled(), true);
   updateStatus = { ...updateStatus, state: "failed", canApply: false, error: { code: "UPDATE_ROLLED_BACK", detail: "The new application could not start. The previous desktop version has been restored." } };
   await page.getByText("The new application could not start. The previous desktop version has been restored.", { exact: true }).waitFor();
-  assert.equal(await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).isEnabled(), true);
-  assert.equal(await page.getByRole("button", { name: "Choose patch ZIP", exact: true }).isEnabled(), true);
+  assert.equal(await cmd(page.getByRole("dialog"), "view.dialog.close").isEnabled(), true);
+  assert.equal(await cmd(page, "hub.update_patch").isEnabled(), true);
   assert.equal(documentLoads, beforeUpdateLoads, "desktop rollback preserves the current application document");
   for (const response of ["lost", "malformed"]) {
     updateStatus = { ...updateStatus, state: "ready", canApply: true, error: null };
-    await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+    await cmd(page, "view.notice.retry", { arg: "update_status" }).click();
     await page.getByText("Patch ready. Restart when your work is saved.", { exact: true }).waitFor();
     updateApplyResponse = response;
     const previousApplies = appliedPatches;
     const failedRead = page.waitForEvent("requestfailed", { predicate: (request) => new URL(request.url()).pathname === "/api/updates/status" });
-    await page.getByRole("button", { name: "Restart to update", exact: true }).click();
+    await cmd(page, "hub.update_apply").click();
     await failedRead;
     assert.equal(appliedPatches, previousApplies + 1);
-    assert.equal(await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).isDisabled(), true,
+    assert.equal(await cmd(page.getByRole("dialog"), "view.dialog.close").isDisabled(), true,
       `accepted apply with ${response} response must keep the restart lock`);
     await page.keyboard.press("Escape"); await page.keyboard.press("Escape");
     assert.equal(await page.getByRole("dialog").isVisible(), true);
     await page.waitForResponse((result) => new URL(result.url()).pathname === "/api/updates/status" && result.ok());
-    assert.equal(await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).isDisabled(), true);
+    assert.equal(await cmd(page.getByRole("dialog"), "view.dialog.close").isDisabled(), true);
     assert.equal(appliedPatches, previousApplies + 1, "uncertain apply is reconciled by reads, never resubmitted");
     updateStatus = { ...updateStatus, state: "failed", canApply: false, error: { code: "UPDATE_ROLLED_BACK", detail: `Recovered after ${response} apply response.` } };
     await page.getByText(`Recovered after ${response} apply response.`, { exact: true }).waitFor();
-    assert.equal(await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).isEnabled(), true);
+    assert.equal(await cmd(page.getByRole("dialog"), "view.dialog.close").isEnabled(), true);
     assert.equal(documentLoads, beforeUpdateLoads);
   }
   // A request that never reached admission can unlock only after a successful
   // read confirms the previous ready state; the page still does not retry it.
   updateStatus = { ...updateStatus, state: "ready", canApply: true, error: null };
-  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await cmd(page, "view.notice.retry", { arg: "update_status" }).click();
   await page.getByText("Patch ready. Restart when your work is saved.", { exact: true }).waitFor();
   updateApplyResponse = "not-received";
   const previousApplies = appliedPatches;
   const rejectedApply = page.waitForEvent("requestfailed", { predicate: (request) => new URL(request.url()).pathname === "/api/updates/apply" });
-  await page.getByRole("button", { name: "Restart to update", exact: true }).click();
+  await cmd(page, "hub.update_apply").click();
   await rejectedApply;
   await page.waitForFunction(() => !document.querySelector('.chat-dialog--settings button[aria-label="Close"]')?.disabled);
   assert.equal(appliedPatches, previousApplies + 1);

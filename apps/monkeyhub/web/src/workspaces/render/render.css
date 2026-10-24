@@ -9,10 +9,6 @@
 .render-workspace button:disabled { opacity: .5; cursor: default; }
 .render-workspace :is(button, a, input, select, textarea, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .render-workspace button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); background: var(--panel-2); }
-.render-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px; border-bottom: 1px solid var(--line); font-size: 12px; }
-.render-toolbar strong { margin-right: auto; }
-.render-mode-toolbar { flex-shrink: 0; }
-.render-mode-toolbar > div { display: flex; gap: 4px; }
 .render-ai-body { display: flex; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .render-inputs { width: 280px; flex: 0 0 280px; overflow: auto; padding: 16px; border-right: 1px solid var(--line); background: var(--panel); font-size: 13px; }
 .render-inputs fieldset { min-width: 0; border: 0; margin: 0; padding: 0; }
@@ -45,11 +41,17 @@
 .render-list img { display: block; width: 100%; height: 80px; object-fit: contain; margin-bottom: 8px; }
 .render-thumbnail-empty { display: block; width: 100%; height: 44px; background: var(--panel-2); }
 .render-detail { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
-.render-comparison { display: flex; flex: 1; min-height: 180px; min-width: 0; }
+.render-comparison { position: relative; display: flex; flex: 1; min-height: 180px; min-width: 0; }
+/* ADR-014 B3, B5: the result's one tool group, over the bottom of its image, as a drawing's is. */
+.render-tools { position: absolute; z-index: 2; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px;
+  max-width: calc(100% - 24px); padding: 4px; overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow);
+  font-size: 12px; }
+.render-tools > button, .render-tools .result-actions > :is(a, button) { flex: none; white-space: nowrap; }
+.render-tools__sep { flex: none; width: 1px; height: 18px; margin: 0 4px; background: var(--line); }
 .render-compare-pane { flex: 1; display: flex; flex-direction: column; margin: 0; min-width: 0; min-height: 0; overflow: hidden; }
 .render-compare-pane + .render-compare-pane { border-left: 1px solid var(--line); }
 .render-compare-pane figcaption { font-size: 11px; color: var(--muted); padding: 10px 12px 0; }
-.render-image { flex: 1; min-height: 0; overflow: auto; padding: 12px; cursor: grab; touch-action: none; }
+.render-image { flex: 1; min-height: 0; overflow: auto; padding: 12px 12px 64px; cursor: grab; touch-action: none; }
 .render-image img { display: block; margin: auto; object-fit: contain; }
 .render-image p { color: var(--muted); font-size: 12px; text-align: center; }
 .render-detail footer { padding: 12px; border-top: 1px solid var(--line); overflow: auto; overflow-wrap: anywhere; max-height: 38%; font-size: 12px; }

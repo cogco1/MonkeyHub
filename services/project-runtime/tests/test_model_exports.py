@@ -110,9 +110,17 @@ class ExportJobTests(unittest.TestCase):
         self.assertEqual(result['previewArtifacts'], [])
         self.assertEqual(self.repository.layout.resolve_relative(result['sourceArtifact']['relative_path']).read_bytes(), data)
 
+    def test_an_stl_print_mesh_is_delivered_with_its_losses(self):
+        result = self.finish(self.submit("stl"))
+        self.assertEqual(result["status"], "succeeded", result.get("failureReason"))
+        self.assertEqual(result["fileName"], "model.stl")
+        self.assertIn("Millimetres", result["losses"]["units"])
+        data = self.client.get(result["downloadPath"]).content
+        self.assertEqual(struct.unpack_from("<I", data, 80)[0], 1)
+
     def test_capability_endpoint_does_not_enable_detected_software(self):
         rows = self.client.get('/api/exports/capabilities').json()
-        self.assertEqual(len(rows), 12)
+        self.assertEqual(len(rows), 16, 'four sources, each to the three others and to an STL print mesh')
         for row in rows:
             if 'skp' in (row['sourceFormat'], row['targetFormat']) or 'dwg' in (row['sourceFormat'], row['targetFormat']):
                 self.assertFalse(row['available'])

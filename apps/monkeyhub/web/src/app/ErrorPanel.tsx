@@ -238,7 +238,8 @@ export function ErrorPanel({
   const { developerMode, language } = usePreferences();
   const board = boardSourceFailure(error, what, language);
   const semantic = error.code === "SEMANTIC_EDIT_INVALID";
-  const copy = FAILURES[failureKind(error)][language];
+  const kind = failureKind(error);
+  const copy = FAILURES[kind][language];
   // A question is its own next step, answered through the forms below it.
   const reason = board ?? (error.question ? <BilingualProse source={error.question} />
     : semantic ? t("error.semanticEditInvalid") : copy.reason);
@@ -256,8 +257,10 @@ export function ErrorPanel({
           ))}
         </ul>
       )}
-      {/* A new refusal starts folded rather than inheriting the last one's state. */}
-      <details key={`${error.code}:${error.detail}`} className="card__details error-panel__details" open={developerMode}>
+      {/* The code, status and the service's own words are for developer mode, where they start open. A failure
+          the Hub does not recognise has its reason only there, so it keeps them, folded, outside developer mode too;
+          a new refusal starts folded rather than inheriting the last one's state. */}
+      {(developerMode || kind === "unknown") && <details key={`${error.code}:${error.detail}`} className="card__details error-panel__details" open={developerMode}>
         <summary>{t("common.technicalDetails")}</summary>
         <p className="error-panel__head">
           <span className="error-panel__code">{error.code}</span>
@@ -267,7 +270,7 @@ export function ErrorPanel({
           {what && <span className="error-panel__what">{what}</span>}
         </p>
         <p className="error-panel__detail" lang="en" translate="no">{error.detail}</p>
-      </details>
+      </details>}
     </div>
   );
 }

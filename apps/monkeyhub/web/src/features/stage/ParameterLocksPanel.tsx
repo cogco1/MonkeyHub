@@ -2,6 +2,7 @@ import { useState } from "react";
 import { asStudioApiError } from "../../api/project-runtime/client";
 import type { ParameterDto } from "../../api/project-runtime/generated";
 import { useT } from "../../i18n/useT";
+import { InlineDecision } from "../../notifications/cards/InlineDecision";
 import { usePreferences } from "../settings/preferences";
 import "./ModelEditPanel.css";
 import "./ParameterLocksPanel.css";
@@ -46,7 +47,7 @@ export function ParameterLocksPanel({ controls, onClose }: {
     }}>
     <div className="model-edit-panel__heading">
       <strong>{zh ? "参数锁" : "Parameter locks"}</strong>
-      <button type="button" className="btn btn--small" autoFocus onClick={onClose}>{zh ? "关闭" : "Close"}</button>
+      <button data-command="component.lock_params.close" type="button" className="btn btn--small" autoFocus onClick={onClose}>{zh ? "关闭" : "Close"}</button>
     </div>
     <p>{zh ? "锁定所选参数的值及已有绑定。其他参数和几何仍可修改。" : "Lock selected values and existing bindings. Other parameters and geometry remain editable."}</p>
     {controls.parameters.length === 0 ? <p>{zh ? "当前模型没有已声明的参数。" : "This model has no declared parameters."}</p>
@@ -61,17 +62,19 @@ export function ParameterLocksPanel({ controls, onClose }: {
           <span>{parameter.lockAuthority ? (zh ? "已锁定" : "Locked") : (zh ? "可修改" : "Editable")}</span>
         </label>)}
       </div>}
-    {controls.disabledReason && <p role="status">{controls.disabledReason}</p>}
     {/* Once recorded, the locks are free to apply: the selection above is kept for them. */}
-    {controls.disabledReason && controls.record && <button type="button" className="btn btn--small" disabled={recording}
-      onClick={() => void record()}>{t(recording ? "stage.record.busy" : "stage.record.continue")}</button>}
-    {recordError && <p className="model-edit-panel__error" role="alert">{recordError}</p>}
+    {controls.disabledReason && <InlineDecision className="parameter-locks__decision" live compact label={controls.disabledReason}
+      title={controls.disabledReason} failure={recordError || undefined} choices={[
+        controls.record && { command: "draft.record.continue", primary: true, disabled: recording,
+          label: t(recording ? "stage.record.busy" : "stage.record.continue"), onSelect: () => void record() },
+      ]} />}
+    {!controls.disabledReason && recordError && <p className="model-edit-panel__error" role="alert">{recordError}</p>}
     {controls.busy && <p role="status">{zh ? "正在保存…" : "Saving…"}</p>}
     {controls.error && <p className="model-edit-panel__error" role="alert">{controls.error}</p>}
     <div className="parameter-locks__actions">
-      <button type="button" className="btn" disabled={disabled || unlocked.length === 0}
+      <button data-command="component.lock_params.lock" type="button" className="btn" disabled={disabled || unlocked.length === 0}
         onClick={() => controls.onApply(unlocked, "lock")}>{zh ? "锁定所选" : "Lock selected"}</button>
-      <button type="button" className="btn" disabled={disabled || locked.length === 0}
+      <button data-command="component.lock_params.unlock" type="button" className="btn" disabled={disabled || locked.length === 0}
         onClick={() => controls.onApply(locked, "unlock")}>{zh ? "解锁所选" : "Unlock selected"}</button>
     </div>
     <small>{zh ? "保存为新的工作候选；不会接受或发布设计阶段。" : "Saves a new working candidate; does not accept or issue a design stage."}</small>

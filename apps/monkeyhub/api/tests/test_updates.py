@@ -43,8 +43,9 @@ BASE, TARGET = "a" * 40, "b" * 40
 class MemoryPreference:
     """自动更新 without touching the account's settings file."""
 
-    def __init__(self, enabled=True):
+    def __init__(self, enabled=True, workshop=False):
         self.value, self.writes = enabled, []
+        self.workshop_value, self.workshop_writes = workshop, []
 
     def enabled(self):
         return self.value
@@ -52,6 +53,13 @@ class MemoryPreference:
     def set(self, enabled):
         self.value = enabled
         self.writes.append(enabled)
+
+    def workshop(self):
+        return self.workshop_value
+
+    def set_workshop(self, enabled):
+        self.workshop_value = enabled
+        self.workshop_writes.append(enabled)
 
 
 class DesktopUpdateTests(unittest.TestCase):
@@ -742,6 +750,34 @@ class AutomaticUpdateTests(unittest.TestCase):
         self.assertTrue(updates.set_auto_update(True).nextLaunch)
         self.assertEqual(self.preference.writes, [True])
 
+    def test_workshop_mode_checks_for_downloads_and_switches_in_nothing(self):
+        self.preference.workshop_value = True
+        updates = self.controller()
+        updates.start(9, "instance")
+        time.sleep(0.3)
+        self.assertEqual(self.github.requests, [], "no automatic check in workshop mode")
+        self.assertFalse(any(thread.name == "hub-update-check" and thread.is_alive() for thread in updates._threads))
+        status = updates.status()
+        self.assertEqual((status.workshopMode, status.autoUpdate), (True, False))
+        for action in (updates.check_now, lambda: updates.set_auto_update(True)):
+            with self.assertRaises(HubFailure) as caught:
+                action()
+            self.assertEqual(caught.exception.error.code, "UPDATE_WORKSHOP_MODE")
+        self.assertEqual((self.github.requests, self.preference.writes), ([], []))
+        # A patch someone chooses on purpose is still prepared, and only restart-now applies it.
+        path = updates.begin_upload()
+        path.write_bytes(self.patch_file.read_bytes())
+        updates.prepare(path)
+        wait_until(lambda: updates.status().state == "ready", "the chosen patch was not prepared")
+        self.assertFalse(updates.status().nextLaunch)
+        updates.activate_on_quit()
+        self.assertFalse(any(command[0] == "powershell.exe" for command in self.processes))
+        self.assertEqual(self.record()["state"], "ready")
+        # Turned off, the automatic check runs again at once.
+        self.assertFalse(updates.set_workshop_mode(False).workshopMode)
+        self.assertEqual(self.preference.workshop_writes, [False])
+        wait_until(lambda: self.github.requests, "no check after workshop mode was turned off")
+
     def test_a_normal_quit_switches_the_entry_through_the_installer(self):
         updates = self.controller()
         updates._run_check(explicit=False)
@@ -930,6 +966,20 @@ class AutomaticUpdateTests(unittest.TestCase):
         self.assertIs(client.put("/api/updates/settings", json={"autoUpdate": True}).json()["nextLaunch"], True)
         saved = json.loads((self.root / "roaming/MonkeyArch/settings.json").read_text(encoding="utf-8"))
         self.assertNotIn("autoUpdate", saved)
+        # 工作坊模式 (#668): one switch per request, saved for the desktop host to read, and only "on" is written.
+        for body in ({}, {"autoUpdate": True, "workshopMode": True}, {"workshopMode": "on"}):
+            self.assertEqual(client.put("/api/updates/settings", json=body).status_code, 422, body)
+        status = client.put("/api/updates/settings", json={"workshopMode": True}).json()
+        self.assertEqual((status["workshopMode"], status["autoUpdate"], status["nextLaunch"]), (True, False, False))
+        saved = json.loads((self.root / "roaming/MonkeyArch/settings.json").read_text(encoding="utf-8"))
+        self.assertIs(saved["workshopMode"], True)
+        self.assertIs(client.get("/api/settings/user").json()["workshopMode"], True)
+        refused = client.post("/api/updates/check")
+        self.assertEqual((refused.status_code, refused.json()["code"]), (409, "UPDATE_WORKSHOP_MODE"))
+        self.assertEqual(client.put("/api/updates/settings", json={"autoUpdate": True}).status_code, 409)
+        self.assertIs(client.put("/api/updates/settings", json={"workshopMode": False}).json()["workshopMode"], False)
+        saved = json.loads((self.root / "roaming/MonkeyArch/settings.json").read_text(encoding="utf-8"))
+        self.assertNotIn("workshopMode", saved)
 
 
 if __name__ == "__main__":

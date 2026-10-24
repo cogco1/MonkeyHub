@@ -442,7 +442,9 @@ def compose_view_sheet(*, style_id: str, paper_size_mm: Sequence[float], views: 
     and greys, never re-projected or rescaled; its title, subtitle and scale
     label sit above it. ``section_marks`` draw a section's cut line on the
     drawing it crosses. A title strip along the bottom carries the title, the
-    sheet number, ``source_text`` and the notes. A drawing (with its labels)
+    sheet number and the notes. ``source_text`` names the model the sheet was
+    drawn from; it goes into the file's metadata (PDF Subject), not onto the
+    sheet, which is for reading the architecture. A drawing (with its labels)
     that leaves the frame, overlaps another or the title strip, or text that
     does not fit, is refused by name rather than moved, scaled or cropped.
     """
@@ -484,6 +486,7 @@ def compose_view_sheet(*, style_id: str, paper_size_mm: Sequence[float], views: 
     canvas = PaperCanvas(font_mapping=font_mapping)
     canvas.start_sheet(str(sheet_number), (width, height))
     canvas.setTitle(str(title))
+    canvas.setSubject(source_text)
     sheet = _Sheet(canvas, height)
 
     footprints: dict[str, tuple[float, float, float, float]] = {}
@@ -547,12 +550,12 @@ def compose_view_sheet(*, style_id: str, paper_size_mm: Sequence[float], views: 
     sheet.text(text_right, first_line, str(sheet_number), title_pt, bold=True, align="right")
     rows = []
     column = text_right - number_width - 8.0 - middle
-    for paragraph in ((source_text,) if source_text else ()) + tuple(notes):
+    for paragraph in tuple(notes):
         rows.extend(_wrapped(canvas, paragraph, column, small_pt) if column > 0 else [paragraph])
     line = strip_top + 3.0 + small_pt * _PT
     for row in rows:
         if line > height - margin - 1.5 or sheet.width(row, small_pt) > column:
-            raise ValueError("The source line and notes do not fit the title strip; shorten the notes")
+            raise ValueError("The notes do not fit the title strip; shorten them")
         sheet.text(middle, line, row, small_pt)
         line += small_pt * _PT * 1.45
     for primitive in canvas.scenes[-1].primitives[strip_text:]:

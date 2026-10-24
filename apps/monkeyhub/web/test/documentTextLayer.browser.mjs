@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
+import { cmd } from "./commandLocator.mjs";
 
 // A standalone consumer of the real layer, with an in-memory parent history.
 // It starts its own ephemeral server and never connects to a project API.
@@ -101,7 +102,7 @@ try {
     await mark().dblclick(); await input().fill("  中文\n第二行  "); await input().press("Control+Enter"); await frames();
     assert.equal((await state()).marks[0].label, "  中文\n第二行  ");
     assert.equal((await state()).changes, 2);
-    await page.locator(".document-text-controls button").first().focus();
+    await cmd(page.locator(".document-text-controls"), "view.markup_tools.text_edit").focus();
     const undoBefore = (await state()).undoEvents;
     await page.keyboard.press("Control+z"); await frames();
     assert.equal((await state()).undoEvents, undoBefore + 1);
@@ -157,7 +158,7 @@ try {
     await clickAt(0.2, 0.2); await input().fill("discard me"); await input().press("Escape"); await frames();
     assert.equal((await state()).changes, 0);
     await clickAt(0.2, 0.2); await input().fill("finished");
-    await page.locator(".document-text-editor__actions button").last().click(); await frames();
+    await cmd(page.locator(".document-text-editor__actions"), "view.markup_tools.text_done").click(); await frames();
     assert.equal((await state()).changes, 1); assert.equal((await state()).focus, "document-viewport");
     await page.keyboard.press("Control+z"); await frames(); assert.equal((await state()).marks.length, 0);
   });
@@ -180,7 +181,7 @@ try {
     await clickAt(0.99, 0.99); await input().fill("edge text");
     const viewport = await page.locator(".document-viewport").boundingBox();
     const panel = await page.locator(".document-text-editor").boundingBox();
-    const finish = await page.locator(".document-text-editor__actions button").last().boundingBox();
+    const finish = await cmd(page.locator(".document-text-editor__actions"), "view.markup_tools.text_done").boundingBox();
     assert.ok(panel.x >= viewport.x && panel.y >= viewport.y);
     assert.ok(panel.x + panel.width <= viewport.x + viewport.width && panel.y + panel.height <= viewport.y + viewport.height);
     assert.ok(finish.y + finish.height <= viewport.y + viewport.height);

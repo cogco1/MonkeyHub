@@ -2733,7 +2733,7 @@ export const ThreeDmViewport = forwardRef<
           {visualStatus === "idle" && idle ? idle : <>
             <p aria-live="polite">{visualMessage}</p>
             {!readOnly && (visualStatus === "idle" || visualStatus === "error") && (
-              <button className="button" type="button" onClick={onRequestFile}>
+              <button data-command="model.import_asset.open_file" className="button" type="button" onClick={onRequestFile}>
                 Open a local .3dm or .skp
               </button>
             )}
@@ -2752,7 +2752,7 @@ export const ThreeDmViewport = forwardRef<
       {legend && <div data-presentation style={{ position: "absolute", top: 12, right: 12, zIndex: 5, display: "grid", justifyItems: "end",
         gap: 6, maxWidth: "min(300px, calc(100% - 24px))", pointerEvents: "none" }}>
         <div className="viewtools" role="group" aria-label={t("stage.presentation.views")} style={{ pointerEvents: "auto" }}>
-          {PRESENTATION_VIEWS.map(([view, standard]) => <button type="button" key={view} data-presentation-view={view}
+          {PRESENTATION_VIEWS.map(([view, standard]) => <button data-command={`view.model_camera.${standard}`} type="button" key={view} data-presentation-view={view}
             title={t(`stage.presentation.${view}Title`)} onClick={() => {
               const runtime = runtimeRef.current;
               if (runtime) standardRuntime(runtime, standard);
@@ -2761,7 +2761,7 @@ export const ThreeDmViewport = forwardRef<
         {/* Folded by default, so the picture stays clear; the line still says how many objects are hatched. */}
         <details data-presentation-legend style={{ maxWidth: "100%", padding: "5px 9px", border: "1px solid var(--line)", borderRadius: "var(--radius-lg)",
           background: "var(--overlay)", color: "var(--ink-2)", fontSize: "calc(11px * var(--font-scale, 1))", pointerEvents: "auto" }}>
-          <summary style={{ cursor: "pointer", whiteSpace: "nowrap" }}>
+          <summary data-command="view.model_display.materials" style={{ cursor: "pointer", whiteSpace: "nowrap" }}>
             {t("stage.presentation.legendSummary", { count: legend.materials.length })}
             {legend.undeclared > 0 && <span title={t("stage.presentation.undeclared", { count: legend.undeclared })}
               style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 8 }}>

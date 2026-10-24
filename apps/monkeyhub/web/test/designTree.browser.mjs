@@ -1,7 +1,7 @@
 /** The Design Tree (#284) in the real ProjectWorkspace and the real Hub rail, on Excalidraw.
  * The Project Runtime is a stub serving the typed fixture (features/designTree/fixture.ts)
  * in the #294 design-history contract until codex/294-admission-record lands; it answers
- * Continue (PUT /api/working-draft) and Accept (POST /api/candidates/{id}/accept) with the
+ * Continue (POST /api/working-design/switch, its Undo /undo) and Accept (POST /api/candidates/{id}/accept) with the
  * existing routes' rules. Arch and Board are replaced by stubs so the tree is what runs.
  * DESIGN_TREE_SCREENSHOTS=<dir> writes review screenshots; --serve keeps the page open.
  */
@@ -15,6 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { deflateSync } from "node:zlib";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
+import { cmd, commandProblems, waitForCommandLabel } from "./commandLocator.mjs";
 
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const slash = (value) => value.replaceAll("\\", "/");
@@ -170,6 +171,9 @@ async function runtime(request, response, url, body) {
     // What Modeling's Record edits and continue does to the working draft here: its edits become recorded.
     if (method === "POST" && name === "/api/fixture/record") { recorded += 1; fixture.state.localDraft = null; return json({}); }
     if (method === "PUT" && name === "/api/working-draft") { writes.push({ method, name, body }); return json(fixture.selectWorkingDraft(body)); }
+    // 2-6: Continue and its Undo are the Runtime's Switch and Undo; a refused one wrote nothing, so it is not a write here.
+    if (method === "POST" && name === "/api/working-design/switch") { const answer = fixture.switchWorkingDesign(body); writes.push({ method, name, body }); return json(answer); }
+    if (method === "POST" && name === "/api/working-design/undo") { const answer = fixture.undoWorkingDesign(body); writes.push({ method, name, body }); return json(answer); }
     if (method === "POST" && name === "/api/candidate-reviews") {
       writes.push({ method, name, body });
       const key = `${body.subjectKind}:${body.subjectRef}`, previous = reviews.get(key);
@@ -192,6 +196,8 @@ async function runtime(request, response, url, body) {
     if (error instanceof fixtureModule.FixtureRefusal) return json({ code: error.code, detail: error.message }, error.status);
     throw error;
   }
+  // A Hub that does not serve the attention queue yet (1-4), as main's does.
+  if (name.startsWith("/api/attention")) return json({ code: "NOT_FOUND", detail: "This Hub does not serve the attention queue yet." }, 404);
   unexpected.push(`${method} ${name}`);
   return json({ code: "FIXTURE_UNEXPECTED", detail: `Unexpected request ${method} ${name}` }, 404);
 }
@@ -232,6 +238,8 @@ async function hubApi(request, response, url, body, origin) {
     return json(hubRuntime(origin).projects[0]);
   }
   if (name === "/api/updates/status") return json({ currentVersion: "fixture", currentRevision: "f".repeat(40), mode: "local", state: "idle", prepared: null, canApply: false, message: null, error: null });
+  // A Hub that does not serve the attention queue yet (1-4), as main's does.
+  if (name.startsWith("/api/attention")) return json({ code: "NOT_FOUND", detail: "This Hub does not serve the attention queue yet." }, 404);
   unexpected.push(`hub ${request.method} ${name}`);
   return json({ code: "FIXTURE_UNEXPECTED", detail: name }, 404);
 }
@@ -338,12 +346,12 @@ try {
   const loaded = [];
   tab.on("request", (request) => loaded.push(request.url()));
   await tab.goto(`${origin}/tree-workspace?lang=en&theme=light`, { waitUntil: "domcontentloaded", timeout: 240_000 });
-  const chip = tab.locator(".stage-chip");
+  const chip = cmd(tab, "view.design_history.toggle", { includeHidden: true });
   await chip.waitFor({ timeout: 120_000 });
   await tab.getByTestId("arch-stub").waitFor();
   await tab.waitForFunction(() => /S2 · Layout — Current/.test(document.querySelector(".stage-chip")?.textContent ?? ""));
   assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S2 · Layout — Current · 2 running", "the chip reads Stage, position and running work");
-  const ready = tab.locator(".stage-chip__ready");
+  const ready = cmd(tab, "attention.decide.show_ready", { includeHidden: true });
   assert.equal((await ready.innerText()).replace(/\s+/g, " ").trim(), "1 option ready · View", "options nobody opened are the chip's notice");
   assert.equal(await chip.getAttribute("aria-pressed"), "false");
   assert.ok(!loaded.some((url) => /excalidraw/i.test(url)), "Excalidraw is not loaded until the tree opens");
@@ -366,7 +374,7 @@ try {
   if (shots) await inChinese("01c-ready-notice-opens-study-zh");
   // #337: the tree's menus sit in the project bar, over whichever surface is open.
   const bar = tab.locator(".project-bar");
-  await bar.getByRole("button", { name: "Back to Modeling" }).click();
+  await cmd(bar, "view.design_tree.leave").click();
   await tab.getByTestId("arch-stub").waitFor();
   assert.equal(await ready.count(), 0, "an option that was opened is no longer new");
 
@@ -376,13 +384,13 @@ try {
   await surface.locator(".design-tree__canvas canvas").first().waitFor();
   await tab.waitForFunction(() => window.__treeApi?.getSceneElements().length > 20);
   // The notice left the canvas centred on the ready option; Fit shows the whole tree again.
-  await bar.getByRole("button", { name: "Fit", exact: true }).click();
+  await cmd(bar, "view.design_tree.fit").click();
   await tab.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve)))));
   await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "mid");
   assert.equal(await chip.getAttribute("aria-pressed"), "true");
   // #337: one bar, not two: the tree's menus on its left, the Stage position at its right end.
   assert.equal(await surface.locator(".surface-bar").count(), 0, "the tree has no bar of its own under the project bar");
-  const [fitBox, chipBox, barBox] = await Promise.all([bar.getByRole("button", { name: "Fit", exact: true }).boundingBox(), chip.boundingBox(), bar.boundingBox()]);
+  const [fitBox, chipBox, barBox] = await Promise.all([cmd(bar, "view.design_tree.fit").boundingBox(), chip.boundingBox(), bar.boundingBox()]);
   assert.ok(chipBox.x > fitBox.x + fitBox.width && barBox.x + barBox.width - (chipBox.x + chipBox.width) < 40, "the position sits at the bar's right end");
   assert.equal(await tab.getByTestId("arch-stub").isVisible(), false, "the tree replaces the view, it is not drawn over it");
   assert.ok(loaded.some((url) => /excalidraw/i.test(url)), "the canvas loads with the tree");
@@ -504,7 +512,7 @@ try {
   assert.ok(Math.abs(pinned.x - (canvasBox.x + 10)) < 1.5 && pinned.width > 40, `the Massing header stays in view: ${JSON.stringify(pinned)}`);
   assert.equal(await massingColumn.locator(".design-tree-column__name").isVisible(), true);
   await shoot(tab, "02c-header-pinned");
-  await bar.getByRole("button", { name: "Fit", exact: true }).click();
+  await cmd(bar, "view.design_tree.fit").click();
   await tab.waitForFunction((left) => {
     const box = [...document.querySelectorAll(".design-tree-column")][1]?.getBoundingClientRect();
     return box && box.x > left;
@@ -655,13 +663,14 @@ try {
   await inspector.waitFor();
   // #409: the inspector's thumbnail is the canvas's image, downloaded once for both.
   await inspector.locator(".model-thumbnail img").waitFor();
+  assert.deepEqual(await commandProblems(surface, { ignore: [".excalidraw"] }), [], "every visible Design tree control names its command");
   assert.equal(imageReads.filter((run) => run === runOf(S1)).length, 1, "the inspector does not download its card's image again");
   await tab.keyboard.press("Escape");
   await surface.locator(".design-tree-inspector").waitFor({ state: "detached" });
   // Out again: no images, and panning the middle level over drawn cards reads nothing more.
   await tab.waitForTimeout(300);
   const reads = statusReads.length + imageReads.length;
-  await bar.getByRole("button", { name: "Fit", exact: true }).click();
+  await cmd(bar, "view.design_tree.fit").click();
   await tab.waitForFunction(() => document.querySelector(".design-tree__canvas")?.dataset.level === "mid");
   await tab.waitForFunction(() => !window.__treeApi.getSceneElements().some((element) => element.type === "image"));
   await centre("candidate:run-facade-c", 1.05);
@@ -672,7 +681,7 @@ try {
   console.log(`design tree zoom levels: ${zoomShots} (far.png, mid.png, close.png)`);
   // Fit again; the level is already the middle one, so wait for the fitted view itself before anything clicks on it.
   const fitted = await tab.evaluate(() => window.__treeApi.getAppState().zoom.value);
-  await bar.getByRole("button", { name: "Fit", exact: true }).click();
+  await cmd(bar, "view.design_tree.fit").click();
   await tab.waitForFunction((before) => window.__treeApi.getAppState().zoom.value !== before, fitted);
   await tab.waitForFunction(() => new Promise((resolve) => {
     const read = () => { const state = window.__treeApi.getAppState(); return `${state.zoom.value},${state.scrollX},${state.scrollY}`; };
@@ -687,11 +696,11 @@ try {
   assert.equal(await card.locator("strong").innerText(), "D · Terraced wedge");
   assert.match(await card.innerText(), /Option · Massing Study/);
   assert.match(await card.innerText(), /Admitted by\s*Agent \(on your words in chat\)/);
-  assert.equal(await card.getByRole("button", { name: "View", exact: true }).isEnabled(), true);
-  assert.equal(await card.getByRole("button", { name: "Compare with original", exact: true }).isEnabled(), true,
+  assert.equal(await cmd(card, "candidate.compare.view").isEnabled(), true);
+  assert.equal(await cmd(card, "candidate.compare.with_original").isEnabled(), true,
     "an option opens beside the model it was made from (#284)");
-  assert.equal(await card.locator('[data-action="accept"]').count(), 0, "an option cannot be accepted");
-  await card.getByRole("button", { name: "Endorse direction", exact: true }).click();
+  assert.equal(await cmd(card, "stage.accept.current").count(), 0, "an option cannot be accepted");
+  await cmd(card, "candidate.review.endorse").click();
   await tab.waitForTimeout(100);
   assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/candidate-reviews", body: {
     projectId: PROJECT, subjectKind: "candidate", subjectRef: "run-massing-d", action: "endorse", reason: null } });
@@ -700,21 +709,22 @@ try {
   const endorsementTime = await card.getByText("Endorsed", { exact: true }).locator("..").locator("dd").innerText();
   assert.ok(endorsementTime.length > 0, "the endorsement has a visible time");
   const beforeArchive = fixture.workingDraft();
-  await card.getByRole("button", { name: "Archive", exact: true }).click();
+  await cmd(card, "candidate.review.archive").click();
   await card.waitFor({ state: "detached" });
   assert.equal((await scene()).elements.some((element) => element.data?.node === "candidate:run-massing-d"), false,
     "an archived Candidate leaves the default canvas");
-  await bar.getByRole("button", { name: "Show processed (1)", exact: true }).click();
+  await waitForCommandLabel(cmd(bar, "view.handled.toggle"), "Show processed (1)");
+  await cmd(bar, "view.handled.toggle").click();
   card = await clickNode("candidate:run-massing-d");
-  await card.getByRole("button", { name: "Undo archive", exact: true }).waitFor();
+  await waitForCommandLabel(cmd(card, "candidate.review.archive"), "Undo archive");
   assert.match(await card.innerText(), /Endorsed by\s*Review Architect/);
   assert.match(await card.innerText(), /Last reviewed by\s*Archive Architect/);
   assert.equal(await card.getByText("Endorsed", { exact: true }).locator("..").locator("dd").innerText(), endorsementTime,
     "archiving keeps the original endorsement's attribution and time");
-  assert.equal(await card.locator('[data-action="continue"]').isEnabled(), true, "archiving does not add a new Continue restriction");
-  await card.getByRole("button", { name: "Undo archive", exact: true }).click();
-  await card.getByRole("button", { name: "Archive", exact: true }).waitFor();
-  assert.equal(await bar.getByRole("button", { name: /Show processed/ }).count(), 0, "restore returns to the default projection");
+  assert.equal(await cmd(card, "design.go_to_step.continue").isEnabled(), true, "archiving does not add a new Continue restriction");
+  await cmd(card, "candidate.review.archive").click();
+  await waitForCommandLabel(cmd(card, "candidate.review.archive"), "Archive");
+  assert.equal(await cmd(bar, "view.handled.toggle").count(), 0, "restore returns to the default projection");
   assert.equal(await card.locator("strong").innerText(), "D · Terraced wedge", "cancelling archive retains the selected Study option");
   assert.deepEqual(fixture.workingDraft(), beforeArchive, "archive, filtering and restore leave Working Head unchanged");
   writes.length = 0;
@@ -726,8 +736,8 @@ try {
   assert.equal(await surface.locator('.design-tree-inspector[data-node="candidate:run-massing-d"]').count(), 1, "a click on the headers leaves the selection");
   card = await clickNode(S1);
   assert.match(await card.innerText(), /Stage · accepted checkpoint/);
-  assert.equal(await card.locator('[data-action="accept"]').count(), 0, "a Stage cannot be accepted again");
-  await card.getByRole("button", { name: "Endorse direction", exact: true }).click();
+  assert.equal(await cmd(card, "stage.accept.current").count(), 0, "a Stage cannot be accepted again");
+  await cmd(card, "candidate.review.endorse").click();
   await card.getByText("Endorsed direction", { exact: true }).waitFor();
   assert.match(await card.innerText(), /Endorsed by\s*Review Architect/);
   writes.length = 0;
@@ -737,14 +747,14 @@ try {
   assert.match(await card.innerText(), /Checks\s*1 violated/, "its Checks row says what its red bar shows");
   assert.equal(await surface.locator(".design-tree__notice").count(), 0, "this runtime reports admitted options");
   card = await clickNode("current");
-  assert.equal(await card.locator('[data-action="accept"]').count(), 1, "Current offers Accept");
-  assert.equal(await card.locator('[data-action="accept"]').isDisabled(), true, "Current is exactly S2, so there is nothing new to accept");
+  assert.equal(await cmd(card, "stage.accept.current").count(), 1, "Current offers Accept");
+  assert.equal(await cmd(card, "stage.accept.current").isDisabled(), true, "Current is exactly S2, so there is nothing new to accept");
   assert.match(await card.innerText(), /Current is exactly S2 · Layout/);
 
   // View is read-only: Modeling opens it, the Working Head stays.
   card = await clickNode("candidate:run-massing-d");
   const headBefore = fixture.state.head;
-  await card.getByRole("button", { name: "View", exact: true }).click();
+  await cmd(card, "candidate.compare.view").click();
   await tab.getByTestId("arch-stub").filter({ hasText: "run-massing-d" }).waitFor();
   assert.deepEqual(await tab.evaluate(() => [window.__arch.initialRunId, window.__arch.followsHead]), ["run-massing-d", false]);
   assert.equal(fixture.state.head, headBefore, "View never moves the Working Head");
@@ -754,25 +764,25 @@ try {
   assert.deepEqual(await tab.locator(".stage-chip__viewing").getByRole("button").allInnerTexts(), ["Back to Current", "Continue from here"]);
   await shoot(tab, "06-viewing-read-only");
   if (shots) await inChinese("06a-chip-viewing-zh");
-  await tab.getByRole("button", { name: "Back to Current", exact: true }).click();
+  await cmd(tab, "design.go_to_step.back_to_current").click();
   await tab.waitForFunction(() => window.__arch.initialRunId === "run-s2-layout");
   assert.equal(await tab.locator(".stage-chip__viewing").count(), 0);
 
-  // Continue moves the Working Head through PUT /api/working-draft, and the trunk re-roots. Unrecorded
+  // Continue moves the Working Head through the Runtime's Switch, and the trunk re-roots. Unrecorded
   // Modeling edits refuse it first, beside one click that records them and continues (#302).
   await chip.click();
   card = await clickNode("candidate:run-massing-d");
   const archRefresh = await tab.evaluate(() => window.__arch.refreshKey);
   fixture.state.localDraft = { source: { projectId: PROJECT, stateDigest: "d".repeat(64), sourceRunId: "run-s2-layout", sourceStageRef: null },
     commands: [], attempt: null, updatedAt: "2026-09-25T22:00:00Z" };
-  await card.getByRole("button", { name: "Continue from here", exact: true }).click();
+  await cmd(card, "design.go_to_step.continue").click();
   await card.getByText("Model edits in Modeling are not recorded yet; they are kept. Record them and continue, or undo them in Modeling.").waitFor();
   assert.equal(fixture.state.head, headBefore, "a Continue refused by unrecorded edits moves nothing");
   assert.equal(writes.length, 0);
   const toast = tab.locator(".design-tree-toast");
   assert.equal(await toast.count(), 0, "a refused Continue keeps its inline message and shows no toast");
   await shoot(tab, "06b-record-and-continue");
-  await card.locator('[data-action="record"]').click();
+  await cmd(card, "draft.record.continue").click();
   // FN-5: the Continue confirms itself beside the chip, with Undo; hovering keeps the toast while it is checked.
   await toast.filter({ hasText: "Current is now “D · Terraced wedge”" }).waitFor();
   await toast.hover();
@@ -782,7 +792,7 @@ try {
   await card.locator('[role="alert"]').waitFor({ state: "detached" });
   assert.equal(await card.getByText(/Current is now|Model edits in Modeling/).count(), 0, "the inspector repeats neither the refusal nor the toast");
   assert.equal(recorded, 1, "Record edits and continue records the edits once, then continues");
-  assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/working-design/switch",
     body: { projectId: PROJECT, runId: "run-massing-d", baseRevisionSha256: "rev-0001", branchId: null } });
   assert.equal(fixture.state.head, "run-massing-d");
   await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 3);
@@ -793,13 +803,13 @@ try {
   await shoot(tab, "06c-continue-toast");
   if (shots) await inChinese("06d-continue-toast-zh");
 
-  // Undo continues back to the exact previous Current: the same PUT, onto the source recorded before the Continue.
+  // Undo continues back to the exact previous Current: the Runtime's Undo, with the entry the Switch replaced.
   const rev = (value) => `rev-${String(value).padStart(4, "0")}`;
   let revision = fixture.state.revision;
-  await toast.getByRole("button", { name: "Undo", exact: true }).click();
+  await cmd(toast, "design.undo_last").click();
   await toast.filter({ hasText: "Undone · Current is back where it was" }).waitFor();
-  assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
-    body: { projectId: PROJECT, runId: "run-s2-layout", baseRevisionSha256: rev(revision), branchId: "main" } });
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/working-design/undo",
+    body: { projectId: PROJECT, previous: { runId: "run-s2-layout", branchId: "main" }, continued: "run-massing-d" } });
   assert.equal(fixture.state.head, "run-s2-layout", "Undo put the previous Current back");
   assert.equal(await toast.getByRole("button").count(), 0, "an Undo offers no second Undo");
   await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 6);
@@ -808,14 +818,14 @@ try {
 
   // Continue from D again; the tour goes on from there.
   revision = fixture.state.revision;
-  await card.getByRole("button", { name: "Continue from here", exact: true }).click();
+  await cmd(card, "design.go_to_step.continue").click();
   await toast.filter({ hasText: "Current is now “D · Terraced wedge”" }).waitFor();
   assert.deepEqual(writes.at(-1).body, { projectId: PROJECT, runId: "run-massing-d", baseRevisionSha256: rev(revision), branchId: null });
   await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 3);
   assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S0 · Site — Current · 2 running");
   assert.equal((await ready.innerText()).replace(/\s+/g, " ").trim(), "3 options ready · View");
   card = await clickNode("current");
-  assert.equal(await card.locator('[data-action="accept"]').isDisabled(), true);
+  assert.equal(await cmd(card, "stage.accept.current").isDisabled(), true);
   assert.match(await card.innerText(), /Current comes from S0 · Site, but this line's newest Stage is S2 · Layout/);
   await shoot(tab, "07-continued-rerooted");
 
@@ -823,18 +833,18 @@ try {
   // alone (#575 rule 3): continued, it is Current itself, one more step after S2, and no card of its own.
   card = await clickNode("candidate:run-entrance-a");
   assert.match(await card.innerText(), /Study\s+Study from S2 · Layout/, "a Study without a name is named after where it started");
-  await card.getByRole("button", { name: "Continue from here", exact: true }).click();
+  await cmd(card, "design.go_to_step.continue").click();
   await toast.filter({ hasText: "Current is now “Courtyard gate on the south bar”" }).waitFor();
   await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 6);
   checkTree(await scene(), [S0, "candidate:run-massing-c", S1, "candidate:run-facade-b", S2, "current"], { "study-massing": 4, "study-facade": 2 });
   assert.equal((await scene()).elements.some((element) => element.id === "candidate:run-entrance-a:card"), false, "the lone option is Current");
   card = await clickNode("current");
-  const acceptButton = card.locator('[data-action="accept"]');
+  const acceptButton = cmd(card, "stage.accept.current");
   assert.equal(await acceptButton.innerText(), "Accept as S3");
   await acceptButton.click();
   await card.getByText("Accept Current as S3? This creates an immutable Stage from the current work.").waitFor();
   await shoot(tab, "08-accept-confirm");
-  await card.locator('[data-action="accept-confirm"]').click();
+  await cmd(card, "stage.accept.confirm").click();
   // Accept confirms itself too, with no Undo: acceptance is a retained fact.
   await toast.filter({ hasText: "Accepted as S3" }).waitFor();
   await toast.hover();
@@ -857,11 +867,11 @@ try {
 
   // R2, the chip's half: while another model is viewed, the chip continues from it through the same Continue.
   card = await clickNode("candidate:run-massing-b");
-  await card.getByRole("button", { name: "View", exact: true }).click();
+  await cmd(card, "candidate.compare.view").click();
   await tab.getByTestId("arch-stub").filter({ hasText: "run-massing-b" }).waitFor();
   const viewingState = tab.locator(".stage-chip__viewing");
   await viewingState.filter({ hasText: "Viewing B · Twin towers on a podium · read-only" }).waitFor();
-  const chipContinue = viewingState.getByRole("button", { name: "Continue from here", exact: true });
+  const chipContinue = cmd(viewingState, "design.go_to_step.continue");
   // Refused by unrecorded edits, it says so in the bar and shows no toast.
   fixture.state.localDraft = { source: { projectId: PROJECT, stateDigest: "e".repeat(64), sourceRunId: "run-entrance-a", sourceStageRef: null },
     commands: [], attempt: null, updatedAt: "2026-09-25T22:20:00Z" };
@@ -876,26 +886,27 @@ try {
   // Record edits and continue behaves here as in the inspector: Modeling records the edits once, then the same Continue.
   revision = fixture.state.revision;
   const recordedBefore = recorded;
-  await tab.locator('.design-tree-bar__refusal [data-action="record"]').click();
+  await cmd(tab.locator(".design-tree-bar__refusal"), "draft.record.continue").click();
   await toast.filter({ hasText: "Current is now “B · Twin towers on a podium”" }).waitFor();
   assert.equal(recorded, recordedBefore + 1, "the chip records the edits once, then continues");
-  assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/working-design/switch",
     body: { projectId: PROJECT, runId: "run-massing-b", baseRevisionSha256: rev(revision), branchId: null } });
   await viewingState.waitFor({ state: "detached" });
   assert.equal(await tab.locator(".design-tree-bar__refusal").count(), 0, "B is Current now: nothing else is viewed");
   await shoot(tab, "09c-chip-continued");
   // Its Undo returns to S3, the Current it replaced.
   revision = fixture.state.revision;
-  await toast.getByRole("button", { name: "Undo", exact: true }).click();
+  await cmd(toast, "design.undo_last").click();
   await toast.filter({ hasText: "Undone" }).waitFor();
-  assert.deepEqual(writes.at(-1).body, { projectId: PROJECT, runId: "run-entrance-a", baseRevisionSha256: rev(revision), branchId: "main" });
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/working-design/undo",
+    body: { projectId: PROJECT, previous: { runId: "run-entrance-a", branchId: "main" }, continued: "run-massing-b" } });
   assert.equal(fixture.state.head, "run-entrance-a");
   await tab.waitForFunction(() => /^S3 — Current/.test((document.querySelector(".stage-chip")?.textContent ?? "").replace(/\s+/g, " ").trim()));
   await chip.click();
   await surface.locator(".design-tree__canvas canvas").first().waitFor();
 
   // The list shows the same nodes to the keyboard.
-  await bar.getByRole("button", { name: "List", exact: true }).click();
+  await cmd(bar, "view.design_tree.list").click();
   const items = surface.getByRole("treeitem");
   await items.first().waitFor();
   // Four Stages, nine admitted options (the tenth, asked for alone, is S3 itself now), two running lines and Current.
@@ -927,11 +938,11 @@ try {
   await overlay.waitFor({ state: "detached" });
   await tab.waitForFunction((row) => document.activeElement?.dataset.node === row, lastRow);
   await tab.setViewportSize({ width: 1440, height: 900 });
-  await bar.getByRole("button", { name: "Canvas", exact: true }).click();
+  await cmd(bar, "view.design_tree.canvas").click();
   await tab.waitForFunction(() => window.__treeApi?.getSceneElements().length > 20);
 
   // Leaving returns to the previous surface; the chip reopens the tree.
-  await bar.getByRole("button", { name: "Back to Modeling" }).click();
+  await cmd(bar, "view.design_tree.leave").click();
   await tab.getByTestId("arch-stub").waitFor();
   assert.equal(await chip.getAttribute("aria-pressed"), "false");
   await tab.getByTestId("workspace-board").click();
@@ -939,13 +950,13 @@ try {
   // Board | Layout are text tabs in the same bar, beside the position.
   const boardModes = bar.getByRole("radiogroup", { name: "Board mode", exact: true });
   assert.deepEqual(await boardModes.getByRole("radio").allInnerTexts(), ["Board", "Layout"]);
-  assert.equal(await bar.getByRole("button", { name: "Back to Modeling" }).count(), 0, "the tree's menus leave the bar with the tree");
+  assert.equal(await cmd(bar, "view.design_tree.leave").count(), 0, "the tree's menus leave the bar with the tree");
   await shoot(tab, "10a-board-bar");
   await chip.click();
-  await bar.getByRole("button", { name: "Back to Board" }).click();
+  await cmd(bar, "view.design_tree.leave").click();
   await tab.getByTestId("board-stub").waitFor();
   await chip.click();
-  await bar.getByRole("button", { name: "Back to Board" }).waitFor();
+  await waitForCommandLabel(cmd(bar, "view.design_tree.leave"), "← Back to Board");
   await chip.click();
   await tab.getByTestId("board-stub").waitFor();
 
@@ -955,8 +966,8 @@ try {
   assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S3 · 当前 · 2 个运行中");
   await chip.click();
   await surface.getByRole("heading", { name: "状态树" }).waitFor();
-  await bar.getByRole("button", { name: "列表", exact: true }).waitFor();
-  await bar.getByRole("button", { name: "返回画板" }).waitFor();
+  await waitForCommandLabel(cmd(bar, "view.design_tree.list"), "列表");
+  await waitForCommandLabel(cmd(bar, "view.design_tree.leave"), "← 返回画板");
   await shoot(tab, "11-zh");
 
   // A result the architect turned down cannot become a Stage: Current's card says so before anyone asks.
@@ -968,7 +979,7 @@ try {
   await tab.evaluate(() => window.dispatchEvent(new Event("focus")));
   card = await clickNode("current");
   await card.getByText("当前是已被否定的结果，不能成为阶段。请先从已准入的方案继续。").waitFor();
-  assert.equal(await card.locator('[data-action="accept"]').isDisabled(), true);
+  assert.equal(await cmd(card, "stage.accept.current").isDisabled(), true);
   fixture.state.head = acceptedHead;
   fixture.state.revision += 1;
 
@@ -981,31 +992,34 @@ try {
   // Review actions use the same node's accessible list row, independent of that view.
   await tab.keyboard.press("Escape");
   await card.waitFor({ state: "detached" });
-  await bar.getByRole("button", { name: "List", exact: true }).click();
-  const rejectedOption = surface.locator('[role="treeitem"][data-node="candidate:run-massing-a"]');
+  await cmd(bar, "view.design_tree.list").click();
+  const rejectedOption = cmd(surface, "view.design_tree.select_row", { arg: "candidate:run-massing-a" });
   await rejectedOption.click();
   card = surface.locator('.design-tree-inspector[data-node="candidate:run-massing-a"]');
   await card.waitFor();
-  await card.getByRole("button", { name: "Reject", exact: true }).click();
+  await cmd(card, "candidate.review.reject").click();
   await card.waitFor({ state: "detached" });
-  await bar.getByRole("button", { name: "Show processed (1)", exact: true }).click();
+  await waitForCommandLabel(cmd(bar, "view.handled.toggle"), "Show processed (1)");
+  await cmd(bar, "view.handled.toggle").click();
   await rejectedOption.click();
   await card.getByText(/Rejected/).waitFor();
-  assert.equal(await card.getByRole("button", { name: "Undo archive", exact: true }).count(), 0,
+  assert.equal(await cmd(card, "candidate.review.archive").filter({ hasText: /^Undo archive$/ }).count(), 0,
     "a rejection is not presented as an archive that can be cancelled");
-  await card.getByRole("button", { name: "Archive", exact: true }).click();
-  await card.getByRole("button", { name: "Undo archive", exact: true }).click();
-  await card.getByRole("button", { name: "Archive", exact: true }).waitFor();
+  await cmd(card, "candidate.review.archive").click();
+  await waitForCommandLabel(cmd(card, "candidate.review.archive"), "Undo archive");
+  await cmd(card, "candidate.review.archive").click();
+  await waitForCommandLabel(cmd(card, "candidate.review.archive"), "Archive");
   await card.getByText(/Rejected/).waitFor();
   assert.equal(reviews.get("candidate:run-massing-a").disposition, "rejected");
   assert.equal(await card.locator("strong").innerText(), "A · Slab bar along the river");
-  assert.equal(await bar.getByRole("button", { name: "Hide processed", exact: true }).getAttribute("aria-pressed"), "true",
+  assert.equal(await cmd(bar, "view.handled.toggle").getAttribute("aria-pressed"), "true",
     "the restored rejection remains visible in processed items");
   assert.deepEqual(writes.slice(reviewWritesStart).map(({ name, body }) => [name, body.action]),
     ["reject", "archive", "restore"].map((action) => ["/api/candidate-reviews", action]));
   assert.deepEqual({ draft: fixture.workingDraft(), stages: fixture.designHistory().stages }, beforeRejectedReview,
     "reject, archive and restore leave Working Head and Stage history unchanged");
-  await bar.getByRole("button", { name: "Hide processed", exact: true }).click();
+  await waitForCommandLabel(cmd(bar, "view.handled.toggle"), "Hide processed");
+  await cmd(bar, "view.handled.toggle").click();
   await card.waitFor({ state: "detached" });
   await context.close();
 
@@ -1054,20 +1068,22 @@ try {
   // Closed, the inspector gives this narrow Hub panel its whole width back.
   await hubPage.keyboard.press("Escape");
   await hubCard.waitFor({ state: "detached" });
-  await hubBar.getByRole("button", { name: "Show processed (1)", exact: true }).click();
-  await hubBar.getByRole("button", { name: "List", exact: true }).click();
-  await hubSurface.locator('[role="treeitem"][data-node="candidate:run-massing-a"]').click();
+  await waitForCommandLabel(cmd(hubBar, "view.handled.toggle"), "Show processed (1)");
+  await cmd(hubBar, "view.handled.toggle").click();
+  await cmd(hubBar, "view.design_tree.list").click();
+  await cmd(hubSurface, "view.design_tree.select_row", { arg: "candidate:run-massing-a" }).click();
   const reopenedReview = hubSurface.locator('.design-tree-inspector[data-node="candidate:run-massing-a"]');
   await reopenedReview.getByText(/Rejected/).waitFor();
   assert.equal(await reopenedReview.locator("strong").innerText(), "A · Slab bar along the river");
-  await hubBar.getByRole("button", { name: "Hide processed", exact: true }).click();
+  await waitForCommandLabel(cmd(hubBar, "view.handled.toggle"), "Hide processed");
+  await cmd(hubBar, "view.handled.toggle").click();
   await reopenedReview.waitFor({ state: "detached" });
-  await hubBar.getByRole("button", { name: "Canvas", exact: true }).click();
+  await cmd(hubBar, "view.design_tree.canvas").click();
   await hubSurface.locator(".design-tree__canvas canvas").first().waitFor();
-  await hubBar.getByRole("button", { name: "Back to Modeling" }).click();
+  await cmd(hubBar, "view.design_tree.leave").click();
   await hubPage.getByTestId("arch-stub").waitFor();
   assert.equal(await railButton("Modeling").getAttribute("aria-pressed"), "true", "leaving returns to the surface it came from");
-  await hubPage.locator(".chat-project-workspace:not([hidden]) .stage-chip").click();
+  await cmd(hubPage.locator(".chat-project-workspace:not([hidden])"), "view.design_history.toggle").click();
   await hubSurface.locator(".design-tree__canvas canvas").first().waitFor();
   assert.equal(await railButton("Design tree").getAttribute("aria-pressed"), "true", "the chip opens the same surface");
   // #367, #409: in the Hub the store already names every drawn thumbnail, so opening the tree close up asks the projection
@@ -1135,7 +1151,7 @@ try {
     arrivingThumbnail: { statusRequests: 1, downloads: 1 }, lostBlobRedrawn: { failedReads: 1, remounted: false } } }));
   await hubPage.evaluate((view) => window.__treeApi.updateScene({ appState: view }), hubView);
   await hubLevel("mid");
-  await hubPage.locator(".chat-project-workspace:not([hidden]) .stage-chip").click();
+  await cmd(hubPage.locator(".chat-project-workspace:not([hidden])"), "view.design_history.toggle").click();
   await hubPage.getByTestId("arch-stub").waitFor();
 
   // #366: Modeling saves its local recovery 250 ms after each edit, the Board its scene 700 ms after each
@@ -1253,7 +1269,7 @@ try {
     "no ids, conflicts or diverged lines on the canvas");
   // #575 rule 5: Current says the words that asked for it first, then where it stands, each clipped to the card.
   assert.match(texts(lineView, "current").join(" ").replace(/\s+/g, " "), /“Give V3's walls and ribs their… 1 edit after V3 - ribbed roof,/);
-  assert.deepEqual(await lineBar.getByRole("button", { name: /earlier steps|superseded drafts/ }).allInnerTexts(),
+  assert.deepEqual(await cmd(lineBar, "view.design_tree.toggle_steps").or(cmd(lineBar, "view.design_tree.toggle_drafts")).allInnerTexts(),
     ["Unfold 4 earlier steps", "Show superseded drafts (2)"]);
   await shoot(linePage, "13-line-folded");
   if (shots) {
@@ -1288,39 +1304,40 @@ try {
   assert.match(await lineCard.innerText(), /Superseded by\s*V3 - ribbed roof, open side triangles/);
   // #575: a draft nothing refers to goes to the project trash at the next open or Continue, restorable for 30 days.
   assert.match(await lineCard.innerText(), /moves it into the project trash, restorable for 30 days/);
-  assert.equal(await lineCard.locator('[data-action="continue"]').isEnabled(), true, "a draft is kept and can be returned to");
-  await lineBar.getByRole("button", { name: "Hide superseded drafts", exact: true }).click();
+  assert.equal(await cmd(lineCard, "design.go_to_step.continue").isEnabled(), true, "a draft is kept and can be returned to");
+  await cmd(lineBar, "view.design_tree.toggle_drafts").click();
   await lineCard.waitFor({ state: "detached" });
-  // Returning to V2 is the existing Continue (PUT /api/working-draft), and its Undo puts Current back.
+  // Returning to V2 is the existing Continue (the Runtime's Switch), and its Undo puts Current back.
   lineCard = await clickCanvasNode(linePage, lineSurface, "step:run-v2");
   assert.match(await lineCard.innerText(), /Step · on the current line/);
   assert.match(await lineCard.innerText(), /Grew from\s*V1 - timber frame and hemp walls/);
   assert.deepEqual(await lineCard.locator(".design-tree-inspector__actions").first().getByRole("button").allInnerTexts(), ["View", "Continue from here"]);
-  assert.equal(await lineCard.getByRole("button", { name: "Endorse direction" }).count(), 0, "a step is no admitted option to review");
+  assert.equal(await cmd(lineCard, "candidate.review.endorse").count(), 0, "a step is no admitted option to review");
   const lineRevision = fixture.state.revision;
-  await lineCard.getByRole("button", { name: "Continue from here", exact: true }).click();
+  await cmd(lineCard, "design.go_to_step.continue").click();
   const lineToast = linePage.locator(".design-tree-toast");
   await lineToast.filter({ hasText: "Current is now “V2 - pitched roof, open gable ends”" }).waitFor();
-  assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/working-design/switch",
     body: { projectId: PROJECT, runId: "run-v2", baseRevisionSha256: rev(lineRevision), branchId: null } });
   await trunkPoints(4);
   checkTree(await scene(linePage), ["origin", "step:run-site-massing", "step:run-v1", "current"], {});
   assert.equal((await scene(linePage)).elements.some((element) => element.id.startsWith("drafts:") || element.id.startsWith("draft:")), false,
     "built on V2, the drafts continue Current now: nothing is superseded");
   await shoot(linePage, "16-returned-to-v2");
-  await lineToast.getByRole("button", { name: "Undo", exact: true }).click();
+  await cmd(lineToast, "design.undo_last").click();
   await lineToast.filter({ hasText: "Undone" }).waitFor();
-  assert.deepEqual(writes.at(-1).body, { projectId: PROJECT, runId: "run-v3-materials", baseRevisionSha256: rev(lineRevision + 1), branchId: null });
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/working-design/undo",
+    body: { projectId: PROJECT, previous: { runId: "run-v3-materials", branchId: null }, continued: "run-v2" } });
   await trunkPoints(6);
   // Folded again from the menu; in the list the fold is a row that Enter opens.
-  await lineBar.getByRole("button", { name: "Fold earlier steps", exact: true }).click();
+  await cmd(lineBar, "view.design_tree.toggle_steps").click();
   await trunkPoints(3);
-  await lineBar.getByRole("button", { name: "List", exact: true }).click();
-  const foldRow = lineSurface.locator('[role="treeitem"][data-node="fold"]');
+  await cmd(lineBar, "view.design_tree.list").click();
+  const foldRow = cmd(lineSurface, "view.design_tree.select_row", { arg: "fold" });
   await foldRow.focus();
   assert.match(await foldRow.innerText(), /4 earlier steps/);
   await linePage.keyboard.press("Enter");
-  await lineSurface.locator('[role="treeitem"][data-node="step:run-v2"]').waitFor();
+  await cmd(lineSurface, "view.design_tree.select_row", { arg: "step:run-v2" }).waitFor();
   assert.deepEqual(await lineSurface.getByRole("treeitem").evaluateAll((rows) => rows.map((row) => row.dataset.node)),
     ["origin", ...lineSteps.slice(0, 3), "drafts:step:run-v2", lineSteps[3], "current"]);
   await shoot(linePage, "17-line-list");
@@ -1328,7 +1345,7 @@ try {
   // the inspector that lists them, and Restore brings one back as a kept draft, through POST /api/trash/restore.
   fixture.clean(["run-v3-closed", "run-v3-glazed"]);
   await linePage.evaluate(() => window.dispatchEvent(new Event("focus")));
-  const cleanedRow = lineSurface.locator('[role="treeitem"][data-node="drafts:step:run-v2"]');
+  const cleanedRow = cmd(lineSurface, "view.design_tree.select_row", { arg: "drafts:step:run-v2" });
   await cleanedRow.filter({ hasText: "Superseded drafts cleaned · 2" }).waitFor();
   assert.match(await cleanedRow.innerText(), /Restorable for 30 days/);
   await cleanedRow.focus();
@@ -1340,7 +1357,7 @@ try {
   assert.deepEqual(await cleanedCard.locator(".design-tree-cleaned li").evaluateAll((rows) => rows.map((row) => row.dataset.run)),
     ["run-v3-glazed", "run-v3-closed"], "newest first");
   await shoot(linePage, "18-cleaned-drafts");
-  await cleanedCard.locator('li[data-run="run-v3-closed"] [data-action="restore"]').click();
+  await cmd(cleanedCard.locator('li[data-run="run-v3-closed"]'), "candidate.restore.draft").click();
   await cleanedCard.locator('li[data-run="run-v3-closed"]').waitFor({ state: "detached" });
   assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/trash/restore", body: { projectId: PROJECT, runId: "run-v3-closed" } });
   await cleanedRow.filter({ hasText: "Superseded drafts · 1" }).waitFor();
@@ -1348,7 +1365,7 @@ try {
   assert.deepEqual(await cleanedCard.locator(".design-tree-cleaned li").evaluateAll((rows) => rows.map((row) => row.dataset.run)), ["run-v3-glazed"]);
   await shoot(linePage, "19-draft-restored");
   // On the canvas the card says the same, quietly, and a click on it opens the same inspector.
-  await lineBar.getByRole("button", { name: "Canvas", exact: true }).click();
+  await cmd(lineBar, "view.design_tree.canvas").click();
   await linePage.waitForFunction(() => window.__treeApi?.getSceneElements().some((element) => element.id === "drafts:step:run-v2:card"));
   // Beside the open inspector the canvas is narrower, and a card's words are clipped to it.
   const cleanedTexts = texts(await scene(linePage), "drafts:step:run-v2");
@@ -1394,7 +1411,7 @@ try {
   // Returning to the roof is the existing Continue; its toast names the step by its words.
   let landedCard = await clickCanvasNode(landedPage, landedSurface, "step:run-roof");
   assert.match(await landedCard.innerText(), /名称\s*Ribbed timber roof/, "the name it was also given is said beside its words");
-  await landedCard.getByRole("button", { name: "从这里继续", exact: true }).click();
+  await cmd(landedCard, "design.go_to_step.continue").click();
   const landedToast = landedPage.locator(".design-tree-toast");
   await landedToast.filter({ hasText: "当前已改为「把屋顶改成木肋拱」" }).waitFor();
   await landedTrunk(3);
@@ -1410,22 +1427,22 @@ try {
   assert.match(texts(landedView, "current").join(" "), /「把屋顶改成木肋拱」/);
   await shoot(landedPage, "23-returned-later-steps");
   // In the list the steps it left are a group of their own, after Current.
-  await landedBar.getByRole("button", { name: "列表", exact: true }).click();
-  await landedSurface.locator('[role="treeitem"][data-node="later:run-materials"]').waitFor();
+  await cmd(landedBar, "view.design_tree.list").click();
+  await cmd(landedSurface, "view.design_tree.select_row", { arg: "later:run-materials" }).waitFor();
   assert.deepEqual(await landedSurface.getByRole("treeitem").evaluateAll((rows) => rows.map((row) => [row.dataset.node, row.dataset.group])),
     [["origin", "trunk"], ["step:run-frame", "trunk"], ["current", "trunk"], ["later:run-glazing", "later"], ["later:run-materials", "later"]]);
-  assert.match(await landedSurface.locator('[role="treeitem"][data-node="current"]').innerText(), /「把屋顶改成木肋拱」/);
+  assert.match(await cmd(landedSurface, "view.design_tree.select_row", { arg: "current" }).innerText(), /「把屋顶改成木肋拱」/);
   await shoot(landedPage, "24-returned-list");
-  await landedBar.getByRole("button", { name: "画布", exact: true }).click();
+  await cmd(landedBar, "view.design_tree.canvas").click();
   await landedPage.waitForFunction(() => window.__treeApi?.getSceneElements().some((element) => element.id === "later:run-materials:card"));
   // A later step is continued again from its own inspector, not only through Undo.
   landedCard = await clickCanvasNode(landedPage, landedSurface, "later:run-materials");
   assert.match(await landedCard.innerText(), /后续步骤 · 当前回到之前时保留/);
   assert.match(await landedCard.innerText(), /「从这里继续」会让当前再走到这里/);
   const landedRevision = fixture.state.revision;
-  await landedCard.getByRole("button", { name: "从这里继续", exact: true }).click();
+  await cmd(landedCard, "design.go_to_step.continue").click();
   await landedToast.filter({ hasText: "当前已改为「给 238 个构件定材质」" }).waitFor();
-  assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/working-design/switch",
     body: { projectId: PROJECT, runId: "run-materials", baseRevisionSha256: rev(landedRevision), branchId: null } });
   await landedTrunk(5);
   landedView = await scene(landedPage);
@@ -1436,8 +1453,11 @@ try {
 
   assert.deepEqual(unexpected, [], "the tree reads only what it declares");
   assert.deepEqual(external, [], "no external request");
-  assert.deepEqual(errors.filter((message) => !/Failed to load resource: the server responded with a status of 404/.test(message)), []);
-  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, Current's line as one chain with its earlier steps folded and opened, landed changes folded like plain steps and named by their words, a return keeping the line it left after Current and a later step continued again, superseded drafts folded where the line moved on, cleaned drafts listed and one restored, return to a step via Continue and Undo, three zoom levels with close-card server thumbnails read on demand and arriving through the index, inspector, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, the chip's viewing state continues from here, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
+  // The two Continues unrecorded edits held back are the Runtime's 409s now (2-6); nothing else failed.
+  const refused = /Failed to load resource: the server responded with a status of 409/;
+  assert.equal(errors.filter((message) => refused.test(message)).length, 2, "the two refused Continues, and no other conflict");
+  assert.deepEqual(errors.filter((message) => !/Failed to load resource: the server responded with a status of 404/.test(message) && !refused.test(message)), []);
+  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, Current's line as one chain with its earlier steps folded and opened, landed changes folded like plain steps and named by their words, a return keeping the line it left after Current and a later step continued again, superseded drafts folded where the line moved on, cleaned drafts listed and one restored, return to a step via Continue and Undo, three zoom levels with close-card server thumbnails read on demand and arriving through the index, inspector, review-open warning, View read-only, Continue re-roots via the Runtime's Switch, its toast's Undo puts the previous Current back through the Runtime's Undo, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, the chip's viewing state continues from here, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
     writes: writes.map((row) => `${row.method} ${row.name}`) }));
 } catch (error) {
   console.error("FAILED:", error);
