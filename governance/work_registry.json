@@ -93,39 +93,6 @@
         "tools/tests/test_state_file_command.py"
       ],
       "depends_on": []
-    },
-    {
-      "id": "GH-300",
-      "lanes": [
-        {
-          "id": "developer-mode",
-          "status": "active",
-          "branch": "claude/300-developer-mode",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-developer-mode",
-          "base_ref": "bc41a4caecb79198c2b1ea15b755a59169e33617",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": "2-7: developer mode is kept in the browser's preference record across reloads; the launch options (runtime start and stop, reference run, model export, port, event stream) and the Hub shell's technical details show only in developer mode. The workspaces' technical details follow after #684 (2-7b). Draft only during the paper freeze: nothing merges into main until the relay ends and the coordinator says so.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/src/ChatMessageContent.tsx",
-            "apps/monkeyhub/web/src/ChatShell.tsx",
-            "apps/monkeyhub/web/src/ChatSuggestionCard.tsx",
-            "apps/monkeyhub/web/src/features/settings/developer.ts",
-            "apps/monkeyhub/web/src/features/settings/preferences.tsx",
-            "apps/monkeyhub/web/src/i18n/BilingualText.tsx",
-            "apps/monkeyhub/web/src/i18n/messages.en.ts",
-            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-            "apps/monkeyhub/web/src/main.tsx",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs",
-            "apps/monkeyhub/web/test/developerMode.test.ts",
-            "apps/monkeyhub/web/test/settingsAutosave.browser.mjs"
-          ],
-          "depends_on": []
-        }
-      ]
     }
   ]
 }
