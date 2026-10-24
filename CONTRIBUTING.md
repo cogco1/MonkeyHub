@@ -37,6 +37,9 @@ MonkeyHub 的第一方代码以 **AGPL-3.0-only** 发布，同时保留未来提
 7. **按影响验证。** 选择受影响的行为测试、类型检查或构建；纯文档检查命令、链接、生成地图和 scoped diff。`archcheck` 检查当前静态边界，`--changed` 检查已提交范围；重复能力检查只覆盖相同声明和部分代码复制，行为正确性与语义重复仍需测试和 review。
 8. **一个 reviewable slice 一个 PR。** 一般一个 Issue 对应一个 PR；只有 Issue 明确拆成多个独立切片时才开多个 PR。只 `git add -- <明确文件>`，核对 staged diff，通过相关 CI 并交独立 reviewer 后集成。PR 写清 Issue、行为、位置（新增或搬动的路径及各自依据的布局规则）、base、交接、重叠、实际检查和剩余验收。不直接 push `main`，不重写已推送历史；只在已落地的相关依赖或集成需要时同步，不做每日机械 rebase。
 9. **合并后当场收尾。** PR 合并后，在同一会话里退役它的 worktree 和本地分支：在主检出先运行 `python tools/dev/workspace.py retire` 预览，再加 `--apply`。它只把已并入 `origin/main` 且没有本地改动的任务 worktree 移入开发根的 `_TRASH_<日期>`（只改名，不删除文件），再删除已合并的本地分支。
+10. **界面入口写去向。** 新增、挪动或撤掉按钮、菜单项、页签时，填 PR 模板的「入口去向」表：命令 id、所属能力、落位、新增 / 挪动 / 撤掉、替代或退役了哪个入口（新能力写“无，新能力 `<id>`”）、该位置预算前后。集成 PR 按 lane 汇总。规则见 [`AGENTS.md`](AGENTS.md)「Interface entries」和 [ADR-014](docs/decisions/014-entries-earn-their-place.md)。
+11. **Issue 验收写结果。** 写“用户能把二层抬高 0.5 m”，不写“界面上有某按钮”；要写点击路径时写命令 id。
+12. **出包前查入口预算。** 打安装包前跑入口预算检查，超预算不出包。
    - 任务 worktree 只用 `workspace.py create` 创建；Codex 或 Claude 桌面应用建的 worktree 由各自应用清理（Claude：Settings › Storage）。
    - 工作不放在 stash 里：提交到分支并推送。
    - lane 分支只在有自己的 PR 时推送；集成 PR 合并后，删除它带入的 lane 分支。

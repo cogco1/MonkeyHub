@@ -183,6 +183,26 @@ the spine.
   label a PR `release` to ship it right after merge
   ([nightly release](docs/development/nightly-release.md)).
 
+## Interface entries
+
+- Buttons, menu items and tabs render a command of the command tree (surface → group → command),
+  which is a view of the `capabilities` of `governance/module_registry.json`: a group is one
+  capability, its `ui.commands` are the commands, and controls that belong to no design capability
+  (dialogs, menus, panels) are `hub.shell` capabilities of kind `shell`. The JSX names the command
+  with `data-command` and defines no action of its own. Form fields (`input`, `select`, `textarea`)
+  are a command's arguments, not commands.
+- List items (each conversation, each result, each reference image) share one command id and name
+  the item with `data-command-arg`.
+- A new capability reaches people through the conversation and Ctrl+K first. A standing button,
+  menu item or tab needs a row in the PR's 入口去向 table: who uses it, how often, and why Ctrl+K
+  is not enough.
+- One command, one standing place; shortcuts and Ctrl+K are not places. Each place has a budget
+  ([ADR-014](docs/decisions/014-entries-earn-their-place.md)); a change that would exceed it
+  retires or folds an entry in the same change.
+- Browser tests reach a command by its id (`data-command`), not by its label or position.
+- Labels come from the command's `label` and `label_zh`, never `zh ? … : …`. Diagnostic commands
+  are tier `developer` and render only in developer mode.
+
 ## Extend behavior, remove superseded paths
 
 Extend the existing owner by default. When replacing a mechanism, remove the
@@ -192,7 +212,8 @@ retained data. An export or a test alone does not prove that a path is needed.
 A genuinely new requested behavior may have nothing to retire. Implement it
 beside its first real consumer; extract a shared abstraction only when real
 consumers need it. Do not invent a retirement or a parallel framework to satisfy
-a slogan.
+a slogan. This covers code paths, not interface entries: a new standing entry
+follows Interface entries above.
 
 "Independently runnable" is not "independent product entry". A service may start by
 itself for tests and development — the project runtime on an explicit `--project-dir`
