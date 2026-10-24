@@ -425,13 +425,7 @@ try {
   await page.locator(".attention-shell__side-tabs .menu-tab[aria-selected=true]").filter({ hasText: "后台" }).waitFor();
   assert.equal(await said.inputValue(), "");
   await page.getByRole("button", { name: "收起侧栏" }).first().click();
-  // What the sentence left out is the one thing the card asks, as buttons; a named project needs no question.
-  await said.fill("切到另一个项目");
-  await said.press("Enter");
-  await offer.getByText("哪个项目？").waitFor();
-  assert.equal(await offer.getByRole("button", { name: "直接做" }).count(), 0, "the choice is the click that does it");
-  await offer.getByRole("button", { name: "Housing 13 户" }).click();
-  await page.waitForFunction(() => document.querySelector(".attention-shell__projects .attention-shell__row[aria-current]")?.textContent.includes("Housing"));
+  // A sentence that names the project needs no question; one that leaves it out is asked that one thing, as buttons.
   await said.fill("切到 Housing 13 户");
   await said.press("Enter");
   await offer.getByRole("button", { name: "直接做" }).waitFor();
@@ -439,6 +433,12 @@ try {
   await offer.getByRole("button", { name: "还是发给 AI" }).click();
   for (let wait = 0; chatPosts.length === before && wait < 100; wait += 1) await page.waitForTimeout(50);
   assert.deepEqual(chatPosts.slice(before).map(([, content]) => content), ["切到 Housing 13 户"], "only what was sent as written reached the model");
+  await said.fill("切到另一个项目");
+  await said.press("Enter");
+  await offer.getByText("哪个项目？").waitFor();
+  assert.equal(await offer.getByRole("button", { name: "直接做" }).count(), 0, "the choice is the click that does it");
+  await offer.getByRole("button", { name: "Housing 13 户" }).click();
+  await page.waitForFunction(() => document.querySelector(".attention-shell__projects .attention-shell__row[aria-current]")?.textContent.includes("Housing"));
   await page.locator(".attention-shell__search").click();
   await page.locator("dialog.command-palette[open] input").fill("那个东西挪远点");
   const byMeaning = page.locator("dialog.command-palette[open] .command-palette__heading").filter({ hasText: "按意思" });
