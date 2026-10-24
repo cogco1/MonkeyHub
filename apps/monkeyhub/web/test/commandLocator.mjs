@@ -22,7 +22,7 @@ export async function commandLabel(locator) {
 /**
  * What finding a control by its label used to check on the side: within `scope` (one element),
  * every visible control that names a command has a readable name and an interactive role, and
- * every visible button names a command. `ignore` lists selectors of subtrees owned elsewhere
+ * every visible button, menu item and tab names a command. `ignore` lists selectors of subtrees owned elsewhere
  * (Excalidraw's own UI, the Hub shell). Returns the problems as text, so a test asserts it is empty;
  * it also catches a `data-command={expression}` that renders nothing, which the static scan cannot see.
  */
@@ -46,9 +46,9 @@ export async function commandProblems(scope, { ignore = [] } = {}) {
       else if (!name(element)) problems.push(`${id}: no readable name`);
       else if (!interactive(element)) problems.push(`${id}: a ${element.tagName.toLowerCase()} without an interactive role`);
     }
-    for (const element of root.querySelectorAll("button")) {
+    for (const element of root.querySelectorAll("button, [role=menuitem], [role=menuitemcheckbox], [role=menuitemradio], [role=tab]")) {
       if (visible(element) && !skipped(element) && !element.hasAttribute("data-command")) {
-        problems.push(`button without data-command: ${name(element) || element.outerHTML.slice(0, 100)}`);
+        problems.push(`${element.getAttribute("role") ?? "button"} without data-command: ${name(element) || element.outerHTML.slice(0, 100)}`);
       }
     }
     return problems;
