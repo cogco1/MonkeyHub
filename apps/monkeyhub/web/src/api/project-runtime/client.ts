@@ -286,6 +286,45 @@ function keptModelBytes(sha256: string): Blob | null {
   return blob;
 }
 
+/*
+ * The working design's history and Switch with its Undo (#300, 2-6), as the Runtime's OpenAPI states them.
+ * The generated client does not have these routes yet: it is regenerated once GH-185 releases it (step 0-2),
+ * and then these shapes and the three calls below come from ./generated like the rest.
+ */
+export interface ContinueMoveDto {
+  readonly occurredAt: string;
+  readonly runId: string;
+  readonly previousRunId: string | null;
+  readonly actorId: string;
+  readonly origin: string;
+  readonly messageSessionId?: string | null;
+  readonly messageId?: string | null;
+}
+export interface ContinueMovesDto {
+  readonly projectId: string;
+  readonly moves: readonly ContinueMoveDto[];
+  readonly warnings: readonly string[];
+}
+export interface HeadEntryDto {
+  readonly runId: string;
+  readonly branchId: string | null;
+}
+export interface WorkingDesignSwitchDto {
+  readonly position: WorkingDraftDto;
+  readonly undo: { readonly previous: HeadEntryDto | null; readonly continued: string; readonly revisionAfter: string | null };
+}
+export interface WorkingDesignSwitchRequestDto {
+  readonly projectId: string;
+  readonly runId: string;
+  readonly baseRevisionSha256: string | null;
+  readonly branchId?: string | null;
+}
+export interface WorkingDesignUndoRequestDto {
+  readonly projectId: string;
+  readonly previous: HeadEntryDto;
+  readonly continued: string;
+}
+
 // Workspace startup reads `/api/project` and `/api/state`; runtime liveness
 // belongs to the Hub that started it.
 export const createStudioClient = (connection: ServerConnection) => ({
@@ -334,6 +373,21 @@ export const createStudioClient = (connection: ServerConnection) => ({
   savePersonsVersion(body: Omit<WorkingDraftSaveDto, "savedBy">): Promise<WorkingDraftDto> {
     return call("POST /api/working-draft/save", saveCurrentWorkingDraftApiWorkingDraftSavePost({
       client: connection.client, body: { ...body, savedBy: "person" } }));
+  },
+  /** The moves that brought the Working Head where it stands, newest first (the history page). */
+  workingDesignMoves(limit = 50, signal?: AbortSignal): Promise<ContinueMovesDto> {
+    return call("GET /api/working-design/moves", connection.client.get({ url: "/api/working-design/moves", query: { limit }, signal }) as
+      Promise<FieldsResult<ContinueMovesDto>>);
+  },
+  /** Switch: Continue onto one run, answered with the Undo that puts back what it replaced. */
+  switchWorkingDesign(body: WorkingDesignSwitchRequestDto): Promise<WorkingDesignSwitchDto> {
+    return call("POST /api/working-design/switch", connection.client.post({ url: "/api/working-design/switch", body,
+      headers: { "Content-Type": "application/json" } }) as Promise<FieldsResult<WorkingDesignSwitchDto>>);
+  },
+  /** One Switch's Undo, while Current still stands where that Switch left it. */
+  undoWorkingDesign(body: WorkingDesignUndoRequestDto): Promise<WorkingDraftDto> {
+    return call("POST /api/working-design/undo", connection.client.post({ url: "/api/working-design/undo", body,
+      headers: { "Content-Type": "application/json" } }) as Promise<FieldsResult<WorkingDraftDto>>);
   },
   retainLocalDraft(body: LocalDraftRequestDto): Promise<WorkingDraftDto> {
     return call("PUT /api/working-draft/local", retainLocalWorkingDraftApiWorkingDraftLocalPut({ client: connection.client, body }));

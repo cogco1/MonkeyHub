@@ -368,7 +368,9 @@
             "hub.shell"
           ],
           "write_scope": [
+            "apps/monkeyhub/web/src/api/project-runtime/client.ts",
             "apps/monkeyhub/web/src/features/designHistory/",
+            "apps/monkeyhub/web/test/historyRows.test.ts",
             "services/project-runtime/src/project_runtime/api/dto/working_draft.py",
             "services/project-runtime/src/project_runtime/api/routes/working_design.py",
             "services/project-runtime/src/project_runtime/application/working_draft.py"

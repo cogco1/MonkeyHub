@@ -1,0 +1,16 @@
+/* The side panel's history page (#300, 2-6): tokens only, so every interface style dresses it. */
+.design-history { display: grid; gap: 10px; min-width: 0; }
+.design-history__head { display: flex; flex-wrap: wrap; gap: 6px; }
+.design-history__note { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; font-size: var(--text-caption, 12px); color: var(--ink); }
+.design-history__note[role="alert"] { color: var(--danger, var(--ink)); }
+.design-history__empty { margin: 0; color: var(--muted); font-size: var(--text-caption, 12px); }
+.design-history__rows { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.design-history__row { display: grid; gap: 2px; padding: 8px 6px; border-bottom: 1px solid var(--line); min-width: 0; }
+.design-history__row[data-current] { background: var(--surface-2, transparent); }
+.design-history__line { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.design-history__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.design-history__badge { flex: none; font-size: var(--text-caption, 12px); color: var(--muted); }
+.design-history__badge--stage { color: var(--accent, var(--muted)); }
+.design-history__meta { margin: 0; color: var(--muted); font-size: var(--text-caption, 12px); }
+.design-history__actions, .design-history__naming { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.design-history__naming input { flex: 1 1 140px; min-width: 0; }
