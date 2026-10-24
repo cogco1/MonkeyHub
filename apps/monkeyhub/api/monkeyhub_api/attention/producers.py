@@ -22,7 +22,7 @@ from .models import AttentionDraft, AttentionMedia, AttentionOption, AttentionSo
 
 # Commands that only open something, named as the command tree names them.
 OPEN_CONVERSATION = "chat.open_conversation"
-COMPARE = "candidate.compare"
+COMPARE = "candidate.compare.decide"
 
 RESULTS = "result:"
 PERMISSIONS = "perm:"

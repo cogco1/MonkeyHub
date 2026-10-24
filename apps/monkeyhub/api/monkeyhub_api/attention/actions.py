@@ -304,7 +304,8 @@ class Opening:
 # Commands a card may offer to open: they show something and change nothing.
 OPENS: dict[str, Opening] = {
     "chat.open_conversation": Opening(takes=("sessionId",), needs=("sessionId",)),
-    "candidate.compare": Opening(takes=("runIds",), needs=("runIds",)),
+    # Compare and decide (2-5): the runs side by side, from the same camera.
+    "candidate.compare.decide": Opening(takes=("runIds",), needs=("runIds",)),
     "board.open_frame": Opening(takes=("frameId",), needs=("frameId",)),
 }
 
