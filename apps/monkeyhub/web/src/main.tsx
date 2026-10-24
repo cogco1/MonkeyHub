@@ -507,6 +507,8 @@ function App() {
         <select data-command="preference.appearance.theme" id="theme" value={preferences.theme} onChange={(event) => changeAppearance({ theme: event.target.value as AppearancePreferences["theme"] })}><option value="system">{t("system")}</option><option value="dark">{t("dark")}</option><option value="light">{t("light")}</option></select></div>
       <div className="settings-row"><label htmlFor="font-scale">{t("size")}</label>
         <select data-command="preference.appearance.size" id="font-scale" value={preferences.fontScale} onChange={(event) => changeAppearance({ fontScale: Number(event.target.value) as AppearancePreferences["fontScale"] })}><option value="0.9">{t("compact")}</option><option value="1">{t("normal")}</option><option value="1.1">{t("large")}</option></select></div>
+      {/* S01: which shell and how it is drawn are for developers; the person has one look. */}
+      <DeveloperOnly>
       <div className="settings-row settings-row--wide" role="radiogroup" aria-labelledby="hub-shell-label" aria-describedby="hub-shell-hint">
         <div className="settings-row__text"><span className="settings-row__title" id="hub-shell-label">{t("shellChoice")}</span>
           <p className="settings-row__hint" id="hub-shell-hint">{t("shellChoiceHint")}</p></div>
@@ -523,6 +525,7 @@ function App() {
           <span className="style-card__name">{words.styles[style]}</span><small className="style-card__note">{words.notes[style]}</small>
         </label>)}</div>
       </div>
+      </DeveloperOnly>
     </section> }, { id: "chat", label: words.chat, icon: "chat", body: <>
       <h2>{t("chatDefaults")}</h2>
       <p className="settings-intro">{t("chatDefaultsHelp")}</p>

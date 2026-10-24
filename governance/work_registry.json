@@ -813,6 +813,34 @@
             "services/project-runtime/tests/test_request_errors.py"
           ],
           "depends_on": []
+        },
+        {
+          "id": "front-minimal-2",
+          "status": "active",
+          "branch": "claude/300-b3-front-minimal-2",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-front-minimal-2",
+          "base_ref": "fa2bd58b",
+          "contributor": "Claude",
+          "reviewer": null,
+          "depends_on": [],
+          "handoff": "20 (S01 inventory): the right column keeps only the change history; the status line's words open the background; back/forward only when there is somewhere to go; usage and the shell/style switches only in developer mode; greyed commands and a New topic that cannot start are not listed.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/app/AdvancedTools.tsx",
+            "apps/monkeyhub/web/src/app/AttentionShell.tsx",
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/src/main.tsx",
+            "apps/monkeyhub/web/test/attentionShell.browser.mjs",
+            "apps/monkeyhub/web/test/candidatePreview.browser.mjs",
+            "apps/monkeyhub/web/test/canvasChrome.browser.mjs",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/test/designTree.browser.mjs",
+            "apps/monkeyhub/web/test/modelingOpen.browser.mjs",
+            "apps/monkeyhub/web/test/settingsAutosave.browser.mjs"
+          ]
         }
       ]
     }
