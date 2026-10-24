@@ -18,6 +18,7 @@ import { ErrorPanel } from "../../app/ErrorPanel";
 import { designObjectLabel } from "../../app/format";
 import type { EvidenceTab } from "../../app/evidence";
 import { LoadingOverlay } from "../../app/LoadingOverlay";
+import { useCommandActions } from "../commands/CommandProvider";
 import { useT } from "../../i18n/useT";
 import { InlineDecision } from "../../notifications/cards/InlineDecision";
 import { usePreferences } from "../settings/preferences";
@@ -1500,6 +1501,35 @@ export function Stage({
         : workModel.refusal === "nothing-loaded"
           ? t("stage.tools.workModelNothingLoaded")
           : t("stage.tools.workModelTitle", { fileName: workModel.source?.fileName ?? "" }));
+  // Ctrl K runs Screenshot, the editable 3dm and the live section here. Their buttons sit in Export and
+  // More, closed menus that the attention shell's bar leaves out, so pointing at them did nothing.
+  const downloadExport = useRef(false);
+  useCommandActions(active ? {
+    "model.capture": {
+      run: () => { void onCapture(); },
+      available: () => loadedRunId === null ? t("stage.tools.screenshotUnavailable")
+        : blend !== null ? t("stage.tools.screenshotBlendUnavailable")
+          : captureState === "busy" ? t("stage.tools.screenshotBusy") : true,
+    },
+    ...(workModel ? { "model.export_3dm.editable": {
+      run: () => { downloadExport.current = true; workModel.onExport(); },
+      available: () => workModel.source !== null && !workModel.busy ? true : workModelTitle ?? t("stage.tools.workModelNothingLoaded"),
+    } } : {}),
+    "drawing.live_section.draw": {
+      run: () => { void drawSection(); },
+      available: () => section !== null && viewedModelSource ? true : t("stage.section.drawUnavailable"),
+    },
+  } : {});
+  // An export Ctrl K asked for comes down as a file: the attention shell has no Export menu to save it from.
+  const exportedSha = workModel?.exported?.sha256 ?? null;
+  useEffect(() => {
+    if (!downloadExport.current || exportedSha === null || !workModel?.exported) return;
+    downloadExport.current = false;
+    const link = document.createElement("a");
+    link.href = connection.url(`/api/artifacts/${exportedSha}/bytes`);
+    link.download = workModel.exported.fileName;
+    link.click();
+  }, [exportedSha]);
   // #352: Export, in the bar: the editable copy of the model on screen and, once made, its file.
   const exportMenu = workModel && (bar.shown("model.export_3dm.editable") || bar.shown("model.export_3dm.save")) && <span ref={exportMenuElement} className="stage-menu">
     <MenuCommand data-command="view.menu.toggle" data-command-arg="modeling_export" aria-expanded={barMenu === "export"} aria-controls="stage-export-menu" onClick={() => toggleBarMenu("export")}>
