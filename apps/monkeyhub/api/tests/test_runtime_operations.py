@@ -1097,6 +1097,16 @@ class ResendTests(unittest.TestCase):
             result = self.hub.forward(self.runtime, "/api/documents", "GET", b"", {})
         self.assertEqual((result.status, self.pauses.call_count), (200, 2))
 
+    def test_a_background_read_answers_at_once_and_is_not_sent_again(self):
+        starting = HubFailure(503, "WORKER_STARTING", "The project's Studio is starting.")
+        with patch.object(self.hub, "service", side_effect=starting), self.assertRaises(HubFailure) as refused:
+            self.hub.forward(self.runtime, "/api/worktrees", "GET", b"", {}, wait=False)
+        self.assertEqual(refused.exception.error.code, "WORKER_STARTING")
+        with patch.object(self.hub, "service", return_value=self.worker),                 patch("monkeyhub_api.runtime.manager.request_http",
+                      return_value=self.answer(503, "INDEX_UNAVAILABLE")) as sent:
+            result = self.hub.forward(self.runtime, "/api/worktrees", "GET", b"", {}, wait=False)
+        self.assertEqual((result.status, sent.call_count, self.pauses.call_count), (503, 1, 0))
+
 
 if __name__ == "__main__":
     unittest.main()

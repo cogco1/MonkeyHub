@@ -999,7 +999,15 @@ class ProjectRuntimeManager:
                 _pause(wait)
 
     def forward(self, runtime: ProjectRuntime, path: str, method: str, body: bytes,
-                headers: dict[str, str], *, source: str | None = None) -> HttpResult:
+                headers: dict[str, str], *, source: str | None = None, wait: bool = True) -> HttpResult:
+        """Send one request to the project's Studio, admitting a change as an operation.
+
+        A failure that did nothing is sent again, and a starting Studio waited
+        for, a few seconds at most. ``wait=False`` is for a background read that
+        the next event makes again: it answers at once, so the thread that
+        follows the Hub's events never stands still on a starting Studio.
+        """
+
         parsed = urlsplit(path)
         if parsed.scheme or parsed.netloc or parsed.fragment or not (parsed.path.startswith("/api/") or parsed.path == "/openapi.json") or ".." in parsed.path.split("/"):
             raise HubFailure(422, "STUDIO_PATH_INVALID", "Only the bound Studio API can be called.")
@@ -1043,7 +1051,7 @@ class ProjectRuntimeManager:
             self.emit("operation/started", runtime.runtime_id)
         dispatched = False
         try:
-            worker = self._serving(runtime)
+            worker = self._serving(runtime) if wait else self.service(runtime)
             forwarded = {key: value for key, value in headers.items()
                          if key in {"content-type", "x-monkey-operation", "x-monkey-parent", "if-none-match",
                                     "x-monkey-turn-id", "x-monkey-parent-span-id"}}
@@ -1079,12 +1087,12 @@ class ProjectRuntimeManager:
             sends = 1
             # A failure that did nothing passes without the person: the same request goes again, a few times
             # at most, and the operation says how many (#300 4-3).
-            while (result.status >= 400 and (kind := failure_kind(_failure_code(result))) is not None
-                   and (wait := resend_wait(kind, sends)) is not None):
+            while (wait and result.status >= 400 and (kind := failure_kind(_failure_code(result))) is not None
+                   and (delay := resend_wait(kind, sends)) is not None):
                 if admission:
                     runtime.operations.sending_again(admission)
                     self.emit("operation/progress", runtime.runtime_id)
-                _pause(wait)
+                _pause(delay)
                 worker = self._serving(runtime)
                 if "X-Monkey-Worker" in forwarded:
                     forwarded["X-Monkey-Worker"] = worker.instance_id
