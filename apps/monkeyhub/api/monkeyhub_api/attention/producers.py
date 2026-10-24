@@ -327,25 +327,42 @@ def _failure_words(record: OperationRecord, what: str, zh: str) -> str:
             f"deal with it. / {zh}没有完成{code}：{record.reason or '没有给出原因'}。请查明原因并处理。")[:1900]
 
 
-def repairs(records: Iterable[RepairRecord]) -> list[AttentionDraft]:
-    """What the Hub put right by itself in a project, each once; one it would not put right again asks for a person."""
+def repairs(records: Iterable[RepairRecord], project: str = "") -> list[AttentionDraft]:
+    """What the Hub put right by itself in a project, each once; one it would not put right again asks for a person.
 
+    ``project`` names the project in the words a person reads: a service that
+    stays down says which project's, and its card restarts it in one click.
+    """
+
+    named = f"{project}: " if project else ""
     drafts = []
     for record in records:
         if record.kind == "studio-restarted":
             drafts.append(_card(("The project service stopped and was started again", "项目服务意外停了一次，已经自动重启"),
                                 (f"Nothing to do. It had stopped: {record.detail}", f"不用处理。停止时：{record.detail}"),
                                 channel="notice", kind="auto_fixed", dedupeKey=f"{REPAIRS}{record.repairId}"))
+        elif record.kind == "studio-start-retried":
+            drafts.append(_card((f"{named}the project service did not start in time and was started again",
+                                 f"{named}项目服务没按时启动，已经自动再启动一次"),
+                                ("Nothing to do.", "不用处理。"),
+                                channel="notice", kind="auto_fixed", dedupeKey=f"{REPAIRS}{record.repairId}"))
         elif record.kind == "studio-restart-held":
             drafts.append(_card(
-                ("The project service keeps stopping and was not started again", "项目服务反复停止，没有再自动重启"),
-                (record.detail, record.detail), channel="notice", kind="info", dedupeKey=f"{REPAIRS}{record.repairId}",
-                options=[_option("ai", ("Ask the AI to handle it", "交给 AI 处理"),
-                                 ("The project's conversation is told it keeps stopping and asked to find out why",
+                (f"{named}the project service is down after three automatic restarts",
+                 f"{named}项目服务停着，自动重启了三次还是不行"),
+                (f"Skills, drawings and changes in this project wait until it runs. Restart it, or ask the AI why. "
+                 f"{record.detail}", f"这个项目的 skill、出图和修改都要等它起来。点「重新启动」再试一次，或交给 AI 查原因。"
+                 f"{record.detail}"),
+                channel="notice", kind="info", dedupeKey=f"{REPAIRS}{record.repairId}",
+                options=[_option("restart", ("Restart it", "重新启动"),
+                                 ("The project service is started again now", "现在再启动一次项目服务"),
+                                 "attention.queue.restart_service"),
+                         _option("ai", ("Ask the AI to handle it", "交给 AI 处理"),
+                                 ("The project's conversation is told it keeps going down and asked to find out why",
                                   "把情况发给项目对话，让 AI 查原因"), "chat.composer.send",
-                                 content=(f"The project service stopped three times in ten minutes and was not started "
-                                          f"again: {record.detail}. Please find out why. / 项目服务十分钟内停了三次，"
-                                          f"没有再自动重启：{record.detail}。请查明原因。")[:1900])]))
+                                 content=(f"The project service went down three times in ten minutes and was not "
+                                          f"started again: {record.detail}. Please find out why. / 项目服务十分钟内"
+                                          f"停了三次，没有再自动重启：{record.detail}。请查明原因。")[:1900])]))
     return drafts
 
 

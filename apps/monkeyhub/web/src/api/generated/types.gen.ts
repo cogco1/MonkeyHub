@@ -2478,9 +2478,9 @@ export type RepairRecord = {
     /**
      * Kind
      *
-     * studio-restarted: the project's Studio stopped unexpectedly and was started again with the same binding and port. studio-restart-held: it stopped again too often to be restarted again by itself; a person recovers it.
+     * studio-restarted: the project's Studio stopped unexpectedly and was started again with the same binding and port. studio-start-retried: it did not become ready in time (START_TIMEOUT) and was started again. studio-restart-held: it went down again too often to be started again by itself; a person restarts it.
      */
-    kind: 'studio-restarted' | 'studio-restart-held';
+    kind: 'studio-restarted' | 'studio-start-retried' | 'studio-restart-held';
     /**
      * At
      *

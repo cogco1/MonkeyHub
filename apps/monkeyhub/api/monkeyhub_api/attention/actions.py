@@ -49,6 +49,8 @@ class HubPort(Protocol):
 
     def apply_update(self) -> object: ...
 
+    def restart_project(self, project_id: str, project_dir: str) -> object: ...
+
 
 class AttentionResolveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -295,6 +297,12 @@ def _update_apply(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
     return _Done()
 
 
+def _restart_service(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
+    # The card's own project: its Studio is started again, crashed or never ready.
+    run.executor.hub.restart_project(run.item.projectId, run.item.projectDir)
+    return _Done()
+
+
 def _acknowledge(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
     operation = args.get("operationId")
     if isinstance(operation, str) and operation:
@@ -336,6 +344,8 @@ COMMANDS: dict[str, Command] = {
     # without one to the project's attention conversation.
     "chat.composer.send": Command(_send_message, takes=("sessionId", "content")),
     "hub.update_apply": Command(_update_apply),
+    # The card's project's Studio, started again (#300 4-2).
+    "attention.queue.restart_service": Command(_restart_service),
     # A recipe guess: the Drawings page's own "save suggestion", bound to the suggested value and its page.
     "attention.answer_guess.save": Command(_save_recipe, undoable=True,
                                            takes=("field", "value", "runId", "assetSha256", "revisionRef", "pageIndex"),
