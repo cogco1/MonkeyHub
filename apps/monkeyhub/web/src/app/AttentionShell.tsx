@@ -226,7 +226,7 @@ export function AttentionShell(props: AttentionShellProps) {
       {props.notices}
       <div className="attention-shell__body">
         <section className="attention-shell__queue" hidden={view !== "attention"} aria-label={t("shell.view.attention")}>
-          <h2>{attentionCount ? t("shell.queueCount", { count: attentionCount }) : t("shell.queueEmpty")}</h2>
+          <h2>{queue.available === null ? t("shell.queueReading") : attentionCount ? t("shell.queueCount", { count: attentionCount }) : t("shell.queueEmpty")}</h2>
           {queue.available ? <AttentionQueue projectName={projectName} /> : <p>{t("shell.queueHint")}</p>}
         </section>
         <div className="attention-shell__surfaces" hidden={view === "attention"}>{props.surfaces}</div>

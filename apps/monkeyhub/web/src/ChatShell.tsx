@@ -502,6 +502,9 @@ type ChatWords = (typeof words)[keyof typeof words];
 const processWords = (t: ChatWords): ProcessWords => ({ steps: t.processStep, prepare: t.processPrepare,
   webSearch: t.processWebSearch, desktop: t.processDesktop, permission: t.processPermission });
 /** The wall clock while `active`; a finished turn needs no ticking. */
+/** Under this, a wait shows only that it runs; past it, how far along it is (08 加载分档). */
+const LONG_WAIT_SECONDS = 10;
+
 function useNow(active: boolean) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -2091,15 +2094,28 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   ];
   // The pieces of the shell both layouts place: the workbench below, and the attention shell
   // (?shell=attention) in app/AttentionShell.tsx. Each is built once per render from the same state.
+  // 08 加载分档: a job past ten seconds shows how far along it is, measured against this project's earlier jobs.
+  const taskNow = useNow(tasks.some((task) => task.state === "running" && task.startedAt));
+  const taskTiming = (task: SidebarTask) => {
+    if (task.state !== "running" || !task.startedAt) return null;
+    const elapsed = Math.max(0, Math.round((taskNow - Date.parse(task.startedAt)) / 1000));
+    if (elapsed < LONG_WAIT_SECONDS) return null;
+    if (!task.expectedSeconds) return { elapsed, share: null, text: t.taskElapsed(elapsed) };
+    const left = Math.round(task.expectedSeconds - elapsed);
+    return { elapsed, share: Math.min(elapsed / task.expectedSeconds, 0.95), text: left > 0 ? t.taskLeft(left) : t.taskLonger(elapsed) };
+  };
   const taskItems = <>
-          {tasks.length ? tasks.map((task) => {
+          {runtime === null ? <li className="chat-muted chat-tasks__empty" role="status">{t.tasksReading}</li> : tasks.length ? tasks.map((task) => {
             const action = task.action ? stepText(describeCall(task.action), processWords(t)) : null;
             const title = task.chat?.title ?? action ?? t.workTools;
             // Where and whether it runs come before what it is doing: a narrow sidebar cuts the end.
-            const caption = [task.projectName, task.state === "running" ? t.taskRunning : t.taskQueued, task.chat ? action : null].filter(Boolean).join(" · ");
+            const timing = taskTiming(task);
+            const caption = [task.projectName, timing?.text ?? (task.state === "running" ? t.taskRunning : t.taskQueued), task.chat ? action : null].filter(Boolean).join(" · ");
             return <li key={task.key}><button data-command="view.background.open_task" data-command-arg={task.key} type="button" className="chat-task" data-state={task.state} title={`${title}\n${caption}`} onClick={() => openTask(task)}>
               <span className="chat-thread__dot" data-status={task.state === "running" ? "running" : "idle"} />
-              <span className="chat-task__text"><span className="chat-task__title">{title}</span><small>{caption}</small></span>
+              <span className="chat-task__text"><span className="chat-task__title">{title}</span><small>{caption}</small>
+                {timing?.share != null && <span className="chat-task__progress" role="progressbar" aria-valuemin={0} aria-valuemax={100}
+                  aria-valuenow={Math.round(timing.share * 100)} aria-label={timing.text}><span style={{ width: `${Math.round(timing.share * 100)}%` }} /></span>}</span>
             </button></li>;
           }) : <li className="chat-muted chat-tasks__empty">{t.tasksEmpty}</li>}
   </>;

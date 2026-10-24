@@ -629,6 +629,35 @@ try {
   }
   attentionServed = false; cards = [];
 
+  // Waiting (ADR-011 §8): one drawing job seen at 0.5 s, 3 s and 15 s. Under ten seconds the background says only that it
+  // runs; past it, a bar and the time left, measured against this project's earlier jobs in the lane (40 s and 60 s: 50 s).
+  const projectA = runtimes.get(projects[0].projectDir);
+  const jobRow = (jobId, status, wallTimeS, startedAt = null) => ({ jobId, status, candidateId: `cand-${jobId}`, proposalId: "p-7", createdAt: now, startedAt,
+    finishedAt: null, error: null, wallTimeS, lane: "exclusive", waitingFor: null, waitingReason: null });
+  const started = Date.parse("2026-10-24T10:00:00Z");
+  for (const colour of ["light", "dark"]) {
+    preferredTheme = colour;
+    for (const [age, caption] of [[0.5, "进行中"], [3, "进行中"], [15, "约还要 35 秒"]]) {
+      projectA.retained = { projectId: "A", projectDir: projectA.projectDir, published: { version: 3, stateSha256: null }, candidates: [], branches: [], stages: [],
+        errors: [], runsScanned: 3, hasMore: false,
+        jobs: [jobRow("now", "running", null, new Date(started).toISOString()), jobRow("j1", "succeeded", 40), jobRow("j2", "succeeded", 60)] };
+      const wait = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      await wait.clock.setFixedTime(new Date(started + age * 1000));
+      const waitPage = await wait.newPage(); waitPage.setDefaultTimeout(15_000);
+      waitPage.on("pageerror", (error) => errors.push(error.message));
+      await waitPage.route((url) => url.pathname.startsWith("/api/"), route);
+      await open(waitPage);
+      await waitPage.getByRole("button", { name: "展开后台" }).click();
+      const row = waitPage.locator(".attention-shell__tasks .chat-task").filter({ hasText: "Thi Hemp" });
+      await row.getByText(caption).waitFor();
+      assert.equal(await row.locator(".chat-task__progress").count(), age < 10 ? 0 : 1, `${age} s: a bar only past ten seconds`);
+      if (age >= 10) assert.equal(await row.locator(".chat-task__progress").getAttribute("aria-valuenow"), "30", "15 s of a 50 s job");
+      await shoot(waitPage, `attention-wait-${String(age).replace(".", "_")}s-${colour}`);
+      await wait.close();
+    }
+  }
+  projectA.retained = null;
+
   // Phone: the projects column and the side panel open over the center.
   for (const colour of ["light", "dark"]) {
     preferredTheme = colour;

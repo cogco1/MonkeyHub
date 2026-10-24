@@ -36,6 +36,21 @@ fixed place, and every surface stacks the same six rows.
 6. **Keyboard:** every menu works with the arrow keys, Enter and Esc; the Hub row is a menubar (#338).
 7. **Checks:** screenshots in Chinese and English, light and dark, and all four interface styles;
    keyboard use; the affected browser tests.
+8. **Waiting (2026-10-24, GH-300).** A wait is shown by how long it lasts:
+
+   | Wait | Shown |
+   |---|---|
+   | under 1 s | nothing: a loading mark appears only after a second (`.boot`, `.chat-thinking`), though input stays blocked meanwhile |
+   | first load of a whole page | a skeleton in the final layout (`LoadingOverlay`), not a spinner in the middle |
+   | one module | a spinner or reading line in that module only |
+   | over 10 s (drawing, export, model sync, a candidate's job) | a measured bar and the time left, from this project's earlier jobs in the same lane (the median `wallTimeS`); with no history, the time so far; past the estimate, 「比平常久 · 已 N 秒」 |
+   | upload, export | progress or the time so far, never a skeleton |
+
+   Zero, not filled in, and not read yet are three different words: 「现在没有要你处理的」 only after the
+   queue was read, 「正在读取…」 before; 「没有正在进行或排队的工作」 only after the Hub's state arrived.
+   Under `prefers-reduced-motion` the marks still appear after their delay, without fading or
+   sliding, and bars jump instead of gliding. Check with screenshots of one operation at 0.5 s, 3 s
+   and 15 s.
 
 **Why:** surfaces drew the same kind of information differently. Board stacked three layers above its
 content (Stage capsule, Board/Layout segmented buttons, title field with buttons); Modeling crowded
