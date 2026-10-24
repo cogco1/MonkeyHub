@@ -153,4 +153,3 @@ button.attention-overview__tile:hover{background:var(--card-hover,var(--panel-2,
    are always shown; the rest shows once the composer has focus. */
 .attention-shell .chat-composer:not(:focus-within) .chat-target[data-default],
 .attention-shell .chat-composer:not(:focus-within) .chat-connection[data-default]{display:none}
-

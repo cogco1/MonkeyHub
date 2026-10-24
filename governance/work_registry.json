@@ -680,7 +680,7 @@
             "apps/monkeyhub/web/src/ChatShell.css",
             "apps/monkeyhub/web/src/ChatShell.tsx",
             "apps/monkeyhub/web/test/attentionShell.browser.mjs",
-            "apps/monkeyhub/web/test/_dbg.mjs"
+            "apps/monkeyhub/web/src/app/attentionShell.css"
           ]
         }
       ]
