@@ -2104,6 +2104,20 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     const left = Math.round(task.expectedSeconds - elapsed);
     return { elapsed, share: Math.min(elapsed / task.expectedSeconds, 0.95), text: left > 0 ? t.taskLeft(left) : t.taskLonger(elapsed) };
   };
+  // The latest result a project's job produced in the last day, beside the Attention page's conclusion.
+  const recentResult = () => {
+    let latest: { finishedAt: number; proposalId: string; projectDir: string } | null = null;
+    for (const row of runtime?.projects ?? []) for (const job of row.retained?.jobs ?? []) {
+      const finishedAt = job.status === "succeeded" && job.finishedAt ? Date.parse(job.finishedAt) : NaN;
+      if (finishedAt > (latest?.finishedAt ?? Date.now() - 86_400_000)) latest = { finishedAt, proposalId: job.proposalId, projectDir: row.projectDir };
+    }
+    if (!latest) return null;
+    const minutes = Math.max(0, Math.floor((Date.now() - latest.finishedAt) / 60_000));
+    const ago = minutes < 1 ? tc("shell.overview.justNow") : minutes < 60 ? tc("shell.overview.minutesAgo", { count: minutes })
+      : tc("shell.overview.hoursAgo", { count: Math.floor(minutes / 60) });
+    const name = projects.find((row) => row.projectDir === latest!.projectDir)?.name;
+    return { title: stepText(describeCall(`POST /api/proposals/${latest.proposalId}/candidate`), processWords(t)), caption: [name, ago].filter(Boolean).join(" · ") };
+  };
   const taskItems = <>
           {runtime === null ? <li className="chat-muted chat-tasks__empty" role="status">{t.tasksReading}</li> : tasks.length ? tasks.map((task) => {
             const action = task.action ? stepText(describeCall(task.action), processWords(t)) : null;
@@ -2452,6 +2466,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       onNewProject={openNewProject} onAddProject={openAddProject} onSettings={openSettings}
       usage={{ label: usageFigure ? `${t.monitor} · ${t.usageWeek(usageFigure.short)}` : t.monitor, onOpen: () => void openTool("monkeymonitor", { projectId: "" }) }}
       background={{ running: tasks.filter((task) => task.state === "running").length, queued: tasks.filter((task) => task.state !== "running").length }}
+      overview={{ wait: tasks.map(taskTiming).find((timing) => timing?.share != null)?.text ?? tasks.map(taskTiming).find(Boolean)?.text ?? null,
+        recent: recentResult() }}
       conversationActive={running || sending !== null}
       notices={statusNotices} conversation={conversationLog} composer={composerArea} surfaces={workspacePages(panel)}
       taskItems={taskItems} dialogs={dialogs}

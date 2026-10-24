@@ -290,12 +290,13 @@
   --primary-bg: var(--ink);
   --primary-ink: var(--ground);
   --card-bg: var(--panel);
-  /* Layers are told apart by a step of tone (1-3%), not by an outline; dark type sits one weight lighter. */
+  /* Layers are told apart by a step of tone (1-3%), not by an outline; dark type sits one weight lighter.
+     Noto Sans SC and YaHei draw 600 like 700, so the step down from bold is 500 (ADR-011 §8). */
   --card-border: transparent;
   --card-radius: 14px;
   --card-pad: 16px;
   --card-title-size: calc(18px * var(--font-scale, 1));
-  --card-title-weight: 600;
+  --card-title-weight: 500;
   --heading-weight: 500;
   --center-bg: #13161a;
   --card-title-line: 1.45;

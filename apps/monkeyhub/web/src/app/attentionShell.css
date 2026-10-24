@@ -133,3 +133,16 @@
   .attention-shell__drawer,.attention-shell__panel{animation:attention-shell-rise 180ms cubic-bezier(.2,.8,.2,1)}
 }
 @keyframes attention-shell-rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+/* The Attention page leads with its conclusion; what runs and what just came out sit beside it as smaller tiles,
+   and the cards follow below (ADR-011 §8). Nothing runs: the conclusion stands alone. */
+.attention-overview{display:grid;grid-template-columns:minmax(0,1fr) repeat(2,minmax(0,220px));gap:12px;align-items:stretch;margin-bottom:20px}
+.attention-overview__hero{align-self:center;min-width:0}
+.attention-overview__hero h2{margin:0;font-size:calc(var(--text-heading) * 1.4);line-height:1.25}
+.attention-overview__hero p{margin-top:6px}
+.attention-overview__tile{display:flex;flex-direction:column;gap:2px;min-width:0;padding:12px 14px;border:0;border-radius:var(--card-radius,var(--radius-lg,10px));
+  background:var(--card-bg,var(--panel));color:var(--ink);font:inherit;text-align:left;font-variant-numeric:tabular-nums}
+.attention-overview__tile span,.attention-overview__tile small{color:var(--muted);font-size:var(--text-small,12px)}
+.attention-overview__tile b{font-weight:var(--heading-weight,600);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+button.attention-overview__tile{cursor:pointer}
+button.attention-overview__tile:hover{background:var(--card-hover,var(--panel-2,var(--panel)))}
+@media(max-width:720px){.attention-overview{grid-template-columns:repeat(2,minmax(0,1fr))}.attention-overview__hero{grid-column:1/-1}}
