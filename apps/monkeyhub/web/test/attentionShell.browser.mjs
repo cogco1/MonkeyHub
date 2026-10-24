@@ -409,6 +409,9 @@ try {
   for (let wait = 0; chatPosts.at(-1)?.[1] !== "这个方案怎么样" && wait < 100; wait += 1) await page.waitForTimeout(50);
   assert.equal(chatPosts.at(-1)?.[1], "这个方案怎么样");
   assert.equal(await offer.count(), 0);
+  // The later passes count what reached the conversations from here on.
+  const sent = chatPosts.splice(posted);
+  for (const [id] of sent) sessions.find((row) => row.id === id)?.messages.pop();
 
   await context.close();
   preferredTheme = "dark";
