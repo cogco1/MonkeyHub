@@ -432,6 +432,8 @@ try {
           const gate = validationGates.get(validation[1]); if (gate) await gate.promise;
           return await json({ code: "VALIDATION_UNAVAILABLE", detail: "The independent review is unavailable." }, 503);
         }
+        // The saved pages of tracing paper over a model: none have been kept yet.
+        if (name === "/api/model-annotations/history") return await json([]);
         if (name === "/api/model-annotations") return await json({ projectId, modelSource: {
           runId: url.searchParams.get("runId"), stateDigest: url.searchParams.get("stateDigest"), assetSha256: url.searchParams.get("assetSha256"),
         }, revisionSha256: null, annotations: [], comment: "" });
