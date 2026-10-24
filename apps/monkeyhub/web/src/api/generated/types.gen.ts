@@ -128,6 +128,395 @@ export type ApplicationSettingsDto = {
 };
 
 /**
+ * AttentionActionResult
+ */
+export type AttentionActionResult = {
+    item: AttentionItem;
+    /**
+     * A new card the action raised instead of guessing: an undo whose precondition no longer holds asks whether to go back anyway.
+     */
+    followUp?: AttentionItem | null;
+};
+
+/**
+ * AttentionBulkRequest
+ *
+ * "All as recommended" over the cards a person had in view.
+ */
+export type AttentionBulkRequest = {
+    /**
+     * Ids
+     */
+    ids: Array<string>;
+    /**
+     * Mode
+     */
+    mode?: 'recommended';
+};
+
+/**
+ * AttentionBulkResult
+ */
+export type AttentionBulkResult = {
+    /**
+     * Bulkid
+     */
+    bulkId: string;
+    /**
+     * Items
+     */
+    items: Array<AttentionItem>;
+    /**
+     * Skipped
+     */
+    skipped: Array<AttentionSkipped>;
+};
+
+/**
+ * AttentionConversation
+ */
+export type AttentionConversation = {
+    /**
+     * Sessionid
+     */
+    sessionId: string;
+};
+
+/**
+ * AttentionConversationRequest
+ */
+export type AttentionConversationRequest = {
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+};
+
+/**
+ * AttentionDismissRequest
+ *
+ * Set a card aside; with days, it comes back after them.
+ */
+export type AttentionDismissRequest = {
+    /**
+     * Days
+     */
+    days?: number | null;
+};
+
+/**
+ * AttentionItem
+ *
+ * One card in a project's queue and how it has been handled.
+ */
+export type AttentionItem = {
+    /**
+     * Channel
+     */
+    channel: 'decide' | 'annotate' | 'guess' | 'notice';
+    /**
+     * Kind
+     */
+    kind: 'ab' | 'choice' | 'plan' | 'review_frame' | 'change_list' | 'ask' | 'suggestion' | 'auto_fixed' | 'info';
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Titlezh
+     */
+    titleZh?: string | null;
+    /**
+     * Summary
+     */
+    summary?: string | null;
+    /**
+     * Summaryzh
+     */
+    summaryZh?: string | null;
+    source?: AttentionSource;
+    /**
+     * Dedupekey
+     */
+    dedupeKey: string;
+    /**
+     * Media
+     */
+    media?: Array<AttentionMedia>;
+    /**
+     * Evidence
+     */
+    evidence?: Array<EvidenceRow>;
+    /**
+     * Options
+     */
+    options?: Array<AttentionOption>;
+    /**
+     * Opens
+     */
+    opens?: Array<CommandRef>;
+    recommendation?: Recommendation | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+    /**
+     * State
+     */
+    state: 'open' | 'review' | 'later' | 'working' | 'done' | 'dismissed' | 'superseded' | 'expired';
+    resolution?: Resolution | null;
+    /**
+     * Snoozeduntil
+     */
+    snoozedUntil?: string | null;
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    /**
+     * Updatedat
+     */
+    updatedAt: string;
+    /**
+     * History
+     */
+    history?: Array<StateChange>;
+};
+
+/**
+ * AttentionMedia
+ *
+ * A picture a card shows: a model view of a run, a Board frame, or a crop of marks.
+ */
+export type AttentionMedia = {
+    /**
+     * Kind
+     */
+    kind: 'model_view' | 'board_frame' | 'crop';
+    /**
+     * Runid
+     */
+    runId?: string | null;
+    /**
+     * View
+     */
+    view?: string | null;
+    /**
+     * Frameid
+     */
+    frameId?: string | null;
+    /**
+     * Markids
+     */
+    markIds?: Array<string>;
+    /**
+     * Caption
+     */
+    caption?: string | null;
+    /**
+     * Captionzh
+     */
+    captionZh?: string | null;
+};
+
+/**
+ * AttentionOption
+ *
+ * One answer on a card: what it is called, what it will do, and the command that does it.
+ */
+export type AttentionOption = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Labelzh
+     */
+    labelZh?: string | null;
+    /**
+     * Consequence
+     */
+    consequence: string;
+    /**
+     * Consequencezh
+     */
+    consequenceZh?: string | null;
+    action: CommandRef;
+    /**
+     * Undoable
+     */
+    undoable?: boolean;
+    /**
+     * Recommended
+     */
+    recommended?: boolean;
+};
+
+/**
+ * AttentionQuestionRequest
+ *
+ * What a design-loop turn asked the architect (design_ask), for the user message it answers.
+ */
+export type AttentionQuestionRequest = {
+    /**
+     * Sessionid
+     */
+    sessionId: string;
+    /**
+     * Messageid
+     */
+    messageId: string;
+    /**
+     * Question
+     */
+    question: string;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Refs
+     */
+    refs?: Array<string>;
+};
+
+/**
+ * AttentionResolveRequest
+ */
+export type AttentionResolveRequest = {
+    /**
+     * Optionid
+     */
+    optionId: string;
+    /**
+     * Note
+     */
+    note?: string | null;
+};
+
+/**
+ * AttentionSkipped
+ */
+export type AttentionSkipped = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Detail
+     */
+    detail: string;
+};
+
+/**
+ * AttentionSource
+ *
+ * The facts a card was written from; every field may be empty.
+ */
+export type AttentionSource = {
+    /**
+     * Runids
+     */
+    runIds?: Array<string>;
+    /**
+     * Studyid
+     */
+    studyId?: string | null;
+    /**
+     * Chatsessionid
+     */
+    chatSessionId?: string | null;
+    /**
+     * Chatmessageid
+     */
+    chatMessageId?: string | null;
+    /**
+     * Permissionid
+     */
+    permissionId?: string | null;
+    /**
+     * Operationid
+     */
+    operationId?: string | null;
+    /**
+     * Jobid
+     */
+    jobId?: string | null;
+    /**
+     * Boardrevision
+     */
+    boardRevision?: string | null;
+    /**
+     * Frameid
+     */
+    frameId?: string | null;
+    /**
+     * Markids
+     */
+    markIds?: Array<string>;
+    /**
+     * Errorcode
+     */
+    errorCode?: string | null;
+    /**
+     * Ruleid
+     */
+    ruleId?: string | null;
+    /**
+     * Targetref
+     */
+    targetRef?: string | null;
+};
+
+/**
+ * AttentionSummary
+ */
+export type AttentionSummary = {
+    /**
+     * Projects
+     */
+    projects: Array<ProjectAttentionCount>;
+    /**
+     * Cards about the Hub itself, such as a prepared update: counted in the totals and shown in the queue, never as a project row.
+     */
+    hub?: ProjectAttentionCount | null;
+    /**
+     * Open
+     */
+    open: number;
+    /**
+     * Later
+     */
+    later: number;
+    /**
+     * Working
+     */
+    working: number;
+    /**
+     * Invalid
+     *
+     * Runtime ids of projects whose saved cards could not be read; none of their cards are counted.
+     */
+    invalid?: Array<string>;
+};
+
+/**
  * ChatArchiveRequest
  */
 export type ChatArchiveRequest = {
@@ -940,6 +1329,24 @@ export type ChatWorkspace = {
 };
 
 /**
+ * CommandRef
+ *
+ * One command of the command tree and the arguments it runs with.
+ */
+export type CommandRef = {
+    /**
+     * Commandid
+     */
+    commandId: string;
+    /**
+     * Args
+     */
+    args?: {
+        [key: string]: string | number | number | boolean | Array<string> | null;
+    };
+};
+
+/**
  * CompleteUpdate
  */
 export type CompleteUpdate = {
@@ -1122,6 +1529,42 @@ export type DesignStageDto = {
     acceptedBy: string;
     acceptance?: AcceptanceEvidenceDto | null;
     review?: ReviewJudgementDto | null;
+};
+
+/**
+ * EvidenceRow
+ *
+ * One line of evidence: what changed, what the checks say, what it costs.
+ */
+export type EvidenceRow = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Labelzh
+     */
+    labelZh?: string | null;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Textzh
+     */
+    textZh?: string | null;
+    /**
+     * Status
+     */
+    status?: 'ok' | 'warn' | 'unknown';
+    /**
+     * Refs
+     */
+    refs?: Array<string>;
 };
 
 /**
@@ -1747,6 +2190,34 @@ export type ProjectArchiveSummary = {
 };
 
 /**
+ * ProjectAttentionCount
+ */
+export type ProjectAttentionCount = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+    /**
+     * Open
+     *
+     * Cards that need a person now: open, or a change list waiting for review.
+     */
+    open: number;
+    /**
+     * Later
+     */
+    later: number;
+    /**
+     * Working
+     */
+    working: number;
+};
+
+/**
  * ProjectRuntimeDto
  */
 export type ProjectRuntimeDto = {
@@ -1804,6 +2275,61 @@ export type ProjectVersionDto = {
      * Statesha256
      */
     stateSha256: string | null;
+};
+
+/**
+ * Recommendation
+ *
+ * The answer the card's writer recommends, and on what grounds.
+ */
+export type Recommendation = {
+    /**
+     * Optionid
+     */
+    optionId: string;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Reasonzh
+     */
+    reasonZh?: string | null;
+    /**
+     * Basis
+     */
+    basis?: Array<string>;
+};
+
+/**
+ * Resolution
+ *
+ * What a person (or the machine, for a registered repair) chose, when, and how to take it back.
+ */
+export type Resolution = {
+    /**
+     * Optionid
+     */
+    optionId?: string | null;
+    /**
+     * By
+     */
+    by: 'person' | 'machine' | 'bulk';
+    /**
+     * At
+     */
+    at: string;
+    /**
+     * Note
+     */
+    note?: string | null;
+    /**
+     * Receipt
+     */
+    receipt?: {
+        [key: string]: string | number | number | boolean | Array<string> | null;
+    };
+    undo?: UndoSpec | null;
 };
 
 /**
@@ -2107,6 +2633,57 @@ export type SkillRefDto = {
      * Source
      */
     source: 'bundled' | 'user' | 'shared';
+};
+
+/**
+ * StateChange
+ */
+export type StateChange = {
+    /**
+     * From
+     */
+    from: 'open' | 'review' | 'later' | 'working' | 'done' | 'dismissed' | 'superseded' | 'expired' | null;
+    /**
+     * To
+     */
+    to: 'open' | 'review' | 'later' | 'working' | 'done' | 'dismissed' | 'superseded' | 'expired';
+    /**
+     * By
+     */
+    by: 'person' | 'machine' | 'bulk';
+    /**
+     * At
+     */
+    at: string;
+    /**
+     * Optionid
+     */
+    optionId?: string | null;
+    /**
+     * Note
+     */
+    note?: string | null;
+    /**
+     * Facts
+     */
+    facts?: {
+        [key: string]: string | number | number | boolean | Array<string> | null;
+    };
+};
+
+/**
+ * UndoSpec
+ *
+ * The reverse of a handled option, run by the same executor while its precondition still holds.
+ */
+export type UndoSpec = {
+    action: CommandRef;
+    /**
+     * Precondition
+     */
+    precondition?: {
+        [key: string]: string | number | number | boolean | Array<string> | null;
+    };
 };
 
 /**
@@ -4164,6 +4741,350 @@ export type RuntimeEventsApiRuntimeEventsGetResponses = {
 };
 
 export type RuntimeEventsApiRuntimeEventsGetResponse = RuntimeEventsApiRuntimeEventsGetResponses[keyof RuntimeEventsApiRuntimeEventsGetResponses];
+
+export type AttentionItemsApiAttentionGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Projectdir
+         */
+        projectDir?: string | null;
+        /**
+         * State
+         */
+        state?: Array<'open' | 'review' | 'later' | 'working' | 'done' | 'dismissed' | 'superseded' | 'expired'> | null;
+        /**
+         * Channel
+         */
+        channel?: Array<'decide' | 'annotate' | 'guess' | 'notice'> | null;
+    };
+    url: '/api/attention';
+};
+
+export type AttentionItemsApiAttentionGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AttentionItemsApiAttentionGetError = AttentionItemsApiAttentionGetErrors[keyof AttentionItemsApiAttentionGetErrors];
+
+export type AttentionItemsApiAttentionGetResponses = {
+    /**
+     * Response Attention Items Api Attention Get
+     *
+     * Successful Response
+     */
+    200: Array<AttentionItem>;
+};
+
+export type AttentionItemsApiAttentionGetResponse = AttentionItemsApiAttentionGetResponses[keyof AttentionItemsApiAttentionGetResponses];
+
+export type AttentionSummaryApiAttentionSummaryGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/attention/summary';
+};
+
+export type AttentionSummaryApiAttentionSummaryGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AttentionSummary;
+};
+
+export type AttentionSummaryApiAttentionSummaryGetResponse = AttentionSummaryApiAttentionSummaryGetResponses[keyof AttentionSummaryApiAttentionSummaryGetResponses];
+
+export type AttentionItemApiAttentionItemIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Item Id
+         */
+        item_id: string;
+    };
+    query?: never;
+    url: '/api/attention/{item_id}';
+};
+
+export type AttentionItemApiAttentionItemIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AttentionItemApiAttentionItemIdGetError = AttentionItemApiAttentionItemIdGetErrors[keyof AttentionItemApiAttentionItemIdGetErrors];
+
+export type AttentionItemApiAttentionItemIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AttentionItem;
+};
+
+export type AttentionItemApiAttentionItemIdGetResponse = AttentionItemApiAttentionItemIdGetResponses[keyof AttentionItemApiAttentionItemIdGetResponses];
+
+export type AttentionLaterApiAttentionItemIdLaterPostData = {
+    body?: never;
+    path: {
+        /**
+         * Item Id
+         */
+        item_id: string;
+    };
+    query?: never;
+    url: '/api/attention/{item_id}/later';
+};
+
+export type AttentionLaterApiAttentionItemIdLaterPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AttentionLaterApiAttentionItemIdLaterPostError = AttentionLaterApiAttentionItemIdLaterPostErrors[keyof AttentionLaterApiAttentionItemIdLaterPostErrors];
+
+export type AttentionLaterApiAttentionItemIdLaterPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: AttentionItem;
+};
+
+export type AttentionLaterApiAttentionItemIdLaterPostResponse = AttentionLaterApiAttentionItemIdLaterPostResponses[keyof AttentionLaterApiAttentionItemIdLaterPostResponses];
+
+export type AttentionDismissApiAttentionItemIdDismissPostData = {
+    /**
+     * Body
+     */
+    body?: AttentionDismissRequest | null;
+    path: {
+        /**
+         * Item Id
+         */
+        item_id: string;
+    };
+    query?: never;
+    url: '/api/attention/{item_id}/dismiss';
+};
+
+export type AttentionDismissApiAttentionItemIdDismissPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AttentionDismissApiAttentionItemIdDismissPostError = AttentionDismissApiAttentionItemIdDismissPostErrors[keyof AttentionDismissApiAttentionItemIdDismissPostErrors];
+
+export type AttentionDismissApiAttentionItemIdDismissPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: AttentionItem;
+};
+
+export type AttentionDismissApiAttentionItemIdDismissPostResponse = AttentionDismissApiAttentionItemIdDismissPostResponses[keyof AttentionDismissApiAttentionItemIdDismissPostResponses];
+
+export type AttentionReopenApiAttentionItemIdReopenPostData = {
+    body?: never;
+    path: {
+        /**
+         * Item Id
+         */
+        item_id: string;
+    };
+    query?: never;
+    url: '/api/attention/{item_id}/reopen';
+};
+
+export type AttentionReopenApiAttentionItemIdReopenPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AttentionReopenApiAttentionItemIdReopenPostError = AttentionReopenApiAttentionItemIdReopenPostErrors[keyof AttentionReopenApiAttentionItemIdReopenPostErrors];
+
+export type AttentionReopenApiAttentionItemIdReopenPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: AttentionItem;
+};
+
+export type AttentionReopenApiAttentionItemIdReopenPostResponse = AttentionReopenApiAttentionItemIdReopenPostResponses[keyof AttentionReopenApiAttentionItemIdReopenPostResponses];
+
+export type AttentionBulkApiAttentionBulkPostData = {
+    body: AttentionBulkRequest;
+    path?: never;
+    query?: never;
+    url: '/api/attention/bulk';
+};
+
+export type AttentionBulkApiAttentionBulkPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AttentionBulkApiAttentionBulkPostError = AttentionBulkApiAttentionBulkPostErrors[keyof AttentionBulkApiAttentionBulkPostErrors];
+
+export type AttentionBulkApiAttentionBulkPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: AttentionBulkResult;
+};
+
+export type AttentionBulkApiAttentionBulkPostResponse = AttentionBulkApiAttentionBulkPostResponses[keyof AttentionBulkApiAttentionBulkPostResponses];
+
+export type AttentionBulkUndoApiAttentionBulkBulkIdUndoPostData = {
+    body?: never;
+    path: {
+        /**
+         * Bulk Id
+         */
+        bulk_id: string;
+    };
+    query?: never;
+    url: '/api/attention/bulk/{bulk_id}/undo';
+};
+
+export type AttentionBulkUndoApiAttentionBulkBulkIdUndoPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AttentionBulkUndoApiAttentionBulkBulkIdUndoPostError = AttentionBulkUndoApiAttentionBulkBulkIdUndoPostErrors[keyof AttentionBulkUndoApiAttentionBulkBulkIdUndoPostErrors];
+
+export type AttentionBulkUndoApiAttentionBulkBulkIdUndoPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: AttentionBulkResult;
+};
+
+export type AttentionBulkUndoApiAttentionBulkBulkIdUndoPostResponse = AttentionBulkUndoApiAttentionBulkBulkIdUndoPostResponses[keyof AttentionBulkUndoApiAttentionBulkBulkIdUndoPostResponses];
+
+export type AttentionResolveApiAttentionItemIdResolvePostData = {
+    body: AttentionResolveRequest;
+    path: {
+        /**
+         * Item Id
+         */
+        item_id: string;
+    };
+    query?: never;
+    url: '/api/attention/{item_id}/resolve';
+};
+
+export type AttentionResolveApiAttentionItemIdResolvePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AttentionResolveApiAttentionItemIdResolvePostError = AttentionResolveApiAttentionItemIdResolvePostErrors[keyof AttentionResolveApiAttentionItemIdResolvePostErrors];
+
+export type AttentionResolveApiAttentionItemIdResolvePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: AttentionActionResult;
+};
+
+export type AttentionResolveApiAttentionItemIdResolvePostResponse = AttentionResolveApiAttentionItemIdResolvePostResponses[keyof AttentionResolveApiAttentionItemIdResolvePostResponses];
+
+export type AttentionUndoApiAttentionItemIdUndoPostData = {
+    body?: never;
+    path: {
+        /**
+         * Item Id
+         */
+        item_id: string;
+    };
+    query?: never;
+    url: '/api/attention/{item_id}/undo';
+};
+
+export type AttentionUndoApiAttentionItemIdUndoPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AttentionUndoApiAttentionItemIdUndoPostError = AttentionUndoApiAttentionItemIdUndoPostErrors[keyof AttentionUndoApiAttentionItemIdUndoPostErrors];
+
+export type AttentionUndoApiAttentionItemIdUndoPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: AttentionActionResult;
+};
+
+export type AttentionUndoApiAttentionItemIdUndoPostResponse = AttentionUndoApiAttentionItemIdUndoPostResponses[keyof AttentionUndoApiAttentionItemIdUndoPostResponses];
+
+export type AttentionConversationApiAttentionConversationPostData = {
+    body: AttentionConversationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/attention/conversation';
+};
+
+export type AttentionConversationApiAttentionConversationPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AttentionConversationApiAttentionConversationPostError = AttentionConversationApiAttentionConversationPostErrors[keyof AttentionConversationApiAttentionConversationPostErrors];
+
+export type AttentionConversationApiAttentionConversationPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: AttentionConversation;
+};
+
+export type AttentionConversationApiAttentionConversationPostResponse = AttentionConversationApiAttentionConversationPostResponses[keyof AttentionConversationApiAttentionConversationPostResponses];
+
+export type AttentionQuestionApiAttentionQuestionsPostData = {
+    body: AttentionQuestionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/attention/questions';
+};
+
+export type AttentionQuestionApiAttentionQuestionsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AttentionQuestionApiAttentionQuestionsPostError = AttentionQuestionApiAttentionQuestionsPostErrors[keyof AttentionQuestionApiAttentionQuestionsPostErrors];
+
+export type AttentionQuestionApiAttentionQuestionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: AttentionItem;
+};
+
+export type AttentionQuestionApiAttentionQuestionsPostResponse = AttentionQuestionApiAttentionQuestionsPostResponses[keyof AttentionQuestionApiAttentionQuestionsPostResponses];
 
 export type GetUserSettingsApiSettingsUserGetData = {
     body?: never;
