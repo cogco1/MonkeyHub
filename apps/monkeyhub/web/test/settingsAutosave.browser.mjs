@@ -59,8 +59,6 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 // 2-3c: the new shell is the default; these passes are the old one's, the way back (attentionShell.browser.mjs has the new).
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
-// The look and shell switches are a developer's (S01): this pass tests them, so it opens in developer mode.
-await page.addInitScript(() => localStorage.setItem("archflow-studio.user-preferences", JSON.stringify({ version: 1, developer: { mode: true, eventStream: true } })));
 await page.addInitScript(() => localStorage.setItem("monkeyhub.shell", "workbench"));
 page.setDefaultTimeout(12000);
 page.on("pageerror", (error) => errors.push(error.message));
@@ -152,6 +150,11 @@ try {
   await step("Settings opens on Display, its pages follow the list, and a style card saves at once", async () => {
     assert.equal(await settingsTab("Display").getAttribute("aria-selected"), "true");
     assert.deepEqual(await dialog.getByRole("tab").allInnerTexts(), ["Display", "Conversations", "AI Render", "Workspace", "What the AI may do", "Software update"]);
+    // The look and shell switches are a developer's (S01): they are not on the page until developer mode is on.
+    assert.equal(await cmd(dialog, "preference.appearance.style_titleblock").count(), 0, "the interface styles wait for developer mode");
+    await settingsTab("Workspace").click();
+    await page.locator("#developer-mode").check();
+    await settingsTab("Display").click();
     const before = userWrites.length;
     await cmd(dialog, "preference.appearance.style_titleblock").check();
     await until(() => userWrites.length === before + 1, "choosing a style writes the preferences document");
@@ -171,6 +174,9 @@ try {
     await cmd(dialog, "preference.appearance.style_classic").check();
     await until(() => userWrites.at(-1)?.uiStyle === "classic", "Classic is saved back");
     await status.filter({ hasText: /^Saved$/ }).waitFor();
+    await settingsTab("Workspace").click();
+    await page.locator("#developer-mode").uncheck();
+    await settingsTab("Display").click();
   });
 
   await step("a key goes in once, is never shown again, and the page says where the key in use comes from", async () => {
