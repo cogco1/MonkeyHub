@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
-import { cmd, waitForCommandLabel } from "./commandLocator.mjs";
+import { cmd, commandProblems, waitForCommandLabel } from "./commandLocator.mjs";
 const root = fileURLToPath(new URL("..", import.meta.url)), repo = path.resolve(root, "../../..");
 const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-publish-browser-"));
 const processes = [], origins = {}, errors = [], passed = [];
@@ -201,6 +201,7 @@ try {
     await bar().getByLabel('Publication title').fill('Newer saved review');
     await until(() => api('pub-a', '/api/publication'), (value) => value.title === 'Newer saved review', 'new save reaches P036');
     await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'save response completes');
+    assert.deepEqual(await commandProblems(pub()), [], 'every visible Layout control names its command');
     release();
     await delay(250);
     assert.equal(await bar().getByLabel('Publication title').inputValue(), 'Newer saved review');

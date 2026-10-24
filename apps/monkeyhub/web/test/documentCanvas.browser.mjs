@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 import { workspaceFixture } from "./workspaceFixture.mjs";
-import { cmd } from "./commandLocator.mjs";
+import { cmd, commandProblems } from "./commandLocator.mjs";
 
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repoRoot = path.resolve(webRoot, "../../..");
@@ -199,6 +199,7 @@ async function ready(width, height) {
   if (width && height) await page.waitForFunction(([w, h]) => document.querySelector(".document-page__ink")?.getAttribute("viewBox") === `0 0 ${w} ${h}`, [width, height]);
   await page.locator('.document-viewport[data-ready="true"]').waitFor();
   await until(() => tool("view.markup_tools.freehand").isEnabled(), Boolean, "page annotation state loaded");
+  assert.deepEqual(await commandProblems(page.locator(".document-workspace")), [], "every visible document-page control names its command");
 }
 async function rect() {
   const box = await page.locator(".document-page").boundingBox();

@@ -9,7 +9,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { cmd, waitForCommandLabel } from "./commandLocator.mjs";
+import { cmd, commandProblems, waitForCommandLabel } from "./commandLocator.mjs";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 
@@ -246,6 +246,7 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
   const feedback = () => cmd(page.locator(".monkeyboard-context"), "markup.hand_to_ai.open");
   await feedback().waitFor(); assert.equal(await feedback().isEnabled(), true);
   assert.equal(await cmd(page.locator(".monkeyboard-context"), "view.open_document.link_model").count(), 0);
+  assert.deepEqual(await commandProblems(page.locator(".monkeyboard"), { ignore: [".excalidraw"] }), [], "every visible Board control names its command");
 
   // #288: the selected page against the editing base is the Runtime's representation status
   // for exactly that page, read when the selection names it. The real route answers first: the

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
-import { cmd, waitForCommandLabel } from "./commandLocator.mjs";
+import { cmd, commandProblems, waitForCommandLabel } from "./commandLocator.mjs";
 
 // Actual Drawing component and generated SDK; disposable HTTP sources only.
 const root = fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/").replace(/\/$/, "");
@@ -310,6 +310,7 @@ try {
     assert.equal(await pen("Hatch spacing (paper mm)").getAttribute("placeholder"), "Project recipe");
     await cmd(page, "drawing.plan.generate").click();
     await page.locator('.drawing-preview__viewport[data-ready="true"]').waitFor();
+    assert.deepEqual(await commandProblems(page.locator(".drawing-workspace")), [], "every visible Drawings control names its command");
     assert.deepEqual(requests[0].modelSource, modelA); assert.equal(requests[0].sourceStageRef, "stage-A");
     assert.equal(requests[0].fileName, "Ground Floor A");
     assert.match(await revision().locator("option:checked").textContent(), /Ground Floor A\.png · Accepted A · /);

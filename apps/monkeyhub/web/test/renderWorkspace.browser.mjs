@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
-import { cmd } from "./commandLocator.mjs";
+import { cmd, commandProblems } from "./commandLocator.mjs";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = path.resolve(webRoot, "../../..");
@@ -325,6 +325,7 @@ try {
   await step("source comparison, zoom and authenticated-byte download keep exact generation identity", async () => {
     await cmd(workspace(), "view.render.compare").click();
     await until(() => workspace().locator('.render-image img').count(), (n) => n === 2, "source and result");
+    assert.deepEqual(await commandProblems(workspace()), [], "every visible Render control names its command");
     await cmd(workspace(), "view.render.zoom_in").click();
     assert.equal(await workspace().locator('.render-image img').first().evaluate((el) => el.style.width), "125%");
     await cmd(workspace(), "view.render.fit").click();

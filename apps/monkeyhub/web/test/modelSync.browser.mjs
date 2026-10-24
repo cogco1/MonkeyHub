@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 import rhino3dm from "rhino3dm";
-import { cmd } from "./commandLocator.mjs";
+import { cmd, commandProblems } from "./commandLocator.mjs";
 
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repoRoot = path.resolve(webRoot, "../../..");
@@ -529,6 +529,7 @@ if (autosaveOnly) {
   let state=await snap();assert.equal(state.loaded,undefined);assert.equal(state.sourceRunId,null);assert.equal(state.view.hasBaseModel,false);
   assert.equal(await page.locator('.stage-empty').count(),0,'a retained local object must replace the empty-canvas message');
   assert.equal(await page.locator('.viewport-state').count(),0,'a local model must not be covered by the idle overlay');
+  assert.deepEqual(await commandProblems(page.locator('.stage')),[],'every visible Modeling control names its command');
   assert.equal(await page.locator('canvas').first().evaluate(canvas=>getComputedStyle(canvas).opacity),'1');
   await pick(first,true);assert.equal((await snap()).pickedStatus,'local');
   const second=await rectangle(1,.75);

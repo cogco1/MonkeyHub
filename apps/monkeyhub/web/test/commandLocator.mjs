@@ -19,6 +19,42 @@ export async function commandLabel(locator) {
     (element.getAttribute("aria-label") ?? element.textContent ?? "").replace(/\s+/g, " ").trim());
 }
 
+/**
+ * What finding a control by its label used to check on the side: within `scope` (one element),
+ * every visible control that names a command has a readable name and an interactive role, and
+ * every visible button names a command. `ignore` lists selectors of subtrees owned elsewhere
+ * (Excalidraw's own UI, the Hub shell). Returns the problems as text, so a test asserts it is empty;
+ * it also catches a `data-command={expression}` that renders nothing, which the static scan cannot see.
+ */
+export async function commandProblems(scope, { ignore = [] } = {}) {
+  return scope.evaluate((root, ignored) => {
+    const visible = (element) => {
+      const box = element.getBoundingClientRect();
+      return box.width > 0 && box.height > 0 && getComputedStyle(element).visibility !== "hidden";
+    };
+    const skipped = (element) => ignored.some((selector) => element.closest(selector));
+    const name = (element) => (element.getAttribute("aria-label")
+      || (element.getAttribute("aria-labelledby") ?? "").split(/\s+/).map((id) => document.getElementById(id)?.textContent ?? "").join(" ")
+      || element.textContent || element.getAttribute("title") || "").replace(/\s+/g, " ").trim();
+    const interactive = (element) => ["BUTTON", "A", "SUMMARY"].includes(element.tagName)
+      || /^(button|link|tab|option|treeitem|menuitem|menuitemcheckbox|menuitemradio|switch|checkbox|radio)$/.test(element.getAttribute("role") ?? "");
+    const problems = [];
+    for (const element of root.querySelectorAll("[data-command]")) {
+      if (!visible(element) || skipped(element)) continue;
+      const id = element.getAttribute("data-command");
+      if (!id) problems.push(`empty data-command: ${element.outerHTML.slice(0, 100)}`);
+      else if (!name(element)) problems.push(`${id}: no readable name`);
+      else if (!interactive(element)) problems.push(`${id}: a ${element.tagName.toLowerCase()} without an interactive role`);
+    }
+    for (const element of root.querySelectorAll("button")) {
+      if (visible(element) && !skipped(element) && !element.hasAttribute("data-command")) {
+        problems.push(`button without data-command: ${name(element) || element.outerHTML.slice(0, 100)}`);
+      }
+    }
+    return problems;
+  }, ignore);
+}
+
 /** Waits until the control shows `label`, for tests that check what a control says (locale). */
 export async function waitForCommandLabel(locator, label, { timeout = 30_000 } = {}) {
   const deadline = Date.now() + timeout;

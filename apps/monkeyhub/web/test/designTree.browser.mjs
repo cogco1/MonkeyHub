@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { deflateSync } from "node:zlib";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
-import { cmd, waitForCommandLabel } from "./commandLocator.mjs";
+import { cmd, commandProblems, waitForCommandLabel } from "./commandLocator.mjs";
 
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const slash = (value) => value.replaceAll("\\", "/");
@@ -656,6 +656,7 @@ try {
   await inspector.waitFor();
   // #409: the inspector's thumbnail is the canvas's image, downloaded once for both.
   await inspector.locator(".model-thumbnail img").waitFor();
+  assert.deepEqual(await commandProblems(surface, { ignore: [".excalidraw"] }), [], "every visible Design tree control names its command");
   assert.equal(imageReads.filter((run) => run === runOf(S1)).length, 1, "the inspector does not download its card's image again");
   await tab.keyboard.press("Escape");
   await surface.locator(".design-tree-inspector").waitFor({ state: "detached" });
