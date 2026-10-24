@@ -19,19 +19,26 @@ const guardPending = (event: BeforeUnloadEvent) => {
 
 function SourceImage({ item, projectId }: { item: PublicationElementDto; projectId: string }) {
   const studio = useStudio();
-  const [url, setUrl] = useState("");
-  const [error, setError] = useState("");
+  const { language } = usePreferences();
+  const zh = language !== "en";
   const [retry, setRetry] = useState(0);
   const key = JSON.stringify([item.source, item.crop]);
+  // Hide an old preview immediately, including before the replacement effect runs.
+  const request = useMemo(() => ({}), [studio, projectId, key, retry]);
+  const [result, setResult] = useState<{ request: object; url: string; error: StudioApiError | null } | null>(null);
+  const retrying = useRef(true);
+  const current = result?.request === request ? result : null;
   useEffect(() => {
     let live = true, retainedUrl = "";
-    setUrl(""); setError("");
+    retrying.current = true;
     void (async () => {
       const source = item.source!;
       // The page's one cached raster (#368), as Board and the PPTX export show it; the source stays the document.
       const raster = await studio.documentPage(source.runId, source.assetSha256, source.revisionRef ?? null, source.pageIndex);
+      if (!live) return;
       const image = await createImageBitmap(raster.file);
       try {
+        if (!live) return;
         const [l, t, r, b] = item.crop ?? [0, 0, 0, 0];
         const canvas = document.createElement("canvas");
         const left = Math.round(l * image.width), top = Math.round(t * image.height);
@@ -39,12 +46,24 @@ function SourceImage({ item, projectId }: { item: PublicationElementDto; project
         canvas.height = Math.max(1, Math.round((1 - b) * image.height) - top);
         canvas.getContext("2d")!.drawImage(image, left, top, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
         const cropped = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("Image preview failed"))));
-        if (live) { retainedUrl = URL.createObjectURL(cropped); setUrl(retainedUrl); }
+        if (live) { retainedUrl = URL.createObjectURL(cropped); setResult({ request, url: retainedUrl, error: null }); }
       } finally { image.close(); }
-    })().catch((cause) => { if (live) setError(asStudioApiError(cause).detail); });
+    })().catch((cause) => {
+      if (live) { retrying.current = false; setResult({ request, url: "", error: asStudioApiError(cause) }); }
+    });
     return () => { live = false; if (retainedUrl) URL.revokeObjectURL(retainedUrl); };
-  }, [studio, projectId, key, retry]);
-  return url ? <img src={url} alt="" draggable={false} /> : <span className="publish-image-status">{error ? <button onPointerDown={(event) => event.stopPropagation()} onClick={() => setRetry((value) => value + 1)} title={error}>↻</button> : "…"}</span>;
+  }, [request]);
+  return current?.url ? <img src={current.url} alt="" draggable={false} /> : <div className="publish-image-status">
+    {current?.error ? <div className="publish-image-error"
+      onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+      <strong>{zh ? "图片预览无法显示" : "Image preview unavailable"}</strong>
+      <ErrorPanel error={current.error} what={zh ? "汇报图片" : "Publish image"} />
+      <button type="button" onClick={() => {
+        if (retrying.current) return;
+        retrying.current = true; setResult(null); setRetry((value) => value + 1);
+      }}>{zh ? "重试图片" : "Retry image"}</button>
+    </div> : <span role="status">{zh ? "正在读取图片…" : "Loading image…"}</span>}
+  </div>;
 }
 
 export default function PublishWorkspace({ projectId, active, refreshKey = 0, boardRequest = null }: { projectId: string; active: boolean; refreshKey?: number; boardRequest?: { revision: string; ids: string[]; requestId: string } | null }) {
@@ -221,7 +240,9 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
       <div className="publish-viewport" ref={viewport}>
         {!page ? <p className="publish-empty">{zh ? "添加页面，或在画板选择图纸后点击“放入汇报”。" : "Add a page, or select Board drawings and choose Add to Publish."}</p> : <div style={{ width: draft.spec.width! * scale, height: draft.spec.height! * scale }}>
           <div className="publish-page" style={{ width: draft.spec.width, height: draft.spec.height, transform: `scale(${scale})` }} onPointerDown={() => setSelected(null)}>
-            {page.elements.map((element) => <div key={element.id} role="button" tabIndex={0} aria-label={`${element.kind} ${element.text || element.id}`} aria-pressed={selected === element.id}
+            {page.elements.map((element) => <div key={element.id} role={element.kind === "image" ? "group" : "button"} tabIndex={0}
+              aria-label={element.kind === "image" ? `${zh ? "图片" : "Image"} ${element.id}${selected === element.id ? (zh ? "，已选中" : ", selected") : ""}` : `${element.kind} ${element.text || element.id}`}
+              aria-pressed={element.kind === "image" ? undefined : selected === element.id}
               className={`publish-element ${selected === element.id ? "selected" : ""}`} style={{ left: element.x, top: element.y, width: element.width, height: element.height, fontSize: element.fontSize, lineHeight: 1.2 }}
               onFocus={() => setSelected(element.id)} onKeyDown={(event) => { if (event.key === "Enter") setSelected(element.id); }}
               onPointerDown={(event) => startDrag(event, element)} onPointerMove={move} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>

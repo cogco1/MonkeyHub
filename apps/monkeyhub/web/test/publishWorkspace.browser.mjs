@@ -86,7 +86,8 @@ try {
   });
   await vite.listen();
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
-  browser = await chromium.launch({ headless: true, channel: "chrome" });
+  browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
+    ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : { channel: "chrome" }) });
   page = await browser.newPage({ viewport: { width: 1440, height: 960 }, acceptDownloads: true });
   page.on("pageerror", (error) => errors.push(error.message));
   const api = (id, route) => fetch(origins[id] + route).then((r) => r.json());
@@ -155,6 +156,120 @@ try {
     await pub().getByRole("button", { name: "Place on page", exact: true }).click();
     await until(() => pub().locator('.publish-page img').count(), (n) => n === 1, "retained image loads");
     await until(() => api("pub-a", "/api/publication"), (x) => x.pages.length === 1 && x.title === "Structure review", "save page");
+  });
+  await step('source-image read and decode failures offer safe bilingual keyboard recovery without writes', async () => {
+    await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'initial page saved');
+    const before = await api('pub-a', '/api/publication');
+    const writes = [];
+    const recordWrite = (request) => {
+      if (new URL(request.url()).pathname.startsWith('/pub-a/api/') && !['GET', 'HEAD', 'OPTIONS'].includes(request.method())) writes.push(request.method() + ' ' + request.url());
+    };
+    page.on('request', recordWrite);
+    const imagePixels = () => pub().locator('.publish-page img').evaluate(async (image) => {
+      await image.decode();
+      const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+      canvas.getContext('2d').drawImage(image, 0, 0); return canvas.toDataURL();
+    });
+    const original = await imagePixels();
+    const reading = (url) => url.pathname === '/pub-a/api/projections/pages';
+    for (const language of ['en', 'zh-CN']) for (const failure of ['read', 'decode']) {
+      const calls = [];
+      let failing = true;
+      await page.route(reading, async (route) => {
+        calls.push(route.request().url());
+        if (!failing) return route.continue();
+        if (failure === 'read') return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'SOURCE_IMAGE_READ_FAILED', detail: 'Image fixture-282 unavailable at /private/source.png' }) });
+        const response = await route.fetch();
+        // Keep the IHDR accepted by documentPage, but let the real browser decoder reject the truncated PNG.
+        await route.fulfill({ response, body: (await response.body()).subarray(0, 24) });
+      });
+      await page.goto(vite.resolvedUrls.local[0] + '?lang=' + language);
+      const status = pub().locator('.publish-image-status');
+      await status.getByRole('alert').waitFor();
+      assert.equal(await status.locator('xpath=..').getAttribute('role'), 'group', 'the preview alert is not flattened inside a button role');
+      assert.match(await status.innerText(), language === 'en' ? /Image preview unavailable/ : /图片预览无法显示/);
+      const panel = status.locator('.error-panel');
+      assert.match(await panel.locator('.error-panel__reason').innerText(), failure === 'read'
+        ? (language === 'en' ? /project service ran into a problem/ : /项目服务出错/)
+        : (language === 'en' ? /This step did not finish/ : /这一步没有完成/));
+      assert.match(await panel.locator('.error-panel__next').innerText(), language === 'en' ? /Try again/ : /再试/);
+      assert.equal(await panel.locator('details').evaluate((element) => element.open), false);
+      assert.equal(await panel.locator('[lang="en"]').isVisible(), false, 'raw diagnostics stay folded');
+      assert.equal(await pub().locator('.publish-page img').count(), 0);
+      await page.screenshot({ path: path.join(temporary, `publish-image-${failure}-${language}.png`), fullPage: true });
+      const retry = status.getByRole('button', { name: language === 'en' ? 'Retry image' : '重试图片', exact: true });
+      await retry.focus();
+      assert.equal(await retry.evaluate((element) => element === document.activeElement), true);
+      failing = false;
+      await page.keyboard.press(failure === 'read' ? 'Enter' : 'Space');
+      await until(() => pub().locator('.publish-page img').count(), (count) => count === 1, 'same source recovers');
+      assert.equal(await pub().getByRole('alert').count(), 0);
+      assert.equal(await imagePixels(), original, 'retry displays the same source pixels');
+      assert.equal(calls.length, 2, 'one read plus one explicit retry, with no automatic or duplicate submit');
+      assert.equal(calls[0], calls[1], 'retry keeps the exact source revision and page');
+      assert.deepEqual(await api('pub-a', '/api/publication'), before, 'retry leaves source binding, crop and layout unchanged');
+      await page.unroute(reading);
+    }
+    page.off('request', recordWrite);
+    assert.deepEqual(writes, [], 'image recovery must never submit a project mutation or autosave');
+    assert.deepEqual(await api('pub-a', '/fixture/head'), head);
+    await page.goto(vite.resolvedUrls.local[0] + '?lang=en');
+    await pub().locator('.publish-page img').waitFor();
+  });
+  await step('a newer crop in the mounted image ignores late reads and failures', async () => {
+    const reading = (url) => url.pathname === '/pub-a/api/projections/pages';
+    for (const failLate of [false, true]) {
+      let release, captured = false, finished = false;
+      const gate = new Promise((resolve) => { release = resolve; });
+      await page.route(reading, async (route) => {
+        if (captured) return route.continue();
+        captured = true;
+        const response = await route.fetch(); await gate;
+        if (failLate) await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'SOURCE_IMAGE_READ_FAILED', detail: 'Superseded image read failed' }) });
+        else await route.fulfill({ response });
+        finished = true;
+      });
+      await page.reload();
+      await until(() => captured, Boolean, 'old image read captured');
+      await pub().locator('.publish-element[role="group"]').focus();
+      await pub().getByLabel('Crop left %', { exact: true }).fill('20');
+      await until(() => pub().locator('.publish-page img').evaluateAll((images) => images.map((image) => image.naturalWidth)), (widths) => widths[0] === 800, 'new crop loaded while original read waits');
+      await until(() => api('pub-a', '/api/publication'), (value) => value.pages[0].elements[1].crop[0] === .2, 'explicit crop saved');
+      const cropped = await api('pub-a', '/api/publication');
+      release(); await until(() => finished, Boolean, 'old read answered'); await delay(100);
+      assert.equal(await pub().locator('.publish-page img').evaluate((image) => image.naturalWidth), 800, 'late pixels cannot replace the new crop');
+      assert.equal(await pub().getByRole('alert').count(), 0, 'late failure cannot replace the new crop');
+      assert.deepEqual(await api('pub-a', '/api/publication'), cropped, 'late completion does not autosave');
+      await page.unroute(reading);
+      await pub().getByLabel('Crop left %', { exact: true }).fill('0');
+      await until(() => pub().locator('.publish-page img').evaluateAll((images) => images.map((image) => image.naturalWidth)), (widths) => widths[0] === 1000, 'original crop restored');
+      await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'explicit restoration saved');
+    }
+  });
+  await step('late source-image responses cannot cross a project switch', async () => {
+    const before = await api('pub-a', '/api/publication');
+    const reading = (url) => url.pathname === '/pub-a/api/projections/pages';
+    for (const failLate of [false, true]) {
+      let release, captured = false, finished = false;
+      const gate = new Promise((resolve) => { release = resolve; });
+      await page.route(reading, async (route) => {
+        const response = await route.fetch(); captured = true; await gate;
+        if (failLate) await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'SOURCE_IMAGE_READ_FAILED', detail: 'Late failure from the previous project' }) });
+        else await route.fulfill({ response });
+        finished = true;
+      });
+      await page.reload();
+      await until(() => captured, Boolean, 'old image request captured');
+      await page.locator('#project-switch').click();
+      await pub().getByRole('button', { name: '+ Page', exact: true }).waitFor();
+      release(); await until(() => finished, Boolean, 'old response delivered'); await delay(100);
+      assert.equal(await pub().locator('.publish-page img').count(), 0, 'the empty second project never shows the first project image');
+      assert.equal(await pub().getByRole('alert').count(), 0, 'a late failure cannot enter another project');
+      await page.unroute(reading);
+      await page.locator('#project-switch').click(); await pub().locator('.publish-page img').waitFor();
+      assert.equal(await pub().getByRole('alert').count(), 0);
+      assert.deepEqual(await api('pub-a', '/api/publication'), before);
+    }
   });
   await step("drag, resize and crop remain editable after cold reopen", async () => {
     const image = pub().locator('.publish-element').filter({ has: page.locator('img') });
