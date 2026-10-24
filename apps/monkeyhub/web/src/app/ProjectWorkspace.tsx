@@ -1,5 +1,5 @@
 import type { RenderView } from "../workspaces/monkeyarch/viewer/renderView";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { asStudioApiError, StudioApiError } from "../api/project-runtime/client";
 import type { RenderCameraDto } from "../api/project-runtime/generated";
 import { useConnection, useStudio } from "../api/project-runtime/ProjectRuntimeContext";
@@ -50,7 +50,9 @@ export interface ProjectWorkspaceProps {
    * is dropped. Null withdraws it: the comparison it opened closes, still loading or on screen,
    * without onComparisonClose.
    */
-  comparisonRequest?: { candidateRunId: string; requestId: number } | null;
+  comparisonRequest?: { candidateRunId: string; requestId: number;
+    /** A decision's other result, set beside the candidate instead of its original, and that decision's card (2-5). */
+    againstRunId?: string | null; aside?: ReactNode } | null;
   /** The person pressed Back in a comparison the Hub requested, so the Hub may clear it and restore its own surface. */
   onComparisonClose?: () => void;
   onWorkspaceChange(workspace: "arch" | "board" | "drawing" | "render" | "publish" | "tree"): void;
@@ -360,6 +362,8 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
       {comparison && <div data-project-surface="compare" inert={!active} style={{ height: "100%", minHeight: 0 }}>
         <Suspense fallback={<LoadingOverlay mode="boot" status="Compare" />}>
           <ModelComparison key={comparison.key} projectId={boundProjectId.current!} candidateRunId={comparison.runId} active={active} nameOf={nameOfRun}
+            againstRunId={comparison.origin === "request" ? comparisonRequest?.againstRunId ?? null : null}
+            aside={comparison.origin === "request" ? comparisonRequest?.aside ?? null : null}
             backLabel={comparison.origin === "tree" ? t("modelCompare.back", { surface: workspace === "tree" ? t("designTree.title")
               : t(`designTree.surface.${workspace}` as MessageKey) }) : t("modelCompare.backPlain")}
             focusOnOpen={comparison.origin === "tree"} onReturn={returnFromComparison} onPhase={(phase) => comparisons.report(comparison.key, phase)} />

@@ -77,16 +77,35 @@ export function resolveComparisonPair(
   candidateRunId: string,
   runtime: Pick<RuntimeDto, "projectId" | "candidates">,
   artifacts: { readonly projectId: string; readonly viewable: readonly ComparisonModel[] },
+  /** Another run to set the candidate beside instead of its original: the other result a decision weighs it against. */
+  againstRunId?: string | null,
 ): { pair: ComparisonPair } | { refusal: ComparisonRefusal } {
   if (runtime.projectId !== projectId || artifacts.projectId !== projectId) return { refusal: "project-changed" };
   const row = runtime.candidates.find((candidate) => candidate.candidateId === candidateRunId);
   if (!row) return { refusal: "candidate-unknown" };
   if (row.status !== "completed") return { refusal: "candidate-unfinished" };
   if (!row.resultStateDigest) return { refusal: "candidate-no-model" };
-  if (!row.baseStateDigest) return { refusal: "no-retained-base" };
   const after = pictureOf(artifacts.viewable.filter((model) => model.runId === candidateRunId && boundState(model) === row.resultStateDigest));
   if (after === "none") return { refusal: "candidate-no-model" };
   if (after === "ambiguous") return { refusal: "candidate-ambiguous" };
+  if (againstRunId) {
+    // The other side is that run's own model: a candidate at its result, any other run (the current design) as listed.
+    if (againstRunId === candidateRunId) return { refusal: "base-ambiguous" };
+    const other = runtime.candidates.find((candidate) => candidate.candidateId === againstRunId);
+    if (other && (other.status !== "completed" || !other.resultStateDigest)) return { refusal: "base-no-model" };
+    const listed = artifacts.viewable.filter((model) => model.runId === againstRunId && boundState(model) !== null
+      && (!other || boundState(model) === other.resultStateDigest));
+    const states = new Set(listed.map((model) => boundState(model)));
+    if (states.size > 1) return { refusal: "base-ambiguous" };
+    const before = pictureOf(listed);
+    if (before === "none") return { refusal: "base-no-model" };
+    if (before === "ambiguous") return { refusal: "base-ambiguous" };
+    return { pair: {
+      candidate: { runId: candidateRunId, stateDigest: row.resultStateDigest, models: after },
+      base: { runId: againstRunId, stateDigest: boundState(before[0]!)!, models: before },
+    } };
+  }
+  if (!row.baseStateDigest) return { refusal: "no-retained-base" };
   const sources = artifacts.viewable.filter((model) => boundState(model) === row.baseStateDigest);
   const runs = new Set(sources.map((model) => model.runId));
   if (runs.size === 0) return { refusal: "base-no-model" };

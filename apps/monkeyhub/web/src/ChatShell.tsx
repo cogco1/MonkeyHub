@@ -32,10 +32,11 @@ import { editFocused, HubMenuBar, type HubMenu, type HubMenuItem } from "./HubMe
 import { ASK_AI_ACTION, openSurfaceAction, useCommandActions, useCommands, type CommandHandler } from "./features/commands/CommandProvider";
 import { askMeaning, offerFor, type ArgChoice, type ArgChoices, type Offer } from "./features/commands/meaning";
 import { indexOf, routeSentence, searchable } from "./features/commands/search";
+import { ComparisonDecision } from "./notifications/cards/AttentionCards";
 import { chooseShell, useShellLayout } from "./app/shellLayout";
 import { AttentionShell, RECENT_CONVERSATIONS, type CenterView, type ShellProject } from "./app/AttentionShell";
 import { useT } from "./i18n/useT";
-import { attentionConversation } from "./notifications/queue";
+import { attentionConversation, queueSnapshot } from "./notifications/queue";
 import { useNoticeRegion } from "./notifications/regions";
 import "./ChatShell.css";
 
@@ -105,7 +106,7 @@ type Opening = { token: number; id: AppId; projectDir: string | null; chatId: st
  * the project workspace `runtimeId` while `tool` stays on screen in the chat that asked; `before` is
  * what was on screen, put back by Back from this comparison, and `opener` is the card control pressed.
  */
-type Comparison = { request: { candidateRunId: string; requestId: number }; projectDir: string; runtimeId: string;
+type Comparison = { request: { candidateRunId: string; requestId: number; againstRunId?: string | null; aside?: ReactNode }; projectDir: string; runtimeId: string;
   chatId: string | null; tool: AppId; before: { panel: boolean; tool: AppId | null }; opener: HTMLButtonElement | null };
 /**
  * GH-285: the admission time and dismissal the Hub now reports; GH-58: whether an operation that
@@ -694,6 +695,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const browserPages = useRef<HTMLDivElement>(null);
   // Cancelling clears the request its workspace receives; it neither restores the view nor answers as Back.
   const endComparison = () => { comparisonRef.current = null; setComparison(null); };
+  /** A card's comparison in another project waits for that project to be the one on screen (2-5). */
+  const pendingComparison = useRef<{ projectDir: string; projectId: string;
+    request: { candidateRunId: string; againstRunId?: string | null; aside?: ReactNode } } | null>(null);
   const [chatWidth, setChatWidth] = useState(() => initial.chatWidth ?? CHAT_WIDTH);
   const [toolBusy, setToolBusy] = useState<AppId | null>(null);
   // PP-1: the tool being opened, and the step each project's start path is on.
@@ -1741,11 +1745,16 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
    */
   const compareResult = async (candidateRunId: string, opener: HTMLButtonElement) => {
     if (!chat || chat.id !== chatId || !project || project.projectId !== chat.projectId || project.projectDir !== chat.projectDir) return;
-    const target = project.projectDir, targetId = project.projectId, targetChat = chatId;
+    await compareIn(project.projectDir, project.projectId, { candidateRunId }, opener);
+  };
+  /** A comparison in this project, over the surface its mounted workspace shows; the Hub keeps the way back. */
+  const compareIn = async (target: string, targetId: string,
+    request: { candidateRunId: string; againstRunId?: string | null; aside?: ReactNode }, opener: HTMLButtonElement | null) => {
+    const targetChat = chatId;
     const current = comparisonRef.current;
     // Another option asked for over one on screen keeps the way back to what came before both.
     const before = current?.projectDir === target && current.chatId === targetChat ? current.before : { panel, tool: activeTool };
-    const publish = (runtimeId: string, tool: AppId) => setComparison({ request: { candidateRunId, requestId: ++comparisonSequence.current },
+    const publish = (runtimeId: string, tool: AppId) => setComparison({ request: { ...request, requestId: ++comparisonSequence.current },
       projectDir: target, runtimeId, chatId: targetChat, tool, before, opener });
     const mounted = tabs.find((tab) => tab.projectDir === target && tab.projectId === targetId && tab.runtimeId);
     if (mounted) { setActiveTool(mounted.id); setPanel(true); publish(mounted.runtimeId!, mounted.id); return; }
@@ -1763,6 +1772,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     const attached = runtimeAttachments.current.get(target);
     if (attached?.projectId === targetId) publish(attached.runtimeId, "tree");
   };
+  useEffect(() => {
+    const pending = pendingComparison.current;
+    if (!pending || pending.projectDir !== projectDir) return;
+    pendingComparison.current = null;
+    void compareIn(pending.projectDir, pending.projectId, pending.request, null);
+  }, [projectDir]);
   // A hidden panel, or another chat, project or tool on screen, cancels the comparison asked for here and its way back.
   useEffect(() => {
     if (comparison && (!panel || comparison.projectDir !== projectDir || comparison.chatId !== chatId || comparison.tool !== activeTool)) endComparison();
@@ -2051,6 +2066,19 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     drawings: "drawing", render: "monkeyrender", fabrication: "monkeyfab", usage: "monkeymonitor" };
   useCommandActions({
     "chat.new_conversation": { run: startChat },
+    // 2-5 比较并决定: a decision card's results side by side, the card under them; its answer closes the comparison.
+    "candidate.compare.decide": { run: ({ args }) => {
+      const runIds = Array.isArray(args?.runIds) ? args.runIds.filter((value): value is string => typeof value === "string" && value.length > 0) : [];
+      if (runIds.length < 2) return;
+      const card = typeof args?.cardId === "string" ? queueSnapshot().cards.find((row) => row.id === args.cardId) ?? null : null;
+      const target = projects.find((row) => row.projectDir === (card?.projectDir ?? projectDir));
+      if (!target) return;
+      const request = { candidateRunId: runIds[runIds.length - 1]!, againstRunId: runIds[0]!,
+        aside: card ? <ComparisonDecision cardId={card.id} project={target.name} onDone={() => { endComparison(); setPanel(false); }} /> : null };
+      if (target.projectDir === projectDir) { void compareIn(target.projectDir, target.projectId, request, null); return; }
+      pendingComparison.current = { projectDir: target.projectDir, projectId: target.projectId, request };
+      selectProject(target);
+    } },
     "chat.open_conversation": { run: ({ args }) => {
       const target = sessions.find((item) => item.id === args?.sessionId);
       if (target) selectChat(target);
