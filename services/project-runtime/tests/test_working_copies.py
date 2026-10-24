@@ -109,7 +109,9 @@ class WorkingCopyTests(unittest.TestCase):
                 for line in response.text.splitlines() if line.startswith("data:")]
 
     def assert_asset_event(self, event: dict, event_type: str, run_id: str) -> None:
-        null_fields = {"jobId", "candidateId", "proposalId", "wallTimeS", "error", "reviewReady", "blockedBy"}
+        # A job's fields, its queue and its steps included, are null on an event that is not a job's.
+        null_fields = {"jobId", "candidateId", "proposalId", "wallTimeS", "error", "reviewReady", "blockedBy",
+                       "lane", "waitingFor", "waitingReason", "title", "steps", "step", "stepState", "stepText"}
         self.assertEqual(set(event), {"seq", "at", "type", "runId"} | null_fields)
         self.assertIsInstance(event["seq"], int)
         self.assertGreater(event["seq"], 0)
