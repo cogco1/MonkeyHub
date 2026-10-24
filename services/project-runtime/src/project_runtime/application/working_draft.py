@@ -349,6 +349,8 @@ def _moves_onto(binding: ProjectBinding, run_id: str) -> list[_Timed]:
             at = datetime.fromisoformat(event["occurredAt"])
         except (KeyError, TypeError, ValueError):
             continue
+        # Compared in UTC: a time written without its zone is read as UTC, as _now writes it.
+        at = at.replace(tzinfo=timezone.utc) if at.tzinfo is None else at.astimezone(timezone.utc)
         message = event.get("messageSource") or {}
         moves.append(_Timed(at, ContinueMove(
             occurred_at=event["occurredAt"], run_id=run_id, previous_run_id=event.get("previousHeadRunId"),
