@@ -354,4 +354,3 @@
 .chat-suggest__chips::-webkit-scrollbar{display:none}
 .chat-suggest__chip{flex:none;padding:2px 10px;border:1px dashed var(--line);border-radius:999px;background:var(--panel);color:var(--ink);font:inherit;font-size:var(--text-caption);white-space:nowrap;cursor:pointer}
 .chat-suggest__chip:hover:not(:disabled){border-color:var(--ink)}.chat-suggest__chip:disabled{color:var(--faint);cursor:default}
-
