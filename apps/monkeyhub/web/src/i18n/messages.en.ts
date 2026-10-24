@@ -1375,6 +1375,7 @@ export const messagesEn = {
   "cards.reopen": "Bring back",
   "cards.evidence": "Evidence",
   "cards.words": "What to send",
+  "cards.unread": "This list could not be read; it is read again when the queue changes.",
 } as const;
 
 export type MessageKey = keyof typeof messagesEn;

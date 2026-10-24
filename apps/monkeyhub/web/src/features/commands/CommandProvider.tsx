@@ -39,6 +39,8 @@ export type CommandState =
 interface CommandsValue {
   register(action: string, handler: CommandHandler): () => void;
   run(id: string, source: UseSource, input?: CommandInput): boolean;
+  /** Counts a use of a command carried out elsewhere (a card's answer, by the Hub); only a command the tree has. */
+  note(id: string, source: UseSource): void;
   /** `onScreen` is the set of commands whose standing entry is shown, read once by the caller; without it the page is read. */
   stateOf(command: Command, onScreen?: ReadonlySet<string>): CommandState;
   openPalette(): void;
@@ -184,8 +186,9 @@ export function CommandProvider({ children, tree = COMMAND_TREE }: { children: R
     return () => window.removeEventListener("keydown", onKey, true);
   }, [byShortcut, run, stateOf]);
 
-  const value = useMemo<CommandsValue>(() => ({ register, run, stateOf, openPalette: () => setOpen(true), tree, usage }),
-    [register, run, stateOf, tree, usage]);
+  const note = useCallback((id: string, source: UseSource) => { if (byId.has(id)) setUsage(recordUse(storage(), id, source)); }, [byId]);
+  const value = useMemo<CommandsValue>(() => ({ register, run, note, stateOf, openPalette: () => setOpen(true), tree, usage }),
+    [register, run, note, stateOf, tree, usage]);
   return <CommandsContext.Provider value={value}>
     {children}
     {open && <CommandPalette language={language} onClose={() => setOpen(false)}
