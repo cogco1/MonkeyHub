@@ -115,6 +115,7 @@
             "apps/monkeyhub/web/test/commandPalette.test.ts",
             "apps/monkeyhub/web/test/commandTree.test.ts",
             "services/project-runtime/src/project_runtime/application/capability.py",
+            "services/project-runtime/tests/test_capabilities.py",
             "tools/governance/devctl.py"
           ],
           "depends_on": []
