@@ -173,6 +173,7 @@ because they are part of the form, not of its meaning.
 | `structural.role` | `load_bearing, non_load_bearing, bracing` |
 | `material.name` | free text |
 | `fabrication.method` | free text |
+| `description.note` | free text: the architect's own short sentence about the component ("shared kitchen"), never inferred |
 
 An unknown key is refused with the nearest known key. Adding, changing or removing a facet upserts
 the component only: its elements, objects, datums and dependency edges are byte-identical before and

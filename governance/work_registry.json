@@ -589,6 +589,37 @@
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/drawnCalibration.ts",
             "apps/monkeyhub/web/test/drawnCalibration.test.ts"
           ]
+        },
+        {
+          "id": "semantic-note",
+          "status": "active",
+          "branch": "claude/300-b3-semantic-note",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-semantic-note",
+          "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Todo 21. A short sentence on a mass or a sketch is something the AI reads: a mass takes it as the facet description.note (recorded from the person's own words through the facets proposal, read in the model view and by the compiler); a sketch takes it as the text typed inside the shape, which the Board view now tells as that shape's note. No interface change. Merged with batch 3.",
+          "modules": [
+            "archflow.semantics.facets",
+            "project_runtime.board",
+            "project_runtime.construction",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat/guides.py",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
+            "docs/architecture/semantic-registry.md",
+            "docs/architecture/system-map.md",
+            "docs/design/construction-api.md",
+            "governance/module_registry.json",
+            "packages/archflow/src/archflow/semantics/facets.py",
+            "packages/monkeyarch/tests/test_facets.py",
+            "services/project-runtime/src/project_runtime/api/dto/construction.py",
+            "services/project-runtime/src/project_runtime/application/boards.py",
+            "services/project-runtime/tests/test_boards.py",
+            "services/project-runtime/tests/test_construction_routes.py"
+          ],
+          "depends_on": []
         }
       ]
     }

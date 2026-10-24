@@ -9188,7 +9188,7 @@
       "owner_path": "packages/archflow/src/archflow/semantics/facets.py",
       "purpose": "The registered L3 facets a component may carry once its meaning is established: namespaced key/value pairs, each key a closed set of values, free text, or text in one written form.",
       "owns": [
-        "the facet vocabulary (architectural.role, architectural.enclosure, structural.role, material.name, material.color, fabrication.method), which keys are free text, and the free-text length bounds",
+        "the facet vocabulary (architectural.role, architectural.enclosure, structural.role, material.name, material.color, fabrication.method, description.note), which keys are free text, and the free-text length bounds",
         "the one written form of a formatted key (material.color: an sRGB hex colour #RRGGBB, kept in upper case), its canonical spelling and its sRGB channels",
         "the written reason of each key added after the construction spec's table (FACET_REASONS, ADR-006)"
       ],
@@ -10608,7 +10608,7 @@
         "handing one explicitly chosen registered image page, up to three reference pages and the person's words to the host conversation as an image discussion (#253), re-verified against the registered documents on confirmation, without reading the Board scene for it or saving the Board; the dialog closes only once the host took the request, and a host's refusal keeps it open with the reason",
         "the export raster of a registered document page (page_export_png): the PNG a Board PNG export writes at full size, a PDF page at 144 dpi over white; a view sheet's retained PNG is this export of its PDF",
         "showing the selected page against the editing base as project_runtime.binding's representation status answers it for that exact page (#288), read again only when the selection or what that status is derived from moves, with the page's own Stage label and generation time; the Board compares no sources itself, and showing the status never changes, rebinds or sends a page",
-        "drawing one frame or region of a scene revision as the Board shows it for an agent to read (view_board, gap 28): its exact registered pages under the person's strokes, shapes, text and tracing-paper snapshots, at most 2048 px and 4 MiB, with every mark listed by type, colours, box, last change, frame and, for each page under it, the shared part in page fractions; it approximates Excalidraw's drawing and writes nothing"
+        "drawing one frame or region of a scene revision as the Board shows it for an agent to read (view_board, gap 28; a sentence typed inside a shape is told as that shape's note, and the text says whose it is: containerId): its exact registered pages under the person's strokes, shapes, text and tracing-paper snapshots, at most 2048 px and 4 MiB, with every mark listed by type, colours, box, last change, frame and, for each page under it, the shared part in page fractions; it approximates Excalidraw's drawing and writes nothing"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (project_runtime.documents and monkeydiagram.drawing_runs)",
