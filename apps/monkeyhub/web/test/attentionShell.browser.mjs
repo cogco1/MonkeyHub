@@ -373,6 +373,7 @@ try {
   await handled.getByText("你选了：留 V17").waitFor();
   await handled.getByRole("button", { name: "撤销" }).click();
   await queued("V16 和 V17 留哪个").waitFor();
+  assert.equal(await queuePage.locator(".attention-toast").filter({ hasText: "V16 和 V17 留哪个" }).count(), 0, "a card brought back here is no news");
   // Set aside leaves the queue for the set-aside page, which brings it back.
   await queued("剖面图出好了").getByRole("button", { name: "忽略" }).click();
   await queued("剖面图出好了").waitFor({ state: "detached" });
@@ -387,6 +388,7 @@ try {
   await ask.waitFor({ state: "detached" });
   assert.deepEqual(attentionNotes, ["1.2 米，和走廊一样宽"]);
   await queuePage.waitForFunction(() => document.activeElement?.id === "attention-card-att_ask_next");
+  assert.equal(await queuePage.locator(".attention-toast").filter({ hasText: "按 1.2 米改楼梯吗" }).count(), 0, "nor one the answer raised");
   // A card that comes to need the architect is a notice; over the model, with the side panel open, it keeps
   // left of the side and above the floating toolbar where they share columns.
   await queuePage.keyboard.press("Alt+3");

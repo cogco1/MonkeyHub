@@ -15,7 +15,7 @@ import {
   type AttentionEvent, type Snapshot,
 } from "./attention";
 import { openCard, openChat } from "./openChat";
-import { queueSnapshot, subscribeQueue } from "./queue";
+import { queueSnapshot, shownHere, subscribeQueue } from "./queue";
 
 /** How often the chat list is read while a turn runs or waits. A reading never overlaps the one before it. */
 export const POLL_MS = 4000;
@@ -114,8 +114,10 @@ export function useAttention(language: Language): Attention {
   const cardBaseline = useRef<Set<string> | null>(null);
   useEffect(() => {
     if (!fromQueue) { cardBaseline.current = null; return; }
-    raise(cardNews(cardBaseline.current, queue.cards), (stack) => settleCards(stack, queue.cards));
+    // A card the person's own action brought up here is in front of them already.
+    raise(cardNews(cardBaseline.current, queue.cards, shownHere), (stack) => settleCards(stack, queue.cards));
     cardBaseline.current = pendingCards(queue.cards);
+    for (const id of [...shownHere]) if (cardBaseline.current.has(id)) shownHere.delete(id);
   }, [fromQueue, queue, raise]);
 
   // The conversations, where it does not.

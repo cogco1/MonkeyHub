@@ -83,15 +83,27 @@ export function cardsIn(states: readonly CardState[], projectDir?: string): Prom
 }
 
 const post = <T>(path: string, body?: unknown) => call<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
+/**
+ * Cards this window put in front of the person through their own action: brought back, or raised by their answer.
+ * They are not news to the person (useAttention), until a reading has seen them waiting.
+ */
+export const shownHere = new Set<string>();
+
 // The queue is read again before the action's answer comes back, so a card it raised is there to be shown.
-const acted = async <T>(action: Promise<T>): Promise<T> => {
-  try { return await action; } finally { await refreshQueue(); }
+const acted = async <T>(action: Promise<T>, brings: (result: T) => readonly (string | null | undefined)[] = () => []): Promise<T> => {
+  try {
+    const result = await action;
+    for (const id of brings(result)) if (id) shownHere.add(id);
+    return result;
+  } finally { await refreshQueue(); }
 };
 
 /** The person's answer, with their own words where the answer sends a message; the Hub's executor carries it out as them. */
 export const resolveCard = (id: string, optionId: string, note?: string) =>
-  acted(post<CardActionResult>(`/api/attention/${encodeURIComponent(id)}/resolve`, note === undefined ? { optionId } : { optionId, note }));
-export const undoCard = (id: string) => acted(post<CardActionResult>(`/api/attention/${encodeURIComponent(id)}/undo`));
+  acted(post<CardActionResult>(`/api/attention/${encodeURIComponent(id)}/resolve`, note === undefined ? { optionId } : { optionId, note }),
+    (result) => [result.followUp?.id]);
+export const undoCard = (id: string) =>
+  acted(post<CardActionResult>(`/api/attention/${encodeURIComponent(id)}/undo`), (result) => [result.item.id, result.followUp?.id]);
 export const laterCard = (id: string) => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/later`));
 export const dismissCard = (id: string) => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/dismiss`));
-export const reopenCard = (id: string) => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/reopen`));
+export const reopenCard = (id: string) => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/reopen`), (item) => [item.id]);
