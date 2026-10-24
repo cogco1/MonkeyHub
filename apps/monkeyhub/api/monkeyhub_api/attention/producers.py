@@ -16,7 +16,7 @@ import re
 from typing import Any
 
 from ..models import ChatDetail
-from ..runtime.models import OperationRecord
+from ..runtime.models import OperationRecord, RepairRecord
 from ..updates.models import UpdateStatus
 from .models import AttentionDraft, AttentionMedia, AttentionOption, AttentionSource, CommandRef
 
@@ -30,6 +30,7 @@ SUGGESTIONS = "sug:"
 QUESTIONS = "dlq:"
 OPERATIONS = "op:"
 UPDATES = "update:"
+REPAIRS = "repair:"
 
 # A result nobody has touched for this long is offered for archiving instead.
 STALE_AFTER = timedelta(days=7)
@@ -310,6 +311,28 @@ def operations(records: Iterable[OperationRecord]) -> list[AttentionDraft]:
                              "attention.queue.acknowledge", operationId=record.operationId)],
             opens=[CommandRef(commandId=OPEN_CONVERSATION, args={"sessionId": record.sessionId})]
             if record.sessionId else []))
+    return drafts
+
+
+def repairs(records: Iterable[RepairRecord]) -> list[AttentionDraft]:
+    """What the Hub put right by itself in a project, each once; one it would not put right again asks for a person."""
+
+    drafts = []
+    for record in records:
+        if record.kind == "studio-restarted":
+            drafts.append(_card(("The project service stopped and was started again", "项目服务意外停了一次，已经自动重启"),
+                                (f"Nothing to do. It had stopped: {record.detail}", f"不用处理。停止时：{record.detail}"),
+                                channel="notice", kind="auto_fixed", dedupeKey=f"{REPAIRS}{record.repairId}"))
+        elif record.kind == "studio-restart-held":
+            drafts.append(_card(
+                ("The project service keeps stopping and was not started again", "项目服务反复停止，没有再自动重启"),
+                (record.detail, record.detail), channel="notice", kind="info", dedupeKey=f"{REPAIRS}{record.repairId}",
+                options=[_option("ai", ("Ask the AI to handle it", "交给 AI 处理"),
+                                 ("The project's conversation is told it keeps stopping and asked to find out why",
+                                  "把情况发给项目对话，让 AI 查原因"), "chat.composer.send",
+                                 content=(f"The project service stopped three times in ten minutes and was not started "
+                                          f"again: {record.detail}. Please find out why. / 项目服务十分钟内停了三次，"
+                                          f"没有再自动重启：{record.detail}。请查明原因。")[:1900])]))
     return drafts
 
 

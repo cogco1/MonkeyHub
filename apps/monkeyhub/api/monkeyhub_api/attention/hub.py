@@ -145,6 +145,8 @@ class AttentionHub:
         project_id, project_dir = runtime.project_id, runtime.project_dir
         self.store.reconcile(project_id, project_dir, producers.OPERATIONS,
                              producers.operations(runtime.operations.records()))
+        self.store.reconcile(project_id, project_dir, producers.REPAIRS,
+                             producers.repairs(getattr(runtime, "repairs", ())))
         sessions = self._sessions(project_id, project_dir)
         self.store.reconcile(project_id, project_dir, producers.PERMISSIONS, producers.permissions(sessions))
         self.store.reconcile(project_id, project_dir, producers.SUGGESTIONS, producers.suggestions(sessions))

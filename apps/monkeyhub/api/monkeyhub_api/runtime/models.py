@@ -67,6 +67,19 @@ class OperationRecord(BaseModel):
     ))
 
 
+class RepairRecord(BaseModel):
+    """Something the Hub put right by itself, from its repair table (``manager.REPAIRS``), and when (#300 4-2)."""
+
+    model_config = ConfigDict(frozen=True)
+    repairId: str
+    kind: Literal["studio-restarted", "studio-restart-held"] = Field(description=(
+        "studio-restarted: the project's Studio stopped unexpectedly and was started again with the same binding "
+        "and port. studio-restart-held: it stopped again too often to be restarted again by itself; a person "
+        "recovers it."))
+    at: str = Field(description="When, in UTC.")
+    detail: str = Field(description="How it had stopped, as its supervisor saw it.")
+
+
 class ProjectRuntimeDto(BaseModel):
     runtimeId: str
     projectId: str
@@ -78,6 +91,8 @@ class ProjectRuntimeDto(BaseModel):
     retained: RuntimeDto | None = None
     projection: Literal["unknown", "ready", "stale", "rebuilding"] = "unknown"
     clients: int = 0
+    repairs: list[RepairRecord] = Field(default_factory=list, description=(
+        "What the Hub put right by itself in this project since it opened it, newest last (at most 10)."))
     error: HubError | None = None
 
 

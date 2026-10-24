@@ -17,7 +17,7 @@ from monkeyhub_api.attention import producers
 from monkeyhub_api.attention.actions import COMMANDS, check_card
 from monkeyhub_api.attention.store import AttentionStore
 from monkeyhub_api.models import ChatDetail
-from monkeyhub_api.runtime.models import OperationRecord
+from monkeyhub_api.runtime.models import OperationRecord, RepairRecord
 from monkeyhub_api.updates.models import UpdateStatus
 
 NOW = datetime(2026, 10, 23, 9, 0, tzinfo=timezone.utc)
@@ -171,6 +171,14 @@ class HubProducerTests(unittest.TestCase):
         self.assertEqual((cards[0].title, cards[0].titleZh), ("The model change did not finish", "改模型没有完成"))
         self.assertEqual(cards[0].options[0].action.args, {"operationId": "o1"})
         self.assertEqual(cards[1].opens[0].args, {"sessionId": "c1"})
+
+    def test_what_the_hub_put_right_is_a_notice_and_what_it_would_not_asks_for_the_ai(self):
+        restarted = RepairRecord(repairId="r1", kind="studio-restarted", at=NOW.isoformat(), detail="exited with code 3")
+        held = RepairRecord(repairId="r2", kind="studio-restart-held", at=NOW.isoformat(), detail="exited with code 3")
+        notice, asked = producers.repairs([restarted, held])
+        self.assertEqual((notice.kind, notice.dedupeKey, notice.options), ("auto_fixed", "repair:r1", []))
+        self.assertEqual(notice.titleZh, "项目服务意外停了一次，已经自动重启")
+        self.assertEqual([(option.id, option.action.commandId) for option in asked.options], [("ai", "chat.composer.send")])
 
     def test_a_prepared_update_asks_to_restart(self):
         ready = UpdateStatus.model_validate({

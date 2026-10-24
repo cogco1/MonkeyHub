@@ -4548,14 +4548,24 @@
             "id": "view.shell.workbench",
             "label": "Back to the old shell",
             "label_zh": "回旧版",
-            "aliases": ["old interface", "workbench", "旧界面", "工作台"],
+            "aliases": [
+              "old interface",
+              "workbench",
+              "旧界面",
+              "工作台"
+            ],
             "entries": []
           },
           {
             "id": "view.shell.attention",
             "label": "Back to the new shell",
             "label_zh": "回新版",
-            "aliases": ["new interface", "attention shell", "新界面", "新版"],
+            "aliases": [
+              "new interface",
+              "attention shell",
+              "新界面",
+              "新版"
+            ],
             "entries": []
           },
           {
@@ -13647,7 +13657,8 @@
         "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
         "guess rules over the Runtime's edit log: the same element field or parameter changed the same way three times within the line's last five steps becomes one ask card whose answers send a sentence to the project's conversation; a field a person set aside stays quiet until its suppression ends; and the Runtime's drawing recipe suggestions (one pen changed the same way on two drawings or more) as one ask card per pen and direction, saving the value as the person's recipe decision",
         "What a person allowed skills to do on this machine (S-1): <runtime root>/config/skill-grants.json (MonkeyHubSkillGrants@1) beside applications.json, outside every project and never synced with a team; one grant per answer, for every skill, one skill by name and source, or one run bound to its project and code; withdrawn grants kept with when; a project's version grants from before S-1 carried over once as grants for that skill only; written only through monkeyhub_api/settings",
-        "An Agent's skill run (S-1): the project's approvals from before carried over, what the run still needs read from its Runtime (GET /api/skills/{id}/needs), and only that put to the person in the chat as one question (always allow, only this time, no); the Hub writes the grant from the answer, the Agent never names one"
+        "An Agent's skill run (S-1): the project's approvals from before carried over, what the run still needs read from its Runtime (GET /api/skills/{id}/needs), and only that put to the person in the chat as one question (always allow, only this time, no); the Hub writes the grant from the answer, the Agent never names one",
+        "the repair table (runtime.manager.REPAIRS, #300 4-2): what the Hub puts right without asking a person; its first entry starts a project's Studio that stopped unexpectedly again through recover, at most three times in ten minutes, then leaves it for a person; each repair and the hold are kept on the project's snapshot (ProjectRuntimeDto.repairs, RepairRecord) and told as repair/applied, which the attention queue shows as a notice, or, for the hold, a card that hands it to the project's conversation"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -13799,7 +13810,9 @@
         "GET /api/settings/skill-grants",
         "POST /api/settings/skill-grants/{grant_id}/revoke",
         "POST /api/settings/skill-grants/carry",
-        "skill_plugins.installed_library"
+        "skill_plugins.installed_library",
+        "REPAIRS",
+        "RepairRecord"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
