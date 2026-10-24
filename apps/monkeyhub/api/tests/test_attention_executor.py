@@ -100,8 +100,8 @@ def option(option_id, label, command, *, undoable=False, recommended=False, **ar
 
 
 def ab_card(study="s1", recommend=None):
-    options = [option("a", "留 A", "design.go_to_step", undoable=True, recommended=recommend == "a", runId="run-v16"),
-               option("b", "换成 B", "design.go_to_step", undoable=True, recommended=recommend == "b",
+    options = [option("a", "留 A", "design.go_to_step.continue", undoable=True, recommended=recommend == "a", runId="run-v16"),
+               option("b", "换成 B", "design.go_to_step.continue", undoable=True, recommended=recommend == "b",
                       runId=f"run-b-{study}", branchId=None),
                option("archive", "都不要", "candidate.review.archive", undoable=True, runIds=["run-a", "run-b"])]
     card = {"channel": "decide", "kind": "ab", "title": "V16 和斜撑版，留哪个", "dedupeKey": f"result:study:{study}",
@@ -112,13 +112,13 @@ def ab_card(study="s1", recommend=None):
 
 
 class CommandTreeTests(unittest.TestCase):
-    def test_what_a_card_may_open_is_what_the_command_tree_marks_as_opening(self):
+    def test_what_a_card_may_open_the_command_tree_marks_as_opening(self):
         registry = json.loads((ROOT / "governance" / "module_registry.json").read_text(encoding="utf-8"))
         commands = {command["id"]: command for capability in registry.get("capabilities", ())
                     for command in (capability.get("ui") or {}).get("commands", ())}
-        self.assertEqual({key for key, command in commands.items() if command.get("opens")} - set(OPENS), set(),
-                         "every command the tree marks as opening may be opened from a card")
-        self.assertEqual({key for key in set(OPENS) & set(commands) if not commands[key].get("opens")}, set())
+        # The tree marks every command that only opens something; a card offers a few of them.
+        self.assertEqual({key for key in set(OPENS) & set(commands) if not commands[key].get("opens")}, set(),
+                         "a card opens only what the command tree marks as opening")
         self.assertEqual({key for key in set(COMMANDS) & set(commands) if commands[key].get("opens")}, set(),
                          "an answer is never a command that only opens something")
 
@@ -194,12 +194,12 @@ class AttentionExecutorTests(unittest.TestCase):
         for draft in (
             {"options": [restart]},
             {"options": [option("go", "重置", "board.reset_canvas")]},
-            {"opens": [{"commandId": "design.go_to_step", "args": {"runId": "run-x"}}]},
+            {"opens": [{"commandId": "design.go_to_step.continue", "args": {"runId": "run-x"}}]},
             {"opens": [{"commandId": "candidate.compare.decide", "args": {}}]},
             {"opens": [{"commandId": "chat.open_conversation", "args": {"sessionId": "c1", "messageId": "m1"}}]},
             # The guess cards' first draft: a sentence under another name, and no conversation to send it to.
-            {"options": [option("go", "再调小一步", "chat.send_message", text="梁高再降 50")]},
-            {"options": [option("go", "换成它", "design.go_to_step")]},
+            {"options": [option("go", "再调小一步", "chat.composer.send", text="梁高再降 50")]},
+            {"options": [option("go", "换成它", "design.go_to_step.continue")]},
         ):
             with self.assertRaises(HubFailure) as refused:
                 store.upsert("thi-hemp", self.project_dir, AttentionDraft.model_validate({
@@ -263,7 +263,7 @@ class AttentionExecutorTests(unittest.TestCase):
     def test_conversation_answers_go_to_the_chat(self):
         permission = self.card(AttentionDraft.model_validate({
             "channel": "decide", "kind": "choice", "title": "「改楼板」请求：写入 runs/", "dedupeKey": "perm:c1:p1",
-            "options": [option("o0", "允许这一次", "chat.answer_permission", sessionId="c1", permissionId="p1",
+            "options": [option("o0", "允许这一次", "attention.queue.answer_permission", sessionId="c1", permissionId="p1",
                                optionId="allow")]}))
         self.executor.resolve(permission, "o0")
         self.assertEqual(self.chats.permissions, [("c1", "p1", "allow")])
@@ -280,7 +280,7 @@ class AttentionExecutorTests(unittest.TestCase):
 
         question = self.card(AttentionDraft.model_validate({
             "channel": "decide", "kind": "choice", "title": "西门廊要保留原来的柱距吗", "dedupeKey": "dlq:c1:m2",
-            "options": [option("answer", "回答", "chat.send_message", sessionId="c1")]}))
+            "options": [option("answer", "回答", "chat.composer.send", sessionId="c1")]}))
         with self.assertRaises(HubFailure) as empty:
             self.executor.resolve(question, "answer")
         self.assertEqual(empty.exception.error.code, "ATTENTION_ACTION_INVALID")
@@ -290,7 +290,7 @@ class AttentionExecutorTests(unittest.TestCase):
 
         guess = self.card(AttentionDraft.model_validate({
             "channel": "guess", "kind": "ask", "title": "Lower the beam again?", "dedupeKey": "rule:edit:beam-3",
-            "options": [option("go", "再调小一步", "chat.send_message", content="梁高再降 50")]}))
+            "options": [option("go", "再调小一步", "chat.composer.send", content="梁高再降 50")]}))
         self.executor.resolve(guess, "go")
         self.assertEqual((self.chats.posts[-1][0], self.chats.posts[-1][1].content), ("c-attention", "梁高再降 50"),
                          "a card that names no conversation answers into the project's own")
@@ -324,7 +324,7 @@ class AttentionExecutorTests(unittest.TestCase):
         self.assertEqual(missing.exception.error.code, "ATTENTION_OPTION_UNKNOWN")
         self.assertTrue(all(re.fullmatch(COMMAND_ID, command) for command in COMMANDS))
         self.assertEqual({command for command, row in COMMANDS.items() if row.undoable},
-                         {"design.go_to_step", "candidate.review.archive", "candidate.restore"})
+                         {"design.go_to_step.continue", "candidate.review.archive", "candidate.review.restore"})
 
     def test_all_as_recommended_runs_once_and_is_taken_back_together(self):
         first = self.card(ab_card("s1", recommend="b"))

@@ -136,7 +136,7 @@ def _compare(study: str, lines: list[dict]) -> AttentionDraft:
         options=[*(_option(letter.lower(), (f"Adopt {letter}", f"采用 {letter}"),
                            (f"The current design becomes {letter}; the one before stays in the history",
                             f"当前方案换成 {letter}，原来那一版留在修改历史里"),
-                           "design.go_to_step", undoable=True, runId=line["runId"], branchId=line.get("branchId"))
+                           "design.go_to_step.continue", undoable=True, runId=line["runId"], branchId=line.get("branchId"))
                    for letter, line in zip(LETTERS, shown)),
                  _archive(every, ("Neither", "都不要"))],
         opens=[CommandRef(commandId=COMPARE, args={"runIds": runs})])
@@ -155,11 +155,11 @@ def _single(line: dict, head: str | None) -> AttentionDraft:
         summary = (f"{summary[0]} {detail}", f"{summary[1]}{detail}") if summary else (detail, detail)
     options = [_option("combine", ("Combine with current", "并入当前"),
                        ("A new result made from both; the two stay as they are", "和当前方案合成一个新结果，原来的都留着"),
-                       "candidate.combine", runIds=[head, run])] if combine else []
+                       "design.go_to_step.combine", runIds=[head, run])] if combine else []
     options += [_option("switch", ("Switch to it", "换成它"),
                         ("The current design becomes this result; the one before stays in the history",
                          "当前方案换成它，原来那一版留在修改历史里"),
-                        "design.go_to_step", undoable=True, runId=run, branchId=line.get("branchId")),
+                        "design.go_to_step.continue", undoable=True, runId=run, branchId=line.get("branchId")),
                 _keep()]
     if line.get("admission") == "admitted":
         options.append(_archive([run], ("Archive", "归档")))
@@ -196,7 +196,7 @@ def permissions(sessions: Iterable[ChatDetail]) -> list[AttentionDraft]:
             for index, choice in enumerate(request.options[:len(LETTERS)]):
                 label, consequence = _PERMISSION_WORDS.get(choice.kind, (
                     (choice.name, choice.name), (f"Answer “{choice.name}”", f"按「{choice.name}」答复")))
-                options.append(_option(f"o{index}", label, consequence, "chat.answer_permission",
+                options.append(_option(f"o{index}", label, consequence, "attention.queue.answer_permission",
                                        sessionId=session.id, permissionId=request.id, optionId=choice.optionId))
             drafts.append(_card(
                 (f"“{session.title}” asks: {request.title}", f"「{session.title}」请求：{request.title}"),
@@ -260,7 +260,7 @@ def questions(asked: Iterable[AskedQuestion]) -> list[AttentionDraft]:
         # The content is what the person writes on the card.
         options=[_option("answer", ("Answer", "回答"),
                          ("Your answer goes back to the conversation, which carries on",
-                          "把你的回答发回原对话，它接着改"), "chat.send_message", sessionId=row.session_id)],
+                          "把你的回答发回原对话，它接着改"), "chat.composer.send", sessionId=row.session_id)],
         opens=[CommandRef(commandId=OPEN_CONVERSATION, args={"sessionId": row.session_id})]) for row in asked]
 
 

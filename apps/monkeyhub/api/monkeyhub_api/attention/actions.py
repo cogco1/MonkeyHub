@@ -137,7 +137,7 @@ def _runs(args: Mapping[str, ArgValue]) -> list[str]:
 def _continued(previous: str | None, branch: object, target: str) -> _Done:
     # A head that no entry named is not put back: returning there is another act.
     undo = None if not previous or previous == target else UndoSpec(
-        action=CommandRef(commandId="design.go_to_step", args={"runId": previous, "branchId": branch}),
+        action=CommandRef(commandId="design.go_to_step.continue", args={"runId": previous, "branchId": branch}),
         precondition={"currentRunId": target})
     return _Done({"runId": target, "previousRunId": previous}, undo)
 
@@ -274,21 +274,21 @@ class Command:
 # command tree; the Hub refuses a card's answer that is not here.
 COMMANDS: dict[str, Command] = {
     # Continue onto runId (on branchId, or the line the run was recorded on).
-    "design.go_to_step": Command(_go_to_step, undoable=True, takes=("runId", "branchId"), needs=("runId",)),
-    "candidate.review.archive": Command(_review("archive", "candidate.restore"), undoable=True,
+    "design.go_to_step.continue": Command(_go_to_step, undoable=True, takes=("runId", "branchId"), needs=("runId",)),
+    "candidate.review.archive": Command(_review("archive", "candidate.review.restore"), undoable=True,
                                         takes=("runIds",), needs=("runIds",)),
-    "candidate.restore": Command(_review("restore", "candidate.review.archive"), undoable=True,
+    "candidate.review.restore": Command(_review("restore", "candidate.review.archive"), undoable=True,
                                  takes=("runIds",), needs=("runIds",)),
     # A new run from runIds (the head first, then the result).
-    "candidate.combine": Command(_combine, takes=("runIds",), needs=("runIds",)),
+    "design.go_to_step.combine": Command(_combine, takes=("runIds",), needs=("runIds",)),
     # optionId null cancels the request, as the conversation's own Cancel does.
-    "chat.answer_permission": Command(_answer_permission, takes=("sessionId", "permissionId", "optionId"),
+    "attention.queue.answer_permission": Command(_answer_permission, takes=("sessionId", "permissionId", "optionId"),
                                       needs=("sessionId", "permissionId")),
     "attention.queue.answer_guess": Command(_answer_guess, takes=("sessionId", "messageId", "revision"),
                                       needs=("sessionId", "messageId", "revision")),
     # content, or what the person writes on the card, is sent as their message to sessionId, or
     # without one to the project's attention conversation.
-    "chat.send_message": Command(_send_message, takes=("sessionId", "content")),
+    "chat.composer.send": Command(_send_message, takes=("sessionId", "content")),
     "hub.update_apply": Command(_update_apply),
     # With operationId, the operation journal's acknowledge; without, the card is only put away.
     "attention.queue.acknowledge": Command(_acknowledge, takes=("operationId",)),
@@ -448,7 +448,7 @@ class AttentionExecutor:
     def partly_done(self, item: AttentionItem, runs: list[str], *, archived: bool) -> AttentionItem:
         """An all-or-none review that could not be put back: a card lists what was left, and offers to finish it."""
 
-        reverse = "candidate.restore" if archived else "candidate.review.archive"
+        reverse = "candidate.review.restore" if archived else "candidate.review.archive"
         state, state_zh = ("archived", "归档") if archived else ("restored", "找回")
         return self.store.upsert(item.projectId, item.projectDir, AttentionDraft(
             channel="decide", kind="choice",
