@@ -138,13 +138,11 @@
             "apps/monkeyhub/web/src/workspaces/monkeyarch/gestureTools.ts",
             "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
-            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentStudyPanel.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentTextLayer.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentTracingPanel.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingDressing.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingMenu.tsx",
-            "apps/monkeyhub/web/src/workspaces/monkeydiagram/RecipeTransfer.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/documentTools.ts",
             "apps/monkeyhub/web/src/workspaces/publish/PublishWorkspace.tsx",
             "apps/monkeyhub/web/src/workspaces/render/ModelPreview.tsx",
@@ -166,7 +164,6 @@
             "apps/monkeyhub/web/test/documentCanvas.browser.mjs",
             "apps/monkeyhub/web/test/documentModelSource.browser.mjs",
             "apps/monkeyhub/web/test/documentShortcuts.browser.mjs",
-            "apps/monkeyhub/web/test/documentStudy.browser.mjs",
             "apps/monkeyhub/web/test/documentTextLayer.browser.mjs",
             "apps/monkeyhub/web/test/documentTracing.browser.mjs",
             "apps/monkeyhub/web/test/drawingStyles.browser.mjs",
@@ -179,7 +176,6 @@
             "apps/monkeyhub/web/test/modelingOpen.browser.mjs",
             "apps/monkeyhub/web/test/presentationStyle.browser.mjs",
             "apps/monkeyhub/web/test/pushPull.browser.mjs",
-            "apps/monkeyhub/web/test/recipeTransfer.browser.mjs",
             "apps/monkeyhub/web/test/renderWorkspace.browser.mjs",
             "apps/monkeyhub/web/test/sceneSnapping.browser.mjs",
             "apps/monkeyhub/web/test/sketch.browser.mjs",
@@ -189,6 +185,26 @@
             "apps/monkeyhub/web/test/viewportSelection.browser.mjs",
             "apps/monkeyhub/web/test/workModelExport.browser.mjs",
             "apps/monkeyhub/web/test/workingCopy.browser.mjs"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "devmode-details",
+          "status": "active",
+          "branch": "claude/300-devmode-details",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-devmode-details",
+          "base_ref": "d6ce682ffd0cf3c5b9efa8dd6cc703a9d2912a09",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "2-7b follow-up: the document page's source fingerprint and saved-ledger reference, and the drawing recipe's file hashes, show only in developer mode; the page number and whether the study is saved stay. Takes these files over from GH-300/tests, whose T-1b does not touch them.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentStudyPanel.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/RecipeTransfer.tsx",
+            "apps/monkeyhub/web/test/documentStudy.browser.mjs",
+            "apps/monkeyhub/web/test/recipeTransfer.browser.mjs"
           ],
           "depends_on": []
         }
