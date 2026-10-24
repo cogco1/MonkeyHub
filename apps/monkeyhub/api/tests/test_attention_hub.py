@@ -23,6 +23,7 @@ from monkeyhub_api.attention.store import AttentionStore, runtime_id
 from monkeyhub_api.models import ChatDetail, HubFailure
 from monkeyhub_api.runtime.models import OperationRecord
 from monkeyhub_api.runtime.worker_http import HttpResult
+from monkeyhub_api.settings.store import SettingsError
 from monkeyhub_api.updates.models import UpdateStatus
 
 NOW = datetime(2026, 10, 23, 9, 0, tzinfo=timezone.utc)
@@ -108,6 +109,11 @@ class FakeChats:
         self.posted = (session_id, request)
 
 
+def no_settings():
+    # The account's own settings are never read by a test.
+    return SimpleNamespace(chat_provider=None, chat_model=None, language=None)
+
+
 def waiting_chat(project_dir: str) -> ChatDetail:
     return ChatDetail.model_validate({
         "id": "c1", "projectId": "thi-hemp", "projectDir": project_dir, "title": "改楼板", "provider": "claude",
@@ -130,7 +136,7 @@ class AttentionHubTests(unittest.TestCase):
         self.store = AttentionStore(Path(temporary.name) / "attention")
         self.runtimes = FakeRuntimes(self.project_dir)
         self.chats = FakeChats([waiting_chat(self.project_dir)])
-        self.hub = AttentionHub(self.store, self.runtimes, self.chats, clock=lambda: NOW)
+        self.hub = AttentionHub(self.store, self.runtimes, self.chats, clock=lambda: NOW, user_settings=no_settings)
 
     def test_a_project_answer_is_the_persons_own_request(self):
         self.hub.studio("thi-hemp", self.project_dir, "PUT", "/api/working-draft", {"runId": "run-b"},
@@ -192,7 +198,8 @@ class AttentionHubTests(unittest.TestCase):
             "prepared": {"targetVersion": "11230e0e1234-desktop", "targetRevision": "a" * 40, "changedBytes": 1,
                          "changedFiles": 1, "removedFiles": 0, "reusedFiles": 0}})
         updates = SimpleNamespace(status=lambda: status, apply=lambda: None)
-        hub = AttentionHub(self.store, self.runtimes, self.chats, updates, hub_dir=self.project_dir + "-hub")
+        hub = AttentionHub(self.store, self.runtimes, self.chats, updates, hub_dir=self.project_dir + "-hub",
+                           user_settings=no_settings)
         hub.refresh_hub()
         summary = self.store.summary()
         self.assertEqual((summary.hub.open, summary.projects), (1, []))
@@ -223,6 +230,18 @@ class AttentionHubTests(unittest.TestCase):
         self.assertEqual(self.chats.created[-1].title, "Attention")
         self.chats.sessions = [row for row in self.chats.sessions if row.id != second]
         self.assertNotIn(hub.conversation(self.project_dir), {first, second}, "so is one that is gone")
+
+    def test_settings_that_cannot_be_read_answer_with_their_defaults(self):
+        def unreadable():
+            raise SettingsError("APPDATA must name the local account's absolute settings directory.")
+
+        hub = AttentionHub(self.store, self.runtimes, self.chats, user_settings=unreadable)
+        self.runtimes.graph = {"head": {"runId": "run-v16"}, "lines": [result_line("run-a"), result_line("run-b")]}
+        hub.refresh(self.runtimes.runtime.runtime_id)
+        card = next(item for item in self.store.items() if item.kind == "ab")
+        self.assertEqual(hub.executor.resolve(card.id, "b").item.state, "done")
+        self.assertEqual(hub.conversation(self.project_dir), "c-new-1")
+        self.assertEqual(self.chats.created[0].title, "关注")
 
     def test_the_hubs_events_bring_cards_up_to_date_and_say_so(self):
         seen = []

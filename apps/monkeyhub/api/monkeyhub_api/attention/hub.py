@@ -29,7 +29,8 @@ from starlette.requests import Request
 
 from ..models import ChatCreateRequest, ChatDetail, HubFailure
 from ..runtime.workers import project_key
-from ..settings.store import read_user_settings
+from ..settings.models import UserSettingsDto
+from ..settings.store import SettingsError, read_user_settings
 from . import producers
 from .actions import AttentionExecutor, check_card
 from .models import AttentionItem
@@ -61,7 +62,7 @@ class AttentionHub:
             store.check = check_card
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self.executor = AttentionExecutor(store, studio=self.studio, chats=chats, hub=self, clock=self._clock,
-                                          language=lambda: getattr(self._user_settings(), "language", None))
+                                          language=lambda: getattr(self._settings(), "language", None))
         store.subscribe(self._changed)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -105,7 +106,7 @@ class AttentionHub:
                     # Only a conversation that is gone is replaced; any other failure is the caller's to read.
                     if exc.error.code != "CHAT_NOT_FOUND":
                         raise
-            settings = self._user_settings()
+            settings = self._settings()
             available = [row.id for row in self.chats.providers() if row.available]
             provider = settings.chat_provider if settings.chat_provider in available else next(iter(available), None)
             if provider is None:
@@ -117,6 +118,13 @@ class AttentionHub:
                 title="Attention" if settings.language == "en" else "关注"))
             self.store.set_conversation(session.projectId, session.projectDir, session.id)
             return session.id
+
+    def _settings(self):
+        # The account's preferences, or their defaults when they cannot be read: no card's answer waits on them.
+        try:
+            return self._user_settings()
+        except (SettingsError, OSError):
+            return UserSettingsDto()
 
     def apply_update(self):
         if self.updates is None:
