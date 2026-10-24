@@ -159,7 +159,8 @@ async function submit(snapshot: DraftSnapshot, source: ModelDraftSource, frame: 
     // worker never permits rebuilding the proposal and changing that request.
     const code = errorCode(error);
     if (["NETWORK_ERROR", "TRANSPORT_ERROR", "OPERATION_RUNNING", "OPERATION_NEEDS_RECOVERY", "OPERATION_RETAINED"].includes(code ?? "")) {
-      const candidateId = `hub-cand-${attempt.requestId.replaceAll("-", "")}`;
+      // The run id the Hub minted for this request (operations.py): the first 16 hex of its UUID.
+      const candidateId = `hub-cand-${attempt.requestId.replaceAll("-", "").slice(0, 16)}`;
       try {
         const runtime = await api.runtime(candidateId);
         if (runtime.projectId === source.projectId) {
