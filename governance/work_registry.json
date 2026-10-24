@@ -132,6 +132,7 @@
           ],
           "write_scope": [
             "services/project-runtime/src/project_runtime/application/capability.py",
+            "services/project-runtime/tests/test_capabilities.py",
             "tools/governance/devctl.py"
           ],
           "depends_on": []
