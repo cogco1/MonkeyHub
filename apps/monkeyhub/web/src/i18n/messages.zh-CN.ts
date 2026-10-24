@@ -1342,6 +1342,12 @@ export const messagesZhCN = {
   "cards.bulk": "全部按建议（{count}）",
   "cards.bulkDone": "已按建议处理 {count} 张",
   "cards.bulkSkipped": "，{count} 张没动",
+  "cards.bulkNames": "包括 {names}",
+  "cards.bulkNamesMore": "包括 {names} 等 {count} 张",
+  "cards.bulkJoin": "、",
+  "cards.bulkUndone": "撤回了 {count} 张",
+  "cards.bulkUndoMoved": "；{count} 张因为项目已经变了没撤，另起了卡问你",
+  "cards.bulkUndoGone": "这一批已经不能一起撤销：里面的卡后来分别改过。",
   "cards.unread": "没读到这一页；队列一有变化会再读。",
 } satisfies MessageCatalog;
 

@@ -1379,6 +1379,12 @@ export const messagesEn = {
   "cards.bulk": "All as recommended ({count})",
   "cards.bulkDone": "{count} handled as recommended",
   "cards.bulkSkipped": ", {count} left as they were",
+  "cards.bulkNames": "Covers {names}",
+  "cards.bulkNamesMore": "Covers {names} and others, {count} in all",
+  "cards.bulkJoin": ", ",
+  "cards.bulkUndone": "{count} taken back",
+  "cards.bulkUndoMoved": "; {count} not taken back because the project moved on, and a card asks you instead",
+  "cards.bulkUndoGone": "This batch can no longer be taken back at once: its cards were changed one by one since.",
   "cards.unread": "This list could not be read; it is read again when the queue changes.",
 } as const;
 
