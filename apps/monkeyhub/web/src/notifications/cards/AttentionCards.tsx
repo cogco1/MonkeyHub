@@ -14,9 +14,11 @@ import "./cards.css";
  * The attention queue's cards (1-4): DecisionCard for what needs a decision, MarkupCard for what waits on the
  * drawing, GuessCard for a question or a suggestion, NoticeCard for news. An answer goes to the Hub, whose
  * executor carries it out as the person; a command that only opens something (compare, a Board frame, the
- * conversation) runs here, through the command tree. Later, set aside, bring back and undo are the queue's own
- * commands (attention.queue). The answer and open buttons are rows of what the card offers (data-command-view),
- * as Ctrl K's rows are: each records its own use.
+ * conversation) runs here, through the command tree, and one the tree does not know yet is left out. Later, set
+ * aside, bring back and undo are the queue's own commands (attention.queue). The answer and open buttons are rows
+ * of what the card offers (data-command-view), as Ctrl K's rows are: an open counts as its command's use when it
+ * runs, an answer when it is sent. A use is counted for a command the tree has; the queue's own are counted
+ * once their group is registered (after 0-2).
  */
 
 interface CardProps {
@@ -47,14 +49,17 @@ function Opens({ refs }: { refs: readonly CommandRef[] }) {
   const { tree, run, stateOf } = useCommands();
   const { language } = usePreferences();
   const t = useT();
-  if (!refs.length) return null;
-  return <div className="attention-card__opens">{refs.map((ref, index) => {
+  const known = refs.flatMap((ref) => {
     const command = tree.commands.find((item) => item.id === ref.commandId);
-    const state = command ? stateOf(command) : null;
-    const reason = !state ? t("commands.unavailable") : state.kind === "unavailable" ? state.reason ?? t("commands.unavailable") : null;
+    return command ? [{ ref, command }] : [];
+  });
+  if (!known.length) return null;
+  return <div className="attention-card__opens">{known.map(({ ref, command }, index) => {
+    const state = stateOf(command);
+    const reason = state.kind === "unavailable" ? state.reason ?? t("commands.unavailable") : null;
     return <button key={`${ref.commandId}:${index}`} type="button" className="menu-command" data-command-view
       aria-disabled={reason ? true : undefined} title={reason ?? undefined}
-      onClick={() => { if (!reason) run(ref.commandId, "card", { args: ref.args }); }}>{command ? command.label[language] : ref.commandId}</button>;
+      onClick={() => { if (!reason) run(ref.commandId, "card", { args: ref.args }); }}>{command.label[language]}</button>;
   })}</div>;
 }
 
@@ -62,6 +67,7 @@ function CardFrame({ card, project, fresh = false, compact = false, children }: 
   const { language } = usePreferences();
   const t = useT();
   const { busy, failure, act } = useCardActions();
+  const { note } = useCommands();
   const [words, setWords] = useState("");
   const chosen = chosenOption(card);
   const pending = isPending(card);
@@ -90,7 +96,11 @@ function CardFrame({ card, project, fresh = false, compact = false, children }: 
         className={option.recommended ? "btn btn--primary attention-card__answer" : "btn attention-card__answer"}
         disabled={busy !== null || (needsWords(option) && !words.trim())}
         aria-describedby={`attention-card-${card.id}-${option.id}`}
-        onClick={() => act(option.id, () => resolveCard(card.id, option.id, needsWords(option) ? words.trim() : undefined))}>
+        onClick={() => act(option.id, async () => {
+          const result = await resolveCard(card.id, option.id, needsWords(option) ? words.trim() : undefined);
+          note(option.action.commandId, "card");
+          return result;
+        })}>
         <span>{say(option.label, option.labelZh, language)}{option.recommended && <small className="attention-card__recommended">{t("cards.recommended")}</small>}</span>
         <small id={`attention-card-${card.id}-${option.id}`}>{say(option.consequence, option.consequenceZh, language)}</small>
       </button>)}

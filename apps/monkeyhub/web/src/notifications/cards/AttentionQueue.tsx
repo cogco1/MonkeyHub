@@ -58,7 +58,7 @@ function AllAsRecommended({ cards }: { cards: readonly AttentionCard[] }) {
     {done ? <>
       <span role="status">{t("cards.bulkDone", { count: done.items.length })}{done.skipped.length > 0 && t("cards.bulkSkipped", { count: done.skipped.length })}</span>
       <button type="button" className="menu-command" data-command="attention.queue.bulk_undo" disabled={busy}
-        onClick={() => act(() => undoBulk(done.bulkId), () => null)}>{t("cards.undo")}</button>
+        onClick={() => act(() => undoBulk(done.bulkId, done.items.map((item) => item.id)), () => null)}>{t("cards.undo")}</button>
     </> : <button type="button" className="btn" data-command="attention.queue.bulk_recommended" disabled={busy}
       onClick={() => act(() => bulkRecommended(recommended.map((card) => card.id)), (result) => result)}>{t("cards.bulk", { count: recommended.length })}</button>}
     {failure && <p className="attention-card__failure" role="alert">{failure.detail}</p>}
@@ -71,15 +71,16 @@ export function CardHistory({ states, empty, projectName }: {
 }) {
   const queue = useAttentionQueue();
   const t = useT();
-  const [cards, setCards] = useState<AttentionCard[] | null>(null);
+  const [cards, setCards] = useState<AttentionCard[] | "unread" | null>(null);
   const key = states.join(",");
   // Read again whenever the queue changes: an answer or a set-aside moves a card here.
   useEffect(() => {
     let current = true;
-    void cardsIn(key.split(",") as CardState[]).then((rows) => { if (current) setCards(queueOrder(rows)); }, () => { if (current) setCards([]); });
+    void cardsIn(key.split(",") as CardState[]).then((rows) => { if (current) setCards(queueOrder(rows)); }, () => { if (current) setCards("unread"); });
     return () => { current = false; };
   }, [key, queue]);
   if (cards === null) return null;
+  if (cards === "unread") return <p className="attention-queue__empty" role="status">{t("cards.unread")}</p>;
   if (!cards.length) return <p className="attention-queue__empty">{t(empty)}</p>;
   return <div className="attention-queue">{cards.map((card) =>
     <AttentionCardView key={card.id} card={card} project={projectName(card.projectDir)} />)}</div>;

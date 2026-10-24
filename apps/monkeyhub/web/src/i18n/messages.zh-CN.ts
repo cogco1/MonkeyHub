@@ -1342,6 +1342,7 @@ export const messagesZhCN = {
   "cards.bulk": "全部按建议（{count}）",
   "cards.bulkDone": "已按建议处理 {count} 张",
   "cards.bulkSkipped": "，{count} 张没动",
+  "cards.unread": "没读到这一页；队列一有变化会再读。",
 } satisfies MessageCatalog;
 
 export const hubCopy = {

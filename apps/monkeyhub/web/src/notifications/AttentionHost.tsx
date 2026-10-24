@@ -95,7 +95,11 @@ function useClearance(active: boolean): { right: number; bottom: number } {
     const watched = new Set<Element>();
     function measure() {
       const boxes: EdgeBox[] = [];
-      for (const { element, edge } of noticeRegions()) {
+      const registered = noticeRegions();
+      for (const element of [...watched]) {
+        if (!registered.some((region) => region.element === element)) { watched.delete(element); observer?.unobserve(element); }
+      }
+      for (const { element, edge } of registered) {
         if (!watched.has(element)) { watched.add(element); observer?.observe(element); }
         const { left, top, right, bottom } = element.getBoundingClientRect();
         boxes.push({ left, top, right, bottom, edge });

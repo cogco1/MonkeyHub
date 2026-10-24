@@ -5,7 +5,7 @@ import type { ChatSummary } from "../src/api/generated";
 import type { AttentionCard } from "../src/notifications/cards/types.ts";
 import {
   addNotice, attentionCopy, cardNews, clearance, GAP, lasts, MAX_NOTICES, noticeText, noticeTitle, pendingCards, remember, settle, settleCards,
-  snapshotOf, titled, transitions,
+  snapshotOf, titled, transitions, withoutChatPermissions,
   type AttentionEvent, type EdgeBox,
 } from "../src/notifications/attention.ts";
 
@@ -192,6 +192,15 @@ test("a card's notice waits when it asks something, and leaves when the card is 
   const permission: AttentionEvent = { key: "chat-1:permission:1", kind: "permission", chatId: "chat-1", projectDir: "D:\\work\\A", title: "Roof" };
   assert.equal(addNotice(addNotice([], permission), decide).length, 2);
   assert.deepEqual(settle([decide], []), [decide], "a reading of the conversations leaves card notices alone");
+});
+
+test("with the queue a waiting permission is a card: the conversations' own permission notices go, the rest stay", () => {
+  const permission: AttentionEvent = { key: "chat-1:permission:1", kind: "permission", chatId: "chat-1", projectDir: "D:\\work\\A", title: "Roof" };
+  const finished: AttentionEvent = { key: "chat-2:finished:1", kind: "finished", chatId: "chat-2", projectDir: "D:\\work\\A", title: "Site" };
+  const decide = cardNews(new Set(), [card("a")])[0]!;
+  assert.deepEqual(withoutChatPermissions([permission, finished, decide]), [finished, decide]);
+  const kept = [finished, decide];
+  assert.equal(withoutChatPermissions(kept), kept, "nothing to take: the same stack");
 });
 
 test("a card's notice reads in the person's language", () => {

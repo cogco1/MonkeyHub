@@ -1379,6 +1379,7 @@ export const messagesEn = {
   "cards.bulk": "All as recommended ({count})",
   "cards.bulkDone": "{count} handled as recommended",
   "cards.bulkSkipped": ", {count} left as they were",
+  "cards.unread": "This list could not be read; it is read again when the queue changes.",
 } as const;
 
 export type MessageKey = keyof typeof messagesEn;

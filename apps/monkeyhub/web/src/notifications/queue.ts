@@ -26,7 +26,9 @@ export interface QueueFailure {
 
 let snapshot: QueueSnapshot = { available: null, cards: [], summary: null };
 const listeners = new Set<() => void>();
-let reading = false, again = false;
+let current: Promise<void> | null = null, next: Promise<void> | null = null, retry: number | undefined;
+/** How long a first reading that failed for another reason than "not served" waits before it is tried again. */
+const RETRY_MS = 5000;
 
 const UNSERVED = new Set([404, 405]);
 
@@ -45,20 +47,29 @@ function publish(next: QueueSnapshot): void {
   for (const listener of listeners) listener();
 }
 
-/** Reads the queue again; a reading asked for while one runs follows it once. */
-export async function refreshQueue(): Promise<void> {
-  if (reading) { again = true; return; }
-  reading = true;
+async function read(): Promise<void> {
   try {
     const [cards, summary] = await Promise.all([call<AttentionCard[]>("/api/attention"), call<AttentionSummary>("/api/attention/summary")]);
     publish({ available: true, cards, summary });
   } catch (cause) {
-    // A Hub without the queue says so once; a reading that failed otherwise keeps what was read last.
+    // A Hub without the queue says so once. A reading that failed otherwise keeps what was read last; a first
+    // one (the Hub still starting) is tried again rather than waiting for the next change.
     if ((cause as { unserved?: boolean }).unserved) publish({ available: false, cards: [], summary: null });
-  } finally {
-    reading = false;
-    if (again) { again = false; void refreshQueue(); }
+    else if (snapshot.available === null && retry === undefined) retry = window.setTimeout(() => { retry = undefined; void refreshQueue(); }, RETRY_MS);
   }
+}
+
+/**
+ * Reads the queue again. One asked for while a reading runs is the reading after it: every caller then waits
+ * for that one, so what the Hub changed before answering them is in it (it says so on its stream first).
+ */
+export function refreshQueue(): Promise<void> {
+  if (!current) {
+    current = read().finally(() => { current = null; });
+    return current;
+  }
+  next ??= current.then(() => { next = null; return refreshQueue(); });
+  return next;
 }
 
 /** The Hub's event stream named a change: read the queue again, if this Hub serves it. */
@@ -107,16 +118,21 @@ const acted = async <T>(action: Promise<T>, brings: (result: T) => readonly (str
 export const resolveCard = (id: string, optionId: string, note?: string) =>
   acted(post<CardActionResult>(`/api/attention/${encodeURIComponent(id)}/resolve`, note === undefined ? { optionId } : { optionId, note }),
     (result) => [result.followUp?.id]);
-export const undoCard = (id: string) =>
-  acted(post<CardActionResult>(`/api/attention/${encodeURIComponent(id)}/undo`), (result) => [result.item.id, result.followUp?.id]);
+/** Cards the person brings back are marked before the Hub is asked, whose change may be read before its answer. */
+const bringingBack = async <T>(ids: readonly string[], action: () => Promise<T>): Promise<T> => {
+  for (const id of ids) shownHere.add(id);
+  try { return await action(); } catch (cause) { for (const id of ids) shownHere.delete(id); throw cause; }
+};
+export const undoCard = (id: string) => bringingBack([id], () =>
+  acted(post<CardActionResult>(`/api/attention/${encodeURIComponent(id)}/undo`), (result) => [result.followUp?.id]));
 export const laterCard = (id: string) => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/later`));
 export const dismissCard = (id: string) => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/dismiss`));
-export const reopenCard = (id: string) => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/reopen`), (item) => [item.id]);
+export const reopenCard = (id: string) => bringingBack([id], () => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/reopen`)));
 
 /** "All as recommended" over the cards the person has in view, taken back as one. */
 export const bulkRecommended = (ids: readonly string[]) => acted(post<BulkResult>("/api/attention/bulk", { ids, mode: "recommended" }));
-export const undoBulk = (bulkId: string) =>
-  acted(post<BulkResult>(`/api/attention/bulk/${encodeURIComponent(bulkId)}/undo`), (result) => result.items.map((item) => item.id));
+export const undoBulk = (bulkId: string, ids: readonly string[]) =>
+  bringingBack(ids, () => acted(post<BulkResult>(`/api/attention/bulk/${encodeURIComponent(bulkId)}/undo`)));
 
 let conversationServed = true;
 /**

@@ -98,12 +98,12 @@ const seedCards = () => [
     evidence: [{ key: "floor", label: "Floor", labelZh: "楼板", text: "V17 is 40 mm thinner", textZh: "V17 薄 40 mm", status: "ok" }],
     options: [answer("v16", "Keep V16", "留 V16", "V17 归档"), answer("v17", "Keep V17", "留 V17", "V16 归档", { recommended: true, undoable: true })],
     recommendation: { optionId: "v17", reason: "Thinner, and every check passes", reasonZh: "更薄，检查都过了" },
-    opens: [{ commandId: "chat.open_conversation", args: { sessionId: "a1" } }] }),
+    opens: [{ commandId: "chat.open_conversation", args: { sessionId: "a1" } }, { commandId: "candidate.compare", args: { runIds: ["v16", "v17"] } }] }),
   queueCard("guess", "B", { channel: "guess", kind: "ask", title: "Which side for the entrance", titleZh: "入口放在哪边",
     options: [answer("south", "South", "南边", "按南边入口改"), answer("east", "East", "东边", "按东边入口改")] }),
   queueCard("notice", "A", { channel: "notice", kind: "info", title: "The section is ready", titleZh: "剖面图出好了" }),
   queueCard("ask", "A", { channel: "guess", kind: "ask", title: "How wide should the stair be", titleZh: "楼梯宽度你想怎么定",
-    options: [answer("say", "Say it", "我来说", "把你写的话交给对话", { action: { commandId: "chat.send_message", args: {} } })] }),
+    options: [answer("say", "Say it", "我来说", "把你写的话交给对话", { action: { commandId: "chat.send_message", args: {} }, undoable: true })] }),
 ];
 let cards = [];
 const bulks = new Map();
@@ -185,7 +185,7 @@ const route = async (handler) => {
         resolution: { optionId: item.recommendation.optionId, by: "bulk", at: stamp(), undo: { action: item.options[0].action } } });
       attentionActions.push(["bulk", items.map((item) => item.id).join(","), null]);
       bulks.set("bulk-1", items.map((item) => item.id));
-      setTimeout(() => announce("attention/changed"), 0);
+      announce("attention/changed");
       return json({ bulkId: "bulk-1", items, skipped: [] });
     }
     const bulkUndo = url.pathname.match(/^\/api\/attention\/bulk\/([^/]+)\/undo$/);
@@ -193,7 +193,7 @@ const route = async (handler) => {
       const items = bulks.get(bulkUndo[1]).map((id) => cards.find((card) => card.id === id));
       for (const item of items) Object.assign(item, { state: "open", resolution: null, updatedAt: stamp() });
       attentionActions.push(["bulk_undo", bulkUndo[1], null]);
-      setTimeout(() => announce("attention/changed"), 0);
+      announce("attention/changed");
       return json({ bulkId: bulkUndo[1], items, skipped: [] });
     }
     const act = url.pathname.match(/^\/api\/attention\/([^/]+)\/(resolve|later|dismiss|reopen|undo)$/);
@@ -202,14 +202,16 @@ const route = async (handler) => {
       const option = act[2] === "resolve" ? item.options.find((row) => row.id === data().optionId) : null;
       attentionActions.push([act[2], item.id, option?.id ?? null]);
       if (act[2] === "resolve" && data().note !== undefined) attentionNotes.push(data().note);
-      // An answer the Hub carried out raised a card that asks what comes next.
-      const followUp = act[2] === "resolve" && item.id === "att_ask" ? queueCard("ask_next", "A", { channel: "decide", kind: "choice",
-        title: "Change the stair to 1.2 m", titleZh: "按 1.2 米改楼梯吗", options: [answer("yes", "Change it", "改", "按 1.2 米改")], createdAt: stamp(), updatedAt: stamp() }) : null;
+      // Taking the stair answer back finds the project moved on: the Hub asks instead, and the card stays handled.
+      const followUp = act[2] === "undo" && item.id === "att_ask" ? queueCard("ask_next", "A", { channel: "decide", kind: "choice",
+        title: "The stair changed since: go back anyway", titleZh: "楼梯已经改过了，还要回到原来吗", options: [answer("yes", "Go back", "回去", "撤回楼梯的改动")],
+        createdAt: stamp(), updatedAt: stamp() }) : null;
       if (followUp) cards.push(followUp);
-      Object.assign(item, { updatedAt: stamp() }, act[2] === "resolve"
+      else Object.assign(item, { updatedAt: stamp() }, act[2] === "resolve"
         ? { state: "done", resolution: { optionId: option.id, by: "person", at: stamp(), undo: option.undoable ? { action: option.action } : null } }
         : act[2] === "later" ? { state: "later" } : act[2] === "dismiss" ? { state: "dismissed" } : { state: "open", resolution: null });
-      setTimeout(() => announce("attention/changed"), 0);
+      // As the Hub does: the change is published when it is stored, before the answer goes back.
+      announce("attention/changed");
       return json(act[2] === "resolve" || act[2] === "undo" ? { item, followUp } : item);
     }
   }
@@ -381,6 +383,9 @@ try {
   const queueCards = queuePage.locator(".attention-shell__queue .attention-card");
   const queued = (text) => queueCards.filter({ hasText: text });
   await queueCards.nth(3).waitFor();
+  sessions.find((row) => row.id === "b1").status = "idle";
+  await queuePage.locator(".attention-toast").filter({ hasText: "「东南角入口」已完成" }).waitFor({ timeout: 12_000 });
+  assert.equal(await queuePage.locator('.attention-toast[data-kind="permission"]').count(), 0, "a waiting permission is a card here, not a second notice");
   assert.deepEqual(await queueCards.evaluateAll((nodes) => nodes.map((node) => node.dataset.channel)), ["decide", "guess", "notice", "guess"]);
   // The counts are the queue's own.
   await queuePage.locator(".attention-shell__row--attention .attention-shell__count").filter({ hasText: "4" }).waitFor();
@@ -393,6 +398,7 @@ try {
   await decide.getByText("更薄，检查都过了").waitFor();
   await decide.getByText("V17 薄 40 mm").waitFor();
   assert.equal(await decide.getByRole("button", { name: "打开对话" }).getAttribute("aria-disabled"), null, "a registered command it opens is offered");
+  assert.equal(await decide.locator(".attention-card__opens button").count(), 1, "one the command tree does not know yet is left out");
   await shoot(queuePage, "attention-queue-desktop-light");
   // Later keeps a card in the queue, put off, and takes it out of the count.
   await queued("入口放在哪边").getByRole("button", { name: "稍后" }).click();
@@ -415,15 +421,19 @@ try {
   await queuePage.locator(".attention-shell__rail-item").filter({ hasText: "已忽略" }).click();
   await queuePage.locator(".attention-shell__panel .attention-card").filter({ hasText: "剖面图出好了" }).getByRole("button", { name: "找回" }).click();
   await queued("剖面图出好了").waitFor();
-  // An answer that sends the architect's own words waits for them, and a card the answer raised is shown next.
+  // An answer that sends the architect's own words waits for them.
   const ask = queued("楼梯宽度你想怎么定");
   assert.equal(await ask.locator('[data-option="say"]').isDisabled(), true, "nothing to send yet");
   await ask.locator("textarea").fill("1.2 米，和走廊一样宽");
   await ask.locator('[data-option="say"]').click();
   await ask.waitFor({ state: "detached" });
   assert.deepEqual(attentionNotes, ["1.2 米，和走廊一样宽"]);
+  // Taking it back after the project moved on: the card the Hub raised instead is shown, with no notice.
+  await queuePage.locator(".attention-shell__rail-item").filter({ hasText: "已处理" }).click();
+  await queuePage.locator(".attention-shell__panel .attention-card").filter({ hasText: "楼梯宽度你想怎么定" }).getByRole("button", { name: "撤销" }).click();
   await queuePage.waitForFunction(() => document.activeElement?.id === "attention-card-att_ask_next");
-  assert.equal(await queuePage.locator(".attention-toast").filter({ hasText: "按 1.2 米改楼梯吗" }).count(), 0, "nor one the answer raised");
+  assert.equal(await queuePage.locator(".attention-toast").filter({ hasText: "楼梯已经改过了" }).count(), 0, "nor one the undo raised");
+  await queuePage.getByRole("button", { name: "收起侧栏" }).first().click();
   // Two or more decisions with a recommendation can be answered at once, and taken back as one.
   for (const [id, titleZh] of [["v11b", "V11b 和当前冲突 78 处，归档吗"], ["v13", "V13 和 V11b 一样，归档吗"]]) {
     cards.push(queueCard(id, "A", { channel: "decide", kind: "choice", title: titleZh, titleZh,
