@@ -1,4 +1,33 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-300",
+      "lanes": [
+        {
+          "id": "polish",
+          "status": "active",
+          "branch": "claude/300-polish",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-polish",
+          "base_ref": "61cf5b4f1",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "The new shell's finish (10-24): Critique Table layers by tone instead of outlines and sets dark type a weight lighter; counts in tabular figures; a reply being written washes in; panels rise, answers spring, Ctrl K fades open. For the third batch after the relay (10-26 07:30); not merged before.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatMessageContent.css",
+            "apps/monkeyhub/web/src/ChatMessageContent.tsx",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/app/attentionShell.css",
+            "apps/monkeyhub/web/src/features/commands/commands.css",
+            "apps/monkeyhub/web/src/notifications/cards/cards.css",
+            "packages/web-shared/src/base.css"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }

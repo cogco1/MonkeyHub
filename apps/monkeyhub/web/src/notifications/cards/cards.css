@@ -5,7 +5,8 @@
 .attention-card[data-channel=decide]{background:var(--decide-bg,var(--card-bg,var(--panel)));border-color:var(--decide-border,var(--card-border,var(--line)))}
 .attention-card+.attention-card{margin-top:12px}
 /* A card that arrived while the list was on screen: a short ring instead of a notice. */
-.attention-card[data-fresh]{animation:attention-card-arrive 2.4s ease-out}
+.attention-card[data-fresh]{animation:attention-card-pop 420ms cubic-bezier(.34,1.56,.64,1),attention-card-arrive 2.4s ease-out}
+@keyframes attention-card-pop{from{transform:translateY(-6px) scale(.98);opacity:.4}to{transform:none;opacity:1}}
 @keyframes attention-card-arrive{0%,40%{box-shadow:0 0 0 2px var(--accent)}100%{box-shadow:var(--pane-ring,none)}}
 @media(prefers-reduced-motion:reduce){.attention-card[data-fresh]{animation:none;box-shadow:0 0 0 2px var(--accent)}}
 .attention-card__eyebrow{display:flex;gap:8px;margin:0;color:var(--muted);font-size:var(--text-caption)}
@@ -46,3 +47,8 @@
 @media(max-width:720px){.attention-card__answer{flex:1 1 100%}.attention-card .menu-command,.attention-card--inline .attention-card__answer{min-height:44px}}
 .attention-card__words{display:grid;gap:4px;margin-top:12px;color:var(--muted);font-size:var(--text-caption)}
 .attention-card__words textarea{min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--control-radius,var(--radius-sm));background:var(--ground);color:var(--ink);font:inherit;font-size:var(--text-ui);resize:vertical}
+/* Feedback springs; the press itself is immediate. */
+@media(prefers-reduced-motion:no-preference){
+  .attention-card__answer{transition:transform 320ms cubic-bezier(.34,1.56,.64,1)}
+  .attention-card__answer:active{transform:scale(.96);transition-duration:60ms}
+}

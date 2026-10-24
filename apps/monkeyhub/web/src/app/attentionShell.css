@@ -40,13 +40,13 @@
 .attention-shell__usage{color:var(--muted)}
 .attention-shell__empty{margin:8px 10px;color:var(--muted);font-size:var(--text-caption)}
 
-.attention-shell__center{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--ground);border-radius:var(--pane-radius,0px);box-shadow:var(--pane-ring,none);overflow:hidden}
+.attention-shell__center{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--center-bg,var(--ground));border-radius:var(--pane-radius,0px);box-shadow:var(--pane-ring,none);overflow:hidden}
 .attention-shell__tabs{gap:12px}
 .attention-shell__tabs .menu-tab[aria-disabled=true]{color:var(--faint);cursor:default}
 .attention-shell__tool{color:var(--ink);font-weight:600}
 .attention-shell__body{position:relative;flex:1;min-height:0}
 .attention-shell__queue{height:100%;box-sizing:border-box;padding:28px 24px;overflow:auto}
-.attention-shell__queue h2{margin:0 0 8px;font-size:var(--text-heading);font-weight:600}
+.attention-shell__queue h2{margin:0 0 8px;font-size:var(--text-heading);font-weight:var(--heading-weight,600)}
 .attention-shell__queue p{max-width:60ch;margin:0;color:var(--muted)}
 /* A surface's own fixed layers (its loading screen) stay within the center instead of covering the shell. */
 .attention-shell__surfaces{position:absolute;inset:0;display:flex;flex-direction:column;contain:layout paint}
@@ -125,3 +125,11 @@
   .attention-shell__search kbd{display:none}
   .attention-shell__drawer{max-height:50dvh}
 }
+/* Figures that change in place keep their width (counts, the background line, the bulk count, evidence values). */
+.attention-shell__count,.attention-shell__status,.attention-shell .chat-count,.attention-queue__bulk,.attention-card__evidence dd,
+.attention-shell__search kbd,.advanced-tools__command kbd{font-variant-numeric:tabular-nums}
+/* Opening a panel is a short ease out; dragging a surface is left to the surface and moves at once. */
+@media(prefers-reduced-motion:no-preference){
+  .attention-shell__drawer,.attention-shell__panel{animation:attention-shell-rise 180ms cubic-bezier(.2,.8,.2,1)}
+}
+@keyframes attention-shell-rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}

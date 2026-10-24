@@ -16,3 +16,10 @@
 .chat-image{width:min(400px,100%)}.chat-image__preview{display:block;padding:0;border:0;background:var(--panel-2);border-radius:6px;overflow:hidden;cursor:zoom-in;min-height:100px;width:100%}.chat-image__preview:disabled{cursor:progress}.chat-image__preview img{display:block;max-width:100%;width:auto;max-height:300px;object-fit:contain;margin:auto}.chat-image .chat-muted{margin:6px 0 0}
 .chat-image-dialog{width:max-content;max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--ground);color:var(--ink);overflow:auto;box-shadow:var(--shadow)}.chat-image-dialog::backdrop{background:#000a}.chat-image-dialog__heading{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:12px}.chat-image-dialog h2{font-size:var(--text-ui);overflow-wrap:anywhere}.chat-image-dialog button{min-height:44px;padding:8px 14px;border:1px solid var(--line);border-radius:7px;background:var(--panel-2);color:var(--ink);cursor:pointer}.chat-image-dialog>img{display:block;max-width:100%;max-height:calc(100dvh - 180px);object-fit:contain;margin:auto}.chat-image-dialog>a{display:inline-flex;align-items:center;min-height:44px;margin-top:8px;color:var(--accent)}
 .chat-image__preview:focus-visible,.chat-image-dialog button:focus-visible,.chat-saved-file a:focus-visible,.chat-saved-file button:focus-visible,.chat-prose a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+/* A reply being written: each new block comes up from a soft blur, and the line being written fades at its edge
+   until the next words arrive. Existing blocks stay put, so nothing reflows or flickers. */
+@media(prefers-reduced-motion:no-preference){
+  .chat-prose--streaming>*{animation:chat-prose-ink 420ms ease-out both}
+  .chat-prose--streaming>:last-child{-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 1.7em),rgba(0,0,0,.3));mask-image:linear-gradient(to bottom,#000 calc(100% - 1.7em),rgba(0,0,0,.3))}
+}
+@keyframes chat-prose-ink{from{opacity:0;filter:blur(3px)}to{opacity:1;filter:none}}

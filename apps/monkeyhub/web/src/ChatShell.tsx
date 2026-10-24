@@ -1936,7 +1936,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     {message.role === "user" && message.contextMode === "project" && <p className="chat-muted">{t.contextProjectMessage}</p>}
     {message.role === "user" && message.contextMode === "stage" && <p className="chat-muted">{t.contextStageMessage}: {message.confirmedStageLabel}</p>}
     {message.role === "user" && message.interjection && <p className="chat-muted" data-interjection={message.interjection}>{t.interjected} · {{ pending: t.interjectionPending, delivered: t.interjectionDelivered, restarted: t.interjectionRestarted, undelivered: t.interjectionUndelivered }[message.interjection]}</p>}
-    <ChatMarkdown text={message.content} />
+    <ChatMarkdown text={message.content} streaming={message.status === "streaming"} />
     {message.role === "assistant" && message.suggestion && <ChatSuggestionCard key={`${chat!.id}:${message.id}:${message.presentationRevision}`}
       message={message} chat={chat!} language={preferences.language} busy={busy || Boolean(toolBusy)} sending={suggestionBusy === message.id}
       error={suggestionError?.chatId === chat!.id && suggestionError.messageId === message.id ? suggestionError.error : null}
@@ -2147,7 +2147,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             {turn.visible.map((message) => message.role !== "tool" ? messageEntry(message)
               : message.id.includes(":progress:") ? <article className="chat-progress" key={message.id} data-status={message.status}>
                 <div className="chat-progress__heading"><span className="chat-thread__dot" data-status={message.status === "streaming" ? "running" : message.status === "failed" ? "failed" : "idle"} />{t.progress}</div>
-                <ChatMarkdown text={message.content} />
+                <ChatMarkdown text={message.content} streaming={message.status === "streaming"} />
                 {(message.status === "failed" || message.status === "interrupted") && <p className="chat-muted">{t[message.status]}</p>}
               </article>
               : <div className="chat-activity chat-activity--permission" key={message.id} data-status={message.status}>
