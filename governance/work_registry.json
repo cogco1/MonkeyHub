@@ -378,7 +378,8 @@
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentTracingPanel.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/drawnCalibration.ts",
-            "apps/monkeyhub/web/test/drawnCalibration.test.ts"
+            "apps/monkeyhub/web/test/drawnCalibration.test.ts",
+            "apps/monkeyhub/web/test/fixtures/cut-plan-document.json"
           ]
         }
       ]
