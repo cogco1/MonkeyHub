@@ -185,6 +185,9 @@ test("design cards distinguish component edits from scalar controls; compiler de
   assert.doesNotMatch(componentHtml, /new-support-wall|entity:|removeEntityIds/);
   assert.doesNotMatch(componentHtml, /type="range"|ghost-mark|undefined|NaN/);
   assert.doesNotMatch(componentHtml, /<details/, "outside developer mode the card has no technical details");
+  // What a person decides on stays: each change in words, and what else it moves.
+  assert.match(componentHtml, /Support wall[^]*· [^]*Wall with hosted opening/);
+  assert.match(componentHtml, /<p class="card__row quiet" data-impact="true">This also updates 1 linked part\(s\)\.<\/p>/);
   const componentDeveloper = render(componentCard, true);
   assert.ok(componentHtml.startsWith(componentDeveloper.split("<details")[0]!), "developer mode adds details below the same card");
   assert.match(componentDeveloper, /<details class="card__row card__details">/);
@@ -215,10 +218,11 @@ test("design cards distinguish component edits from scalar controls; compiler de
   });
   const questionHtml = render(questionCard);
   assert.match(questionHtml, /Which side should the opening face/);
-  assert.doesNotMatch(questionHtml, /internal slot|set height|<details/);
+  // The accepted forms are answers, so they stay; the server's own detail waits for developer mode.
+  assert.match(questionHtml, /<button data-command="component\.resolve_pick\.reply"[^>]*>[^]*set height to/);
+  assert.doesNotMatch(questionHtml, /internal slot|<details/);
   const questionDeveloper = render(questionCard, true);
-  assert.match(questionDeveloper, /<details class="card__row card__details">/);
-  assert.match(questionDeveloper, /set height to/);
+  assert.match(questionDeveloper, /<details class="card__row card__details">[^]*missing internal slot/);
 
   const missingCard = createElement(MissingControlCard, {
     error: new StudioApiError({

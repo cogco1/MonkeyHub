@@ -446,6 +446,8 @@ export const messagesZhCN = {
   "proposal.why": "查看原因",
   "proposal.keep": "保持不变",
   "proposal.nothingNamed": "未指定任何内容",
+  "proposal.impact": "还会带动 {count} 处。",
+  "proposal.impactUnchecked": "有 {count} 个构件查不到会受什么影响。",
   "proposal.conflict": "冲突：此改动触及了你要求保持不变的内容",
   "proposal.ghostShown": "模型中已显示幽灵预览",
   "proposal.approximate": "近似结果",

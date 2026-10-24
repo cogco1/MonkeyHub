@@ -459,6 +459,8 @@ export const messagesEn = {
   "proposal.why": "why",
   "proposal.keep": "Keep",
   "proposal.nothingNamed": "nothing was named",
+  "proposal.impact": "This also updates {count} linked part(s).",
+  "proposal.impactUnchecked": "What it does to {count} component(s) could not be checked.",
   "proposal.conflict":
     "Conflict: the change reaches what you asked to keep",
   "proposal.ghostShown": "ghost shown in the model",

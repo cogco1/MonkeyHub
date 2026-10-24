@@ -211,6 +211,8 @@
             "apps/monkeyhub/web/src/features/conversation/cards/MissingControlCard.tsx",
             "apps/monkeyhub/web/src/features/conversation/cards/ProposalCard.tsx",
             "apps/monkeyhub/web/src/features/conversation/cards/QuestionCard.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
             "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/ModelComparison.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/modelComparison.css",
             "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",

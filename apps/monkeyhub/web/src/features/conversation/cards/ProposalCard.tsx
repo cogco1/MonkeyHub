@@ -101,11 +101,24 @@ export function ProposalCard({
           </p>
         )}
       </div>
-      {(change.kind !== "edit_components" || change.kept.length > 0) && <div className="card__row">
+      {(change.kind !== "edit_components" || change.changes.length > 0 || change.kept.length > 0) && <div className="card__row">
         <dl className="kv kv--review">
           {change.kind === "edit_components" ? (
-            change.kept.length > 0 && (
-              <>
+            <>
+              {change.changes.length > 0 && <>
+                <dt>{t("proposal.change")}</dt>
+                <dd>
+                  <ul className="reflist">
+                    {change.changes.map((item, index) => (
+                      <li key={`${item.entityId}:${index}`}>
+                        <BilingualText source={item.label} />
+                        {" · "}<BilingualText source={item.description} />
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </>}
+              {change.kept.length > 0 && <>
                 <dt>{t("proposal.keep")}</dt>
                 <dd>
                   <ul className="reflist">
@@ -114,8 +127,8 @@ export function ProposalCard({
                     ))}
                   </ul>
                 </dd>
-              </>
-            )
+              </>}
+            </>
           ) : (
             <>
               <dt>{t("proposal.change")}</dt>
@@ -130,6 +143,12 @@ export function ProposalCard({
           )}
         </dl>
       </div>}
+      {/* What else moves and what could not be checked, in a sentence; the refs and the reason are in developer mode. */}
+      {(impact.propagated.length > 0 || impact.unknownCoverage.count > 0) && <p className="card__row quiet" data-impact>
+        {impact.propagated.length > 0 && t("proposal.impact", { count: impact.propagated.length })}
+        {impact.propagated.length > 0 && impact.unknownCoverage.count > 0 && " "}
+        {impact.unknownCoverage.count > 0 && t("proposal.impactUnchecked", { count: impact.unknownCoverage.count })}
+      </p>}
       {/* The ids, the reader's own words and the raw edits are for developer mode; the card above says what changes. */}
       <DeveloperOnly><details className="card__row card__details">
         <summary data-command="view.disclosure.toggle" data-command-arg="technical_details">{t("common.technicalDetails")}</summary>
@@ -199,19 +218,7 @@ export function ProposalCard({
           </dd>
         </dl>
         <Verbatim lines={impact.honesty} />
-        {change.kind === "edit_components" && (
-          <>
-            <ul className="reflist">
-              {change.changes.map((item, index) => (
-                <li key={`${item.entityId}:${index}`}>
-                  <BilingualText source={item.label} />
-                  {" · "}<BilingualText source={item.description} />
-                </li>
-              ))}
-            </ul>
-            <pre>{JSON.stringify(change.edits, null, 2)}</pre>
-          </>
-        )}
+        {change.kind === "edit_components" && <pre>{JSON.stringify(change.edits, null, 2)}</pre>}
       </details></DeveloperOnly>
       {proposal.status === "conflict" && (
         <div className="card__row">

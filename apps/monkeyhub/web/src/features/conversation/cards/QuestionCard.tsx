@@ -72,8 +72,23 @@ export function QuestionCard({
             {expanded ? "收起" : `查看全部 ${candidates.length} 项`}</button>}
         </div>
       )}
-      {/* The server's own detail, its accepted forms and open slots are for developer mode; the question is above. */}
-      {(error.question || error.acceptedForms.length > 0 || pending) && <DeveloperOnly>
+      {/* The forms the server accepts are answers: one click puts one in the composer. */}
+      {error.acceptedForms.length > 0 && (
+        <div className="card__row chips">
+          {error.acceptedForms.map((form) => (
+            <button data-command="component.resolve_pick.reply" data-command-arg={form}
+              key={form}
+              type="button"
+              className="chip"
+              onClick={() => onReply(form)}
+            >
+              <code>{form}</code>
+            </button>
+          ))}
+        </div>
+      )}
+      {/* The server's own detail, the slots still open and the ruled-out candidates are for developer mode. */}
+      {(error.question || (pending && (pending.missingSlots.length > 0 || pending.rejectedCandidates.length > 0))) && <DeveloperOnly>
         <details className="card__row card__details">
           <summary data-command="view.disclosure.toggle" data-command-arg="technical_details">{t("common.technicalDetails")}</summary>
           {error.question && (
@@ -86,18 +101,6 @@ export function QuestionCard({
               {t("question.stillOpen", { slots: pending.missingSlots.join(", ") })}
             </p>
           )}
-          <div className="chips">
-            {error.acceptedForms.map((form) => (
-              <button data-command="component.resolve_pick.reply" data-command-arg={form}
-                key={form}
-                type="button"
-                className="chip"
-                onClick={() => onReply(form)}
-              >
-                <code>{form}</code>
-              </button>
-            ))}
-          </div>
           {pending && pending.rejectedCandidates.length > 0 && (
             <p className="quiet mono">
               {t("question.ruledOut", {

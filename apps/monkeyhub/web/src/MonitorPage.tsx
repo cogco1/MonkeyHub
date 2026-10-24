@@ -43,6 +43,7 @@ const words = {
     usageScope: "汇总与明细均统计所选项目的全部已记录任务；任务选择仅切换时间线。",
     includeOperations: "包含工具与本地操作", visibleSubtotal: "当前显示的模型调用小计", allCallsTotal: "全部模型调用合计",
     recordRange: (shown: number, count: number) => `当前显示 ${shown} / ${count} 条记录`,
+    warningsNote: (count: number) => `读取记录时有 ${count} 条提示，这里的数字可能不完整。`,
     sources: "用量来源", agent: "Agent", sourcesHelp: "先选 agent，再每行填一个明确的本机文件路径：Codex 或 Claude Code 的会话 JSONL，或别处导出的 UsageEvent@1 文件。不扫描目录；Hub 自动绑定的会话不需要手填，这里仅用于诊断补充。", apply: "应用来源", applied: "来源已更新",
     calculator: "费用估算", calculatorHelp: "按你明确选择的费率计算 API 等价值；不是订阅实际扣款，也不自动猜计费档位。", rate: "费率", chooseRate: "选择参考费率", input: "总输入", cacheRead: "缓存读取", cacheWrite: "缓存写入", cacheWrite1h: "其中 1 小时写入", reasoning: "其中推理输出", calculate: "计算", resetTotals: "恢复当前汇总", estimated: "估算费用", knownSubtotal: "已知小计", missing: "仍缺少",
     serviceDetail: "技术详情", updated: "更新于", download: "下载 Trace JSON", raw: "原始记录", endNotObserved: "结束时间未观测",
@@ -58,6 +59,7 @@ const words = {
     usageScope: "Totals and records cover all recorded tasks in the selected project scope. The task selector changes only the timeline.",
     includeOperations: "Include tools and local operations", visibleSubtotal: "Displayed model-call subtotal", allCallsTotal: "All model-call totals",
     recordRange: (shown: number, count: number) => `Showing ${shown} of ${count} records`,
+    warningsNote: (count: number) => `Reading the records raised ${count} notice${count === 1 ? "" : "s"}; these figures may be incomplete.`,
     sources: "Usage sources", agent: "Agent", sourcesHelp: "Choose an agent, then enter one explicit local file path per line: a Codex or Claude Code session JSONL, or a UsageEvent@1 file exported elsewhere. No folder is scanned. Hub-bound sessions do not need to be entered here; this is only for diagnostic supplements.", apply: "Apply sources", applied: "Sources updated",
     calculator: "Cost estimate", calculatorHelp: "Calculates an API-rate equivalent from the rate you explicitly select. It is not a subscription charge and no billing tier is guessed.", rate: "Rate", chooseRate: "Choose reference rate", input: "Total input", cacheRead: "Cache read", cacheWrite: "Cache write", cacheWrite1h: "Of which 1-hour write", reasoning: "Of which reasoning output", calculate: "Calculate", resetTotals: "Use current totals", estimated: "Estimated cost", knownSubtotal: "Known subtotal", missing: "Still missing",
     serviceDetail: "Technical details", updated: "Updated", download: "Download Trace JSON", raw: "Raw record", endNotObserved: "End not observed",
@@ -362,6 +364,8 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
         </section>
       </div>
 
+      {/* Outside developer mode the notices are counted, since they can leave the figures short. */}
+      {!developer && warnings.length > 0 && <p className="monitor-help monitor-global-warnings">{t.warningsNote(warnings.length)}</p>}
       {developer && warnings.length > 0 && <details className="monitor-global-warnings"><summary data-command="view.disclosure.toggle" data-command-arg="usage_warnings">{t.warnings} · {warnings.length}</summary>{warnings.map((warning) => <p key={warning}>{warning}</p>)}</details>}
     </main>
     {/* L5: where the records come from, when they were read, and how the scope counts them. */}

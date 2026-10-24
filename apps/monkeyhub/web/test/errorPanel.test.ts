@@ -81,7 +81,7 @@ test("a refusal says what happened and the next step; the server's words wait fo
     [{ status: 502, code: "TRANSPORT_ERROR", detail: "GET /api/jobs/job-1 answered HTTP 502 with a body this client could not read." },
       /ran into a problem/, /restart MonkeyHub/, /项目服务出错/],
     [{ status: 0, code: "TRANSPORT_ERROR", detail: "Cannot read properties of undefined (reading x)" },
-      /This step did not finish/, /turn on developer mode in Settings/, /这一步没有完成/],
+      /This step did not finish/, /open Technical details below/, /这一步没有完成/],
   ];
   for (const [refusal, reason, next, zhReason] of cases) {
     const html = render(refusal, "en", "POST /api/drawings/elevations");
@@ -89,9 +89,19 @@ test("a refusal says what happened and the next step; the server's words wait fo
     assert.match(lead, reason, `${refusal.code}: reason`);
     assert.match(lead, next, `${refusal.code}: next step`);
     assert.match(lead, /class="error-panel__detail error-panel__next"/, `${refusal.code}: one next step`);
-    assert.doesNotMatch(html, /<details/, `${refusal.code}: outside developer mode there are no technical details`);
-    assert.ok(!html.includes(refusal.code) && !html.includes(refusal.detail) && !html.includes("POST"),
-      `${refusal.code}: no code, raw detail or route outside developer mode`);
+    assert.ok(!lead.includes(refusal.code) && !lead.includes(refusal.detail) && !lead.includes("POST"),
+      `${refusal.code}: no code, raw detail or route before the details`);
+    // 2-7: a failure the Hub does not recognise has its reason only in the service's words, so they stay, folded;
+    // every other failure leaves them to developer mode.
+    if (next.test("open Technical details below")) {
+      assert.ok(folded(html).includes(refusal.code) && folded(html).includes(refusal.detail) && folded(html).includes("POST /api/drawings/elevations"),
+        `${refusal.code}: code, detail and route stay folded under Technical details`);
+      assert.doesNotMatch(html, /<details[^>]*\sopen/, `${refusal.code}: details start folded outside developer mode`);
+    } else {
+      assert.doesNotMatch(html, /<details/, `${refusal.code}: outside developer mode there are no technical details`);
+      assert.ok(!html.includes(refusal.code) && !html.includes(refusal.detail) && !html.includes("POST"),
+        `${refusal.code}: no code, raw detail or route outside developer mode`);
+    }
     const developer = render(refusal, "en", "POST /api/drawings/elevations", true);
     assert.ok(html.startsWith(shown(developer)), `${refusal.code}: developer mode leads with the same words`);
     assert.ok(folded(developer).includes(refusal.code) && folded(developer).includes(refusal.detail) && folded(developer).includes("POST /api/drawings/elevations"),
@@ -99,7 +109,7 @@ test("a refusal says what happened and the next step; the server's words wait fo
     assert.match(developer, /<details[^>]*\sopen=""><summary>Technical details<\/summary>/, `${refusal.code}: and start open there`);
     const zh = render(refusal, "zh-CN");
     assert.match(zh, zhReason, `${refusal.code}: Chinese reason`);
-    assert.ok(!zh.includes(refusal.code), `${refusal.code}: no code in Chinese outside developer mode`);
+    assert.ok(!shown(zh).includes(refusal.code), `${refusal.code}: no code in the Chinese lead`);
     assert.match(render(refusal, "zh-CN", undefined, true), /<summary>技术详情<\/summary>/);
   }
 
