@@ -108,6 +108,8 @@ const seedCards = () => [
     options: [answer("say", "Say it", "我来说", "把你写的话交给对话", { action: { commandId: "chat.composer.send", args: {} }, undoable: true })] }),
 ];
 let cards = [];
+// How often a comparison read the project's candidates: once each time one opens over a pair.
+let comparisonReads = 0;
 const bulks = new Map();
 // Cards whose undo finds the project moved on: the Hub leaves them handled and asks instead.
 const movedOnUndo = new Set(["att_v11b"]);
@@ -121,7 +123,7 @@ const route = async (handler) => {
   if (url.pathname.endsWith("/api/document-comments")) return handler.fulfill({ json: { comments: [], kind: "document",
     runId: url.searchParams.get("runId") ?? "run-v17", revisionRef: url.searchParams.get("revisionRef") } });
   // The comparison a decision card opens reads the project's candidates; this project has none retained (2-5).
-  if (/\/studio\/api\/runtime$/.test(url.pathname)) return handler.fulfill({ json: { projectId: "A", candidates: [] } });
+  if (/\/studio\/api\/runtime$/.test(url.pathname)) { comparisonReads += 1; return handler.fulfill({ json: { projectId: "A", candidates: [] } }); }
   if (await workspace.handle(handler, url)) return;
   const json = (body, status = 200) => handler.fulfill({ json: body, status });
   const data = () => request.postDataJSON();
@@ -552,6 +554,22 @@ try {
   await under.filter({ hasText: "V16 和 V17 留哪个" }).waitFor();
   assert.equal(await under.locator(".attention-card__opens").count(), 0, "the card under its comparison does not offer it again");
   await under.getByText("V17 薄 40 mm").waitFor();
+  // A new result in the Study changes the card under the comparison: its answers would now adopt other results, so
+  // the comparison opens again over the pair the card weighs now, and nothing is answered meanwhile.
+  const weighed = cards.find((row) => row.id === "att_decide"), asOpened = JSON.parse(JSON.stringify(weighed));
+  const changed = async (fields, label) => {
+    const reads = comparisonReads, acted = attentionActions.length;
+    Object.assign(weighed, fields, { updatedAt: stamp() });
+    announce("attention/changed");
+    await under.getByRole("button", { name: label }).waitFor();
+    for (let wait = 0; comparisonReads === reads && wait < 100; wait += 1) await queuePage.waitForTimeout(50);
+    assert.ok(comparisonReads > reads, "the comparison opened again over what the card weighs now");
+    assert.equal(attentionActions.length, acted, "and nothing was answered for the person");
+  };
+  await changed({ options: [answer("v16", "Keep V16", "留 V16", "V18 归档"), answer("v18", "Keep V18", "留 V18", "V16 归档", { recommended: true, undoable: true })],
+    recommendation: { optionId: "v18", reason: "Newest", reasonZh: "最新" },
+    opens: [asOpened.opens[0], { commandId: "candidate.compare.decide", args: { runIds: ["v16", "v18"] } }] }, /留 V18/);
+  await changed({ options: asOpened.options, recommendation: asOpened.recommendation, opens: asOpened.opens }, /留 V17/);
   await under.locator(".attention-card__answer").first().click();
   await queuePage.waitForFunction(() => document.querySelector(".menu-tab[aria-pressed=true]")?.textContent === "关注");
   await comparing.waitFor({ state: "detached" });

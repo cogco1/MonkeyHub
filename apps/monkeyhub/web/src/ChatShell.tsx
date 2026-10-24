@@ -33,6 +33,7 @@ import { ASK_AI_ACTION, openSurfaceAction, useCommandActions, useCommands, type 
 import { askMeaning, offerFor, type ArgChoice, type ArgChoices, type Offer } from "./features/commands/meaning";
 import { indexOf, routeSentence, searchable } from "./features/commands/search";
 import { ComparisonDecision } from "./notifications/cards/AttentionCards";
+import { answersKey } from "./notifications/cards/cardText";
 import { chooseShell, useShellLayout } from "./app/shellLayout";
 import { AttentionShell, RECENT_CONVERSATIONS, type CenterView, type ShellProject } from "./app/AttentionShell";
 import { useT } from "./i18n/useT";
@@ -2074,7 +2075,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       const target = projects.find((row) => row.projectDir === (card?.projectDir ?? projectDir));
       if (!target) return;
       const request = { candidateRunId: runIds[runIds.length - 1]!, againstRunId: runIds[0]!,
-        aside: card ? <ComparisonDecision cardId={card.id} project={target.name} onDone={() => { endComparison(); setPanel(false); }} /> : null };
+        aside: card ? <ComparisonDecision cardId={card.id} project={target.name} runIds={runIds} answers={answersKey(card)}
+          onDone={() => { endComparison(); setPanel(false); }} /> : null };
       if (target.projectDir === projectDir) { void compareIn(target.projectDir, target.projectId, request, null); return; }
       pendingComparison.current = { projectDir: target.projectDir, projectId: target.projectId, request };
       selectProject(target);
