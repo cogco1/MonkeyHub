@@ -17,6 +17,12 @@ digest of the index (names, descriptions and code), so it is built once per
 change of the folders. A skill is only a procedure: it grants no permission;
 what a run may do is a person's to allow (``settings.skill_grants``).
 
+A skill that carries a program (an ``entry``) is not run by the agent. The
+plugin holds no script, so an agent that reads only the author's steps does them
+itself with Bash, past every question the Hub would ask. Its SKILL.md therefore
+opens with ``run_through_hub``: start it with ``studio_request``, where the Hub
+asks the person for what it needs and the project keeps the run.
+
 A project's ``recipe`` memory names one skill as ``skill:<name>@<code>``, the
 first 12 hex digits of its codeSha256 (``pin``), and the Hub says of every
 recipe a turn carries whether that skill still has that code
@@ -73,6 +79,8 @@ _NAMED_SKILL = re.compile(rf"(?:{PLUGIN_NAME}:|skill:)?(?P<name>[^@:]+)(?:@(?P<p
 _PINNED_SKILL = re.compile(r"skill:(?P<name>[a-z0-9]+(?:-[a-z0-9]+)*)@(?:(?P<code>[0-9a-f]{12})|(?P<version>[1-9][0-9]{0,8}))")
 # How a recipe names a skill's code: the first 12 hex digits of its codeSha256.
 CODE_DIGITS = 12
+# The wording of ``run_through_hub``; a plugin built with another wording is another directory.
+RUN_BLOCK_VERSION = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +107,8 @@ def installed_library() -> Library | None:
         if row.content is None:
             continue
         rows.append({"id": row.skill_id, "name": row.name, "description": row.content["description"],
-                     "code": str(row.code_sha256)[:CODE_DIGITS], "source": row.source, "body": row.content["body"]})
+                     "code": str(row.code_sha256)[:CODE_DIGITS], "source": row.source, "body": row.content["body"],
+                     "entry": row.content.get("entry"), "access": row.content.get("access")})
     return Library(tuple(rows)) if rows else None
 
 
@@ -195,17 +204,56 @@ def learn(runtime_root: Path, event: Mapping[str, Any]) -> list[str]:
 def index_digest(library: Library) -> str:
     """What names one state of the skill folders, as a chat is given them."""
 
-    rows = sorted([str(row["id"]), str(row["name"]), str(row["description"]), str(row["code"]), str(row["source"])]
-                  for row in library.skills)
-    return canonical_digest({"skills": rows})
+    rows = sorted([str(row["id"]), str(row["name"]), str(row["description"]), str(row["code"]), str(row["source"]),
+                   str(bool(row.get("entry")))] for row in library.skills)
+    return canonical_digest({"skills": rows, "runBlock": RUN_BLOCK_VERSION})
+
+
+def _declared(access: Mapping[str, Any] | None) -> str:
+    """What a skill declares it will use, as a short English line for the agent; empty when nothing."""
+
+    access = access or {}
+    words = []
+    if access.get("programs"):
+        words.append("run " + ", ".join(access["programs"]))
+    if access.get("network"):
+        words.append("use the network")
+    if access.get("ssh"):
+        words.append("connect by ssh to " + ", ".join(access["ssh"]))
+    if access.get("write"):
+        words.append("write to " + ", ".join(access["write"]))
+    if access.get("packages"):
+        words.append("install Python packages " + ", ".join(access["packages"]))
+    return "; ".join(words)
+
+
+def run_through_hub(skill: Mapping[str, Any]) -> str:
+    """What opens the SKILL.md of a skill that carries a program: start it through the Hub, do not do its steps yourself."""
+
+    declared = _declared(skill.get("access"))
+    return (
+        "> **This skill is a program MonkeyHub runs for you. Do not run its scripts or programs yourself, with Bash "
+        "or any other tool, and do not copy them: that skips the person's permission and leaves no record in the project.**\n"
+        ">\n"
+        "> Start it with the monkeyhub tool `studio_request`: `POST /api/skills/" + str(skill["id"]) + "/run` with the body "
+        '`{"inputs": {...}, "parameters": {...}}`, the inputs and parameters described below (the key is `parameters`, '
+        "even where the text below writes `params`; the Hub adds the project). "
+        + (f"It declares that it will {declared}. " if declared else "")
+        + "If it needs something no one has allowed yet, the Hub asks the person in this chat; wait for the answer, and "
+        "when the reply says so, call the same run again with the permissionId it gives. The reply is a job: "
+        "`GET` its `statusPath` until it ends, then tell the person what it made or why it did not.\n\n")
 
 
 def skill_markdown(skill: Mapping[str, Any]) -> str:
-    """One SKILL.md: the frontmatter an agent lists, then the body it reads on use."""
+    """One SKILL.md: the frontmatter an agent lists, then the body it reads on use.
+
+    A skill with a program opens with how to start it through the Hub, ahead of the author's steps.
+    """
 
     # A JSON string is a YAML flow scalar, so any description stays one value.
+    opening = run_through_hub(skill) if skill.get("entry") else ""
     return (f"---\nname: {skill['name']}\ndescription: {json.dumps(skill['description'], ensure_ascii=False)}\n"
-            f"---\n\n{skill['body'].rstrip()}\n")
+            f"---\n\n{opening}{skill['body'].rstrip()}\n")
 
 
 def materialize(cache_root: Path, library: Library) -> Path | None:

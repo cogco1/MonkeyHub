@@ -1450,7 +1450,7 @@ export const messagesZhCN = {
   "skills.grants.revokeAria": "撤销「{scope}」的允许",
   "skills.grants.revoking": "正在撤销…",
   "skills.agentRuns.title": "AI 在对话里运行 skill",
-  "skills.agentRuns.intro": "对这个 Hub 上的所有项目都有效。",
+  "skills.agentRuns.intro": "对这个 Hub 上的所有项目都有效。这里管的是 AI 请 MonkeyHub 运行 skill；AI 自己在命令行里做的别的事不经过这里，由 Claude Code、Codex 各自问你。",
   "skills.agentRuns.ask": "在对话里问我",
   "skills.agentRuns.askHint": "skill 需要你还没允许过的事时，对话里问一次：总是允许 / 只这一次 / 不，等你回答。允许过的不会再问。",
   "skills.agentRuns.granted": "只做我已经允许过的事",

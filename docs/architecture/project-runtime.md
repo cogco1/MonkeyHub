@@ -126,6 +126,9 @@ and writes the current versions into a Claude plugin in its own cache,
 `skills/<name>/SKILL.md`), rebuilt only when the index changes (`monkeyhub_api/chat/skill_plugins.py`). A Claude
 chat is started with `--plugin-dir <that directory>`; Claude lists each name and description and reads a
 body only when it uses the skill. Nothing is written into any project.
+A skill that carries a program opens its SKILL.md with the instruction to start it through `studio_request`
+(`POST /api/skills/{id}/run`, the Hub adds the project): the plugin holds no script, and an agent that did the author's
+steps itself with Bash would skip the question the Hub asks a person and leave no run in the project.
 
 A Claude or Coding Plan chat sees the library's skills and nothing else (#463). The CLI (2.1.283) does not
 gate its `Skill` tool under `dontAsk`, so an allow rule restricts nothing, and deny rules cannot say
