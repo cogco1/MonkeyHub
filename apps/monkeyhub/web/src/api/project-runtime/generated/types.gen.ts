@@ -651,6 +651,30 @@ export type BoardExportRequestDto = {
 };
 
 /**
+ * BoardRegionDto
+ *
+ * A rectangle of the board in scene coordinates.
+ */
+export type BoardRegionDto = {
+    /**
+     * X
+     */
+    x: number;
+    /**
+     * Y
+     */
+    y: number;
+    /**
+     * Width
+     */
+    width: number;
+    /**
+     * Height
+     */
+    height: number;
+};
+
+/**
  * BoardRequestDto
  */
 export type BoardRequestDto = {
@@ -676,6 +700,126 @@ export type BoardRequestDto = {
      * Seendocuments
      */
     seenDocuments: Array<string>;
+};
+
+/**
+ * BoardViewDto
+ *
+ * A region of the board as drawn (pages under marks) and every mark in it, with where it lies on each page.
+ */
+export type BoardViewDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string | null;
+    /**
+     * Frame
+     */
+    frame: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Frames
+     *
+     * Every frame on the board: id, name and box.
+     */
+    frames: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Region
+     *
+     * The drawn region: x, y, width, height in scene coordinates.
+     */
+    region: {
+        [key: string]: number;
+    };
+    /**
+     * Scale
+     *
+     * Image pixels per scene unit.
+     */
+    scale: number;
+    image: BoardViewImageDto;
+    /**
+     * Pages
+     *
+     * Registered pages in the region; tracingPaper marks a tracing-paper snapshot.
+     */
+    pages: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Annotations
+     *
+     * Marks in the region in scene order: type, colours, box, updatedAt, frameId, text, and onPages (each page it lies over, the shared part as page fractions x0..x1, y0..y1 from the top left).
+     */
+    annotations: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Annotationcount
+     *
+     * All marks in the region; at most 2,000 are listed.
+     */
+    annotationCount: number;
+};
+
+/**
+ * BoardViewImageDto
+ */
+export type BoardViewImageDto = {
+    /**
+     * Mimetype
+     */
+    mimeType: 'image/png';
+    /**
+     * Width
+     */
+    width: number;
+    /**
+     * Height
+     */
+    height: number;
+    /**
+     * Sha256
+     */
+    sha256: string;
+    /**
+     * Data
+     *
+     * The PNG, base64.
+     */
+    data: string;
+};
+
+/**
+ * BoardViewRequestDto
+ *
+ * One frame (by element id) or region of the board to draw and list; neither is the whole scene.
+ */
+export type BoardViewRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Frameid
+     */
+    frameId?: string | null;
+    region?: BoardRegionDto | null;
+    /**
+     * Maxedge
+     */
+    maxEdge?: number;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256?: string | null;
 };
 
 /**
@@ -874,6 +1018,10 @@ export type CameraPassRequestDto = {
      * Sourcestageref
      */
     sourceStageRef?: string | null;
+    /**
+     * Cut the model at a live section plane first, as the Modeling viewport does; a saved view's own cut applies when none is given. Its outline is drawn as lines; its cut faces are not filled.
+     */
+    clip?: SectionClipDto | null;
 };
 
 /**
@@ -8799,6 +8947,12 @@ export type PlanDrawingDto = {
      */
     follow?: 'live' | 'frozen' | null;
     /**
+     * Board
+     *
+     * on-request: the Board does not place this drawing by itself, only when a person asks (the Modeling viewport's live section draws so). Omitted keeps the previous revision's; a new drawing is automatic.
+     */
+    board?: 'automatic' | 'on-request' | null;
+    /**
      * Reason
      *
      * Why this revision is asked for, in the asker's own words, such as the correction an agent was given; omit it for a direct edit. Retained with the revision beside who asked, never in its recipe.
@@ -9117,6 +9271,12 @@ export type PlanRequestDto = {
      * live follows the project's Working Head; frozen keeps this drawing on its chosen source until it is rebuilt. Omitted keeps the previous revision's choice; a new drawing is live.
      */
     follow?: 'live' | 'frozen' | null;
+    /**
+     * Board
+     *
+     * on-request: the Board does not place this drawing by itself, only when a person asks (the Modeling viewport's live section draws so). Omitted keeps the previous revision's; a new drawing is automatic.
+     */
+    board?: 'automatic' | 'on-request' | null;
     /**
      * Reason
      *
@@ -10478,6 +10638,35 @@ export type PushPullRequestDto = {
 };
 
 /**
+ * QuantitiesRequestDto
+ *
+ * One exact model, as the drawing routes select it, and whether the answer is JSON or CSV.
+ */
+export type QuantitiesRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    modelSource?: ModelSourceDto | null;
+    /**
+     * Sourceasset
+     *
+     * {runId, assetSha256} of an imported or snapshot model
+     */
+    sourceAsset?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Format
+     */
+    format?: 'json' | 'csv';
+};
+
+/**
  * RecipeBindingRequestDto
  *
  * The project recipe: paper-space values a new drawing starts from.
@@ -11137,6 +11326,10 @@ export type RenderViewSourceRequestDto = {
      * Pngbase64
      */
     pngBase64: string;
+    /**
+     * The live section the view was cut at, kept in its recipe so a camera pass of it is cut the same way.
+     */
+    clip?: SectionClipDto | null;
 };
 
 /**
@@ -11781,6 +11974,30 @@ export type SectionCameraDto = {
      * Default eye only: height above the lowest cut point, in the source model unit (default 1.6 m).
      */
     eyeHeight?: number | null;
+};
+
+/**
+ * SectionClipDto
+ *
+ * A live section plane (G5): a point on it and the normal toward the side that stays drawn, in the model's frame.
+ */
+export type SectionClipDto = {
+    /**
+     * Origin
+     */
+    origin: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Normal
+     */
+    normal: [
+        number,
+        number,
+        number
+    ];
 };
 
 /**
@@ -17289,6 +17506,41 @@ export type UpdateBoardApiBoardPutResponses = {
 
 export type UpdateBoardApiBoardPutResponse = UpdateBoardApiBoardPutResponses[keyof UpdateBoardApiBoardPutResponses];
 
+export type ViewBoardApiBoardViewPostData = {
+    body: BoardViewRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/board/view';
+};
+
+export type ViewBoardApiBoardViewPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ViewBoardApiBoardViewPostError = ViewBoardApiBoardViewPostErrors[keyof ViewBoardApiBoardViewPostErrors];
+
+export type ViewBoardApiBoardViewPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: BoardViewDto;
+};
+
+export type ViewBoardApiBoardViewPostResponse = ViewBoardApiBoardViewPostResponses[keyof ViewBoardApiBoardViewPostResponses];
+
 export type ExportBoardApiBoardExportPostData = {
     body: BoardExportRequestDto;
     headers?: {
@@ -18863,6 +19115,39 @@ export type ReadConstructionModelApiConstructionModelGetResponses = {
 };
 
 export type ReadConstructionModelApiConstructionModelGetResponse = ReadConstructionModelApiConstructionModelGetResponses[keyof ReadConstructionModelApiConstructionModelGetResponses];
+
+export type ReadQuantitiesApiQuantitiesPostData = {
+    body: QuantitiesRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/quantities';
+};
+
+export type ReadQuantitiesApiQuantitiesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadQuantitiesApiQuantitiesPostError = ReadQuantitiesApiQuantitiesPostErrors[keyof ReadQuantitiesApiQuantitiesPostErrors];
+
+export type ReadQuantitiesApiQuantitiesPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
 
 export type CreateConstructionProposalApiProposalsConstructionPostData = {
     body: ConstructionRequestDto;
