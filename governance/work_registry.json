@@ -122,7 +122,8 @@
             "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "apps/monkeyhub/web/test/developerMode.test.ts",
             "apps/monkeyhub/web/test/settingsAutosave.browser.mjs"
-          ]
+          ],
+          "depends_on": []
         }
       ]
     }
