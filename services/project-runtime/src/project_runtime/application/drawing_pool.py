@@ -80,7 +80,7 @@ class DrawingPool:
 
     def __call__(self, task: DrawTask) -> DrawResult:
         result = self._solve(run_draw_task, task)
-        self._keep(task.source, result.verified)
+        self.keep(task.source, result.verified)
         return result
 
     def source(self, project_root: str, source) -> VerifiedElevationSource:
@@ -94,7 +94,7 @@ class DrawingPool:
         if known is not None:
             return known
         verified = self._solve(verify_draw_source, project_root, source)
-        self._keep(source, verified)
+        self.keep(source, verified)
         return verified
 
     def _solve(self, function, *arguments):
@@ -150,7 +150,9 @@ class DrawingPool:
         broken.shutdown(wait=False, cancel_futures=True)
         _LOG.warning("A drawing worker stopped; the next drawing starts a new pool")
 
-    def _keep(self, source, verified: VerifiedElevationSource) -> None:
+    def keep(self, source, verified: VerifiedElevationSource) -> None:
+        """Remember ``source`` as verified, without its shapes, for the next request on it."""
+
         try:
             with self._lock:
                 self._sources[source] = verified

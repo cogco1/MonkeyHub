@@ -98,7 +98,8 @@ def create_plan(request: Request, payload: PlanRequestDto) -> SourceDocumentDto:
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
     return document_dto(generate_plan(binding, **plan_arguments(payload), **_source(payload),
-                                      attribution=request_attribution(request)))
+                                      attribution=request_attribution(request),
+                                      projections=ready_projections(request.app.state)))
 
 
 @router.get("/drawings/plans/vector", response_model=PlanVectorDto, response_model_by_alias=True)
