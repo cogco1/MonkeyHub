@@ -149,6 +149,25 @@
             "docs/decisions/README.md"
           ],
           "depends_on": []
+        },
+        {
+          "id": "registry-data",
+          "status": "active",
+          "branch": "claude/300-registry-data",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-registry-data",
+          "base_ref": "dee04b0e92b49390ae5b0e3611372c9afab2c3b8",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "2-1a data: the nine surfaces' commands (Board, Modeling, Design tree, Drawings, document page, Render, Layout, Fabrication, Usage) registered as capability groups with ui.commands from the 711-entry audit, every templated id expanded, the audit's command columns and coverage tests. The shell layer stays with GH-300/command-tree. Branched from claude/300-command-tree with #690 merged in; PR after the freeze.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/test/commandTreeCoverage.test.ts",
+            "docs/audits/hub-entries.md",
+            "tools/tests/test_hub_entries_coverage.py"
+          ],
+          "depends_on": []
         }
       ]
     }
