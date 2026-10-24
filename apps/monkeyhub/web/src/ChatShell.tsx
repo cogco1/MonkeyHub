@@ -158,6 +158,7 @@ const composerWords = {
     target: "将修改：当前", targetUnrecorded: "未记录的修改不包括在内", sending: "发送中…",
     sendTo: (name: string) => `发到：${name}`, sendToAttention: "关注对话", sendToNew: "新对话",
     routeSays: (label: string) => `这句话可以直接做：「${label}」`, routeRun: "直接做", routeSend: "还是发给 AI",
+    providerSwitched: (from: string, to: string) => `要用 ${from} 得先装，现在用的是 ${to}`,
     routeWhich: (name: string) => name === "project" ? "哪个项目？" : name === "sessionId" ? "哪个对话？" : `还差：${name}`,
     operationOpenChat: "打开对话", operationDismiss: "知道了",
     operationMore: (count: number) => `另有 ${count} 个`,
@@ -171,6 +172,7 @@ const composerWords = {
     target: "Changes: Current", targetUnrecorded: "unrecorded edits not included", sending: "Sending…",
     sendTo: (name: string) => `To: ${name}`, sendToAttention: "the attention conversation", sendToNew: "a new conversation",
     routeSays: (label: string) => `This can be done directly: ${label}`, routeRun: "Do it", routeSend: "Send to the AI instead",
+    providerSwitched: (from: string, to: string) => `${from} has to be installed first; using ${to} for now`,
     routeWhich: (name: string) => name === "project" ? "Which project?" : name === "sessionId" ? "Which conversation?" : `Still needed: ${name}`,
     operationOpenChat: "Open chat", operationDismiss: "Dismiss",
     operationMore: (count: number) => `${count} more`,
@@ -861,12 +863,22 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const visibleSessions = sessions.filter((session) => Boolean(session.archived) === archivedView);
   // An existing conversation keeps the connection it was created with; only a
   // new one takes the saved default.
-  const connection = chat?.id === chatId ? { provider: chat.provider, model: chat.model ?? null } : defaults;
+  // 17: a new conversation starts on the saved default; when that one is not installed, on the first connection that is
+  // (a signed-in one first), and the composer says so in a sentence instead of the CLI's own English.
+  const savedProvider = providers.find((item) => item.id === defaults.provider);
+  const usableProvider = providers.length && savedProvider && !savedProvider.available
+    ? providers.find((item) => item.available && item.signedIn !== false) ?? providers.find((item) => item.available) ?? null : null;
+  const usableDefaults = usableProvider ? { provider: usableProvider.id as ChatCreateRequest["provider"], model: null } : defaults;
+  const connection = chat?.id === chatId ? { provider: chat.provider, model: chat.model ?? null } : usableDefaults;
   const availableProvider = providers.find((item) => item.id === connection.provider);
+  const providerNote = !chatId && savedProvider && !savedProvider.available
+    ? usableProvider ? w.providerSwitched((savedProvider.label ?? savedProvider.id).replace(/\s+CLI$/, ""), usableProvider.label.replace(/\s+CLI$/, ""))
+      : (loading ? "" : t.noProvider)
+    : "";
   const composerDisabledReason = !project ? t.projectRequired : busy ? t.actionPending : undefined;
   const sendDisabledReason = running ? (renderDraft ? t.renderContextAfterReply : !draft.trim() ? t.interjectEmpty : undefined)
     : composerDisabledReason ?? (!draft.trim() && !attachments.length ? t.sendEmpty
-      : !chatId && !availableProvider?.available ? availableProvider?.detail ?? t.noProvider : undefined);
+      : !chatId && !availableProvider?.available ? t.noProvider : undefined);
   // The connection as the Hub named it, short enough to read in a sentence.
   const connectionName = (availableProvider?.label ?? connection.provider ?? "").replace(/\s+CLI$/, "") || null;
   const chosenModel = chat?.id === chatId ? chat.model ?? null : draftModel;
@@ -1418,7 +1430,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       const reading = routed ?? chatId;
       let current = chat?.id === reading ? chat : reading ? await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(reading)}`) : null;
       if (!current) {
-        const body: ChatCreateRequest = { projectDir: target, provider: defaults.provider, model: draftModel };
+        const body: ChatCreateRequest = { projectDir: target, provider: usableDefaults.provider, model: usableProvider ? null : draftModel };
         current = await request<ChatDetail>("/api/chat/sessions", body);
         setDrafts((value) => ({ ...value, [key]: "", [current!.id]: content }));
         setDraftAttachments((value) => ({ ...value, [key]: [], [current!.id]: files }));
@@ -1553,7 +1565,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       setProjects((items) => [...items.filter((item) => item.projectDir !== project.projectDir), project]);
       setArchivedView(false); selectProject(project);
       newDialog.current?.close(); setProjectName("");
-      const body: ChatCreateRequest = { projectDir: project.projectDir, provider: defaults.provider, model: defaults.model };
+      const body: ChatCreateRequest = { projectDir: project.projectDir, provider: usableDefaults.provider, model: usableDefaults.model };
       const created = await request<ChatDetail>("/api/chat/sessions", body);
       selectChat(created); setChat(created); await refresh();
       input.current?.focus();
@@ -1580,7 +1592,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (actionLock.current || !path.trim()) return;
     actionLock.current = true; setBusy(true); setDialogError(null);
     try {
-      const body: ChatCreateRequest = { projectDir: path.trim().replace(/^"(.*)"$/, "$1"), provider: defaults.provider, model: defaults.model };
+      const body: ChatCreateRequest = { projectDir: path.trim().replace(/^"(.*)"$/, "$1"), provider: usableDefaults.provider, model: usableDefaults.model };
       const created = await request<ChatDetail>("/api/chat/sessions", body);
       selectChat(created); setChat(created); addDialog.current?.close(); setFolder(""); await refresh();
     } catch (cause) { setDialogError(asFailure(cause)); }
@@ -2431,7 +2443,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <button data-command="preference.chat_model.custom_cancel" type="button" className="btn" onClick={() => setCustomModel(null)}>{t.cancel}</button>
         </form>}
         {/* PP-1: a tool being opened says so on its own skeleton, not here. */}
-        <p className="chat-composer-note" role="status">{sending === "posting" ? w.sending : busy ? t.working : !availableProvider?.available && !chatId ? availableProvider?.detail ?? (loading ? "" : t.noProvider) : ""}</p>
+        <p className="chat-composer-note" role="status">{sending === "posting" ? w.sending : busy ? t.working : !chatId ? providerNote : ""}</p>
       </div>
   </>;
   /** The open surfaces, kept mounted; only the selected one shows, and only while `showing`. */
