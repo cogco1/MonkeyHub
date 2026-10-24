@@ -659,6 +659,7 @@ try {
     assert.equal(await page.locator(".drawing-error").count(), 0);
   });
   await step("retained dimensions can be removed without rewriting their original revision", async () => {
+    await openGroup("dimensions");
     await cmd(page, "drawing.plan.remove_dimension").click();
     assert.equal(await page.getByRole("group", { name: "Saved dimensions", exact: true, includeHidden: true }).count(), 0);
     await until(() => revision().inputValue(), value => value !== oldRevision, "dimension removal retained");
