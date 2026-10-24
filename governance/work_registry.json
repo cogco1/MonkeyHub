@@ -181,7 +181,8 @@
             "apps/monkeyhub/web/test/canvasChrome.browser.mjs",
             "apps/monkeyhub/web/test/commandPalette.browser.mjs",
             "apps/monkeyhub/web/test/commandPalette.test.ts",
-            "apps/monkeyhub/web/test/commandTree.test.ts"
+            "apps/monkeyhub/web/test/commandTree.test.ts",
+            "apps/monkeyhub/web/test/designTree.browser.mjs"
           ],
           "depends_on": []
         },
@@ -372,7 +373,6 @@
             "apps/monkeyhub/web/src/features/designTree/continueUndo.ts",
             "apps/monkeyhub/web/src/features/designTree/fixture.ts",
             "apps/monkeyhub/web/src/features/designTree/useDesignTree.ts",
-            "apps/monkeyhub/web/test/designTree.browser.mjs",
             "apps/monkeyhub/web/test/designTree.test.ts",
             "apps/monkeyhub/web/test/historyPage.browser.mjs",
             "apps/monkeyhub/web/test/historyRows.test.ts",
