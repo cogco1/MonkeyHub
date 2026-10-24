@@ -581,6 +581,23 @@ export type ChangeList = {
 };
 
 /**
+ * ChangeListAnswer
+ *
+ * The list's card, and, when it was small and sure enough to apply at once, the approval to build now.
+ */
+export type ChangeListAnswer = {
+    card: AttentionItem;
+    /**
+     * Applied
+     *
+     * cardId, items, content and quotes, as a run card would send them; null while the list waits on its card.
+     */
+    applied?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
  * ChangeListItem
  *
  * One change as the agent understood it from the marks and the words.
@@ -5326,7 +5343,7 @@ export type AttentionChangeListApiAttentionChangeListsPostResponses = {
     /**
      * Successful Response
      */
-    201: AttentionItem;
+    201: ChangeListAnswer;
 };
 
 export type AttentionChangeListApiAttentionChangeListsPostResponse = AttentionChangeListApiAttentionChangeListsPostResponses[keyof AttentionChangeListApiAttentionChangeListsPostResponses];

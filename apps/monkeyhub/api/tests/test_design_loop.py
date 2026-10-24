@@ -153,7 +153,7 @@ class SubmitTests(unittest.TestCase):
         self.assertIsNone(design_loop._loops["chat-1"]["asked"], "a refused list asks nothing")
         posted = []
         with (patch.object(transport, "_request_json",
-                           side_effect=lambda *a, **k: posted.append((*a, k)) or {"id": "att_" + "0" * 32}),
+                           side_effect=lambda *a, **k: posted.append((*a, k)) or {"card": {"id": "att_" + "0" * 32}}),
               patch.dict("os.environ", {"MONKEYHUB_PRESENTATION_TOKEN": "token-1"})):
             answer = design_loop.call(HUB, "chat-1", "design_ask", ask)
         self.assertEqual((answer["recorded"], answer["cardId"]), ("asked", "att_" + "0" * 32))
@@ -163,6 +163,19 @@ class SubmitTests(unittest.TestCase):
         self.assertEqual(posted[0][4]["headers"], {"Authorization": "Bearer token-1"})
         state = json.loads(self.state.read_text(encoding="utf-8"))
         self.assertEqual(state["asked"]["changeList"], "att_" + "0" * 32)
+
+    def test_a_small_sure_list_is_built_in_the_same_turn(self) -> None:
+        from monkeyhub_api.chat import transport
+
+        applied = {"cardId": "att_" + "1" * 32, "items": [1], "content": "东墙换成砖",
+                   "quotes": [{"items": [1], "feedbackQuote": "东墙换成砖", "clauses": ["东墙换成砖"]}]}
+        ask = {"question": "我这样读你的批注", "reason": "批注", "changes": [
+            {"n": 1, "markIds": ["east"], "note": "东墙换成砖", "understanding": "east wall in brick",
+             "targets": ["wall-east"]}]}
+        with patch.object(transport, "_request_json", return_value={"card": {"id": applied["cardId"]}, "applied": applied}):
+            answer = design_loop.call(HUB, "chat-1", "design_ask", ask)
+        self.assertEqual((answer["recorded"], answer["build"]), ("applied", applied))
+        self.assertIsNone(design_loop._loops["chat-1"]["asked"], "nothing was asked: the turn goes on to build it")
 
     def test_the_budget_is_configurable(self) -> None:
         with patch.dict("os.environ", {design_loop.REPAIR_BUDGET_ENV: "1"}):

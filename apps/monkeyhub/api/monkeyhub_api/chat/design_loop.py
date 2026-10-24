@@ -310,12 +310,18 @@ def call(hub: str, chat_id: str, name: str, arguments: Mapping[str, Any]) -> dic
                 raise
             return {"recorded": None, "code": exc.error.code, "detail": exc.error.detail, "note": "Nothing was asked: "
                     "correct the list as the detail says and ask again, or ask without changes."}
+        if card.get("applied"):
+            # Small and sure (decision 5): nothing is asked; the Agent builds it now and the architect can undo it.
+            return {"recorded": "applied", "cardId": card["card"]["id"], "build": card["applied"], "note": "These "
+                    "changes are small and sure, so they are made now: one design_submit per group of quotes, with "
+                    "that group's feedbackQuote, changing only each item's targets. Then say what changed; the "
+                    "architect can undo it from their card."}
         held["asked"] = {"question": arguments["question"], "reason": arguments["reason"],
-                         "refs": list(arguments.get("refs") or ()), "changeList": card["id"]}
+                         "refs": list(arguments.get("refs") or ()), "changeList": card["card"]["id"]}
         _write_state(held)
-        return {"recorded": "asked", "cardId": card["id"], "note": "Say in your reply how you read the marks, item by "
-                "item, and that the list waits on the architect's card, every sure item ticked; end the turn. Nothing "
-                "is built until they run it."}
+        return {"recorded": "asked", "cardId": card["card"]["id"], "note": "Say in your reply how you read the marks, "
+                "item by item, and that the list waits on the architect's card, every sure item ticked; end the turn. "
+                "Nothing is built until they run it."}
     if name == "design_ask":
         held["asked"] = {"question": arguments["question"], "reason": arguments["reason"],
                          "refs": list(arguments.get("refs") or ())}
