@@ -19,7 +19,7 @@ const root = path.resolve(process.env.MONKEYHUB_WEB_DIST ?? fileURLToPath(new UR
 const shots = process.env.ATTENTION_SHELL_SHOTS ? path.resolve(process.env.ATTENTION_SHELL_SHOTS) : null;
 const now = new Date().toISOString();
 const projects = [
-  { projectId: "A", projectDir: "D:\\fixture\\A", name: "Thi Hemp 墙身节点", chatCount: 2, version: 3, stage: "S2" },
+  { projectId: "A", projectDir: "D:\\fixture\\A", name: "Thi Hemp 墙身节点", chatCount: 2, version: 3, stage: "S2", step: "V16 去掉斜撑" },
   { projectId: "B", projectDir: "D:\\fixture\\B", name: "Housing 13 户", chatCount: 1, version: 0, stage: null },
 ];
 const message = (id, role, content) => ({ id, role, content, status: "complete", createdAt: now });
@@ -286,8 +286,8 @@ try {
   await page.locator(".attention-shell__projects .attention-shell__row").filter({ hasText: "Thi Hemp" }).locator(".attention-shell__count").filter({ hasText: "1" }).waitFor();
   assert.deepEqual(await page.locator(".attention-shell__recent").first().locator(".chat-thread__title").allTextContents(), ["楼板再薄一点", "斜撑留不留"],
     "a project's conversations, newest first");
-  assert.deepEqual(await page.locator(".attention-shell__projects .attention-shell__version").allTextContents(), ["当前 V3 · S2"],
-    "under its name each project says where it stands; a project nothing was published in says nothing");
+  assert.deepEqual(await page.locator(".attention-shell__projects .attention-shell__version").allTextContents(), ["当前 V16 去掉斜撑"],
+    "under its name each project says which step its design stands on; a project nothing names says nothing");
   assert.equal(await page.locator(".menu-tab[aria-pressed=true]").textContent(), "关注");
   await page.getByText("现在没有要你处理的").or(page.getByText("1 项需要关注")).first().waitFor();
   assert.ok(await page.locator(".attention-shell__drawer").isHidden(), "the conversation waits in its drawer");

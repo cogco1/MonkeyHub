@@ -480,7 +480,7 @@ class ChatStore:
         for key, (spelling, count) in folded.items():
             version, stage = projects._listed_project(spelling)[1]
             listed[key] = ChatProject(projectId=key[0], projectDir=spelling, name=key[0],
-                                        chatCount=count, version=version, stage=stage)
+                                        chatCount=count, version=version, stage=stage, step=projects.current_step(spelling))
         workspace = self.workspace()
         workspace_root = Path(workspace.workspaceDir).resolve()
         discovered = []
@@ -501,7 +501,7 @@ class ChatStore:
                 if (project_id, project_key(project_dir)) not in listed:
                     listed[(project_id, project_key(project_dir))] = ChatProject(
                         projectId=project_id, projectDir=project_dir, name=project_id,
-                        chatCount=0, version=version, stage=stage,
+                        chatCount=0, version=version, stage=stage, step=projects.current_step(project_dir),
                     )
         return sorted(listed.values(), key=lambda row: (row.name, row.projectDir))
 
