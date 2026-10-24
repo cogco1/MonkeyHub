@@ -255,7 +255,7 @@ class AcpChatTests(unittest.TestCase):
         # Going online is another answer, still asked; so is a request in another project.
         self.post(session, "permission-network")
         asked = self.permission(session)
-        self.assertEqual(asked.title, "Fetch page · https://example.com/a")
+        self.assertEqual(asked.title, "https network access to example.com · https://example.com")
         self.assertIn("联网", asked.options[1].name)
         self.answer(session, "allow")
         self.assertEqual(len(tool_grants.read(self.runtime).grants), 1, "only this time writes no grant")
@@ -274,7 +274,7 @@ class AcpChatTests(unittest.TestCase):
         session = self.create()
         self.post(session, "permission-hub")
         card = self.permission(session)
-        self.assertEqual(card.title, "Studio call · studio_request POST /api/proposals")
+        self.assertEqual(card.title, "mcp.monkeyhub.studio_request · studio_request POST /api/proposals")
         self.assertIn("MonkeyHub 自己的工具", card.options[1].name)
         self.answer(session, "hub-project")
         self.post(session, "permission-hub")
@@ -282,7 +282,7 @@ class AcpChatTests(unittest.TestCase):
         self.assertEqual(self.adapter_chose("permission-hub"), ["allow", "allow"])
         self.assertEqual([g.action for g in tool_grants.read(self.runtime).grants], ["hub"])
         # A tool of another MCP server and an edit are asked every time, with the adapter's own options only.
-        for text in ("permission-other", "permission-edit"):
+        for text in ("permission-other", "permission-edit", *self.NEVER_COVERED):
             with self.subTest(text=text):
                 self.post(session, text)
                 card = self.permission(session)
@@ -293,6 +293,47 @@ class AcpChatTests(unittest.TestCase):
                                  "asked again, not covered by any grant")
                 self.answer(session, "reject")
         self.assertEqual([g.action for g in tool_grants.read(self.runtime).grants], ["hub"])
+
+    # Real request shapes of the locked adapter that no grant may answer: an MCP tool whose server is not the Hub's or not
+    # known, a URL an MCP server asks to open, more sandbox permissions, a command that asks for more permissions, and
+    # a request that tells nothing of its kind.
+    NEVER_COVERED = ("permission-mcp-unknown", "permission-fetch", "permission-more", "permission-run-more", "permission-bare")
+
+    def test_a_grant_for_commands_answers_nothing_that_is_not_a_plain_command(self):
+        from monkeyhub_api.settings import tool_grants
+
+        for action in ("run", "network", "hub"):
+            tool_grants.allow(self.runtime, "acp-project", action)
+        session = self.create()
+        for text in ("permission-other", "permission-edit", *self.NEVER_COVERED):
+            with self.subTest(text=text):
+                self.post(session, text)
+                card = self.permission(session)
+                self.assertEqual([o.optionId for o in card.options], ["allow", "always", "reject"],
+                                 "asked, with the adapter's own options: no grant for commands, going online or the Hub's tools covers it")
+                self.answer(session, "reject")
+                self.assertEqual(self.adapter_chose(text)[-1], "reject")
+        # What the grants do cover, in the adapter's real shapes: a command, going online, a call to the Hub's own server.
+        for text in ("permission-run", "permission-network", "permission-hub", "permission-mcp-standalone"):
+            with self.subTest(text=text):
+                self.post(session, text)
+                self.finished(session)
+                self.assertEqual(self.adapter_chose(text), ["allow"], "answered by the Hub")
+
+    def test_a_command_grant_is_not_borrowed_by_going_online_or_an_mcp_tool(self):
+        from monkeyhub_api.settings import tool_grants
+
+        tool_grants.allow(self.runtime, "acp-project", "run")
+        session = self.create()
+        for text, action in (("permission-network", "network"), ("permission-hub", "hub")):
+            with self.subTest(text=text):
+                self.post(session, text)
+                card = self.permission(session)
+                self.assertIn("hub-project", [o.optionId for o in card.options], f"asked: only {action} would cover it")
+                self.answer(session, "reject")
+        self.post(session, "permission-run")
+        self.finished(session)
+        self.assertEqual(self.adapter_chose("permission-run"), ["allow"], "the command grant still answers a command")
 
     def test_with_the_design_loop_enforced_a_command_is_asked_every_time_and_the_hubs_tools_are_not(self):
         from monkeyhub_api.settings.store import read_application_settings, save_application_settings

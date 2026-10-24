@@ -1363,17 +1363,18 @@ class ChatStore:
                     or request.get("sessionId") != session.acpSessionId):
                 future.set_result(None)
                 return future
-            title = providers._redact(str(request.get("toolCall", {}).get("title") or "Permission requested"))
+            calls = self._acp_tools.get(session_id)
+            title = providers._redact(acp_grants.call_title(request, calls) or "Permission requested")
             options = [ChatPermissionOption.model_validate(item) for item in request["options"]]
             # A command, going online or a call to the Hub's own tools can be allowed once for the whole project
             # (A4). Not a command or going online while the design loop is enforced: Claude has no shell then, and
             # Codex gets no more than Claude.
-            action = acp_grants.action_of(request)
+            action = acp_grants.action_of(request, calls)
             if action in ("run", "network") and self._design_loop_enforced():
                 action = None
             allow = acp_grants.option_id(request["options"], "allow_once")
             reject = acp_grants.option_id(request["options"], "reject_once", "reject_always")
-            what = providers._redact(acp_grants.preview(request))
+            what = providers._redact(acp_grants.preview(request, calls))
             if action is not None and allow is not None and reject is not None:
                 from ..settings import tool_grants
 
