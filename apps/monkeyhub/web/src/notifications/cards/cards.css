@@ -4,6 +4,10 @@
   background:var(--card-bg,var(--panel));color:var(--ink);font-size:var(--text-ui);line-height:1.6;overflow-wrap:anywhere}
 .attention-card[data-channel=decide]{background:var(--decide-bg,var(--card-bg,var(--panel)));border-color:var(--decide-border,var(--card-border,var(--line)))}
 .attention-card+.attention-card{margin-top:12px}
+/* A card that arrived while the list was on screen: a short ring instead of a notice. */
+.attention-card[data-fresh]{animation:attention-card-arrive 2.4s ease-out}
+@keyframes attention-card-arrive{0%,40%{box-shadow:0 0 0 2px var(--accent)}100%{box-shadow:var(--pane-ring,none)}}
+@media(prefers-reduced-motion:reduce){.attention-card[data-fresh]{animation:none;box-shadow:0 0 0 2px var(--accent)}}
 .attention-card__eyebrow{display:flex;gap:8px;margin:0;color:var(--muted);font-size:var(--text-caption)}
 .attention-card__project::before{content:"·";margin-right:8px}
 .attention-card__title{margin:2px 0 0;font-size:var(--card-title-size,var(--text-ui));font-weight:var(--card-title-weight,600);line-height:var(--card-title-line,1.5)}
@@ -26,6 +30,7 @@
 .attention-card__queue{margin-left:auto}
 .attention-card .menu-command[aria-disabled=true]{color:var(--faint);cursor:default}
 .attention-queue__empty{margin:0;color:var(--muted)}
+.attention-queue__bulk{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin:0 0 12px;color:var(--muted);font-size:var(--text-caption)}
 /* A decision a page asks in place (InlineDecision): a row of the page, tighter than a queue card. Compact puts the title
    and the answers on one line, wrapping where it is narrow. Its lines are whole pixels, so a canvas below the row
    starts on a whole pixel too. */

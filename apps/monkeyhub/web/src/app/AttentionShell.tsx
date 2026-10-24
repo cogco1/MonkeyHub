@@ -6,6 +6,7 @@ import { useT } from "../i18n/useT";
 import { AttentionQueue, CardHistory, useAttentionQueue } from "../notifications/cards/AttentionQueue";
 import { pendingFor } from "../notifications/cards/cardText";
 import { OPEN_CARD_EVENT, type OpenCardDetail } from "../notifications/openChat";
+import { showingQueue } from "../notifications/queue";
 import { useNoticeRegion } from "../notifications/regions";
 import { AdvancedTools } from "./AdvancedTools";
 import "./attentionShell.css";
@@ -79,6 +80,8 @@ export interface AttentionShellProps {
   surfaces: ReactNode;
   taskItems: ReactNode;
   dialogs: ReactNode;
+  /** The left column's Attention: no conversation is chosen, so the next message goes to the attention conversation. */
+  onAttentionConversation(): void;
 }
 
 function Glyph({ path }: { path: string }) {
@@ -100,6 +103,7 @@ export function AttentionShell(props: AttentionShellProps) {
     if (props.conversationActive && !active.current) setDrawer(true);
     active.current = props.conversationActive;
   }, [props.conversationActive]);
+  useEffect(() => { showingQueue(view === "attention"); return () => showingQueue(false); }, [view]);
   const open = (page: SidePage) => setSide((current) => (current === page ? null : page));
   const pageLabel = (page: SidePage) => t(`shell.side.${page}` as MessageKey);
   useCommandActions({ "view.tab.attention": { run: () => props.onView("attention") } });
@@ -153,7 +157,7 @@ export function AttentionShell(props: AttentionShellProps) {
 
     <nav className="attention-shell__left" id="attention-shell-left" aria-label={t("shell.projects")}>
       <button type="button" className="attention-shell__row attention-shell__row--attention" aria-current={view === "attention" ? "page" : undefined}
-        data-command="view.tab.attention" onClick={() => { props.onView("attention"); setLeftOpen(false); }}>
+        data-command="view.tab.attention" onClick={() => { props.onView("attention"); props.onAttentionConversation(); setLeftOpen(false); }}>
         <Glyph path={QUEUE} /><span>{t("shell.view.attention")}</span>
         {attentionCount > 0 && <span className="attention-shell__count">{attentionCount}</span>}
       </button>

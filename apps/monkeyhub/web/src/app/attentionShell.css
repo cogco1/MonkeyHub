@@ -111,6 +111,8 @@
   .attention-shell__panel{width:min(var(--panel-width),calc(100vw - 2 * var(--shell-gap,0px)));border-right:0}
   .attention-shell:not([data-side=closed]) .attention-shell__scrim--side{display:block;position:absolute;inset:0;z-index:29;border:0;background:var(--scrim,#0006)}
 }
+/* 2-3a: where the next message goes, above what it changes. */
+.attention-shell .chat-target__to{overflow:hidden;color:var(--ink);font-weight:600;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:720px){
   .attention-shell{--top-height:48px;grid-template-columns:minmax(0,1fr)}
   .attention-shell__left-toggle{display:inline-flex}

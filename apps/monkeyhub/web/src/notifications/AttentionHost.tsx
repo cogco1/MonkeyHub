@@ -72,9 +72,9 @@ function Notice({ notice, words, visible, onOpen, onDismiss }: {
     <p className="attention-toast__text">
       <span id={sentence}>{noticeText(notice, words)}</span>
       <span className="attention-toast__dot" aria-hidden="true">·</span>
-      <button type="button" className="attention-toast__view" aria-describedby={sentence} onClick={() => onOpen(notice)}>{words.view}</button>
+      <button type="button" className="attention-toast__view" data-command="view.notice.open" aria-describedby={sentence} onClick={() => onOpen(notice)}>{words.view}</button>
     </p>
-    <button type="button" className="attention-toast__close" aria-label={words.dismiss} aria-describedby={sentence} title={words.dismiss}
+    <button type="button" className="attention-toast__close" data-command="view.notice.dismiss" aria-label={words.dismiss} aria-describedby={sentence} title={words.dismiss}
       onClick={() => onDismiss(notice)}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" aria-hidden="true"><path d="m7 7 10 10M7 17 17 7" /></svg>
     </button>

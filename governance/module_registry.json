@@ -1068,6 +1068,12 @@
             ]
           },
           {
+            "id": "view.notice.open",
+            "label": "Show what a notice is about",
+            "label_zh": "查看提示说的事",
+            "entries": []
+          },
+          {
             "id": "view.notice.read_latest",
             "label": "Read the latest version",
             "label_zh": "读取最新版本",

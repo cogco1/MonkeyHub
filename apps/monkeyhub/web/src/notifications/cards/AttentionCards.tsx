@@ -28,6 +28,8 @@ interface CardProps {
   card: AttentionCard;
   /** The project a card belongs to, as the shell names it; left out where the page shows one project. */
   project?: string | null;
+  /** Arrived while the list was on screen: marked for a moment. */
+  fresh?: boolean;
 }
 
 /** One card's pending action and the Hub's refusal of the last one, kept with the card. */
@@ -64,7 +66,7 @@ function Opens({ refs }: { refs: readonly CommandRef[] }) {
   })}</div>;
 }
 
-function CardFrame({ card, project, compact = false, children }: CardProps & { compact?: boolean; children?: ReactNode }) {
+function CardFrame({ card, project, fresh = false, compact = false, children }: CardProps & { compact?: boolean; children?: ReactNode }) {
   const { language } = usePreferences();
   const t = useT();
   const { busy, failure, act } = useCardActions();
@@ -73,7 +75,7 @@ function CardFrame({ card, project, compact = false, children }: CardProps & { c
   const chosen = chosenOption(card);
   const pending = isPending(card);
   const reason = card.recommendation ? say(card.recommendation.reason, card.recommendation.reasonZh, language) : null;
-  return <article className="attention-card" id={`attention-card-${card.id}`} tabIndex={-1} data-card={card.id} data-channel={card.channel}
+  return <article className="attention-card" id={`attention-card-${card.id}`} tabIndex={-1} data-card={card.id} data-fresh={fresh || undefined} data-channel={card.channel}
     data-kind={card.kind} data-state={card.state} aria-labelledby={`attention-card-${card.id}-title`}>
     <header className="attention-card__head">
       <p className="attention-card__eyebrow">

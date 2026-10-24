@@ -11,7 +11,8 @@ import { createProjectWorkspaceFixture } from "./projectWorkspaceFixture.mjs";
 // conversation drawer above the composer (lying over the Board and the model), the side panel's
 // pages, the notices clear of the side panel, and the phone drawers. One pass serves the attention queue
 // (1-4): its cards on the Attention page, their answers, the handled and set-aside pages, and a new card's
-// notice kept above the model's floating toolbar.
+// notice kept above the model's floating toolbar, All as recommended and its undo, and a message sent with no
+// conversation open, which goes to the project's attention conversation.
 // ATTENTION_SHELL_SHOTS=<dir> saves desktop and phone, light and dark. With ATTENTION_SHELL_STYLE=board the
 // shots are drawn in that interface style too, on a build that has it.
 const root = path.resolve(process.env.MONKEYHUB_WEB_DIST ?? fileURLToPath(new URL("../dist/", import.meta.url)));
@@ -105,7 +106,10 @@ const seedCards = () => [
     options: [answer("say", "Say it", "我来说", "把你写的话交给对话", { action: { commandId: "chat.composer.send", args: {} }, undoable: true })] }),
 ];
 let cards = [];
-const attentionActions = [], attentionNotes = [];
+const bulks = new Map();
+// Cards whose undo finds the project moved on: the Hub leaves them handled and asks instead.
+const movedOnUndo = new Set(["att_v11b"]);
+const attentionActions = [], attentionNotes = [], chatPosts = [];
 const route = async (handler) => {
   const request = handler.request(), url = new URL(request.url()), method = request.method();
   if (url.pathname === "/api/runtime/events") return handler.continue();
@@ -139,10 +143,25 @@ const route = async (handler) => {
     models: ["fixture-model"], modelCatalog: "ready", modelDetail: "Fixture" }]);
   if (url.pathname === "/api/chat/sessions" && method === "GET") return json(listed !== projects ? []
     : sessions.filter((row) => Boolean(row.archived) === (url.searchParams.get("archived") === "true")).map(summary));
+  if (url.pathname === "/api/chat/sessions" && method === "POST") {
+    const project = projects.find((row) => row.projectDir === data().projectDir);
+    const session = { id: `new-${sessions.length}`, projectId: project.projectId, projectDir: project.projectDir, title: "新对话", provider: "codex",
+      status: "idle", createdAt: stamp(), updatedAt: stamp(), messages: [] };
+    sessions.unshift(session);
+    return json({ ...session, attention: summary(session).attention });
+  }
   const archive = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)\/archive$/);
   if (archive && method === "PUT") {
     const session = sessions.find((row) => row.id === archive[1]);
     Object.assign(session, { archived: data().archived, updatedAt: new Date().toISOString() });
+    return json({ ...session, attention: summary(session).attention });
+  }
+  const post = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)\/messages$/);
+  if (post && method === "POST") {
+    const session = sessions.find((row) => row.id === post[1]);
+    chatPosts.push([session.id, data().content]);
+    session.messages.push(message(`${session.id}-${session.messages.length}`, "user", data().content));
+    session.updatedAt = stamp();
     return json({ ...session, attention: summary(session).attention });
   }
   const chat = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)$/);
@@ -160,6 +179,33 @@ const route = async (handler) => {
         open: count(project.projectId, ["open", "review"]), later: count(project.projectId, ["later"]), working: count(project.projectId, ["working"]) }));
       const total = (key) => rows.reduce((sum, row) => sum + row[key], 0);
       return json({ projects: rows, hub: null, open: total("open"), later: total("later"), working: total("working") });
+    }
+    // The project's attention conversation, opened on first need.
+    if (url.pathname === "/api/attention/conversation" && method === "POST") {
+      const project = projects.find((row) => row.projectDir === data().projectDir);
+      const id = `att-conv-${project.projectId}`;
+      if (!sessions.some((row) => row.id === id)) sessions.unshift({ id, projectId: project.projectId, projectDir: project.projectDir, title: "关注",
+        provider: "codex", status: "idle", createdAt: stamp(), updatedAt: stamp(), messages: [] });
+      return json({ sessionId: id });
+    }
+    if (url.pathname === "/api/attention/bulk" && method === "POST") {
+      const items = data().ids.map((id) => cards.find((card) => card.id === id));
+      for (const item of items) Object.assign(item, { state: "done", updatedAt: stamp(),
+        resolution: { optionId: item.recommendation.optionId, by: "bulk", at: stamp(), undo: { action: item.options[0].action } } });
+      attentionActions.push(["bulk", items.map((item) => item.id).join(","), null]);
+      bulks.set("bulk-1", items.map((item) => item.id));
+      announce("attention/changed");
+      return json({ bulkId: "bulk-1", items, skipped: [] });
+    }
+    const bulkUndo = url.pathname.match(/^\/api\/attention\/bulk\/([^/]+)\/undo$/);
+    if (bulkUndo && method === "POST") {
+      const ids = bulks.get(bulkUndo[1]);
+      const items = ids.filter((id) => !movedOnUndo.has(id)).map((id) => cards.find((card) => card.id === id));
+      for (const item of items) Object.assign(item, { state: "open", resolution: null, updatedAt: stamp() });
+      attentionActions.push(["bulk_undo", bulkUndo[1], null]);
+      announce("attention/changed");
+      return json({ bulkId: bulkUndo[1], items,
+        skipped: ids.filter((id) => movedOnUndo.has(id)).map((id) => ({ id, code: "ATTENTION_UNDO_MOVED", detail: "The project moved on" })) });
     }
     const act = url.pathname.match(/^\/api\/attention\/([^/]+)\/(resolve|later|dismiss|reopen|undo)$/);
     if (act && method === "POST") {
@@ -399,6 +445,69 @@ try {
   await queuePage.waitForFunction(() => document.activeElement?.id === "attention-card-att_ask_next");
   assert.equal(await queuePage.locator(".attention-toast").filter({ hasText: "楼梯已经改过了" }).count(), 0, "nor one the undo raised");
   await queuePage.getByRole("button", { name: "收起侧栏" }).first().click();
+  // Two or more decisions whose recommendation can be taken back are answered at once, and taken back as one; V13's
+  // archive could not be, so it is left to the person.
+  const archiveCard = (id, titleZh, undoable, projectId = "A") => queueCard(id, projectId, { channel: "decide", kind: "choice", title: titleZh, titleZh,
+    options: [answer("archive", "Archive", "归档", "归档这一版", { recommended: true, undoable }), answer("keep", "Keep", "留着", "先不动")],
+    recommendation: { optionId: "archive", reason: "Conflicts with the current design", reasonZh: "和当前方案冲突" }, createdAt: stamp(), updatedAt: stamp() });
+  cards.push(archiveCard("v11b", "V11b 和当前冲突 78 处，归档吗", true), archiveCard("v13", "V13 和 V11b 一样，归档吗", false));
+  announce("attention/changed");
+  // On the Attention page they arrive marked in the list, not as notices.
+  await queued("V11b 和当前冲突 78 处，归档吗").and(queuePage.locator("[data-fresh]")).waitFor();
+  assert.equal(await queuePage.locator(".attention-toast").filter({ hasText: "V11b" }).count(), 0, "a card arriving in the list on screen is no notice");
+  const bulk = queuePage.locator(".attention-queue__bulk");
+  await bulk.getByRole("button", { name: "全部按建议（2）" }).waitFor();
+  const names = await bulk.locator(".attention-queue__bulk-names").textContent();
+  assert.ok(names.includes("V16 和 V17 留哪个") && names.includes("V11b 和当前冲突 78 处，归档吗") && !names.includes("V13"), `the button names what it answers: ${names}`);
+  await shoot(queuePage, "attention-queue-bulk-desktop-light");
+  await bulk.getByRole("button", { name: "全部按建议（2）" }).click();
+  await bulk.getByText("已按建议处理 2 张").waitFor();
+  await queued("V11b 和当前冲突 78 处，归档吗").waitFor({ state: "detached" });
+  assert.ok(await queued("V13 和 V11b 一样，归档吗").isVisible(), "the one that could not be taken back waits for the person");
+  const [kind, bulkIds] = attentionActions.at(-1);
+  assert.deepEqual([kind, bulkIds.split(",").sort()], ["bulk", ["att_decide", "att_v11b"]], "the two recommended decisions that can be taken back");
+  // The undo says what it could not take back.
+  await bulk.getByRole("button", { name: "撤销" }).click();
+  await bulk.getByText("撤回了 1 张；1 张因为项目已经变了没撤，另起了卡问你").waitFor();
+  await queued("V16 和 V17 留哪个").waitFor();
+  assert.deepEqual(attentionActions.at(-1), ["bulk_undo", "bulk-1", null]);
+  assert.equal(await queuePage.locator(".attention-toast").filter({ hasText: "V16 和 V17" }).count(), 0, "what the undo brought back is no news");
+  // Another decision that can be taken back makes two again, and the button is back; across two projects it names them.
+  cards.push(archiveCard("v14", "Housing 的 V14 和 V13 一样，归档吗", true, "B"));
+  announce("attention/changed");
+  await bulk.getByRole("button", { name: "全部按建议（2）" }).waitFor();
+  const across = await bulk.locator(".attention-queue__bulk-names").textContent();
+  assert.ok(across.includes("Thi Hemp 墙身节点·V16 和 V17 留哪个") && across.includes("Housing 13 户·Housing 的 V14") && across.endsWith("，共涉及 2 个项目"),
+    `each card with its project: ${across}`);
+  // With no conversation chosen, a message goes to the project's attention conversation, which then opens.
+  assert.ok(await queuePage.locator(".attention-shell__drawer").isHidden());
+  assert.equal(await queuePage.locator(".attention-shell__recent .chat-thread[aria-current]").count(), 0, "no conversation is chosen");
+  assert.equal(await queuePage.locator(".attention-shell .chat-target__to").textContent(), "发到：关注对话");
+  await queuePage.locator(".attention-shell #chat-input").fill("楼板再薄一点");
+  await queuePage.keyboard.press("Enter");
+  await queuePage.locator(".attention-shell__drawer").getByText("楼板再薄一点").waitFor();
+  assert.deepEqual(chatPosts, [["att-conv-A", "楼板再薄一点"]]);
+  // A conversation chosen in the column takes the next message, with its drawer closed too; the line above the
+  // composer says where it goes.
+  const sendTo = queuePage.locator(".attention-shell .chat-target__to");
+  const composerInput = queuePage.locator(".attention-shell #chat-input");
+  const sendLine = async (text) => { await composerInput.fill(text); await composerInput.press("Enter");
+    await queuePage.locator(".attention-shell__drawer").getByText(text).waitFor(); };
+  await queuePage.locator(".attention-shell__recent .chat-thread").filter({ hasText: /^楼板再薄一点/ }).click();
+  await queuePage.locator(".attention-shell__drawer").getByText("我把 V16 的楼板改成只留一层胶合板。").waitFor();
+  await queuePage.getByRole("button", { name: "收起对话" }).click();
+  await queuePage.locator(".attention-shell__drawer").waitFor({ state: "hidden" });
+  assert.equal(await sendTo.textContent(), "发到：楼板再薄一点");
+  await sendLine("再薄 5 毫米");
+  assert.deepEqual(chatPosts.at(-1), ["a1", "再薄 5 毫米"], "the chosen conversation, not the attention one");
+  // A new conversation the person asked for is started by its first message.
+  await queuePage.getByRole("button", { name: "在Thi Hemp 墙身节点里开新对话" }).click();
+  assert.equal(await sendTo.textContent(), "发到：新对话");
+  await sendLine("另开一条");
+  assert.match(chatPosts.at(-1)[0], /^new-/, "a new conversation");
+  // The column's Attention chooses none again: the next message goes to the attention conversation.
+  await queuePage.locator(".attention-shell__row--attention").click();
+  assert.equal(await sendTo.textContent(), "发到：关注对话");
   // A card that comes to need the architect is a notice; over the model, with the side panel open, it keeps
   // left of the side and above the floating toolbar where they share columns.
   await queuePage.keyboard.press("Alt+3");

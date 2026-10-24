@@ -7,7 +7,7 @@
  * unavailable, and the notices keep reading the conversations as before.
  */
 
-import type { AttentionCard, AttentionSummary, CardActionResult, CardState } from "./cards/types";
+import type { AttentionCard, AttentionSummary, BulkResult, CardActionResult, CardState } from "./cards/types";
 
 /** What the Hub publishes on its event stream after any change to the queue. */
 export const ATTENTION_CHANGED = "attention/changed";
@@ -100,6 +100,11 @@ const post = <T>(path: string, body?: unknown) => call<T>(path, { method: "POST"
  */
 export const shownHere = new Set<string>();
 
+let listShown = false;
+/** Whether the queue's own list is on screen (the attention shell's Attention page): a card arriving there is seen in it. */
+export const showingQueue = (shown: boolean) => { listShown = shown; };
+export const queueOnScreen = () => listShown;
+
 // The queue is read again before the action's answer comes back, so a card it raised is there to be shown.
 const acted = async <T>(action: Promise<T>, brings: (result: T) => readonly (string | null | undefined)[] = () => []): Promise<T> => {
   try {
@@ -113,13 +118,38 @@ const acted = async <T>(action: Promise<T>, brings: (result: T) => readonly (str
 export const resolveCard = (id: string, optionId: string, note?: string) =>
   acted(post<CardActionResult>(`/api/attention/${encodeURIComponent(id)}/resolve`, note === undefined ? { optionId } : { optionId, note }),
     (result) => [result.followUp?.id]);
-/** A card the person brings back is marked before the Hub is asked, whose change may be read before its answer. */
-const bringingBack = async <T>(id: string, action: () => Promise<T>): Promise<T> => {
-  shownHere.add(id);
-  try { return await action(); } catch (cause) { shownHere.delete(id); throw cause; }
+/** Cards the person brings back are marked before the Hub is asked, whose change may be read before its answer. */
+const bringingBack = async <T>(ids: readonly string[], action: () => Promise<T>): Promise<T> => {
+  for (const id of ids) shownHere.add(id);
+  try { return await action(); } catch (cause) { for (const id of ids) shownHere.delete(id); throw cause; }
 };
-export const undoCard = (id: string) => bringingBack(id, () =>
+export const undoCard = (id: string) => bringingBack([id], () =>
   acted(post<CardActionResult>(`/api/attention/${encodeURIComponent(id)}/undo`), (result) => [result.followUp?.id]));
 export const laterCard = (id: string) => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/later`));
 export const dismissCard = (id: string) => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/dismiss`));
-export const reopenCard = (id: string) => bringingBack(id, () => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/reopen`)));
+export const reopenCard = (id: string) => bringingBack([id], () => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/reopen`)));
+
+/** "All as recommended" over the cards the person has in view, taken back as one. */
+export const bulkRecommended = (ids: readonly string[]) => acted(post<BulkResult>("/api/attention/bulk", { ids, mode: "recommended" }));
+export const undoBulk = async (bulkId: string, ids: readonly string[]) => {
+  const result = await bringingBack(ids, () => acted(post<BulkResult>(`/api/attention/bulk/${encodeURIComponent(bulkId)}/undo`)));
+  // What the undo left where it was did not come back.
+  for (const row of result.skipped) shownHere.delete(row.id);
+  return result;
+};
+
+let conversationServed = true;
+/**
+ * The project's attention conversation (1-2), where the new shell's input goes while no conversation is open:
+ * the Hub opens it on first need. null where this Hub does not have it yet, which is then asked no more.
+ */
+export async function attentionConversation(projectDir: string): Promise<string | null> {
+  if (!conversationServed) return null;
+  try {
+    return (await post<{ sessionId: string }>("/api/attention/conversation", { projectDir })).sessionId;
+  } catch (cause) {
+    if ((cause as { unserved?: boolean }).unserved) conversationServed = false;
+    else throw cause;
+    return null;
+  }
+}

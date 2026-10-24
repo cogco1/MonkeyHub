@@ -16,7 +16,7 @@ import {
   withoutChatPermissions, type AttentionEvent, type Snapshot,
 } from "./attention";
 import { openCard, openChat } from "./openChat";
-import { queueSnapshot, shownHere, subscribeQueue } from "./queue";
+import { queueOnScreen, queueSnapshot, shownHere, subscribeQueue } from "./queue";
 
 /** How often the chat list is read while a turn runs or waits. A reading never overlaps the one before it. */
 export const POLL_MS = 4000;
@@ -117,8 +117,10 @@ export function useAttention(language: Language): Attention {
   const cardBaseline = useRef<Set<string> | null>(null);
   useEffect(() => {
     if (!fromQueue) { cardBaseline.current = null; return; }
-    // A card the person's own action brought up here is in front of them already.
-    raise(cardNews(cardBaseline.current, queue.cards, shownHere), (stack) => settleCards(withoutChatPermissions(stack), queue.cards));
+    // A card the person's own action brought up here is in front of them already, and so is every card while
+    // the queue's list is on screen: it arrives highlighted there (AttentionQueue) instead.
+    const seenHere = queueOnScreen() && shown() ? new Set(queue.cards.map((card) => card.id)) : shownHere;
+    raise(cardNews(cardBaseline.current, queue.cards, seenHere), (stack) => settleCards(withoutChatPermissions(stack), queue.cards));
     cardBaseline.current = pendingCards(queue.cards);
     for (const id of [...shownHere]) if (cardBaseline.current.has(id)) shownHere.delete(id);
   }, [fromQueue, queue, raise]);
