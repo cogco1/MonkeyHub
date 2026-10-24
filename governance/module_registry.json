@@ -4013,13 +4013,15 @@
             "id": "attention.queue.bulk_recommended",
             "label": "Take every recommendation",
             "label_zh": "全部按建议",
-            "entries": []
+            "entries": [],
+            "in_place": true
           },
           {
             "id": "attention.queue.bulk_undo",
             "label": "Undo taking every recommendation",
             "label_zh": "撤销全部按建议",
-            "entries": []
+            "entries": [],
+            "in_place": true
           },
           {
             "id": "attention.queue.answer_permission",
@@ -4128,7 +4130,8 @@
             ],
             "aliases": [
               "send"
-            ]
+            ],
+            "place": "composer"
           },
           {
             "id": "chat.composer.interject",
@@ -4136,7 +4139,8 @@
             "label_zh": "插话",
             "entries": [
               "壳89"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "chat.composer.stop",
@@ -4144,7 +4148,8 @@
             "label_zh": "停止这一轮",
             "entries": [
               "壳88"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "chat.composer.menu",
@@ -4152,7 +4157,8 @@
             "label_zh": "附件与新话题",
             "entries": [
               "壳81"
-            ]
+            ],
+            "place": "composer"
           },
           {
             "id": "chat.composer.attach",
@@ -4162,7 +4168,8 @@
               "壳74",
               "壳82"
             ],
-            "opens": true
+            "opens": true,
+            "in_place": true
           },
           {
             "id": "chat.composer.topic",
@@ -4170,7 +4177,8 @@
             "label_zh": "新话题",
             "entries": [
               "壳83"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "chat.composer.remove_topic",
@@ -4178,7 +4186,8 @@
             "label_zh": "移除新话题",
             "entries": [
               "壳75"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "chat.composer.remove_images",
@@ -4186,7 +4195,8 @@
             "label_zh": "移除讨论的图片",
             "entries": [
               "壳77"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "chat.composer.remove_attachment",
@@ -4197,7 +4207,8 @@
             ],
             "entries": [
               "壳79"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "chat.permission.choose",
@@ -4208,7 +4219,8 @@
             ],
             "entries": [
               "壳53"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "chat.permission.cancel",
@@ -4216,7 +4228,8 @@
             "label_zh": "取消授权请求",
             "entries": [
               "壳53"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "chat.archive.toggle",
@@ -4227,7 +4240,8 @@
             ],
             "entries": [
               "壳34"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "chat.archive.view",
@@ -4243,7 +4257,8 @@
             "label_zh": "恢复此对话",
             "entries": [
               "壳71"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "chat.suggestion.accept",
@@ -4251,7 +4266,8 @@
             "label_zh": "按建议做",
             "entries": [
               "壳57"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "chat.suggestion.adjust",
@@ -4259,7 +4275,8 @@
             "label_zh": "调整想法",
             "entries": [
               "壳58"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "chat.suggestion.dismiss",
@@ -4267,7 +4284,8 @@
             "label_zh": "暂时跳过建议",
             "entries": [
               "壳59"
-            ]
+            ],
+            "in_place": true
           }
         ]
       },
@@ -4394,7 +4412,8 @@
             "entries": [
               "窗4",
               "窗6"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "project.create.add_existing_confirm",
@@ -4403,7 +4422,8 @@
             "entries": [
               "窗8",
               "窗10"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "project.archive.export_confirm",
@@ -4412,7 +4432,8 @@
             "entries": [
               "窗12",
               "窗14"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "project.archive.restore_confirm",
@@ -4422,7 +4443,8 @@
               "窗16",
               "窗17",
               "窗20"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "project.archive.open_restored",
@@ -4431,7 +4453,8 @@
             "entries": [
               "窗18"
             ],
-            "opens": true
+            "opens": true,
+            "in_place": true
           }
         ]
       },
@@ -4575,7 +4598,8 @@
             "label_zh": "展开这一轮的步骤",
             "entries": [
               "壳51"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "view.conversation.jump_latest",
@@ -4583,7 +4607,8 @@
             "label_zh": "跳到最新消息",
             "entries": [
               "壳67"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "view.tab.cancel",
@@ -4591,7 +4616,8 @@
             "label_zh": "取消打开工作面",
             "entries": [
               "壳90"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "view.tab.layout",
@@ -5390,7 +5416,8 @@
             ],
             "entries": [
               "窗47"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "view.open_file.image",
@@ -5399,7 +5426,8 @@
             "entries": [
               "壳62"
             ],
-            "opens": true
+            "opens": true,
+            "in_place": true
           },
           {
             "id": "view.open_file.document",
@@ -5408,7 +5436,8 @@
             "entries": [
               "壳63"
             ],
-            "opens": true
+            "opens": true,
+            "in_place": true
           },
           {
             "id": "view.open_file.download",
@@ -5417,7 +5446,8 @@
             "entries": [
               "壳64",
               "窗2"
-            ]
+            ],
+            "in_place": true
           }
         ]
       },
@@ -5567,7 +5597,8 @@
             "label_zh": "语言",
             "entries": [
               "窗48"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.appearance.theme",
@@ -5575,7 +5606,8 @@
             "label_zh": "主题",
             "entries": [
               "窗49"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.appearance.size",
@@ -5583,7 +5615,8 @@
             "label_zh": "字号",
             "entries": [
               "窗50"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.chat_model.change",
@@ -5591,7 +5624,8 @@
             "label_zh": "更换模型",
             "entries": [
               "壳68"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.chat_model.choose",
@@ -5599,7 +5633,8 @@
             "label_zh": "这个对话的模型",
             "entries": [
               "壳84"
-            ]
+            ],
+            "place": "composer"
           },
           {
             "id": "preference.chat_model.custom_apply",
@@ -5608,7 +5643,8 @@
             "entries": [
               "壳85",
               "壳86"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.chat_model.custom_cancel",
@@ -5616,7 +5652,8 @@
             "label_zh": "取消自定义模型 ID",
             "entries": [
               "壳87"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.chat_model.default_cli",
@@ -5624,7 +5661,8 @@
             "label_zh": "默认 CLI",
             "entries": [
               "窗52"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.chat_model.default_model",
@@ -5632,7 +5670,8 @@
             "label_zh": "默认模型",
             "entries": [
               "窗53"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.chat_model.default_custom",
@@ -5640,7 +5679,8 @@
             "label_zh": "自定义默认模型 ID",
             "entries": [
               "窗54"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.chat_provider.sign_in",
@@ -5651,7 +5691,8 @@
             ],
             "entries": [
               "窗55"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.chat_provider.plan_provider",
@@ -5659,7 +5700,8 @@
             "label_zh": "Coding Plan 服务商",
             "entries": [
               "窗56"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.chat_provider.plan_url",
@@ -5667,7 +5709,8 @@
             "label_zh": "Coding Plan 端点地址",
             "entries": [
               "窗57"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.secret.key",
@@ -5679,7 +5722,8 @@
             "entries": [
               "窗58",
               "窗65"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.secret.clear",
@@ -5691,7 +5735,8 @@
             "entries": [
               "窗59",
               "窗66"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.secret.get_link",
@@ -5703,7 +5748,8 @@
             "entries": [
               "窗60",
               "窗68"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.render_provider.provider",
@@ -5711,7 +5757,8 @@
             "label_zh": "图像供应商",
             "entries": [
               "窗62"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.render_provider.model",
@@ -5719,7 +5766,8 @@
             "label_zh": "图像模型",
             "entries": [
               "窗63"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.render_provider.timeout",
@@ -5727,7 +5775,8 @@
             "label_zh": "渲染请求超时",
             "entries": [
               "窗64"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.render_provider.check",
@@ -5735,7 +5784,8 @@
             "label_zh": "检查渲染密钥",
             "entries": [
               "窗67"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.workspace.projects_folder",
@@ -5743,7 +5793,8 @@
             "label_zh": "新项目所在文件夹",
             "entries": [
               "窗69"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.workspace.library_project",
@@ -5751,7 +5802,8 @@
             "label_zh": "技能库项目",
             "entries": [
               "窗70"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "preference.developer_mode",
@@ -5759,7 +5811,8 @@
             "label_zh": "开发者模式",
             "entries": [
               "窗72"
-            ]
+            ],
+            "in_place": true
           }
         ]
       },
@@ -5821,7 +5874,8 @@
             "label_zh": "重启更新",
             "entries": [
               "窗83"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "hub.update_check_now",
@@ -5829,7 +5883,8 @@
             "label_zh": "立即检查更新",
             "entries": [
               "窗84"
-            ]
+            ],
+            "in_place": true
           },
           {
             "id": "hub.update_patch",
@@ -5838,7 +5893,8 @@
             "entries": [
               "窗86"
             ],
-            "opens": true
+            "opens": true,
+            "in_place": true
           },
           {
             "id": "hub.update_auto",
@@ -5846,7 +5902,8 @@
             "label_zh": "自动更新",
             "entries": [
               "窗87"
-            ]
+            ],
+            "in_place": true
           }
         ]
       },

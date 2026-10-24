@@ -5732,7 +5732,7 @@ export const COMMAND_TREE: CommandTree = {
       "group": "shell",
       "channel": "front",
       "tier": "basic",
-      "place": null,
+      "place": "composer",
       "when": [],
       "shortcut": null,
       "entries": [
@@ -5796,7 +5796,7 @@ export const COMMAND_TREE: CommandTree = {
       "group": "shell",
       "channel": "front",
       "tier": "basic",
-      "place": null,
+      "place": "composer",
       "when": [],
       "shortcut": null,
       "entries": [
@@ -8402,7 +8402,7 @@ export const COMMAND_TREE: CommandTree = {
       "group": "settings",
       "channel": "side",
       "tier": "basic",
-      "place": null,
+      "place": "composer",
       "when": [],
       "shortcut": null,
       "entries": [
