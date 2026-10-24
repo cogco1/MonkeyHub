@@ -10,6 +10,7 @@ import unittest
 
 from fastapi.testclient import TestClient
 
+from archflow.contracts.failures import failure_body
 from archflow.project.repository import ProjectWriterBusy
 from monkeyarch.authoring.frame import FrameError
 from monkeyarch.domain.massing_transforms import MassingTransformError
@@ -228,7 +229,8 @@ class OwnerRefusalTests(unittest.TestCase):
             with self.subTest(refusal=type(refusal).__name__):
                 response = self.client.get(f"/api/raises-owner-{index}")
                 self.assertEqual(response.status_code, OWNER_REFUSALS[type(refusal)])
-                self.assertEqual(response.json(), {"code": refusal.code, "detail": str(refusal)})
+                # A code the shared failure table registers also says its category and whether a resend can succeed.
+                self.assertEqual(response.json(), failure_body(refusal.code, str(refusal)))
                 self.assertEqual(
                     response.json(),
                     StudioError(OWNER_REFUSALS[type(refusal)], refusal.code, str(refusal)).body(),
