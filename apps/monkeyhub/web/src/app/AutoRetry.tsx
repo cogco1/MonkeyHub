@@ -34,5 +34,6 @@ export function AutoRetry({ failure, retry, place, children, ...button }: Props)
     return () => window.clearTimeout(timer);
   }, [failure, key, button.disabled]);
   if (waiting) return <span className="auto-retry" role="status">{t("retry.auto")}</span>;
-  return <button type="button" {...button} onClick={() => { tried.delete(key); latest.current(); }}>{children}</button>;
+  // The command the caller names (a wrapper the entry rules list), carried by the button it renders.
+  return <button type="button" {...button} data-command={button["data-command"]} onClick={() => { tried.delete(key); latest.current(); }}>{children}</button>;
 }
