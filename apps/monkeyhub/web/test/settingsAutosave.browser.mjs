@@ -149,7 +149,7 @@ try {
 
   await step("Settings opens on Display, its pages follow the list, and a style card saves at once", async () => {
     assert.equal(await settingsTab("Display").getAttribute("aria-selected"), "true");
-    assert.deepEqual(await dialog.getByRole("tab").allInnerTexts(), ["Display", "Conversations", "AI Render", "Workspace", "Software update"]);
+    assert.deepEqual(await dialog.getByRole("tab").allInnerTexts(), ["Display", "Conversations", "AI Render", "Workspace", "What the AI may do", "Software update"]);
     const before = userWrites.length;
     await cmd(dialog, "preference.appearance.style_titleblock").check();
     await until(() => userWrites.length === before + 1, "choosing a style writes the preferences document");
