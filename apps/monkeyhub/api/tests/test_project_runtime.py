@@ -688,7 +688,7 @@ for _ in range(5):
             proposal_a = self.propose(client, a)
             proposal_b = self.propose(client, b, project_id=other_id)
             operation_id = str(uuid4())
-            candidate_id = "hub-cand-" + operation_id.replace("-", "")
+            candidate_id = "hub-cand-" + operation_id.replace("-", "")[:16]
             barrier = threading.Barrier(3)
 
             def submit(runtime_id, proposal):

@@ -225,7 +225,9 @@ class OperationManager:
                 return existing, False
             route = urlsplit(path).path
             published = (retained or {}).get("published", {})
-            candidate = f"hub-cand-{UUID(operation_id).hex}" if method == "POST" and _CANDIDATE_REQUEST.fullmatch(route) else None
+            # The run id is the first 16 hex of the request's UUID: a candidate's records sit below it, and the full
+            # 32 left too little of MAX_PATH where Windows has long paths off. syncModelDraft.ts derives the same id.
+            candidate = f"hub-cand-{UUID(operation_id).hex[:16]}" if method == "POST" and _CANDIDATE_REQUEST.fullmatch(route) else None
             accepted = _ACCEPT_REQUEST.fullmatch(route) if method == "POST" else None
             if accepted:
                 candidate = accepted.group(1)

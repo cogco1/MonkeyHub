@@ -11,7 +11,7 @@ const source: ModelDraftSource = { projectId: "project", stateDigest: "original-
 const frame: FrameDto = { levels: [0, 8].map(elevation => ({ levelId: `level-${elevation}`, elevation,
   role: "datum", elementsOn: [], closure: [] })), axes: [], honesty: [] };
 const requestId = "12345678-1234-1234-1234-123456789abc";
-const candidateId = "hub-cand-12345678123412341234123456789abc";
+const candidateId = "hub-cand-1234567812341234";
 const accepted: CandidateAcceptedDto = { jobId: "job-one", candidateId, status: "queued" };
 const snapshot = (...commands: DraftCommand[]): DraftSnapshot => ({ commands, objects: new Map() });
 const draw = (elementId = "drawn-a"): DraftCommand => ({ kind: "sketch", elementId, componentId: "room",
