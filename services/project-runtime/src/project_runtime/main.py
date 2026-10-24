@@ -750,6 +750,17 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _serve(args: argparse.Namespace, settings: StudioSettings) -> None:
+    from .application import drawing_pool
+
+    # The serving process solves its drawings in worker processes (#300); a test's app does not.
+    drawing_pool.start()
+    try:
+        _serve_app(args, settings)
+    finally:
+        drawing_pool.stop()
+
+
+def _serve_app(args: argparse.Namespace, settings: StudioSettings) -> None:
     app = create_app(settings)
     app.state.server_version = SERVER_VERSION
     app.state.process_id = os.getpid()

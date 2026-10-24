@@ -11,6 +11,7 @@ PNG, retained together and registered as its PDF.
 from __future__ import annotations
 
 import base64
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 import hashlib
@@ -58,6 +59,7 @@ from ..binding import ProjectBinding
 from ..monitoring import StudioMonitor
 from .projection import StateProjection, project_state, require_readable
 from .projections import DOCUMENT_PAGE, ELEVATION, SECTION_PERSPECTIVE, SHEET, ProjectionQueue, on_demand_spec
+from . import drawing_pool
 from ..errors import StudioError
 
 
@@ -691,6 +693,31 @@ def _worn_materials(binding, model_source: ModelSource, source, object_ids) -> d
     return worn
 
 
+_drawing_locks: dict[tuple[str, str], list] = {}
+_drawing_locks_guard = threading.Lock()
+
+
+@contextmanager
+def drawing_lock(project_id: str, drawing_id: str):
+    """Hold one drawing id of one project: its requests take turns, other drawings do not wait (#300).
+
+    Taken before ``_document_source_lock`` and never while holding it.
+    """
+
+    key = (project_id, drawing_id)
+    with _drawing_locks_guard:
+        entry = _drawing_locks.setdefault(key, [threading.RLock(), 0])
+        entry[1] += 1
+    try:
+        with entry[0]:
+            yield
+    finally:
+        with _drawing_locks_guard:
+            entry[1] -= 1
+            if entry[1] == 0:
+                _drawing_locks.pop(key, None)
+
+
 def _registered_drawing(
     binding: ProjectBinding, monitor: StudioMonitor, operation: dict[str, Any], *, model_source: ModelSource | DrawingAssetSource,
     stage_ref: ProjectRecordRef | None, drawing_id: str, kind: str, what: str, same_recipe, freeze,
@@ -720,53 +747,57 @@ def _registered_drawing(
             details["emitted_object_ids"] = observed["emitted_object_ids"]
         observer(event)
 
-    with _document_source_lock:
-        closest, closest_checks = None, {}
-        for document in list_documents(binding, model_source.run_id):
-            checks = {
-                "drawing_id": "same" if document.drawing_id == drawing_id else "changed",
-                "source_stage_ref": "same" if document.source_stage_ref == selected_stage else "changed",
-                "model_source": "same" if _document_source(document) == model_source else "changed",
-                "view_recipe": "same" if same_recipe(document) else "changed",
-            }
-            if all(value == "same" for value in checks.values()):
-                details.update(cache_checks=checks, comparison_refs=[document.revision_ref],
-                               execution_path="retained_drawing")
-                try:
-                    document_bytes(binding, document.run_id, document.asset_sha256, document.revision_ref)
-                except StudioError:
-                    checks["bytes"] = "invalid"
-                    details.update(cache_status="refused", cache_reason="cached_document_unavailable")
-                    raise
-                checks["bytes"] = "same"
-                details.update(cache_status="hit", cache_reason="exact_registered_drawing",
-                               output_refs=[document.revision_ref], input_equivalent=True)
-                if monitor.store is not None and document.revision_ref is not None:
+    # One request at a time per drawing; other drawings solve meanwhile. The documents lock is held
+    # only to look for a registered revision and to register a new one, never while a view is solved.
+    with drawing_lock(binding.project_id, drawing_id):
+        with _document_source_lock:
+            closest, closest_checks = None, {}
+            for document in list_documents(binding, model_source.run_id):
+                checks = {
+                    "drawing_id": "same" if document.drawing_id == drawing_id else "changed",
+                    "source_stage_ref": "same" if document.source_stage_ref == selected_stage else "changed",
+                    "model_source": "same" if _document_source(document) == model_source else "changed",
+                    "view_recipe": "same" if same_recipe(document) else "changed",
+                }
+                if all(value == "same" for value in checks.values()):
+                    details.update(cache_checks=checks, comparison_refs=[document.revision_ref],
+                                   execution_path="retained_drawing")
                     try:
-                        retained = binding.repository.load_json(record_ref_from_uri(document.revision_ref, binding.project_id))
-                        backend = retained["projection"]["backend"]
-                        details["input_identity"].update(backend=backend["binding"], backend_version=backend["binding_version"])
-                    except Exception:
-                        # This optional diagnostic read cannot make a verified drawing unavailable.
-                        pass
-                return document
-            if document.drawing_id == drawing_id and (closest is None or
-                    sum(value == "same" for value in checks.values()) > sum(value == "same" for value in closest_checks.values())):
-                closest, closest_checks = document, checks
-        try:
-            refuse_other_kind(binding, drawing_id, kind, what)
-        except StudioError:
-            details.update(cache_status="refused", cache_reason="drawing_kind_changed")
-            raise
-        details.update(
-            cache_status="miss", cache_reason="no_registered_drawing" if closest is None else "registered_inputs_changed",
-            cache_checks={"drawing_id": "missing"} if closest is None else closest_checks,
-            comparison_refs=[] if closest is None else [closest.revision_ref], execution_path="full_projection",
-        )
+                        document_bytes(binding, document.run_id, document.asset_sha256, document.revision_ref)
+                    except StudioError:
+                        checks["bytes"] = "invalid"
+                        details.update(cache_status="refused", cache_reason="cached_document_unavailable")
+                        raise
+                    checks["bytes"] = "same"
+                    details.update(cache_status="hit", cache_reason="exact_registered_drawing",
+                                   output_refs=[document.revision_ref], input_equivalent=True)
+                    if monitor.store is not None and document.revision_ref is not None:
+                        try:
+                            retained = binding.repository.load_json(record_ref_from_uri(document.revision_ref, binding.project_id))
+                            backend = retained["projection"]["backend"]
+                            details["input_identity"].update(backend=backend["binding"], backend_version=backend["binding_version"])
+                        except Exception:
+                            # This optional diagnostic read cannot make a verified drawing unavailable.
+                            pass
+                    return document
+                if document.drawing_id == drawing_id and (closest is None or
+                        sum(value == "same" for value in checks.values()) > sum(value == "same" for value in closest_checks.values())):
+                    closest, closest_checks = document, checks
+            try:
+                refuse_other_kind(binding, drawing_id, kind, what)
+            except StudioError:
+                details.update(cache_status="refused", cache_reason="drawing_kind_changed")
+                raise
+            details.update(
+                cache_status="miss", cache_reason="no_registered_drawing" if closest is None else "registered_inputs_changed",
+                cache_checks={"drawing_id": "missing"} if closest is None else closest_checks,
+                comparison_refs=[] if closest is None else [closest.revision_ref], execution_path="full_projection",
+            )
         drawing = freeze(observe)
         details["executed_stages"].append("drawing.register")
         with monitor.measure("drawing.register", project_id=binding.project_id, run_id=model_source.run_id,
-                             source_ref=operation["source_ref"], details={"input_identity": details["input_identity"]}) as registration:
+                             source_ref=operation["source_ref"], details={"input_identity": details["input_identity"]}) as registration, \
+                _document_source_lock:
             run = binding.load_run(model_source.run_id)
             pages = _document_pages(drawing.png, "image/png")
             ref = binding.repository.put_json(
@@ -852,10 +883,12 @@ def generate_elevation(
             "view": recipe.to_dict(), "content": _drawn_content(source, verified)})
 
         def freeze(observe):
+            pool = drawing_pool.drawer()
             try:
                 return freeze_model_axis_elevation(
                     binding.repository, source=source, view=recipe, drawing_run_id=f"studio-drawing-{uuid4().hex}",
                     operation_observer=observe, parent_event_id=operation["event_id"], cache=cache,
+                    drawer=pool, verified=None if pool is None else pool.verified(source),
                 )
             except DrawingElevationError as exc:
                 raise StudioError(409, "DRAWING_GENERATION_FAILED", str(exc)) from exc
@@ -923,10 +956,12 @@ def generate_section_perspective(
             "view": request, "content": _drawn_content(source, verified)})
 
         def freeze(observe):
+            pool = drawing_pool.drawer()
             try:
                 return freeze_section_perspective(
                     binding.repository, source=source, view=view, drawing_run_id=f"studio-drawing-{uuid4().hex}",
                     operation_observer=observe, parent_event_id=operation["event_id"], cache=cache,
+                    drawer=pool, verified=None if pool is None else pool.verified(source),
                 )
             except SectionPerspectiveError as exc:
                 raise StudioError(422, exc.code, str(exc)) from exc
