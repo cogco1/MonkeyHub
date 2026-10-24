@@ -282,6 +282,17 @@ try {
   await page.waitForFunction(() => !document.querySelector(".attention-shell__surfaces .boot"));
   assert.equal(await page.locator(".menu-tab[aria-pressed=true]").textContent(), "画板");
   assert.ok(await page.locator(".attention-shell__queue").isHidden());
+  // Embedded, the Board's bar keeps its front commands; the rest are in the advanced tools and Ctrl K (G1).
+  const bar = page.locator(".attention-shell__surfaces .project-bar").first();
+  await bar.locator('[data-command="document.upload"]').waitFor();
+  for (const hidden of ["board.add_document_page.toggle_list", "board.manage.import_component_info"]) {
+    assert.equal(await bar.locator(`[data-command="${hidden}"]`).count(), 0, `the Board bar leaves out ${hidden}`);
+  }
+  assert.equal(await bar.locator(".monkeyboard-title").count(), 0, "and the board's title field");
+  await bar.locator('[data-command-arg="board_more"]').click();
+  assert.deepEqual(await bar.locator(".monkeyboard-actions-panel [data-command]").evaluateAll((items) => items.map((item) => item.getAttribute("data-command"))),
+    ["view.canvas.fit", "sketch.to_model.new_frame"], "More keeps Fit and New sketch frame");
+  await bar.locator('[data-command-arg="board_more"]').click();
   await shoot(page, "attention-board-desktop-light");
   await page.locator("body").click({ position: { x: 700, y: 870 } }).catch(() => undefined);
   await page.locator(".attention-shell__top").click({ position: { x: 1200, y: 20 } });
@@ -299,6 +310,18 @@ try {
   assert.ok((await box(composer)).height < 60, `the idle composer is one line (${(await box(composer)).height}px)`);
   await page.waitForFunction(() => [...document.querySelectorAll(".attention-shell__surfaces canvas")].some((canvas) => canvas.offsetParent && canvas.width > 0));
   await page.waitForFunction(() => !document.querySelector(".attention-shell__surfaces .boot"));
+  // The model's bar: More keeps the views, Fit selected and Screenshot; Versions and Export are in the advanced tools (G1).
+  const modelBar = page.locator(".attention-shell__surfaces .chat-project-workspace:not([hidden]) .project-bar");
+  for (const hidden of ['[data-command="design.go_to_step.versions"]', '[data-command-arg="modeling_export"]']) {
+    assert.equal(await modelBar.locator(hidden).count(), 0, `the model bar leaves out ${hidden}`);
+  }
+  await modelBar.locator('[data-command-arg="modeling_more"]').click();
+  const more = modelBar.locator("#stage-more-menu");
+  assert.deepEqual(await more.locator("[data-command]").evaluateAll((items) => items.map((item) => item.getAttribute("data-command"))),
+    ["view.model_camera.top", "view.model_camera.front", "view.model_camera.right", "view.model_camera.iso", "view.model_camera.perspective",
+      "view.model_camera.fit_selected", "model.capture"], "More keeps the views, Fit selected and Screenshot");
+  assert.equal(await more.locator("[data-display-style]").count(), 0, "a field that is not a command is left out too");
+  await modelBar.locator('[data-command-arg="modeling_more"]').click();
   await shoot(page, "attention-model-drawer-desktop-light");
   await page.getByRole("button", { name: "收起对话" }).click();
   assert.equal((await box(body)).height, withDrawer.height, "opening the drawer does not push the surface up");
@@ -341,10 +364,15 @@ try {
   });
   await clear("rail only");
   await page.locator(".attention-shell__rail-item").filter({ hasText: "后台" }).click();
-  // Ctrl+K from the top row's search.
+  // Ctrl+K from the top row's search; it opens a side page by its command, as the rail does.
+  assert.deepEqual(await page.locator(".attention-shell__rail-item").evaluateAll((items) => items.map((item) => item.getAttribute("data-command"))),
+    ["view.background.toggle", "view.design_history.toggle", "view.handled.toggle", "view.ignored.toggle", "view.advanced_tools.toggle"]);
   await page.locator(".attention-shell__search").click();
   await page.locator("dialog.command-palette[open]").waitFor();
-  await page.keyboard.press("Escape");
+  await page.locator("dialog.command-palette[open] input").fill("查看已忽略的卡");
+  await page.keyboard.press("Enter");
+  await page.locator(".attention-shell__side-tabs .menu-tab[aria-selected=true]").filter({ hasText: "已忽略" }).waitFor();
+  await page.getByRole("button", { name: "收起侧栏" }).first().click();
 
   await context.close();
   preferredTheme = "dark";

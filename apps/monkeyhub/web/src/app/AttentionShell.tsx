@@ -22,6 +22,11 @@ import "./attentionShell.css";
 export type CenterView = "attention" | "board" | "model" | "tool";
 export type SidePage = "background" | "history" | "handled" | "ignored" | "tools";
 const SIDE_PAGES: readonly SidePage[] = ["background", "history", "handled", "ignored", "tools"];
+/** The command that shows each side page: its rail item and its tab carry it, and Ctrl K finds it. */
+const SIDE_COMMANDS: Readonly<Record<SidePage, string>> = {
+  background: "view.background.toggle", history: "view.design_history.toggle", handled: "view.handled.toggle",
+  ignored: "view.ignored.toggle", tools: "view.advanced_tools.toggle",
+};
 /** How many of a project's conversations stand under its row. */
 export const RECENT_CONVERSATIONS = 3;
 
@@ -109,7 +114,10 @@ export function AttentionShell(props: AttentionShellProps) {
   useEffect(() => { showingQueue(view === "attention"); return () => showingQueue(false); }, [view]);
   const open = (page: SidePage) => setSide((current) => (current === page ? null : page));
   const pageLabel = (page: SidePage) => t(`shell.side.${page}` as MessageKey);
-  useCommandActions({ "view.tab.attention": { run: () => props.onView("attention") } });
+  useCommandActions({
+    "view.tab.attention": { run: () => props.onView("attention") },
+    ...Object.fromEntries(SIDE_PAGES.map((page) => [SIDE_COMMANDS[page], { run: () => open(page) }])),
+  });
   const backgroundCount = props.background.running + props.background.queued;
   // The queue's own counts where the Hub serves it; until then, what the conversations say waits on the architect.
   const queue = useAttentionQueue();
@@ -246,7 +254,7 @@ export function AttentionShell(props: AttentionShellProps) {
         <div className="attention-shell__panel-head">
           <div className="menu-tabs attention-shell__side-tabs" role="tablist" aria-label={t("shell.side")}>
             {SIDE_PAGES.map((page) => <button key={page} type="button" role="tab" className="menu-tab" aria-selected={side === page} aria-pressed={side === page}
-              onClick={() => setSide(page)}>{pageLabel(page)}</button>)}
+              data-command={SIDE_COMMANDS[page]} onClick={() => setSide(page)}>{pageLabel(page)}</button>)}
           </div>
           <button type="button" className="chat-icon" aria-label={t("shell.closeSide")} title={t("shell.closeSide")} onClick={() => setSide(null)}><Icon name="close" /></button>
         </div>
@@ -259,7 +267,8 @@ export function AttentionShell(props: AttentionShellProps) {
         </div>
       </div>}
       <div className="attention-shell__rail" role="toolbar" aria-orientation="vertical" aria-label={t("shell.side")}>
-        {SIDE_PAGES.map((page) => <button key={page} type="button" className="attention-shell__rail-item" aria-pressed={side === page} onClick={() => open(page)}>
+        {SIDE_PAGES.map((page) => <button key={page} type="button" className="attention-shell__rail-item" aria-pressed={side === page}
+          data-command={SIDE_COMMANDS[page]} onClick={() => open(page)}>
           <Icon name={page === "background" ? "tasks" : page === "history" ? "tree" : page === "handled" ? "archive" : page === "ignored" ? "restore" : "display"} />
           <span>{pageLabel(page)}</span>{page === "background" && backgroundCount > 0 && <span className="attention-shell__count">{backgroundCount}</span>}
         </button>)}

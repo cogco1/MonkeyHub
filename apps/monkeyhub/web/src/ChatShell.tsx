@@ -2260,7 +2260,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
                 documentRequest={item.projectDir ? documentRequests[item.projectDir] : undefined}
                 comparisonRequest={comparison?.runtimeId === item.runtimeId ? comparison.request : null}
                 onComparisonClose={workspaceComparisonClose(item.runtimeId)}
-                onDesignContextChange={workspaceContextCallback(item.runtimeId)} onPositionChange={workspacePositionCallback(item.runtimeId)}
+                onDesignContextChange={workspaceContextCallback(item.runtimeId)} onPositionChange={workspacePositionCallback(item.runtimeId)} embedded={attentionLayout}
                 onWorkspaceChange={(workspace) => { const id = workspace === "board" ? "monkeyboard" : workspace === "publish" ? "publish" : workspace === "drawing" ? "drawing" : workspace === "render" ? "monkeyrender" : workspace === "tree" ? "tree" : "monkeyarch";
                   // #284: moving within this workspace, onto the same surface too, ends a comparison the Hub asked for here.
                   if (comparisonRef.current?.runtimeId === item.runtimeId) endComparison();

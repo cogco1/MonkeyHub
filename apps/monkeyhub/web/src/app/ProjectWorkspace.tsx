@@ -64,6 +64,11 @@ export interface ProjectWorkspaceProps {
   onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
   /** Where a chat message lands (#285): the position the Stage chip states, as it states it. */
   onPositionChange?: (position: WorkspacePosition | null) => void;
+  /**
+   * The attention shell embeds the Board and the model in its center tabs (G1): their bars keep the command tree's
+   * front commands, the rest being in its advanced tools and Ctrl K. Other surfaces show as they are.
+   */
+  embedded?: boolean;
 }
 
 /** What the Stage chip says about the editing position, for the chat composer's target label (#285). */
@@ -78,7 +83,7 @@ export interface WorkspacePosition {
 
 /** One mounted project: the Board, its page editor and the same local model draft. */
 export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, candidateFollowsHead = false, treeFocus = null, active = true, refreshKey = 0, documentRequest = null,
-  comparisonRequest = null, onComparisonClose, onWorkspaceChange, onChatRequest, onRenderChatRequest, onDesignContextChange, onPositionChange }: ProjectWorkspaceProps) {
+  comparisonRequest = null, onComparisonClose, onWorkspaceChange, onChatRequest, onRenderChatRequest, onDesignContextChange, onPositionChange, embedded = false }: ProjectWorkspaceProps) {
   const renderReader = useRef<(() => RenderView | null) | null>(null);
   const registerRenderReader = useCallback((reader: (() => RenderView | null) | null) => { renderReader.current = reader; }, []);
   const readRenderView = useCallback(() => renderReader.current?.() ?? null, []);
@@ -290,7 +295,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     {/* #337: one bar over every surface. The surface on screen puts its menus on the left; the project's
         position stays at the right end, where the Stage chip opens the Design Tree. #300: Board and its
         Layout mode share one rail entry, and this switch moves between the two mounted surfaces. */}
-    <ProjectBar label={t("workspace.surfaceBar")}
+    <ProjectBar label={t("workspace.surfaceBar")} frontOnly={embedded && (shown === "arch" || (shown === "board" && !pageOpen))}
       lead={((shown === "board" && !pageOpen) || shown === "publish") && <BoardModeSwitch mode={workspace === "publish" ? "layout" : "board"}
         onChange={(mode) => onWorkspaceChange(mode === "layout" ? "publish" : "board")} />}
       position={designTree.available && <DesignTreeBar data={designTree} seen={seenCandidates.seen} open={shown === "tree"} viewing={viewing}

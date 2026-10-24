@@ -19,7 +19,7 @@ import { boardDocumentFrameName, documentKey, documentMime, findSource, imageSou
 import { BoardSketchError, calibrateSketchFrame, insideSketchFrame, newSketchFrameData, sketchActionsFromFrame, sketchFrameData, sketchFrameIds, sketchSummary, type BoardSketchRequest, type SketchFrameData, type SketchSkipReason } from "./boardSketch";
 import { pageSourceDetails, pageSourceReason, pageSourceState, pageStageLabel, pageStatusShows, readStageLabels, type PageStatusRead } from "./boardSourceStatus";
 import "./board.css";
-import { MenuCommand, StatusLine, SurfaceMenus } from "../../features/chrome/SurfaceChrome";
+import { MenuCommand, StatusLine, SurfaceMenus, useBarEntries } from "../../features/chrome/SurfaceChrome";
 import { BOARD_SCENE_LIMIT_BYTES, cardElementId, cardLabelText, componentInfoCardIds, isComponentInfoElement, placeDatasetCards, sceneBytes } from "../../features/componentInfo/boardDatasets";
 import { ComponentInfoError, parseDatasetImport, problemText, type ComponentInfoDataset } from "../../features/componentInfo/componentInfo";
 import { useT, type TFunction } from "../../i18n/useT";
@@ -556,6 +556,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const [ready, setReady] = useState(false);
   const [hasAnnotations, setHasAnnotations] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  // In the attention shell the bar keeps the front commands: Upload, Fit and New sketch frame (G1).
+  const bar = useBarEntries();
   const [context, setContext] = useState<FeedbackContext | null>(null);
   const actions = useRef<HTMLDetailsElement | null>(null);
   const [critMode, setCritMode] = useState(false);
@@ -1421,7 +1423,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
         crit mode shows the drawings alone. */}
     <SurfaceMenus label="MonkeyBoard" active={active && !critMode}
       end={<span className={`monkeyboard-save-state${saveState.error ? " is-error" : ""}`} role="status">{saveState.error ? text.dirty : saveState.saving ? text.saving : saveState.dirty ? text.dirty : text.saved}</span>}>
-      <input className="surface-title monkeyboard-title" aria-label={text.title} value={title} maxLength={200} onChange={(event) => { const value = event.target.value; setTitle(value); titleRef.current = value; capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []); }} onBlur={() => { const value = titleRef.current.trim() || "MonkeyBoard"; titleRef.current = value; setTitle(value); capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []); }} />
+      {!bar.frontOnly && <input className="surface-title monkeyboard-title" aria-label={text.title} value={title} maxLength={200} onChange={(event) => { const value = event.target.value; setTitle(value); titleRef.current = value; capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []); }} onBlur={() => { const value = titleRef.current.trim() || "MonkeyBoard"; titleRef.current = value; setTitle(value); capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []); }} />}
       <MenuCommand data-command="board.add_document_page.toggle_list" aria-expanded={sourcesOpen} aria-controls="monkeyboard-project-documents" onClick={() => setSourcesOpen((open) => !open)}>{text.sources}</MenuCommand>
       <MenuCommand data-command="document.upload" disabled={!ready || busy || saveState.conflict} onClick={() => input.current?.click()}>{text.upload}</MenuCommand>
       <MenuCommand data-command="board.manage.import_component_info" disabled={!ready || busy || saveState.conflict} title={t("componentInfo.board.importTitle")}
@@ -1429,20 +1431,20 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       <details ref={actions} className="monkeyboard-actions" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) closeActions(); }} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeActions(); actions.current?.querySelector("summary")?.focus(); } }}>
         <summary className="menu-command" data-command="view.menu.toggle" data-command-arg="board_more">{boardText.more}</summary>
         <div className="monkeyboard-actions-panel" role="group" aria-label={boardText.more}>
-          <button data-command="view.canvas.fit" disabled={!ready} onClick={() => canvas.current?.scrollToContent(undefined, { fitToContent: true, animate: false })}>{text.fit}</button>
-          <button data-command="markup.hand_to_ai.open" disabled={!ready || busy || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>
-          <button data-command="sketch.to_model.new_frame" disabled={!ready || busy || saveState.conflict} onClick={() => { void newSketchFrame(); }}>{sketchCopy[language].newFrame}</button>
-          <button data-command="markup.hand_to_ai.enter_crit" disabled={!ready} onClick={enterCrit}>{text.crit}</button>
-          <button type="button" data-command="markup.clear" disabled={!ready || busy || saveState.conflict || !hasAnnotations} onClick={clearAnnotations} title={text.clearAnnotationsHint}>{text.clearAnnotations}</button>
-          {onPublish && <button data-command="board.manage.add_to_publish" disabled={!ready || busy || exporting || saveState.conflict} onClick={() => void sendToPublish()}>{language === "zh-CN" ? "放入汇报" : "Add to Publish"}</button>}
-          <div className="monkeyboard-export" aria-label={text.export}>
+          {bar.shown("view.canvas.fit") && <button data-command="view.canvas.fit" disabled={!ready} onClick={() => canvas.current?.scrollToContent(undefined, { fitToContent: true, animate: false })}>{text.fit}</button>}
+          {bar.shown("markup.hand_to_ai.open") && <button data-command="markup.hand_to_ai.open" disabled={!ready || busy || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>}
+          {bar.shown("sketch.to_model.new_frame") && <button data-command="sketch.to_model.new_frame" disabled={!ready || busy || saveState.conflict} onClick={() => { void newSketchFrame(); }}>{sketchCopy[language].newFrame}</button>}
+          {bar.shown("markup.hand_to_ai.enter_crit") && <button data-command="markup.hand_to_ai.enter_crit" disabled={!ready} onClick={enterCrit}>{text.crit}</button>}
+          {bar.shown("markup.clear") && <button type="button" data-command="markup.clear" disabled={!ready || busy || saveState.conflict || !hasAnnotations} onClick={clearAnnotations} title={text.clearAnnotationsHint}>{text.clearAnnotations}</button>}
+          {onPublish && bar.shown("board.manage.add_to_publish") && <button data-command="board.manage.add_to_publish" disabled={!ready || busy || exporting || saveState.conflict} onClick={() => void sendToPublish()}>{language === "zh-CN" ? "放入汇报" : "Add to Publish"}</button>}
+          {bar.shown("board.export.run") && <div className="monkeyboard-export" aria-label={text.export}>
             <span>{text.exportClean}</span>
             <select aria-label={text.export} value={exportFormat} disabled={!ready || exporting} onChange={(event) => setExportFormat(event.target.value as typeof exportFormat)}>
               <option value="merged-pdf">{text.exportMerged}</option><option value="page-pdfs">{text.exportPages}</option><option value="png">{text.exportPng}</option><option value="jpeg">{text.exportJpeg}</option>
             </select>
             <label><input type="checkbox" checked={exportZip} disabled={!ready || exporting} onChange={(event) => setExportZip(event.target.checked)} /> {text.exportZip}</label>
             <button data-command="board.export.run" disabled={!ready || exporting} onClick={() => { void exportBoard(); }}>{exporting ? text.exporting : text.export}</button>
-          </div>
+          </div>}
         </div>
       </details>
     </SurfaceMenus>

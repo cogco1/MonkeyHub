@@ -42,7 +42,7 @@ import { ModelEditPanel, type DirectModelAction, type DirectModelTool } from "./
 import { ParameterLocksPanel, type ParameterLockControls } from "./ParameterLocksPanel";
 import { ElevationPanel, type ElevationControls } from "./ElevationPanel";
 import { ModelToolButton } from "./ModelToolButton";
-import { MenuCommand, MenuSeparator, StatusLine, SurfaceMenus } from "../chrome/SurfaceChrome";
+import { MenuCommand, MenuSeparator, StatusLine, SurfaceMenus, useBarEntries } from "../chrome/SurfaceChrome";
 import { preparePushPull } from "./pushPull";
 import { ComponentInfoPanel, useChangesSince, useComponentInfoBoard, useShownLineage,
   type ComponentInfoSubject } from "../componentInfo/ComponentInfoCard";
@@ -506,6 +506,8 @@ export function Stage({
   const moreToolsElement = useRef<HTMLSpanElement>(null);
   const moreToolsPanelElement = useRef<HTMLDivElement>(null);
   const closeBarMenu = useCallback(() => setBarMenu(null), []);
+  // In the attention shell the bar keeps the front commands: the views, Fit selected and Screenshot (G1).
+  const bar = useBarEntries();
   const closeMoreTools = useCallback(() => setMoreToolsOpen(false), []);
   useDismiss(barMenu === "export", exportMenuElement, '[aria-controls="stage-export-menu"]', closeBarMenu);
   useDismiss(barMenu === "more", moreMenuElement, '[aria-controls="stage-more-menu"]', closeBarMenu);
@@ -1447,7 +1449,7 @@ export function Stage({
           ? t("stage.tools.workModelNothingLoaded")
           : t("stage.tools.workModelTitle", { fileName: workModel.source?.fileName ?? "" }));
   // #352: Export, in the bar: the editable copy of the model on screen and, once made, its file.
-  const exportMenu = workModel && <span ref={exportMenuElement} className="stage-menu">
+  const exportMenu = workModel && (bar.shown("model.export_3dm.editable") || bar.shown("model.export_3dm.save")) && <span ref={exportMenuElement} className="stage-menu">
     <MenuCommand data-command="view.menu.toggle" data-command-arg="modeling_export" aria-expanded={barMenu === "export"} aria-controls="stage-export-menu" onClick={() => toggleBarMenu("export")}>
       {t("stage.menu.export")}</MenuCommand>
     {barMenu === "export" && <div ref={exportPanelElement} id="stage-export-menu" className="stage-menu__panel" role="group" aria-label={t("stage.menu.export")}>
@@ -1476,32 +1478,33 @@ export function Stage({
       {t("stage.menu.more")}</MenuCommand>
     {barMenu === "more" && <div ref={morePanelElement} id="stage-more-menu" className="stage-menu__panel" role="group" aria-label={t("stage.menu.more")}>
       <div className="stage-menu__views">
-        {STANDARD_VIEWS.map((view) => <button data-command={`view.model_camera.${view}`} type="button" key={view}
+        {STANDARD_VIEWS.filter((view) => bar.shown(`view.model_camera.${view}`)).map((view) => <button data-command={`view.model_camera.${view}`} type="button" key={view}
           onClick={() => viewportRef.current?.standardView(view)}>{t(`stage.view.${view}`)}</button>)}
       </div>
-      <button data-command="view.model_camera.fit_selected" type="button" disabled={!model?.hasSelection} onClick={() => viewportRef.current?.fitSelection()}>{t("stage.tools.fitSelected")}</button>
+      {bar.shown("view.model_camera.fit_selected") && <button data-command="view.model_camera.fit_selected" type="button" disabled={!model?.hasSelection}
+        onClick={() => viewportRef.current?.fitSelection()}>{t("stage.tools.fitSelected")}</button>}
       {/* How the model is painted: one choice, carried to the viewport as a prop so a
           remounted canvas opens in it too. The title says what the chosen look shows. */}
-      <label className="stage-menu__field" title={t(`stage.display.${displayStyle}Title`)}>
+      {!bar.frontOnly && <label className="stage-menu__field" title={t(`stage.display.${displayStyle}Title`)}>
         <span>{t("stage.display.label")}</span>
         <select data-display-style value={displayStyle}
           onChange={(event) => chooseDisplayStyle(event.target.value as ModelDisplayStyle)}>
           {MODEL_DISPLAY_STYLES.map((style) => <option key={style} value={style} title={t(`stage.display.${style}Title`)}>
             {t(`stage.display.${style}`)}</option>)}
         </select>
-      </label>
+      </label>}
       <span className="stage-menu__sep" aria-hidden="true" />
       {/* One button, home: the reference run's exports when it left any, else the export the
           stage actually opened on - named for what it brings back, disabled only when there is nothing. */}
-      <button data-command="view.reference_model.show" type="button" disabled={home === null} onClick={fromMore(onShowHome)} title={home === null ? t("stage.tools.homeUnavailable")
+      {bar.shown("view.reference_model.show") && <button data-command="view.reference_model.show" type="button" disabled={home === null} onClick={fromMore(onShowHome)} title={home === null ? t("stage.tools.homeUnavailable")
         : home.kind === "reference" ? t("stage.tools.referenceShow", { runId: home.runId }) : t("stage.tools.homeShow", { runId: home.runId })}>
-        {home?.kind === "fallback" ? t("stage.tools.home") : t("stage.tools.reference")}</button>
-      <button data-command="model.import_asset.open_file" type="button" onClick={fromMore(onRequestFile)}>{t("stage.tools.open3dm")}</button>
-      <button data-command="model.capture" type="button" disabled={loadedRunId === null || blend !== null || captureState === "busy"} onClick={fromMore(() => void onCapture())}
+        {home?.kind === "fallback" ? t("stage.tools.home") : t("stage.tools.reference")}</button>}
+      {bar.shown("model.import_asset.open_file") && <button data-command="model.import_asset.open_file" type="button" onClick={fromMore(onRequestFile)}>{t("stage.tools.open3dm")}</button>}
+      {bar.shown("model.capture") && <button data-command="model.capture" type="button" disabled={loadedRunId === null || blend !== null || captureState === "busy"} onClick={fromMore(() => void onCapture())}
         title={loadedRunId === null ? t("stage.tools.screenshotUnavailable") : blend !== null ? t("stage.tools.screenshotBlendUnavailable") : t("stage.tools.screenshotTitle")}>
-        {captureState === "busy" ? t("stage.tools.screenshotBusy") : t("stage.tools.screenshot")}</button>
-      <button data-command="view.model_display.clear" type="button" onClick={fromMore(() => viewportRef.current?.clear())}>{t("stage.tools.clear")}</button>
-      {parameterLocks && <>
+        {captureState === "busy" ? t("stage.tools.screenshotBusy") : t("stage.tools.screenshot")}</button>}
+      {bar.shown("view.model_display.clear") && <button data-command="view.model_display.clear" type="button" onClick={fromMore(() => viewportRef.current?.clear())}>{t("stage.tools.clear")}</button>}
+      {parameterLocks && bar.shown("component.lock_params.open") && <>
         <span className="stage-menu__sep" aria-hidden="true" />
         <button data-command="component.lock_params.open" type="button" aria-expanded={parameterLocksOpen} onClick={() => { chooseDrawingTool(null); setParameterLocksOpen(true); }}>
           {zh ? "参数锁" : "Parameter locks"}</button>

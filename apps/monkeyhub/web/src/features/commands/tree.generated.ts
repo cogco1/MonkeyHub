@@ -7896,6 +7896,42 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
+      "id": "view.ignored.toggle",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Show set-aside cards",
+        "zh-CN": "查看已忽略的卡"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "view.advanced_tools.toggle",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Show advanced tools",
+        "zh-CN": "查看高级工具"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
       "id": "view.background.open_task",
       "capability": "shell.pages",
       "label": {

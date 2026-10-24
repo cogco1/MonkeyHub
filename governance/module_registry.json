@@ -5298,6 +5298,18 @@
             ]
           },
           {
+            "id": "view.ignored.toggle",
+            "label": "Show set-aside cards",
+            "label_zh": "查看已忽略的卡",
+            "entries": []
+          },
+          {
+            "id": "view.advanced_tools.toggle",
+            "label": "Show advanced tools",
+            "label_zh": "查看高级工具",
+            "entries": []
+          },
+          {
             "id": "view.background.open_task",
             "label": "Open a task",
             "label_zh": "打开任务",
