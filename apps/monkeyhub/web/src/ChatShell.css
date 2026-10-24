@@ -347,3 +347,11 @@
 /* 一句话直接办: the one thing a sentence left out, asked on its card as buttons. */
 .chat-route__which{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .chat-route__which>span{color:var(--muted)}
+/* 18: sentences to say, under the input, made from the project's own state. */
+.chat-suggest{display:grid;gap:6px;padding:8px 2px 0}
+.chat-suggest__hint{margin:0;color:var(--muted);font-size:var(--text-caption)}
+.chat-suggest__chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.chat-suggest__chips::-webkit-scrollbar{display:none}
+.chat-suggest__chip{flex:none;padding:2px 10px;border:1px dashed var(--line);border-radius:999px;background:var(--panel);color:var(--ink);font:inherit;font-size:var(--text-caption);white-space:nowrap;cursor:pointer}
+.chat-suggest__chip:hover:not(:disabled){border-color:var(--ink)}.chat-suggest__chip:disabled{color:var(--faint);cursor:default}
+
