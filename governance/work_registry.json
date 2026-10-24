@@ -93,36 +93,6 @@
         "tools/tests/test_state_file_command.py"
       ],
       "depends_on": []
-    },
-    {
-      "id": "GH-300",
-      "lanes": [
-        {
-          "id": "short-paths",
-          "status": "active",
-          "branch": "claude/short-paths",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-short-paths",
-          "base_ref": "bc41a4caecb79198c2b1ea15b755a59169e33617",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": "Into the redesign batch through its merge lead; no PR of its own.",
-          "modules": [
-            "archflow.project.repository",
-            "hub.shell",
-            "project_runtime.candidate",
-            "project_runtime.intent"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
-            "apps/monkeyhub/api/tests/test_project_runtime.py",
-            "apps/monkeyhub/web/src/features/stage/syncModelDraft.ts",
-            "apps/monkeyhub/web/test/syncModelDraft.test.ts",
-            "packages/archflow/src/archflow/project/repository.py",
-            "services/project-runtime/src/project_runtime/api/routes/candidates.py"
-          ],
-          "depends_on": []
-        }
-      ]
     }
   ]
 }
