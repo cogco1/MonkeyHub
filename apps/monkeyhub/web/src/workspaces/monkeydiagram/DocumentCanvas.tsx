@@ -594,8 +594,8 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
     modelSources.find((item) => sameModelSource(item.modelSource, source))?.label ?? source.runId;
   const modelLabel = documentModelSource === null ? null : labelOfModel(documentModelSource);
   const previousModel = document?.modelSourceHistory?.at(-1)?.modelSource ?? null;
-  // A drawing made from a model keeps that model; a file that was uploaded or imported may be linked to another one.
-  const relinkable = documentModelSource !== null && document !== null && !document.revisionRef && !document.drawingId;
+  // A drawing or a picture made from a model keeps that model; only a file the person brought in may be linked to another.
+  const relinkable = documentModelSource !== null && document?.modelSourceChangeable === true;
   const missingPage = !loading && selectedSha !== null && !page;
   useEffect(() => {
     if (selectedSha !== initialSourceSha || selectedRevision !== initialRevisionRef || pageIndex !== initialPageIndex) timing?.finish("cancelled");

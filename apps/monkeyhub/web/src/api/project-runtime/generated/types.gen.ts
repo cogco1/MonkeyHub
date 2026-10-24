@@ -13278,6 +13278,12 @@ export type SourceDocumentDto = {
      */
     modelSourceHistory?: Array<ModelSourceBindingDto>;
     /**
+     * Modelsourcechangeable
+     *
+     * Read only: whether the person may point this document at another model (PUT /api/documents/{sha}/model-source). False for a drawing or a picture the Hub made from a model, and for a document registered with its model.
+     */
+    modelSourceChangeable?: boolean;
+    /**
      * Drawingid
      */
     drawingId?: string | null;

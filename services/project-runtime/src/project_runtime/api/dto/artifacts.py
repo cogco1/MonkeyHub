@@ -24,6 +24,7 @@ from ...application.artifacts import (
     ModelSource,
     SourceDocument,
     ViewportCapture,
+    model_source_changeable,
     view_recipe_with_frame,
 )
 from .project import ProjectVersionDto
@@ -417,6 +418,9 @@ class SourceDocumentDto(BaseModel):
     model_source_history: list[ModelSourceBindingDto] = Field(alias="modelSourceHistory", default_factory=list, description=(
         "Read only: the models this document was linked to before modelSource, oldest first. Changing the link keeps "
         "the one it replaced."))
+    model_source_changeable: bool = Field(alias="modelSourceChangeable", default=False, description=(
+        "Read only: whether the person may point this document at another model (PUT /api/documents/{sha}/model-source). "
+        "False for a drawing or a picture the Hub made from a model, and for a document registered with its model."))
     drawing_id: str | None = Field(alias="drawingId", default=None)
     revision_ref: str | None = Field(alias="revisionRef", default=None)
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
@@ -453,6 +457,7 @@ def document_dto(document: SourceDocument) -> SourceDocumentDto:
         model_source_history=[ModelSourceBindingDto(
             model_source=model_source_dto(item.model_source), binding_ref=item.binding_ref,
             bound_at=item.bound_at, actor_id=item.actor_id) for item in document.model_source_history],
+        model_source_changeable=model_source_changeable(document),
         drawing_id=document.drawing_id, revision_ref=document.revision_ref,
         source_stage_ref=document.source_stage_ref, view_recipe=view_recipe_with_frame(document.view_recipe),
         generated_at=document.generated_at,

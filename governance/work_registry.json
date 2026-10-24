@@ -34,8 +34,7 @@
             "services/project-runtime/src/project_runtime/api/dto/artifacts.py",
             "services/project-runtime/src/project_runtime/api/routes/artifacts.py",
             "services/project-runtime/src/project_runtime/application/artifacts.py",
-            "services/project-runtime/tests/test_working_copies.py",
-            "apps/monkeyhub/web/test/documentCanvas.browser.mjs"
+            "services/project-runtime/tests/test_working_copies.py"
           ],
           "depends_on": []
         }
