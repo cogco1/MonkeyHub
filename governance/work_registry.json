@@ -483,6 +483,45 @@
             "docs/protocols/project-runtime-api.md"
           ],
           "depends_on": []
+        },
+        {
+          "id": "rhino-folders",
+          "status": "active",
+          "branch": "claude/300-b3-rhino-folders",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-rhino-folders",
+          "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Todo 4 (05 C1, C2, D1, D5). C1: MonkeyHub opens Rhino with its script server on (POST /api/live-rhino/open; the caller asks the person first); a Rhino already open without the server still needs StartScriptServer typed once (Rhino's startup-commands setting is not written: its settings key is unconfirmed). C2: RhinoCode.exe was already found through Windows' App Paths; the message no longer leads with the environment variable. D1/D5: a folder or archive file is chosen in Windows' own dialog. D2 (workspace default) is already so; D4 (join) has no page in main. Merged with batch 3.",
+          "modules": [
+            "hub.shell",
+            "project_runtime.live_rhino"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat/routes.py",
+            "apps/monkeyhub/api/monkeyhub_api/models.py",
+            "apps/monkeyhub/api/monkeyhub_api/path_picker.py",
+            "apps/monkeyhub/api/tests/test_path_picker.py",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/api/generated/index.ts",
+            "apps/monkeyhub/web/src/api/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/features/commands/tree.generated.ts",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "docs/architecture/system-map.md",
+            "docs/protocols/project-runtime-api.md",
+            "governance/module_registry.json",
+            "services/project-runtime/src/project_runtime/api/dto/live_rhino.py",
+            "services/project-runtime/src/project_runtime/api/routes/live_rhino.py",
+            "services/project-runtime/src/project_runtime/application/live_rhino.py",
+            "services/project-runtime/tests/test_live_rhino.py"
+          ],
+          "depends_on": []
         }
       ]
     }

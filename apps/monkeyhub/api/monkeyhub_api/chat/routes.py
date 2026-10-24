@@ -12,10 +12,11 @@ from fastapi.responses import FileResponse, Response
 from starlette.requests import Request
 
 from . import media
+from .. import path_picker
 from ..models import (
     HubError, HubFailure, ChatProvider, ChatProject, ChatProjectRequest, ChatSummary, ChatDetail, ChatCreateRequest,
     ChatModelRequest, ChatPostRequest, ChatUsageSource, ChatWorkspace, ChatPermissionRequest, ChatArchiveRequest,
-    ChatAttachmentContent,
+    ChatAttachmentContent, ChatPickedPath, ChatPickPathRequest,
     ChatPresentationBindRequest, ChatPresentationBinding, ChatPresentationRequest,
 )
 
@@ -51,6 +52,13 @@ def projects_router(chats) -> APIRouter:
     @routes.post("/api/chat/projects", response_model=ChatProject, status_code=201)
     def create_chat_project(body: ChatProjectRequest):
         return chats.create_project(body)
+
+    @routes.post("/api/chat/pick-path", response_model=ChatPickedPath)
+    def pick_chat_path(request: Request, body: ChatPickPathRequest):
+        """A folder or file chosen in Windows' own dialog, on this computer's screen, instead of a typed path."""
+        if request.client is None or request.client.host not in {"127.0.0.1", "::1"}:
+            raise HubFailure(403, "LOCAL_PICKER_REQUIRED", "A dialog can only be opened for a person at this computer.")
+        return ChatPickedPath(path=path_picker.pick(body.kind, body.title, file_filter=body.filter))
 
     return routes
 

@@ -4441,6 +4441,13 @@
             "in_place": true
           },
           {
+            "id": "project.create.choose_folder",
+            "label": "Choose folder",
+            "label_zh": "选择文件夹",
+            "entries": [],
+            "in_place": true
+          },
+          {
             "id": "project.create.add_existing_confirm",
             "label": "Add the project",
             "label_zh": "添加项目",
@@ -4448,6 +4455,13 @@
               "窗8",
               "窗10"
             ],
+            "in_place": true
+          },
+          {
+            "id": "project.archive.choose_file",
+            "label": "Choose archive file",
+            "label_zh": "选择归档文件",
+            "entries": [],
             "in_place": true
           },
           {
@@ -10518,7 +10532,8 @@
         "the typed write operations (layer, polyline, extrusion, box, mesh, dot, import, transform, delete, attributes), checked in full before the document changes",
         "stamping created objects with monkeyhub.owner/write/label/project user text and refusing to touch unstamped objects unless allowUserObjects is true",
         "GET /api/live-rhino/instances, GET /api/live-rhino/document, POST /api/live-rhino/write, GET /api/live-rhino/capture",
-        "POST /api/live-rhino/snapshot: a copy of the open document, unsaved edits included (optionally only drawable objects or some layers), registered as an external model asset through project_runtime.documents; the architect's selection, path and modified flag are restored"
+        "POST /api/live-rhino/snapshot: a copy of the open document, unsaved edits included (optionally only drawable objects or some layers), registered as an external model asset through project_runtime.documents; the architect's selection, path and modified flag are restored",
+        "Opening Rhino for the person with its script server on (open_connected, POST /api/live-rhino/open): Rhino.exe beside RhinoCode.exe is started detached with /nosplash /runscript=\"_StartScriptServer\" and the .3dm file if one is named, then waited for until RhinoCode lists it; a Rhino that already answers with the document is returned as it is, and another Rhino running without a script server refuses (LIVE_RHINO_ALREADY_OPEN: a second Rhino would not have the first one's unsaved work). The caller asks the person first and sends confirmed true. RhinoCode.exe is found where Windows records Rhino (App Paths) and in Program Files; MONKEYHUB_RHINOCODE is only an override."
       ],
       "does_not_own": [
         "saving the document - the architect saves in Rhino",
@@ -10546,7 +10561,12 @@
         "write_document",
         "capture_view",
         "POST /api/live-rhino/snapshot",
-        "snapshot_document"
+        "snapshot_document",
+        "POST /api/live-rhino/open",
+        "open_connected",
+        "rhino_executable",
+        "LiveRhinoOpenRequest",
+        "LiveRhinoOpenDto"
       ],
       "depends_on": [
         "monkeycad.occt",
@@ -13715,7 +13735,8 @@
         "The installed skills that cannot be used right now (S-1): GET /api/settings/skill-problems lists them from the skill folders alone, each with its kind (entry_syntax, missing_file, name_differs, unreadable), file, line and the technical line; Settings › What the AI may do says each in plain words with who can fix it",
         "What a person allowed a conversation's Codex agent to do in one project (A4): a command it starts, going online, and a call to the Hub's own MCP server (an edit, and any other MCP server's tool, are asked every time: ADR-012). <runtime root>/config/tool-grants.json (MonkeyHubToolGrants@1), one grant per answer, kept apart from the skills' grants and never read by a Project Runtime; the permission card offers 'always allow in this project' beside 'only this time' and 'no', and a later request of that kind in that project is answered by the Hub with the adapter's own 'allow once' option and a line in the conversation; commands and going online are asked again while the design loop is enforced; withdrawn in Settings › What the AI may do",
         "sending again what did nothing (#300 4-3): the forward waits while a project's Studio starts (WORKER_STARTING) and sends the same request again while the Runtime's answer is a transient failure that did nothing (archflow.contracts.failures), a few times at most; OperationRecord.attempts counts the sends and errorCode keeps the code it ended with; a failed operation's attention card can be handed to the project's conversation",
-        "the repair table (runtime.manager.REPAIRS, #300 4-2): what the Hub puts right without asking a person; its first entry starts a project's Studio that stopped unexpectedly again through recover, at most three times in ten minutes, then leaves it for a person; each repair and the hold are kept on the project's snapshot (ProjectRuntimeDto.repairs, RepairRecord) and told as repair/applied, which the attention queue shows as a notice, or, for the hold, a card that hands it to the project's conversation"
+        "the repair table (runtime.manager.REPAIRS, #300 4-2): what the Hub puts right without asking a person; its first entry starts a project's Studio that stopped unexpectedly again through recover, at most three times in ten minutes, then leaves it for a person; each repair and the hold are kept on the project's snapshot (ProjectRuntimeDto.repairs, RepairRecord) and told as repair/applied, which the attention queue shows as a notice, or, for the hold, a card that hands it to the project's conversation",
+        "Choosing a folder or a file in Windows' own dialog in place of a typed path (POST /api/chat/pick-path, path_picker.pick): a PowerShell child opens the dialog on the person's screen and is told what to ask through its environment; only a caller on this computer may ask; closing the dialog chooses nothing. Used by Add existing project and Restore archive."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -13879,7 +13900,9 @@
         "POST /api/commands/meaning",
         "skill_plugins.installed_library",
         "REPAIRS",
-        "RepairRecord"
+        "RepairRecord",
+        "POST /api/chat/pick-path",
+        "path_picker.pick"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -13935,6 +13958,7 @@
       "files": [
         "apps/monkeyhub/api/monkeyhub_api/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/fabrication.py",
+        "apps/monkeyhub/api/monkeyhub_api/path_picker.py",
         "apps/monkeyhub/api/monkeyhub_api/app/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
         "apps/monkeyhub/api/monkeyhub_api/app/main.py",

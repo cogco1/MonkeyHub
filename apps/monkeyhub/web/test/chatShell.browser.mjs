@@ -165,6 +165,7 @@ const archiveOmissions = [
   "rebuildable previews and unbounded telemetry/logs",
   "unreferenced exports: exports/ travels only where a retained record names a file in it",
 ];
+const pickAnswers = [], pickRequests = [];
 const archiveSummaryFor = (projectId, projectDir, archivePath) => ({
   projectId, formatVersion: 3, version: 3, stateSha256: "b".repeat(64), runCount: 7, fileCount: 42,
   retainedBytes: 7340032, categories: { artifact: 18, authored_input: 3, design: 4, envelope: 17 },
@@ -410,6 +411,11 @@ const hubApi = async (route) => {
     const body = data(), selected = projects.find((item) => item.projectDir === body.projectDir);
     assert.ok(selected, "an archive is only written for a project this Hub lists");
     return json(archiveSummaryFor(selected.projectId, selected.projectDir, body.archivePath), 201);
+  }
+  if (url.pathname === "/api/chat/pick-path") {
+    // Windows' own dialog is not drawn here: the person's answer is queued by the test (null is a closed dialog).
+    pickRequests.push(data());
+    return json({ path: pickAnswers.length ? pickAnswers.shift() : null });
   }
   if (url.pathname === "/api/project/archive/restore") {
     const body = data();
@@ -3749,9 +3755,18 @@ try {
   const beforeAdd = writes.length;
   await cmd(page, "project.create.add_existing").click();
   const add = page.getByRole("dialog").filter({ hasText: "Add an existing project" });
-  await add.getByLabel("Project folder", { exact: true }).fill("D:\\fixture\\C");
-  await cmd(add, "project.create.add_existing_confirm").click();
+  // A closed dialog chooses nothing; a chosen folder is added at once, with no path typed.
+  await cmd(add, "project.create.choose_folder").click();
+  for (const end = Date.now() + 10000; pickRequests.length < 1;) {
+    if (Date.now() > end) assert.fail("the folder dialog was never asked for");
+    await page.waitForTimeout(50);
+  }
+  assert.equal(await add.getByLabel("Project folder", { exact: true }).inputValue(), "", "a closed dialog fills nothing");
+  assert.equal(writes.slice(beforeAdd).filter(([, pathname]) => pathname === "/api/chat/sessions").length, 0, "and adds nothing");
+  pickAnswers.push("D:\\fixture\\C");
+  await cmd(add, "project.create.choose_folder").click();
   await cmd(page, "project.open", { arg: "Project C" }).first().waitFor();
+  assert.deepEqual(pickRequests.at(-1), { kind: "folder", title: "Choose an existing ArchFlow project folder", filter: "any" });
   await studioReady();
   assert.equal(writes.slice(beforeAdd).filter(([, pathname, , target]) => pathname === "/api/project/modeling" && target === "D:\\fixture\\C").length, 0);
   assert.ok(!writes.slice(beforeAdd).some(([, pathname]) => pathname === "/api/chat/projects" || pathname === "/api/project/modeling"));
@@ -4058,7 +4073,11 @@ try {
   const restored = page.getByRole("dialog").filter({ hasText: "Restore project archive" });
   assert.equal(await restored.getByLabel("Restore into folder").inputValue(), "D:\\fixture",
     "the restore target starts at the workspace new projects are made in");
-  await restored.getByLabel("Archive file").fill("D:\\backups\\fixture-A.monkeyhub.zip");
+  pickAnswers.push("D:\\backups\\fixture-A.monkeyhub.zip");
+  await cmd(restored, "project.archive.choose_file").click();
+  await page.waitForFunction(() => [...document.querySelectorAll("dialog[open] input")]
+    .some((input) => input.value === "D:\\backups\\fixture-A.monkeyhub.zip"), null, { timeout: 10000 });
+  assert.deepEqual(pickRequests.at(-1), { kind: "file", title: "Choose a project archive", filter: "archive" });
   await cmd(restored, "project.archive.restore_confirm").click();
   await restored.getByText("Project restored and verified through normal project readers").waitFor();
   assert.deepEqual(writes.at(-1).slice(0, 3), ["POST", "/api/project/archive/restore",

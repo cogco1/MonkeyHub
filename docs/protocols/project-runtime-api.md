@@ -2335,7 +2335,10 @@ not an authorization or guarantee for a later execution. See
 ## Live Rhino and skill runs
 
 **Live Rhino** (`project_runtime.live_rhino`, local runtimes only). `GET /api/live-rhino/instances` lists running
-Rhinos reachable through Rhino 8's RhinoCode CLI; a Rhino is listed after `StartScriptServer` has been typed in it once.
+Rhinos reachable through Rhino 8's RhinoCode CLI; a Rhino is listed once its script server is on: opened by
+`POST /api/live-rhino/open` (ask the person first, send `confirmed: true`; starts Rhino with `/runscript="_StartScriptServer"` and the
+`.3dm` named by `documentPath`, waits up to 90 s, returns `{rhino, opened}`; a Rhino already open on that document is returned as it is,
+and another Rhino running without the server refuses with `LIVE_RHINO_ALREADY_OPEN`), or `StartScriptServer` typed in it once.
 `GET /api/live-rhino/document` reads the open document as it is now, unsaved edits included (layers, objects,
 optional geometry). `POST /api/live-rhino/write` adds or changes objects as one `_-RunPythonScript` command, so one
 Undo removes it; created objects carry `monkeyhub.owner=agent` user text, and transform, delete and attributes refuse
