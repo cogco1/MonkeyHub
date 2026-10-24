@@ -278,6 +278,8 @@ try {
   await page.locator(".attention-shell__projects .attention-shell__row").filter({ hasText: "Thi Hemp" }).locator(".attention-shell__count").filter({ hasText: "1" }).waitFor();
   assert.deepEqual(await page.locator(".attention-shell__recent").first().locator(".chat-thread__title").allTextContents(), ["楼板再薄一点", "斜撑留不留"],
     "a project's conversations, newest first");
+  assert.deepEqual(await page.locator(".attention-shell__projects .attention-shell__version").allTextContents(), ["当前 V3 · S2"],
+    "under its name each project says where it stands; a project nothing was published in says nothing");
   assert.equal(await page.locator(".menu-tab[aria-pressed=true]").textContent(), "关注");
   await page.getByText("现在没有要你处理的").or(page.getByText("1 项需要关注")).first().waitFor();
   assert.ok(await page.locator(".attention-shell__drawer").isHidden(), "the conversation waits in its drawer");

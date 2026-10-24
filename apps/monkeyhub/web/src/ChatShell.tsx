@@ -2552,7 +2552,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       : busy || modelBusy || archiveBusy !== null ? t.actionPending : null;
     const shellProjects: ShellProject[] = projects.map((item) => {
       const threads = visibleSessions.filter((session) => session.projectDir === item.projectDir).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-      return { projectDir: item.projectDir, name: item.name, current: item.projectDir === projectDir,
+      return { projectDir: item.projectDir, name: item.name, version: item.version ?? null, stage: item.stage ?? null, current: item.projectDir === projectDir,
         needs: waiting.filter((session) => session.projectDir === item.projectDir).length, working: busyProjects.has(item.projectDir),
         recent: (archivedView ? threads : threads.slice(0, RECENT_CONVERSATIONS)).map((session) => ({
           id: session.id, title: session.title, status: session.status ?? "idle", current: session.id === chatId, needsYou: session.attention === "permission",

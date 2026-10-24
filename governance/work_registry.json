@@ -644,6 +644,28 @@
             "apps/monkeyhub/web/test/attentionShell.browser.mjs",
             "apps/monkeyhub/web/test/modelComparison.test.ts"
           ]
+        },
+        {
+          "id": "project-version",
+          "status": "active",
+          "branch": "claude/300-b3-project-version",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-project-version",
+          "base_ref": "32c6563595bec02f3528ee2dc4b2e4156b7f4ec9",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Todo 19. The left column shows, under each project's name, where the project stands: 'Current V16' (the project's published version, and its accepted Stage when it has one). Based on claude/300-batch3 (the attention shell is there). Merged with batch 3.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/app/AttentionShell.tsx",
+            "apps/monkeyhub/web/src/app/attentionShell.css",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/attentionShell.browser.mjs"
+          ],
+          "depends_on": []
         }
       ]
     }
