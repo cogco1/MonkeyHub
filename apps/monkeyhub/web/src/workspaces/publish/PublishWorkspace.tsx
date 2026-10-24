@@ -4,7 +4,7 @@ import { publicationClient } from "../../api/project-runtime/publication";
 import { asStudioApiError, type StudioApiError } from "../../api/project-runtime/client";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import type { PublicationDto, PublicationElementDto, SourceDocumentDto } from "../../api/project-runtime/generated";
-import { pageSource, documentKey } from "../monkeyboard/boardScene";
+import { pageSource, documentKey, type PageSource } from "../monkeyboard/boardScene";
 import { usePreferences } from "../../features/settings/preferences";
 import { createPublicationSaveQueue } from "./publicationSaveQueue";
 import "./publish.css";
@@ -47,7 +47,11 @@ function SourceImage({ item, projectId }: { item: PublicationElementDto; project
   return url ? <img src={url} alt="" draggable={false} /> : <span className="publish-image-status">{error ? <button data-command="view.notice.retry" data-command-arg="layout_image" onPointerDown={(event) => event.stopPropagation()} onClick={() => setRetry((value) => value + 1)} title={error}>↻</button> : "…"}</span>;
 }
 
-export default function PublishWorkspace({ projectId, active, refreshKey = 0, boardRequest = null }: { projectId: string; active: boolean; refreshKey?: number; boardRequest?: { revision: string; ids: string[]; requestId: string } | null }) {
+export default function PublishWorkspace({ projectId, active, refreshKey = 0, boardRequest = null, placeRequest = null }: {
+  projectId: string; active: boolean; refreshKey?: number; boardRequest?: { revision: string; ids: string[]; requestId: string } | null;
+  /** A drawing or render result put in the layout from its own page (ADR-014 B5): it arrives on a page of its own. */
+  placeRequest?: { source: PageSource; requestId: string } | null;
+}) {
   const studio = useStudio(), connection = useConnection();
   const api = useMemo(() => publicationClient(connection), [connection]);
   const cacheKey = JSON.stringify([connection.baseUrl, projectId]);
@@ -66,7 +70,7 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
   const busy = running || importing;
   const [attempt, setAttempt] = useState(0), [asset, setAsset] = useState("");
   const [scale, setScale] = useState(1);
-  const handledBoardRequest = useRef<string | null>(null);
+  const handledBoardRequest = useRef<string | null>(null), handledPlaceRequest = useRef<string | null>(null);
   const readEpoch = useRef(0);
   const viewport = useRef<HTMLDivElement>(null);
   const drag = useRef<{ pointer: number; startX: number; startY: number; item: PublicationElementDto; resize: boolean } | null>(null);
@@ -155,6 +159,16 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
       if (alive.current) setPageIndex(Math.max(0, Math.min(previousLength, updated.pages.length - 1)));
     });
   }, [active, boardRequest, !!draft, busy, attempt]);
+  // A result put in the layout from its page takes a new page, filling it as an image placed here does, and is selected.
+  useEffect(() => {
+    if (!active || !draft || !placeRequest || handledPlaceRequest.current === placeRequest.requestId || locked.current) return;
+    handledPlaceRequest.current = placeRequest.requestId;
+    const id = crypto.randomUUID();
+    const image: PublicationElementDto = { id, kind: "image", x: 48, y: 115, width: draft.spec.width! - 96, height: draft.spec.height! - 140,
+      text: "", fontSize: 28, source: placeRequest.source, frozen: false, crop: [0, 0, 0, 0] };
+    change({ ...draft, pages: [...draft.pages, { id: crypto.randomUUID(), elements: [image] }] });
+    setPageIndex(draft.pages.length); setSelected(id);
+  }, [active, placeRequest, !!draft, busy]);
   const exportFile = async (format: "pdf" | "pptx") => {
     const saved = await save();
     const blob = await api.export({ projectId, revisionSha256: saved.revisionSha256!, format });

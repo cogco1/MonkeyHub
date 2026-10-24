@@ -483,6 +483,42 @@
             "apps/monkeyhub/web/test/inlineDecision.test.ts"
           ],
           "depends_on": []
+        },
+        {
+          "id": "entry-pages",
+          "status": "active",
+          "branch": "claude/300-entry-pages",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-entry-pages",
+          "base_ref": "bc5ee99d4b1005d03247fa1f2d4908b9cae0e8b7",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Three-channel convergence 6-1 (ADR-014 B2-B9 in the embedded pages), one draft PR per page. This branch (6-1a): the Drawings and Render pages keep one bar each, refresh shows only after a failed read, the Drawings parameters fold to one open group, and a drawing or render result offers the same three actions (download, put on the Board, put into the layout). The page files are handed over from GH-300/tests, whose work on them (T-1a) is done. Not merged before the paper relay ends.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/app/ProjectWorkspace.tsx",
+            "apps/monkeyhub/web/src/features/results/",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingCanvas.css",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingDressing.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingMenu.css",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingMenu.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/RecipeTransfer.tsx",
+            "apps/monkeyhub/web/src/workspaces/publish/PublishWorkspace.tsx",
+            "apps/monkeyhub/web/src/workspaces/publish/publish.css",
+            "apps/monkeyhub/web/src/workspaces/render/ModelPreview.tsx",
+            "apps/monkeyhub/web/src/workspaces/render/RenderResults.tsx",
+            "apps/monkeyhub/web/src/workspaces/render/RenderWorkspace.tsx",
+            "apps/monkeyhub/web/src/workspaces/render/render.css",
+            "apps/monkeyhub/web/src/workspaces/render/renderViews.ts",
+            "apps/monkeyhub/web/test/drawingCanvas.browser.mjs",
+            "apps/monkeyhub/web/test/publishWorkspace.browser.mjs",
+            "apps/monkeyhub/web/test/recipeTransfer.browser.mjs",
+            "apps/monkeyhub/web/test/renderWorkspace.browser.mjs",
+            "apps/monkeyhub/web/test/resultActions.test.ts"
+          ],
+          "depends_on": []
         }
       ]
     }

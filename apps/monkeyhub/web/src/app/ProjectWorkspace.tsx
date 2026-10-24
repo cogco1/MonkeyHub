@@ -111,6 +111,12 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   const [renderVisited, setRenderVisited] = useState(workspace === "render");
   const [boardRefresh, setBoardRefresh] = useState(0);
   const [boardPage, setBoardPage] = useState<BoardPageRequest | null>(null);
+  // ADR-014 B5: a drawing or render result goes to the Board or into the layout from its page, which then opens with it there.
+  const [layoutPlace, setLayoutPlace] = useState<{ source: PageSource; requestId: string } | null>(null);
+  const toBoard = (source: PageSource) => {
+    setVisit(null); setBoardPage({ source, requestId: crypto.randomUUID() }); setBoardRefresh((value) => value + 1); onWorkspaceChange("board");
+  };
+  const toLayout = (source: PageSource) => { setLayoutPlace({ source, requestId: crypto.randomUUID() }); onWorkspaceChange("publish"); };
   const pageOpen = workspace === "board" && visit !== null;
   const modelVisible = workspace === "arch" || pageOpen;
   useEffect(() => { if (modelVisible) setArchVisited(true); }, [modelVisible]);
@@ -318,7 +324,8 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
       {(publishVisited || workspace === "publish") && <div data-project-surface="publish" hidden={shown !== "publish"} inert={!active || shown !== "publish"}
         style={{ height: "100%", minHeight: 0, display: shown === "publish" ? "block" : "none" }}>
         <Suspense fallback={<LoadingOverlay mode="boot" status="Publish" />}>
-          <Publish projectId={boundProjectId.current!} active={active && shown === "publish"} refreshKey={refreshKey + attempt} boardRequest={publishRequest} />
+          <Publish projectId={boundProjectId.current!} active={active && shown === "publish"} refreshKey={refreshKey + attempt} boardRequest={publishRequest}
+            placeRequest={layoutPlace} />
         </Suspense>
       </div>}
       {(renderVisited || workspace === "render") && <div data-project-surface="render" hidden={shown !== "render"} inert={!active || shown !== "render"}
@@ -326,14 +333,14 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
         <Suspense fallback={<LoadingOverlay mode="boot" status="Render" />}>
           <Render readModelView={readRenderView} onModeling={() => onWorkspaceChange("arch")} onShowInModeling={showInModeling}
             projectId={boundProjectId.current!} active={active && shown === "render"} refreshKey={refreshKey + attempt}
-            onBoard={(source) => { setVisit(null); setBoardPage({ source, requestId: crypto.randomUUID() }); setBoardRefresh((value) => value + 1); onWorkspaceChange("board"); }} />
+            onBoard={toBoard} onLayout={toLayout} />
         </Suspense>
       </div>}
       {(drawingVisited || workspace === "drawing") && <div data-project-surface="drawing" hidden={shown !== "drawing"} inert={!active || shown !== "drawing"}
         style={{ height: "100%", minHeight: 0, display: shown === "drawing" ? "block" : "none" }}>
         {/* #337: the Drawing puts its recipe transfer in its own menus, and a file to confirm in its row. */}
         <Suspense fallback={<LoadingOverlay mode="boot" status="Drawing" />}>
-          <Drawing projectId={boundProjectId.current!} active={active && shown === "drawing"} refreshKey={refreshKey + attempt} />
+          <Drawing projectId={boundProjectId.current!} active={active && shown === "drawing"} refreshKey={refreshKey + attempt} onBoard={toBoard} onLayout={toLayout} />
         </Suspense>
       </div>}
       {(boardVisited || workspace === "board") && <div data-project-surface="board" hidden={shown !== "board" || pageOpen} inert={!active || shown !== "board" || pageOpen}

@@ -16,10 +16,6 @@
 .drawing-another__panel { display: grid; gap: 10px; }
 .drawing-another__panel .drawing-field, .drawing-another__panel .drawing-field__hint { margin: 0; }
 /* More: the drawing's less frequent commands, under the word's right edge. */
-.drawing-more__panel { display: grid; gap: 8px; }
-.drawing-more__panel > button { text-align: left; }
-.drawing-more__panel > .drawing-field__hint { margin: -2px 0 4px; }
-@media (min-width: 641px) { .drawing-more > .drawing-more__panel { left: auto; right: 0; width: min(300px, calc(100vw - 32px)); } }
 /* One row above the drawing, only while something asks for a person; each item keeps its frame. */
 .drawing-attention { flex: none; display: grid; gap: 8px; max-height: 45%; overflow-y: auto; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: var(--text-ui); }
 .drawing-held { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 12px; border: 1px solid var(--line); border-left: 3px solid var(--violated); border-radius: var(--radius-sm); }
@@ -32,11 +28,11 @@
 .drawing-controls legend { padding: 0 6px 0 0; font-weight: 600; }
 .drawing-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; min-width: 0; }
 /* The drawing's own controls: in the canvas and its settings, the row above them and the menu panels in the bar. */
-:is(.drawing-body, .drawing-attention, .drawing-another__panel, .drawing-more__panel) :is(input, select) { min-width: 0; width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel); color: var(--ink); font: inherit; min-height: 36px; }
-:is(.drawing-body, .drawing-attention, .drawing-another__panel, .drawing-more__panel) button { min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--ink); font: inherit; cursor: pointer; }
-:is(.drawing-body, .drawing-attention, .drawing-another__panel, .drawing-more__panel) button:hover:not(:disabled) { background: var(--surface-hover); }
-:is(.drawing-body, .drawing-attention, .drawing-another__panel, .drawing-more__panel) :is(button, input):disabled { opacity: .5; cursor: default; }
-:is(.drawing-body, .drawing-attention, .drawing-another__panel, .drawing-more__panel) :is(input, select, button, summary):focus-visible, .drawing-preview__viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:is(.drawing-body, .drawing-attention, .drawing-another__panel) :is(input, select) { min-width: 0; width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel); color: var(--ink); font: inherit; min-height: 36px; }
+:is(.drawing-body, .drawing-attention, .drawing-another__panel) button { min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--ink); font: inherit; cursor: pointer; }
+:is(.drawing-body, .drawing-attention, .drawing-another__panel) button:hover:not(:disabled) { background: var(--surface-hover); }
+:is(.drawing-body, .drawing-attention, .drawing-another__panel) :is(button, input):disabled { opacity: .5; cursor: default; }
+:is(.drawing-body, .drawing-attention, .drawing-another__panel) :is(input, select, button, summary):focus-visible, .drawing-preview__viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 :is(.drawing-body, .drawing-attention) summary { cursor: pointer; padding: 8px 0; }
 .drawing-field__hint { margin: 6px 0 0; color: var(--muted); font-size: var(--text-caption); line-height: 1.4; }
 /* The source's state in the row: kept or earlier drawings dashed, stale or broken ones marked at the left. */
@@ -71,9 +67,13 @@
 .drawing-actions { flex: none; border-top: 1px solid var(--line); padding: 12px 14px; }
 .drawing-actions > .btn--accent { width: 100%; background: var(--accent-soft); border-color: var(--accent); }
 .drawing-controls input:invalid { border-color: var(--violated); }
-.drawing-section { margin-top: 12px; border-top: 1px solid var(--line); }
-.drawing-section > summary { font-weight: 600; }
-.drawing-section > fieldset { margin-top: 0; padding-top: 0; border-top: 0; }
+/* ADR-014 B7: the folded groups of settings, each named by its summary. */
+.drawing-group { margin-top: 12px; border-top: 1px solid var(--line); }
+.drawing-group > summary { font-weight: 600; }
+.drawing-group > fieldset { margin-top: 0; padding-top: 0; border-top: 0; }
+.drawing-group > fieldset > legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.drawing-error { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; }
+.drawing-error > :first-child { flex: 1 1 280px; min-width: 0; }
 .drawing-section .drawing-field__hint { margin: 0 0 12px; }
 .drawing-section button[type="submit"] { width: 100%; background: var(--accent-soft); border-color: var(--accent); }
 @container drawing (max-width: 900px) {

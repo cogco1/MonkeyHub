@@ -4931,6 +4931,20 @@
             ]
           },
           {
+            "id": "view.layout.place_result",
+            "label": "Put in Layout",
+            "label_zh": "放进排版",
+            "surface": "layout",
+            "aliases": [
+              "put drawing in layout",
+              "put render in layout",
+              "放进汇报"
+            ],
+            "entries": [],
+            "opens": true,
+            "in_place": true
+          },
+          {
             "id": "view.layout.select_page",
             "label": "Select page",
             "label_zh": "选择页面",

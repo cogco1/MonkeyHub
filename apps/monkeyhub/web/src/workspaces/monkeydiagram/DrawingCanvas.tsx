@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
 import { asStudioApiError, type StudioApiError } from "../../api/project-runtime/client";
 import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, PlanVectorDto, PlanDressingDto, ProjectArtifactDto, RecipeSuggestionDto, SectionLineDto, SourceDocumentDto, WorkingSourceDto } from "../../api/project-runtime/generated";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { MenuSeparator, StatusLine, SurfaceMenus } from "../../features/chrome/SurfaceChrome";
+import { ResultActions } from "../../features/results/ResultActions";
 import { usePreferences } from "../../features/settings/preferences";
 import { useT } from "../../i18n/useT";
 import { DocumentSurface } from "./DocumentCanvas";
@@ -12,12 +13,13 @@ import { defaultPlanForm, drawingDocumentKey, isVerticalSection, keptOnChosenVer
 import { DressingControls, DressingOverlay } from "./DrawingDressing";
 import { DrawingMenu } from "./DrawingMenu";
 import { useRecipeTransfer } from "./RecipeTransfer";
+import { pageSource, type PageSource } from "../monkeyboard/boardScene";
 import "./DrawingCanvas.css";
 
 const copy = {
   en: { title: "Drawing", source: "Version to draw", revision: "Drawing", fresh: "New cut plan", drawingName: "New cut-plan name", drawingNameHint: "Optional; applies to the new cut plan, not a section perspective. Later revisions keep this name.",
-    noModel: "The current project model has no exact geometry to draw yet.", refresh: "Refresh sources", generating: "Generating…", generate: "Generate cut plan",
-    rebuild: "Rebuild on this version", another: "Draw another version", anotherHint: "A version chosen here is drawn once and is not updated automatically.",
+    noModel: "The current project model has no exact geometry to draw yet.", refresh: "Read again", generating: "Generating…", generate: "Generate cut plan",
+    rebuild: "Rebuild on this version", another: "Source", anotherHint: "A version chosen here is drawn once and is not updated automatically.",
     earlier: "Earlier revisions", earlierView: "Earlier revision · not updated automatically", openLatest: "Open the current revision",
     live: "Follows the current project model", liveCurrent: "Current with the project model", updating: "Updating to the current model…",
     stale: "Not updated", chosenView: "Drawn from a chosen version · not updated automatically", followAgain: "Follow the current model again", workingVersion: "Working version (not accepted)", representation: "Drawing appearance", cutHeight: "Cut height", bottom: "View bottom", depth: "Depth beyond the section plane", scale: "Scale denominator (1 : n)",
@@ -36,9 +38,9 @@ const copy = {
     sectionPlane: "Cut plane", sectionAcrossX: "Across X (x = position)", sectionAcrossY: "Across Y (y = position)", sectionPosition: "Position",
     sectionToward: "Look toward", eyeHeight: "Eye height above the lowest cut point", fov: "Field of view (degrees)",
     sectionGenerate: "Generate section perspective", sectionView: "Section perspective · true to scale at the cut plane",
-    statusError: "Source status could not be read. Refresh to try again.", loading: "Loading drawing…",
+    statusError: "Source status could not be read.", loading: "Loading drawing…",
     recipePen: "Project recipe", penHint: "A pen left empty follows the project recipe, or 0.35 / 0.18 / 2 mm without one; the drawing then shows the values it was made with.",
-    objects: "Objects in this drawing", object: "Projected object", noObject: "Choose an object",
+    objects: "Objects in this drawing", dressing: "Entourage", object: "Projected object", noObject: "Choose an object",
     pickHint: "Point at a line to see which object it draws; click it to select that object.",
     tooMany: "This drawing has {count} lines, so it is shown as an image; choose its objects from the list.",
     hideObject: "Hide this object", hiddenObjects: "Hidden objects", showObject: "Show again", notInModel: "not in this model", noMaterial: "no material",
@@ -50,8 +52,8 @@ const copy = {
     recipeWords: "Save as project recipe: {values}.", recipeSaved: "Saved as the project recipe: {values}.", recipeSame: "These values already are the project recipe." },
 
   "zh-CN": { title: "图纸", source: "出图版本", revision: "图纸", fresh: "新建剖切平面", drawingName: "新建剖切平面名称", drawingNameHint: "可选；仅用于新建剖切平面，不用于剖透视。后续修订会继承此名称。",
-    noModel: "项目当前模型还没有可出图的精确几何。", refresh: "刷新来源", generating: "正在生成…", generate: "生成剖切平面",
-    rebuild: "基于此版本重建", another: "绘制其他版本", anotherHint: "在这里选择的版本只按一次绘制，不会自动更新。",
+    noModel: "项目当前模型还没有可出图的精确几何。", refresh: "重新读取", generating: "正在生成…", generate: "生成剖切平面",
+    rebuild: "基于此版本重建", another: "来源", anotherHint: "在这里选择的版本只按一次绘制，不会自动更新。",
     earlier: "较早版本", earlierView: "较早版本 · 不自动更新", openLatest: "打开当前版本",
     live: "跟随项目当前模型", liveCurrent: "与项目当前模型一致", updating: "正在更新到当前模型…",
     stale: "尚未更新", chosenView: "按所选版本绘制 · 不自动更新", followAgain: "改为跟随当前模型", workingVersion: "工作版本（未接受）", representation: "图纸表达", cutHeight: "剖切高度", bottom: "视图底部", depth: "剖切面后的绘制深度", scale: "比例分母（1 : n）",
@@ -70,9 +72,9 @@ const copy = {
     sectionPlane: "剖切面", sectionAcrossX: "垂直于 X（x = 位置）", sectionAcrossY: "垂直于 Y（y = 位置）", sectionPosition: "位置",
     sectionToward: "看向", eyeHeight: "视高（自剖切最低点起）", fov: "视角（度）",
     sectionGenerate: "生成剖透视", sectionView: "剖透视 · 剖切面处按比例",
-    statusError: "无法读取来源状态，请刷新重试。", loading: "正在读取图纸…",
+    statusError: "无法读取来源状态。", loading: "正在读取图纸…",
     recipePen: "项目设定", penHint: "留空的线宽和填充间距按项目表达设定取值，没有设定时为 0.35 / 0.18 / 2 mm；生成后显示图纸实际采用的数值。",
-    objects: "图中对象", object: "投影对象", noObject: "选择对象",
+    objects: "图中对象", dressing: "配景", object: "投影对象", noObject: "选择对象",
     pickHint: "指向线条可查看它来自哪个对象，点击即可选中该对象。",
     tooMany: "此图共有 {count} 条线，以图片显示；请从列表中选择对象。",
     hideObject: "隐藏此对象", hiddenObjects: "已隐藏对象", showObject: "重新显示", notInModel: "不在当前模型中", noMaterial: "无材质",
@@ -182,8 +184,22 @@ function planPicture(svg: string): PlanPicture | null {
 const objectLabel = (text: Copy, object: PlanObject, roles: readonly LineRole[] = object.roles) =>
   [object.component ?? object.id, object.material ?? text.noMaterial, roles.map(role => text.roles[role]).join(", ")].join(" · ");
 
-function PlanPreview({ source, file, vector, picture, hidden, picked, onPick, symbols, objects, selected, onSelect, onChange, disabled }: {
+/**
+ * A folded group of the drawing's settings (ADR-014 B7). It opens and closes through its owner, which also opens it when
+ * a person picks what it holds on the drawing; its summary is the group's name.
+ */
+function SettingsGroup({ label, group, open, onToggle, children }: {
+  label: string; group: string; open: boolean; onToggle(group: string, open: boolean): void; children: ReactNode;
+}) {
+  return <details className="drawing-group" open={open} onToggle={event => { if (event.currentTarget.open !== open) onToggle(group, event.currentTarget.open); }}>
+    <summary data-command="view.disclosure.toggle" data-command-arg={`drawing_${group}`}>{label}</summary>{children}
+  </details>;
+}
+
+function PlanPreview({ source, file, vector, picture, hidden, picked, onPick, symbols, objects, selected, onSelect, onChange, disabled, actions }: {
   source: SourceDocumentDto; file: File; vector: PlanVectorDto | null; picture: PlanPicture | null;
+  /** What the drawing offers as a result (ADR-014 B5), after the zoom in the same group. */
+  actions?: ReactNode;
   hidden: readonly string[]; picked: string | null; onPick(object: string | null): void; objects: PlanDressingDto[];
   /** Whether plan symbols are drawn and edited here: on a horizontal plan, not a vertical section. */
   symbols: boolean;
@@ -238,11 +254,13 @@ function PlanPreview({ source, file, vector, picture, hidden, picked, onPick, sy
   const scale = Math.max(0.02, Math.min((bounds.width - 32) / page.width, (bounds.height - 32) / page.height)) * zoom;
   const hovered = hover && picture?.objects.get(hover.mark.object);
   return <section className="drawing-preview" aria-label={source.fileName}>
-    {/* #337: the drawing's one tool group, over the bottom of the canvas; the bar names the drawing. */}
+    {/* #337: the drawing's one tool group, over the bottom of the canvas; the bar names the drawing. Its result
+        actions follow the zoom (ADR-014 B5). */}
     <div className="drawing-preview__tools">
       <button data-command="view.canvas.zoom_out" type="button" aria-label={text.zoomOut} disabled={zoom <= 0.25} onClick={() => setZoom(value => Math.max(0.25, value / 1.25))}>−</button>
       <button data-command="view.canvas.fit" type="button" onClick={() => setZoom(1)}>{text.fit}</button>
       <button data-command="view.canvas.zoom_in" type="button" aria-label={text.zoomIn} disabled={zoom >= 8} onClick={() => setZoom(value => Math.min(8, value * 1.25))}>+</button>
+      {actions}
     </div>
     <div className="drawing-preview__viewport" ref={viewport} tabIndex={0} data-ready={inline || ready}
       onKeyDown={event => { if (event.key === "Escape" && picked) { event.preventDefault(); onPick(null); } }}>
@@ -270,17 +288,26 @@ function PlanPreview({ source, file, vector, picture, hidden, picked, onPick, sy
   </section>;
 }
 
-export default function DrawingCanvas({ projectId, active = true, refreshKey = 0 }: {
+export default function DrawingCanvas({ projectId, active = true, refreshKey = 0, onBoard, onLayout }: {
   projectId: string; active?: boolean; refreshKey?: number;
+  /** Send the open drawing's saved page to the Board, which opens with it placed and selected. */
+  onBoard?(source: PageSource): void;
+  /** Put the open drawing's saved page in the layout, on a page of its own. */
+  onLayout?(source: PageSource): void;
 }) {
   const studio = useStudio(), { language } = usePreferences(), text = copy[language], t = useT();
   const controls = useRef<HTMLFormElement>(null), controlsId = useId();
   const recipes = useRecipeTransfer(projectId, active);
   const [documents, setDocuments] = useState<SourceDocumentDto[]>([]), [stages, setStages] = useState<DesignStageDto[]>([]);
   const [assets, setAssets] = useState<ProjectArtifactDto[]>([]), [importing, setImporting] = useState(false);
-  const importInput = useRef<HTMLInputElement>(null), [anotherOpen, setAnotherOpen] = useState(false), [moreOpen, setMoreOpen] = useState(false);
+  const importInput = useRef<HTMLInputElement>(null), [anotherOpen, setAnotherOpen] = useState(false);
   // The bar's menus do not stay open behind another surface.
-  useEffect(() => { if (!active) { setAnotherOpen(false); setMoreOpen(false); } }, [active]);
+  useEffect(() => { if (!active) setAnotherOpen(false); }, [active]);
+  // ADR-014 B7: the settings beyond the drawing's appearance are folded, each group opening when a person opens it
+  // or picks what it holds on the drawing, so the panel shows its few common fields and the groups' names.
+  const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(() => new Set());
+  const showGroup = useCallback((group: string, open = true) => setOpenGroups(current =>
+    current.has(group) === open ? current : open ? new Set([...current, group]) : new Set([...current].filter(item => item !== group))), []);
   // A version chosen from the list closes its menu, so the row or word it moves to is in sight; arrowing through
   // the list with the keyboard does not.
   const arrowing = useRef(false);
@@ -501,6 +528,8 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const hideObject = (id: string) => { pick(null); update({ hiddenObjectIds: [...new Set([...hiddenIds, id])].sort() }); };
   const showObject = (id: string) => update({ hiddenObjectIds: hiddenIds.filter(item => item !== id) });
   const pickedObject = picked && !hiddenSet.has(picked) ? picture?.objects.get(picked) ?? null : null;
+  useEffect(() => { if (pickedObject) showGroup("objects"); }, [pickedObject, showGroup]);
+  useEffect(() => { if (selectedDressing) showGroup("dressing"); }, [selectedDressing, showGroup]);
   const listedObjects = picture ? [...picture.objects.values()].filter(object => !hiddenSet.has(object.id))
     .map(object => ({ object, label: objectLabel(text, object) })).sort((a, b) => a.label.localeCompare(b.label)) : [];
   const hiddenName = (id: string) => {
@@ -757,13 +786,6 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
         <p className="drawing-field__hint">{text.anotherHint}</p>
       </DrawingMenu>
       {recipes.menu}
-      <DrawingMenu label={t("drawing.more")} command="view.menu.toggle" commandArg="drawing_more" className="drawing-more" panelClassName="drawing-more__panel" open={moreOpen} onOpenChange={setMoreOpen}>
-        {source && !perspectiveOpen && <>
-          <button data-command="drawing.export.svg" type="button" disabled={busy || dirty || !active || !vector} onClick={() => { setMoreOpen(false); downloadSvg(); }}>{text.download}</button>
-          <p className="drawing-field__hint">{text.downloadHint}</p>
-        </>}
-        <button data-command="drawing.plan.refresh" type="button" disabled={busy || loading} onClick={() => { setMoreOpen(false); setRefresh(value => value + 1); }}>{text.refresh}</button>
-      </DrawingMenu>
     </SurfaceMenus>
     {/* One row above the drawing, only while something asks for a person. */}
     {attention && <div className="drawing-attention">
@@ -797,7 +819,9 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
       </section>}
       {refused && <div className="drawing-held" role="status"><p>{text.held}</p>
         <button data-command="view.notice.retry" data-command-arg="drawing_save" className="btn btn--accent" type="submit" form={controlsId} disabled={busy || !(source?.modelSource || documentAsset(source))}>{text.retry}</button></div>}
-      {error && <ErrorPanel error={error} what={text.title} />}
+      {/* B3: reading again is offered where a read failed, not kept in a menu. */}
+      {error && <div className="drawing-error"><ErrorPanel error={error} what={text.title} />
+        <button data-command="drawing.plan.refresh" type="button" disabled={busy || loading} onClick={() => setRefresh(value => value + 1)}>{text.refresh}</button></div>}
       {offers.map(offer => {
         const label = offerText(offer, text.offer);
         return <section key={offer.suggestionId} className="drawing-offer" aria-label={label}><p>{label}</p>
@@ -812,7 +836,10 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
       <div className="drawing-main">
         <div className="drawing-canvas">{source && file ? <PlanPreview key={source.drawingId ?? selected} source={source} file={file} vector={vector}
           picture={picture} hidden={hiddenIds} picked={pickedObject?.id ?? null} onPick={pick} symbols={!verticalOpen} objects={form.dressing} selected={selectedDressing}
-          onSelect={setSelectedDressing} onChange={dressing => update({ dressing })} disabled={busy || !active} />
+          onSelect={setSelectedDressing} onChange={dressing => update({ dressing })} disabled={busy || !active}
+          actions={<ResultActions disabled={busy || dirty || !active}
+            download={perspectiveOpen ? undefined : { command: "drawing.export.svg", label: text.download, title: text.downloadHint, disabled: !vector, onDownload: downloadSvg }}
+            onBoard={onBoard && (() => onBoard(pageSource(source, 0)))} onLayout={onLayout && (() => onLayout(pageSource(source, 0)))} />} />
           : <div className="drawing-empty" role="status">{loading || source ? text.loading : stage ? text.empty : live?.reason ?? text.noModel}</div>}</div>
       </div>
       <form id={controlsId} ref={controls} className="drawing-controls" aria-label={text.settings} onSubmit={event => { event.preventDefault(); void generate(source ? null : stage, !source && explicitTarget ? { follow: "frozen" } : {}); }}>
@@ -833,7 +860,8 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
               <p className="drawing-field__hint" role={recipeNote ? "status" : undefined}>{recipeNote ?? text.saveRecipeHint}</p>
             </div>}</details>
         </fieldset>}
-        {source && !perspectiveOpen && picture && <fieldset disabled={busy || !active}><legend>{text.objects}</legend>
+        {source && !perspectiveOpen && picture && <SettingsGroup label={text.objects} group="objects" open={openGroups.has("objects")} onToggle={showGroup}>
+          <fieldset disabled={busy || !active}><legend>{text.objects}</legend>
           <label className="drawing-field">{text.object}<select value={pickedObject?.id ?? ""} onChange={event => pick(event.target.value || null)}>
             <option value="">{text.noObject}</option>
             {listedObjects.map(({ object, label }) => <option key={object.id} value={object.id}>{label}</option>)}</select></label>
@@ -846,11 +874,13 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
             return <li key={id}><span>{name}{status?.unresolvedObjectIds?.includes(id) ? ` · ${text.notInModel}` : ""}</span>
               <button data-command="drawing.plan.show_object" data-command-arg={id} type="button" aria-label={`${text.showObject}: ${name}`} onClick={() => showObject(id)}>{text.showObject}</button></li>;
           })}</ul></div>}
-        </fieldset>}
-        {source && vector && form.cropUv && !verticalOpen && <DressingControls objects={form.dressing} vector={vector} crop={form.cropUv}
+        </fieldset></SettingsGroup>}
+        {source && vector && form.cropUv && !verticalOpen && <SettingsGroup label={text.dressing} group="dressing" open={openGroups.has("dressing")} onToggle={showGroup}>
+          <DressingControls objects={form.dressing} vector={vector} crop={form.cropUv}
           selected={selectedDressing} onSelect={setSelectedDressing} onChange={dressing => update({ dressing })}
-          disabled={busy || !active} language={language} unit={lengthUnit} status={status} />}
-        {dimensions.length > 0 && !verticalOpen && <fieldset disabled={busy || !active}><legend>{text.dimensions}</legend>
+          disabled={busy || !active} language={language} unit={lengthUnit} status={status} /></SettingsGroup>}
+        {dimensions.length > 0 && !verticalOpen && <SettingsGroup label={text.dimensions} group="dimensions" open={openGroups.has("dimensions")} onToggle={showGroup}>
+          <fieldset disabled={busy || !active}><legend>{text.dimensions}</legend>
           {dimensions.map(dimension => {
             const resolved = status?.dimensions?.find(item => item.id === dimension.id);
             const label = choices?.dimensions.find(item => item.entityRef === dimension.entityRef && item.openingId === dimension.openingId)?.label ?? dimension.openingId;
@@ -862,9 +892,9 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
               <button data-command="drawing.plan.remove_dimension" data-command-arg={dimension.id} type="button" onClick={() => update({ dimensions: dimensions.filter(item => item.id !== dimension.id) })}>{text.remove}</button>
             </div>;
           })}
-        </fieldset>}
+        </fieldset></SettingsGroup>}
         {/* Its controls belong to the section form below, so a cut plan's autosave never waits on them. */}
-        <details className="drawing-section" open={perspectiveOpen || undefined}><summary data-command="drawing.section_perspective.toggle">{text.section}</summary>
+        <details className="drawing-group drawing-section" open={perspectiveOpen || undefined}><summary data-command="drawing.section_perspective.toggle">{text.section}</summary>
           <fieldset form={sectionFormId} disabled={busy || !active || !lengthUnit || !sectionTarget}>
             <p className="drawing-field__hint">{text.sectionHint}</p>
             <label className="drawing-field">{text.sectionPlane}<select form={sectionFormId} value={section.axis}
