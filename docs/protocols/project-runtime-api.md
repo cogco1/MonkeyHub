@@ -1112,14 +1112,18 @@ fields this request supplies. It takes the `accept` grant, and the change itself
    words (compared as lower-case letters and digits): that keep is those conditions, checked on the built
    change at step 7; a refused proposal is `problems`;
 3. a keep conflict is `needs_question` (`KEEP_CONFLICT`), quoting the decision's words;
-4. a change whose reach (its direct references, what they propagate to, and every whole each touched part
-   belongs to) includes the target of an applicable `reject` or `avoid` decision is `needs_question`
-   (`REJECTED_OPTION`);
+4. a change that edits the target of an applicable `reject` or `avoid` decision is `needs_question`
+   (`REJECTED_OPTION`): it changes the target's own row or the row of a part of it, adds a part under it or
+   removes one, changes the row of a whole that holds it, or changes the parameter the decision names. A target
+   the change only carries along through parameter bindings, its own row unchanged, is not edited by it (a
+   larger rotunda rebuilds its oculus ring and does not glaze it). An `avoid` asks that its target not change at
+   all: any change reaching it, a part of it or the whole it belongs to, parameter bindings included, asks. What the
+   build added is read on the built record too;
 5. a live condition in the change's reach (its direct references and their downstream closure) that names
    no executable check is `needs_question` (`UNCHECKED_CONDITION`), unless `confirmed` names it as
    `obligation:<id>` and the request carries the architect's words; nothing is built for a question. In
-   steps 4 and 5 the reach is what the change changes: a part a relation reaches only to have it checked
-   again (`requires_revalidation`, such as a support it stands on) does not change;
+   step 5 the reach is what the change changes: a part a relation reaches only to have it checked again
+   (`requires_revalidation`, such as a support it stands on) does not change;
 6. the candidate is built and waited for (`waitSeconds`, default 240, at most 300); a build that does not
    finish is `problems` with `RUN_TIMEOUT` and keeps building. What the build changed against the base, where
    its proposal's impact did not name it, meets steps 3 to 5 again (`KEEP_CONFLICT`, `REJECTED_OPTION`,

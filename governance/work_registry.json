@@ -4,12 +4,12 @@
     {
       "id": "GH-185",
       "status": "active",
-      "branch": "codex/185-submit-shapes",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-185-submit-shapes",
-      "base_ref": "f6136b0b1b646099a6e281c979e23d2ea905ce07",
+      "branch": "codex/185-reject-edits",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-185-reject-edits",
+      "base_ref": "919bbf2af07d2ec7b60f71a09cd0229c0f551f7a",
       "contributor": "Claude",
       "reviewer": null,
-      "handoff": "Tuning after #678: design_submit states each kind's body with an example and answers a refused body with its fields; parameters may come as key: value; keep takes only entity and parameter refs; the model view names the declared parameters, what each geometry id is made from, the parts a script cannot edit and every opening with the parameters that size it; an unknown id is answered with what it is.",
+      "handoff": "Tuning after #688: a rejected option is revived only by a change that edits its target (its row, a part under it, a whole holding it, or the parameter it names), not by one that carries it along through parameter bindings.",
       "modules": [
         "archflow.state.state_record",
         "hub.shell",
