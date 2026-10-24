@@ -23,6 +23,7 @@
 .document-model-source__description > span { color: var(--muted); margin-right: 8px; font-size: 12px; }
 .document-model-source__description > strong { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .document-model-source__description > p { margin: 3px 0 0; font-size: 12px; color: var(--muted); }
+.document-model-source__description > .document-model-source__change { padding: 0 2px; border: 0; background: none; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: 12px; }
 .document-model-source__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .document-model-source__actions select { max-width: 340px; }
 .document-model-source__actions > span { font-size: 12px; color: var(--muted); }

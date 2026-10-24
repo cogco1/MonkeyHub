@@ -996,7 +996,8 @@
         "GET /api/documents",
         "POST /api/documents",
         "GET /api/documents/{asset_sha256}/bytes",
-        "POST /api/documents/{asset_sha256}/model-source"
+        "POST /api/documents/{asset_sha256}/model-source",
+        "PUT /api/documents/{asset_sha256}/model-source"
       ],
       "works": [
         "PDF, PNG and JPEG uploads kept by content",
@@ -1061,6 +1062,14 @@
               "文8",
               "文9"
             ]
+          },
+          {
+            "id": "document.model_source.change",
+            "label": "Change linked model",
+            "label_zh": "换一个模型",
+            "surface": "document",
+            "channel": "background",
+            "entries": []
           }
         ]
       }
@@ -10193,7 +10202,7 @@
         "verifying and decoding a viewport PNG before retaining its bytes through P036 under runs/<requested-run>/workspaces/studio-captures with a server-generated content name; an optional exact modelSource also registers the preview through the existing SourceDocument object store",
         "validating original PDF/PNG/JPEG bytes and visible page dimensions, ingesting them through P036, and registering their content identity in the named run; serving only registered source bytes whose SHA-256 still matches",
         "retaining an explicitly supplied composed 3dm against its exact run state, or an external 3dm without semantic state in P036 source runs keyed by the exact asset digest; original bytes and immutable registrations share the existing artifact owner, with no native readback claim",
-        "one-time declared model-source association for an existing unbound document, retained in its unchanged storage run; serving the association without rewriting source bytes, annotations or earlier comments",
+        "one-time declared model-source association for an existing unbound document, retained in its unchanged storage run; serving the association without rewriting source bytes, annotations or earlier comments; changing that link later (PUT; an uploaded or imported document only, a drawing made from a model keeps its model) writes a record that names the one it replaces, so the earlier link stays in modelSourceHistory and is never overwritten",
         "registering model-axis elevation and top projection revisions from a complete exact STEP in the existing document list, with fixed model/Stage source, logical drawing id, view recipe and immutable drawing receipt; top is an uncut orthographic projection",
         "composing front/right/top review sheets from the exact retained model using a selected drawing style and explicit scale, registering PDF and same-scene editable DXF through P036, and reusing an identical retained sheet without another projection",
         "requiring a native Stage model to cover every producing seat execution, or an explicitly registered complete composed model",
@@ -10277,10 +10286,12 @@
         "GET /api/projections/pages",
         "GET /api/projections/{key}",
         "ModelSource",
+        "ModelSourceBinding",
         "POST /api/artifacts/{sha256}/rhino-export",
         "POST /api/captures",
         "POST /api/documents",
         "POST /api/documents/{asset_sha256}/model-source",
+        "PUT /api/documents/{asset_sha256}/model-source",
         "POST /api/documents/{asset_sha256}/work-copy",
         "POST /api/drawings/elevations",
         "POST /api/drawings/plans",
@@ -10339,6 +10350,7 @@
         "projection_spec",
         "read_model_preview",
         "read_model_source_index",
+        "rebind_document_model_source",
         "recipe_suggestions",
         "register_model_asset",
         "replacement_cause",

@@ -17,6 +17,7 @@ from ...application.artifacts import (
     artifact_bytes,
     export_rhino_work_model,
     bind_document_model_source,
+    rebind_document_model_source,
     DocumentPageReplacement,
     DocumentReplacementTarget,
     document_bytes,
@@ -30,6 +31,7 @@ from ...application.artifacts import (
     require_model_source,
     save_viewport_capture,
 )
+from ...authentication import request_attribution
 from ...binding import bound_project
 from ...application.gestures import read_model_annotations
 from ...application.projection import project_state
@@ -115,6 +117,17 @@ def associate_document_model_source(request: Request, asset_sha256: str, payload
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The source document names another project.")
     return document_dto(bind_document_model_source(binding, payload.run_id, asset_sha256, model_source_from(payload.model_source)))
+
+
+@router.put("/documents/{asset_sha256}/model-source", response_model=SourceDocumentDto, response_model_by_alias=True)
+def change_document_model_source(request: Request, asset_sha256: str, payload: DocumentModelSourceRequestDto) -> SourceDocumentDto:
+    """Link the document to another model. The link it had stays in modelSourceHistory; a drawing made from a model refuses."""
+
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The source document names another project.")
+    return document_dto(rebind_document_model_source(binding, payload.run_id, asset_sha256, model_source_from(payload.model_source),
+                                                     attribution=request_attribution(request)))
 
 
 @router.post("/documents", response_model=SourceDocumentDto, response_model_by_alias=True, status_code=201)
