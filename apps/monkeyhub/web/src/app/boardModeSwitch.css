@@ -3,16 +3,17 @@
 .board-mode-switch {
   display: flex;
   align-self: stretch;
-  gap: 14px;
+  gap: var(--tab-gap, 14px);
 }
 
 .board-mode-switch button {
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
-  padding: 0 2px;
+  align-self: var(--tab-align, stretch);
+  min-height: var(--tab-h, 44px);
+  padding: var(--tab-pad, 0 2px);
   border: 0;
-  border-radius: 0;
+  border-radius: var(--tab-radius, 0);
   background: none;
   color: var(--muted);
   font: inherit;
@@ -26,9 +27,10 @@
 }
 
 .board-mode-switch button[aria-checked="true"] {
-  color: var(--ink);
+  background: var(--tab-on-bg, none);
+  color: var(--tab-on-ink, var(--ink));
   font-weight: 600;
-  box-shadow: inset 0 -2px var(--accent);
+  box-shadow: var(--tab-on-mark, inset 0 -2px var(--accent));
 }
 
 .board-mode-switch button:focus-visible {

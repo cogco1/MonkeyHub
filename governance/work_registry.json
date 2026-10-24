@@ -156,6 +156,33 @@
             "tools/governance/devctl.py"
           ],
           "depends_on": []
+        },
+        {
+          "id": "board-style",
+          "status": "active",
+          "branch": "claude/300-board-style",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-board-style",
+          "base_ref": "cc8f54e20546c73a1e1e1763a5001a8495c48675",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Critique Table (评图桌, board) as base.css tokens and component hooks read with fallbacks, and data-ui-family in place of the three-style selector lists. The board value reaches the settings, menus and style cards after the GH-185 scope is released. Draft only during the paper freeze: nothing merges into main until the relay ends and the coordinator says so.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatCard.css",
+            "apps/monkeyhub/web/src/ChatShell.css",
+            "apps/monkeyhub/web/src/app/boardModeSwitch.css",
+            "apps/monkeyhub/web/src/app/styles.css",
+            "apps/monkeyhub/web/src/features/chrome/chrome.css",
+            "apps/monkeyhub/web/src/notifications/attention.css",
+            "apps/monkeyhub/web/test/appearance.test.ts",
+            "apps/monkeyhub/web/test/interfaceStyles.browser.mjs",
+            "packages/web-shared/src/appearance.d.ts",
+            "packages/web-shared/src/appearance.js",
+            "packages/web-shared/src/base.css"
+          ],
+          "depends_on": []
         }
       ]
     }
