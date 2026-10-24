@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 import { workspaceFixture } from "./workspaceFixture.mjs";
-import { cmd } from "./commandLocator.mjs";
+import { cmd, commandProblems } from "./commandLocator.mjs";
 
 // Real Board, save queue, preferences and Excalidraw. Only the fixture entry and
 // a read/write handle to Excalidraw's public API are injected; no component stub.
@@ -116,6 +116,7 @@ try {
       equal(await cmd(page, "view.notice.retry", { arg: "board_open" }).textContent(), expected[initial].retry, `${initial}: retry`);
       await cmd(page, "view.notice.retry", { arg: "board_open" }).click();
       await page.waitForFunction(() => window.__boardApi && !document.querySelector(".monkeyboard-initializing"));
+      equal(await commandProblems(page.locator(".monkeyboard"), { ignore: [".excalidraw"] }), [], `${initial}: every visible Board control names its command`);
       await page.locator(".monkeyboard-title").fill("Unfinished review {count}");
       await page.evaluate(() => {
         const { convertToExcalidrawElements, CaptureUpdateAction } = window.__boardHelpers;
