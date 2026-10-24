@@ -651,7 +651,9 @@ try {
     assert.equal(await cmd(page, "drawing.plan.refresh", { includeHidden: true }).count(), 0, "no standing refresh");
     await page.evaluate(() => { window.drawingFixture.failDocuments = 1; });
     await refreshSources();
-    await page.locator(".drawing-attention .drawing-error").getByText("Fixture could not read the documents.").waitFor();
+    await page.locator(".drawing-attention .drawing-error .error-panel").waitFor();
+    // The panel says what happened in words; the server's own words are folded beneath it.
+    assert.equal(await page.locator(".drawing-error .error-panel__detail").textContent(), "Fixture could not read the documents.");
     await cmd(page.locator(".drawing-attention"), "drawing.plan.refresh").click();
     await cmd(page, "drawing.plan.refresh").waitFor({ state: "detached" });
     assert.equal(await page.locator(".drawing-error").count(), 0);
