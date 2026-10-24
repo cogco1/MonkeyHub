@@ -322,13 +322,13 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
   assert.deepEqual((await currentStudy()).research.comparisonResults, compared.research.comparisonResults,
     "Reopening must replay both exact comparison results");
   // 2-7: the relations only one side has are for everyone; the saved records' references wait for developer mode.
-  const exact = panel().locator("details").filter({ has: cmd(panel(), "view.disclosure.toggle", { arg: "study_exact_versions", includeHidden: true }) }).first();
-  await cmd(exact, "view.disclosure.toggle", { arg: "study_exact_versions" }).click();
-  assert.equal(await cmd(exact, "view.disclosure.toggle", { arg: "study_exact_versions" }).textContent(), "Unique relations");
+  const exact = cmd(panel(), "view.disclosure.toggle", { arg: "study_exact_versions" }).first();
+  await exact.click();
+  assert.equal(await exact.textContent(), "Unique relations");
   for (const ref of compared.research.comparisons.flatMap(row => row.studies.map(study => study.ledgerRef))) {
     assert.equal(await panel().getByText(ref, { exact: true }).count(), 0, `${ref} waits for developer mode`);
   }
-  await cmd(exact, "view.disclosure.toggle", { arg: "study_exact_versions" }).click();
+  await exact.click();
   await page.screenshot({ path: path.join(evidenceDir, "study-compare.png") });
 
   await step("Explanations");
