@@ -210,9 +210,10 @@ class AttentionHub:
         return sessions
 
     def _graph(self, runtime) -> dict | None:
-        # Only a running Studio is asked; a closed project keeps the cards it had.
+        # Only a running Studio is asked, at once: a closed or starting project keeps the cards it had until its
+        # next event, and this thread keeps hearing events meanwhile.
         try:
-            result = self.runtimes.forward(runtime, "/api/worktrees", "GET", b"", {})
+            result = self.runtimes.forward(runtime, "/api/worktrees", "GET", b"", {}, wait=False)
         except HubFailure:
             return None
         return result.json() if result.status < 400 else None
