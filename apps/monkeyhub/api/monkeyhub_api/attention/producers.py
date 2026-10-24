@@ -60,7 +60,7 @@ def _card(title: Words, summary: Words | None = None, **fields: Any) -> Attentio
 
 def _keep() -> AttentionOption:
     return _option("keep", ("Keep", "留着"), ("The result stays where it is; this card is put away",
-                                              "结果留在原处，这张卡收起"), "attention.acknowledge")
+                                              "结果留在原处，这张卡收起"), "attention.queue.acknowledge")
 
 
 def _archive(runs: list[str], label: Words) -> AttentionOption:
@@ -233,7 +233,7 @@ def suggestions(sessions: Iterable[ChatDetail]) -> list[AttentionDraft]:
             dedupeKey=f"{SUGGESTIONS}{card.id}",
             options=[_option("go", ("Do this", "就这样做"),
                              (f"The conversation carries on: {suggestion.title}", f"在原对话里接着做：{suggestion.title}"),
-                             "attention.answer_guess", sessionId=session.id, messageId=card.id,
+                             "attention.queue.answer_guess", sessionId=session.id, messageId=card.id,
                              revision=card.presentationRevision)],
             opens=[CommandRef(commandId=OPEN_CONVERSATION, args={"sessionId": session.id})]))
     return drafts
@@ -307,7 +307,7 @@ def operations(records: Iterable[OperationRecord]) -> list[AttentionDraft]:
             dedupeKey=f"{OPERATIONS}{record.operationId}:{record.status}",
             options=[_option("ok", ("Got it", "知道了"), ("The notice is put away; the record stays",
                                                          "收起这条提示，操作记录不变"),
-                             "attention.acknowledge", operationId=record.operationId)],
+                             "attention.queue.acknowledge", operationId=record.operationId)],
             opens=[CommandRef(commandId=OPEN_CONVERSATION, args={"sessionId": record.sessionId})]
             if record.sessionId else []))
     return drafts
