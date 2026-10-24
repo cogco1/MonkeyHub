@@ -5098,8 +5098,8 @@
           },
           {
             "id": "view.handled.toggle",
-            "label": "Show processed",
-            "label_zh": "查看已处理项",
+            "label": "Handled",
+            "label_zh": "已处理",
             "surface": "design_tree",
             "entries": [
               "树3"
@@ -5282,8 +5282,8 @@
           },
           {
             "id": "view.design_history.toggle",
-            "label": "Toggle design tree",
-            "label_zh": "切换状态树",
+            "label": "History",
+            "label_zh": "修改历史",
             "opens": true,
             "entries": [
               "栏4"

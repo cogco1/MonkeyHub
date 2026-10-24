@@ -71,6 +71,17 @@ test("a developer command waits for developer mode", () => {
   assert.deepEqual(ids(rankCommands(tree, "端口", "zh-CN", [], true)), ["view.runtime_port"]);
 });
 
+test("a command that only means something where it stands is offered while that entry is on screen", () => {
+  const placed: CommandTree = { capabilities: [], commands: [
+    command("chat.composer.interject", "Interject", "插话", { place: "composer" }),
+    command("project.create.confirm", "Create the project", "创建项目", { place: "dialog:project_create" }),
+    command("view.design_tree.open", "Open the design tree", "打开状态树", { place: "project_bar" }),
+  ] };
+  assert.deepEqual(ids(rankCommands(placed, "", "en")), ["view.design_tree.open"], "a standing place is offered from anywhere");
+  assert.deepEqual(ids(rankCommands(placed, "", "en", [], false, new Set(["chat.composer.interject"]))), ["chat.composer.interject", "view.design_tree.open"]);
+  assert.deepEqual(ids(rankCommands(placed, "创建", "zh-CN", [], false, new Set(["project.create.confirm"]))), ["project.create.confirm"]);
+});
+
 test("an empty palette leads with what was used last, then the tree in order", () => {
   const ranked = rankCommands(tree, "", "en", ["drawing.plan_new", "missing.command", "model.export_stl"]);
   assert.deepEqual(ids(ranked), ["drawing.plan_new", "model.export_stl", "model.export_3dm"]);

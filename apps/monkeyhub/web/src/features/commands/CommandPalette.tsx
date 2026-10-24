@@ -50,7 +50,7 @@ export function CommandPalette({ language, onClose, askAI }: {
   }, []);
 
   const rows = useMemo<Row[]>(() => {
-    const ranked = rankCommands(tree, query, language, usage.recent, developerMode).slice(0, SHOWN);
+    const ranked = rankCommands(tree, query, language, usage.recent, developerMode, onScreen).slice(0, SHOWN);
     const out: Row[] = [];
     if (!query.trim()) {
       // Recent first, then one heading per advanced-tools group, in the groups' order.

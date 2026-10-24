@@ -33,14 +33,18 @@ export function queryParts(query: string): string[] {
   return fold(query).split(/[\s　,，、;；·]+/).filter(Boolean);
 }
 
+/** Places whose commands mean something only where they stand: the composer, a card, a list row, a dialog. */
+const IN_PLACE = /^(?:composer|card|row)$|^dialog:/;
+
 /**
  * Commands the palette offers at all: background ones are the machine's to do, one that
  * needs arguments is run from where they are known (a card, a row generated per
- * conversation), and developer ones wait for developer mode.
+ * conversation), and developer ones wait for developer mode. One that only means something
+ * where it stands (IN_PLACE) is offered while that entry is on screen, to point at it.
  */
-export function searchable(tree: CommandTree, developer = false): Command[] {
+export function searchable(tree: CommandTree, developer = false, onScreen: ReadonlySet<string> = new Set()): Command[] {
   return tree.commands.filter((command) => command.channel !== "background" && !command.args.length
-    && (developer || command.tier !== "developer"));
+    && (developer || command.tier !== "developer") && (!command.place || !IN_PLACE.test(command.place) || onScreen.has(command.id)));
 }
 
 function scorePart(part: string, command: Command, capability: CommandCapability | null, language: Language): number {
@@ -63,11 +67,12 @@ function scorePart(part: string, command: Command, capability: CommandCapability
  */
 export function rankCommands(
   tree: CommandTree, query: string, language: Language, recent: readonly string[] = [], developer = false,
+  onScreen: ReadonlySet<string> = new Set(),
 ): RankedCommand[] {
   const size = new Map<string, number>();
   for (const command of tree.commands) size.set(command.capability, (size.get(command.capability) ?? 0) + 1);
   const single = new Map(tree.capabilities.filter((capability) => size.get(capability.id) === 1).map((capability) => [capability.id, capability]));
-  const commands = searchable(tree, developer);
+  const commands = searchable(tree, developer, onScreen);
   const recency = new Map(recent.map((id, index) => [id, index]));
   const parts = queryParts(query);
   if (!parts.length) {

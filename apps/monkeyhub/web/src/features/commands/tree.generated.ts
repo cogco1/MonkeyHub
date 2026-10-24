@@ -7524,8 +7524,8 @@ export const COMMAND_TREE: CommandTree = {
       "id": "view.handled.toggle",
       "capability": "shell.pages",
       "label": {
-        "en": "Show processed",
-        "zh-CN": "查看已处理项"
+        "en": "Handled",
+        "zh-CN": "已处理"
       },
       "terms": [],
       "surface": "design_tree",
@@ -7859,8 +7859,8 @@ export const COMMAND_TREE: CommandTree = {
       "id": "view.design_history.toggle",
       "capability": "shell.pages",
       "label": {
-        "en": "Toggle design tree",
-        "zh-CN": "切换状态树"
+        "en": "History",
+        "zh-CN": "修改历史"
       },
       "terms": [],
       "surface": "hub",
