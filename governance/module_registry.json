@@ -10796,7 +10796,8 @@
         "Kaiwen's retention rule (#575): which runs go to the project trash (plan_cleaning) - a draft the Worktree Graph names superseded, an attempt an admitted result replaced or its loop withdrew, a design change whose run never finished - and only off every kept line (the Working Head's, a Stage's, an admitted result's), never continued, admitted or rejected, no name a person saved (an agent's or any other caller's name goes with it into the trash) and no row a person chose, no execution's input, holding only what its execution wrote, and named by no retained record outside it but the admission that replaced it; moving them in order (clean_superseded), the trash read and restore (GET /api/trash, POST /api/trash/restore), the 30-day purge, and the sweeps at project open (after the index loads) and after each Continue on a thread of their own (RetentionSweeps)",
         "expiring superseded local recovery in the project's own runtime (prune_recovery over archflow.project.repository's prune_working_draft, its rule unchanged): first in every retention sweep and every 15 minutes while the project is open (RECOVERY_PRUNE_INTERVAL_S), the timer the Hub kept until ADR-012",
         "relation_problems: the violated relations, then the unchecked ones, by relation id, from the run's retained relation reports, at most RELATION_PROBLEMS_SHOWN; a check that held on the pairs it measured but left a pair unmeasured is unchecked",
-        "each finished Worktree Graph line's candidate review (unreviewed, rejected, archived) from the retained candidate reviews, read once per graph, so a result the architect archived is not offered again (#300)"
+        "each finished Worktree Graph line's candidate review (unreviewed, rejected, archived) from the retained candidate reviews, read once per graph, so a result the architect archived is not offered again (#300)",
+        "following a job in four steps (#300): generate, check, repair and save, each pending, running, done, skipped or failed with a sentence; the work reports them with report_step from the worker thread it runs on, each change is a job.step event, a step still running when the work ends ends with it, and a job's events carry its lane, what it waits for, its title and its steps"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - monkeyarch.application.project_runner",
@@ -10864,6 +10865,10 @@
         "inspect_runtime",
         "GET /api/runtime",
         "JobRegistry.list",
+        "JobRegistry.step",
+        "JobStep",
+        "report_step",
+        "STEPS",
         "candidate_seats",
         "GET /api/worktrees",
         "worktree_graph",

@@ -563,6 +563,24 @@
             "apps/monkeyhub/api/tests/test_attention_producers.py"
           ],
           "depends_on": []
+        },
+        {
+          "id": "job-steps",
+          "status": "active",
+          "branch": "claude/300-job-steps",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-job-steps",
+          "base_ref": "bc41a4caecb79198c2b1ea15b755a59169e33617",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Step 2-4 of the three-channel shell: a Runtime job is followed in four steps (generate, check, repair, save); work reports them with report_step, each change is a job.step event, and the event wire keeps the lane and what a queued job waits for. Reporting from candidate runs and revisions, JobDto.steps and the Hub's OperationRecord.steps wait for GH-185 to release those files.",
+          "modules": [
+            "project_runtime.candidate"
+          ],
+          "write_scope": [
+            "services/project-runtime/src/project_runtime/api/dto/events.py",
+            "services/project-runtime/src/project_runtime/jobs.py"
+          ],
+          "depends_on": []
         }
       ]
     }
