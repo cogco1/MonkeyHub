@@ -17,13 +17,15 @@ function stored(): ShellLayout {
 }
 
 function asked(): ShellLayout | null {
+  if (typeof window === "undefined") return null;
   const value = new URLSearchParams(window.location.search).get("shell");
   return value === "attention" || value === "workbench" ? value : null;
 }
 
-let current: ShellLayout = asked() ?? stored();
+// Read when first asked, not at import: a page without a window (a test rendering the shell) gets the default.
+let current: ShellLayout | null = null;
 
-export const shellLayout = (): ShellLayout => current;
+export const shellLayout = (): ShellLayout => (current ??= asked() ?? stored());
 
 /** Go to the other shell: at once, with the same conversation, drafts and open surfaces, and kept for next time. */
 export function chooseShell(next: ShellLayout): void {
@@ -33,7 +35,7 @@ export function chooseShell(next: ShellLayout): void {
     url.searchParams.delete("shell");
     window.history.replaceState(window.history.state, "", url);
   }
-  if (current === next) return;
+  if (shellLayout() === next) return;
   current = next;
   for (const listener of listeners) listener();
 }
