@@ -20,12 +20,12 @@ export function AdvancedTools() {
   const { tree, run, stateOf } = useCommands();
   const [onScreen] = useState(entriesOnScreen);
   const groups = useMemo(() => {
-    const commands = searchable(tree, developerMode, onScreen);
+    const commands = searchable(tree, developerMode);
     const order = (group: string) => { const index = (GROUPS as readonly string[]).indexOf(group); return index < 0 ? GROUPS.length : index; };
     const byGroup = new Map<string, typeof commands>();
     for (const command of commands) byGroup.set(command.group, [...(byGroup.get(command.group) ?? []), command]);
     return [...byGroup.entries()].sort(([a], [b]) => order(a) - order(b));
-  }, [tree, developerMode, onScreen]);
+  }, [tree, developerMode]);
   if (!groups.length) return <p className="attention-shell__empty">{t("shell.side.tools.empty")}</p>;
   return <div className="advanced-tools">{groups.map(([group, commands]) => <section key={group} className="advanced-tools__group">
     <h3>{(GROUPS as readonly string[]).includes(group) ? t(`commands.group.${group}` as MessageKey) : group}</h3>

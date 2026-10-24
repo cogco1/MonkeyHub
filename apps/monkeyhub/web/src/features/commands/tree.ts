@@ -44,6 +44,8 @@ export interface Command {
   readonly tier: CommandTier;
   /** Its one standing place, if it has one; the palette and shortcuts are not places. */
   readonly place: string | null;
+  /** It means something only where it stands (in a dialog, on a card, in the composer, at a row's end): not listed bare. */
+  readonly inPlace?: boolean;
   /** The conditions it needs (the capability's requires, the Runtime's feature flags), read once they are wired. */
   readonly when: readonly string[];
   readonly shortcut: string | null;
