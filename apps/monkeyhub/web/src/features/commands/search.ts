@@ -34,12 +34,13 @@ export function queryParts(query: string): string[] {
 }
 
 /**
- * Commands the palette offers at all: background ones are the machine's to do, one that
- * needs arguments is run from where they are known (a card, a row generated per
- * conversation), and developer ones wait for developer mode.
+ * Commands the palette and the advanced tools offer at all: background ones are the machine's to do, one that
+ * needs arguments is run from where they are known (a card, a row generated per conversation), one that means
+ * something only where it stands (in place: a dialog's confirm, a card's button, the composer's Stop) is used
+ * there, and developer ones wait for developer mode.
  */
 export function searchable(tree: CommandTree, developer = false): Command[] {
-  return tree.commands.filter((command) => command.channel !== "background" && !command.args.length
+  return tree.commands.filter((command) => command.channel !== "background" && !command.args.length && !command.inPlace
     && (developer || command.tier !== "developer"));
 }
 

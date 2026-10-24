@@ -192,7 +192,7 @@ test("design cards distinguish component edits from scalar controls and fold com
     }),
   ));
   assert.match(scalarHtml, /height 3 → <b>4<\/b> m/);
-  assert.match(scalarHtml, /<details class="card__row card__details"><summary>[^<]+<\/summary><div class="card__row refine"/);
+  assert.match(scalarHtml, /<details class="card__row card__details"><summary[^>]*>[^<]+<\/summary><div class="card__row refine"/);
   assert.match(scalarHtml, /type="range"/);
   assert.match(scalarHtml, /class="btn btn--primary" disabled=""/);
 
@@ -241,7 +241,7 @@ test("design cards distinguish component edits from scalar controls and fold com
       createElement(Composer, { ...composerProps, intentProvider: provider }),
     ));
     if (provider === "codex") {
-      assert.match(composerHtml, /<details class="card__details"><summary>(?:View editable parameters|查看可编辑参数)<\/summary>/);
+      assert.match(composerHtml, /<details class="card__details"><summary[^>]*>(?:View editable parameters|查看可编辑参数)<\/summary>/);
     } else {
       assert.doesNotMatch(composerHtml, /<details/);
     }

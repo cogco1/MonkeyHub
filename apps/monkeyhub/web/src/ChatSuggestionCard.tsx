@@ -74,11 +74,11 @@ export function ChatSuggestionCard({ message, chat, language, busy, sending, err
       <p><strong>{t.request}</strong><br /><span className="chat-suggestion__request">{card.prompt}</span></p>
     </> }}
     actions={!dismissed && <>
-      <button type="button" className="btn btn--primary" data-suggestion-action="accept" disabled={Boolean(reason)} aria-describedby={reason ? statusId : undefined} onClick={onAccept}>
+      <button data-command="chat.suggestion.accept" type="button" className="btn btn--primary" data-suggestion-action="accept" disabled={Boolean(reason)} aria-describedby={reason ? statusId : undefined} onClick={onAccept}>
         {sending ? t.sending : card.capability === "available" ? t.accept : t.assess}
       </button>
-      <button type="button" className="btn" data-suggestion-action="adjust" disabled={Boolean(reason)} onClick={onAdjust}>{t.adjust}</button>
-      <button type="button" className="chat-suggestion__skip" data-suggestion-action="dismiss" disabled={Boolean(reason)} onClick={() => setDismissed(true)}>{t.dismiss}</button>
+      <button data-command="chat.suggestion.adjust" type="button" className="btn" data-suggestion-action="adjust" disabled={Boolean(reason)} onClick={onAdjust}>{t.adjust}</button>
+      <button data-command="chat.suggestion.dismiss" type="button" className="chat-suggestion__skip" data-suggestion-action="dismiss" disabled={Boolean(reason)} onClick={() => setDismissed(true)}>{t.dismiss}</button>
     </>}
     footer={(reason || error) && <>
       {reason && <p className="chat-suggestion__status" id={statusId} role="status">{reason}</p>}

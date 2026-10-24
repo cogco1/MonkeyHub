@@ -82,16 +82,16 @@ function ImagePreview({ src, name, downloadUrl, labels }: { src: string; name: s
   const opener = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   return <div className="chat-image">
-    {state !== "failed" && <button className="chat-image__preview" type="button" ref={opener}
+    {state !== "failed" && <button data-command="view.open_file.image" className="chat-image__preview" type="button" ref={opener}
       aria-label={`${labels.previewImage}: ${name}`} disabled={state !== "ready"} onClick={() => dialog.current?.showModal()}>
       <img src={src} alt={name} loading="lazy" decoding="async" onLoad={() => setState("ready")} onError={() => setState("failed")} />
     </button>}
     {state !== "ready" && <p className="chat-muted" role="status">{state === "failed" ? labels.imageFailed : labels.imageLoading}</p>}
     <dialog className="chat-image-dialog" ref={dialog} aria-labelledby={titleId} onClose={() => opener.current?.focus()}>
       <div className="chat-image-dialog__heading"><h2 id={titleId}>{name}</h2>
-        <button type="button" onClick={() => dialog.current?.close()} autoFocus>{labels.close}</button></div>
+        <button data-command="view.dialog.close" type="button" onClick={() => dialog.current?.close()} autoFocus>{labels.close}</button></div>
       {state === "ready" && <img src={src} alt={name} />}
-      <a href={downloadUrl} download={name}>{labels.download}</a>
+      <a data-command="view.open_file.download" href={downloadUrl} download={name}>{labels.download}</a>
     </dialog>
   </div>;
 }
@@ -147,9 +147,9 @@ export function ChatMessageFiles({ sessionId, messageId, attachments = [], docum
             </span>
           </div>
           <div className="chat-file-row__actions">
-            {file.document && onOpenDocument && <button type="button" className="chat-activity__open" disabled={documentBusy}
+            {file.document && onOpenDocument && <button data-command="view.open_file.document" type="button" className="chat-activity__open" disabled={documentBusy}
               onClick={() => onOpenDocument(file.document!)}>{labels.openDocument}</button>}
-            <a href={file.downloadUrl} download={file.name}>{labels.download}</a>
+            <a data-command="view.open_file.download" href={file.downloadUrl} download={file.name}>{labels.download}</a>
           </div>
         </div>
       </li>;

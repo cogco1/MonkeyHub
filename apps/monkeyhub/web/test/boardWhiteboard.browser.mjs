@@ -9,6 +9,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { cmd, commandProblems, waitForCommandLabel } from "./commandLocator.mjs";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 
@@ -149,9 +150,9 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
     await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
     await page.locator(".monkeyboard-canvas canvas").first().waitFor();
   };
-  const more = () => page.locator(".monkeyboard-actions > summary");
+  const more = () => cmd(page, "view.menu.toggle", { arg: "board_more" });
   const setMore = async (expanded) => { if ((await page.locator(".monkeyboard-actions").getAttribute("open") !== null) !== expanded) await more().click(); };
-  const fit = async () => { await setMore(true); await page.getByRole("button", { name: "Fit board", exact: true }).click(); await setMore(false); };
+  const fit = async () => { await setMore(true); await cmd(page, "view.canvas.fit").click(); await setMore(false); };
   const selectAll = async () => {
     await page.locator(".excalidraw").focus(); await page.keyboard.press("Escape");
     await page.keyboard.press("v"); await page.keyboard.press("Control+a");
@@ -162,11 +163,11 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
   };
   await open();
   await page.getByText("Drop a drawing or image here", { exact: true }).waitFor();
-  const documentsToggle = page.getByRole("button", { name: "Project documents", exact: true });
+  const documentsToggle = cmd(page, "board.add_document_page.toggle_list");
   assert.equal(await documentsToggle.getAttribute("aria-expanded"), "false");
   assert.equal(await page.locator(".monkeyboard-sources").isVisible(), false);
   assert.equal(await page.locator(".monkeyboard-actions").getAttribute("open"), null);
-  assert.equal(await page.getByRole("button", { name: "Crit mode", exact: true }).isVisible(), false);
+  assert.equal(await cmd(page, "markup.hand_to_ai.enter_crit").isVisible(), false);
   assert.equal(await page.locator(".monkeyboard-context").isVisible(), false);
   await more().focus(); await page.keyboard.press("Enter");
   assert.notEqual(await page.locator(".monkeyboard-actions").getAttribute("open"), null);
@@ -182,14 +183,16 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
   await screenshot("empty-zh");
   await page.setViewportSize({ width: 620, height: 900 });
   const canvasWidth = (await page.locator(".monkeyboard-canvas").boundingBox()).width;
-  const narrowDocuments = page.getByRole("button", { name: "项目资料", exact: true });
+  const narrowDocuments = cmd(page, "board.add_document_page.toggle_list");
+  await waitForCommandLabel(narrowDocuments, "项目资料");
   await narrowDocuments.click();
   assert.equal(await narrowDocuments.getAttribute("aria-expanded"), "true");
   assert.equal((await page.locator(".monkeyboard-canvas").boundingBox()).width, canvasWidth,
     "Narrow documents overlay must not squeeze the canvas");
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await screenshot("narrow-sources-zh");
-  await page.getByRole("button", { name: "收起项目资料", exact: true }).click();
+  await waitForCommandLabel(cmd(page, "board.add_document_page.close_list"), "收起项目资料");
+  await cmd(page, "board.add_document_page.close_list").click();
   assert.equal(await narrowDocuments.getAttribute("aria-expanded"), "false");
   await screenshot("narrow-zh");
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -229,7 +232,7 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
   await savedWhere((value) => active(value, "arrow").length === 1, "Native arrow gesture did not persist");
   await selectAll();
   await page.locator(".monkeyboard-context").waitFor();
-  await page.locator(".monkeyboard-context").getByRole("button", { name: "Link model in MonkeyDiagram", exact: true }).waitFor();
+  await cmd(page.locator(".monkeyboard-context"), "view.open_document.link_model").waitFor();
   assert.equal(await page.locator(".monkeyboard-context-identity strong").innerText(), firstDocument.fileName);
   assert.equal(await page.locator(".monkeyboard-context-binding").innerText(), "Drawing only");
   assert.equal(submissions.length, 0);
@@ -240,9 +243,10 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
   await fit(); await selectAll();
-  const feedback = () => page.locator(".monkeyboard-context").getByRole("button", { name: "Send design feedback", exact: true });
+  const feedback = () => cmd(page.locator(".monkeyboard-context"), "markup.hand_to_ai.open");
   await feedback().waitFor(); assert.equal(await feedback().isEnabled(), true);
-  assert.equal(await page.locator(".monkeyboard-context").getByRole("button", { name: "Link model in MonkeyDiagram", exact: true }).count(), 0);
+  assert.equal(await cmd(page.locator(".monkeyboard-context"), "view.open_document.link_model").count(), 0);
+  assert.deepEqual(await commandProblems(page.locator(".monkeyboard"), { ignore: [".excalidraw"] }), [], "every visible Board control names its command");
 
   // #288: the selected page against the editing base is the Runtime's representation status
   // for exactly that page, read when the selection names it. The real route answers first: the
@@ -362,7 +366,7 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
   await setMore(true);
-  await page.locator(".monkeyboard-actions-panel").getByRole("button", { name: "Send design feedback", exact: true }).click();
+  await cmd(page.locator(".monkeyboard-actions-panel"), "markup.hand_to_ai.open").click();
   await page.getByRole("dialog", { name: "Discuss this drawing", exact: true }).waitFor();
   await page.keyboard.press("Escape");
   await page.getByRole("dialog", { name: "Discuss this drawing", exact: true }).waitFor({ state: "hidden" });
@@ -393,11 +397,11 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
   assert.equal(await comment().inputValue(), "入口保持净宽");
   assert.equal(submissions.length, 0, "Selecting and opening existing text must not submit an intent");
   await screenshot("text-prefilled");
-  await dialog.getByRole("button", { name: "Send to design", exact: true }).click();
+  await cmd(dialog, "markup.hand_to_ai.send").click();
   for (let attempt = 0; submissions.length < 1 && attempt < 100; attempt++) await delay(100);
   assert.equal(submissions.length, 1);
   assert.equal(submissions[0].utterance, "入口保持净宽", "Selected Chinese text must be sent exactly once without retyping");
-  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await cmd(dialog, "view.dialog.close").click();
   // A real text selection/delete remains reversible through the native keys.
   await page.keyboard.press("Escape"); await page.mouse.click(665, 555); await page.keyboard.press("Delete");
   await savedWhere((value) => active(value, "text").length === 0, "Delete did not remove selected text");
@@ -433,7 +437,7 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
   assert.equal(await comment().inputValue(), editedComment);
   assert.equal(submissions.length, 1, "Opening and extending feedback must not call the agent");
   await screenshot("text-with-conditions");
-  await dialog.getByRole("button", { name: "Send to design", exact: true }).click();
+  await cmd(dialog, "markup.hand_to_ai.send").click();
   for (let attempt = 0; submissions.length < 2 && attempt < 100; attempt++) await delay(100);
   assert.equal(submissions.length, 2);
   const submitted = submissions[1];
@@ -448,7 +452,7 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
     "Board text travels as the editable message, never as geometry annotations");
   assert.equal(submitted.documentVisuals[0].annotatedPngBase64, submissions[0].documentVisuals[0].annotatedPngBase64,
     "Adding only Board text, including a native arrow label, must not redraw text into the geometry PNG");
-  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await cmd(dialog, "view.dialog.close").click();
 
   // Persisted source bindings are immutable. Exercise stale reads by changing only
   // the documents response after the modal opens, preserving all real project data.
@@ -463,14 +467,14 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
       await route.fulfill({ response, json: { ...value, documents } });
     });
     try {
-      await dialog.getByRole("button", { name: "Send to design", exact: true }).click();
+      await cmd(dialog, "markup.hand_to_ai.send").click();
       await dialog.getByRole("alert").waitFor();
       assert.match(await dialog.getByRole("alert").innerText(), change === "model" ? /linked model changed|cannot be opened/i : /source changed/i);
       assert.equal(await comment().inputValue(), selectedText);
       assert.equal(submissions.length, 2); assert.equal(annotationWrites().length, 2);
       await screenshot(`${change}-changed`);
     } finally { await page.unroute(documentsUrl); }
-    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await cmd(dialog, "view.dialog.close").click();
   }
 
   // Export is the registered clean original even after real Board/page ink was saved.
@@ -478,7 +482,7 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
   await page.getByRole("combobox", { name: "Export board pages", exact: true }).selectOption("png");
   await screenshot("more");
   const downloadReady = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export board pages", exact: true }).click();
+  await cmd(page, "board.export.run").click();
   const download = await downloadReady;
   const exportedPath = path.join(root, "clean-original.png"); await download.saveAs(exportedPath);
   const inspect = spawnSync(python, ["-c", `
@@ -516,14 +520,14 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
   await Promise.race([refreshSeen, delay(15000).then(() => assert.fail("Background document refresh did not start"))]);
   const replacementDialog = page.getByRole("dialog", { name: "Update this page", exact: true });
   try {
-    await page.locator(".monkeyboard-context").getByRole("button", { name: "Update this page", exact: true }).click();
+    await cmd(page.locator(".monkeyboard-context"), "document.replace_page.open").click();
     await replacementDialog.waitFor();
   } finally {
     releaseRefresh(); await refreshDone; await page.unroute("**/api/documents", holdDocuments);
   }
   await replacementDialog.getByLabel("Updated PDF / image", { exact: true }).setInputFiles({
     name: "原位更新.png", mimeType: "image/png", buffer: Buffer.from(replacementPng, "base64") });
-  await replacementDialog.getByRole("button", { name: "Update in place", exact: true }).click();
+  await cmd(replacementDialog, "document.replace_page.submit").click();
   await replacementDialog.waitFor({ state: "hidden" });
   const replaced = await board();
   const updatedImage = active(replaced, "image")[0];
@@ -571,7 +575,7 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
     canvas.getContext("2d").fillRect(0, 0, 120, 80); return canvas.toDataURL().split(",")[1];
   });
   const chooserReady = page.waitForEvent("filechooser");
-  await page.getByRole("button", { name: "Upload PDF / image", exact: true }).click();
+  await cmd(page, "document.upload").click();
   await (await chooserReady).setFiles({ name: "文件选择上传.png", mimeType: "image/png", buffer: Buffer.from(pickerPng, "base64") });
   await savedWhere((value) => active(value, "image").length === 3, "Native file chooser upload did not reach the real saved board");
   assert.ok((await call("GET", "/api/documents")).documents.some((document) => document.fileName === "文件选择上传.png"));
@@ -611,7 +615,7 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
   await documentsToggle.click();
   const pdfCard = page.locator(".monkeyboard-source").filter({ has: page.getByRole("heading", { name: "两页图纸.pdf", exact: true }) });
   await pdfCard.getByRole("combobox").selectOption("1");
-  await pdfCard.getByRole("button", { name: "Add page", exact: true }).click();
+  await cmd(pdfCard, "board.add_document_page.add").click();
   const pdfScene = await savedWhere((value) => active(value, "image").length === 6, "Adding the second PDF page did not persist");
   const pdfImages = active(pdfScene, "image").filter((element) => element.customData.sourceDocument.assetSha256 === pdfDocument.assetSha256);
   assert.deepEqual(pdfImages.map((element) => element.customData.sourceDocument), [0, 1].map((pageIndex) => ({
@@ -645,12 +649,13 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
   assert.deepEqual(await board(), winner, "Opening the saved board must preserve both the winner and the original tab's draft");
   await savedTab.close();
   await open("zh-CN");
-  await page.getByRole("button", { name: "项目资料", exact: true }).waitFor();
-  await page.getByText("更多画板操作", { exact: true }).click();
-  await page.getByRole("button", { name: "清除批注", exact: true }).waitFor();
+  await waitForCommandLabel(cmd(page, "board.add_document_page.toggle_list"), "项目资料");
+  await waitForCommandLabel(cmd(page, "view.menu.toggle", { arg: "board_more" }), "更多画板操作");
+  await cmd(page, "view.menu.toggle", { arg: "board_more" }).click();
+  await waitForCommandLabel(cmd(page, "markup.clear"), "清除批注");
   assert.equal((await board()).title, "Other saved version");
   await open("zh-CN", "light");
-  await page.getByRole("button", { name: "项目资料", exact: true }).waitFor();
+  await waitForCommandLabel(cmd(page, "board.add_document_page.toggle_list"), "项目资料");
   await screenshot("light-zh");
   assert.deepEqual(requests.filter((request) => /\/api\/(intents|proposals|jobs|model-annotations|candidates)/.test(request.path)), [],
     "Ordinary board actions must never enter a model or agent path");

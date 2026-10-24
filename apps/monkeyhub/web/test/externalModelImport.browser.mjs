@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
+import { cmd } from "./commandLocator.mjs";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = path.resolve(webRoot, "../../..");
@@ -69,10 +70,10 @@ async function drop(bytes, name) {
   try { await viewport().dispatchEvent('drop', { dataTransfer: transfer }); } finally { await transfer.dispose(); }
 }
 async function versions() {
-  const toggle = page.locator('.project-bar .stage__versions-toggle');
+  const toggle = cmd(page.locator('.project-bar'), 'design.go_to_step.versions', { includeHidden: true });
   if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
   const panel = surface().getByRole('region', { name: 'Model versions', exact: true });
-  const summary = panel.locator('summary').filter({ hasText: 'Existing models and past runs' });
+  const summary = cmd(panel, 'view.old_results.toggle', { includeHidden: true });
   await summary.waitFor();
   if (!(await summary.evaluate(el => el.parentElement.open))) await summary.click();
   return panel;
@@ -82,7 +83,7 @@ async function shown(sha) {
   assert.ok(artifact);
   await until(async () => {
     const panel = await versions();
-    const card = panel.locator('.vcard__export').filter({ hasText: artifact.fileName });
+    const card = cmd(panel, 'view.old_results.open', { includeHidden: true }).filter({ hasText: artifact.fileName });
     return { selected: await card.count() ? await card.getAttribute('aria-pressed') : null,
       disabled: await card.count() ? await card.isDisabled() : true,
       loading: await surface().locator('.viewport-state--loading').count(),
@@ -163,14 +164,14 @@ try {
     assert.equal((await(await refused).json()).code,'MODEL_ASSET_INVALID');
     await surface().getByRole('alert').waitFor();
     assert.equal((await rows()).length,2); assert.equal(await surface().locator('.viewport-state--error').count(),0);
-    assert.equal(await surface().locator('.vcard__export[aria-pressed="true"]').count(),1);
-    assert.match(await surface().locator('.vcard__export[aria-pressed="true"]').innerText(),/external-b\.3dm/);
+    assert.equal(await cmd(surface(), 'view.old_results.open', { includeHidden: true }).and(surface().locator('[aria-pressed="true"]')).count(),1);
+    assert.match(await cmd(surface(), 'view.old_results.open', { includeHidden: true }).and(surface().locator('[aria-pressed="true"]')).innerText(),/external-b\.3dm/);
     assert.equal((await api('/fixture/metrics')).head,head);
   });
   await step('page reopen and selecting either old source preserves exact original bytes', async () => {
     await page.reload(); await viewport().waitFor();
     for (const row of [first,second]) {
-      const panel=await versions(); const open=panel.locator('.vcard__export').filter({hasText:row.fileName}); await open.click();
+      const panel=await versions(); const open=cmd(panel, 'view.old_results.open', { includeHidden: true }).filter({hasText:row.fileName}); await open.click();
       await shown(row.sha256);
       const downloaded=Buffer.from(await(await fetch(origin+`/api/artifacts/${row.sha256}/bytes`)).arrayBuffer());
       assert.deepEqual(downloaded,row.sha256===first.sha256?a:b);
@@ -179,11 +180,11 @@ try {
   });
   await step('external viewing cannot become a semantic edit base or an accepted Stage', async () => {
     const panel=await versions();
-    const continuing=panel.getByRole('button',{name:'Continue from here',exact:true});
+    const continuing=cmd(panel, 'design.go_to_step.continue');
     assert.equal(await continuing.count()===0 || await continuing.isDisabled(),true,'external source must not offer an exact-state continuation');
-    assert.equal(await surface().getByRole('button',{name:'Undo model',exact:true}).isDisabled(),true);
-    assert.equal(await surface().getByRole('button',{name:'Redo model',exact:true}).isDisabled(),true);
-    const s0=panel.getByRole('button',{name:'Accept as S0',exact:true}); if(await s0.count()) assert.equal(await s0.isDisabled(),true);
+    assert.equal(await cmd(surface(), 'draft.tools.undo').isDisabled(),true);
+    assert.equal(await cmd(surface(), 'draft.tools.redo').isDisabled(),true);
+    const s0=cmd(panel, 'stage.accept.initial'); if(await s0.count()) assert.equal(await s0.isDisabled(),true);
     const context=await page.evaluate(()=>window.externalImportContext);
     assert.ok(context?.designContext===null || context?.designContext?.sourceRunId===beforeContext?.designContext?.sourceRunId);
     assert.equal((await api('/fixture/metrics')).head,head);

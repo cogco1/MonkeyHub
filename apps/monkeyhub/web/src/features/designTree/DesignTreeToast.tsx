@@ -57,7 +57,7 @@ export function DesignTreeToast({ data, toast, words }: { data: DesignTreeData; 
     <span className="design-tree-toast__text">{text}</span>
     {toast.kind === "continued" && toast.undo && <>
       <span aria-hidden="true">·</span>
-      <button type="button" className="design-tree-toast__undo" data-action="undo" disabled={data.busy !== null}
+      <button data-command="design.undo_last" type="button" className="design-tree-toast__undo" data-action="undo" disabled={data.busy !== null}
         onClick={() => void data.undo()}>{undoing ? copy("undoing") : copy("undo")}</button>
     </>}
   </div>;
