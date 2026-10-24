@@ -87,47 +87,93 @@ class OperationManager:
         if self.journal_path is None or not self.journal_path.exists():
             return
         try:
-            saved = json.loads(self.journal_path.read_text(encoding="utf-8"))
-            if saved["projectId"] != self.project_id or saved["projectDir"] != self.project_dir:
-                raise ValueError("The operation journal belongs to another project binding.")
-            for row in saved["operations"]:
-                record = OperationRecord.model_validate(row["record"])
-                signature = row["signature"]
-                if (record.projectId != self.project_id or str(UUID(record.operationId)) != record.operationId
-                        or record.operationId in self._operations
-                        or not isinstance(signature, list) or len(signature) != 3
-                        or not all(isinstance(value, str) for value in signature)
-                        or not re.fullmatch(r"[0-9a-f]{64}", signature[2])
-                        or not isinstance(row["acceptingCandidate"], bool)
-                        or not isinstance(row["branchId"], str)
-                        or (row["expectedStage"] is not None and not isinstance(row["expectedStage"], str))):
-                    raise ValueError("Invalid saved operation binding.")
-                # A local journal never proves a successful P036 commit/result.
-                record.committed, record.resultDigest, record.resultRevision = False, None, None
-                if record.status in _ACTIVE or (record.candidateId and record.status == "completed"):
-                    record.status = "needs_recovery"
-                    record.reason = "Hub restarted before this operation's retained result was reconciled. No request was replayed."
-                admission = _Admission(record, tuple(signature), row["expectedStage"],
-                                       row["branchId"], row["acceptingCandidate"])
-                admission.finished.set()  # A prior process cannot deliver its HTTP response.
-                self._operations[record.operationId] = admission
-            # A dismissal is a person's reading of one outcome, not a recovery
-            # fact: an unreadable entry only brings its notice back.
-            acknowledged = saved.get("acknowledged", {})
-            for key, value in (acknowledged.items() if isinstance(acknowledged, dict) else ()):
-                if isinstance(value, str):
-                    # Kept before a dismissal named its status, when only a failed
-                    # or stale one could be dismissed. A request keeps that status;
-                    # an observed run could only have failed.
-                    admitted = self._operations.get(key)
-                    value = {"acknowledgedAt": value, "status": admitted.record.status if admitted else "failed"}
-                    if value["status"] not in _ACKNOWLEDGEABLE:
-                        continue
-                if (isinstance(value, dict) and isinstance(value.get("acknowledgedAt"), str)
-                        and value.get("status") in _ACKNOWLEDGEABLE | {"needs_recovery"}):
-                    self._acknowledged[key] = (value["acknowledgedAt"], value["status"])
+            self._operations, self._acknowledged = self._read(self.journal_path)
         except (OSError, ValueError, KeyError, TypeError) as exc:
             raise HubFailure(503, "OPERATION_LOG_INVALID", "The saved operation identities could not be read for this project. Requests were not replayed.") from exc
+
+    def merge(self, journals) -> None:
+        """Take in the journals an earlier Hub kept for another spelling of this folder (gap 26).
+
+        Their operations and dismissals join this journal's, which wins where
+        both name one; each journal taken in is then renamed
+        ``<name>.merged-into-<id>`` and kept. One that cannot be read is left
+        where it is.
+        """
+
+        if self.journal_path is None:
+            return
+        with self._lock:
+            taken = []
+            for path in journals:
+                if path == self.journal_path or not path.is_file():
+                    continue
+                try:
+                    operations, acknowledged = self._read(path)
+                except (OSError, ValueError, KeyError, TypeError):
+                    continue
+                for key, admission in operations.items():
+                    self._operations.setdefault(key, admission)
+                for key, value in acknowledged.items():
+                    self._acknowledged.setdefault(key, value)
+                taken.append(path)
+            if not taken:
+                return
+            try:
+                self._save()
+            except HubFailure:
+                return  # Kept in memory and saved with the next change; the old journals stay.
+            for path in taken:
+                try:
+                    path.replace(path.with_name(f"{path.name}.merged-into-{self.journal_path.stem}"))
+                except OSError:
+                    continue
+
+    def _read(self, path: Path) -> tuple[dict, dict]:
+        """One saved journal's operations and dismissals; raises if any of it is not this project's."""
+
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        # Any spelling of this folder: an earlier Hub saved some under its prefixed one.
+        if saved["projectId"] != self.project_id or project_key(saved["projectDir"]) != self.project_dir:
+            raise ValueError("The operation journal belongs to another project binding.")
+        operations: dict[str, _Admission] = {}
+        dismissed: dict[str, tuple[str, str]] = {}
+        for row in saved["operations"]:
+            record = OperationRecord.model_validate(row["record"])
+            signature = row["signature"]
+            if (record.projectId != self.project_id or str(UUID(record.operationId)) != record.operationId
+                    or record.operationId in operations
+                    or not isinstance(signature, list) or len(signature) != 3
+                    or not all(isinstance(value, str) for value in signature)
+                    or not re.fullmatch(r"[0-9a-f]{64}", signature[2])
+                    or not isinstance(row["acceptingCandidate"], bool)
+                    or not isinstance(row["branchId"], str)
+                    or (row["expectedStage"] is not None and not isinstance(row["expectedStage"], str))):
+                raise ValueError("Invalid saved operation binding.")
+            # A local journal never proves a successful P036 commit/result.
+            record.committed, record.resultDigest, record.resultRevision = False, None, None
+            if record.status in _ACTIVE or (record.candidateId and record.status == "completed"):
+                record.status = "needs_recovery"
+                record.reason = "Hub restarted before this operation's retained result was reconciled. No request was replayed."
+            admission = _Admission(record, tuple(signature), row["expectedStage"],
+                                   row["branchId"], row["acceptingCandidate"])
+            admission.finished.set()  # A prior process cannot deliver its HTTP response.
+            operations[record.operationId] = admission
+        # A dismissal is a person's reading of one outcome, not a recovery
+        # fact: an unreadable entry only brings its notice back.
+        acknowledged = saved.get("acknowledged", {})
+        for key, value in (acknowledged.items() if isinstance(acknowledged, dict) else ()):
+            if isinstance(value, str):
+                # Kept before a dismissal named its status, when only a failed
+                # or stale one could be dismissed. A request keeps that status;
+                # an observed run could only have failed.
+                admitted = operations.get(key)
+                value = {"acknowledgedAt": value, "status": admitted.record.status if admitted else "failed"}
+                if value["status"] not in _ACKNOWLEDGEABLE:
+                    continue
+            if (isinstance(value, dict) and isinstance(value.get("acknowledgedAt"), str)
+                    and value.get("status") in _ACKNOWLEDGEABLE | {"needs_recovery"}):
+                dismissed[key] = (value["acknowledgedAt"], value["status"])
+        return operations, dismissed
 
     def _save(self) -> None:
         if self.journal_path is None:
@@ -179,7 +225,9 @@ class OperationManager:
                 return existing, False
             route = urlsplit(path).path
             published = (retained or {}).get("published", {})
-            candidate = f"hub-cand-{UUID(operation_id).hex}" if method == "POST" and _CANDIDATE_REQUEST.fullmatch(route) else None
+            # The run id is the first 16 hex of the request's UUID: a candidate's records sit below it, and the full
+            # 32 left too little of MAX_PATH where Windows has long paths off. syncModelDraft.ts derives the same id.
+            candidate = f"hub-cand-{UUID(operation_id).hex[:16]}" if method == "POST" and _CANDIDATE_REQUEST.fullmatch(route) else None
             accepted = _ACCEPT_REQUEST.fullmatch(route) if method == "POST" else None
             if accepted:
                 candidate = accepted.group(1)

@@ -19,8 +19,10 @@ import webbrowser
 
 import uvicorn
 
+from ..models import plain_spelling
 from ..settings import credentials
 from ..updates.desktop_updates import recover_failed_start
+from . import locator
 from .composition import SOURCE_ROOT, HubSettings, create_app
 
 
@@ -105,6 +107,23 @@ def _runtime_lease(root: Path):
                 fcntl.flock(lease.fileno(), fcntl.LOCK_UN)
 
 
+def _announce(server: uvicorn.Server, settings: HubSettings) -> None:
+    """Write runtime/hub.json once the server listens, with the port it actually bound (gap 44)."""
+
+    while not server.started and not server.should_exit:
+        threading.Event().wait(0.05)
+    if not server.started:
+        return
+    ports = [sock.getsockname()[1] for listener in getattr(server, "servers", None) or ()
+             for sock in getattr(listener, "sockets", None) or ()]
+    try:
+        locator.write(settings.runtime_root, url=f"http://127.0.0.1:{ports[0] if ports else settings.port}",
+                      managed_instance_id=settings.managed_instance_id)
+    except OSError as error:
+        # The Hub still serves; a reader without the file is told to pass --hub-url.
+        print(f"MonkeyHub could not write {locator.LOCATOR}: {error}", file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Open the local MonkeyHub without a building project.")
     parser.add_argument("--runtime-root", type=Path)
@@ -123,6 +142,9 @@ def main(argv: list[str] | None = None) -> None:
         if not local_appdata or not Path(local_appdata).is_absolute():
             parser.error("set --runtime-root to an absolute nonproject directory")
         runtime_root = Path(local_appdata) / "MonkeyHub"
+    # The desktop shell passes its canonical path, with a ``\\?\`` prefix that
+    # every project made under it would inherit (gap 26).
+    runtime_root = Path(plain_spelling(str(runtime_root)))
     hub_web = args.hub_web_dir
     if hub_web is None and (SOURCE_ROOT / "apps/monkeyhub/web/dist/index.html").is_file():
         hub_web = SOURCE_ROOT / "apps/monkeyhub/web/dist"
@@ -145,6 +167,8 @@ def main(argv: list[str] | None = None) -> None:
                                  reason=f"{type(error).__name__}: {error}"[:300])
             raise
         server = HubServer(uvicorn.Config(app, host="127.0.0.1", port=settings.port))
+        announcing = threading.Thread(target=_announce, args=(server, settings), daemon=True)
+        announcing.start()
         if args.managed_stdin:
             def watch_stdin():
                 for line in sys.stdin:
@@ -164,6 +188,9 @@ def main(argv: list[str] | None = None) -> None:
         try:
             server.run()
         finally:
+            # A quitting Hub takes back where it said it listens; a crash leaves the file, and readers check it.
+            announcing.join(timeout=2)
+            locator.remove(settings.runtime_root)
             if not server.started:
                 app.state.updates.startup_failed("the Hub server did not start")
         if server.started:

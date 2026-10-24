@@ -53,7 +53,9 @@ try {
   await server.listen();
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
   browser = await chromium.launch({ headless: true, channel: "chrome" });
+  // 2-3c: the new shell is the default; these passes are the old one's, the way back (attentionShell.browser.mjs has the new).
   page = await browser.newPage();
+  await page.addInitScript(() => localStorage.setItem("monkeyhub.shell", "workbench"));
   page.setDefaultTimeout(20_000);
   await page.addInitScript(() => {
     const loads = Number(sessionStorage.getItem("fixture.documentLoads") ?? "0") + 1;

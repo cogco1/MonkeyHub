@@ -679,9 +679,75 @@ def _png(image, text):
     return buffer.getvalue()
 
 
+def _clip_section(np, x, y, z, triangles, labels, pairs, plane):
+    """The part of the model on the kept side of a live section plane (G5): what lies beyond it dropped or cut.
+
+    ``plane`` is ``(a, b, c, e)`` in camera coordinates, kept where
+    ``a x + b y + c z + e >= 0``. A triangle crossing it is cut into one or
+    two, an edge crossing it is cut at it, and the segments where the plane
+    crosses the triangles come back as new edges: the section's outline. New
+    vertices are appended, so the given indices keep their meaning. The cut
+    faces are not filled.
+    """
+
+    a, b, c, e = plane
+    d = a * x + b * y + c * z + e
+    removed = d[triangles] < 0
+    count = removed.sum(axis=1)
+    kept, kept_labels = [triangles[count == 0]], [labels[count == 0]]
+    xs, ys, zs = [x], [y], [z]
+    base = len(x)
+    outline = []
+
+    def cut(p, q):
+        t = d[p] / (d[p] - d[q])
+        return x[p] + t * (x[q] - x[p]), y[p] + t * (y[q] - y[p]), z[p] + t * (z[q] - z[p])
+
+    for lonely in (1, 2):
+        rows = np.flatnonzero(count == lonely)
+        if not len(rows):
+            continue
+        tri, flag = triangles[rows], removed[rows]
+        # The odd vertex out first: the one removed (one removed) or the one kept (two removed).
+        odd = np.argmax(flag if lonely == 1 else ~flag, axis=1)
+        first = tri[np.arange(len(tri)), odd]
+        second = tri[np.arange(len(tri)), (odd + 1) % 3]
+        third = tri[np.arange(len(tri)), (odd + 2) % 3]
+        meet_a, meet_b = cut(first, second), cut(first, third)
+        n = len(rows)
+        ia, ib = base + np.arange(n), base + n + np.arange(n)
+        for values, source in ((xs, 0), (ys, 1), (zs, 2)):
+            values.append(np.concatenate([meet_a[source], meet_b[source]]))
+        base += 2 * n
+        if lonely == 1:
+            kept.append(np.stack([ia, second, third], axis=1))
+            kept.append(np.stack([ia, third, ib], axis=1))
+            kept_labels += [labels[rows], labels[rows]]
+        else:
+            kept.append(np.stack([first, ia, ib], axis=1))
+            kept_labels.append(labels[rows])
+        outline.append(np.stack([ia, ib], axis=1))
+    dp, dq = d[pairs[:, 0]], d[pairs[:, 1]]
+    pairs = pairs[(dp >= 0) | (dq >= 0)].copy()
+    crossing = np.flatnonzero((d[pairs[:, 0]] < 0) | (d[pairs[:, 1]] < 0))
+    if len(crossing):
+        p, q = pairs[crossing, 0], pairs[crossing, 1]
+        meet = cut(p, q)
+        at = base + np.arange(len(crossing))
+        for values, source in ((xs, 0), (ys, 1), (zs, 2)):
+            values.append(meet[source])
+        base += len(crossing)
+        first_removed = d[p] < 0
+        pairs[crossing[first_removed], 0] = at[first_removed]
+        pairs[crossing[~first_removed], 1] = at[~first_removed]
+    return (np.concatenate(xs), np.concatenate(ys), np.concatenate(zs), np.concatenate(kept).astype(np.int64),
+            np.concatenate(kept_labels), np.concatenate([pairs, *outline]).astype(np.int64))
+
+
 def camera_passes(
     meshes: Sequence[ObjectMesh], *, camera: PerspectiveCamera, width: int, height: int,
     groups: Mapping[str, str] | None = None, text: Mapping[str, str] | None = None,
+    clip: tuple[Sequence[float], Sequence[float]] | None = None,
 ) -> CameraPasses:
     """Draw ``meshes`` through ``camera`` into an ID image, a line image and a depth image of ``width`` x ``height``.
 
@@ -692,7 +758,10 @@ def camera_passes(
     ID_BACKGROUND. The line image is black visible feature edges on white.
     The depth image is 16-bit grey: DEPTH_NEAREST at the nearest visible
     surface, 1 at the farthest, linear in distance along the view axis
-    between them, 0 where no surface is.
+    between them, 0 where no surface is. ``clip`` (a point and the normal
+    toward the kept side, in the model's frame) cuts the model at a live
+    section plane first, as the Modeling viewport does; its outline is drawn
+    as lines and its cut faces are not filled.
     """
 
     import numpy as np
@@ -742,9 +811,20 @@ def camera_passes(
     triangle_count = sum(len(item) for item in tris)
     if base:
         x, y, z = np.concatenate(xs), np.concatenate(ys), np.concatenate(zs)
+        cut_tris, cut_labels, pairs = np.concatenate(tris), np.concatenate(labels), np.concatenate(edges)
+        if clip is not None:
+            normal = np.asarray(clip[1], dtype=float)
+            length = float(np.linalg.norm(normal))
+            if not math.isfinite(length) or length == 0:
+                raise MeshViewError("a section plane needs a normal that is not zero")
+            normal = normal / length
+            # The plane in camera coordinates: offset = x right + y up + z forward from the eye.
+            plane = (float(normal @ right), float(normal @ true_up), float(normal @ forward),
+                     float(normal @ (eye - np.asarray(clip[0], dtype=float))))
+            x, y, z, cut_tris, cut_labels, pairs = _clip_section(np, x, y, z, cut_tris, cut_labels, pairs, plane)
         reach = float(np.abs(z).max()) or 1.0
         near = max(reach * 1e-6, 1e-9)
-        cx, cy, cz, all_tris, all_labels = _clip_near(np, x, y, z, np.concatenate(tris), np.concatenate(labels), near)
+        cx, cy, cz, all_tris, all_labels = _clip_near(np, x, y, z, cut_tris, cut_labels, near)
         safe = np.maximum(cz, near)
         sx = big_w / 2 + focal * cx / safe
         sy = big_h / 2 - focal * cy / safe
@@ -771,7 +851,6 @@ def camera_passes(
             rows = np.maximum(np.maximum(padded[:-2], padded[1:-1]), padded[2:])
             farthest = np.maximum(np.maximum(rows[:, :-2], rows[:, 1:-1]), rows[:, 2:])
             del padded, rows
-            pairs = np.concatenate(edges)
             za, zb = z[pairs[:, 0]], z[pairs[:, 1]]
             pairs = pairs[(za >= near) | (zb >= near)]
             ax, ay, az = x[pairs[:, 0]].copy(), y[pairs[:, 0]].copy(), z[pairs[:, 0]].copy()

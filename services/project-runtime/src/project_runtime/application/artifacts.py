@@ -442,6 +442,26 @@ def _ordered_documents(documents: Iterable[SourceDocument]) -> tuple[SourceDocum
     return tuple(generated + undated)
 
 
+ELEVATION_VIEW_KIND = "model-axis-elevation"
+
+
+def view_recipe_with_frame(recipe: Mapping[str, Any] | None) -> dict | None:
+    """A drawing's view recipe as every reader is given it: its frame always under "frame" (gap 16).
+
+    A cut plan or section keeps its frame there. An elevation's record keeps
+    origin, right, up, look, crop_uv, scale and the rest flat, because they are
+    the receipt the drawing is checked against; the record stays as it is, and
+    its reader is given the flat keys and the same values again under "frame".
+    """
+
+    if recipe is None:
+        return None
+    recipe = dict(recipe)
+    if "frame" not in recipe and recipe.get("kind") == ELEVATION_VIEW_KIND:
+        recipe["frame"] = {key: value for key, value in recipe.items() if key not in ("sourceAsset", "follow")}
+    return recipe
+
+
 def document_bytes(
     binding: ProjectBinding, run_id: str, asset_sha256: str,
     revision_ref: str | None = None,

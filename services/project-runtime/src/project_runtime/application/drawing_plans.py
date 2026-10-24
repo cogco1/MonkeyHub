@@ -35,10 +35,12 @@ from .artifacts import (
 from ..binding import retained_sources
 from .decisions import project_recipe
 from .drawings import (
+    _retaining, _solving, drawing_sources,
     VIEW_MARGIN, _complete_source, _elevation_view, _selected_source, _document_source, DrawingAssetSource, is_vertical_section,
     refuse_other_kind, require_unit,
 )
 from .drawing_dimensions import resolve_plan_dimensions, list_plan_dimension_intents
+from . import drawing_pool
 from .intent import component_edit_proposal
 from .intent_requests import in_unit
 from .projection import project_state, require_actionable
@@ -257,12 +259,12 @@ def _paper_rules(retained, hatch, beyond, spacing_mm):
     return rules
 
 
-@retained_sources
+@drawing_sources
 def generate_plan(binding, *, attribution, reason=None, source_kind=None, source_stage_ref=None, model_source=None,
                   drawing_id=None, file_name=None, previous_revision_ref=None, cut_height=None, bottom=None, scale_denominator=None,
                   crop_uv=None, cut_line_mm=None, visible_line_mm=None, hatch_spacing_mm=None, hatch=None, beyond=None,
                   hidden_object_ids=None, dimensions=None, dressing=None, dressing_operations=None, follow=None, source_asset=None,
-                  section=None, depth=None, length_unit=None):
+                  section=None, depth=None, length_unit=None, board=None):
     """One cut-plan revision, or the retained one an identical request already made.
 
     ``section`` (a plan line and kept side, or a plane) makes it a vertical
@@ -342,6 +344,10 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
         # it to follow the Working Head again (#271); without a choice, it follows.
         if follow == "frozen" or (follow is None and old.get("follow") == "frozen"):
             recipe["follow"] = "frozen"
+        # A drawing asked for from the viewport's live section waits for a person's "Put on Board" (G5), and its
+        # later revisions keep waiting, as they keep their follow choice.
+        if board == "on-request" or (board is None and old.get("board") == "on-request"):
+            recipe["board"] = "on-request"
         if dressing is not None or "dressing" in old or dressing_operations is not None:
             recipe["dressing"] = deepcopy(dressing if dressing is not None else old.get("dressing", []))
             if dressing_operations is not None:
@@ -370,6 +376,8 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
         if not _frames_something(cad_receipt, frame, set(recipe["hiddenObjectIds"])):
             raise StudioError(422, "DRAWING_VIEW_EMPTY", "No drawn object reaches this drawing's window and depth; "
                                                          "move the window or the cut onto the model.")
+        # The documents lock is held only to look for a registered revision and to register a new one, and
+        # the project's write guard is given back while the plan is solved (drawing_sources).
         with _document_source_lock:
             documents = list_documents(binding, None if previous is not None or explicit_drawing_id else model_source.run_id)
             named = previous or next((document for document in documents if document.drawing_id == drawing_id), None)
@@ -396,17 +404,31 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
                 # before projection writes anything. A retry found its own child
                 # above; another edit of an already replaced page is a conflict.
                 drawing_revision_replacement(binding, previous, previous.pages, documents)
-            verified = read_elevation_source(binding.repository, source)
-            resolved = () if isinstance(model_source, DrawingAssetSource) else resolve_plan_dimensions(
-                binding, model_source, stage_ref, verified, frame, recipe["dimensions"], hidden_object_ids=recipe["hiddenObjectIds"])
-            drawing = freeze_cut_plan(binding.repository, source=source, recipe=recipe,
-                                      drawing_run_id=f"studio-drawing-{uuid4().hex}", dimensions=resolved,
-                                      previous_revision_ref=previous_revision_ref, reason=reason, source_kind=source_kind,
-                                      attribution={"actorId": attribution.actor_id, "authenticated": attribution.authenticated,
-                                                   "origin": attribution.origin})
-            pages = _document_pages(drawing.png, "image/png")
+        pool = drawing_pool.drawer()
+        # Only dimensions to measure need the source's shapes here; the plan itself is solved by the pool.
+        verified = (None if pool is not None and not recipe["dimensions"]
+                    else read_elevation_source(binding.repository, source))
+        resolved = () if isinstance(model_source, DrawingAssetSource) else resolve_plan_dimensions(
+            binding, model_source, stage_ref, verified, frame, recipe["dimensions"], hidden_object_ids=recipe["hiddenObjectIds"])
+        _solving()
+        drawing = freeze_cut_plan(binding.repository, source=source, recipe=recipe,
+                                  drawing_run_id=f"studio-drawing-{uuid4().hex}", dimensions=resolved,
+                                  previous_revision_ref=previous_revision_ref, reason=reason, source_kind=source_kind,
+                                  attribution={"actorId": attribution.actor_id, "authenticated": attribution.authenticated,
+                                               "origin": attribution.origin}, drawer=pool,
+                                  retaining=_retaining(binding, model_source, stage_ref))
+        pages = _document_pages(drawing.png, "image/png")
+        with _document_source_lock:
             # A rebuild answers for its previous revision's page wherever that
             # page is placed (#291); a changed page shape cannot keep that frame.
+            documents = list_documents(binding, None if previous is not None or explicit_drawing_id else model_source.run_id)
+            for document in documents:
+                if (document.drawing_id == drawing_id and _document_source(document) == model_source
+                        and document.source_stage_ref == selected_stage and document.view_recipe == recipe
+                        and (previous is None or document.revision_ref == previous_revision_ref
+                             or document.previous_revision_ref == previous_revision_ref)):
+                    # The same request registered it while this one was solved: that revision answers both.
+                    return document
             replaces = () if previous is None else drawing_revision_replacement(
                 binding, previous, pages, documents)
             run = binding.load_run(model_source.run_id)

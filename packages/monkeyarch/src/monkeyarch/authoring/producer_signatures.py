@@ -19,8 +19,8 @@ from typing import Any
 def producer_signatures() -> dict[str, dict[str, Any]]:
     """The authoring contracts the Studio can query and execute.
 
-    Prisms, bounded planar surfaces, curves, lofts and walls with hosted apertures expose their
-    authored parameters here. Other existing producers remain executable;
+    Prisms, bounded planar surfaces, curves, lofts, walls with hosted apertures, straight flights and
+    railings expose their authored parameters here. Other existing producers remain executable;
     they are not advertised as semantic creation tools until their authored
     parameter contract is exposed here.
     Values and placements belong to the project's record, never this table.
@@ -253,6 +253,55 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "The curve follows its base datum, reference offset, elevation and explicit work_plane.",
             "A curve creates no face, thickness, support relation or top datum.",
         ],
+    }, "stair": {
+        "producer": "stair",
+        "label": "直跑楼梯",
+        "description": (
+            "One straight flight of count steps rising from references.from toward references.to, width wide and "
+            "centred on that line, as one stepped solid standing on a level or another element's published top. "
+            "It publishes <element-id>-top at its base plus count × rise, which a landing stands on."
+        ),
+        "parameters": obj({
+            "count": {"anyOf": [{"type": "integer", "minimum": 1},
+                                {"type": "string", "pattern": r"^@[A-Za-z0-9_.:-]+$"}]},
+            "rise": {**scalar, "description": "Each step's rise."},
+            "width": {**scalar, "description": "Across the flight, centred on the from→to line."},
+            "going": {**scalar, "description": "Optional: when stated, count × going must equal the from→to length."},
+            "thickness": {**scalar, "description": "Retained rows only; must be 0: a flight is one stepped solid."},
+            "elevation": {**scalar, "description": "Metres above references.base; defaults to zero."},
+        }),
+        "references": obj({"from": plan, "to": plan, "base": elevation, "top": elevation}),
+        "requiredParameters": ["count", "rise", "width"],
+        "requiredReferences": ["from", "to", "base"],
+        "constraints": [
+            "With a top reference, the base plus elevation plus count × rise must agree with it within a millimetre.",
+            "A stated going times count must equal the from→to length within a millimetre.",
+            "The flight neither hosts voids nor acts as one.",
+        ],
+    }, "railing": {
+        "producer": "railing",
+        "label": "栏杆",
+        "description": (
+            "Posts and a rail along an open polyline: a post at every point and at most spacing apart, and a rail "
+            "whose top runs height above the line, laid along each segment so it follows a flight's slope."
+        ),
+        "parameters": obj({
+            "points": {"type": "array", "minItems": 2, "maxItems": 512,
+                       "items": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                       "description": "Ordered [X, Y-up, Z] points where the railing stands, relative to the base datum."},
+            "height": {**scalar, "description": "From the line up to the rail's top; defaults to 1.0."},
+            "post": {**scalar, "description": "A post's square size; defaults to 0.05."},
+            "spacing": {**scalar, "description": "The most between two posts along a segment's plan run; defaults to 1.2."},
+            "rail": {**scalar, "description": "The rail's square size; defaults to 0.05."},
+            "elevation": {**scalar, "description": "Metres above references.base; defaults to zero."},
+        }),
+        "references": obj({"base": elevation}),
+        "requiredParameters": ["points"],
+        "requiredReferences": ["base"],
+        "constraints": [
+            "No segment may be vertical, and height must exceed the rail's size.",
+            "A railing publishes no top datum and neither hosts voids nor acts as one.",
+        ],
     }}
     # Agents read this table in order, so it runs from the lowest sufficient
     # expression to the specialized realization: early modeling starts with a
@@ -271,6 +320,8 @@ _PARAMETER_UNITS: dict[str, dict[str, str]] = {
     "planar-surface": {"elevation": "m"},
     "curve": {"elevation": "m"},
     "wall": {"height": "m", "thickness": "m"},
+    "stair": {"rise": "m", "width": "m", "going": "m", "thickness": "m", "elevation": "m"},
+    "railing": {"height": "m", "post": "m", "spacing": "m", "rail": "m", "elevation": "m"},
 }
 
 

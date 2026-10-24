@@ -99,6 +99,21 @@ class CameraPassTests(unittest.TestCase):
         focal = 90 / math.tan(math.radians(30))
         self.assertAlmostEqual(drawn.near, 2 * focal / 160, delta=0.05)
 
+    def test_a_live_section_cuts_what_lies_beyond_it_and_draws_its_outline(self):
+        # G5: the plane y = -5, kept toward +Y, removes the near box entirely.
+        drawn = self.passes(clip=((0, -5, 0), (0, 1, 0)))
+        self.assertEqual(drawn.seen, ("far",))
+        # The plane y = 11 cuts into the far box: its front face goes, the nearest surface is at the cut.
+        cut = self.passes(meshes=(FAR,), clip=((0, 11, 0), (0, 1, 0)))
+        self.assertGreater(cut.near, 30.5, "nothing in front of the plane is seen")
+        whole = self.passes(meshes=(FAR,))
+        self.assertLess(whole.near, 30.5)
+        _, _, lines = pixels(cut.line_png)
+        self.assertEqual(lines.getpixel((160, 90)), 255, "the cut face is not filled or lined inside")
+        self.assertIn(0, {lines.getpixel((x, 90)) for x in range(320)}, "the cut's outline is drawn")
+        with self.assertRaises(MeshViewError):
+            self.passes(clip=((0, 0, 0), (0, 0, 0)))
+
     def test_a_saved_view_s_matrices_give_the_same_camera(self):
         eye, right, up, forward = CAMERA.basis(__import__("numpy"))
         back = -forward

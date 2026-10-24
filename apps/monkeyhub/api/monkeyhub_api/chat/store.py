@@ -33,6 +33,7 @@ from uuid import uuid4
 from pydantic import Field
 
 from .. import projects
+from ..runtime.workers import project_key
 from . import activity, guides, mcp_server, media, providers, skill_plugins, studio_tool, transport, turn_context
 from ..settings.store import read_application_settings
 
@@ -170,6 +171,21 @@ class _Running:
     steering: threading.Lock = field(default_factory=threading.Lock)
 
 
+def _presented_id(value: str, field: str) -> str:
+    """A turn or message id an external source names: a lowercase UUID.
+
+    A malformed one is an invalid argument; answering it with the chat's own
+    404 told the source its chat was gone when only the id was wrong (gap 43).
+    """
+
+    try:
+        return projects._identifier(value)
+    except HubFailure:
+        raise HubFailure(422, "CHAT_PRESENTATION_INVALID",
+                         f"{field} must be a lowercase UUID, such as uuid4() makes; {value[:80]!r} is not. "
+                         "Nothing was published.") from None
+
+
 class ChatStore:
     def __init__(self, runtime_root: Path, hub_url: str, *, applications=None, commands=None, acp_command=None, timeout_s: float = 900):
         self.root = runtime_root / "chats"
@@ -186,6 +202,8 @@ class ChatStore:
         # A skill's question stays readable after the person answers it, so the
         # chat tool that asked can read the answer on a later call.
         self._skill_questions: dict[tuple[str, str], Future] = {}
+        # What each skill question would allow (S-1), kept by the Hub until the person answers it.
+        self._skill_asks: dict[tuple[str, str], Mapping] = {}
         self.timeout_s = timeout_s
         self._lock = threading.RLock()
         self._sessions: dict[str, _SavedChat] = {}
@@ -448,10 +466,17 @@ class ChatStore:
             for session in self._sessions.values():
                 key = (session.projectId, session.projectDir)
                 counts[key] = counts.get(key, 0) + 1
+        # One entry per folder, however its conversations or settings spell it
+        # (gap 26); the first spelling seen is the one shown.
+        folded: dict[tuple[str, str], tuple[str, int]] = {}
+        for (project_id, project_dir), count in counts.items():
+            key = (project_id, project_key(project_dir))
+            spelling, total = folded.get(key, (project_dir, 0))
+            folded[key] = (spelling, total + count)
         listed: dict[tuple[str, str], ChatProject] = {}
-        for key, count in counts.items():
-            version, stage = projects._listed_project(key[1])[1]
-            listed[key] = ChatProject(projectId=key[0], projectDir=key[1], name=key[0],
+        for key, (spelling, count) in folded.items():
+            version, stage = projects._listed_project(spelling)[1]
+            listed[key] = ChatProject(projectId=key[0], projectDir=spelling, name=key[0],
                                         chatCount=count, version=version, stage=stage)
         workspace = self.workspace()
         workspace_root = Path(workspace.workspaceDir).resolve()
@@ -470,8 +495,8 @@ class ChatStore:
             except HubFailure:
                 pass
             else:
-                if (project_id, project_dir) not in listed:
-                    listed[(project_id, project_dir)] = ChatProject(
+                if (project_id, project_key(project_dir)) not in listed:
+                    listed[(project_id, project_key(project_dir))] = ChatProject(
                         projectId=project_id, projectDir=project_dir, name=project_id,
                         chatCount=0, version=version, stage=stage,
                     )
@@ -664,8 +689,8 @@ class ChatStore:
             if (request.projectId != session.projectId or request.sourceSessionId != (session.sourceSessionId or f"hub:{session_id}")
                     or projects._project(session.projectDir) != (session.projectId, session.projectDir)):
                 raise HubFailure(409, "CHAT_PRESENTATION_MISMATCH", "The presentation belongs to a different project or source session.")
-            projects._identifier(request.messageId)
-            projects._identifier(request.turnId)
+            _presented_id(request.messageId, "messageId")
+            _presented_id(request.turnId, "turnId")
             if request.kind == "user" and (not session.sourceSessionId or request.status != "complete"):
                 raise HubFailure(422, "CHAT_PRESENTATION_INVALID", "Only an external source can start a turn with a complete user message.")
             if request.kind == "progress" and (request.attachments or request.documents):
@@ -822,8 +847,8 @@ class ChatStore:
     def project_configuration(self, project_dir: str | None):
         """Hold the same lock across configuration changes and turn admission."""
         with self._lock:
-            target = str(Path(project_dir).resolve()) if project_dir else None
-            if any(self._sessions[key].projectDir != target for key in self._running):
+            target = project_key(project_dir) if project_dir else None
+            if any(project_key(self._sessions[key].projectDir) != target for key in self._running):
                 raise HubFailure(409, "CHAT_PROJECT_BUSY", "Stop the running chat before switching the active project.")
             yield
 
@@ -832,8 +857,8 @@ class ChatStore:
         with self._lock:
             if app_id in {"monkeyarch", "monkeyboard"} and stopping:
                 configured = project_dir if project_dir is not None else read_application_settings(self.runtime_root).project_dir
-                target = str(Path(configured).resolve()) if configured else None
-                if any(target is not None and os.path.normcase(self._sessions[key].projectDir) == os.path.normcase(target) for key in self._running):
+                target = project_key(configured) if configured else None
+                if any(target is not None and project_key(self._sessions[key].projectDir) == target for key in self._running):
                     raise HubFailure(409, "CHAT_RUNNING", "Stop the running chat before closing its design tools.")
             yield
 
@@ -1252,7 +1277,7 @@ class ChatStore:
                 only_library = (*(("--plugin-dir", str(skills)) if skills is not None else ()),
                                 "--setting-sources", "project,local", "--settings",
                                 skill_plugins.claude_settings(self.runtime_root, providers._claude_user_settings()))
-            denied = providers._claude_denied(session.projectDir)
+            denied = providers._claude_denied(session.projectDir, self.runtime_root)
             if environment.get(studio_tool.DESIGN_LOOP_ENV) == studio_tool.DESIGN_LOOP_ENFORCED:
                 # Enforced (#185): no shell, so the Agent reaches the design only through this Hub, which vouches
                 # for it; a shell could reach the Runtime's port and act as a person.
@@ -1286,10 +1311,10 @@ class ChatStore:
         return command, environment
 
     def _library(self) -> skill_plugins.Library | None:
-        return skill_plugins.configured_library(self.runtime_root, self.hub_url)
+        return skill_plugins.installed_library()
 
     def _turn_library(self) -> Callable[[], skill_plugins.Library | None]:
-        """The configured library, read at most once for one turn: its recipes and its plugin share it."""
+        """The installed skills, read at most once for one turn: its recipes and its plugin share them."""
 
         held: list = []
 
@@ -1320,7 +1345,7 @@ class ChatStore:
         except HubFailure as failure:
             for row in recipes:
                 row["skill"] = {"load": None, "pinned": (row["memory"].get("value") or {}).get("skill"),
-                                "libraryVersion": None, "note": f"{failure.error.detail} Tell the user."}
+                                "current": None, "note": f"{failure.error.detail} Tell the user."}
             return
         for row in recipes:
             row["skill"] = skill_plugins.pinned_status(current, str((row["memory"].get("value") or {}).get("skill")),
@@ -1352,9 +1377,18 @@ class ChatStore:
             self._save(session)
         return future
 
-    def request_skill_permission(self, session_id: str, title: str) -> str:
-        """Put a skill's run and its access to the person in the running chat, as a question with three buttons."""
+    def request_skill_permission(self, session_id: str, title: str, ask: Mapping | None = None) -> str:
+        """Put what a skill run needs to the person in the running chat, as a question with three buttons.
 
+        ``ask`` is what the answer would allow (S-1): ``access``, the ``skill``
+        it is for, the ``projectId`` and ``codeSha256`` of this run, and the
+        ``broad`` part of the access, which is allowed only for that skill.
+        The Hub keeps it, and writes the grant itself when the person answers.
+        """
+
+        broad = bool(ask and ask.get("broad"))
+        always = ("总是允许这个 skill / Always allow for this skill" if broad
+                  else "总是允许 / Always allow")
         future = Future()
         with self._lock:
             session = self._session(session_id)
@@ -1362,10 +1396,9 @@ class ChatStore:
             if self._closing or running is None or running.stop.is_set():
                 raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is not running, so no one can be asked.")
             permission = ChatPermission(id=str(uuid4()), title=title, options=[
-                ChatPermissionOption(optionId="allow_once", name="允许这一次 / Allow once", kind="allow_once"),
-                ChatPermissionOption(optionId="allow_always", name="这个版本一直允许 / Always allow this version",
-                                     kind="allow_always"),
-                ChatPermissionOption(optionId="reject", name="拒绝 / Deny", kind="reject_once"),
+                ChatPermissionOption(optionId="allow_always", name=always, kind="allow_always"),
+                ChatPermissionOption(optionId="allow_once", name="只这一次 / Only this time", kind="allow_once"),
+                ChatPermissionOption(optionId="reject", name="不 / No", kind="reject_once"),
             ])
             session.messages.append(ChatMessage(
                 id=f"{self._answering(session)}:permission:{permission.id}", role="tool", content=permission.title,
@@ -1374,6 +1407,8 @@ class ChatStore:
             session.updatedAt = _now()
             self._permissions[(session_id, permission.id)] = future
             self._skill_questions[(session_id, permission.id)] = future
+            if ask is not None:
+                self._skill_asks[(session_id, permission.id)] = dict(ask)
             if running.trace:
                 running.trace.permission(permission.id)
             self._save(session)
@@ -1384,6 +1419,8 @@ class ChatStore:
 
         status is "answered" (optionId says which button), "waiting", or
         "withdrawn" when the turn ended or was stopped before anyone answered.
+        When the person allowed it, the Hub has kept the grant (S-1):
+        ``grantId`` names it, the one a run for "only this time" names.
         """
 
         with self._lock:
@@ -1394,11 +1431,28 @@ class ChatStore:
         try:
             option = future.result(timeout=wait)
         except FutureTimeout:
-            return {"permissionId": permission_id, "status": "waiting", "optionId": None}
+            return {"permissionId": permission_id, "status": "waiting", "optionId": None, "grantId": None}
         with self._lock:
             self._skill_questions.pop((session_id, permission_id), None)
+            ask = self._skill_asks.pop((session_id, permission_id), None)
+        grant_id = None
+        if ask is not None and option in ("allow_once", "allow_always"):
+            grant_id = self._allow_skill(ask, once=option == "allow_once", ref=permission_id)
         return {"permissionId": permission_id, "status": "withdrawn" if option is None else "answered",
-                "optionId": option}
+                "optionId": option, "grantId": grant_id}
+
+    def _allow_skill(self, ask: Mapping, *, once: bool, ref: str) -> str:
+        """Keep the grant the person's answer gave: for this one run, this skill, or every skill."""
+
+        from project_runtime.api.dto.skill_grants import SkillRefDto
+        from ..settings import skill_grants
+
+        skill = SkillRefDto.model_validate(ask["skill"])
+        row = skill_grants.allow(
+            self.runtime_root, ask["access"], method="card", ref=ref,
+            skill=skill if once or ask.get("broad") else None,
+            once={"projectId": str(ask["projectId"]), "codeSha256": str(ask["codeSha256"])} if once else None)
+        return row.grant_id
 
     def resolve_permission(self, session_id: str, permission_id: str, request: ChatPermissionRequest) -> ChatDetail:
         with self._lock:
@@ -2148,11 +2202,10 @@ class ChatStore:
 
     def close_project(self, project_dir: str) -> None:
         """Detach only this project's agents and cancel their pending permissions."""
-        target = os.path.normcase(str(Path(project_dir).resolve()))
+        target = project_key(project_dir)
         with self._lock:
             self._load()
-            ids = [row.id for row in self._sessions.values()
-                   if os.path.normcase(str(Path(row.projectDir).resolve())) == target]
+            ids = [row.id for row in self._sessions.values() if project_key(row.projectDir) == target]
         for session_id in ids:
             self.stop(session_id)
             with self._lock:

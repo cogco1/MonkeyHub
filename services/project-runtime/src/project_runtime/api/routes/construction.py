@@ -16,7 +16,11 @@ from __future__ import annotations
 from dataclasses import replace
 import re
 
+from typing import Literal
+
 from fastapi import APIRouter, Query
+from fastapi.responses import Response
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.requests import Request
 
 from monkeyarch.authoring.construction.vocabulary import vocabulary
@@ -29,8 +33,10 @@ from ...application.construction import (
     hosted_opening_proposal,
     kept_refs,
 )
-from ...application.artifacts import MODEL_UPLOAD_RUN_PREFIX
+from ...application import quantities
+from ...application.artifacts import MODEL_UPLOAD_RUN_PREFIX, ModelSource
 from ...application.projection import StateProjection, project_state
+from ..dto.artifacts import ModelSourceDto
 from ...application.proposals import Proposal
 from ..dto.construction import (
     ConstructionModelDto,
@@ -55,6 +61,8 @@ _SCRIPT_REFUSED = {422: {"model": ConstructionRefusalDto,
 _FACETS_REFUSED = {422: {"model": ConstructionRefusalDto,
                          "description": "Refused with a code and one sentence (FACETS_INVALID, FACETS_TARGET_INVALID)"}}
 _OPENING_REFUSED = {
+    404: {"model": ConstructionRefusalDto,
+          "description": "OPENING_UNKNOWN: the host has no opening by that id; the sentence names the ones it has"},
     409: {"model": EnrichmentRequiredDto,
           "description": "ENRICHMENT_REQUIRED names the facet to add first; STALE_BASE a request made against another state"},
     422: {"model": ConstructionRefusalDto,
@@ -104,6 +112,41 @@ def _not_a_design_state(run: str, projection: StateProjection) -> str:
             "GET /api/construction/model without run reads the project's own.")
 
 
+class QuantitiesRequestDto(BaseModel):
+    """One exact model, as the drawing routes select it, and whether the answer is JSON or CSV."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    project_id: str = Field(alias="projectId", min_length=1)
+    model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
+    source_asset: dict[str, str] | None = Field(alias="sourceAsset", default=None,
+                                                description="{runId, assetSha256} of an imported or snapshot model")
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
+    format: Literal["json", "csv"] = "json"
+
+
+@router.post("/quantities", responses={200: {"content": {"text/csv": {}}}})
+def read_quantities(request: Request, payload: QuantitiesRequestDto):
+    """Each physical member's volume, area, closure, role and material, and their sums by material and role (G4).
+
+    A read: volume, closure and solid count are the model's recorded cold read,
+    area is measured on the same exact shapes, role and material are its
+    construction facets (else the material the model asset gives the member).
+    ``format: "csv"`` answers the same as CSV.
+    """
+
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The quantities request names another project.")
+    result = quantities.model_quantities(
+        binding, model_source=None if payload.model_source is None else ModelSource.from_dict(
+            payload.model_source.model_dump(by_alias=True)),
+        source_asset=payload.source_asset, source_stage_ref=payload.source_stage_ref)
+    if payload.format == "csv":
+        return Response(content=quantities.quantities_csv(result), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": 'attachment; filename="quantities.csv"', "Cache-Control": "no-store"})
+    return result
+
+
 @router.post("/proposals/construction", response_model=ConstructionProposalDto, response_model_by_alias=True,
              status_code=201, responses=_SCRIPT_REFUSED)
 def create_construction_proposal(request: Request, body: ConstructionRequestDto) -> ConstructionProposalDto:
@@ -148,6 +191,8 @@ def create_hosted_opening_proposal(request: Request, body: HostedOpeningRequestD
     anything else, the answer is 409 ENRICHMENT_REQUIRED naming the facet to add. The geometry keeps its id,
     its delivered object and whatever stands on it; a block that cannot take one as it is drawn (not a
     rectangle, lifted off its base) is refused with the reason. along is measured on the model view's alongLine.
+    With opening, the id of one the host has, it changes that opening (the fields sent replace its own) or, with
+    remove: true and nothing else, removes it and its family.
     """
 
     binding, base, projection, previous, body = _proposal_source(request, body)
@@ -155,7 +200,7 @@ def create_hosted_opening_proposal(request: Request, body: HostedOpeningRequestD
     proposal = hosted_opening_proposal(
         projection, body.host, kind=body.kind, along=body.along, width=body.width, sill=body.sill, head=body.head,
         shape=body.shape, spring_height=body.spring_height, family=body.family, interface_ref=body.interface_ref,
-        summary=body.summary, keep_refs=kept_refs(projection.record, body.keep),
+        opening=body.opening, remove=body.remove, summary=body.summary, keep_refs=kept_refs(projection.record, body.keep),
     )
     return _remember(request, proposal, base, previous, body)
 

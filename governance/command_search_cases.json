@@ -1,0 +1,105 @@
+{
+ "schema": "MonkeyHubCommandSearchCases@1",
+ "note": "Sentences people type, and what the command search (web: apps/monkeyhub/web/src/features/commands/search.ts) and the agent's capability index (project_runtime.application.capability) must answer. Both test suites read this file, so the two keep one rule. command: the web's best command; route: whether the composer offers it in place of the conversation; capability: the Runtime index's best capability, where the Runtime performs it.",
+ "cases": [
+  {
+   "say": "帮我截一张图",
+   "command": "model.capture",
+   "route": true,
+   "capability": "model.capture"
+  },
+  {
+   "say": "take a screenshot",
+   "command": "model.capture",
+   "route": true,
+   "capability": "model.capture"
+  },
+  {
+   "say": "我想看之前的版本",
+   "command": "view.design_tree.open",
+   "route": false,
+   "capability": "design.history"
+  },
+  {
+   "say": "show me the design history",
+   "command": "view.design_tree.open",
+   "route": true,
+   "capability": "design.history"
+  },
+  {
+   "say": "导出画板PDF",
+   "command": "board.export.run",
+   "route": true,
+   "capability": "board.export"
+  },
+  {
+   "say": "把面往上拉",
+   "command": "draft.tools.push_pull",
+   "route": true,
+   "capability": "draft.direct_edit"
+  },
+  {
+   "say": "把墙往外推一点",
+   "command": "draft.tools.push_pull",
+   "route": true,
+   "capability": "draft.direct_edit"
+  },
+  {
+   "say": "画一个矩形",
+   "command": "draft.tools.rectangle",
+   "route": true,
+   "capability": "draft.direct_edit"
+  },
+  {
+   "say": "出一张平面图",
+   "command": "drawing.plan.generate",
+   "route": true,
+   "capability": "drawing.orthographic"
+  },
+  {
+   "say": "生成渲染图",
+   "command": "render.run.generate",
+   "route": true,
+   "capability": "render.run"
+  },
+  {
+   "say": "把模型导出成rhino能打开的",
+   "command": "model.export_3dm.editable",
+   "route": true,
+   "capability": "model.exchange"
+  },
+  {
+   "say": "改楼层标高",
+   "command": "frame.set_level.datum",
+   "route": true,
+   "capability": "frame.set_level"
+  },
+  {
+   "say": "make the main volume taller",
+   "route": false,
+   "capability": "candidate.modify_existing"
+  },
+  {
+   "say": "打开设置",
+   "command": "view.settings.open",
+   "route": true
+  },
+  {
+   "say": "新建一个项目",
+   "command": "project.create.new",
+   "route": true
+  },
+  {
+   "say": "看看用了多少钱",
+   "command": "view.usage.open",
+   "route": false
+  },
+  {
+   "say": "出一套施工图纸并送审",
+   "route": false
+  }
+ ],
+ "nothing": [
+  "这个方案怎么样"
+ ]
+}

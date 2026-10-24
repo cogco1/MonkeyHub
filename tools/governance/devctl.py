@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from tools.dev import source_roots  # noqa: E402 - needs this tree on sys.path first
-from tools.governance.archcheck import COMMAND_TREE as COMMAND_TREE_PATH, REGISTRY_SCHEMA, render_command_tree  # noqa: E402
+from tools.governance.archcheck import COMMAND_TREE as COMMAND_TREE_PATH, REGISTRY_SCHEMA, load_command_phrases, render_command_tree  # noqa: E402
 
 source_roots.put_first(ROOT)
 
@@ -468,7 +468,7 @@ def main(argv: list[str] | None = None) -> int:
     rendered = [SEMANTIC_REGISTRY]
     if system_map is not None:
         SYSTEM_MAP.write_text(system_map, encoding="utf-8", newline="\n")
-        COMMAND_TREE.write_text(render_command_tree(load_module_registry()), encoding="utf-8", newline="\n")
+        COMMAND_TREE.write_text(render_command_tree(load_module_registry(), load_command_phrases(ROOT)), encoding="utf-8", newline="\n")
         rendered += [SYSTEM_MAP, COMMAND_TREE]
     print("rendered " + ", ".join(str(path.relative_to(ROOT)) for path in rendered))
     return 0

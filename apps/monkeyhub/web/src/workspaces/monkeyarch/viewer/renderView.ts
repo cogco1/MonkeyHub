@@ -20,6 +20,8 @@ export interface RenderView {
   readonly modelSource?: ModelSourceDto | null;
   readonly sourceStageRef?: string | null;
   readonly sourceIssue?: "unsaved" | "loading" | "unbound" | null;
+  /** The live section the view is cut at (G5): a point on the plane and the normal toward the kept side. */
+  readonly clip?: { readonly origin: [number, number, number]; readonly normal: [number, number, number] } | null;
 }
 
 /** A captured view as its source document retains it: the camera, and the pixels it was drawn at. */
@@ -33,8 +35,10 @@ const EPSILON = 1e-9;
 const MODEL_UP = new Vector3(0, 0, 1);
 
 async function drawPng(scene: Scene, camera: ViewCamera, screenSize: [number, number], exposure: number, shadows: boolean): Promise<Blob> {
-  const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  // A live section's cut and fills (G5) draw here as on screen: clipping on, and a stencil buffer for the fills.
+  const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, stencil: true });
   try {
+    renderer.localClippingEnabled = true;
     renderer.setPixelRatio(1); renderer.setSize(...screenSize, false);
     renderer.outputColorSpace = SRGBColorSpace; renderer.toneMapping = ACESFilmicToneMapping;
     renderer.toneMappingExposure = exposure;

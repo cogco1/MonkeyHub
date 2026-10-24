@@ -168,9 +168,9 @@ class ProviderTests(unittest.TestCase):
         with patch("monkeycad.formats.conversion.ThreeDM",side_effect=ConversionError("missing runtime")):
             coordinator = ConversionCoordinator([InProcessMeshProvider()])
             routes = coordinator.capabilities()
-            # Only the route that needs no 3DM runtime stays: GLB to an STL print mesh.
+            # Only the routes that need no 3DM runtime stay: GLB to an STL print mesh, an OBJ or an FBX.
             self.assertEqual([(row["sourceFormat"], row["targetFormat"]) for row in routes if row["available"]],
-                             [("glb", "stl")])
+                             [("glb", "stl"), ("glb", "obj"), ("glb", "fbx")])
             with self.assertRaisesRegex(ConversionFailure,NO_EXECUTOR):
                 coordinator.convert(fixture(),"glb","3dm")
 

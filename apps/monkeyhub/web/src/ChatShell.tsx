@@ -27,9 +27,11 @@ import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } f
 import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
 import { ProjectSkills } from "./features/skills/SkillsPanel";
-import { ProjectSkillGrants, SkillRunChoice } from "./features/skills/SkillPermissions";
+import { SkillGrants } from "./features/skills/SkillPermissions";
 import { editFocused, HubMenuBar, type HubMenu, type HubMenuItem } from "./HubMenu";
-import { ASK_AI_ACTION, openSurfaceAction, useCommandActions, type CommandHandler } from "./features/commands/CommandProvider";
+import { ASK_AI_ACTION, openSurfaceAction, useCommandActions, useCommands, type CommandHandler } from "./features/commands/CommandProvider";
+import { indexOf, routeSentence, searchable } from "./features/commands/search";
+import { chooseShell, useShellLayout } from "./app/shellLayout";
 import { AttentionShell, RECENT_CONVERSATIONS, type CenterView, type ShellProject } from "./app/AttentionShell";
 import { useT } from "./i18n/useT";
 import { attentionConversation } from "./notifications/queue";
@@ -66,7 +68,7 @@ const menuWords = {
     sidebar: "侧栏", tools: "工具面板", theme: "主题", system: "跟随系统", dark: "深色", light: "浅色",
     uiStyle: "界面风格", classic: "经典", quiet: "静默仪表", titleblock: "图签", night: "夜航",
     size: "字号", compact: "紧凑", normal: "标准", large: "大",
-    update: "检查更新…",
+    update: "软件更新…",
   },
   en: {
     menus: "Menus", back: "Back to the previous conversation", forward: "Forward to the next conversation",
@@ -76,7 +78,7 @@ const menuWords = {
     sidebar: "Sidebar", tools: "Tools panel", theme: "Theme", system: "Match system", dark: "Dark", light: "Light",
     uiStyle: "Interface style", classic: "Classic", quiet: "Quiet instrument", titleblock: "Title block", night: "Night flight",
     size: "Text size", compact: "Compact", normal: "Standard", large: "Large",
-    update: "Check for updates…",
+    update: "Software update…",
   },
 } as const;
 // followHead: the tab was restored on a cold start, not opened to inspect that exact
@@ -153,6 +155,7 @@ const composerWords = {
     newTopicRemove: "移除新话题",
     target: "将修改：当前", targetUnrecorded: "未记录的修改不包括在内", sending: "发送中…",
     sendTo: (name: string) => `发到：${name}`, sendToAttention: "关注对话", sendToNew: "新对话",
+    routeSays: (label: string) => `这句话可以直接做：「${label}」`, routeRun: "直接做", routeSend: "还是发给 AI",
     operationOpenChat: "打开对话", operationDismiss: "知道了",
     operationMore: (count: number) => `另有 ${count} 个`,
     targetViewing: (name: string) => `正在查看 ${name}，这条消息仍会修改当前`,
@@ -164,6 +167,7 @@ const composerWords = {
     newTopicRemove: "Remove New topic",
     target: "Changes: Current", targetUnrecorded: "unrecorded edits not included", sending: "Sending…",
     sendTo: (name: string) => `To: ${name}`, sendToAttention: "the attention conversation", sendToNew: "a new conversation",
+    routeSays: (label: string) => `This can be done directly: ${label}`, routeRun: "Do it", routeSend: "Send to the AI instead",
     operationOpenChat: "Open chat", operationDismiss: "Dismiss",
     operationMore: (count: number) => `${count} more`,
     targetViewing: (name: string) => `Viewing ${name}; this message still changes Current`,
@@ -586,6 +590,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   runtimeEventRef.current = onRuntimeEvent;
   const t = words[preferences.language], w = composerWords[preferences.language], s = shellWords[preferences.language];
   const developer = useDeveloperMode();
+  // 08: a sentence that clearly names one command the person can run here is offered as that command before it goes
+  // to the model (the search index in features/commands/search.ts); the person can still send it as written.
+  const commands = useCommands();
+  const [routed, setRouted] = useState<{ id: string; text: string } | null>(null);
+  const sendAsWritten = useRef(false);
   const [initial] = useState(readView);
   const [projects, setProjects] = useState<ChatProject[]>([]);
   const [sessions, setSessions] = useState<ChatSummary[]>([]);
@@ -1361,6 +1370,13 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       finally { actionLock.current = false; setSending(null); }
       return;
     }
+    if (!sendAsWritten.current && !attachments.length && !renderDraft) {
+      const hit = routeSentence(indexOf(commands.tree, searchable(commands.tree, developer)), draft.trim());
+      const state = hit ? commands.stateOf(hit.command) : null;
+      if (hit && state && (state.kind === "ready" || state.kind === "opens")) { setRouted({ id: hit.command.id, text: draft.trim() }); return; }
+    }
+    sendAsWritten.current = false;
+    setRouted(null);
     const target = projectDir, content = draft.trim(), key = draftKey, files = attachments;
     const requestedContext = designContext, requestedContextMode = contextMode, contextProjectId = workspaceContext?.projectId;
     const requestedRender = renderDraft;
@@ -1966,7 +1982,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const mw = menuWords[preferences.language];
   const tc = useT();
   // 2-3a: the attention shell, opened with ?shell=attention until it becomes the default (2-3c).
-  const [attentionLayout] = useState(() => new URLSearchParams(window.location.search).get("shell") === "attention");
+  // 2-3c: the attention shell by default; the workbench while the person has gone back to it (app/shellLayout.ts).
+  const attentionLayout = useShellLayout() === "attention";
   /** Whether the attention shell shows a conversation now; while it does not, a message goes to the attention conversation. */
   // A New conversation the person asked for: the next message starts one, in the attention shell too.
   const [freshChat, setFreshChat] = useState(false);
@@ -2011,6 +2028,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     "view.conversation_history.forward": { run: () => walk(1), available: () => (trail.index < trail.ids.length - 1 ? true : tc("commands.noLaterChat")) },
     "view.left_column.toggle": { run: toggleSidebar },
     "view.side_panel": { run: () => setPanel(!panel) },
+    "view.shell.workbench": { run: () => chooseShell("workbench"), available: () => (attentionLayout ? true : tc("shell.alreadyWorkbench")) },
+    "view.shell.attention": { run: () => chooseShell("attention"), available: () => (attentionLayout ? tc("shell.alreadyAttention") : true) },
     "view.tab.board": needsProject(() => openTool("monkeyboard")),
     "view.tab.modeling": needsProject(() => openTool("monkeyarch")),
     "view.settings.open": { run: openSettings },
@@ -2194,6 +2213,19 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); addAttachments(Array.from(event.dataTransfer.files)); } setDraggingFiles(false); }}
           onPaste={(event) => { if (event.clipboardData.files.length) { event.preventDefault(); addAttachments(Array.from(event.clipboardData.files)); } }}>
           {draggingFiles && <p className="chat-attachment-drop" role="status">{t.dropFiles}</p>}
+          {/* 08: the command the sentence names, offered before the model; it goes once the words change. */}
+          {routed && routed.text === draft.trim() && (() => {
+            const command = commands.tree.commands.find((item) => item.id === routed.id);
+            if (!command) return null;
+            return <div className="chat-route" role="group" aria-label={w.routeSays(command.label[preferences.language])}>
+              <p className="chat-route__says">{w.routeSays(command.label[preferences.language])}</p>
+              <button data-command={command.id} type="button" className="btn btn--primary chat-route__run" onClick={() => {
+                if (commands.run(routed.id, "composer")) setDrafts((value) => ({ ...value, [draftKey]: "" }));
+                setRouted(null);
+              }}>{w.routeRun}</button>
+              <button data-command="chat.composer.send" type="button" className="btn chat-route__send" onClick={() => { sendAsWritten.current = true; void send(); }}>{w.routeSend}</button>
+            </div>;
+          })()}
           {/* DC-9: what this message will change, and DC-5: a New topic chosen from the + menu, as one removable chip. */}
           <div className="chat-composer__context">
             {project && <p className="chat-target" id="chat-target" data-viewing={Boolean(position?.viewing)} data-read-only={Boolean(staleBase)}>
@@ -2360,15 +2392,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             hidden={page.id !== shownSettingsPage}>{page.body}</section>)}
           <section role="tabpanel" id="settings-page-skill-permissions" className="settings-page" aria-labelledby="settings-tab-skill-permissions"
             hidden={shownSettingsPage !== "skill-permissions"}>
-            {/* Read each time the page is shown, for the project on screen; only this page and the Skills panel grant or revoke.
-                The Hub-wide choice of how a chat's AI runs skills shows without a project too. */}
-            {settingsOpen && shownSettingsPage === "skill-permissions" && (projectRuntime
-              ? <ProjectRuntimeProvider key={`skill-grants:${projectRuntime.runtimeId}`} runtimeId={projectRuntime.runtimeId}
-                baseUrl={`${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`}>
-                <ProjectSkillGrants projectName={project?.name ?? null} />
-              </ProjectRuntimeProvider>
-              : <div className="skills skill-grants"><h2>{t.skillPermissions}</h2><SkillRunChoice />
-                <p className="settings-intro">{t.skillPermissionsUnavailable}</p></div>)}
+            {/* What a person allowed skills to do on this computer (S-1), read each time the page is shown: the Hub's own
+                grants, so it needs no project and no project has to answer. Only this page withdraws a grant. */}
+            {settingsOpen && shownSettingsPage === "skill-permissions" && <SkillGrants />}
           </section>
         </div>
         <section role="tabpanel" id="settings-page-update" className="settings-page" aria-labelledby="settings-tab-update" hidden={shownSettingsPage !== "update"}>
@@ -2423,6 +2449,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       <button type="button" className="chat-icon" aria-label={mw.back} title={mw.back} disabled={trail.index <= 0} data-command="view.conversation_history.back" onClick={() => walk(-1)}><Icon name="back" /></button>
       <button type="button" className="chat-icon" aria-label={mw.forward} title={mw.forward} disabled={trail.index >= trail.ids.length - 1} data-command="view.conversation_history.forward" onClick={() => walk(1)}><Icon name="forward" /></button>
       <button type="button" className="chat-icon" aria-label={sidebar ? t.collapse : t.expand} title={sidebar ? t.collapse : t.expand} data-command="view.left_column.toggle" onClick={toggleSidebar}><Icon name="sidebar" /></button>
+      {/* 2-3c: the workbench is the way back; the new shell is one press away from it. */}
+      <button type="button" className="menu-command chat-menubar__to-new" data-command="view.shell.attention" onClick={() => chooseShell("attention")}>{tc("shell.toAttention")}</button>
     </>} /></div>
     <aside className="chat-sidebar" aria-label={t.projects}>
       <div className="chat-sidebar__body">
@@ -2603,12 +2631,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             </> : <p className="chat-muted">{t.connectionNone}</p>}
           </details> : reloadPage;
         })()}
-        {/* The project's skills, read from its runtime: the one place a person approves a version to run. */}
-        <div className="chat-project-card__skills">
+        {/* The skills installed on this computer, as this project's runtime lists them; nothing is approved here (S-1). */}
+        {developer && <div className="chat-project-card__skills">
           <button type="button" className="chat-activity__open" disabled={!projectRuntime} title={projectRuntime ? undefined : t.skillsUnavailable}
             aria-description={projectRuntime ? undefined : t.skillsUnavailable} onClick={() => { setSkillsOpen(true); skillsDialog.current?.showModal(); }}>
             <Icon name="file" /><span>{t.skills}</span></button>
-        </div>
+        </div>}
         {/* A whole project moved as one file: written from what is retained,
             and read back into a folder of its own. Neither touches this view. */}
         <div className="chat-project-card__archive">

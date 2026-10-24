@@ -117,6 +117,10 @@ def save_render_view(binding, request):
     # that earlier runtimes retained for it.
     recipe = {"kind": "model-view", "camera": request.camera.model_dump(by_alias=True, exclude_none=True, mode="json"),
               "screenSize": list(request.screen_size)}
+    clip = getattr(request, "clip", None)
+    if clip is not None:
+        # A view cut at a live section keeps the cut (G5); one without keeps the recipe, and so the identity, it had.
+        recipe["clip"] = {"origin": list(clip.origin), "normal": list(clip.normal)}
     identity = canonical_digest({"modelSource": source.to_dict(), "sourceStageRef": request.source_stage_ref,
                                  "viewRecipe": recipe})
     return save_document(binding, source.run_id, f"Model view - {identity[:8]}.png", "image/png",

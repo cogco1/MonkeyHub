@@ -122,6 +122,16 @@ VERBS: tuple[Verb, ...] = (
          "A solid through two or more sections with the same point count and corresponding point order, "
          "all measured from the same level or the same top. cap=False leaves both ends open: an open "
          "surface, not a solid."),
+    Verb("stair", _p("start", "end", "count", "rise", "width", at=0), "solid",
+         "A straight flight of count steps, each rise high, rising from start (x, z) toward end (x, z), width wide "
+         "and centred on that line; at is where its first step stands, like at for extrude. top(flight) is its "
+         "top, at + count x rise, for a landing. It can be moved, rotated or mirrored, not scaled, and it neither "
+         "cuts nor is cut."),
+    Verb("railing", _p("points", height=1.0, post=0.05, spacing=1.2, rail=0.05), "solid",
+         "Posts and a rail along an open polyline [(x, y, z), ...] of 2 to 512 points where the railing stands, as "
+         "for path: a post post x post square at every point and at most spacing apart, and a rail rail x rail "
+         "whose top runs height above the line. A segment cannot be vertical. It can be moved, rotated or "
+         "mirrored, not scaled."),
     Verb("move", _p("obj", dx=0, dy=0, dz=0), "obj",
          "Move a shape in place by (dx, dy, dz)."),
     Verb("rotate", _p("obj", "degrees", about=(0, 0)), "obj",

@@ -375,7 +375,7 @@ def admitted_candidate_id(request: Request, generated: str) -> str:
         return generated
     instance_id = getattr(request.app.state, "managed_instance_id", None)
     if (not instance_id or request.headers.get("x-monkey-worker") != instance_id
-            or re.fullmatch(r"hub-cand-[0-9a-f]{32}", candidate_id) is None):
+            or re.fullmatch(r"hub-cand-(?:[0-9a-f]{16}|[0-9a-f]{32})", candidate_id) is None):
         raise StudioError(409, "CANDIDATE_ADMISSION_MISMATCH", "The candidate admission is not bound to this managed Studio instance.")
     binding = bound_project(request.app.state)
     if candidate_id in binding.run_ids():

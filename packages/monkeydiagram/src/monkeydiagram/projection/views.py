@@ -296,6 +296,10 @@ class SectionPerspectiveError(DrawingElevationError):
         super().__init__(message)
         self.code = code
 
+    def __reduce__(self):
+        # Raised in a drawing worker, it reaches the Runtime with its code.
+        return type(self), (self.code, str(self))
+
 
 def refuse_section(code: str, message: str):
     """Refuse a section request with its stable, caller-visible reason code."""

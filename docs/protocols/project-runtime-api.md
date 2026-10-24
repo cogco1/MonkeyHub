@@ -418,8 +418,8 @@ drawn prisms and faces.
 
 Write vectors (`translation`, `axis`, `scale`, `origin`, push/pull `normal`, work-plane axes,
 loft sections) are the building-local modeling frame `[x, y, z]` with +y up; plan points are
-`[x, z]`. Candidate object and compare boxes are the export's Z-up CAD frame, `[x, z, y]` of
-the same point. A direct action's proposal summary states its vector and which way it goes
+`[x, z]` with +z north. Candidate object and compare boxes are the export's Z-up CAD frame, `[x, z, y]` of
+the same point, so the plan's +z is the 3DM's +Y and an exported GLB's -Z. A direct action's proposal summary states its vector and which way it goes
 (up or down, or horizontal along plan x or z) before anything runs.
 
 A modeling write whose `stateDigest` is not the selected source's is refused
@@ -2198,6 +2198,8 @@ three documents, registered beside the model with `viewRecipe.kind` "camera-pass
 image. They can be render sources or references like any registered image. Not yet drawn: materials' textures,
 transparency, lights or shadows; the camera's own near and far planes are not used.
 
+A live section (G5) travels with a view: `POST /api/render/views` takes an optional `clip` (`{origin, normal}`, a point on the plane and the normal toward the side that stays drawn, in the model's frame) and keeps it in the saved view's recipe, and `POST /api/render/views/passes` takes one too (a saved view's own `clip` applies when none is given). A pass cut so drops or cuts the triangles and feature edges beyond the plane before projecting, draws the cut's outline in the line image, and names `clip` in its record and its three recipes; the cut faces are not filled in these images (the Modeling viewport fills those of closed members).
+
 Each request creates its own `render-<UUID hex>` P036 run. Repeating identical
 parameters with that UUID returns the same job; different parameters return 409.
 Different UUIDs keep distinct attempts even when their pixels are identical.
@@ -2388,7 +2390,10 @@ an elevation the same values are given flat and again under `frame`. The documen
 own folder (`monkeyhub-skill-*` in the system temp folder: copies of the inputs, the package and the outputs) is
 removed when the run ends, after its outputs are registered in the project; the run's record is written from what
 was registered, so nothing a run produced lives only there. A failed run registers no outputs: its record keeps the
-exit code, the ends of stdout and stderr, and what it needed.
+exit code, the ends of stdout and stderr, and what it needed. Inside its own folder a run writes only under
+`--outputs` or beside its own code, and no write climbs out of `--outputs` with `..`, whatever it was granted: a
+refused write fails the run as `SKILL_OUTPUT_INVALID` (the run's control files, inputs and audit log stay as they
+were), even when the skill caught the refusal.
 
 What a run is never given. Its environment is the user's own less the runtime's settings (every
 `ARCHFLOW_STUDIO_*`, `MONKEYHUB_*` and `MONKEYMONITOR_*` variable, among them the render key the Hub hands the runtime
@@ -2412,3 +2417,29 @@ checked. Native code, ctypes and the programs a granted program starts are outsi
 can reach the Hub's forwarded URL can also send a grant; `approvedBy` names who the runtime saw, not proof that a
 person pressed the button. With a grant, a skill can do what the user's account can do as far as the grant reaches,
 and the button on the Hub page is the only gate.
+
+## Board view, quantities and the live section (branch claude/hub-capabilities, 2026-10-21)
+
+`POST /api/board/view` (a read; gap 28) draws one frame (`frameId`, a frame element's id) or `region` (`{x, y,
+width, height}` in scene coordinates) of a Board scene revision as the Board shows it, its exact registered pages
+(tracing-paper snapshots included) under the person's strokes, lines, shapes and text, at most 2048 px (`maxEdge`
+64-2048) and 4 MiB, as base64 PNG with its SHA-256. Beside it: every frame on the board, the pages in the region
+(file name, `tracingPaper`, exact source), and every mark (type, colours, stroke width, opacity, box, `updatedAt`
+from Excalidraw's `updated`, `frameId`, `groupIds`, text, point count, and `onPages`: each page under it with the
+shared part as page fractions from the top left). It approximates Excalidraw's drawing and writes nothing.
+
+`PUT /api/board` refuses a newly added `seenDocuments` id that names a drawing revision by its asset
+(`BOARD_SEEN_KEY_INVALID`): a received drawing is the JSON text of `[runId, revisionRef]`, and `[runId,
+assetSha256]` only for a document without a revision. Ids already saved are not read again.
+
+`POST /api/quantities` (a read; G4) takes the model a drawing route would select (`modelSource`, `sourceAsset`
+or `sourceStageRef`) and answers one row per physical member: closed, solid count, volume (a closed member's
+only) as its CAD receipt recorded of the cold read (an imported model's receipt keeps only bounds, so its
+members are measured on the same exact shapes; `measuredFrom` says which), area measured on that shape, in the
+model unit and in metres, and role and material from the facets of the geometry id it belongs to by the one
+naming rule (`obj-<id>`, `obj-<id>-...`), else the model asset's own material. `summary` sums closed members by
+material and role; open members are counted apart and add only area. `format: "csv"` answers the same as CSV.
+
+A cut plan or vertical section asked with `board: "on-request"` is not placed on the Board by itself, only when
+a person asks (`BoardPageRequest`); its later revisions keep that, as they keep `follow`. The Modeling viewport's
+live section draws so, and offers Put on Board for what it drew.

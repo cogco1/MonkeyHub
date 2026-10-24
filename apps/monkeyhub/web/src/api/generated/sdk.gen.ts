@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AcknowledgeOperationApiRuntimeOperationsOperationIdAcknowledgePostData, AcknowledgeOperationApiRuntimeOperationsOperationIdAcknowledgePostErrors, AcknowledgeOperationApiRuntimeOperationsOperationIdAcknowledgePostResponses, ActOnComputerApiComputerActionsPostData, ActOnComputerApiComputerActionsPostErrors, ActOnComputerApiComputerActionsPostResponses, ApplicationSettingsApiSettingsAppsGetData, ApplicationSettingsApiSettingsAppsGetResponses, ApplyUpdateApiUpdatesApplyPostData, ApplyUpdateApiUpdatesApplyPostResponses, AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostData, AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostErrors, AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostResponses, BindChatPresentationApiChatPresentationBindPostData, BindChatPresentationApiChatPresentationBindPostErrors, BindChatPresentationApiChatPresentationBindPostResponses, ChatProjectsApiChatProjectsGetData, ChatProjectsApiChatProjectsGetResponses, ChatProviderLoginApiChatProvidersProviderIdLoginPostData, ChatProviderLoginApiChatProvidersProviderIdLoginPostErrors, ChatProviderLoginApiChatProvidersProviderIdLoginPostResponses, ChatProvidersApiChatProvidersGetData, ChatProvidersApiChatProvidersGetErrors, ChatProvidersApiChatProvidersGetResponses, ChatSessionsApiChatSessionsGetData, ChatSessionsApiChatSessionsGetErrors, ChatSessionsApiChatSessionsGetResponses, ChatUsageSourcesApiChatUsageSourcesGetData, ChatUsageSourcesApiChatUsageSourcesGetResponses, ChatWorkspaceApiChatWorkspaceGetData, ChatWorkspaceApiChatWorkspaceGetResponses, CheckGeminiApiCredentialsGeminiCheckPostData, CheckGeminiApiCredentialsGeminiCheckPostResponses, CheckUpdatesApiUpdatesCheckPostData, CheckUpdatesApiUpdatesCheckPostResponses, ClearCredentialApiCredentialsCredentialIdDeleteData, ClearCredentialApiCredentialsCredentialIdDeleteErrors, ClearCredentialApiCredentialsCredentialIdDeleteResponses, CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostData, CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostErrors, CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostResponses, CompleteUpdateApiUpdatesCompletePostData, CompleteUpdateApiUpdatesCompletePostErrors, CompleteUpdateApiUpdatesCompletePostResponses, CreateChatApiChatSessionsPostData, CreateChatApiChatSessionsPostErrors, CreateChatApiChatSessionsPostResponses, CreateChatProjectApiChatProjectsPostData, CreateChatProjectApiChatProjectsPostErrors, CreateChatProjectApiChatProjectsPostResponses, ExportProjectArchiveApiProjectArchiveExportPostData, ExportProjectArchiveApiProjectArchiveExportPostErrors, ExportProjectArchiveApiProjectArchiveExportPostResponses, GetFabProfilesApiFabProfilesGetData, GetFabProfilesApiFabProfilesGetErrors, GetFabProfilesApiFabProfilesGetResponses, GetUserSettingsApiSettingsUserGetData, GetUserSettingsApiSettingsUserGetResponses, HealthApiHealthGetData, HealthApiHealthGetResponses, InspectComputerApiComputerInspectPostData, InspectComputerApiComputerInspectPostErrors, InspectComputerApiComputerInspectPostResponses, IntegrationStatusApiIntegrationsGetData, IntegrationStatusApiIntegrationsGetErrors, IntegrationStatusApiIntegrationsGetResponses, ListAppsApiAppsGetData, ListAppsApiAppsGetErrors, ListAppsApiAppsGetResponses, ListCredentialsApiCredentialsGetData, ListCredentialsApiCredentialsGetResponses, OpenProviderLinkApiLinksLinkIdOpenPostData, OpenProviderLinkApiLinksLinkIdOpenPostErrors, OpenProviderLinkApiLinksLinkIdOpenPostResponses, OpenRuntimeApiRuntimeProjectsOpenPostData, OpenRuntimeApiRuntimeProjectsOpenPostErrors, OpenRuntimeApiRuntimeProjectsOpenPostResponses, PostChatApiChatSessionsSessionIdMessagesPostData, PostChatApiChatSessionsSessionIdMessagesPostErrors, PostChatApiChatSessionsSessionIdMessagesPostResponses, PrepareFabApiFabPreparePostData, PrepareFabApiFabPreparePostErrors, PrepareFabApiFabPreparePostResponses, PrepareProjectModelingApiProjectModelingPostData, PrepareProjectModelingApiProjectModelingPostErrors, PrepareProjectModelingApiProjectModelingPostResponses, PrepareUpdateApiUpdatesPreparePostData, PrepareUpdateApiUpdatesPreparePostResponses, PresentChatApiChatSessionsSessionIdPresentationPostData, PresentChatApiChatSessionsSessionIdPresentationPostErrors, PresentChatApiChatSessionsSessionIdPresentationPostResponses, PutUserSettingsApiSettingsUserPutData, PutUserSettingsApiSettingsUserPutErrors, PutUserSettingsApiSettingsUserPutResponses, ReadChatApiChatSessionsSessionIdGetData, ReadChatApiChatSessionsSessionIdGetErrors, ReadChatApiChatSessionsSessionIdGetResponses, ReadChatAttachmentApiChatSessionsSessionIdAttachmentsAttachmentIdGetData, ReadChatAttachmentApiChatSessionsSessionIdAttachmentsAttachmentIdGetErrors, ReadChatAttachmentApiChatSessionsSessionIdAttachmentsAttachmentIdGetResponses, ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetData, ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetErrors, ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetResponses, ReadChatDocumentApiChatSessionsSessionIdDocumentsMessageIdIndexGetData, ReadChatDocumentApiChatSessionsSessionIdDocumentsMessageIdIndexGetErrors, ReadChatDocumentApiChatSessionsSessionIdDocumentsMessageIdIndexGetResponses, ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetData, ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetErrors, ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetResponses, ReadProjectRuntimeApiRuntimeProjectsRuntimeIdGetData, ReadProjectRuntimeApiRuntimeProjectsRuntimeIdGetErrors, ReadProjectRuntimeApiRuntimeProjectsRuntimeIdGetResponses, ReadRuntimeApiRuntimeGetData, ReadRuntimeApiRuntimeGetResponses, ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetData, ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetErrors, ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetResponses, RecordComputerApiComputerRecordingsPostData, RecordComputerApiComputerRecordingsPostErrors, RecordComputerApiComputerRecordingsPostResponses, RecoverRuntimeApiRuntimeProjectsRuntimeIdRecoverPostData, RecoverRuntimeApiRuntimeProjectsRuntimeIdRecoverPostErrors, RecoverRuntimeApiRuntimeProjectsRuntimeIdRecoverPostResponses, ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostData, ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostErrors, ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponses, RestoreProjectArchiveApiProjectArchiveRestorePostData, RestoreProjectArchiveApiProjectArchiveRestorePostErrors, RestoreProjectArchiveApiProjectArchiveRestorePostResponses, RollbackUpdateApiUpdatesRollbackPostData, RollbackUpdateApiUpdatesRollbackPostErrors, RollbackUpdateApiUpdatesRollbackPostResponses, RuntimeEventsApiRuntimeEventsGetData, RuntimeEventsApiRuntimeEventsGetResponse, RuntimeEventsApiRuntimeEventsGetResponses, SaveCredentialApiCredentialsCredentialIdPutData, SaveCredentialApiCredentialsCredentialIdPutErrors, SaveCredentialApiCredentialsCredentialIdPutResponses, SendFabApiFabSendPostData, SendFabApiFabSendPostErrors, SendFabApiFabSendPostResponses, SetChatArchivedApiChatSessionsSessionIdArchivePutData, SetChatArchivedApiChatSessionsSessionIdArchivePutErrors, SetChatArchivedApiChatSessionsSessionIdArchivePutResponses, SetChatModelApiChatSessionsSessionIdModelPutData, SetChatModelApiChatSessionsSessionIdModelPutErrors, SetChatModelApiChatSessionsSessionIdModelPutResponses, StartAppApiAppsAppIdStartPostData, StartAppApiAppsAppIdStartPostErrors, StartAppApiAppsAppIdStartPostResponses, StopAppApiAppsAppIdStopPostData, StopAppApiAppsAppIdStopPostErrors, StopAppApiAppsAppIdStopPostResponses, StopChatApiChatSessionsSessionIdStopPostData, StopChatApiChatSessionsSessionIdStopPostErrors, StopChatApiChatSessionsSessionIdStopPostResponses, UpdateApplicationSettingsApiSettingsAppsPutData, UpdateApplicationSettingsApiSettingsAppsPutErrors, UpdateApplicationSettingsApiSettingsAppsPutResponses, UpdateRestartApiUpdatesRestartGetData, UpdateRestartApiUpdatesRestartGetResponses, UpdateSettingsApiUpdatesSettingsPutData, UpdateSettingsApiUpdatesSettingsPutErrors, UpdateSettingsApiUpdatesSettingsPutResponses, UpdateStatusApiUpdatesStatusGetData, UpdateStatusApiUpdatesStatusGetResponses } from './types.gen';
+import type { AcknowledgeOperationApiRuntimeOperationsOperationIdAcknowledgePostData, AcknowledgeOperationApiRuntimeOperationsOperationIdAcknowledgePostErrors, AcknowledgeOperationApiRuntimeOperationsOperationIdAcknowledgePostResponses, ActOnComputerApiComputerActionsPostData, ActOnComputerApiComputerActionsPostErrors, ActOnComputerApiComputerActionsPostResponses, ApplicationSettingsApiSettingsAppsGetData, ApplicationSettingsApiSettingsAppsGetResponses, ApplyUpdateApiUpdatesApplyPostData, ApplyUpdateApiUpdatesApplyPostResponses, AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostData, AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostErrors, AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostResponses, AttentionBulkApiAttentionBulkPostData, AttentionBulkApiAttentionBulkPostErrors, AttentionBulkApiAttentionBulkPostResponses, AttentionBulkUndoApiAttentionBulkBulkIdUndoPostData, AttentionBulkUndoApiAttentionBulkBulkIdUndoPostErrors, AttentionBulkUndoApiAttentionBulkBulkIdUndoPostResponses, AttentionConversationApiAttentionConversationPostData, AttentionConversationApiAttentionConversationPostErrors, AttentionConversationApiAttentionConversationPostResponses, AttentionDismissApiAttentionItemIdDismissPostData, AttentionDismissApiAttentionItemIdDismissPostErrors, AttentionDismissApiAttentionItemIdDismissPostResponses, AttentionItemApiAttentionItemIdGetData, AttentionItemApiAttentionItemIdGetErrors, AttentionItemApiAttentionItemIdGetResponses, AttentionItemsApiAttentionGetData, AttentionItemsApiAttentionGetErrors, AttentionItemsApiAttentionGetResponses, AttentionLaterApiAttentionItemIdLaterPostData, AttentionLaterApiAttentionItemIdLaterPostErrors, AttentionLaterApiAttentionItemIdLaterPostResponses, AttentionQuestionApiAttentionQuestionsPostData, AttentionQuestionApiAttentionQuestionsPostErrors, AttentionQuestionApiAttentionQuestionsPostResponses, AttentionReopenApiAttentionItemIdReopenPostData, AttentionReopenApiAttentionItemIdReopenPostErrors, AttentionReopenApiAttentionItemIdReopenPostResponses, AttentionResolveApiAttentionItemIdResolvePostData, AttentionResolveApiAttentionItemIdResolvePostErrors, AttentionResolveApiAttentionItemIdResolvePostResponses, AttentionSummaryApiAttentionSummaryGetData, AttentionSummaryApiAttentionSummaryGetResponses, AttentionUndoApiAttentionItemIdUndoPostData, AttentionUndoApiAttentionItemIdUndoPostErrors, AttentionUndoApiAttentionItemIdUndoPostResponses, BindChatPresentationApiChatPresentationBindPostData, BindChatPresentationApiChatPresentationBindPostErrors, BindChatPresentationApiChatPresentationBindPostResponses, CarrySkillGrantsApiSettingsSkillGrantsCarryPostData, CarrySkillGrantsApiSettingsSkillGrantsCarryPostErrors, CarrySkillGrantsApiSettingsSkillGrantsCarryPostResponses, ChatProjectsApiChatProjectsGetData, ChatProjectsApiChatProjectsGetResponses, ChatProviderLoginApiChatProvidersProviderIdLoginPostData, ChatProviderLoginApiChatProvidersProviderIdLoginPostErrors, ChatProviderLoginApiChatProvidersProviderIdLoginPostResponses, ChatProvidersApiChatProvidersGetData, ChatProvidersApiChatProvidersGetErrors, ChatProvidersApiChatProvidersGetResponses, ChatSessionsApiChatSessionsGetData, ChatSessionsApiChatSessionsGetErrors, ChatSessionsApiChatSessionsGetResponses, ChatUsageSourcesApiChatUsageSourcesGetData, ChatUsageSourcesApiChatUsageSourcesGetResponses, ChatWorkspaceApiChatWorkspaceGetData, ChatWorkspaceApiChatWorkspaceGetResponses, CheckGeminiApiCredentialsGeminiCheckPostData, CheckGeminiApiCredentialsGeminiCheckPostResponses, CheckUpdatesApiUpdatesCheckPostData, CheckUpdatesApiUpdatesCheckPostResponses, ClearCredentialApiCredentialsCredentialIdDeleteData, ClearCredentialApiCredentialsCredentialIdDeleteErrors, ClearCredentialApiCredentialsCredentialIdDeleteResponses, CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostData, CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostErrors, CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostResponses, CompleteUpdateApiUpdatesCompletePostData, CompleteUpdateApiUpdatesCompletePostErrors, CompleteUpdateApiUpdatesCompletePostResponses, CreateChatApiChatSessionsPostData, CreateChatApiChatSessionsPostErrors, CreateChatApiChatSessionsPostResponses, CreateChatProjectApiChatProjectsPostData, CreateChatProjectApiChatProjectsPostErrors, CreateChatProjectApiChatProjectsPostResponses, ExportProjectArchiveApiProjectArchiveExportPostData, ExportProjectArchiveApiProjectArchiveExportPostErrors, ExportProjectArchiveApiProjectArchiveExportPostResponses, GetFabProfilesApiFabProfilesGetData, GetFabProfilesApiFabProfilesGetErrors, GetFabProfilesApiFabProfilesGetResponses, GetUserSettingsApiSettingsUserGetData, GetUserSettingsApiSettingsUserGetResponses, HealthApiHealthGetData, HealthApiHealthGetResponses, InspectComputerApiComputerInspectPostData, InspectComputerApiComputerInspectPostErrors, InspectComputerApiComputerInspectPostResponses, IntegrationStatusApiIntegrationsGetData, IntegrationStatusApiIntegrationsGetErrors, IntegrationStatusApiIntegrationsGetResponses, ListAppsApiAppsGetData, ListAppsApiAppsGetErrors, ListAppsApiAppsGetResponses, ListCredentialsApiCredentialsGetData, ListCredentialsApiCredentialsGetResponses, OpenProviderLinkApiLinksLinkIdOpenPostData, OpenProviderLinkApiLinksLinkIdOpenPostErrors, OpenProviderLinkApiLinksLinkIdOpenPostResponses, OpenRuntimeApiRuntimeProjectsOpenPostData, OpenRuntimeApiRuntimeProjectsOpenPostErrors, OpenRuntimeApiRuntimeProjectsOpenPostResponses, PostChatApiChatSessionsSessionIdMessagesPostData, PostChatApiChatSessionsSessionIdMessagesPostErrors, PostChatApiChatSessionsSessionIdMessagesPostResponses, PrepareFabApiFabPreparePostData, PrepareFabApiFabPreparePostErrors, PrepareFabApiFabPreparePostResponses, PrepareProjectModelingApiProjectModelingPostData, PrepareProjectModelingApiProjectModelingPostErrors, PrepareProjectModelingApiProjectModelingPostResponses, PrepareUpdateApiUpdatesPreparePostData, PrepareUpdateApiUpdatesPreparePostResponses, PresentChatApiChatSessionsSessionIdPresentationPostData, PresentChatApiChatSessionsSessionIdPresentationPostErrors, PresentChatApiChatSessionsSessionIdPresentationPostResponses, PutUserSettingsApiSettingsUserPutData, PutUserSettingsApiSettingsUserPutErrors, PutUserSettingsApiSettingsUserPutResponses, ReadChatApiChatSessionsSessionIdGetData, ReadChatApiChatSessionsSessionIdGetErrors, ReadChatApiChatSessionsSessionIdGetResponses, ReadChatAttachmentApiChatSessionsSessionIdAttachmentsAttachmentIdGetData, ReadChatAttachmentApiChatSessionsSessionIdAttachmentsAttachmentIdGetErrors, ReadChatAttachmentApiChatSessionsSessionIdAttachmentsAttachmentIdGetResponses, ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetData, ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetErrors, ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetResponses, ReadChatDocumentApiChatSessionsSessionIdDocumentsMessageIdIndexGetData, ReadChatDocumentApiChatSessionsSessionIdDocumentsMessageIdIndexGetErrors, ReadChatDocumentApiChatSessionsSessionIdDocumentsMessageIdIndexGetResponses, ReadChatDocumentSourceApiChatSessionsSessionIdAttachmentsAttachmentIdDocumentSourceGetData, ReadChatDocumentSourceApiChatSessionsSessionIdAttachmentsAttachmentIdDocumentSourceGetErrors, ReadChatDocumentSourceApiChatSessionsSessionIdAttachmentsAttachmentIdDocumentSourceGetResponses, ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetData, ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetErrors, ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetResponses, ReadProjectRuntimeApiRuntimeProjectsRuntimeIdGetData, ReadProjectRuntimeApiRuntimeProjectsRuntimeIdGetErrors, ReadProjectRuntimeApiRuntimeProjectsRuntimeIdGetResponses, ReadRuntimeApiRuntimeGetData, ReadRuntimeApiRuntimeGetResponses, ReadSkillGrantsApiSettingsSkillGrantsGetData, ReadSkillGrantsApiSettingsSkillGrantsGetResponses, ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetData, ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetErrors, ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetResponses, RecordComputerApiComputerRecordingsPostData, RecordComputerApiComputerRecordingsPostErrors, RecordComputerApiComputerRecordingsPostResponses, RecoverRuntimeApiRuntimeProjectsRuntimeIdRecoverPostData, RecoverRuntimeApiRuntimeProjectsRuntimeIdRecoverPostErrors, RecoverRuntimeApiRuntimeProjectsRuntimeIdRecoverPostResponses, ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostData, ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostErrors, ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponses, RestoreProjectArchiveApiProjectArchiveRestorePostData, RestoreProjectArchiveApiProjectArchiveRestorePostErrors, RestoreProjectArchiveApiProjectArchiveRestorePostResponses, RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostData, RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostErrors, RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostResponses, RollbackUpdateApiUpdatesRollbackPostData, RollbackUpdateApiUpdatesRollbackPostErrors, RollbackUpdateApiUpdatesRollbackPostResponses, RuntimeEventsApiRuntimeEventsGetData, RuntimeEventsApiRuntimeEventsGetResponse, RuntimeEventsApiRuntimeEventsGetResponses, SaveCredentialApiCredentialsCredentialIdPutData, SaveCredentialApiCredentialsCredentialIdPutErrors, SaveCredentialApiCredentialsCredentialIdPutResponses, SendFabApiFabSendPostData, SendFabApiFabSendPostErrors, SendFabApiFabSendPostResponses, SetChatArchivedApiChatSessionsSessionIdArchivePutData, SetChatArchivedApiChatSessionsSessionIdArchivePutErrors, SetChatArchivedApiChatSessionsSessionIdArchivePutResponses, SetChatModelApiChatSessionsSessionIdModelPutData, SetChatModelApiChatSessionsSessionIdModelPutErrors, SetChatModelApiChatSessionsSessionIdModelPutResponses, StartAppApiAppsAppIdStartPostData, StartAppApiAppsAppIdStartPostErrors, StartAppApiAppsAppIdStartPostResponses, StopAppApiAppsAppIdStopPostData, StopAppApiAppsAppIdStopPostErrors, StopAppApiAppsAppIdStopPostResponses, StopChatApiChatSessionsSessionIdStopPostData, StopChatApiChatSessionsSessionIdStopPostErrors, StopChatApiChatSessionsSessionIdStopPostResponses, UpdateApplicationSettingsApiSettingsAppsPutData, UpdateApplicationSettingsApiSettingsAppsPutErrors, UpdateApplicationSettingsApiSettingsAppsPutResponses, UpdateRestartApiUpdatesRestartGetData, UpdateRestartApiUpdatesRestartGetResponses, UpdateSettingsApiUpdatesSettingsPutData, UpdateSettingsApiUpdatesSettingsPutErrors, UpdateSettingsApiUpdatesSettingsPutResponses, UpdateStatusApiUpdatesStatusGetData, UpdateStatusApiUpdatesStatusGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -145,6 +145,34 @@ export const applicationSettingsApiSettingsAppsGet = <ThrowOnError extends boole
  */
 export const updateApplicationSettingsApiSettingsAppsPut = <ThrowOnError extends boolean = false>(options: Options<UpdateApplicationSettingsApiSettingsAppsPutData, ThrowOnError>): RequestResult<UpdateApplicationSettingsApiSettingsAppsPutResponses, UpdateApplicationSettingsApiSettingsAppsPutErrors, ThrowOnError> => (options.client ?? client).put<UpdateApplicationSettingsApiSettingsAppsPutResponses, UpdateApplicationSettingsApiSettingsAppsPutErrors, ThrowOnError>({
     url: '/api/settings/apps',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Read Skill Grants
+ *
+ * What a person allowed skills to do on this machine (S-1), withdrawn grants included; no project is read.
+ */
+export const readSkillGrantsApiSettingsSkillGrantsGet = <ThrowOnError extends boolean = false>(options?: Options<ReadSkillGrantsApiSettingsSkillGrantsGetData, ThrowOnError>): RequestResult<ReadSkillGrantsApiSettingsSkillGrantsGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ReadSkillGrantsApiSettingsSkillGrantsGetResponses, unknown, ThrowOnError>({ url: '/api/settings/skill-grants', ...options });
+
+/**
+ * Revoke Skill Grant
+ *
+ * Withdraw one grant in Settings; its record stays and no later run is allowed by it.
+ */
+export const revokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePost = <ThrowOnError extends boolean = false>(options: Options<RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostData, ThrowOnError>): RequestResult<RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostResponses, RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostErrors, ThrowOnError> => (options.client ?? client).post<RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostResponses, RevokeSkillGrantApiSettingsSkillGrantsGrantIdRevokePostErrors, ThrowOnError>({ url: '/api/settings/skill-grants/{grant_id}/revoke', ...options });
+
+/**
+ * Carry Skill Grants
+ *
+ * A project's version approvals from before S-1, carried over once each as grants for that skill.
+ */
+export const carrySkillGrantsApiSettingsSkillGrantsCarryPost = <ThrowOnError extends boolean = false>(options: Options<CarrySkillGrantsApiSettingsSkillGrantsCarryPostData, ThrowOnError>): RequestResult<CarrySkillGrantsApiSettingsSkillGrantsCarryPostResponses, CarrySkillGrantsApiSettingsSkillGrantsCarryPostErrors, ThrowOnError> => (options.client ?? client).post<CarrySkillGrantsApiSettingsSkillGrantsCarryPostResponses, CarrySkillGrantsApiSettingsSkillGrantsCarryPostErrors, ThrowOnError>({
+    url: '/api/settings/skill-grants/carry',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -335,6 +363,13 @@ export const readChatAttachmentApiChatSessionsSessionIdAttachmentsAttachmentIdGe
 export const readChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGet = <ThrowOnError extends boolean = false>(options: Options<ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetData, ThrowOnError>): RequestResult<ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetResponses, ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetErrors, ThrowOnError> => (options.client ?? client).get<ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetResponses, ReadChatModelSourceApiChatSessionsSessionIdAttachmentsAttachmentIdModelSourceGetErrors, ThrowOnError>({ url: '/api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source', ...options });
 
 /**
+ * Read Chat Document Source
+ *
+ * The attachment's bytes for POST /api/documents, when it is a PNG, a JPEG or a PDF (gap 37).
+ */
+export const readChatDocumentSourceApiChatSessionsSessionIdAttachmentsAttachmentIdDocumentSourceGet = <ThrowOnError extends boolean = false>(options: Options<ReadChatDocumentSourceApiChatSessionsSessionIdAttachmentsAttachmentIdDocumentSourceGetData, ThrowOnError>): RequestResult<ReadChatDocumentSourceApiChatSessionsSessionIdAttachmentsAttachmentIdDocumentSourceGetResponses, ReadChatDocumentSourceApiChatSessionsSessionIdAttachmentsAttachmentIdDocumentSourceGetErrors, ThrowOnError> => (options.client ?? client).get<ReadChatDocumentSourceApiChatSessionsSessionIdAttachmentsAttachmentIdDocumentSourceGetResponses, ReadChatDocumentSourceApiChatSessionsSessionIdAttachmentsAttachmentIdDocumentSourceGetErrors, ThrowOnError>({ url: '/api/chat/sessions/{session_id}/attachments/{attachment_id}/document-source', ...options });
+
+/**
  * Read Chat Attachment Content
  */
 export const readChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGet = <ThrowOnError extends boolean = false>(options: Options<ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetData, ThrowOnError>): RequestResult<ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetResponses, ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetErrors, ThrowOnError> => (options.client ?? client).get<ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetResponses, ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetErrors, ThrowOnError>({ url: '/api/chat/sessions/{session_id}/attachments/{attachment_id}/read', ...options });
@@ -383,10 +418,11 @@ export const resolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionI
 /**
  * Ask Skill Permission
  *
- * Ask the person in this running chat whether a skill may run, with the three permission buttons.
+ * Ask the person in this running chat to allow what a skill run needs, with three buttons (S-1).
  *
- * The chat tool asks this before an Agent's run of a version no one
- * always allowed, then reads the answer below.
+ * The chat tool asks this before an Agent's run that needs something no
+ * one allowed yet, then reads the answer below. ``ask`` is what the
+ * answer would allow; the Hub writes the grant when the person answers.
  */
 export const askSkillPermissionApiChatSessionsSessionIdSkillPermissionsPost = <ThrowOnError extends boolean = false>(options: Options<AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostData, ThrowOnError>): RequestResult<AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostResponses, AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostErrors, ThrowOnError> => (options.client ?? client).post<AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostResponses, AskSkillPermissionApiChatSessionsSessionIdSkillPermissionsPostErrors, ThrowOnError>({
     url: '/api/chat/sessions/{session_id}/skill-permissions',
@@ -400,7 +436,7 @@ export const askSkillPermissionApiChatSessionsSessionIdSkillPermissionsPost = <T
 /**
  * Read Skill Permission
  *
- * The person's answer: answered (with optionId), waiting, or withdrawn; waits up to ``wait`` seconds.
+ * The person's answer: answered (with optionId and the grant kept), waiting, or withdrawn; waits up to ``wait`` seconds.
  */
 export const readSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGet = <ThrowOnError extends boolean = false>(options: Options<ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetData, ThrowOnError>): RequestResult<ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetResponses, ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetErrors, ThrowOnError> => (options.client ?? client).get<ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetResponses, ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissionIdGetErrors, ThrowOnError>({ url: '/api/chat/sessions/{session_id}/skill-permissions/{permission_id}', ...options });
 
@@ -502,6 +538,109 @@ export const acknowledgeOperationApiRuntimeOperationsOperationIdAcknowledgePost 
  * Runtime Events
  */
 export const runtimeEventsApiRuntimeEventsGet = <ThrowOnError extends boolean = false>(options?: Options<RuntimeEventsApiRuntimeEventsGetData, ThrowOnError, RuntimeEventsApiRuntimeEventsGetResponse>): Promise<ServerSentEventsResult<RuntimeEventsApiRuntimeEventsGetResponses>> => (options?.client ?? client).sse.get<RuntimeEventsApiRuntimeEventsGetResponses, unknown, ThrowOnError>({ url: '/api/runtime/events', ...options });
+
+/**
+ * Attention Items
+ *
+ * Cards newest first; every project unless projectDir names one, unsettled ones unless state is given.
+ */
+export const attentionItemsApiAttentionGet = <ThrowOnError extends boolean = false>(options?: Options<AttentionItemsApiAttentionGetData, ThrowOnError>): RequestResult<AttentionItemsApiAttentionGetResponses, AttentionItemsApiAttentionGetErrors, ThrowOnError> => (options?.client ?? client).get<AttentionItemsApiAttentionGetResponses, AttentionItemsApiAttentionGetErrors, ThrowOnError>({ url: '/api/attention', ...options });
+
+/**
+ * Attention Summary
+ *
+ * Per project: cards that need a person now, put off, and being carried out.
+ */
+export const attentionSummaryApiAttentionSummaryGet = <ThrowOnError extends boolean = false>(options?: Options<AttentionSummaryApiAttentionSummaryGetData, ThrowOnError>): RequestResult<AttentionSummaryApiAttentionSummaryGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<AttentionSummaryApiAttentionSummaryGetResponses, unknown, ThrowOnError>({ url: '/api/attention/summary', ...options });
+
+/**
+ * Attention Item
+ */
+export const attentionItemApiAttentionItemIdGet = <ThrowOnError extends boolean = false>(options: Options<AttentionItemApiAttentionItemIdGetData, ThrowOnError>): RequestResult<AttentionItemApiAttentionItemIdGetResponses, AttentionItemApiAttentionItemIdGetErrors, ThrowOnError> => (options.client ?? client).get<AttentionItemApiAttentionItemIdGetResponses, AttentionItemApiAttentionItemIdGetErrors, ThrowOnError>({ url: '/api/attention/{item_id}', ...options });
+
+/**
+ * Attention Later
+ */
+export const attentionLaterApiAttentionItemIdLaterPost = <ThrowOnError extends boolean = false>(options: Options<AttentionLaterApiAttentionItemIdLaterPostData, ThrowOnError>): RequestResult<AttentionLaterApiAttentionItemIdLaterPostResponses, AttentionLaterApiAttentionItemIdLaterPostErrors, ThrowOnError> => (options.client ?? client).post<AttentionLaterApiAttentionItemIdLaterPostResponses, AttentionLaterApiAttentionItemIdLaterPostErrors, ThrowOnError>({ url: '/api/attention/{item_id}/later', ...options });
+
+/**
+ * Attention Dismiss
+ */
+export const attentionDismissApiAttentionItemIdDismissPost = <ThrowOnError extends boolean = false>(options: Options<AttentionDismissApiAttentionItemIdDismissPostData, ThrowOnError>): RequestResult<AttentionDismissApiAttentionItemIdDismissPostResponses, AttentionDismissApiAttentionItemIdDismissPostErrors, ThrowOnError> => (options.client ?? client).post<AttentionDismissApiAttentionItemIdDismissPostResponses, AttentionDismissApiAttentionItemIdDismissPostErrors, ThrowOnError>({
+    url: '/api/attention/{item_id}/dismiss',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Attention Reopen
+ */
+export const attentionReopenApiAttentionItemIdReopenPost = <ThrowOnError extends boolean = false>(options: Options<AttentionReopenApiAttentionItemIdReopenPostData, ThrowOnError>): RequestResult<AttentionReopenApiAttentionItemIdReopenPostResponses, AttentionReopenApiAttentionItemIdReopenPostErrors, ThrowOnError> => (options.client ?? client).post<AttentionReopenApiAttentionItemIdReopenPostResponses, AttentionReopenApiAttentionItemIdReopenPostErrors, ThrowOnError>({ url: '/api/attention/{item_id}/reopen', ...options });
+
+/**
+ * Attention Bulk
+ */
+export const attentionBulkApiAttentionBulkPost = <ThrowOnError extends boolean = false>(options: Options<AttentionBulkApiAttentionBulkPostData, ThrowOnError>): RequestResult<AttentionBulkApiAttentionBulkPostResponses, AttentionBulkApiAttentionBulkPostErrors, ThrowOnError> => (options.client ?? client).post<AttentionBulkApiAttentionBulkPostResponses, AttentionBulkApiAttentionBulkPostErrors, ThrowOnError>({
+    url: '/api/attention/bulk',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Attention Bulk Undo
+ */
+export const attentionBulkUndoApiAttentionBulkBulkIdUndoPost = <ThrowOnError extends boolean = false>(options: Options<AttentionBulkUndoApiAttentionBulkBulkIdUndoPostData, ThrowOnError>): RequestResult<AttentionBulkUndoApiAttentionBulkBulkIdUndoPostResponses, AttentionBulkUndoApiAttentionBulkBulkIdUndoPostErrors, ThrowOnError> => (options.client ?? client).post<AttentionBulkUndoApiAttentionBulkBulkIdUndoPostResponses, AttentionBulkUndoApiAttentionBulkBulkIdUndoPostErrors, ThrowOnError>({ url: '/api/attention/bulk/{bulk_id}/undo', ...options });
+
+/**
+ * Attention Resolve
+ */
+export const attentionResolveApiAttentionItemIdResolvePost = <ThrowOnError extends boolean = false>(options: Options<AttentionResolveApiAttentionItemIdResolvePostData, ThrowOnError>): RequestResult<AttentionResolveApiAttentionItemIdResolvePostResponses, AttentionResolveApiAttentionItemIdResolvePostErrors, ThrowOnError> => (options.client ?? client).post<AttentionResolveApiAttentionItemIdResolvePostResponses, AttentionResolveApiAttentionItemIdResolvePostErrors, ThrowOnError>({
+    url: '/api/attention/{item_id}/resolve',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Attention Undo
+ */
+export const attentionUndoApiAttentionItemIdUndoPost = <ThrowOnError extends boolean = false>(options: Options<AttentionUndoApiAttentionItemIdUndoPostData, ThrowOnError>): RequestResult<AttentionUndoApiAttentionItemIdUndoPostResponses, AttentionUndoApiAttentionItemIdUndoPostErrors, ThrowOnError> => (options.client ?? client).post<AttentionUndoApiAttentionItemIdUndoPostResponses, AttentionUndoApiAttentionItemIdUndoPostErrors, ThrowOnError>({ url: '/api/attention/{item_id}/undo', ...options });
+
+/**
+ * Attention Conversation
+ *
+ * Where the new shell's input and answers that name no conversation go; opened on first need.
+ */
+export const attentionConversationApiAttentionConversationPost = <ThrowOnError extends boolean = false>(options: Options<AttentionConversationApiAttentionConversationPostData, ThrowOnError>): RequestResult<AttentionConversationApiAttentionConversationPostResponses, AttentionConversationApiAttentionConversationPostErrors, ThrowOnError> => (options.client ?? client).post<AttentionConversationApiAttentionConversationPostResponses, AttentionConversationApiAttentionConversationPostErrors, ThrowOnError>({
+    url: '/api/attention/conversation',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Attention Question
+ *
+ * Called by the conversation's tool server when design_ask records a question.
+ */
+export const attentionQuestionApiAttentionQuestionsPost = <ThrowOnError extends boolean = false>(options: Options<AttentionQuestionApiAttentionQuestionsPostData, ThrowOnError>): RequestResult<AttentionQuestionApiAttentionQuestionsPostResponses, AttentionQuestionApiAttentionQuestionsPostErrors, ThrowOnError> => (options.client ?? client).post<AttentionQuestionApiAttentionQuestionsPostResponses, AttentionQuestionApiAttentionQuestionsPostErrors, ThrowOnError>({
+    url: '/api/attention/questions',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Get User Settings

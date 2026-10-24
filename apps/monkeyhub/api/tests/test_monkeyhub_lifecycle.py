@@ -423,6 +423,45 @@ class HubCliLifecycleTests(LocalHubCase):
         self.assertIn("Another Hub is using runtime directory", result.stdout.decode("utf-8", errors="replace"))
         self.assertFalse(port_open(other_port))
 
+    def test_the_cli_hub_says_where_it_listens_and_takes_it_back_when_it_quits(self):
+        """Gap 44: runtime/hub.json names this Hub, its health agrees, and a normal quit removes it."""
+
+        from monkeyhub_api.app import locator
+        from monkeyhub_api.models import HubFailure
+
+        instance_id = str(uuid4())
+        log_path = self.root / "hub-locator.log"
+        with log_path.open("wb") as log:
+            child = subprocess.Popen(
+                [sys.executable, str(ROOT / "apps/monkeyhub/run.py"),
+                 "--runtime-root", str(self.runtime), "--port", str(self.hub_port),
+                 "--managed-stdin", "--managed-instance-id", instance_id, "--no-browser"],
+                cwd=self.root, env=os.environ.copy(), stdin=subprocess.PIPE,
+                stdout=log, stderr=subprocess.STDOUT,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            try:
+                def located():
+                    self.assertIsNone(child.poll(), f"Hub exited early; see {log_path}")
+                    try:
+                        return locator.locate(self.runtime)
+                    except HubFailure:
+                        return None
+                self.assertEqual(wait_for(located, "The CLI Hub never said where it listens"), self.base_url)
+                record = json.loads((self.runtime / "runtime" / "hub.json").read_text(encoding="utf-8"))
+                health = http_json(self.base_url + "/api/health")
+                self.assertEqual((record["processId"], record["managedInstanceId"]),
+                                 (health["processId"], instance_id))
+                child.stdin.write(b"stop" + bytes([10]))
+                child.stdin.flush()
+                self.assertEqual(child.wait(timeout=60), 0)
+                self.assertFalse((self.runtime / "runtime" / "hub.json").exists(), "a normal quit takes it back")
+            finally:
+                if child.stdin is not None and not child.stdin.closed:
+                    child.stdin.close()
+                if child.poll() is None:
+                    child.wait(timeout=30)
+
     def test_cli_stop_and_eof_wait_for_an_accepted_monitor_request(self):
         for stop_mode in ("stop", "eof"):
             with self.subTest(stop_mode=stop_mode):

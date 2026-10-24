@@ -15,9 +15,11 @@ Every item has the shape the owner wrote (#252, 2026-09-28): a ``key``, a
 ``version`` and a ``status``. Three kinds exist now: a ``locator`` points at
 retained project content and copies none of it; a ``source_policy`` says where
 to look first, and what to avoid, for a research topic; a ``recipe`` names the
-library skill a task follows as ``skill:<name>@<version>`` and holds none of its
-steps. The Hub resolves that version against the configured library when a chat
-saves one; this owner never reads the library. Scope is ``project``;
+skill a task follows as ``skill:<name>@<code>``, the first 12 hex digits of
+its codeSha256 when the recipe was saved (S-1), and holds none of its steps; one
+saved before S-1 names a library version, ``skill:<name>@<version>``, and is
+still read. The Hub fills in the code from the installed skill when a chat
+saves one; this owner never reads the skill folders. Scope is ``project``;
 the wider scopes live in the library project and reach a project by pinned
 import. Authority is ``explicit``: an item is saved from the user's words or a
 person's own action, never inferred from behaviour. ``confidence``,
@@ -285,8 +287,9 @@ def _note(value: Mapping[str, Any]) -> str | None:
     return None if note is None else note.strip() or None
 
 
-# One exact library skill version: project_runtime.skills' name spelling, then its version.
-_SKILL_REF = re.compile(r"skill:(?P<name>[^@]+)@(?P<version>[1-9][0-9]{0,8})")
+# One exact skill: project_runtime.skills' name spelling, then the first 12 hex digits of its code (S-1),
+# or the library version a recipe from before S-1 names.
+_SKILL_REF = re.compile(r"skill:(?P<name>[^@]+)@(?:(?P<code>[0-9a-f]{12})|(?P<version>[1-9][0-9]{0,8}))")
 
 
 def _recipe_value(value: Mapping[str, Any]) -> dict[str, Any]:
@@ -295,9 +298,10 @@ def _recipe_value(value: Mapping[str, Any]) -> dict[str, Any]:
         raise _invalid("a recipe names its task in the user's words.")
     found = _SKILL_REF.fullmatch(value["skill"].strip())
     if (found is None or len(found["name"]) > MAX_NAME_LENGTH or not SKILL_NAME.fullmatch(found["name"])):
-        raise _invalid("a recipe names one exact library skill version, skill:<name>@<version> "
-                       "(e.g. skill:hatch-review@1); its steps stay in the skill.")
-    return {"task": task, "skill": f"skill:{found['name']}@{int(found['version'])}", "note": _note(value)}
+        raise _invalid("a recipe names one exact skill, skill:<name>@<code> with the first 12 hex digits of its "
+                       "code (e.g. skill:hatch-review@3f2a9c41d07b); its steps stay in the skill.")
+    pinned = found["code"] or str(int(found["version"]))
+    return {"task": task, "skill": f"skill:{found['name']}@{pinned}", "note": _note(value)}
 
 
 def _fold(text: str) -> str:

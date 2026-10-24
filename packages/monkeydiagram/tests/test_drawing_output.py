@@ -187,6 +187,16 @@ class DrawingOutputTests(unittest.TestCase):
         self.assertAlmostEqual(abs(segment[2].y-segment[1].y), 50, places=3)
         pdf.close()
 
+    def test_a_sheet_embeds_its_own_font_after_a_sheet_drawn_with_another(self):
+        import fitz
+        for font, face in ((self.font, "Roman"), (self.font.with_name("VeraBd.ttf"), "Bold")):
+            canvas = PaperCanvas(font_mapping={"normal": font})
+            canvas.start_sheet("A01", (210, 297))
+            canvas.setFont("normal", 12)
+            canvas.drawString(20, 40, "Section")
+            with fitz.open(stream=render_pdf(canvas), filetype="pdf") as pdf:
+                self.assertEqual([font[3].split("+")[-1].rsplit("-", 1)[-1] for font in pdf[0].get_fonts()], [face])
+
     def test_paths_preserve_holes_circles_beziers_pen_and_native_dash_pattern(self):
         c = self.canvas
         c.setLineWidth(0.35/MM_PER_PT)

@@ -124,6 +124,11 @@ def sessions_router(chats) -> APIRouter:
         return {"fileName": attachment.name, "attachmentId": attachment.id,
                 "contentBase64": base64.b64encode(path.read_bytes()).decode("ascii")}
 
+    @routes.get("/api/chat/sessions/{session_id}/attachments/{attachment_id}/document-source")
+    def read_chat_document_source(session_id: str, attachment_id: str):
+        """The attachment's bytes for POST /api/documents, when it is a PNG, a JPEG or a PDF (gap 37)."""
+        return media.document_source(*chats.attachment(session_id, attachment_id))
+
     @routes.get("/api/chat/sessions/{session_id}/attachments/{attachment_id}/read", response_model=ChatAttachmentContent)
     def read_chat_attachment_content(session_id: str, attachment_id: str, offset: int = Query(0, ge=0),
                                      limit: int = Query(32768, ge=1, le=65536), page: int = Query(1, ge=1)):
@@ -147,19 +152,26 @@ def sessions_router(chats) -> APIRouter:
 
     @routes.post("/api/chat/sessions/{session_id}/skill-permissions", status_code=201)
     def ask_skill_permission(session_id: str, body: dict):
-        """Ask the person in this running chat whether a skill may run, with the three permission buttons.
+        """Ask the person in this running chat to allow what a skill run needs, with three buttons (S-1).
 
-        The chat tool asks this before an Agent's run of a version no one
-        always allowed, then reads the answer below.
+        The chat tool asks this before an Agent's run that needs something no
+        one allowed yet, then reads the answer below. ``ask`` is what the
+        answer would allow; the Hub writes the grant when the person answers.
         """
         title = str(body.get("title") or "")[:4000]
         if not title:
             raise HubFailure(422, "CHAT_PERMISSION_INVALID", "Say what is being asked.")
-        return {"permissionId": chats.request_skill_permission(session_id, title)}
+        ask = body.get("ask")
+        if ask is not None and (not isinstance(ask, dict) or not isinstance(ask.get("access"), dict)
+                                or not isinstance(ask.get("skill"), dict) or not ask.get("projectId")
+                                or not ask.get("codeSha256")):
+            raise HubFailure(422, "CHAT_PERMISSION_INVALID",
+                             "ask names the access, the skill, and this run's projectId and codeSha256.")
+        return {"permissionId": chats.request_skill_permission(session_id, title, ask)}
 
     @routes.get("/api/chat/sessions/{session_id}/skill-permissions/{permission_id}")
     def read_skill_permission(session_id: str, permission_id: str, wait: float = Query(default=0, ge=0, le=170)):
-        """The person's answer: answered (with optionId), waiting, or withdrawn; waits up to ``wait`` seconds."""
+        """The person's answer: answered (with optionId and the grant kept), waiting, or withdrawn; waits up to ``wait`` seconds."""
         return chats.skill_permission_answer(session_id, permission_id, wait)
 
     return routes

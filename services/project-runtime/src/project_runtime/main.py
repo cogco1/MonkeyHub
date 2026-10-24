@@ -567,7 +567,7 @@ def _source_revision(root: Path = REPOSITORY_ROOT) -> str | None:
     try:
         result = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
-            capture_output=True, text=True, check=True, timeout=5,
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True, timeout=5,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except (OSError, subprocess.SubprocessError):
@@ -750,6 +750,17 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _serve(args: argparse.Namespace, settings: StudioSettings) -> None:
+    from .application import drawing_pool
+
+    # The serving process solves its drawings in worker processes (#300); a test's app does not.
+    drawing_pool.start(warm=True)
+    try:
+        _serve_app(args, settings)
+    finally:
+        drawing_pool.stop()
+
+
+def _serve_app(args: argparse.Namespace, settings: StudioSettings) -> None:
     app = create_app(settings)
     app.state.server_version = SERVER_VERSION
     app.state.process_id = os.getpid()

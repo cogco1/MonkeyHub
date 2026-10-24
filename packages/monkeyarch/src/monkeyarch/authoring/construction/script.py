@@ -56,6 +56,7 @@ from monkeyarch.authoring.construction.shapes import (
     ShapeError,
     World,
     binding_refusal,
+    clean,
     circle,
     closed_profile,
     combine,
@@ -78,6 +79,8 @@ from monkeyarch.authoring.construction.shapes import (
     side,
 )
 from monkeyarch.authoring.construction.vocabulary import BUILTINS, LIMITS, MATH, REQUIRED, VERBS, Verb, verb
+
+MAX_STEPS = 200  # steps in one stair() flight
 
 MAX_NESTING = LIMITS["nesting"]
 MAX_ELEMENTS = LIMITS["listElements"]
@@ -884,6 +887,55 @@ class Session:
             raise ShapeError(f"loft() cap must be True or False, not {describe(a['cap'])}")
         self.tick(len(sections) * len(sections[0].profile.points) // 10)  # per point, as a copy is
         return self._drawn(Drawn(self._next(), self.line, "loft", sections=tuple(sections), cap=a["cap"]))
+
+    def _whole(self, producer: str, params: dict, references: dict, anchor: Anchor) -> Shape:
+        """A new shape its producer makes whole, standing on ``anchor``: a flight or a railing (gap 34)."""
+
+        shape = RowShape(self._next(), self.line, element_id=None, component_id=None, geometry_id=None,
+                         producer=producer, parent_id=None, authored={"params": params, "references": references},
+                         resolved={"params": params, "references": references}, existing=False, owns_component=True)
+        shape.base_anchor = anchor
+        shape.geometry_changed = True
+        shape.check_extent()
+        return self.new(shape)
+
+    def verb_stair(self, a: dict, given: frozenset) -> Shape:
+        start, end = point2(a["start"], "stair() start"), point2(a["end"], "stair() end")
+        if math.dist(start, end) < MIN_LENGTH:
+            raise ShapeError("stair() rises from start toward end; they are the same point")
+        count = a["count"]
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= MAX_STEPS:
+            raise ShapeError(f"stair() needs at least one step and at most {MAX_STEPS}: count is a whole number "
+                             f"of steps, not {describe(count)}")
+        rise, width = length(a["rise"], "stair() rise"), length(a["width"], "stair() width")
+        if rise < 0 or width < 0:
+            raise ShapeError("stair() rise and width are positive; a flight going down starts at its top")
+        params = {"count": count, "rise": clean(rise), "width": clean(width)}
+        references = {"from": {"point": [clean(start[0]), clean(start[1])]},
+                      "to": {"point": [clean(end[0]), clean(end[1])]}}
+        return self._whole("stair", params, references, self.anchor(a["at"], "stair() at"))
+
+    def verb_railing(self, a: dict, given: frozenset) -> Shape:
+        points = a["points"]
+        if not isinstance(points, (list, tuple)):
+            raise ShapeError(f"railing() takes a list of points (x, y, z), not {describe(points)}")
+        if not 2 <= len(points) <= MAX_PATH_POINTS:
+            raise ShapeError(f"railing() takes 2 to {MAX_PATH_POINTS} points")
+        self.charge(self.measure(points)[0])
+        checked = [point3(point, "railing()") for point in points]
+        for p, q in zip(checked, checked[1:]):
+            if math.hypot(q[0] - p[0], q[2] - p[2]) < MIN_LENGTH:
+                raise ShapeError(f"railing() runs from ({p[0]!r}, {p[1]!r}, {p[2]!r}) straight up or down; a railing "
+                                 "segment cannot be vertical")
+        sizes = {key: length(a[key], f"railing() {key}") for key in ("height", "post", "spacing", "rail")}
+        if any(value < 0 for value in sizes.values()):
+            raise ShapeError("railing() height, post, spacing and rail are positive")
+        if sizes["height"] <= sizes["rail"]:
+            raise ShapeError(f"railing() height {sizes['height']!r} must be higher than its rail {sizes['rail']!r}")
+        _, elevation = self._default_level()
+        params = {"points": [[clean(x), clean(y - elevation), clean(z)] for x, y, z in checked],
+                  **{key: clean(value) for key, value in sizes.items()}}
+        return self._whole("railing", params, {}, self.anchor(0, "railing()"))
 
     # ---- transforms
     @staticmethod

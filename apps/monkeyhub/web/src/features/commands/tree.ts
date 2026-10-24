@@ -46,6 +46,10 @@ export interface Command {
   readonly place: string | null;
   /** It means something only where it stands (in a dialog, on a card, in the composer, at a row's end): not listed bare. */
   readonly inPlace?: boolean;
+  /** How people say they want it, written ahead of time for the search index (governance/command_phrases.json). */
+  readonly phrases?: readonly string[];
+  /** Other short names for it, from the same file. */
+  readonly aliases?: readonly string[];
   /** The conditions it needs (the capability's requires, the Runtime's feature flags), read once they are wired. */
   readonly when: readonly string[];
   readonly shortcut: string | null;

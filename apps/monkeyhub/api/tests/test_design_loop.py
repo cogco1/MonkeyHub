@@ -99,6 +99,22 @@ class SubmitTests(unittest.TestCase):
             self.answers = [{"outcome": "landed", "code": "LANDED", "candidateId": "c-9"}]
             self.assertEqual(self.submit()["outcome"], "landed", "the next message starts a new budget")
 
+    def test_a_question_also_waits_in_the_architects_queue(self) -> None:
+        from monkeyhub_api.chat import transport
+
+        posted = []
+        with (patch.object(transport, "_request_json", side_effect=lambda *a, **k: posted.append((*a, k)) or {}),
+              patch.dict("os.environ", {"MONKEYHUB_PRESENTATION_TOKEN": "token-1"})):
+            answer = design_loop.call(HUB, "chat-1", "design_ask", {"question": "西门廊保留柱距吗", "reason": "和楼梯冲突"})
+        self.assertEqual(answer["recorded"], "asked")
+        self.assertEqual(posted[0][1:3], ("/api/attention/questions", "POST"))
+        self.assertEqual(posted[0][3], {"sessionId": "chat-1", "messageId": "m-1", "question": "西门廊保留柱距吗",
+                                        "reason": "和楼梯冲突", "refs": []})
+        self.assertEqual(posted[0][4]["headers"], {"Authorization": "Bearer token-1"}, "the conversation's own token")
+        with patch.object(transport, "_request_json", side_effect=OSError("Hub is restarting")):
+            self.assertEqual(design_loop.call(HUB, "chat-1", "design_ask", {"question": "q", "reason": "r"})["recorded"],
+                             "asked", "the reply still carries the question")
+
     def test_the_budget_is_configurable(self) -> None:
         with patch.dict("os.environ", {design_loop.REPAIR_BUDGET_ENV: "1"}):
             self.answers = [{"outcome": "problems", "code": "CHECKS_FAILED", "candidateId": "c-1"}]

@@ -89,8 +89,8 @@ def _cli(args: list[str], runner: Runner | None) -> subprocess.CompletedProcess:
     run = subprocess.run if runner is None else runner
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
-        return run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                   timeout=CLI_TIMEOUT_S, creationflags=flags)
+        return run(args, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
+                   errors="replace", timeout=CLI_TIMEOUT_S, creationflags=flags)
     except subprocess.TimeoutExpired as exc:
         raise StudioError(504, "LIVE_RHINO_TIMEOUT", "RhinoCode did not answer in time.") from exc
     except OSError as exc:

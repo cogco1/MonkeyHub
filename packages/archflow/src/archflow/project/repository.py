@@ -922,6 +922,18 @@ def _read_shared_json(path: Path) -> dict[str, Any]:
     )
 
 
+def _temporary_beside(path: Path) -> Path:
+    """A writer's temporary file, in ``path``'s directory and of one short length.
+
+    It does not repeat ``path``'s name: a record's name is already long, and
+    on Windows with long paths off (a student's machine, a build server) the
+    temporary file was what first crossed MAX_PATH, in a project folder of
+    about 40 characters. ``_TEMPORARY_NAME`` still knows a leftover by it.
+    """
+
+    return path.with_name(f".t.{uuid4().hex}.tmp")
+
+
 def _write_immutable(path: Path, data: bytes) -> None:
     """Install immutable content without ever replacing an existing target."""
 
@@ -933,7 +945,7 @@ def _write_immutable(path: Path, data: bytes) -> None:
             )
         return
 
-    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    temporary = _temporary_beside(path)
     try:
         with temporary.open("xb") as handle:
             handle.write(data)
@@ -953,7 +965,7 @@ def _write_immutable(path: Path, data: bytes) -> None:
 
 def _replace_atomic(path: Path, data: bytes) -> None:
     _make_directory(path.parent)
-    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    temporary = _temporary_beside(path)
     try:
         with temporary.open("xb") as handle:
             handle.write(data)
