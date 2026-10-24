@@ -1366,6 +1366,9 @@ export const messagesEn = {
   "shell.conversation": "Conversation",
   "shell.side": "Side panel",
   "shell.closeSide": "Close the side panel",
+  "shell.toAttention": "Back to the new shell",
+  "shell.alreadyWorkbench": "This is the old shell already",
+  "shell.alreadyAttention": "This is the new shell already",
   "shell.side.background": "Background",
   "shell.side.history": "History",
   "shell.side.handled": "Handled",
@@ -1523,6 +1526,7 @@ export type MessageCatalog = {
 };
 
 export const hubCopy = {
+    shellChoice: "Shell", shellChoiceHint: "The new shell puts what needs you on its Attention page; the old one is the workbench, retired in early December. Kept on this computer only.", shellNew: "New", shellOld: "Old",
     softwareUpdate: "Software update", updateCurrent: "Current version", updateTarget: "Prepared version", updateChangedBytes: "Changed files size",
     updateUnsupported: "Patch updates require the installed MonkeyHub desktop app.",
     updateTrustLocal: "A local development patch contains executable code. Choose a ZIP from a source you trust (up to 256 MiB).",

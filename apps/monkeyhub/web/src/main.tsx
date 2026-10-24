@@ -11,6 +11,7 @@ import "./styles.css";
 import { FabPage } from "./FabPage";
 import { ChatShell, type HubSettings } from "./ChatShell";
 import { CommandProvider } from "./features/commands/CommandProvider";
+import { chooseShell, useShellLayout } from "./app/shellLayout";
 import { AttentionHost } from "./notifications/AttentionHost";
 import { queueChanged } from "./notifications/queue";
 
@@ -289,7 +290,16 @@ function App() {
     JSON.stringify(chatDraft) !== JSON.stringify(savedChatDefaults) || JSON.stringify(renderDraft) !== JSON.stringify(savedRenderDefaults);
   const launchDirty = JSON.stringify(launchDraft) !== JSON.stringify(savedLaunch);
   const connected = apps !== null && statusIssue === null;
-  useEffect(() => applyAppearance(preferences), [preferences]);
+  const layout = useShellLayout();
+  useEffect(() => {
+    applyAppearance(preferences);
+    // 2-3c: someone who never chose an interface style sees the new shell in Critique Table (board); a style they
+    // chose, or are choosing now, stays theirs.
+    if (layout === "attention" && userSettings && userSettings.uiStyle == null && preferences.uiStyle === savedAppearance?.uiStyle) {
+      document.documentElement.dataset.uiStyle = "board";
+      document.documentElement.dataset.uiFamily = "board";
+    }
+  }, [preferences, layout, userSettings, savedAppearance]);
   const refreshApps = useCallback(async () => {
     if (readingApps.current) { appsAgain.current = true; return; }
     readingApps.current = true; appsReadAt.current = Date.now();
@@ -492,6 +502,13 @@ function App() {
         <select data-command="preference.appearance.theme" id="theme" value={preferences.theme} onChange={(event) => changeAppearance({ theme: event.target.value as AppearancePreferences["theme"] })}><option value="system">{t("system")}</option><option value="dark">{t("dark")}</option><option value="light">{t("light")}</option></select></div>
       <div className="settings-row"><label htmlFor="font-scale">{t("size")}</label>
         <select data-command="preference.appearance.size" id="font-scale" value={preferences.fontScale} onChange={(event) => changeAppearance({ fontScale: Number(event.target.value) as AppearancePreferences["fontScale"] })}><option value="0.9">{t("compact")}</option><option value="1">{t("normal")}</option><option value="1.1">{t("large")}</option></select></div>
+      <div className="settings-row settings-row--wide" role="radiogroup" aria-labelledby="hub-shell-label" aria-describedby="hub-shell-hint">
+        <div className="settings-row__text"><span className="settings-row__title" id="hub-shell-label">{t("shellChoice")}</span>
+          <p className="settings-row__hint" id="hub-shell-hint">{t("shellChoiceHint")}</p></div>
+        <div className="settings-row__choices">{(["attention", "workbench"] as const).map((value) => <label key={value}>
+          <input data-command={`view.shell.${value}`} type="radio" name="hub-shell" value={value} checked={layout === value} onChange={() => chooseShell(value)} />
+          {t(value === "attention" ? "shellNew" : "shellOld")}</label>)}</div>
+      </div>
       <div className="settings-row settings-row--wide" role="radiogroup" aria-labelledby="ui-style-label" aria-describedby="ui-style-hint">
         <div className="settings-row__text"><span className="settings-row__title" id="ui-style-label">{words.uiStyle}</span><p className="settings-row__hint" id="ui-style-hint">{words.uiStyleHint}</p></div>
         <div className="style-cards">{UI_STYLES.map((style) => <label key={style} className="style-card" data-style={style}>

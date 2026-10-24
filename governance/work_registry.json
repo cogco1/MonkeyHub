@@ -170,11 +170,13 @@
             "apps/monkeyhub/web/src/app/AttentionShell.tsx",
             "apps/monkeyhub/web/src/app/ProjectWorkspace.tsx",
             "apps/monkeyhub/web/src/app/attentionShell.css",
+            "apps/monkeyhub/web/src/app/shellLayout.ts",
             "apps/monkeyhub/web/src/features/chrome/SurfaceChrome.tsx",
             "apps/monkeyhub/web/src/features/commands/",
             "apps/monkeyhub/web/src/features/stage/Stage.tsx",
             "apps/monkeyhub/web/src/i18n/messages.en.ts",
             "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/src/main.tsx",
             "apps/monkeyhub/web/src/notifications/AttentionHost.tsx",
             "apps/monkeyhub/web/src/notifications/attention.css",
             "apps/monkeyhub/web/src/notifications/attention.ts",
@@ -193,11 +195,15 @@
             "apps/monkeyhub/web/test/attentionShell.browser.mjs",
             "apps/monkeyhub/web/test/attentionShell.test.ts",
             "apps/monkeyhub/web/test/canvasChrome.browser.mjs",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "apps/monkeyhub/web/test/commandPalette.browser.mjs",
             "apps/monkeyhub/web/test/commandPalette.test.ts",
             "apps/monkeyhub/web/test/commandSearch.test.ts",
             "apps/monkeyhub/web/test/commandTree.test.ts",
-            "apps/monkeyhub/web/test/designTree.browser.mjs"
+            "apps/monkeyhub/web/test/designTree.browser.mjs",
+            "apps/monkeyhub/web/test/errorBoundary.browser.mjs",
+            "apps/monkeyhub/web/test/notifications.browser.mjs",
+            "apps/monkeyhub/web/test/settingsAutosave.browser.mjs"
           ],
           "depends_on": []
         },
@@ -209,7 +215,7 @@
           "base_ref": "cc8f54e20546c73a1e1e1763a5001a8495c48675",
           "contributor": "Claude",
           "reviewer": null,
-          "handoff": "T-1a then T-1b: Hub components render data-command ids from the command tree (format agreed with GH-300/command-tree) and browser tests reach controls by command id instead of label or position, each test file's result unchanged. T-1b (ChatShell, HubMenu, settings dialog, notifications) waits for GH-300/command-tree's shell ids. Not merged before the paper relay ends. Stage.tsx, SurfaceChrome.tsx and Board.tsx carry their command ids and go to GH-300/shell (2-3b).",
+          "handoff": "T-1a then T-1b: Hub components render data-command ids from the command tree (format agreed with GH-300/command-tree) and browser tests reach controls by command id instead of label or position, each test file's result unchanged. T-1b (ChatShell, HubMenu, settings dialog, notifications) waits for GH-300/command-tree's shell ids. Not merged before the paper relay ends. Stage.tsx, SurfaceChrome.tsx and Board.tsx carry their command ids and go to GH-300/shell (2-3b). On claude/300-default-shell (2-3c, 10-24) errorBoundary.browser.mjs went to GH-300/shell for the default shell; the batch branch reconciles.",
           "modules": [
             "hub.shell"
           ],
@@ -279,7 +285,6 @@
             "apps/monkeyhub/web/test/drawingCanvas.browser.mjs",
             "apps/monkeyhub/web/test/drawingStyles.browser.mjs",
             "apps/monkeyhub/web/test/elevation.browser.mjs",
-            "apps/monkeyhub/web/test/errorBoundary.browser.mjs",
             "apps/monkeyhub/web/test/externalModelImport.browser.mjs",
             "apps/monkeyhub/web/test/intentViewSource.browser.mjs",
             "apps/monkeyhub/web/test/modelPreviews.browser.mjs",
@@ -349,7 +354,7 @@
           "base_ref": "0dd76ca7b4fbec15185369f18f236228f52995f7",
           "contributor": "Claude",
           "reviewer": null,
-          "handoff": "T-1b on top of GH-300/shell (#695), GH-300/tests (#684) and GH-300/registry-data: the old shell (ChatShell, HubMenu, the settings pages in main.tsx, the chat cards) renders data-command ids, its browser tests reach controls by command id, and the shell's entry rows are registered as capability groups with ui.commands from the 711-entry inventory, reusing the ids GH-300/shell already registered. T-1b's data-command ids in ChatShell.tsx are done and the file is back with GH-300/shell; it hands the file over again if T-1b needs another change there.",
+          "handoff": "T-1b on top of GH-300/shell (#695), GH-300/tests (#684) and GH-300/registry-data: the old shell (ChatShell, HubMenu, the settings pages in main.tsx, the chat cards) renders data-command ids, its browser tests reach controls by command id, and the shell's entry rows are registered as capability groups with ui.commands from the 711-entry inventory, reusing the ids GH-300/shell already registered. T-1b's data-command ids in ChatShell.tsx are done and the file is back with GH-300/shell; it hands the file over again if T-1b needs another change there. On claude/300-default-shell (2-3c, 10-24) chatShell.browser.mjs, main.tsx, settingsAutosave.browser.mjs, notifications.browser.mjs went to GH-300/shell for the default shell; the batch branch reconciles.",
           "modules": [
             "hub.shell"
           ],
@@ -359,11 +364,7 @@
             "apps/monkeyhub/web/src/HubMenu.tsx",
             "apps/monkeyhub/web/src/SoftwareUpdateSettings.tsx",
             "apps/monkeyhub/web/src/app/BoardModeSwitch.tsx",
-            "apps/monkeyhub/web/src/main.tsx",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "apps/monkeyhub/web/test/eventStream.browser.mjs",
-            "apps/monkeyhub/web/test/notifications.browser.mjs",
-            "apps/monkeyhub/web/test/settingsAutosave.browser.mjs",
             "docs/audits/hub-entries.md",
             "tools/tests/test_hub_entries_coverage.py"
           ],

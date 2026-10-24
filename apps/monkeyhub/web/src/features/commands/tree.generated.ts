@@ -8896,6 +8896,78 @@ export const COMMAND_TREE: CommandTree = {
       ]
     },
     {
+      "id": "view.shell.workbench",
+      "capability": "shell.layout",
+      "label": {
+        "en": "Back to the old shell",
+        "zh-CN": "回旧版"
+      },
+      "terms": [
+        "old interface",
+        "workbench",
+        "旧界面",
+        "工作台"
+      ],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "回到旧版界面",
+        "换回原来的工作台",
+        "用回以前的样子",
+        "go back to the old interface",
+        "switch to the old workbench"
+      ],
+      "aliases": [
+        "旧版",
+        "老界面",
+        "old shell",
+        "classic layout"
+      ]
+    },
+    {
+      "id": "view.shell.attention",
+      "capability": "shell.layout",
+      "label": {
+        "en": "Back to the new shell",
+        "zh-CN": "回新版"
+      },
+      "terms": [
+        "new interface",
+        "attention shell",
+        "新界面",
+        "新版"
+      ],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "回到新版界面",
+        "换成新的界面",
+        "打开新版",
+        "go back to the new interface",
+        "switch to the new shell"
+      ],
+      "aliases": [
+        "新版界面",
+        "关注页界面",
+        "new shell",
+        "new layout"
+      ]
+    },
+    {
       "id": "view.side_panel",
       "capability": "shell.layout",
       "label": {
