@@ -113,14 +113,14 @@ function CardFrame({ card, project, compact = false, children }: CardProps & { c
       <Opens refs={card.opens} />
       <span className="attention-card__queue">
         {pending && <>
-          <button type="button" className="menu-command" data-command="attention.queue.later" disabled={busy !== null}
+          <button type="button" className="menu-command" data-command="attention.queue.later" data-command-arg={card.id} disabled={busy !== null}
             onClick={() => act("later", () => laterCard(card.id))}>{t("cards.later")}</button>
-          <button type="button" className="menu-command" data-command="attention.queue.dismiss" disabled={busy !== null}
+          <button type="button" className="menu-command" data-command="attention.queue.dismiss" data-command-arg={card.id} disabled={busy !== null}
             onClick={() => act("dismiss", () => dismissCard(card.id))}>{t("cards.dismiss")}</button>
         </>}
-        {card.state === "done" && card.resolution?.undo && <button type="button" className="menu-command" data-command="attention.queue.undo" disabled={busy !== null}
+        {card.state === "done" && card.resolution?.undo && <button type="button" className="menu-command" data-command="attention.queue.undo" data-command-arg={card.id} disabled={busy !== null}
           onClick={() => act("undo", () => undoCard(card.id))}>{t("cards.undo")}</button>}
-        {(card.state === "dismissed" || card.state === "later") && <button type="button" className="menu-command" data-command="attention.queue.reopen" disabled={busy !== null}
+        {(card.state === "dismissed" || card.state === "later") && <button type="button" className="menu-command" data-command="attention.queue.reopen" data-command-arg={card.id} disabled={busy !== null}
           onClick={() => act("reopen", () => reopenCard(card.id))}>{t("cards.reopen")}</button>}
       </span>
     </footer>
