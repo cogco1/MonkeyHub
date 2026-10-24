@@ -257,8 +257,16 @@ the runtime snapshot followed by each project's latest Studio events marked `rep
 therefore holds one SSE connection however many projects and surfaces it shows. Chat tools use
 the same forwarding path. `AppStatus.apiUrl` identifies the runtime API for its
 verified agent connection; `AppStatus.url` opens the corresponding workspace in MonkeyHub. A
-runtime that is not `ready` or `busy` and healthy answers `WORKER_UNAVAILABLE`. Direct access
+runtime whose Studio is starting or recovering answers `WORKER_STARTING`; one that is otherwise
+not `ready` or `busy` and healthy (a crashed one) answers `WORKER_UNAVAILABLE`. Direct access
 to the runtime's own port is for development and tests (§8).
+
+A failure whose code `archflow.contracts.failures` lists as transient passes without the person
+(#300 4-3): its answer says `category` and `resend`, and the forward waits and sends the same
+request again while the code says nothing was done (`WORKER_STARTING`, `DRAWING_WORKER_LOST`,
+the index loading, the writer lease held while a runtime restarts), a few times at most. The
+operation record counts the sends (`attempts`) and keeps the code it ended with (`errorCode`).
+A reply lost after dispatch is still never sent again.
 
 Each admitted mutation keeps an operation record. An answer of 422 or 409 that names no
 proposal, job or candidate the Studio took on is `refused` (#404): the caller already read it,

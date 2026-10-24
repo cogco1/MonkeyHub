@@ -60,6 +60,11 @@ class OperationRecord(BaseModel):
         "POST /api/drawings/sheets. Before the Hub has read the project since the reply was lost or it "
         "started, an operation that named a run counts as recoverable unless its notice was dismissed."
     ))
+    errorCode: str | None = Field(default=None, description=(
+        "The code of the failure it ended with; None while it has not failed."))
+    attempts: int = Field(default=1, ge=1, description=(
+        "How many times the Hub sent this request: more than one when a failure that did nothing passed and it "
+        "was sent again (archflow.contracts.failures)."))
     acknowledgedAt: str | None = Field(default=None, description=(
         "When a person dismissed this operation's notice: a failed or stale one, or one that needs "
         "recovery and is not recoverable. Reported only while the operation still reads that way; it "

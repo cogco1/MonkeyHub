@@ -169,8 +169,19 @@ class HubProducerTests(unittest.TestCase):
             self.record("o5", "completed")])
         self.assertEqual([card.dedupeKey for card in cards], ["op:o1:failed", "op:o4:needs_recovery"])
         self.assertEqual((cards[0].title, cards[0].titleZh), ("The model change did not finish", "改模型没有完成"))
-        self.assertEqual(cards[0].options[0].action.args, {"operationId": "o1"})
+        handed, read = cards[0].options
+        self.assertEqual((handed.id, handed.action.commandId, read.action.args),
+                         ("ai", "chat.composer.send", {"operationId": "o1"}))
+        self.assertIn("构件 seat 缺少面", handed.action.args["content"])
+        self.assertEqual([option.id for option in cards[1].options], ["ok"], "only a failure is handed to the AI")
         self.assertEqual(cards[1].opens[0].args, {"sessionId": "c1"})
+
+    def test_a_failure_tried_again_says_how_often_and_its_code_to_the_ai(self):
+        card, = producers.operations([self.record("o1", "failed", reason="the drawing worker stopped",
+                                                  attempts=3, errorCode="DRAWING_WORKER_LOST")])
+        words = card.options[0].action.args["content"]
+        self.assertIn("after 3 tries", words)
+        self.assertIn("[DRAWING_WORKER_LOST]", words)
 
     def test_a_prepared_update_asks_to_restart(self):
         ready = UpdateStatus.model_validate({

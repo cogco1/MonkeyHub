@@ -478,7 +478,7 @@ class DesktopUpdates:
                 with self._lock:
                     self._restart_commit = None
                     self._error = HubError(code="UPDATE_ROLLED_BACK", detail="The new application could not start. The previous desktop version has been restored.")
-                    self._save({**self._record, "state": "failed", "error": self._error.model_dump()})
+                    self._save({**self._record, "state": "failed", "error": self._error.model_dump(exclude_none=True)})
             finally:
                 with self._lock:
                     self._verifying = False
@@ -554,7 +554,7 @@ class DesktopUpdates:
             self._error = error
             if (self._record.get("baseCommit"), self._record.get("targetCommit")) == (record["baseCommit"], record["targetCommit"]):
                 try:
-                    self._save({**self._record, "state": "failed", "error": error.model_dump(), "launchAttempts": 0})
+                    self._save({**self._record, "state": "failed", "error": error.model_dump(exclude_none=True), "launchAttempts": 0})
                 except OSError:
                     _log.warning("Could not record the restored desktop entry.")
 

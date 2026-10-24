@@ -27,6 +27,12 @@ def plain_spelling(path: str) -> str:
 class HubError(BaseModel):
     code: str
     detail: str
+    category: Literal["transient", "conflict"] | None = Field(default=None, description=(
+        "transient: it passes by itself; conflict: the project moved, read it again before deciding. "
+        "Left out for a failure the caller or a person answers. The Hub's answer adds it from "
+        "archflow.contracts.failures; this module stays importable without archflow (an update's trial load)."))
+    resend: bool | None = Field(default=None, description=(
+        "True when nothing was done, so the same request may be sent again unchanged."))
 
 
 class AppStatus(BaseModel):

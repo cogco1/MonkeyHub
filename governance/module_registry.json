@@ -4548,14 +4548,24 @@
             "id": "view.shell.workbench",
             "label": "Back to the old shell",
             "label_zh": "回旧版",
-            "aliases": ["old interface", "workbench", "旧界面", "工作台"],
+            "aliases": [
+              "old interface",
+              "workbench",
+              "旧界面",
+              "工作台"
+            ],
             "entries": []
           },
           {
             "id": "view.shell.attention",
             "label": "Back to the new shell",
             "label_zh": "回新版",
-            "aliases": ["new interface", "attention shell", "新界面", "新版"],
+            "aliases": [
+              "new interface",
+              "attention shell",
+              "新界面",
+              "新版"
+            ],
             "entries": []
           },
           {
@@ -12155,6 +12165,7 @@
         "agent_chat"
       ],
       "depends_on": [
+        "archflow.contracts.failures",
         "archflow.project.index",
         "archflow.project.repository",
         "monkeyarch.authoring.element_reindex",
@@ -13647,7 +13658,8 @@
         "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
         "guess rules over the Runtime's edit log: the same element field or parameter changed the same way three times within the line's last five steps becomes one ask card whose answers send a sentence to the project's conversation; a field a person set aside stays quiet until its suppression ends; and the Runtime's drawing recipe suggestions (one pen changed the same way on two drawings or more) as one ask card per pen and direction, saving the value as the person's recipe decision",
         "What a person allowed skills to do on this machine (S-1): <runtime root>/config/skill-grants.json (MonkeyHubSkillGrants@1) beside applications.json, outside every project and never synced with a team; one grant per answer, for every skill, one skill by name and source, or one run bound to its project and code; withdrawn grants kept with when; a project's version grants from before S-1 carried over once as grants for that skill only; written only through monkeyhub_api/settings",
-        "An Agent's skill run (S-1): the project's approvals from before carried over, what the run still needs read from its Runtime (GET /api/skills/{id}/needs), and only that put to the person in the chat as one question (always allow, only this time, no); the Hub writes the grant from the answer, the Agent never names one"
+        "An Agent's skill run (S-1): the project's approvals from before carried over, what the run still needs read from its Runtime (GET /api/skills/{id}/needs), and only that put to the person in the chat as one question (always allow, only this time, no); the Hub writes the grant from the answer, the Agent never names one",
+        "sending again what did nothing (#300 4-3): the forward waits while a project's Studio starts (WORKER_STARTING) and sends the same request again while the Runtime's answer is a transient failure that did nothing (archflow.contracts.failures), a few times at most; OperationRecord.attempts counts the sends and errorCode keeps the code it ended with; a failed operation's attention card can be handed to the project's conversation"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -14070,6 +14082,7 @@
       ],
       "depends_on": [
         "archflow.contracts.canonical",
+        "archflow.contracts.failures",
         "archflow.project.archive",
         "archflow.project.manifest",
         "archflow.project.record_kinds",
@@ -15001,6 +15014,52 @@
       "notes": [],
       "files": [
         "tools/project/state_file.py"
+      ]
+    },
+    {
+      "module_id": "archflow.contracts.failures",
+      "owner_path": "packages/archflow/src/archflow/contracts/failures.py",
+      "purpose": "Which failures pass by themselves and which may be sent again unchanged: one table of failure codes for the Hub and the Project Runtime (#300 4-1, 4-3).",
+      "owns": [
+        "the failure kinds (FAILURE_KINDS, FailureKind): per code, its category (transient or conflict), whether nothing was done so the same request may be sent again (resend), how long it usually lasts and how many sends it is worth",
+        "how long to wait before the next send, or None when it is not sent again (resend_wait, LONGEST_WAIT_S)",
+        "a failure's answer with its kind added for a known code (failure_body); every other code is answered {code, detail} as before"
+      ],
+      "does_not_own": [
+        "raising or rendering a failure: project_runtime.errors (StudioError) and the Hub's HubFailure",
+        "sending a request again: the Hub's forward (hub.shell)"
+      ],
+      "inputs": [
+        "a failure code and its sentence"
+      ],
+      "outputs": [
+        "FailureKind or None",
+        "a wait in seconds or None",
+        "a failure body"
+      ],
+      "public_api": [
+        "FAILURE_KINDS",
+        "FailureCategory",
+        "FailureKind",
+        "LONGEST_WAIT_S",
+        "failure_body",
+        "failure_kind",
+        "resend_wait"
+      ],
+      "depends_on": [],
+      "invariants": [
+        "a conflict is never sent again unchanged: the caller reads the project again before deciding",
+        "a code is listed only when its failure says nothing was done or nothing should be sent again; a reply lost after dispatch is not listed",
+        "every listed kind is sent a bounded number of times"
+      ],
+      "status": "canonical",
+      "tests": [
+        "packages/archflow/tests/test_failures.py"
+      ],
+      "notes": "Kept in archflow because the Hub and the Runtime answer with the same failure body and the Hub sends again on the Runtime's codes; neither owns the other's.",
+      "untested_reason": "field primitives with no behaviour of their own; every StateRecord/GeometryProgram round-trip test exercises them",
+      "files": [
+        "packages/archflow/src/archflow/contracts/failures.py"
       ]
     }
   ]
