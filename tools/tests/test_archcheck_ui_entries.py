@@ -7,9 +7,12 @@ import unittest
 from pathlib import Path
 
 from tools.governance.archcheck import (
+    COMMAND_TREE,
     ArchitecturePolicyError,
     check_changed_ui_baseline,
+    check_command_tree,
     check_ui_entries,
+    render_command_tree,
     unregistered_ui_entries,
 )
 
@@ -23,6 +26,10 @@ def _policy(baseline=None, budgets=None, **fields):
 
 def _command(command_id, place=None, surface="board"):
     return {"id": command_id, "label": "Open", "label_zh": "打开", "surface": surface, "place": place}
+
+
+def _ui_command(command_id, **fields):
+    return {"id": command_id, "label": "Open", "label_zh": "打开", **fields}
 
 
 class UnregisteredEntryTests(unittest.TestCase):
@@ -203,6 +210,40 @@ class ChangedBaselineTests(unittest.TestCase):
         self._commit({"a.tsx": 4, "b.tsx": 1}, "more")
         self.assertEqual(self._codes(), ["UI_ENTRY_BASELINE", "UI_ENTRY_BASELINE"])
 
+
+
+class CommandUiTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        (self.root / "governance").mkdir()
+
+    def _codes(self, *commands, **ui):
+        capability = {"capability_id": "board.organize", "owner": "hub.shell", "purpose": "Arrange.", "purpose_zh": "整理。",
+                      "ui": {"surface": "board", "group": "board", **ui, "commands": list(commands)}}
+        registry = {"schema": "ArchFlowModuleRegistry@1", "modules": [], "capabilities": [capability]}
+        (self.root / "governance" / "module_registry.json").write_text(json.dumps(registry), encoding="utf-8")
+        target = self.root / COMMAND_TREE
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(render_command_tree(registry), encoding="utf-8")
+        return [finding.code for finding in check_command_tree(self.root)]
+
+    def test_registered_fields_pass(self):
+        self.assertEqual(self._codes(_ui_command("board.export.run", entries=["板15"], args=["format"], opens=False,
+                                              aliases=["export"], shortcut=None)), [])
+
+    def test_an_unknown_field_is_reported(self):
+        self.assertEqual(self._codes(_ui_command("board.export.run", entry=["板15"])), ["COMMAND_UI"])
+        self.assertEqual(self._codes(_ui_command("board.export.run"), colour="red"), ["COMMAND_UI"])
+
+    def test_entries_name_audit_rows_and_a_set_of_options_shares_one(self):
+        self.assertEqual(self._codes(_ui_command("board.export.run", entries=["B15"])), ["COMMAND_UI"])
+        self.assertEqual(self._codes(_ui_command("view.model_camera.top", entries=["模10"]),
+                                     _ui_command("view.model_camera.front", entries=["模10"])), [])
+
+    def test_arguments_are_camel_case_and_opens_is_a_flag(self):
+        self.assertEqual(self._codes(_ui_command("board.export.run", args=["stage_ref"], opens="yes")), ["COMMAND_UI", "COMMAND_UI"])
 
 if __name__ == "__main__":
     unittest.main()

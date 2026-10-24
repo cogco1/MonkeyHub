@@ -1735,6 +1735,54 @@ COMMAND_TREE = "apps/monkeyhub/web/src/features/commands/tree.generated.ts"
 COMMAND_ID = re.compile(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+")
 COMMAND_CHANNELS = frozenset({"front", "side", "background"})
 COMMAND_TIERS = frozenset({"basic", "advanced", "developer"})
+# The fields a capability's ui and its commands may carry (plan 1.5); anything else is a typo the
+# view would drop without a word.
+COMMAND_UI_FIELDS = frozenset({"preview", "surface", "group", "tier", "channel", "commands"})
+COMMAND_FIELDS = frozenset({"id", "label", "label_zh", "aliases", "entries", "channel", "tier", "args", "opens",
+                            "surface", "group", "place", "when", "shortcut", "action"})
+# An entry-audit row: the surface's short name and the row number (壳 Hub shell, 窗 Hub dialogs, 栏 project
+# bar, 模 Modeling, 板 Board, 排 Layout, 文 document page, 图 Drawings, 渲 Render, 树 Design tree,
+# 制 Fabrication, 量 Usage).
+COMMAND_ENTRY = re.compile(r"(?:壳|窗|栏|模|板|排|文|图|渲|树|制|量)[1-9]\d*")
+COMMAND_ARG = re.compile(r"[a-z][A-Za-z0-9]*")
+
+
+def _command_ui_problems(entry: dict[str, Any]) -> Iterator[str]:
+    """What is wrong with one capability's ui block, as COMMAND_UI messages."""
+
+    ui = entry.get("ui")
+    if ui is None:
+        return
+    if not isinstance(ui, dict):
+        yield "ui is an object"
+        return
+    for key in sorted(set(ui) - COMMAND_UI_FIELDS):
+        yield f"ui.{key} is not a field the command tree reads"
+    commands = ui.get("commands", [])
+    if not isinstance(commands, list):
+        yield "ui.commands is a list"
+        return
+    for command in commands:
+        if not isinstance(command, dict):
+            yield "each of ui.commands is an object"
+            continue
+        name = command.get("id", "?")
+        for key in sorted(set(command) - COMMAND_FIELDS):
+            yield f"{name}: {key} is not a command field"
+        for key in ("aliases", "when", "entries", "args"):
+            value = command.get(key, [])
+            if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+                yield f"{name}: {key} is a list of text"
+        for code in command.get("entries", []) if isinstance(command.get("entries"), list) else ():
+            if not isinstance(code, str) or not COMMAND_ENTRY.fullmatch(code):
+                yield f"{name}: entry {code!r} is not an audit row such as 模18"
+        for arg in command.get("args", []) if isinstance(command.get("args"), list) else ():
+            if isinstance(arg, str) and not COMMAND_ARG.fullmatch(arg):
+                yield f"{name}: argument {arg!r} is a camelCase name"
+        if "opens" in command and not isinstance(command["opens"], bool):
+            yield f"{name}: opens is true or false"
+        if command.get("shortcut") is not None and not isinstance(command["shortcut"], str):
+            yield f"{name}: shortcut is text"
 
 
 def _strings(value: Any) -> list[str]:
@@ -1798,8 +1846,11 @@ def check_command_tree(root: Path) -> Iterator[PolicyFinding]:
     registry (COMMAND_ID); its labels exist in both languages and differ;
     channel and tier take their registered values (COMMAND_FIELD); ``place``
     names one standing place or none, since Ctrl+K and shortcuts are not
-    places (COMMAND_PLACE). The committed view must equal what render-map
-    writes (COMMAND_TREE_STALE).
+    places (COMMAND_PLACE). A capability's ``ui`` and its commands carry only
+    the fields the view reads, entries name audit rows (模18; a row that
+    counted a set of options names several commands), and arguments are
+    camelCase names (COMMAND_UI). The
+    committed view must equal what render-map writes (COMMAND_TREE_STALE).
     """
 
     registry_path = root / "governance" / "module_registry.json"
@@ -1807,6 +1858,9 @@ def check_command_tree(root: Path) -> Iterator[PolicyFinding]:
         return
     rel_registry = registry_path.relative_to(root).as_posix()
     data = json.loads(registry_path.read_text(encoding="utf-8"))
+    for entry in data.get("capabilities") or ():
+        for problem in _command_ui_problems(entry):
+            yield PolicyFinding(rel_registry, 1, "COMMAND_UI", f"{entry.get('capability_id')}: {problem}")
     seen: dict[str, str] = {}
     tree = command_tree(data)
     for command in tree["commands"]:
