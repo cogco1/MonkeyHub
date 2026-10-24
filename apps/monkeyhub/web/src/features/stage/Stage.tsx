@@ -1348,7 +1348,9 @@ export function Stage({
     editingModelSource.runId === viewedModelSource.runId &&
     editingModelSource.stateDigest === viewedModelSource.stateDigest &&
     editingModelSource.assetSha256 === viewedModelSource.assetSha256;
-  const editingLabel = editingBaseLabel ?? versions.find((group) => group.runId === editingBaseRunId)?.exports[0]?.artifact.fileName ?? t("stage.base.savedSource");
+  // S01: a file name is not what a person calls a version; it shows for developers only.
+  const editingLabel = editingBaseLabel ?? (developerMode ? versions.find((group) => group.runId === editingBaseRunId)?.exports[0]?.artifact.fileName : null)
+    ?? t("stage.base.savedSource");
   const versionCount = designHistory ? designHistory.history?.stages.length ?? 0 : new Set([
     ...versions.flatMap((group) => group.exports.filter(({ artifact }) => artifact.format === "3dm" && artifact.sha256 !== null)
       .map(({ artifact }) => `${group.runId}:${artifact.sha256}`)),
@@ -1369,7 +1371,7 @@ export function Stage({
   </>;
   // #337: which model the next edit starts from. While that is the model on screen it is quiet words on the
   // status line; a different model, a refused act or an unsaved choice asks in one row above the canvas.
-  const baseQuestion = Boolean(baseNotice || baseRecord || baseNotSaved) || (editingBaseRunId !== null && (!sameSource || Boolean(baseError)));
+  const baseQuestion = Boolean(baseNotice || baseRecord || baseNotSaved) || (editingBaseRunId !== null && (Boolean(baseError) || (loadedRunId !== null && !sameSource)));
   const baseWords = editingBaseRunId !== null && <span role="status" aria-live="polite">
     {changingBase ? <span className="wait-late">{t("stage.base.loading")}</span> : sameSource ? t("stage.base.sameSource") : t("stage.base.current")}
     {!sameSource && <strong className="editing-base__name" title={editingLabel ?? undefined}> {editingLabel}</strong>}
