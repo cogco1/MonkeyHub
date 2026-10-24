@@ -13239,7 +13239,9 @@
         "The command palette (Ctrl+K), the Hub's own shortcuts and the local use counts (src/features/commands): it reads tree.generated.ts, the view of the module registry's capability commands that devctl render-map writes, and runs a command through the handler the surface performing it registers under its id; no second command list",
         "The interface styles' component hooks: shared controls, cards, view tabs, the current conversation row, the composer and notices read var(--hook, their own value); only Critique Table (board) sets the hooks, and component rules key on data-ui-family (classic, instrument, board)",
         "The attention shell (?shell=attention, app/AttentionShell.tsx): the projects column with what waits on the architect, the Attention, Board and Model tabs over the open surfaces, the conversation drawer above the composer, the side panel with background and advanced tools, and the phone drawers; it places the nodes ChatShell's state builds and holds none of its own",
-        "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back."
+        "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
+        "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
+        "Carrying out a card's answer as the person who chose it (#300, attention/actions.py): Continue onto a run and its undo, archiving and restoring candidates, combining a result with the head, answering a conversation's permission or suggestion, sending the person's reply to the conversation, applying a prepared update and reading a notice; \"all as recommended\" with one undo. The producers (attention/producers.py) that write results, permissions, suggestions, design-loop questions, failed operations and updates as cards. AttentionHub (attention/hub.py) gives the executor its ports on the Hub (the runtime forward, the chat store, the updater), reconciles a project's cards a moment after its events settle, and publishes attention/changed under the project's runtime id."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -13366,7 +13368,12 @@
         "src/features/commands/CommandProvider.tsx: CommandProvider, useCommandActions(command id → handler), useCommands; tree.generated.ts: COMMAND_TREE",
         "AttentionStore",
         "AttentionDraft",
-        "AttentionItem"
+        "AttentionItem",
+        "AttentionExecutor",
+        "COMMANDS",
+        "AttentionHub",
+        "check_card",
+        "OPENS"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -13416,7 +13423,8 @@
         "Beside a project workspace the projects list folds to its icons unless pinned (#283): the pin is UserSettingsDto.sidebarPinned, written only while pinned so a version older than it still reads the file; the folding, Focus and the conversation's width are this window's view state and reach no Project Runtime or project",
         "the design-loop tools never call a Runtime of their own: each read and each change goes through studio_request and its bindings; a submission past the repair limit is refused before anything is sent",
         "every request the Hub forwards for a chat carries X-Monkey-Agent with that chat and the worker identity; a person's request through the Hub carries neither; a revision's journal row ends as its outcome says (landed, admitted and built complete, problems fail, a question or refusal is refused) and a revision that lost its answer is never completed from its build alone",
-        "A card's state is a person's handling of it, never a design fact: the attention store writes only attention/<runtimeId>.json under the Hub runtime root and never a project. One dedupeKey is one card; a closed card opens again only when its facts or its answers change. Every button on a card is one command of the command tree with bound arguments, never a request of its own."
+        "A card's state is a person's handling of it, never a design fact: the attention store writes only attention/<runtimeId>.json under the Hub runtime root and never a project. One dedupeKey is one card; a closed card opens again only when its facts or its answers change. Every button on a card is one command of the command tree with bound arguments, never a request of its own.",
+        "A card's answer runs only if its command is in the executor's COMMANDS, and check_card refuses, before the store keeps it, a card whose answer is marked undoable when its command cannot be taken back or whose opens names a command outside OPENS; a project change goes through the Hub forward without a chat header, with a UUID idempotency key per card, answer and attempt, so the Runtime reads it as the person's click and the operation journal admits it. An undo runs only while its precondition holds (Current is still on the run the Continue moved it to); otherwise a new card asks. A Continue that already landed before a restart is recorded as done with the undo its working step saw, without writing again. All as recommended runs only recommended answers whose command can be taken back. Producers are pure functions of what the Hub read and never answer for a person."
       ],
       "files": [
         "apps/monkeyhub/api/monkeyhub_api/__init__.py",
@@ -13546,7 +13554,10 @@
         "apps/monkeyhub/api/monkeyhub_api/attention/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/models.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/store.py",
-        "apps/monkeyhub/api/monkeyhub_api/attention/routes.py"
+        "apps/monkeyhub/api/monkeyhub_api/attention/routes.py",
+        "apps/monkeyhub/api/monkeyhub_api/attention/actions.py",
+        "apps/monkeyhub/api/monkeyhub_api/attention/hub.py",
+        "apps/monkeyhub/api/monkeyhub_api/attention/producers.py"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -13614,7 +13625,11 @@
         "apps/monkeyhub/web/test/appearance.test.ts",
         "apps/monkeyhub/web/test/interfaceStyles.browser.mjs",
         "apps/monkeyhub/web/test/attentionShell.browser.mjs",
-        "apps/monkeyhub/api/tests/test_attention_store.py"
+        "apps/monkeyhub/api/tests/test_attention_store.py",
+        "apps/monkeyhub/api/tests/test_attention_store.py",
+        "apps/monkeyhub/api/tests/test_attention_executor.py",
+        "apps/monkeyhub/api/tests/test_attention_hub.py",
+        "apps/monkeyhub/api/tests/test_attention_producers.py"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
