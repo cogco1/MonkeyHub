@@ -3155,7 +3155,8 @@
               "模91",
               "文10",
               "文34",
-              "树16"
+              "树16",
+              "栏7"
             ]
           },
           {
@@ -3182,7 +3183,9 @@
             "id": "design.go_to_step.back_to_current",
             "label": "Back to Current",
             "label_zh": "回到当前",
-            "entries": []
+            "entries": [
+              "栏6"
+            ]
           },
           {
             "id": "design.go_to_step.save_milestone",
@@ -3244,7 +3247,8 @@
               "回到之前的模型"
             ],
             "entries": [
-              "模21"
+              "模21",
+              "栏8"
             ]
           },
           {
@@ -3266,7 +3270,9 @@
               "模27",
               "模87",
               "文35",
-              "树26"
+              "树26",
+              "壳76",
+              "栏9"
             ]
           },
           {
@@ -3274,7 +3280,9 @@
             "label": "Options ready",
             "label_zh": "方案就绪",
             "opens": true,
-            "entries": []
+            "entries": [
+              "栏5"
+            ]
           },
           {
             "id": "stage.accept.next",
@@ -3592,6 +3600,19 @@
               "模151",
               "模152"
             ]
+          },
+          {
+            "id": "candidate.compare.option",
+            "label": "Compare an option",
+            "label_zh": "查看某个方案的改动",
+            "args": [
+              "optionId"
+            ],
+            "entries": [
+              "壳55"
+            ],
+            "opens": true,
+            "surface": "hub"
           }
         ]
       }
@@ -3922,9 +3943,161 @@
               "sessionId"
             ],
             "entries": [
-              "壳33"
+              "壳33",
+              "壳48"
             ],
             "opens": true
+          },
+          {
+            "id": "chat.composer.send",
+            "label": "Send the message",
+            "label_zh": "发送消息",
+            "entries": [
+              "壳80",
+              "壳89"
+            ],
+            "aliases": [
+              "send"
+            ]
+          },
+          {
+            "id": "chat.composer.interject",
+            "label": "Interject while it works",
+            "label_zh": "插话",
+            "entries": [
+              "壳89"
+            ]
+          },
+          {
+            "id": "chat.composer.stop",
+            "label": "Stop the turn",
+            "label_zh": "停止这一轮",
+            "entries": [
+              "壳88"
+            ]
+          },
+          {
+            "id": "chat.composer.menu",
+            "label": "Attachments and new topic",
+            "label_zh": "附件与新话题",
+            "entries": [
+              "壳81"
+            ]
+          },
+          {
+            "id": "chat.composer.attach",
+            "label": "Add attachments",
+            "label_zh": "添加附件",
+            "entries": [
+              "壳74",
+              "壳82"
+            ],
+            "opens": true
+          },
+          {
+            "id": "chat.composer.topic",
+            "label": "New topic",
+            "label_zh": "新话题",
+            "entries": [
+              "壳83"
+            ]
+          },
+          {
+            "id": "chat.composer.remove_topic",
+            "label": "Remove the new topic",
+            "label_zh": "移除新话题",
+            "entries": [
+              "壳75"
+            ]
+          },
+          {
+            "id": "chat.composer.remove_images",
+            "label": "Remove the images under discussion",
+            "label_zh": "移除讨论的图片",
+            "entries": [
+              "壳77"
+            ]
+          },
+          {
+            "id": "chat.composer.remove_attachment",
+            "label": "Remove an attachment",
+            "label_zh": "移除附件",
+            "args": [
+              "file"
+            ],
+            "entries": [
+              "壳79"
+            ]
+          },
+          {
+            "id": "chat.permission.choose",
+            "label": "Answer the agent's request",
+            "label_zh": "回答授权请求",
+            "args": [
+              "optionId"
+            ],
+            "entries": [
+              "壳53"
+            ]
+          },
+          {
+            "id": "chat.permission.cancel",
+            "label": "Cancel the agent's request",
+            "label_zh": "取消授权请求",
+            "entries": [
+              "壳53"
+            ]
+          },
+          {
+            "id": "chat.archive.toggle",
+            "label": "Archive or restore a conversation",
+            "label_zh": "归档或恢复对话",
+            "args": [
+              "sessionId"
+            ],
+            "entries": [
+              "壳34"
+            ]
+          },
+          {
+            "id": "chat.archive.view",
+            "label": "Show archived conversations",
+            "label_zh": "查看已归档对话",
+            "entries": [
+              "壳37"
+            ]
+          },
+          {
+            "id": "chat.archive.restore",
+            "label": "Restore this conversation",
+            "label_zh": "恢复此对话",
+            "entries": [
+              "壳71"
+            ]
+          },
+          {
+            "id": "chat.suggestion.accept",
+            "label": "Take the suggestion",
+            "label_zh": "按建议做",
+            "entries": [
+              "壳57"
+            ]
+          },
+          {
+            "id": "chat.suggestion.adjust",
+            "label": "Adjust the suggestion",
+            "label_zh": "调整想法",
+            "entries": [
+              "壳58"
+            ]
+          },
+          {
+            "id": "chat.suggestion.dismiss",
+            "label": "Skip the suggestion",
+            "label_zh": "暂时跳过建议",
+            "entries": [
+              "壳59"
+            ]
           }
         ]
       },
@@ -3992,7 +4165,8 @@
             "label_zh": "新建项目…",
             "entries": [
               "壳6",
-              "壳28"
+              "壳28",
+              "壳39"
             ]
           },
           {
@@ -4005,7 +4179,8 @@
             ],
             "entries": [
               "壳7",
-              "壳31"
+              "壳31",
+              "壳40"
             ]
           },
           {
@@ -4029,6 +4204,64 @@
               "壳11",
               "壳108"
             ]
+          },
+          {
+            "id": "project.open",
+            "label": "Open a project",
+            "label_zh": "打开项目",
+            "args": [
+              "project"
+            ],
+            "entries": [
+              "壳32"
+            ],
+            "opens": true
+          },
+          {
+            "id": "project.create.new_confirm",
+            "label": "Create the project",
+            "label_zh": "创建项目",
+            "entries": [
+              "窗4",
+              "窗6"
+            ]
+          },
+          {
+            "id": "project.create.add_existing_confirm",
+            "label": "Add the project",
+            "label_zh": "添加项目",
+            "entries": [
+              "窗8",
+              "窗10"
+            ]
+          },
+          {
+            "id": "project.archive.export_confirm",
+            "label": "Export the archive",
+            "label_zh": "导出归档",
+            "entries": [
+              "窗12",
+              "窗14"
+            ]
+          },
+          {
+            "id": "project.archive.restore_confirm",
+            "label": "Restore the archive",
+            "label_zh": "恢复归档",
+            "entries": [
+              "窗16",
+              "窗17",
+              "窗20"
+            ]
+          },
+          {
+            "id": "project.archive.open_restored",
+            "label": "Open the restored project",
+            "label_zh": "打开恢复的项目",
+            "entries": [
+              "窗18"
+            ],
+            "opens": true
           }
         ]
       },
@@ -4099,7 +4332,6 @@
             "entries": [
               "壳3",
               "壳20",
-              "壳27",
               "壳41"
             ]
           },
@@ -4140,7 +4372,8 @@
               "模115",
               "板1",
               "文1",
-              "文3"
+              "文3",
+              "栏3"
             ]
           },
           {
@@ -4154,8 +4387,50 @@
             ],
             "shortcut": "Alt+3",
             "entries": [
-              "壳91"
+              "壳91",
+              "壳102"
             ]
+          },
+          {
+            "id": "view.left_column.pin",
+            "label": "Keep the project column open",
+            "label_zh": "钉住项目栏",
+            "entries": [
+              "壳27"
+            ]
+          },
+          {
+            "id": "view.conversation.steps",
+            "label": "Show a turn's steps",
+            "label_zh": "展开这一轮的步骤",
+            "entries": [
+              "壳51"
+            ]
+          },
+          {
+            "id": "view.conversation.jump_latest",
+            "label": "Jump to the latest message",
+            "label_zh": "跳到最新消息",
+            "entries": [
+              "壳67"
+            ]
+          },
+          {
+            "id": "view.tab.cancel",
+            "label": "Stop opening the workspace",
+            "label_zh": "取消打开工作面",
+            "entries": [
+              "壳90"
+            ]
+          },
+          {
+            "id": "view.tab.layout",
+            "label": "Layout",
+            "label_zh": "排版",
+            "entries": [
+              "栏3"
+            ],
+            "opens": true
           }
         ]
       },
@@ -4224,7 +4499,9 @@
             "entries": [
               "壳93",
               "模2",
-              "模95"
+              "模95",
+              "壳42",
+              "壳54"
             ]
           },
           {
@@ -4900,7 +5177,76 @@
             "label": "Toggle design tree",
             "label_zh": "切换状态树",
             "opens": true,
-            "entries": []
+            "entries": [
+              "栏4"
+            ]
+          },
+          {
+            "id": "view.background.toggle",
+            "label": "Show running tasks",
+            "label_zh": "展开任务列表",
+            "entries": [
+              "壳29"
+            ]
+          },
+          {
+            "id": "view.background.open_task",
+            "label": "Open a task",
+            "label_zh": "打开任务",
+            "args": [
+              "taskId"
+            ],
+            "entries": [
+              "壳30"
+            ],
+            "opens": true
+          },
+          {
+            "id": "view.project_info.toggle",
+            "label": "This project",
+            "label_zh": "此项目信息",
+            "entries": [
+              "壳98"
+            ],
+            "opens": true
+          },
+          {
+            "id": "view.settings.page",
+            "label": "Settings page",
+            "label_zh": "设置页",
+            "args": [
+              "page"
+            ],
+            "entries": [
+              "窗47"
+            ]
+          },
+          {
+            "id": "view.open_file.image",
+            "label": "Enlarge the image",
+            "label_zh": "放大图片",
+            "entries": [
+              "壳62"
+            ],
+            "opens": true
+          },
+          {
+            "id": "view.open_file.document",
+            "label": "Open the document",
+            "label_zh": "打开文档",
+            "entries": [
+              "壳63"
+            ],
+            "opens": true
+          },
+          {
+            "id": "view.open_file.download",
+            "label": "Download the file",
+            "label_zh": "下载文件",
+            "entries": [
+              "壳64",
+              "窗2"
+            ]
           }
         ]
       },
@@ -4989,7 +5335,8 @@
             "label": "Interface style: Classic",
             "label_zh": "界面风格：经典",
             "entries": [
-              "壳23"
+              "壳23",
+              "窗51"
             ]
           },
           {
@@ -4997,7 +5344,8 @@
             "label": "Interface style: Quiet",
             "label_zh": "界面风格：静默仪表",
             "entries": [
-              "壳23"
+              "壳23",
+              "窗51"
             ]
           },
           {
@@ -5005,7 +5353,8 @@
             "label": "Interface style: Title block",
             "label_zh": "界面风格：图签",
             "entries": [
-              "壳23"
+              "壳23",
+              "窗51"
             ]
           },
           {
@@ -5013,7 +5362,8 @@
             "label": "Interface style: Night",
             "label_zh": "界面风格：夜航",
             "entries": [
-              "壳23"
+              "壳23",
+              "窗51"
             ]
           },
           {
@@ -5038,6 +5388,206 @@
             "label_zh": "字号：大",
             "entries": [
               "壳24"
+            ]
+          },
+          {
+            "id": "preference.appearance.language",
+            "label": "Language",
+            "label_zh": "语言",
+            "entries": [
+              "窗48"
+            ]
+          },
+          {
+            "id": "preference.appearance.theme",
+            "label": "Theme",
+            "label_zh": "主题",
+            "entries": [
+              "窗49"
+            ]
+          },
+          {
+            "id": "preference.appearance.size",
+            "label": "Text size",
+            "label_zh": "字号",
+            "entries": [
+              "窗50"
+            ]
+          },
+          {
+            "id": "preference.chat_model.change",
+            "label": "Change the model",
+            "label_zh": "更换模型",
+            "entries": [
+              "壳68"
+            ]
+          },
+          {
+            "id": "preference.chat_model.choose",
+            "label": "Model for this conversation",
+            "label_zh": "这个对话的模型",
+            "entries": [
+              "壳84"
+            ]
+          },
+          {
+            "id": "preference.chat_model.custom_apply",
+            "label": "Use a custom model id",
+            "label_zh": "使用自定义模型 ID",
+            "entries": [
+              "壳85",
+              "壳86"
+            ]
+          },
+          {
+            "id": "preference.chat_model.custom_cancel",
+            "label": "Cancel the custom model id",
+            "label_zh": "取消自定义模型 ID",
+            "entries": [
+              "壳87"
+            ]
+          },
+          {
+            "id": "preference.chat_model.default_cli",
+            "label": "Default CLI",
+            "label_zh": "默认 CLI",
+            "entries": [
+              "窗52"
+            ]
+          },
+          {
+            "id": "preference.chat_model.default_model",
+            "label": "Default model",
+            "label_zh": "默认模型",
+            "entries": [
+              "窗53"
+            ]
+          },
+          {
+            "id": "preference.chat_model.default_custom",
+            "label": "Custom default model id",
+            "label_zh": "自定义默认模型 ID",
+            "entries": [
+              "窗54"
+            ]
+          },
+          {
+            "id": "preference.chat_provider.sign_in",
+            "label": "Sign in to a CLI",
+            "label_zh": "登录 CLI",
+            "args": [
+              "provider"
+            ],
+            "entries": [
+              "窗55"
+            ]
+          },
+          {
+            "id": "preference.chat_provider.plan_provider",
+            "label": "Coding Plan provider",
+            "label_zh": "Coding Plan 服务商",
+            "entries": [
+              "窗56"
+            ]
+          },
+          {
+            "id": "preference.chat_provider.plan_url",
+            "label": "Coding Plan endpoint",
+            "label_zh": "Coding Plan 端点地址",
+            "entries": [
+              "窗57"
+            ]
+          },
+          {
+            "id": "preference.secret.key",
+            "label": "Saved key or token",
+            "label_zh": "保存的密钥或令牌",
+            "args": [
+              "credential"
+            ],
+            "entries": [
+              "窗58",
+              "窗65"
+            ]
+          },
+          {
+            "id": "preference.secret.clear",
+            "label": "Clear a saved key",
+            "label_zh": "清除保存的密钥",
+            "args": [
+              "credential"
+            ],
+            "entries": [
+              "窗59",
+              "窗66"
+            ]
+          },
+          {
+            "id": "preference.secret.get_link",
+            "label": "Get a key or token",
+            "label_zh": "获取密钥或令牌",
+            "args": [
+              "credential"
+            ],
+            "entries": [
+              "窗60",
+              "窗68"
+            ]
+          },
+          {
+            "id": "preference.render_provider.provider",
+            "label": "Image provider",
+            "label_zh": "图像供应商",
+            "entries": [
+              "窗62"
+            ]
+          },
+          {
+            "id": "preference.render_provider.model",
+            "label": "Image model",
+            "label_zh": "图像模型",
+            "entries": [
+              "窗63"
+            ]
+          },
+          {
+            "id": "preference.render_provider.timeout",
+            "label": "Render request timeout",
+            "label_zh": "渲染请求超时",
+            "entries": [
+              "窗64"
+            ]
+          },
+          {
+            "id": "preference.render_provider.check",
+            "label": "Check the render key",
+            "label_zh": "检查渲染密钥",
+            "entries": [
+              "窗67"
+            ]
+          },
+          {
+            "id": "preference.workspace.projects_folder",
+            "label": "Folder for new projects",
+            "label_zh": "新项目所在文件夹",
+            "entries": [
+              "窗69"
+            ]
+          },
+          {
+            "id": "preference.workspace.library_project",
+            "label": "Skill library project",
+            "label_zh": "技能库项目",
+            "entries": [
+              "窗70"
+            ]
+          },
+          {
+            "id": "preference.developer_mode",
+            "label": "Developer mode",
+            "label_zh": "开发者模式",
+            "entries": [
+              "窗72"
             ]
           }
         ]
@@ -5090,7 +5640,41 @@
             "label": "Check for updates…",
             "label_zh": "检查更新…",
             "entries": [
-              "壳25"
+              "壳25",
+              "壳36"
+            ]
+          },
+          {
+            "id": "hub.update_apply",
+            "label": "Restart to update",
+            "label_zh": "重启更新",
+            "entries": [
+              "窗83"
+            ]
+          },
+          {
+            "id": "hub.update_check_now",
+            "label": "Check for updates now",
+            "label_zh": "立即检查更新",
+            "entries": [
+              "窗84"
+            ]
+          },
+          {
+            "id": "hub.update_patch",
+            "label": "Choose a patch ZIP",
+            "label_zh": "选择补丁 ZIP",
+            "entries": [
+              "窗86"
+            ],
+            "opens": true
+          },
+          {
+            "id": "hub.update_auto",
+            "label": "Automatic updates",
+            "label_zh": "自动更新",
+            "entries": [
+              "窗87"
             ]
           }
         ]
@@ -5306,7 +5890,12 @@
               "渲23",
               "树8",
               "制3",
-              "量5"
+              "量5",
+              "壳47",
+              "壳105",
+              "窗61",
+              "窗85",
+              "栏1"
             ]
           },
           {
@@ -5327,7 +5916,9 @@
             "label": "Dismiss the notice",
             "label_zh": "关掉提示",
             "entries": [
-              "板18"
+              "板18",
+              "壳49",
+              "壳70"
             ]
           },
           {
@@ -5354,7 +5945,10 @@
               "制16",
               "量9",
               "量10",
-              "量19"
+              "量19",
+              "壳101",
+              "壳103",
+              "窗71"
             ]
           },
           {
@@ -5381,7 +5975,18 @@
             "entries": [
               "板71",
               "板75",
-              "板82"
+              "板82",
+              "壳100",
+              "窗1",
+              "窗3",
+              "窗5",
+              "窗7",
+              "窗9",
+              "窗11",
+              "窗13",
+              "窗15",
+              "窗19",
+              "窗46"
             ]
           }
         ]

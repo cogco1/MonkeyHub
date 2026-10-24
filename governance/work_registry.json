@@ -311,6 +311,8 @@
             "apps/monkeyhub/web/src/ChatSuggestionCard.tsx",
             "apps/monkeyhub/web/src/HubMenu.tsx",
             "apps/monkeyhub/web/src/SoftwareUpdateSettings.tsx",
+            "apps/monkeyhub/web/src/app/BoardModeSwitch.tsx",
+            "apps/monkeyhub/web/src/app/ProjectWorkspace.tsx",
             "apps/monkeyhub/web/src/main.tsx",
             "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "apps/monkeyhub/web/test/eventStream.browser.mjs",

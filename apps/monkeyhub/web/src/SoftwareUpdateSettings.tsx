@@ -180,18 +180,18 @@ export function SoftwareUpdateSettings({ language, open, restartBlocker, onResta
           const file = event.target.files?.[0]; event.target.value = ""; if (file) void prepare(file);
         }} />
       <div className="actions software-update__actions">
-        {prepared && <button type="button" className="btn btn--primary" disabled={Boolean(request) || working || !status?.canApply || Boolean(blocked) || Boolean(error)}
+        {prepared && <button data-command="hub.update_apply" type="button" className="btn btn--primary" disabled={Boolean(request) || working || !status?.canApply || Boolean(blocked) || Boolean(error)}
           aria-describedby={blocked ? "software-update-blocker" : "software-update-recovery"} onClick={() => void apply()}>{t.updateRestart}</button>}
-        {status?.mode === "local" && <button type="button" className={retry && !prepared ? "btn btn--primary" : "btn"}
+        {status?.mode === "local" && <button data-command="hub.update_check_now" type="button" className={retry && !prepared ? "btn btn--primary" : "btn"}
           disabled={Boolean(request) || working || checking}
           onClick={() => void send("check", "check", { method: "POST" })}>{retry ? copy.checkAgain : t.updateCheckNow}</button>}
-        <button type="button" className="btn" disabled={Boolean(request) || working} onClick={() => void refresh()}>{t.updateRefresh}</button>
-        {status?.mode === "local" && <button type="button" className="btn" disabled={Boolean(request) || working}
+        <button data-command="view.notice.retry" data-command-arg="update_status" type="button" className="btn" disabled={Boolean(request) || working} onClick={() => void refresh()}>{t.updateRefresh}</button>
+        {status?.mode === "local" && <button data-command="hub.update_patch" type="button" className="btn" disabled={Boolean(request) || working}
           aria-describedby="software-update-trust" onClick={() => fileInput.current?.click()}>{t.updateChoosePatch}</button>}
       </div>
       {status?.mode === "local" && <div className="software-update__auto">
         <label className="software-update__toggle">
-          <input type="checkbox" role="switch" checked={Boolean(status.autoUpdate)} disabled={Boolean(request) || working}
+          <input data-command="hub.update_auto" type="checkbox" role="switch" checked={Boolean(status.autoUpdate)} disabled={Boolean(request) || working}
             aria-describedby="software-update-auto-help" onChange={(event) => void send("auto", "settings", {
               method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ autoUpdate: event.target.checked }),
             })} />
