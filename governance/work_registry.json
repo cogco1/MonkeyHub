@@ -93,6 +93,39 @@
         "tools/tests/test_state_file_command.py"
       ],
       "depends_on": []
+    },
+    {
+      "id": "GH-300",
+      "lanes": [
+        {
+          "id": "batch2",
+          "status": "active",
+          "branch": "claude/300-batch2",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-batch2",
+          "base_ref": "312e40fedf53f19bc1006e46c1ea99f1ae2edb00",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "The second redesign batch (three-channel shell, #300): the reviewed redesign branches merged into one PR to main in the order their PRs give, the coordinator's decision of 2026-10-24. This lane exists only while the batch is assembled: its merges and the regenerated clients are filed under it, and the batch's last commit releases it with the lanes whose work the batch completes.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            ".github/",
+            "AGENTS.md",
+            "CONTRIBUTING.md",
+            "apps/",
+            "docs/",
+            "governance/",
+            "packages/",
+            "probes/",
+            "scripts/",
+            "services/",
+            "tests/",
+            "tools/"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
