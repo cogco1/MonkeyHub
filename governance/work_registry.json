@@ -1,4 +1,57 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-300",
+      "lanes": [
+        {
+          "id": "b3-tracing",
+          "status": "active",
+          "branch": "claude/300-b3-tracing-2",
+          "worktree": "C:\\Users\\Public\\renou\\dev\\wt\\claude-300-b3-tracing",
+          "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Tracing Paper without friction: Esc (or Ctrl+K) exits the whole paper in one press; Clear (Ctrl+Shift+X) takes every mark in one undoable step without a confirmation; leaving the paper retains it as one model-annotation revision and removes its ink from the model; the next paper starts blank and modification history can continue any retained paper; a text tool writes a short sentence, and a sentence on one resolved component is read as that component's description.note.",
+          "modules": [
+            "project_runtime.intent",
+            "hub.shell"
+          ],
+          "write_scope": [
+            ".github/workflows/verify.yml",
+            "apps/monkeyhub/api/monkeyhub_api/chat/studio_tool.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/monkeyhub/web/src/api/project-runtime/client.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/app/App.tsx",
+            "apps/monkeyhub/web/src/app/styles.css",
+            "apps/monkeyhub/web/src/features/commands/CommandProvider.tsx",
+            "apps/monkeyhub/web/src/features/commands/tree.generated.ts",
+            "apps/monkeyhub/web/src/features/conversation/Composer.tsx",
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/src/workspaces/monkeyarch/Annotate.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeyarch/gestureTools.ts",
+            "apps/monkeyhub/web/src/workspaces/monkeyarch/useModelAnnotations.ts",
+            "apps/monkeyhub/web/test/annotate.browser.mjs",
+            "apps/monkeyhub/web/test/commandTree.test.ts",
+            "apps/monkeyhub/web/test/intentViewSource.browser.mjs",
+            "apps/monkeyhub/web/test/modelAnnotations.test.ts",
+            "docs/architecture/system-map.md",
+            "governance/module_registry.json",
+            "governance/work_registry.json",
+            "services/project-runtime/src/project_runtime/api/dto/intent.py",
+            "services/project-runtime/src/project_runtime/api/routes/intents.py",
+            "services/project-runtime/src/project_runtime/application/gestures.py",
+            "services/project-runtime/tests/test_gestures.py",
+            "services/project-runtime/tests/test_working_copies.py"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
