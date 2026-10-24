@@ -100,3 +100,4 @@ A component's L3 meaning (`Component@1.fields.facets`). A key added after the co
 | `material.name` | free text, 1-120 characters | the construction spec, section 3.4 |
 | `material.color` | an sRGB hex colour #RRGGBB | material.name names what a material is, not how it looks, and no composition of the registered keys states a colour; a material's base appearance belongs to the design state (owner decision on #560, 2026-10-01) |
 | `fabrication.method` | free text, 1-120 characters | the construction spec, section 3.4 |
+| `description.note` | free text, 1-120 characters | the architect's own words about what a component is or should be ("shared kitchen", "more open here") are neither a role nor a material nor a fabrication method, and the closed sets of architectural.role and structural.role cannot hold a sentence; it is stated in the person's words and never inferred (2026-10-24, GH-300: the front keeps sketch, mass and a few words of meaning) |

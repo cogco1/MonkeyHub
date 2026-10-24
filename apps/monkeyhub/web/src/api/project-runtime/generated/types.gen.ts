@@ -5636,7 +5636,7 @@ export type FacetTargetDto = {
     /**
      * Set
      *
-     * facet keys and values to add or change: architectural.role, architectural.enclosure, structural.role, material.name, material.color (#RRGGBB, with material.name), fabrication.method
+     * facet keys and values to add or change: architectural.role, architectural.enclosure, structural.role, material.name, material.color (#RRGGBB, with material.name), fabrication.method, description.note: when the person picks a mass and says in a few words what it is or should be ("共享厨房", "这里更开放"), that sentence is not a change request; record it in their own words, at most 120 characters, say so in one line, and never ask which type it is. It is listed with the other facets in GET /api/construction/model and read with them when a change is compiled. Words that ask for a change stay a change request; the note may be recorded beside it
      */
     set?: {
         [key: string]: string;

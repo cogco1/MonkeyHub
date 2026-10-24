@@ -685,6 +685,19 @@ class FacetsProposalTestCase(ConstructionTestCase):
                          [entity.to_dict() for entity in after.entities if entity.entity_id != "portico"])
         self.assertEqual(before.dependency_edges(), after.dependency_edges())
 
+    def test_the_architects_sentence_about_a_component_is_a_facet_the_model_view_and_the_compiler_read(self) -> None:
+        proposal = self.facets([{"id": "portico", "set": {"description.note": "  共享厨房  "}}])
+        after = {entity.entity_id: entity for entity in self.successor(proposal).entities}
+        self.assertEqual(component_facets(after["portico"]), {"description.note": "共享厨房"}, "kept in their words, trimmed")
+        self.assertEqual(self.facets([{"id": "portico", "set": {"description.note": "x" * 121}}], expect=422)["code"], "FACETS_INVALID")
+        self.assertEqual(self.facets([{"id": "portico", "set": {"description.note": "这里更开放"}, "part": "portico-base"}],
+                                     expect=422)["code"], "FACETS_INVALID",
+                         "a note is about a component, not one of its parts")
+        # The compiler is offered the key beside the others, and the model view lists what a component has said.
+        from project_runtime.application import intent_agent
+        schema = intent_agent._answer_schema()
+        self.assertIn("description.note", json.dumps(schema))
+
     def test_a_facet_edit_that_changes_nothing_proposes_nothing(self) -> None:
         # Taking off a facet a component does not have.
         body = self.facets([{"id": "portico", "remove": ["material.name"]}], expect=422)
