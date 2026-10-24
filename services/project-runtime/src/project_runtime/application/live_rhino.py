@@ -144,11 +144,18 @@ def rhino_executable() -> Path:
     return candidate
 
 
-def _rhino_is_running(runner: Runner | None) -> bool:
-    """Whether any Rhino process runs on this machine, with or without its script server."""
+def _running_rhino_pids(runner: Runner | None) -> set[int]:
+    """The process ids of every Rhino running on this machine, with or without its script server."""
 
     result = _cli(["tasklist", "/FI", "IMAGENAME eq Rhino.exe", "/FO", "CSV", "/NH"], runner)
-    return result.returncode == 0 and "rhino.exe" in (result.stdout or "").lower()
+    if result.returncode != 0:
+        return set()
+    pids = set()
+    for line in (result.stdout or "").splitlines():
+        cells = [cell.strip().strip('"') for cell in line.split('","')]
+        if len(cells) > 1 and cells[0].strip('"').lower() == "rhino.exe" and cells[1].strip('"').isdigit():
+            pids.add(int(cells[1].strip('"')))
+    return pids
 
 
 def _launch(command_line: str) -> None:
@@ -181,9 +188,11 @@ def open_connected(*, document_path: str | None = None, runner: Runner | None = 
             return held[0], False
     elif existing:
         return existing[0], False
-    if _rhino_is_running(runner):
+    # Only a Rhino RhinoCode cannot reach is a Rhino without its script server; one that answers and holds another
+    # document does not stop this one from being opened beside it.
+    if _running_rhino_pids(runner) - {row.process_id for row in existing}:
         raise StudioError(409, "LIVE_RHINO_ALREADY_OPEN",
-                          "Rhino is already open on this computer without its script server. Ask the person to type "
+                          "A Rhino is already open on this computer without its script server. Ask the person to type "
                           "StartScriptServer in it once; a second Rhino would not have the unsaved work of the first.")
     # Rhino reads /runscript as written, quotes included; a list of arguments would escape them.
     command_line = f'"{rhino_executable()}" /nosplash /runscript="{START_COMMAND}"' + (f' "{document_path}"' if document_path else "")
