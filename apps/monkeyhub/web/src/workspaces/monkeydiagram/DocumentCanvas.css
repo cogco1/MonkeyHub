@@ -72,7 +72,14 @@
 .document-render-error span { display: block; font-size: 12px; }
 .document-input-hint { margin: 0; padding: 6px 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; background: var(--panel); }
 .document-notes { width: 240px; flex-shrink: 0; border-left: 1px solid var(--line); padding: 16px 12px; overflow-y: auto; background: var(--panel); }
-.document-notes > label { display: block; font-weight: 600; margin-bottom: 8px; }
+.document-panel--notes > label { display: block; font-weight: 600; margin-bottom: 8px; }
+/* ADR-014 B6: the column's pages as words over it; the page in sight is underlined, the others keep their state hidden. */
+.document-panels { display: flex; gap: 14px; margin: -4px 0 14px; border-bottom: 1px solid var(--line); }
+.document-panels button { min-height: 36px; padding: 0 2px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.document-panels button:hover { color: var(--ink); }
+.document-panels button[aria-selected="true"] { color: var(--ink); font-weight: 600; box-shadow: inset 0 -2px var(--accent); }
+.document-panel[hidden] { display: none; }
+.document-panel > .document-tracing { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
 .document-tracing { display: grid; gap: 10px; margin-bottom: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
 .document-tracing p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .document-tracing form, .document-tracing label { display: grid; gap: 6px; font-size: 12px; }

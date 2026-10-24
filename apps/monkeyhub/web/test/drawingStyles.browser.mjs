@@ -94,7 +94,9 @@ async function until(read, accepts, label) {
 const generate = () => cmd(page, "drawing.sheet.generate");
 const source = () => page.getByRole("combobox", { name: "源文件", exact: true });
 const opened = () => page.evaluate(() => window.drawingFixture.opens.length);
-const ready = async () => { await page.locator('.document-viewport[data-ready="true"]').waitFor(); await until(() => generate().isEnabled(), Boolean, "generation enabled"); };
+// ADR-014 B6: the drawing sheet is the right column's own page; a step that makes one opens it, as a person does.
+const sheetPage = async () => { const tab = cmd(page, "view.document_panel.show", { arg: "sheet" }); if (await tab.getAttribute("aria-selected") !== "true") await tab.click(); };
+const ready = async () => { await page.locator('.document-viewport[data-ready="true"]').waitFor(); await sheetPage(); await until(() => generate().isEnabled(), Boolean, "generation enabled"); };
 try {
   await server.listen();
   browser = await chromium.launch({ headless: true, channel: "chrome" });

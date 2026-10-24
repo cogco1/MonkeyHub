@@ -557,6 +557,14 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   const sheetScope = useRef({ key: sheetScopeKey });
   if (sheetScope.current.key !== sheetScopeKey) sheetScope.current = { key: sheetScopeKey };
   const hasSheetAction = onOpenGeneratedDocument !== undefined;
+  // ADR-014 B6: the right column's pages, the page note first; tracing needs the page on screen, the sheet its host.
+  const [panel, setPanel] = useState<DocumentPanel>("notes");
+  const panels: readonly { id: DocumentPanel; label: string }[] = [
+    { id: "notes", label: t("document.notes") },
+    ...file && page ? [{ id: "trace" as const, label: t("document.trace.title") }] : [],
+    ...hasSheetAction ? [{ id: "sheet" as const, label: t("document.drawingStyles") }] : [],
+  ];
+  const shownPanel = panels.some((item) => item.id === panel) ? panel : "notes";
   useEffect(() => { setSheetError(null); }, [sheetScopeKey]);
   useEffect(() => {
     if (!hasSheetAction) return;
@@ -906,9 +914,17 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
           label: `${documents.find(item => item.assetSha256 === row.source.assetSha256)?.fileName ?? row.studyId} · ${Number(row.source.pageIndex) + 1}`,
         }))} onCompare={target => { void study.compare(target); }} />
       : <aside className="document-notes" aria-label={t("document.notes")}>
-        {file && page && <DocumentTracingPanel key={JSON.stringify([projectId, documentRun, selectedSha, selectedRevision, pageIndex, review?.ref.revisionSha256])} draft={draft}
-          disabled={busy || sending || !active} onSendingChange={setSending} />}
-        {hasSheetAction && <section className="document-drawing-styles" aria-label={t("document.drawingStyles")}>
+        {/* ADR-014 B6: the column is three pages, one in sight at a time; a page left keeps what was typed in it. */}
+        {panels.length > 1 && <div className="document-panels" role="tablist" aria-label={t("document.notes")}>
+          {panels.map((item) => <button key={item.id} data-command="view.document_panel.show" data-command-arg={item.id} type="button" role="tab"
+            id={`document-panel-tab-${item.id}`} aria-controls={`document-panel-${item.id}`} aria-selected={shownPanel === item.id}
+            onClick={() => setPanel(item.id)}>{item.label}</button>)}
+        </div>}
+        {file && page && <div className="document-panel" id="document-panel-trace" role="tabpanel" aria-labelledby="document-panel-tab-trace" hidden={shownPanel !== "trace"}>
+          <DocumentTracingPanel key={JSON.stringify([projectId, documentRun, selectedSha, selectedRevision, pageIndex, review?.ref.revisionSha256])} draft={draft}
+          disabled={busy || sending || !active} onSendingChange={setSending} /></div>}
+        {hasSheetAction && <section className="document-panel document-drawing-styles" id="document-panel-sheet" role="tabpanel" aria-labelledby="document-panel-tab-sheet"
+          hidden={shownPanel !== "sheet"} aria-label={t("document.drawingStyles")}>
           <fieldset disabled={stylesLoading || sheetBusy}>
             <legend>{t("document.drawingStyles")}</legend>
             <div className="document-drawing-styles__cards">{drawingStyles.map((style) => <label className="document-drawing-style" key={style.id}>
@@ -942,6 +958,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
           {sheetError && <p className="document-drawing-styles__error" role="alert">{sheetError.detail}</p>}
           {stylesError && <button data-command="view.notice.retry" data-command-arg="drawing_styles" type="button" onClick={() => setStylesRetry((value) => value + 1)}>{t("document.drawingStylesRetry")}</button>}
         </section>}
+        <div className="document-panel document-panel--notes" id="document-panel-notes" role="tabpanel" aria-labelledby="document-panel-tab-notes" hidden={shownPanel !== "notes"}>
         <label htmlFor="document-comment">{t("document.comment")}</label>
         <textarea id="document-comment" value={review?.text ?? draft.comment} readOnly={draft.readOnly} disabled={!draft.ready || sending}
           onChange={(event) => draft.setComment(event.target.value)} onBlur={draft.flush} placeholder={t("document.commentHint")} />
@@ -980,6 +997,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
               {t("document.openSubmittedPage", { page: ref.pageIndex + 1 })}</button>)}
           </article>)}
         </details>
+        </div>
       </aside>}
     </div>
   </div>;

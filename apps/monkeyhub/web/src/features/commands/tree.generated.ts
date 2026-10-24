@@ -6929,6 +6929,26 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
+      "id": "view.document_panel.show",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Show a page of the document's right column",
+        "zh-CN": "切换文档页右栏"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "panel"
+      ]
+    },
+    {
       "id": "view.study.toggle",
       "capability": "shell.pages",
       "label": {

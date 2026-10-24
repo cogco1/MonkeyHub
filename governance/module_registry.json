@@ -4829,6 +4829,17 @@
             ]
           },
           {
+            "id": "view.document_panel.show",
+            "label": "Show a page of the document's right column",
+            "label_zh": "切换文档页右栏",
+            "surface": "document",
+            "args": [
+              "panel"
+            ],
+            "entries": [],
+            "in_place": true
+          },
+          {
             "id": "view.study.toggle",
             "label": "Study this page",
             "label_zh": "研究此图页",

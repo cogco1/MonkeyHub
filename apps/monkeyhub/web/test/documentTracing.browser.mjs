@@ -165,10 +165,16 @@ print(json.dumps({"png": base64.b64encode(data.getvalue()).decode()}))
     await page.mouse.move(...await point(from)); await page.mouse.down();
     await page.mouse.move(...await point(to), { steps: 12 }); await page.mouse.up();
   }
+  // ADR-014 B6: the right column is three pages with at most ten controls in sight; the page note comes first.
+  const panel = (id) => cmd(page, "view.document_panel.show", { arg: id });
+  const controlsInSight = () => page.locator(".document-notes").locator("button:visible, input:visible, select:visible, textarea:visible, summary:visible").count();
   async function editor() {
     await page.locator(".document-viewport[data-ready=true]").waitFor();
     assert.equal(await page.getByLabel("Source document", { exact: true }).inputValue(), source.assetSha256);
     assert.equal(await page.getByLabel("Page", { exact: true }).inputValue(), "0");
+    assert.equal(await panel("notes").getAttribute("aria-selected"), "true", "the page note is the column's first page");
+    assert.ok(await controlsInSight() <= 10, `the page note's column shows ${await controlsInSight()} controls`);
+    await panel("trace").click();
     await tracing().waitFor();
     assert.match(await tracing().innerText(), /No image model has interpreted this page/);
   }
@@ -211,6 +217,7 @@ print(json.dumps({"png": base64.b64encode(data.getvalue()).decode()}))
   await page.getByLabel("Known length (m)", { exact: true }).fill("6");
   await cmd(page, "sketch.to_model.calibrate").click();
   await page.getByLabel("Mass height (m)", { exact: true }).fill("2.4");
+  assert.ok(await controlsInSight() <= 10, `tracing with two shapes shows ${await controlsInSight()} controls`);
   const calibrated = await saved();
   assert.equal(calibrated.tracingCalibration.distance, 6);
   assert.deepEqual(calibrated.tracingCalibration.origin, calibrated.annotations[0].points[0]);
