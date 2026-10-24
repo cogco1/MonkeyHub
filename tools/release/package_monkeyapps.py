@@ -308,6 +308,10 @@ def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) 
                         ignore=shutil.ignore_patterns("__pycache__", "tests", "test_*", "third-party"))
     shutil.copytree(source / FAB_SOURCE, bundle / FAB_BUNDLE,
                     ignore=shutil.ignore_patterns("__pycache__", "tests", "test_*", "third-party"))
+    # The skills a project can import; project_runtime.skill_library reads
+    # them at the same path in the bundle as in the checkout.
+    shutil.copytree(source / "apps/monkeyhub/skills", bundle / "apps/monkeyhub/skills",
+                    ignore=shutil.ignore_patterns("__pycache__"))
     # Keep upstream license text and source labels, but shorten its distribution
     # paths so the installer does not depend on Windows long-path opt-in.
     notices = source / "apps/monkeyhub/installer/third-party"

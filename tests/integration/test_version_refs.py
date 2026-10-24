@@ -122,6 +122,12 @@ NO_VERSION_IDENTITY = {
     "StudioRenderJob@2": "an image attempt bound to document, model-content and Stage refs; its run manifest owns the canonical base",
     "StudioSkill@1": "a procedure's immutable version: it names its previous version's record URI, "
     "and no canonical version or base",
+    "StudioSkillApproval@1": "a person's grant for one skill version's code hash; no canonical version",
+    "StudioSkillRevocation@1": "withdraws one approval by its record ref; no canonical version",
+    "StudioSkillRun@1": "one skill execution: input documents and model content by digest, outputs by SHA-256; "
+    "its run manifest owns the canonical base",
+    "StudioCameraPass@1": "passes of one model content (run id and state digest) and Stage ref, with their "
+    "documents by digest; its run manifest owns the canonical base",
     "StudioScopedDecision@1": "a scoped judgement: it names content digests, run ids and record "
     "refs, and embeds no canonical version; its fixed run manifest owns that base",
     "StudioMemoryRecord@1": "a project memory item: it names content digests and record refs, and embeds no "

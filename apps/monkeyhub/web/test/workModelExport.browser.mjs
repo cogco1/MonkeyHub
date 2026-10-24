@@ -29,6 +29,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
+import { cmd } from "./commandLocator.mjs";
 
 const sha = (text) => text.padEnd(64, "0").slice(0, 64);
 const base = {
@@ -176,9 +177,9 @@ test("the shipped export control and versions panel answer for the model on scre
   await page.locator("#panel").waitFor();
 
   const controls = () => page.evaluate(() => window.__workModel.controls);
-  const button = page.locator("[data-work-model-export]");
+  const button = cmd(page, "model.export_3dm.editable", { includeHidden: true });
   const openViewTools = async () => {
-    const toggle = page.locator('button[aria-controls="stage-export-menu"]');
+    const toggle = cmd(page, "view.menu.toggle", { arg: "modeling_export", includeHidden: true });
     if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
   };
 
@@ -187,7 +188,7 @@ test("the shipped export control and versions panel answer for the model on scre
     // The Hub is the stage's only host since #168, so Versions is always offered
     // (a bar menu opening a docked inspector since #345); this control is
     // reached with Versions closed, not from behind it.
-    assert.equal(await page.locator("button.stage__versions-toggle").getAttribute("aria-expanded"), "false");
+    assert.equal(await cmd(page, "design.go_to_step.versions", { includeHidden: true }).getAttribute("aria-expanded"), "false");
     await openViewTools();
     await button.waitFor({ state: "visible", timeout: 5_000 });
     assert.equal(await page.locator("#stage-versions-panel").count(), 0);
@@ -219,7 +220,7 @@ test("the shipped export control and versions panel answer for the model on scre
     await page.locator("[data-work-model-error]").waitFor({ timeout: 10_000 });
     assert.match(await page.locator("[data-work-model-error]").innerText(), /RHINO_HOST_UNAVAILABLE|no Rhino here/);
     assert.deepEqual(posts.at(-1), { sha256: step.sha256, body: { runId: "run-a" } });
-    assert.equal(await page.locator("#stage-export-menu [data-work-model-save]").count(), 0);
+    assert.equal(await cmd(page.locator("#stage-export-menu"), "model.export_3dm.save", { includeHidden: true }).count(), 0);
     assert.equal(await button.isEnabled(), true);
   });
 
@@ -250,7 +251,7 @@ test("the shipped export control and versions panel answer for the model on scre
     await page.evaluate((viewed) => window.__workModel.show(viewed), { runId: "run-a", shas: [preview.sha256] });
     await page.waitForFunction((expected) => window.__workModel.controls.exported === expected, work.sha256);
     await openViewTools();
-    const save = page.locator("#stage-export-menu [data-work-model-save]");
+    const save = cmd(page.locator("#stage-export-menu"), "model.export_3dm.save", { includeHidden: true });
     await save.waitFor({ timeout: 5_000 });
     assert.match(await save.getAttribute("href"), new RegExp(`/api/artifacts/${work.sha256}/bytes$`));
     assert.equal(await save.getAttribute("download"), work.fileName);
@@ -263,15 +264,15 @@ test("the shipped export control and versions panel answer for the model on scre
     await page.evaluate(([rows]) => { window.__rows = rows; window.__workModel.reread(); },
       [[preview, step, secondSeat, otherPreview, otherStep, work, failedWork]]);
     const panel = page.locator("#panel");
-    await panel.locator("[data-work-model-save]").first().waitFor({ timeout: 5_000 });
+    await cmd(panel, "model.export_3dm.save", { includeHidden: true }).first().waitFor({ timeout: 5_000 });
 
-    const saves = await panel.locator("[data-work-model-save]").evaluateAll(
+    const saves = await cmd(panel, "model.export_3dm.save", { includeHidden: true }).evaluateAll(
       (nodes) => nodes.map((node) => node.getAttribute("href")));
     assert.deepEqual(saves, [`/api/artifacts/${work.sha256}/bytes`], "only the succeeded copy is offered");
 
     // No editable copy is offered as something to open: the buttons that view
     // a run's models name the previews only.
-    const viewButtons = await panel.locator("button.vcard__export").evaluateAll(
+    const viewButtons = await cmd(panel, "view.old_results.open", { includeHidden: true }).evaluateAll(
       (nodes) => nodes.map((node) => node.textContent));
     assert.equal(viewButtons.some((label) => label.includes("work.3dm")), false, viewButtons.join(" | "));
     assert.deepEqual(errors, []);

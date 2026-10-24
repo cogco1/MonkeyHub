@@ -1,5 +1,5 @@
 import { useT } from "./i18n/useT";
-import { UserPreferencesProvider, usePreferences } from "./features/settings/preferences";
+import { DeveloperOnly, UserPreferencesProvider, useDeveloperMode, usePreferences } from "./features/settings/preferences";
 import { StrictMode, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { appearanceFromSearch, applyAppearance, DEFAULT_APPEARANCE, resolveAppearance, type AppearancePreferences, type Language } from "../../../../packages/web-shared/src/appearance.js";
@@ -10,7 +10,9 @@ import { applicationSettingsApiSettingsAppsGet, chatProviderLoginApiChatProvider
 import "./styles.css";
 import { FabPage } from "./FabPage";
 import { ChatShell, type HubSettings } from "./ChatShell";
+import { CommandProvider } from "./features/commands/CommandProvider";
 import { AttentionHost } from "./notifications/AttentionHost";
+import { queueChanged } from "./notifications/queue";
 
 type AppId = AppStatus["appId"];
 type Issue = { code: string; detail: string };
@@ -123,6 +125,7 @@ async function responseData<T>(request: Promise<unknown>): Promise<T> {
   return result.data;
 }
 function ErrorMessage({ issue, language }: { issue: Issue | null; language: Language }) {
+  const developer = useDeveloperMode();
   const [translated, setTranslated] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false; setTranslated(null);
@@ -130,7 +133,7 @@ function ErrorMessage({ issue, language }: { issue: Issue | null; language: Lang
     return () => { cancelled = true; };
   }, [issue?.detail, language]);
   if (!issue) return null;
-  return <div className="error-message" role="alert"><p>{language === "zh-CN" ? knownErrors[issue.code] ?? translated ?? issue.detail : issue.detail}</p><details><summary>{copy[language].details}</summary><code>{issue.code}</code><p>{translated ?? issue.detail}</p></details></div>;
+  return <div className="error-message" role="alert"><p>{language === "zh-CN" ? knownErrors[issue.code] ?? translated ?? issue.detail : issue.detail}</p>{developer && <details><summary>{copy[language].details}</summary><code>{issue.code}</code><p>{translated ?? issue.detail}</p></details>}</div>;
 }
 
 // Settings save themselves: a choice at once, typed text after this pause.
@@ -220,13 +223,13 @@ function CredentialField({ id, inputId, title, status, language, link, linkLabel
   return <div className="settings-row settings-row--wide settings-key">
     <div className="settings-row__text"><label htmlFor={inputId}>{title}</label><p className="settings-row__hint" id={`${inputId}-state`}>{where}</p></div>
     <div className="settings-key__controls">
-      <input id={inputId} type="password" autoComplete="off" spellCheck={false} value={draft} disabled={busy || status?.storeAvailable === false}
+      <input data-command="preference.secret.key" data-command-arg={id} id={inputId} type="password" autoComplete="off" spellCheck={false} value={draft} disabled={busy || status?.storeAvailable === false}
         placeholder={status?.saved ? words.replace : placeholder} aria-describedby={`${inputId}-state ${inputId}-hint`}
         onChange={(event) => { setDraft(event.target.value); setNote(null); }} onBlur={() => void save()}
         onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void save(); } }} />
       {children}
-      {status?.saved && <button type="button" className="btn" disabled={busy} onClick={() => void clear()}>{words.clear}</button>}
-      {link && <button type="button" className="btn btn--link" onClick={() => void openLink()}>{linkLabel ?? words.getKey} ↗</button>}
+      {status?.saved && <button data-command="preference.secret.clear" data-command-arg={id} type="button" className="btn" disabled={busy} onClick={() => void clear()}>{words.clear}</button>}
+      {link && <button data-command="preference.secret.get_link" data-command-arg={id} type="button" className="btn btn--link" onClick={() => void openLink()}>{linkLabel ?? words.getKey} ↗</button>}
     </div>
     <p className="settings-row__hint" id={`${inputId}-hint`} role="status">{note ?? words.keyHint}</p>
     <ErrorMessage issue={issue} language={language} />
@@ -242,7 +245,7 @@ function WorkspaceDiagnosticsSettings() {
   const t = useT();
   const { developerMode, setDeveloperMode, eventStreamVisible, setEventStreamVisible } = usePreferences();
   return <div>
-    <label><input type="checkbox" checked={developerMode} onChange={(event) => setDeveloperMode(event.target.checked)} /> {t("settings.fields.developerMode")}</label>
+    <label><input id="developer-mode" data-command="preference.developer_mode" type="checkbox" checked={developerMode} onChange={(event) => setDeveloperMode(event.target.checked)} /> {t("settings.fields.developerMode")}</label>
     <p className="help">{t("settings.developerMode.help")}</p>
     {developerMode && <label><input type="checkbox" checked={eventStreamVisible} onChange={(event) => setEventStreamVisible(event.target.checked)} /> {t("settings.fields.eventStreamVisible")}</label>}
   </div>;
@@ -328,6 +331,7 @@ function App() {
   // Every second while a service is starting or stopping; a settled list is read again each minute, on return,
   // at once when a project runtime opens, closes or its worker changes, and at most every ten seconds while other runtime news arrives.
   const runtimeNews = useCallback((kind: string) => {
+    queueChanged(kind);
     if (/^(runtime\/snapshot|project\/(opened|closed)|worker\/)/.test(kind) || Date.now() - appsReadAt.current > 10_000) void refreshApps();
   }, [refreshApps]);
   const appsSettling = busyServices.size > 0 || statusIssue !== null || (apps ?? []).some((app) => app.state === "starting" || app.state === "stopping");
@@ -469,7 +473,7 @@ function App() {
       : row.signedIn === true ? keyWords.signedIn : row.signedIn === false ? keyWords.signedOut : keyWords.unknown;
     return <div className="settings-row" key={provider}><div className="settings-row__text"><span className="settings-row__title">{name}</span>
       <p className="settings-row__hint" id={`sign-in-${provider}`}>{state}</p></div>
-      <button type="button" className="btn" aria-describedby={`sign-in-${provider}`} disabled={!row?.installed} onClick={() => void signIn(provider)}>
+      <button data-command="preference.chat_provider.sign_in" data-command-arg={provider} type="button" className="btn" aria-describedby={`sign-in-${provider}`} disabled={!row?.installed} onClick={() => void signIn(provider)}>
         {row?.signedIn ? keyWords.signInAgain : keyWords.signIn}</button></div>;
   };
   // #328: Settings in pages, each a list of rows: what a setting is on the left, its control on the right.
@@ -483,15 +487,15 @@ function App() {
     pages: [{ id: "display", label: words.display, icon: "display", body: <section id="settings" ref={settingsRef}>
       <h2>{t("appearance")}</h2>
       <div className="settings-row"><label htmlFor="language">{t("language")}</label>
-        <select id="language" value={preferences.language} onChange={(event) => changeAppearance({ language: event.target.value as Language })}><option value="zh-CN">简体中文</option><option value="en">English</option></select></div>
+        <select data-command="preference.appearance.language" id="language" value={preferences.language} onChange={(event) => changeAppearance({ language: event.target.value as Language })}><option value="zh-CN">简体中文</option><option value="en">English</option></select></div>
       <div className="settings-row"><label htmlFor="theme">{t("theme")}</label>
-        <select id="theme" value={preferences.theme} onChange={(event) => changeAppearance({ theme: event.target.value as AppearancePreferences["theme"] })}><option value="system">{t("system")}</option><option value="dark">{t("dark")}</option><option value="light">{t("light")}</option></select></div>
+        <select data-command="preference.appearance.theme" id="theme" value={preferences.theme} onChange={(event) => changeAppearance({ theme: event.target.value as AppearancePreferences["theme"] })}><option value="system">{t("system")}</option><option value="dark">{t("dark")}</option><option value="light">{t("light")}</option></select></div>
       <div className="settings-row"><label htmlFor="font-scale">{t("size")}</label>
-        <select id="font-scale" value={preferences.fontScale} onChange={(event) => changeAppearance({ fontScale: Number(event.target.value) as AppearancePreferences["fontScale"] })}><option value="0.9">{t("compact")}</option><option value="1">{t("normal")}</option><option value="1.1">{t("large")}</option></select></div>
+        <select data-command="preference.appearance.size" id="font-scale" value={preferences.fontScale} onChange={(event) => changeAppearance({ fontScale: Number(event.target.value) as AppearancePreferences["fontScale"] })}><option value="0.9">{t("compact")}</option><option value="1">{t("normal")}</option><option value="1.1">{t("large")}</option></select></div>
       <div className="settings-row settings-row--wide" role="radiogroup" aria-labelledby="ui-style-label" aria-describedby="ui-style-hint">
         <div className="settings-row__text"><span className="settings-row__title" id="ui-style-label">{words.uiStyle}</span><p className="settings-row__hint" id="ui-style-hint">{words.uiStyleHint}</p></div>
         <div className="style-cards">{UI_STYLES.map((style) => <label key={style} className="style-card" data-style={style}>
-          <input type="radio" name="ui-style" value={style} checked={uiStyle === style} onChange={() => changeAppearance({ uiStyle: style })} />
+          <input data-command={`preference.appearance.style_${style}`} type="radio" name="ui-style" value={style} checked={uiStyle === style} onChange={() => changeAppearance({ uiStyle: style })} />
           {/* A small drawing of the shell in that style: sidebar, header, rows and a result sheet. */}
           <span className="style-card__preview" aria-hidden="true"><i className="style-card__side" /><i className="style-card__head" /><i className="style-card__row" /><i className="style-card__row style-card__row--current" /><i className="style-card__sheet" /></span>
           <span className="style-card__name">{words.styles[style]}</span><small className="style-card__note">{words.notes[style]}</small>
@@ -504,12 +508,12 @@ function App() {
         <p className="settings-row__hint" id="connection-state">{selectedConnection
           ? <>{selectedConnection.label} · {connectionWords(selectedConnection)}{catalogWords(selectedConnection) ? ` · ${catalogWords(selectedConnection)}` : ""}</>
           : t("checking")}</p></div>
-        <select id="default-chat-provider" aria-describedby="connection-state" value={chatDraft.chatProvider ?? ""} onChange={(event) => { editDefaults(0); setDefaultModelCustom(null); setChatDraft((current) => ({ ...current, chatProvider: (event.target.value || null) as ChatDefaults["chatProvider"], chatModel: null })); }}>
+        <select data-command="preference.chat_model.default_cli" id="default-chat-provider" aria-describedby="connection-state" value={chatDraft.chatProvider ?? ""} onChange={(event) => { editDefaults(0); setDefaultModelCustom(null); setChatDraft((current) => ({ ...current, chatProvider: (event.target.value || null) as ChatDefaults["chatProvider"], chatModel: null })); }}>
           <option value="">{t("cliUnset")}</option>
           {(chatProviders.length ? chatProviders : [{ id: "codex", label: "Codex CLI", available: true, detail: "" }] as readonly ChatProvider[]).map((item) => <option key={item.id} value={item.id} disabled={!item.available}>{item.label}{connectionState(item)}</option>)}
         </select></div>
       <div className="settings-row"><label htmlFor="default-chat-model">{t("chatModel")}</label>
-        <select id="default-chat-model" value={defaultModelCustom !== null ? "__custom__" : chatDraft.chatModel ?? ""} onChange={(event) => {
+        <select data-command="preference.chat_model.default_model" id="default-chat-model" value={defaultModelCustom !== null ? "__custom__" : chatDraft.chatModel ?? ""} onChange={(event) => {
           if (event.target.value === "__custom__") { setDefaultModelCustom(chatDraft.chatModel ?? ""); return; }
           editDefaults(0); setDefaultModelCustom(null); setChatDraft((current) => ({ ...current, chatModel: event.target.value || null }));
         }}>
@@ -518,7 +522,7 @@ function App() {
           <option value="__custom__">{t("customModel")}</option>
         </select></div>
       {defaultModelCustom !== null && <div className="settings-row"><label htmlFor="default-chat-model-custom">{t("customModel")}</label>
-        <input id="default-chat-model-custom" autoFocus value={defaultModelCustom}
+        <input data-command="preference.chat_model.default_custom" id="default-chat-model-custom" autoFocus value={defaultModelCustom}
           onChange={(event) => { editDefaults(TYPING_PAUSE_MS); setDefaultModelCustom(event.target.value); setChatDraft((current) => ({ ...current, chatModel: event.target.value.trim() || null })); }} /></div>}
       <h3 className="settings-subhead">{keyWords.signInSection}</h3>
       <p className="settings-intro">{signInOpened ? keyWords.signInOpened : keyWords.signInHint}</p>
@@ -527,7 +531,7 @@ function App() {
       <h3 className="settings-subhead">{keyWords.planSection}</h3>
       <p className="settings-intro">{keyWords.planIntro}</p>
       <div className="settings-row"><label htmlFor="coding-plan-provider">{keyWords.planProvider}</label>
-        <select id="coding-plan-provider" value={planPreset?.id ?? "custom"} onChange={(event) => {
+        <select data-command="preference.chat_provider.plan_provider" id="coding-plan-provider" value={planPreset?.id ?? "custom"} onChange={(event) => {
           const preset = PLAN_PRESETS.find((item) => item.id === event.target.value);
           if (!preset) return;
           editDefaults(0); setChatDraft((current) => ({ ...current, codingPlanBaseUrl: preset.url }));
@@ -536,7 +540,7 @@ function App() {
           <option value="custom">{keyWords.planCustom}</option>
         </select></div>
       <div className="settings-row"><label htmlFor="coding-plan-url">{keyWords.planUrl}</label>
-        <input id="coding-plan-url" type="url" value={chatDraft.codingPlanBaseUrl ?? ""} placeholder="https://…/anthropic" spellCheck={false}
+        <input data-command="preference.chat_provider.plan_url" id="coding-plan-url" type="url" value={chatDraft.codingPlanBaseUrl ?? ""} placeholder="https://…/anthropic" spellCheck={false}
           aria-invalid={planInvalid ? true : undefined} onChange={(event) => {
             editDefaults(TYPING_PAUSE_MS); setChatDraft((current) => ({ ...current, codingPlanBaseUrl: event.target.value.trim() || null }));
           }} /></div>
@@ -545,57 +549,60 @@ function App() {
         language={preferences.language} link={planPreset?.link} linkLabel={keyWords.getToken} placeholder="sk-…"
         variable="ANTHROPIC_AUTH_TOKEN" onChanged={keyChanged} />
       <div className="settings-row"><div className="settings-row__text"><span className="settings-row__title">{words.connections}</span><p className="settings-row__hint">{words.connectionsHint}</p></div>
-        <button id="recheck-connections" className="btn" type="button" disabled={!connected} onClick={() => void readSettings(true)}>{t("recheck")}</button></div>
+        <button data-command="view.notice.retry" data-command-arg="connections" id="recheck-connections" className="btn" type="button" disabled={!connected} onClick={() => void readSettings(true)}>{t("recheck")}</button></div>
     </> }, { id: "render", label: words.render, icon: "render", body: <>
       <h2>{t("renderSettings")}</h2>
       <p className="settings-intro">{keyWords.renderIntro}</p>
       <div className="settings-row"><label htmlFor="render-provider">{t("renderProvider")}</label>
-        <select id="render-provider" value={renderDraft.renderProvider ?? "off"} onChange={(event) => {
+        <select data-command="preference.render_provider.provider" id="render-provider" value={renderDraft.renderProvider ?? "off"} onChange={(event) => {
           editDefaults(0); setRenderDraft((value) => ({ ...value, renderProvider: event.target.value as RenderDefaults["renderProvider"] }));
         }}><option value="off">{t("renderOff")}</option><option value="gemini">Gemini</option></select></div>
       <div className="settings-row"><label htmlFor="render-model">{t("renderModel")}</label>
-        <input id="render-model" value={renderDraft.renderModel ?? ""} placeholder="gemini-3.1-flash-image" onChange={(event) => {
+        <input data-command="preference.render_provider.model" id="render-model" value={renderDraft.renderModel ?? ""} placeholder="gemini-3.1-flash-image" onChange={(event) => {
           editDefaults(TYPING_PAUSE_MS); setRenderDraft((value) => ({ ...value, renderModel: event.target.value.trim() || null }));
         }} /></div>
       <div className="settings-row"><label htmlFor="render-timeout">{t("renderTimeout")}</label>
-        <input id="render-timeout" type="number" min="1" max="300" value={renderDraft.renderTimeoutS ?? ""} placeholder={t("runtimeDefault")}
+        <input data-command="preference.render_provider.timeout" id="render-timeout" type="number" min="1" max="300" value={renderDraft.renderTimeoutS ?? ""} placeholder={t("runtimeDefault")}
           aria-invalid={renderInvalid ? true : undefined} onChange={(event) => {
           editDefaults(TYPING_PAUSE_MS); setRenderDraft((value) => ({ ...value, renderTimeoutS: event.target.value === "" ? null : Number(event.target.value) }));
         }} /></div>
       <CredentialField id="gemini" inputId="gemini-key" title={keyWords.geminiKey} status={credentialRows.gemini}
         language={preferences.language} link="gemini-keys" placeholder="AIza…" variable="MONKEYHUB_RENDER_API_KEY" onChanged={keyChanged}>
-        {credentialRows.gemini?.configured && <button type="button" className="btn" disabled={geminiCheck === "checking"} onClick={() => void checkGemini()}>{keyWords.check}</button>}
+        {credentialRows.gemini?.configured && <button data-command="preference.render_provider.check" type="button" className="btn" disabled={geminiCheck === "checking"} onClick={() => void checkGemini()}>{keyWords.check}</button>}
       </CredentialField>
       {geminiCheck && <p className="settings-row__hint settings-key__check" data-result={geminiCheck} role="status">{keyWords.checks[geminiCheck]}</p>}
       <ErrorMessage issue={renderInvalid} language={preferences.language} />
     </> }, { id: "workspace", label: words.workspace, icon: "folder", body: <>
       <h2>{t("workspace")}</h2>
       <div className="settings-row settings-row--wide"><div className="settings-row__text"><label htmlFor="workspace-dir">{t("workspaceDir")}</label><p className="settings-row__hint">{t("workspaceHelp")}</p></div>
-        <input id="workspace-dir" value={launchDraft.workspaceDir ?? ""} placeholder={workspace?.workspaceDir ?? ""}
+        <input data-command="preference.workspace.projects_folder" id="workspace-dir" value={launchDraft.workspaceDir ?? ""} placeholder={workspace?.workspaceDir ?? ""}
           aria-invalid={launchInvalid?.field === "workspace-dir" ? true : undefined}
           onChange={(event) => changeLaunch({ workspaceDir: event.target.value || null })} /></div>
       <div className="settings-row settings-row--wide"><div className="settings-row__text"><label htmlFor="library-dir">{t("libraryDir")}</label><p className="settings-row__hint">{t("libraryHelp")}</p></div>
-        <input id="library-dir" value={launchDraft.libraryDir ?? ""} aria-describedby="library-dir-status"
+        <input data-command="preference.workspace.library_project" id="library-dir" value={launchDraft.libraryDir ?? ""} aria-describedby="library-dir-status"
           aria-invalid={libraryIssue ? true : undefined}
           onChange={(event) => changeLaunch({ libraryDir: event.target.value || null })} /></div>
       <ErrorMessage issue={libraryIssue} language={preferences.language} />
       <p className="help" id="library-dir-status">{t("libraryStatus")}</p>
-      <details className="advanced"><summary>{t("advanced")}</summary>
+      <details className="advanced"><summary data-command="view.disclosure.toggle" data-command-arg="launch_options">{t("advanced")}</summary>
         <WorkspaceDiagnosticsSettings />
-        <div className="chat-service-settings">{(apps ?? []).filter((app) => app.appId === "monkeyarch").map((app) => <div key={app.appId}><span>Project Runtime · {t(app.state)}</span><button className="btn" disabled={!connected || busyServices.has(app.serviceId) || app.state === "starting" || app.state === "stopping"} onClick={() => void act(app)}>{t(app.state === "running" ? "stop" : "start")}</button><ErrorMessage issue={actionIssues[app.appId] ?? app.error ?? null} language={preferences.language} /></div>)}</div>
-        <div className="settings-row"><label htmlFor="reference-run">{t("reference")}</label><input id="reference-run" value={launchDraft.referenceRun ?? ""} onChange={(event) => changeLaunch({ referenceRun: event.target.value || null })} /></div>
-        <div className="settings-row"><label htmlFor="cad-export">{t("cad")}</label><select id="cad-export" value={launchDraft.cadExport} onChange={(event) => changeLaunch({ cadExport: event.target.value as ApplicationSettingsDto["cadExport"] }, 0)}><option value="occt">{t("occt")}</option><option value="rhino">{t("rhino")}</option><option value="off">{t("off")}</option></select></div>
-        <div className="settings-row"><label htmlFor="studio-port">{t("studioPort")}</label><input id="studio-port" type="number" min="1024" max="65535" value={launchDraft.studioPort}
-          aria-invalid={launchInvalid?.field === "studio-port" ? true : undefined} onChange={(event) => changeLaunch({ studioPort: Number(event.target.value) })} /></div>
-        <p className="help">{t("launchHelp")}</p>
+        {/* The Hub starts and stops the project service with the project and keeps its default port: developer mode only. */}
+        <DeveloperOnly>
+          <div className="chat-service-settings">{(apps ?? []).filter((app) => app.appId === "monkeyarch").map((app) => <div key={app.appId}><span>Project Runtime · {t(app.state)}</span><button className="btn" disabled={!connected || busyServices.has(app.serviceId) || app.state === "starting" || app.state === "stopping"} onClick={() => void act(app)}>{t(app.state === "running" ? "stop" : "start")}</button><ErrorMessage issue={actionIssues[app.appId] ?? app.error ?? null} language={preferences.language} /></div>)}</div>
+          <div className="settings-row"><label htmlFor="reference-run">{t("reference")}</label><input id="reference-run" value={launchDraft.referenceRun ?? ""} onChange={(event) => changeLaunch({ referenceRun: event.target.value || null })} /></div>
+          <div className="settings-row"><label htmlFor="cad-export">{t("cad")}</label><select id="cad-export" value={launchDraft.cadExport} onChange={(event) => changeLaunch({ cadExport: event.target.value as ApplicationSettingsDto["cadExport"] }, 0)}><option value="occt">{t("occt")}</option><option value="rhino">{t("rhino")}</option><option value="off">{t("off")}</option></select></div>
+          <div className="settings-row"><label htmlFor="studio-port">{t("studioPort")}</label><input id="studio-port" type="number" min="1024" max="65535" value={launchDraft.studioPort}
+            aria-invalid={launchInvalid?.field === "studio-port" ? true : undefined} onChange={(event) => changeLaunch({ studioPort: Number(event.target.value) })} /></div>
+          <p className="help">{t("launchHelp")}</p>
+        </DeveloperOnly>
       </details>
       <ErrorMessage issue={libraryIssue ? null : launchIssue ?? launchInvalid} language={preferences.language} />
     </> }],
   };
-  return <UserPreferencesProvider appearance={preferences}><ChatShell preferences={preferences} configuredProject={savedLaunch?.projectDir ?? null} settings={settings}
+  return <UserPreferencesProvider appearance={preferences}><CommandProvider><ChatShell preferences={preferences} configuredProject={savedLaunch?.projectDir ?? null} settings={settings}
     settingsDirty={appearanceDirty || launchDirty || settingsSaving || busyServices.size > 0}
     defaults={{ provider: savedChatDefaults.chatProvider ?? "codex", model: savedChatDefaults.chatModel }}
-    workspace={workspace} apps={statusIssue ? null : apps} onRuntimeEvent={runtimeNews} onAppearance={changeAppearance} />{attention}</UserPreferencesProvider>;
+    workspace={workspace} apps={statusIssue ? null : apps} onRuntimeEvent={runtimeNews} onAppearance={changeAppearance} />{attention}</CommandProvider></UserPreferencesProvider>;
 }
 const root = document.getElementById("root");
 if (!root) throw new Error("MonkeyHub root is missing.");

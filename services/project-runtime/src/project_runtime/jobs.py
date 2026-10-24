@@ -22,13 +22,21 @@ Failure is the part worth reading. Any exception from the work - the runner's
 ``ProjectRunnerError``, an absent seat pack, a repository refusal - lands on
 the job as ``failed`` with the exception's own sentence. Nothing is swallowed,
 nothing is retried, and nothing is reported as an empty success.
+
+A person follows a job in four fixed steps (#300): generate, check, repair and
+save. The work says how far it has got with ``report_step`` from the worker
+thread it runs on; each change is a ``job.step`` event. A job whose work
+reports nothing has no steps. When the work ends, a step still running ends
+with it, done or failed, and a step it never reached is skipped.
 """
 
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+import logging
 import threading
 import time
 from typing import Any, Callable, Iterable, Mapping
@@ -59,6 +67,21 @@ PERSISTENCE = "in-memory (not version history)"
 # kind publishes under its own name (export.queued).
 RUN = "run"
 
+_LOG = logging.getLogger(__name__)
+
+# The steps a person follows a job by, in order, and the state each can be in.
+STEPS = ("generate", "check", "repair", "save")
+STEP_STATES = frozenset({"pending", "running", "done", "skipped", "failed"})
+
+
+@dataclass(frozen=True, slots=True)
+class JobStep:
+    """One of a job's four steps, and a sentence a person can read about it."""
+
+    name: str
+    state: str = "pending"
+    text: str | None = None
+
 
 @dataclass(frozen=True, slots=True)
 class Job:
@@ -81,6 +104,32 @@ class Job:
     write_refs: frozenset[str] = frozenset()
     waiting_for: str | None = None
     waiting_reason: str | None = None
+    # What a person calls this job, and how far it has got: empty until its
+    # work reports a step.
+    title: str | None = None
+    steps: tuple[JobStep, ...] = ()
+
+
+# The job the current worker thread is running, so the work it calls can
+# report a step without carrying the registry through every signature.
+_CURRENT: ContextVar[tuple["JobRegistry", str] | None] = ContextVar("studio_job", default=None)
+
+
+def report_step(name: str, state: str, text: str | None = None) -> None:
+    """Say how far the job this thread runs has got; outside a job, nothing happens.
+
+    Progress is told, never acted on: a report naming a step or state this
+    registry does not know is dropped and logged, and the work goes on. Only
+    the worker thread knows its job; a thread the work starts itself does not.
+    """
+
+    current = _CURRENT.get()
+    if current is None:
+        return
+    try:
+        current[0].step(current[1], name, state, text)
+    except ValueError:
+        _LOG.warning("A job's step report was dropped: %r %r is no step and state of %s", name, state, current[1])
 
 
 class JobRegistry:
@@ -138,6 +187,7 @@ class JobRegistry:
         project_id: str | None = None,
         source_ref: str | None = None,
         related_event_id: str | None = None,
+        title: str | None = None,
     ) -> Job:
         """Queue one run and answer with the job that will do it.
 
@@ -189,6 +239,7 @@ class JobRegistry:
             lane=EXCLUSIVE if exclusive else PARALLEL,
             read_refs=frozenset(read_refs),
             write_refs=frozenset(write_refs),
+            title=title,
         )
         with self._lock:
             if not self._accepting:
@@ -268,6 +319,31 @@ class JobRegistry:
                 if job.proposal_id == proposal_id
             )
 
+    def step(self, job_id: str, name: str, state: str, text: str | None = None) -> Job:
+        """Record how far one job has got on one of its steps, and publish it as ``job.step``.
+
+        The first report gives the job all four steps, the others pending.
+        """
+
+        if name not in STEPS or state not in STEP_STATES:
+            raise ValueError(f"a job's step is one of {', '.join(STEPS)}, in one of {', '.join(sorted(STEP_STATES))}")
+        with self._lock:
+            job = self._jobs[job_id]
+            steps = job.steps or tuple(JobStep(step) for step in STEPS)
+            job = replace(job, steps=tuple(JobStep(name, state, text) if row.name == name else row for row in steps))
+            self._jobs[job_id] = job
+        self._publish(job, "job.step", step=JobStep(name, state, text))
+        return job
+
+    def _settle_steps(self, job_id: str, *, failed: bool) -> None:
+        # A step the work left running ends with the work; one it never reached was skipped.
+        job = self.get(job_id)
+        for row in job.steps:
+            if row.state == "running":
+                self.step(job_id, row.name, "failed" if failed else "done", row.text)
+            elif row.state == "pending":
+                self.step(job_id, row.name, "skipped", row.text)
+
     def shutdown(self) -> None:
         """Finish every accepted job before closing the worker pool."""
 
@@ -338,44 +414,55 @@ class JobRegistry:
 
     def _run(self, job_id: str, work: Callable[[], Any]) -> None:
         started = time.perf_counter()
-        self._publish(
-            self._transition(job_id, status=RUNNING, started_at=_now()),
-            "candidate.running",
-        )
+        # Whatever happens below, even an event that cannot be published, the
+        # job gives its lane and its worker back.
         try:
-            work()
-        # Every *failure* is somebody's answer, but an interpreter that is
-        # shutting down is not a failed candidate: SystemExit and
-        # KeyboardInterrupt pass through rather than being recorded as one.
-        except Exception as exc:  # noqa: BLE001 - the reason is the point
-            # The runner's own sentence goes on the job verbatim; an exception
-            # with no message would otherwise arrive as an empty string nobody
-            # could act on.
+            self._publish(
+                self._transition(job_id, status=RUNNING, started_at=_now()),
+                "candidate.running",
+            )
+            current = _CURRENT.set((self, job_id))
+            try:
+                work()
+            # Every *failure* is somebody's answer, but an interpreter that is
+            # shutting down is not a failed candidate: SystemExit and
+            # KeyboardInterrupt pass through rather than being recorded as one.
+            except Exception as exc:  # noqa: BLE001 - the reason is the point
+                failure: Exception | None = exc
+            else:
+                failure = None
+            finally:
+                _CURRENT.reset(current)
+            try:
+                self._settle_steps(job_id, failed=failure is not None)
+            except Exception:  # noqa: BLE001 - the job still ends, with its own reason
+                _LOG.warning("The steps of job %s could not be settled", job_id, exc_info=True)
+            if failure is not None:
+                # The runner's own sentence goes on the job verbatim; an exception
+                # with no message would otherwise arrive as an empty string nobody
+                # could act on.
+                self._publish(
+                    self._transition(
+                        job_id,
+                        status=FAILED,
+                        finished_at=_now(),
+                        error=str(failure) or f"{type(failure).__name__} (no message)",
+                        wall_time_s=round(time.perf_counter() - started, 3),
+                    ),
+                    "candidate.failed",
+                )
+                return
             self._publish(
                 self._transition(
                     job_id,
-                    status=FAILED,
+                    status=SUCCEEDED,
                     finished_at=_now(),
-                    error=str(exc) or f"{type(exc).__name__} (no message)",
                     wall_time_s=round(time.perf_counter() - started, 3),
                 ),
-                "candidate.failed",
+                "candidate.succeeded",
             )
+        finally:
             self._release(job_id)
-            return
-        except BaseException:
-            self._release(job_id)
-            raise
-        self._publish(
-            self._transition(
-                job_id,
-                status=SUCCEEDED,
-                finished_at=_now(),
-                wall_time_s=round(time.perf_counter() - started, 3),
-            ),
-            "candidate.succeeded",
-        )
-        self._release(job_id)
 
     def _release(self, job_id: str) -> None:
         with self._lock:
@@ -390,15 +477,15 @@ class JobRegistry:
             self._jobs[job_id] = job
         return job
 
-    def _publish(self, job: Job, event_type: str) -> None:
+    def _publish(self, job: Job, event_type: str, *, step: JobStep | None = None) -> None:
         # A run keeps the published event names; another kind says what it is.
         if job.kind != RUN:
             event_type = event_type.replace("candidate.", job.kind + ".", 1)
-        self._events.publish(event=_event(job, event_type))
+        self._events.publish(event=_event(job, event_type, step))
 
 
-def _event(job: Job, event_type: str) -> Mapping[str, Any]:
-    """One lifecycle event: which job, which run, and what it cost."""
+def _event(job: Job, event_type: str, step: JobStep | None = None) -> Mapping[str, Any]:
+    """One lifecycle event: which job, which run, what it cost, and how far it has got."""
 
     return {
         "type": event_type,
@@ -413,6 +500,12 @@ def _event(job: Job, event_type: str) -> Mapping[str, Any]:
         "lane": job.lane,
         "waiting_for": job.waiting_for,
         "waiting_reason": job.waiting_reason,
+        "title": job.title,
+        "steps": [{"name": row.name, "state": row.state, "text": row.text} for row in job.steps],
+        # On job.step: the step that changed.
+        "step": None if step is None else step.name,
+        "step_state": None if step is None else step.state,
+        "step_text": None if step is None else step.text,
     }
 
 

@@ -305,12 +305,33 @@ class FormatTests(unittest.TestCase):
         with self.assertRaisesRegex(ConversionError, "render mesh"):
             convert(base64.b64decode(model.Encode()), "3dm", "glb")
 
+    def test_3dm_to_stl_is_millimetres_at_full_size_and_counts_what_it_leaves_out(self):
+        import rhino3dm as r
+        model = r.File3dm.FromByteArray(ThreeDM().write(fixture()))
+        model.Settings.ModelUnitSystem = r.UnitSystem.Feet
+        model.Objects.AddLine(r.Point3d(0, 0, 0), r.Point3d(1, 0, 0))
+        model.Objects.AddTextDot("6th Ave", r.Point3d(0, 0, 0))
+        output, info = convert(base64.b64decode(model.Encode()), "3dm", "stl")
+        self.assertEqual(struct.unpack_from("<I", output, 80)[0], 1)
+        corners = struct.unpack_from("<12f", output, 84)[3:]
+        for got, expected in zip(corners[:3], (1 * 304.8, 2 * 304.8, 3 * 304.8)):
+            self.assertAlmostEqual(got, expected, places=2)
+        self.assertEqual(info["omitted"], {"LineCurve": 1, "TextDot": 1})
+        self.assertIn("millimetres", info["losses"]["units"].lower())
+        self.assertEqual(info["outputValidation"]["status"], "passed")
+
+    def test_stl_is_written_never_read_as_a_source(self):
+        with self.assertRaises(ConversionError):
+            convert(b"solid", "stl", "glb")
+
     def test_all_ten_unavailable_routes_are_explicit(self):
         from monkeycad.formats.conversion import ConversionCoordinator, NO_EXECUTOR
         routes = ConversionCoordinator().capabilities()
-        self.assertEqual(len(routes), 12)
+        self.assertEqual(len(routes), 16)
+        available = sorted((r["sourceFormat"], r["targetFormat"]) for r in routes if r["available"])
+        self.assertEqual(available, [("3dm", "glb"), ("3dm", "stl"), ("glb", "3dm"), ("glb", "stl")])
         blocked = [r for r in routes if not r["available"]]
-        self.assertEqual(len(blocked), 10)
+        self.assertEqual(len(blocked), 12)
         for route in blocked:
             with self.assertRaisesRegex(ConversionError, NO_EXECUTOR):
                 convert(b"anything", route["sourceFormat"], route["targetFormat"])

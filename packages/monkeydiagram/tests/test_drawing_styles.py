@@ -141,6 +141,26 @@ class ViewSheetTests(unittest.TestCase):
                       source_text="Source: pavilion.skp, sha256 0eedb1d8; lengths in metres")
         return compose_view_sheet(**{**values, **kwargs})
 
+    def test_the_source_goes_into_the_metadata_and_every_font_is_embedded(self):
+        from io import BytesIO
+        from pypdf import PdfReader
+        from monkeydiagram.rendering.paper import render_pdf
+        canvas = self.compose()
+        texts = [p.data["text"] for p in canvas.scenes[0].primitives if p.kind == "text"]
+        self.assertFalse(any("Source:" in text or "sha256" in text for text in texts), texts)
+        reader = PdfReader(BytesIO(render_pdf(canvas, fonts())))
+        self.assertIn("pavilion.skp", reader.metadata.subject)
+        for page in reader.pages:
+            for font in page["/Resources"]["/Font"].values():
+                font = font.get_object()
+                self.assertNotIn("Helvetica", str(font["/BaseFont"]))
+                descendants = font.get("/DescendantFonts")
+                descriptor = (descendants[0].get_object() if descendants else font).get("/FontDescriptor")
+                self.assertIsNotNone(descriptor, font["/BaseFont"])
+                descriptor = descriptor.get_object()
+                self.assertTrue(any(key in descriptor for key in ("/FontFile", "/FontFile2", "/FontFile3")),
+                                f"{font['/BaseFont']} is not embedded")
+
     def test_each_drawing_keeps_its_own_paper_size_pens_and_marks_where_it_is_placed(self):
         from pypdf import PdfReader
         canvas = self.compose()
@@ -160,9 +180,9 @@ class ViewSheetTests(unittest.TestCase):
         self.assertEqual((poche.data["stroke"], poche.data["fill_mode"]), (False, 0))
         self.assertAlmostEqual(poche.data["fill_color"][0], 128 / 255)
         text = PdfReader(BytesIO(render_pdf(canvas))).pages[0].extract_text()
-        for expected in ("PLAN", "SECTION A-A", "1:75", "SYNTHETIC PAVILION", "A3-01", "Vertical cut at Y -3.048 m",
-                         "pavilion.skp"):
+        for expected in ("PLAN", "SECTION A-A", "1:75", "SYNTHETIC PAVILION", "A3-01", "Vertical cut at Y -3.048 m"):
             self.assertIn(expected, text)
+        self.assertNotIn("pavilion.skp", text, "the source is metadata, not sheet text")
         self.assertEqual(render_pdf(self.compose()), render_pdf(canvas), "the same placement gives the same sheet")
 
     def test_a_section_line_is_drawn_on_the_plan_it_names(self):

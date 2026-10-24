@@ -124,7 +124,10 @@ tolerate it.
 | GET | `/api/working-draft/revision` | `{projectId, revisionSha256}` of the working position alone, for polling whether the head may have moved; no local draft and no project guard | reads the working position | provisional |
 | PUT | `/api/working-draft` | Continue: the working position, and so the Working Head, moves onto `runId`, or back to the default with `null`, under the `baseRevisionSha256` compare-and-swap; a move onto a run retains who made it as `AuditEvent@1` `design.continued` beside that run (§4.1). `messageSource` with `rawLanguage` marks the Hub Agent continuing on the user's bound words. In the project's own Runtime a move onto a run then cleans what the line now moves past into the project trash, on a thread of its own (§4.1) | **writes the working position + that run's review** | provisional |
 | GET | `/api/representation-status?runId=&assetSha256=&revisionRef=&pageIndex=` | one exact registered page's representation status (§4.1) in the projection's own words: `{projectId, state, reason}`, `state` one of `current`, `outdated`, `frozen`, `unavailable`. A page that cannot be read, or whose replacements loop, is `unavailable`; nothing is stored | reads the working position + shared + design refs | provisional |
-| GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, the head's `line` of steps oldest first with their retained `label`, `request`, `summary` and `stageRef` (#575), after a return to an earlier step the `later` steps it moved back past, other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), a draft the line superseded as `relation: superseded` with `supersededBy`, each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5), and drawing/render `current`/`stale`/`frozen`/`running`/`unavailable` states, a drawing's as the Drawing tool reads it (§4.1). Nothing is merged, started, moved or deleted | reads the working position + shared + design refs + the admissions review + each result's Continue events + server memory | provisional |
+| GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, the head's `line` of steps oldest first with their retained `label`, `request`, `summary` and `stageRef` (#575), after a return to an earlier step the `later` steps it moved back past, other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), a draft the line superseded as `relation: superseded` with `supersededBy`, each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5) and its candidate `review` (`unreviewed`, `rejected`, `archived`, from `POST /api/candidate-reviews`; `unknown` while the reviews cannot be read), and drawing/render `current`/`stale`/`frozen`/`running`/`unavailable` states, a drawing's as the Drawing tool reads it (§4.1). Nothing is merged, started, moved or deleted | reads the working position + shared + design refs + the admissions review + the candidate reviews + each result's Continue events + server memory | provisional |
+| GET | `/api/working-design/moves?limit=` | the moves that brought the Working Head where it stands, newest first (default 50, at most 500): `{occurredAt, runId, previousRunId, actorId, origin, messageSessionId, messageId}` from the `design.continued` event beside each run (§4.1), walked back from the working position's run along each move's previous run; it stops at the project's first head or a return to the default (a Continue onto no run leaves no event), and `warnings` say where a run could not be read. Going back to a step is `PUT /api/working-draft` onto its `previousRunId` | reads the Continue events of about `limit` runs | provisional |
+| POST | `/api/working-design/switch` | Switch (#300, 2-6): `{projectId, runId, baseRevisionSha256, branchId?, messageSource?, rawLanguage?}` is Continue onto `runId` (the same design.continued event, design-loop rule and project-trash cleaning as `PUT /api/working-draft`), refused with `409 DESIGN_TREE_UNSYNCED_EDITS` while Modeling holds edits not yet recorded on the current source. It answers `{position, undo: {previous: {runId, branchId} \| null, continued, revisionAfter}}`; `previous` is null when no working-position entry named the head it replaced, so there is no exact Undo |
+| POST | `/api/working-design/undo` | `{projectId, previous: {runId, branchId}, continued}`, a Switch's `undo`: writes `previous` back while Current still stands on `continued`, against the position as read. Current already on `previous` (a retried Undo) answers the position unchanged; Current moved elsewhere answers `409 DESIGN_TREE_UNDO_MOVED` with `currentRunId`; unrecorded Modeling edits answer `409 DESIGN_TREE_UNSYNCED_EDITS` |
 | GET | `/api/trash` | the project trash (#575, §4.1): `retentionDays` (30) and each entry oldest first, `runId`, `trashedAt`, `expiresAt`, `rule` (`superseded`, `replaced-attempt`, `failed-attempt`), `reason`, `supersededBy`, `baseRunId`, `label` and `stateDigest`. Answered conditionally (ETag) like the tree's other views | reads `trash/entries/` | provisional |
 | POST | `/api/trash/restore` | `{projectId, runId}`: moves that trashed run back into `runs/` exactly as it left, with its working-draft row and every trashed run it names (what it was made from); answers `restored` and the trash as it now is. A restored run is never cleaned again. `TRASH_ENTRY_NOT_FOUND` (404), `TRASH_RESTORE_REFUSED` (409, its place in `runs/` is taken or it could not be moved whole) | **moves runs back + writes the working position + the retention run's review** | provisional |
 | POST | `/api/drawings/elevations` → 201 | exact-model elevation document with drawing/revision/Stage/view references | writes shared drawing artifacts and document registration | provisional |
@@ -1241,6 +1244,14 @@ as a sequence replays everything rather than silently skipping ahead.
 and closes as soon as the backlog drains — so a bounded read always terminates, even on a quiet
 process. Without `limit` the connection is held open and carries live events.
 
+A job's events (`candidate.queued` … `candidate.failed`, `candidate.waiting`, an export's
+`export.*`) carry its `lane`, while it is queued `waitingFor` and `waitingReason`, its `title`
+when its work gave one, and its `steps`: the four steps a person follows it by — `generate`,
+`check`, `repair`, `save` — each `pending`, `running`, `done`, `skipped` or `failed` with an
+optional sentence, empty until its work reports one. Each report is a `job.step` event naming
+the `step`, its `stepState` and `stepText`; a step still running when the work ends ends with
+it, `done` or `failed`. The steps live in this process's memory, like the job itself (#300).
+
 **Reserved.** The browser's `EventSource` cannot send an `Authorization` header, so an
 authenticated stream (§10.1) has no answer in v2. A minor version will name one — a bearer
 token on the stream request through a fetch reader, or a short-lived stream ticket — and until
@@ -2004,8 +2015,12 @@ The optional fields are `language` (`en` or `zh-CN`), `theme`
 `intentModel`, positive finite `intentTimeoutS`, `renderProvider` (`off`, `gemini`), a nonempty
 `renderModel` of at most 160 characters, `renderTimeoutS` from 1 to 300, `chatProvider`
 (`codex`, `claude`, `coding-plan`), a nonempty `chatModel`, an http(s) `codingPlanBaseUrl`,
-boolean `autoUpdate`, and boolean `sidebarPinned` (#283: the projects list kept open beside a
-project workspace; the Hub page writes it only while pinned). Other fields are refused.
+boolean `autoUpdate`, boolean `sidebarPinned` (#283: the projects list kept open beside a
+project workspace; the Hub page writes it only while pinned), and boolean `workshopMode` (#668:
+no update is checked for, downloaded or switched in at quit, and from its next launch the desktop
+runs once per account and asks for port 8790 first; written only while on, through
+`PUT /api/updates/settings {"workshopMode": true}`, which then refuses `POST /api/updates/check` and
+`{"autoUpdate": …}` with 409 `UPDATE_WORKSHOP_MODE`). Other fields are refused.
 Both routes return saved fields only; nulls are
 omitted. PUT replaces the file, so a client preserves any saved fields it is not editing. A
 malformed file answers 422 `USER_SETTINGS_INVALID` and can be replaced by an explicit valid PUT.
@@ -2166,6 +2181,23 @@ keeps its recipe and identity; a client standing in it infers a target on its vi
 line. Sending a retained camera again with the current `modelSource` captures the same
 view on the current model as a new source; the earlier source and its results stay.
 
+`POST /api/render/views/passes` (202; #19) draws three aligned images of one exact model through a
+perspective camera: an object-ID image (each key one flat sRGB colour, exact in every pixel the key's nearest surface
+covers, on white), the visible feature edges in black on white, and a 16-bit grey depth image (65535 at the nearest
+visible surface, 1 at the farthest, linear in distance along the view axis between them, 0 where no surface is). Name
+`view` (`{runId, assetSha256}` of a saved model view: its camera and its own model) or `camera` (`position`, `target`,
+`up`, vertical `fovDeg`, in the model's frame and length unit) with `size` and one model (`modelSource`, or
+`sourceAsset` as the drawing routes take an imported or live-Rhino snapshot model). `longEdge` (16 to 4096, default
+2048) is the output's longer side; the view's aspect is kept. `idBy` groups the ID colours by `object`, `layer` or
+`material` (from the model asset's own index; an object it does not name once is "unknown"). The images come from one
+depth buffer over the model's triangles (meshed at about 0.75 pixel at the model's middle distance; triangles crossing
+the near plane are cut), so they line up pixel for pixel. The work runs as a background job in its own P036 run
+`camera-pass-<id>` (`StudioCameraPass@1`); `GET /api/render/views/passes/{passId}` reads it, and on success names the
+three documents, registered beside the model with `viewRecipe.kind` "camera-pass", `pass`, the camera, size, `idBy`,
+`legend` (`{key, color, objects, pixels}`) on the ID image and `depth` (`near`, `far`, `unit`, `measure`) on the depth
+image. They can be render sources or references like any registered image. Not yet drawn: materials' textures,
+transparency, lights or shadows; the camera's own near and far planes are not used.
+
 Each request creates its own `render-<UUID hex>` P036 run. Repeating identical
 parameters with that UUID returns the same job; different parameters return 409.
 Different UUIDs keep distinct attempts even when their pixels are identical.
@@ -2296,3 +2328,87 @@ uses the existing CAD/SDK/projection executors and their saved-output checks.
 `ready` and `checkedAt` describe the last qualification in this Hub session,
 not an authorization or guarantee for a later execution. See
 [Integration packs](integration-packs.md) for the contract and Revit design case.
+
+## Live Rhino and skill runs
+
+**Live Rhino** (`project_runtime.live_rhino`, local runtimes only). `GET /api/live-rhino/instances` lists running
+Rhinos reachable through Rhino 8's RhinoCode CLI; a Rhino is listed after `StartScriptServer` has been typed in it once.
+`GET /api/live-rhino/document` reads the open document as it is now, unsaved edits included (layers, objects,
+optional geometry). `POST /api/live-rhino/write` adds or changes objects as one `_-RunPythonScript` command, so one
+Undo removes it; created objects carry `monkeyhub.owner=agent` user text, and transform, delete and attributes refuse
+the architect's own objects unless `allowUserObjects` is true. `GET /api/live-rhino/capture` returns a PNG of one view. `POST /api/live-rhino/snapshot` writes a copy of the open
+document as it is now (unsaved edits included; `drawableOnly` leaves out text dots, hatches and annotations the
+drawing routes refuse, `layerPrefixes` keeps some layers) and registers it as an external model asset, so plans,
+elevations and section perspectives can draw it as `sourceAsset`; its `undrawable` lists any object the drawing
+routes will leave out of that copy, with the reason. Nothing here saves the document. The answers are typed in the
+schema: instances `LiveRhinoInstancesDto`; write `LiveRhinoWriteDto` (`writeId`, `created` `{operation, id, op}`,
+`changed`, `deleted`, `imported`, `document`); snapshot `LiveRhinoSnapshotDto` (`rhino`, `document`,
+`writtenObjects`, `meshedObjects`, `omitted` by object type, `artifact` with `runId`/`sha256` to pass as
+`sourceAsset {runId, assetSha256}`, `undrawable` `{checked, drawable, objects}`). A document's `objectCount` counts the
+objects in it, not those Rhino keeps for Undo; `modified` stays true after a write and its Undo. The model view
+(`GET /api/drawings/model-view`) does not take a snapshot, which has no runner receipt; draw one with a plan, an
+elevation or a section perspective.
+
+**Skill runs** (`project_runtime.skills`, `project_runtime.skill_runs`). A skill version may carry `files`, an
+`entry` and `access`: the programs it starts, whether it uses the network, ssh hosts, folders it reads and writes,
+and Python packages. Its `codeSha256` covers body, entry, files and access. A person grants a version on the Hub
+page (`POST /api/skills/{id}/approvals`, `scope` "once" for one run or "version" until revoked); every grant and
+its status is at `GET /api/skills/approvals`, and `POST /api/skills/approvals/{approvalId}/revoke` withdraws one.
+The chat's tools reach neither. `POST /api/skills/{id}/run` refuses an ungranted version (`SKILL_NOT_APPROVED`), code
+that no longer matches its grant (`SKILL_CODE_CHANGED`) or a version without an entry (`SKILL_NOT_RUNNABLE`), then
+answers 202 with a `statusPath` (`GET /api/skills/runs/{runId}`): the run is a background job in its own P036 run
+`skill-run-<id>`. An Agent's run is marked by the Hub (`agentRun`). The Hub setting `skillAgentRuns` decides it, as
+Claude Code and Codex ask before a tool runs. Every run needs a person's grant, and a version a person always allowed
+runs. Otherwise "ask" (the default) puts the run and its access to the person in the chat with three buttons (allow
+once, always allow this version, deny); on allow the Hub writes the grant with `method` "hub-chat" and starts the run
+with that grant (`grantId` names a once grant, which only that Agent run may use). The Agent's tool call waits up to
+50 s per call and answers `SKILL_PERMISSION_WAITING` with a `permissionId` to call again with; `SKILL_PERMISSION_DENIED`
+and `SKILL_PERMISSION_WITHDRAWN` (the turn ended first) run nothing. "granted" runs only always-allowed versions and
+asks nothing; "never" asks nothing and also refuses an Agent any skill that declares access. While the Hub's designLoop
+is "enforced" (#185) the setting reads as "never".
+
+Skill packages. `GET /api/skills/library` lists the packages shipped with MonkeyHub (`apps/monkeyhub/skills/`,
+the same path in the release, source "bundled") and the user's own (`%LOCALAPPDATA%\MonkeyHub\skill-packages`, or the folder
+`MONKEYHUB_SKILL_PACKAGES` names; source "user"), each with the version the project holds and `upToDate`.
+`POST /api/skills/import` (`source`, `name`: the package folder) registers one as a version of the project's skill
+and answers `imported: false` with the current version when the package says what it says. A package is
+`skill.json` (name, description, entry, manifest, access), `SKILL.md` and its other UTF-8 text files. Importing
+grants nothing; the chat may list and import.
+
+A run is not isolated. It starts `python -B -X utf8 <bootstrap> <entry> --inputs <dir> --params <file> --outputs <dir>`
+with the runtime's Python and the user's own environment variables; declared packages are installed once into the
+skill's own folder (under `%LOCALAPPDATA%\MonkeyHub\skill-envs`) with a local pip. An input is a registered
+document, a 3dm model asset (`modelSha256`), a drawing (`kind: "drawing"`, its SVG and registration) or any local
+file (`kind: "file"`, `path`). PDF/PNG/JPEG outputs become documents, 3dm outputs model assets with an `undrawable`
+report, small text stays in the record, and any other file is a P036 object, downloadable at
+`GET /api/skills/runs/{runId}/outputs/{name}`. A drawing input's `<name>.json` gives its view under
+`viewRecipe.frame` for every kind: a cut plan's record keeps it there, while an elevation's record keeps origin, right,
+up, look, crop_uv, scale and the rest flat on `viewRecipe` (they are the receipt the drawing is checked against), so for
+an elevation the same values are given flat and again under `frame`. The documents list itself is unchanged. The run's
+own folder (`monkeyhub-skill-*` in the system temp folder: copies of the inputs, the package and the outputs) is
+removed when the run ends, after its outputs are registered in the project; the run's record is written from what
+was registered, so nothing a run produced lives only there. A failed run registers no outputs: its record keeps the
+exit code, the ends of stdout and stderr, and what it needed.
+
+What a run is never given. Its environment is the user's own less the runtime's settings (every
+`ARCHFLOW_STUDIO_*`, `MONKEYHUB_*` and `MONKEYMONITOR_*` variable, among them the render key the Hub hands the runtime
+and a team project's sync token) and less every variable named as a credential (a `KEY`, `TOKEN`, `SECRET`,
+`PASSWORD`, `CREDENTIAL`, `AUTH`, `PAT` or `COOKIE` part, or `API_KEY`, `ACCESS_KEY`, `PRIVATE_KEY`); `SSH_AUTH_SOCK`
+stays only for a version granted ssh hosts. The bootstrap refuses a lookup of Windows Credential Manager's
+`CredRead*`/`CredEnumerate*` functions, where the Hub keeps the keys saved in Settings: no grant allows it, and the run
+fails with `SKILL_CREDENTIALS_REFUSED`. A skill that needs a provider (an image model, say) asks the Hub to call it;
+the key never leaves the Hub. Programs a granted program starts, and native code that reads another process's memory,
+are outside what this can stop.
+
+What the grant holds and what it does not. The bootstrap installs a Python audit hook before the entry runs:
+starting a program (subprocess, os.system, exec/spawn, startfile), ssh/scp/sftp/rsync to a host, connecting to a
+host other than this machine, and writing, removing or renaming outside the run's folders, the system temp folder
+and the skill's package folder are each checked against the granted access, refused when not granted, and
+recorded. The run record names the grant (who gave it, when, once or for the version, what it allows), the
+programs started, hosts reached, writes outside its folders, and in `needed` what the code tried that was not
+granted (the run then fails with `SKILL_PERMISSION_NEEDED`; the person can widen the declaration and grant again).
+A refused step is not offered to the person mid-run; the run ends and says what it needed. Reading files is not
+checked. Native code, ctypes and the programs a granted program starts are outside the hook. Any local process that
+can reach the Hub's forwarded URL can also send a grant; `approvedBy` names who the runtime saw, not proof that a
+person pressed the button. With a grant, a skill can do what the user's account can do as far as the grant reaches,
+and the button on the Hub page is the only gate.

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
+import { cmd, waitForCommandLabel } from "./commandLocator.mjs";
 
 // Real Canvas, SDK and PDF rendering; synthetic documents and HTTP responses.
 // No real project, model process or retained document is changed by this test.
@@ -90,7 +91,7 @@ async function until(read, accepts, label) {
   do { assert.deepEqual(errors, []); last = await read(); if (accepts(last)) return last; await new Promise(resolve => setTimeout(resolve, 50)); } while (Date.now() < end);
   assert.fail(`${label}: ${JSON.stringify(last)}`);
 }
-const generate = () => page.getByRole("button", { name: "生成图纸", exact: true });
+const generate = () => cmd(page, "drawing.sheet.generate");
 const source = () => page.getByRole("combobox", { name: "源文件", exact: true });
 const opened = () => page.evaluate(() => window.drawingFixture.opens.length);
 const ready = async () => { await page.locator('.document-viewport[data-ready="true"]').waitFor(); await until(() => generate().isEnabled(), Boolean, "generation enabled"); };
@@ -133,7 +134,8 @@ try {
     await until(() => requests.length, value => value === 1, "one drawing request");
     assert.deepEqual(requests[0], { projectId: "drawing-project", modelSource: modelA, styleId: "arch364-technical", scaleDenominator: 10,
       hiddenObjectIds: ["flower"], outlineObjectIds: ["vase"], notes: ["Keep the stone inscription."] });
-    assert.equal(await page.getByRole("button", { name: "正在生成图纸…", exact: true }).isDisabled(), true);
+    await waitForCommandLabel(generate(), "正在生成图纸…");
+    assert.equal(await generate().isDisabled(), true);
     assert.equal(await source().isEnabled(), true);
     await page.getByLabel("对此页的意见", { exact: true }).fill("Preserve this note while generating.");
     release(); await until(opened, value => value === 1, "new PDF opened"); await ready();
@@ -198,8 +200,8 @@ try {
     assert.equal(await page.locator(".document-model-source strong").textContent(), "Model A");
     assert.equal(await page.locator(".document-model-source").getAttribute("data-model-source-status"), "mismatch");
     await page.getByLabel("对此页的意见", { exact: true }).fill("Review the latest drawing without changing my starting model.");
-    assert.equal(await page.getByRole("button", { name: "提交本页意见", exact: true }).isDisabled(), true);
-    assert.equal(await page.getByRole("button", { name: "从这里继续", exact: true }).isEnabled(), true);
+    assert.equal(await cmd(page, "markup.hand_to_ai.submit_page_note").isDisabled(), true);
+    assert.equal(await cmd(page, "design.go_to_step.continue").isEnabled(), true);
     assert.deepEqual(await page.evaluate(() => window.drawingFixture.editing), rootSource);
     assert.deepEqual(await page.evaluate(() => window.drawingFixture.continues), []);
     assert.equal(await opened(), 2);
@@ -248,7 +250,7 @@ try {
     if (change === "workspace") await page.evaluate(() => window.drawingFixture.setActive(false));
     if (change === "project") await page.evaluate(() => window.drawingFixture.setProject("other-project"));
     release(); await until(() => release, value => value === null, "response released");
-    await until(() => page.getByRole("button", { name: "正在生成图纸…", exact: true }).count(), value => value === 0, "request finished");
+    await until(() => generate().filter({ hasText: /^正在生成图纸…$/ }).count(), value => value === 0, "request finished");
     assert.equal(await opened(), before);
     if (change === "workspace") await page.evaluate(() => window.drawingFixture.setActive(true));
     if (change === "project") await page.evaluate(() => window.drawingFixture.setProject("drawing-project"));
@@ -256,11 +258,11 @@ try {
   });
   await step("English text, dark theme and narrow layout retain usable style controls", async () => {
     await page.evaluate(() => { window.drawingFixture.setLanguage("en"); window.drawingFixture.setTheme("dark"); });
-    await page.getByRole("button", { name: "Generate drawing", exact: true }).waitFor();
+    await waitForCommandLabel(generate(), "Generate drawing");
     assert.match(await page.getByRole("radio").first().getAttribute("value"), /arch400-white/);
     await page.screenshot({ path: join(screenshots, "styles-dark-en.png") });
     await page.setViewportSize({ width: 375, height: 812 });
-    await page.getByRole("button", { name: "Generate drawing", exact: true }).scrollIntoViewIfNeeded();
+    await generate().scrollIntoViewIfNeeded();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: join(screenshots, "styles-narrow.png") });
   });

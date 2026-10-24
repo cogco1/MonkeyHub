@@ -134,6 +134,12 @@ CANDIDATE_REVIEW = "candidate-review"
 # holds one: a scoped decision is a judgement compiled into later turns, and a
 # recipe is a decision's typed paper-space values; neither carries a procedure.
 STUDIO_SKILL = "studio-skill"
+# A person's approval of one exact skill version's code, and one execution of
+# an approved version with what it read and wrote (project_runtime.skill_runs).
+STUDIO_SKILL_APPROVAL = "studio-skill-approval"
+STUDIO_SKILL_REVOCATION = "studio-skill-revocation"
+STUDIO_SKILL_RUN = "studio-skill-run"
+STUDIO_CAMERA_PASS = "studio-camera-pass"
 
 # ---- read by the spine, written by nobody on it
 
@@ -205,6 +211,36 @@ _TABLE: tuple[RecordKind, ...] = (
         "the library project: its name, description, SKILL.md body and the "
         "inputs, outputs and permissions it declares; a skill is a procedure, "
         "grants no permission and changes no design state",
+    ),
+    RecordKind(
+        STUDIO_SKILL_APPROVAL,
+        "StudioSkillApproval@1",
+        PersistenceArea.RUN_REVIEW.value,
+        "a person's approval of one skill version, bound to the SHA-256 of its "
+        "body, entry and files; only an approved code hash may run",
+    ),
+    RecordKind(
+        STUDIO_SKILL_REVOCATION,
+        "StudioSkillRevocation@1",
+        PersistenceArea.RUN_REVIEW.value,
+        "a person withdrawing one retained skill approval; the approval stays "
+        "readable, and no run may use it afterwards",
+    ),
+    RecordKind(
+        STUDIO_SKILL_RUN,
+        "StudioSkillRun@1",
+        PersistenceArea.RUN_REVIEW.value,
+        "one execution of an approved skill version in its own run: skill id, "
+        "version and code hash, the exact input documents and parameters, exit "
+        "status, and every output with its SHA-256 and registered document",
+    ),
+    RecordKind(
+        STUDIO_CAMERA_PASS,
+        "StudioCameraPass@1",
+        PersistenceArea.RUN_REVIEW.value,
+        "one drawing of a model through a perspective camera in its own run: the "
+        "camera, size and model, its status, and the registered ID, line and "
+        "depth documents with the legend and depth range",
     ),
     RecordKind(
         CANDIDATE_ADMISSION,

@@ -3,9 +3,11 @@
 Delete is not a new kind of authority: it is the removal the record's own
 ``edit_components`` already carries, made against one exact base and run
 through the candidate route every other change uses. What these tests hold to
-is that it removes exactly the object that was picked — never the component it
-belongs to, never a neighbour — and that an element something else depends on
-is refused with the dependency named instead of being taken away under it.
+is that it removes exactly the object that was picked — never a neighbour, and
+its component only when the object was all that component held, as a
+construction ``delete`` takes a shape's component with its body — and that an
+element something else depends on is refused with the dependency named instead
+of being taken away under it.
 """
 
 from pathlib import Path
@@ -98,6 +100,28 @@ class DeleteElementTestCase(unittest.TestCase):
         state = self.client.get("/api/state").json()
         self.assertIn("portico", [row["componentId"] for row in state["elements"]],
                       "the component is still there, with its own elements")
+
+    def test_deleting_the_only_element_of_a_component_takes_the_component_with_it(self) -> None:
+        # A drawn shape is one component holding one body: deleting the body in the view leaves nothing for
+        # the component to be, so it goes too, and the candidate is not refused for an empty component.
+        made = self.client.post("/api/proposals/construction", json={
+            "stateDigest": self.digest(), "script": "annex = extrude(rect(6, 0, 3, 2), 2.4)"})
+        self.assertEqual(made.status_code, 201, made.text)
+        base = self.run_proposal(made.json()["proposalId"])
+        before = self.names(base)
+        self.assertIn("obj-annex-body", before)
+
+        proposal = self.client.post("/api/proposals/delete", json={
+            "stateDigest": self.digest(base), "sourceRunId": base, "elementId": "annex-body"})
+        self.assertEqual(proposal.status_code, 201, proposal.text)
+        body = proposal.json()
+        self.assertEqual(body["change"]["edits"]["removeEntityIds"], ["annex", "annex-body"])
+        self.assertEqual(body["target"]["componentId"], "annex")
+
+        deleted = self.run_proposal(body["proposalId"])
+        self.assertEqual(before - self.names(deleted), {"obj-annex-body"}, "the picked object is the only thing gone")
+        state = self.client.get(f"/api/state?run={deleted}").json()
+        self.assertNotIn("annex", [row["componentId"] for row in state["elements"]])
 
     def test_an_element_something_stands_on_is_refused_with_what_stands_on_it(self) -> None:
         before = self.runs()

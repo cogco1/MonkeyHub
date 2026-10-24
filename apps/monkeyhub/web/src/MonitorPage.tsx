@@ -6,6 +6,7 @@ import {
   aggregateTokens, formatCount, formatDuration, isModelCall, uncachedInput, projectIds, summarizeUsage, quoteDraftReducer, serialMonitorRead,
   type MonitorEvent, type MonitorTrace,
 } from "./monitorData";
+import { useDeveloperMode } from "./features/settings/preferences";
 import "./MonitorPage.css";
 import { useRowEndSeparators } from "./surfaceBarRows";
 
@@ -42,6 +43,7 @@ const words = {
     usageScope: "汇总与明细均统计所选项目的全部已记录任务；任务选择仅切换时间线。",
     includeOperations: "包含工具与本地操作", visibleSubtotal: "当前显示的模型调用小计", allCallsTotal: "全部模型调用合计",
     recordRange: (shown: number, count: number) => `当前显示 ${shown} / ${count} 条记录`,
+    warningsNote: (count: number) => `读取记录时有 ${count} 条提示，这里的数字可能不完整。`,
     sources: "用量来源", agent: "Agent", sourcesHelp: "先选 agent，再每行填一个明确的本机文件路径：Codex 或 Claude Code 的会话 JSONL，或别处导出的 UsageEvent@1 文件。不扫描目录；Hub 自动绑定的会话不需要手填，这里仅用于诊断补充。", apply: "应用来源", applied: "来源已更新",
     calculator: "费用估算", calculatorHelp: "按你明确选择的费率计算 API 等价值；不是订阅实际扣款，也不自动猜计费档位。", rate: "费率", chooseRate: "选择参考费率", input: "总输入", cacheRead: "缓存读取", cacheWrite: "缓存写入", cacheWrite1h: "其中 1 小时写入", reasoning: "其中推理输出", calculate: "计算", resetTotals: "恢复当前汇总", estimated: "估算费用", knownSubtotal: "已知小计", missing: "仍缺少",
     serviceDetail: "技术详情", updated: "更新于", download: "下载 Trace JSON", raw: "原始记录", endNotObserved: "结束时间未观测",
@@ -57,6 +59,7 @@ const words = {
     usageScope: "Totals and records cover all recorded tasks in the selected project scope. The task selector changes only the timeline.",
     includeOperations: "Include tools and local operations", visibleSubtotal: "Displayed model-call subtotal", allCallsTotal: "All model-call totals",
     recordRange: (shown: number, count: number) => `Showing ${shown} of ${count} records`,
+    warningsNote: (count: number) => `Reading the records raised ${count} notice${count === 1 ? "" : "s"}; these figures may be incomplete.`,
     sources: "Usage sources", agent: "Agent", sourcesHelp: "Choose an agent, then enter one explicit local file path per line: a Codex or Claude Code session JSONL, or a UsageEvent@1 file exported elsewhere. No folder is scanned. Hub-bound sessions do not need to be entered here; this is only for diagnostic supplements.", apply: "Apply sources", applied: "Sources updated",
     calculator: "Cost estimate", calculatorHelp: "Calculates an API-rate equivalent from the rate you explicitly select. It is not a subscription charge and no billing tier is guessed.", rate: "Rate", chooseRate: "Choose reference rate", input: "Total input", cacheRead: "Cache read", cacheWrite: "Cache write", cacheWrite1h: "Of which 1-hour write", reasoning: "Of which reasoning output", calculate: "Calculate", resetTotals: "Use current totals", estimated: "Estimated cost", knownSubtotal: "Known subtotal", missing: "Still missing",
     serviceDetail: "Technical details", updated: "Updated", download: "Download Trace JSON", raw: "Raw record", endNotObserved: "End not observed",
@@ -91,6 +94,8 @@ function dateText(value: string | null | undefined): string {
 
 export function MonitorPage({ preferences, active, initialProjectId = "", openRequest = 0, projects: hubProjects = [] }: Props) {
   const t = words[preferences.language];
+  // Record formats, raw records, timing diagnostics and read notices are for developer mode.
+  const developer = useDeveloperMode();
   const [base, setBase] = useState<string | null>(null);
   const [events, setEvents] = useState<MonitorEvent[]>([]);
   const [traces, setTraces] = useState<MonitorTrace[]>([]);
@@ -278,10 +283,10 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
   return <div className="monitor-page" ref={root}>
     {/* #337 L2: the page's one bar. Its two views, the scope and Refresh are words; the service's state is at the right end. */}
     <SurfaceBar label={t.title} end={<span className={`monitor-health${error ? " monitor-health--error" : ""}`}>{loading ? t.connecting : error ? t.failed : t.ready}</span>}>
-      <MenuTabs label={t.views} value={view} onChange={(next) => setView(next)} options={[{ value: "calls" as const, label: t.viewCalls }, { value: "timeline" as const, label: t.viewTimeline }]} />
+      <MenuTabs label={t.views} value={view} onChange={(next) => setView(next)} options={[{ value: "calls" as const, label: t.viewCalls, command: "view.usage.calls" }, { value: "timeline" as const, label: t.viewTimeline, command: "view.usage.timeline" }]} />
       <MenuSeparator />
       <div className="monitor-scope">
-        <MenuTabs label={t.scope} value={project} onChange={chooseScope} options={[...(scopeProject ? [{ value: scopeProject, label: nameOf(scopeProject) }] : []), { value: "", label: t.all }]} />
+        <MenuTabs label={t.scope} value={project} onChange={chooseScope} options={[...(scopeProject ? [{ value: scopeProject, label: nameOf(scopeProject), command: "view.usage.scope_project" }] : []), { value: "", label: t.all, command: "view.usage.scope_all" }]} />
         {/* Another project: the word Project, over a list of every project that holds the one in scope. */}
         {projects.some((id) => id !== scopeProject) && <span className="monitor-pick">
           <span className="menu-command" aria-hidden="true">{t.project}<i className="monitor-pick__chevron" /></span>
@@ -291,12 +296,12 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
         </span>}
       </div>
       <MenuSeparator />
-      <MenuCommand onClick={() => void readAll(true)} disabled={loading}>{t.refresh}</MenuCommand>
+      <MenuCommand data-command="view.usage.refresh" onClick={() => void readAll(true)} disabled={loading}>{t.refresh}</MenuCommand>
     </SurfaceBar>
     <main className="monitor-shell">
       {/* The rail and the Help menu name the page; the heading is for screen readers. */}
       <h1 className="sr-only">{t.title}</h1>
-      {error && <div className="error-message" role="alert"><strong>{t.failed}</strong><p>{error}</p><button className="btn" type="button" onClick={() => void readAll(true)}>{t.retry}</button></div>}
+      {error && <div className="error-message" role="alert"><strong>{t.failed}</strong><p>{error}</p><button data-command="view.notice.retry" data-command-arg="usage" className="btn" type="button" onClick={() => void readAll(true)}>{t.retry}</button></div>}
       <section className="monitor-stats" aria-label={t.usage} hidden={view !== "calls"}>
         {[
           [t.calls, summary.calls.toLocaleString(), ""],
@@ -308,7 +313,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
       </section>
 
       <section className="monitor-section" hidden={view !== "timeline"}>
-        <div className="monitor-section__head"><div><p className="monitor-eyebrow">TurnTrace@1</p><h2>{t.tasks}</h2></div>{filteredTraces.length > 0 && <label>{t.task}<select value={selectedTrace?.trace_id ?? ""} onChange={(event) => setTraceId(event.target.value)}>{filteredTraces.map((trace) => <option key={trace.trace_id} value={trace.trace_id}>{dateText(trace.started_at)} · {trace.status ?? "unknown"}</option>)}</select></label>}</div>
+        <div className="monitor-section__head"><div>{developer && <p className="monitor-eyebrow">TurnTrace@1</p>}<h2>{t.tasks}</h2></div>{filteredTraces.length > 0 && <label>{t.task}<select value={selectedTrace?.trace_id ?? ""} onChange={(event) => setTraceId(event.target.value)}>{filteredTraces.map((trace) => <option key={trace.trace_id} value={trace.trace_id}>{dateText(trace.started_at)} · {trace.status ?? "unknown"}</option>)}</select></label>}</div>
         {!selectedTrace ? <p className="monitor-empty">{t.noTasks}</p> : <>
           <div className="monitor-trace-summary">
             <span><small>{t.status}</small><strong>{text(selectedTrace.status)}</strong></span>
@@ -317,7 +322,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
             <span><small>{t.firstCandidate}</small><strong>{formatDuration(selectedTrace.summary?.first_candidate_ms)}</strong></span>
             <span><small>{t.modelRounds}</small><strong>{formatCount(numeric(selectedTrace.summary?.model_rounds))}</strong></span>
             <span><small>{t.toolRounds}</small><strong>{formatCount(numeric(selectedTrace.summary?.tool_rounds))}</strong></span>
-            <a className="btn" href={base ? `${base}/api/traces/export?trace_id=${encodeURIComponent(selectedTrace.trace_id)}` : undefined} target="_blank" rel="noreferrer">{t.download}</a>
+            {developer && <a className="btn" href={base ? `${base}/api/traces/export?trace_id=${encodeURIComponent(selectedTrace.trace_id)}` : undefined} target="_blank" rel="noreferrer">{t.download}</a>}
           </div>
           <div className="monitor-timeline" style={{ "--timeline-ms": timeline } as CSSProperties}>
             {spans.map((span, index) => {
@@ -326,40 +331,42 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
               const left = timeline > 0 ? Math.max(0, Math.min(100, offset / timeline * 100)) : 0;
               const width = timeline > 0 ? Math.max(0.7, Math.min(100 - left, duration / timeline * 100)) : 1;
               return <details className="monitor-span" key={span.span_id ?? span.event_id ?? index}>
-                <summary><span className="monitor-span__label" title={status}>{span.label ?? span.phase ?? "stage"}{span.status === "incomplete" ? ` · ${status}` : ""}</span><span className="monitor-span__lane">{span.lane ?? "—"}</span><span className="monitor-span__track"><i data-lane={span.lane ?? "unknown"} data-blocking={span.blocking === true} style={{ left: `${left}%`, width: `${width}%` }} /></span><span>{formatDuration(span.duration_ms)}</span></summary>
+                <summary data-command="view.usage.span"><span className="monitor-span__label" title={status}>{span.label ?? span.phase ?? "stage"}{span.status === "incomplete" ? ` · ${status}` : ""}</span><span className="monitor-span__lane">{span.lane ?? "—"}</span><span className="monitor-span__track"><i data-lane={span.lane ?? "unknown"} data-blocking={span.blocking === true} style={{ left: `${left}%`, width: `${width}%` }} /></span><span>{formatDuration(span.duration_ms)}</span></summary>
                 <dl><dt>{t.status}</dt><dd>{status}</dd><dt>{t.source}</dt><dd>{text(span.source)}</dd><dt>{t.provider}</dt><dd>{[span.provider, span.model].filter(Boolean).join(" · ") || "—"}</dd><dt>{t.blocking}</dt><dd>{span.blocking == null ? "—" : span.blocking ? t.yes : t.no}</dd></dl>
-                {span.details && Object.keys(span.details).length > 0 && <pre>{JSON.stringify(span.details, null, 2)}</pre>}
+                {developer && span.details && Object.keys(span.details).length > 0 && <pre>{JSON.stringify(span.details, null, 2)}</pre>}
               </details>;
             })}
           </div>
-          {(selectedDiagnostics.length > 0 || selectedWarnings.length > 0) && <details className="monitor-diagnostics"><summary>{t.diagnostics} · {selectedDiagnostics.length + selectedWarnings.length}</summary>{selectedDiagnostics.map((item, index) => <div key={index}><strong>{text(item.label ?? item.code)}</strong><p>{text(item.note)}</p></div>)}{selectedWarnings.map((warning) => <p key={warning}>{warning}</p>)}</details>}
-          <details className="monitor-raw"><summary>{t.raw}</summary><pre>{JSON.stringify(selectedTrace, null, 2)}</pre></details>
+          {developer && (selectedDiagnostics.length > 0 || selectedWarnings.length > 0) && <details className="monitor-diagnostics"><summary data-command="view.disclosure.toggle" data-command-arg="usage_diagnostics">{t.diagnostics} · {selectedDiagnostics.length + selectedWarnings.length}</summary>{selectedDiagnostics.map((item, index) => <div key={index}><strong>{text(item.label ?? item.code)}</strong><p>{text(item.note)}</p></div>)}{selectedWarnings.map((warning) => <p key={warning}>{warning}</p>)}</details>}
+          {developer && <details className="monitor-raw"><summary data-command="view.disclosure.toggle" data-command-arg="usage_raw">{t.raw}</summary><pre>{JSON.stringify(selectedTrace, null, 2)}</pre></details>}
         </>}
       </section>
 
       <section className="monitor-section" hidden={view !== "calls"}>
-        <div className="monitor-section__head"><div><p className="monitor-eyebrow">UsageLog</p><h2>{t.usage}</h2></div><label className="monitor-operation-toggle"><input type="checkbox" checked={includeOperations} onChange={(event) => setIncludeOperations(event.target.checked)} />{t.includeOperations}</label></div>
+        <div className="monitor-section__head"><div>{developer && <p className="monitor-eyebrow">UsageLog</p>}<h2>{t.usage}</h2></div><label className="monitor-operation-toggle"><input type="checkbox" checked={includeOperations} onChange={(event) => setIncludeOperations(event.target.checked)} />{t.includeOperations}</label></div>
         <p className="monitor-help" aria-live="polite">{t.recordRange(visibleEvents.length, detailEvents.length)}</p>
         {!detailEvents.length ? <p className="monitor-empty">{t.noUsage}</p> : <><div className="monitor-table-wrap"><table className="monitor-table"><thead><tr><th>{t.time}</th><th>{t.source}</th><th>{t.provider}</th><th>{t.phase}</th><th>{t.cached}</th><th>{t.uncached}</th><th>{t.output}</th><th>{t.duration}</th></tr></thead><tbody>{visibleEvents.map((event) => {
           const modelCall = isModelCall(event);
           return <tr key={event.event_id}><td>{dateText(event.started_at)}</td><td>{event.source}</td><td>{event.provider}<small>{event.model}</small></td><td>{event.phase}<small>{event.status}</small></td><td>{formatCount(modelCall ? event.tokens.cached_input_tokens : null)}</td><td>{formatCount(modelCall ? uncachedInput(event) : null)}</td><td>{formatCount(modelCall ? event.tokens.output_tokens : null)}</td><td>{formatDuration(event.duration_ms)}</td></tr>;
         })}</tbody><tfoot>{[{ label: t.visibleSubtotal, totals: visibleSummary }, { label: t.allCallsTotal, totals: summary }].map(({ label, totals }) => {
           return <tr key={label}><th colSpan={4} scope="row">{label}</th>{[totals.cachedInput, totals.uncachedInput, totals.output].map((bucket, index) => <td key={index}>{formatCount(bucket.value)}<small>{t.coverage(bucket.recorded, bucket.missing)}</small></td>)}<td>—</td></tr>;
-        })}</tfoot></table></div>{visible < detailEvents.length && <button className="btn monitor-more" type="button" onClick={() => setVisible((value) => value + 20)}>{t.showMore}</button>}</>}
+        })}</tfoot></table></div>{visible < detailEvents.length && <button data-command="view.usage.show_more" className="btn monitor-more" type="button" onClick={() => setVisible((value) => value + 20)}>{t.showMore}</button>}</>}
       </section>
 
       <div className="monitor-lower-grid" hidden={view !== "calls"}>
-        <section className="monitor-section"><div className="monitor-section__head"><h2>{t.sources}</h2></div><p className="monitor-help">{t.sourcesHelp}</p><form className="monitor-source-form" onSubmit={(event) => void applySources(event)}><label>{t.agent}<select value={sourceAgent} onChange={(event) => { setSourceAgent(event.target.value); setSourceStatus(""); }}>{(Object.keys(sourceDrafts).length ? Object.keys(sourceDrafts) : [sourceAgent]).map((agent) => <option value={agent} key={agent}>{agentNames[agent] ?? agent}</option>)}</select></label><textarea className="monitor-sources" aria-label={t.sources} rows={6} spellCheck={false} value={sourceDrafts[sourceAgent] ?? ""} onChange={(event) => { const value = event.target.value; setSourceDrafts((drafts) => ({ ...drafts, [sourceAgent]: value })); setSourceDirty((dirty) => ({ ...dirty, [sourceAgent]: true })); setSourceStatus(""); }} /><div className="monitor-actions"><button className="btn btn--primary" type="submit" disabled={!base}>{t.apply}</button><span role="status">{sourceStatus}</span></div></form></section>
+        <section className="monitor-section"><div className="monitor-section__head"><h2>{t.sources}</h2></div><p className="monitor-help">{t.sourcesHelp}</p><form className="monitor-source-form" onSubmit={(event) => void applySources(event)}><label>{t.agent}<select value={sourceAgent} onChange={(event) => { setSourceAgent(event.target.value); setSourceStatus(""); }}>{(Object.keys(sourceDrafts).length ? Object.keys(sourceDrafts) : [sourceAgent]).map((agent) => <option value={agent} key={agent}>{agentNames[agent] ?? agent}</option>)}</select></label><textarea className="monitor-sources" aria-label={t.sources} rows={6} spellCheck={false} value={sourceDrafts[sourceAgent] ?? ""} onChange={(event) => { const value = event.target.value; setSourceDrafts((drafts) => ({ ...drafts, [sourceAgent]: value })); setSourceDirty((dirty) => ({ ...dirty, [sourceAgent]: true })); setSourceStatus(""); }} /><div className="monitor-actions"><button data-command="view.usage.apply_sources" className="btn btn--primary" type="submit" disabled={!base}>{t.apply}</button><span role="status">{sourceStatus}</span></div></form></section>
         <section className="monitor-section"><div className="monitor-section__head"><h2>{t.calculator}</h2></div><p className="monitor-help">{t.calculatorHelp}</p><form onSubmit={(event) => void calculate(event)} className="monitor-calculator"><label>{t.rate}<select value={rateIndex} onChange={(event) => { invalidateQuote(); setRateIndex(event.target.value); }} required><option value="">{t.chooseRate}</option>{rates.map((rate, index) => <option value={index} key={`${rate.provider}:${rate.model}:${index}`}>{rate.label ?? `${rate.provider} · ${rate.model}`}</option>)}</select></label><div className="monitor-token-grid">{[
           ["input_tokens", t.input], ["cached_input_tokens", t.cacheRead], ["cache_write_input_tokens", t.cacheWrite],
           ["cache_write_1h_input_tokens", t.cacheWrite1h], ["output_tokens", t.output], ["reasoning_output_tokens", t.reasoning],
-        ].map(([key, label]) => <label key={key}>{label}<input inputMode="numeric" value={usageDraft[key] ?? ""} onChange={(event) => { invalidateQuote(); dispatchQuoteDraft({ type: "edit", field: key, value: event.target.value }); }} placeholder="—" /></label>)}</div><div className="monitor-actions"><button className="btn btn--primary" type="submit" disabled={!base || rateIndex === "" || quoteDraft.projectId !== project}>{t.calculate}</button><button className="btn" type="button" onClick={resetEstimate}>{t.resetTotals}</button></div></form>
+        ].map(([key, label]) => <label key={key}>{label}<input inputMode="numeric" value={usageDraft[key] ?? ""} onChange={(event) => { invalidateQuote(); dispatchQuoteDraft({ type: "edit", field: key, value: event.target.value }); }} placeholder="—" /></label>)}</div><div className="monitor-actions"><button data-command="view.usage.calculate" className="btn btn--primary" type="submit" disabled={!base || rateIndex === "" || quoteDraft.projectId !== project}>{t.calculate}</button><button data-command="view.usage.reset_totals" className="btn" type="button" onClick={resetEstimate}>{t.resetTotals}</button></div></form>
           {quoteError && <div className="error-message"><p>{quoteError}</p></div>}
           {quote && <div className="monitor-quote"><span>{t.estimated}</span><strong>{quote.amount_usd === null ? "—" : `$${quote.amount_usd} ${quote.currency}`}</strong><small>{t.knownSubtotal}: ${quote.known_subtotal_usd}{quote.missing.length ? ` · ${t.missing}: ${quote.missing.join(", ")}` : ""}</small></div>}
         </section>
       </div>
 
-      {warnings.length > 0 && <details className="monitor-global-warnings"><summary>{t.warnings} · {warnings.length}</summary>{warnings.map((warning) => <p key={warning}>{warning}</p>)}</details>}
+      {/* Outside developer mode the notices are counted, since they can leave the figures short. */}
+      {!developer && warnings.length > 0 && <p className="monitor-help monitor-global-warnings">{t.warningsNote(warnings.length)}</p>}
+      {developer && warnings.length > 0 && <details className="monitor-global-warnings"><summary data-command="view.disclosure.toggle" data-command-arg="usage_warnings">{t.warnings} · {warnings.length}</summary>{warnings.map((warning) => <p key={warning}>{warning}</p>)}</details>}
     </main>
     {/* L5: where the records come from, when they were read, and how the scope counts them. */}
     <StatusLine className="monitor-status" end={<span title={t.usageScope}>{t.usageScope}</span>}>

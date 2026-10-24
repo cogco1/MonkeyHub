@@ -23,7 +23,7 @@ const VOID = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input"
 
 /**
  * The text a reader sees before opening anything: what lies outside every element marked `hidden`,
- * and of a shut `<details>` (the technical section) only its summary.
+ * and of a shut `<details>` (developer mode's technical section) only its summary.
  */
 function visibleText(markup: string): string {
   const shown: string[] = [];
@@ -53,7 +53,7 @@ async function harness(t: TestContext) {
   const info = await vite.ssrLoadModule("/src/features/componentInfo/componentInfo.ts") as Info;
   const board = await vite.ssrLoadModule("/src/features/componentInfo/boardDatasets.ts") as Board;
   const { ComponentInfoPanel } = await vite.ssrLoadModule("/src/features/componentInfo/ComponentInfoCard.tsx") as Card;
-  const { UserPreferencesProvider } = await vite.ssrLoadModule("/src/features/settings/preferences.tsx");
+  const { UserPreferencesProvider, usePreferences } = await vite.ssrLoadModule("/src/features/settings/preferences.tsx");
   const { messagesEn } = await vite.ssrLoadModule("/src/i18n/messages.en.ts") as typeof import("../src/i18n/messages.en.ts");
   const en = (key: string, parameters?: Readonly<Record<string, string | number>>) =>
     (messagesEn as Record<string, string>)[key]!.replace(/\{(\w+)\}/g, (_, name: string) => String(parameters?.[name] ?? `{${name}}`));
@@ -63,9 +63,15 @@ async function harness(t: TestContext) {
   const ready = { status: "ready" as const, projectId: "fixture-project", revisionSha256: "r".repeat(64), ...board.readBoardDatasets(elements) };
   const card = info.buildComponentCard({ componentId: "post-1", elementId: "post-1-body", modelLabel: "Post 1",
     shown: SHOWN_B, pickMatchesShown: true, board: ready }, ((status: string) => en(`componentInfo.status.${status}`)) as never);
-  const draw = (shown: typeof card) => renderToStaticMarkup(createElement(UserPreferencesProvider as (props: { appearance: unknown; children: ReactNode }) => ReactNode,
-    { appearance: { language: "en", theme: "light", fontScale: 1 } },
-    createElement(ComponentInfoPanel, { subject: { kind: "card", card: shown }, onClose() {} })));
+  const draw = (shown: typeof card, developerMode = false) => {
+    function Panel() {
+      // SSR has no settings click: set this fresh provider's switch; the panel is real.
+      Object.assign(usePreferences(), { developerMode });
+      return createElement(ComponentInfoPanel, { subject: { kind: "card", card: shown }, onClose() {} });
+    }
+    return renderToStaticMarkup(createElement(UserPreferencesProvider as (props: { appearance: unknown; children: ReactNode }) => ReactNode,
+      { appearance: { language: "en", theme: "light", fontScale: 1 } }, createElement(Panel)));
+  };
   return { info, card, draw, en, ready };
 }
 
@@ -128,5 +134,7 @@ test("an inherited card shows its data, flags a changed shape once and names whe
   assert.ok(seen.includes("Written for version B; this component&#x27;s shape has changed since"), "the flag shows above the data");
   assert.ok(seen.includes("timber") && seen.includes("Example Timber"), "the inherited data shows");
   assert.equal(markup.match(/data-card-state="reshaped"/g)?.length, 1);
-  assert.match(markup, /<li data-inherited="true"><strong>Basics<\/strong>[^]*?inherited from version B<\/li>/);
+  // 2-7: the datasets behind the card are listed in developer mode's technical section.
+  assert.doesNotMatch(markup, /component-info__technical/, "outside developer mode the card has no technical section");
+  assert.match(draw(card, true), /<li data-inherited="true"><strong>Basics<\/strong>[^]*?inherited from version B<\/li>/);
 });

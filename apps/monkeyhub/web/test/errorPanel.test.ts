@@ -8,7 +8,7 @@ import { createServer } from "vite";
 
 type Refusal = { status: number; code: string; detail: string; question?: string; acceptedForms?: string[] };
 
-test("a refusal says what happened and the next step, with the server's words folded beneath (FN-4)", async (t) => {
+test("a refusal says what happened and the next step; the server's words wait for developer mode (FN-4, 2-7)", async (t) => {
   const vite = await createServer({
     root: fileURLToPath(new URL("..", import.meta.url)),
     configFile: false,
@@ -17,11 +17,16 @@ test("a refusal says what happened and the next step, with the server's words fo
   });
   t.after(() => vite.close());
   const { ErrorPanel } = await vite.ssrLoadModule("/src/app/ErrorPanel.tsx");
-  const { UserPreferencesProvider } = await vite.ssrLoadModule("/src/features/settings/preferences.tsx");
+  const { UserPreferencesProvider, usePreferences } = await vite.ssrLoadModule("/src/features/settings/preferences.tsx");
   const { StudioApiError } = await vite.ssrLoadModule("/src/api/project-runtime/error.ts");
-  const render = (refusal: Refusal, language = "en", what?: string) => renderToStaticMarkup(
-    createElement(UserPreferencesProvider, { appearance: { language, theme: "light", fontScale: 1 } },
-      createElement(ErrorPanel, { error: new StudioApiError(refusal), what })));
+  const render = (refusal: Refusal, language = "en", what?: string, developerMode = false) => {
+    function Panel() {
+      // SSR has no settings click: set this fresh provider's switch; the panel is real.
+      Object.assign(usePreferences(), { developerMode });
+      return createElement(ErrorPanel, { error: new StudioApiError(refusal), what });
+    }
+    return renderToStaticMarkup(createElement(UserPreferencesProvider, { appearance: { language, theme: "light", fontScale: 1 } }, createElement(Panel)));
+  };
   const shown = (html: string) => html.split("<details")[0]!;
   const folded = (html: string) => html.split("<details")[1] ?? "";
 
@@ -86,14 +91,26 @@ test("a refusal says what happened and the next step, with the server's words fo
     assert.match(lead, /class="error-panel__detail error-panel__next"/, `${refusal.code}: one next step`);
     assert.ok(!lead.includes(refusal.code) && !lead.includes(refusal.detail) && !lead.includes("POST"),
       `${refusal.code}: no code, raw detail or route before the details`);
-    assert.ok(folded(html).includes(refusal.code) && folded(html).includes(refusal.detail) && folded(html).includes("POST /api/drawings/elevations"),
-      `${refusal.code}: code, detail and route stay under Technical details`);
-    assert.match(html, /<summary>Technical details<\/summary>/);
-    assert.doesNotMatch(html, /<details[^>]*\sopen/, `${refusal.code}: details start folded outside developer mode`);
+    // 2-7: a failure the Hub does not recognise has its reason only in the service's words, so they stay, folded;
+    // every other failure leaves them to developer mode.
+    if (next.test("open Technical details below")) {
+      assert.ok(folded(html).includes(refusal.code) && folded(html).includes(refusal.detail) && folded(html).includes("POST /api/drawings/elevations"),
+        `${refusal.code}: code, detail and route stay folded under Technical details`);
+      assert.doesNotMatch(html, /<details[^>]*\sopen/, `${refusal.code}: details start folded outside developer mode`);
+    } else {
+      assert.doesNotMatch(html, /<details/, `${refusal.code}: outside developer mode there are no technical details`);
+      assert.ok(!html.includes(refusal.code) && !html.includes(refusal.detail) && !html.includes("POST"),
+        `${refusal.code}: no code, raw detail or route outside developer mode`);
+    }
+    const developer = render(refusal, "en", "POST /api/drawings/elevations", true);
+    assert.ok(html.startsWith(shown(developer)), `${refusal.code}: developer mode leads with the same words`);
+    assert.ok(folded(developer).includes(refusal.code) && folded(developer).includes(refusal.detail) && folded(developer).includes("POST /api/drawings/elevations"),
+      `${refusal.code}: code, detail and route are under Technical details in developer mode`);
+    assert.match(developer, /<details[^>]*\sopen=""><summary>Technical details<\/summary>/, `${refusal.code}: and start open there`);
     const zh = render(refusal, "zh-CN");
-    assert.match(shown(zh), zhReason, `${refusal.code}: Chinese reason`);
-    assert.match(zh, /<summary>技术详情<\/summary>/);
+    assert.match(zh, zhReason, `${refusal.code}: Chinese reason`);
     assert.ok(!shown(zh).includes(refusal.code), `${refusal.code}: no code in the Chinese lead`);
+    assert.match(render(refusal, "zh-CN", undefined, true), /<summary>技术详情<\/summary>/);
   }
 
   // A compiler refusal keeps the catalog's reason and gains a next step.

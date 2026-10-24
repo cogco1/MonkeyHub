@@ -7,8 +7,8 @@ import "./DrawingMenu.css";
  * while it loads, or a file dialog it opened, leaves it open. Its owner closes it once its result shows elsewhere, and
  * focus then returns to the word.
  */
-export function DrawingMenu({ label, className, panelClassName, open, onOpenChange, children }: {
-  label: string; className: string; panelClassName: string; open: boolean; onOpenChange(open: boolean): void; children: ReactNode;
+export function DrawingMenu({ label, command, commandArg, className, panelClassName, open, onOpenChange, children }: {
+  label: string; command: string; commandArg: string; className: string; panelClassName: string; open: boolean; onOpenChange(open: boolean): void; children: ReactNode;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
   const change = useRef(onOpenChange);
@@ -48,7 +48,7 @@ export function DrawingMenu({ label, className, panelClassName, open, onOpenChan
       if (event.key !== "Escape" || !open) return;
       event.preventDefault(); event.stopPropagation(); onOpenChange(false); menu.current?.querySelector("summary")?.focus();
     }}>
-    <summary className="menu-command" onClick={event => { event.preventDefault(); onOpenChange(!open); }}>{label}</summary>
+    <summary className="menu-command" data-command={command} data-command-arg={commandArg} onClick={event => { event.preventDefault(); onOpenChange(!open); }}>{label}</summary>
     <div className={`drawing-menu__panel ${panelClassName}`}>{children}</div>
   </details>;
 }

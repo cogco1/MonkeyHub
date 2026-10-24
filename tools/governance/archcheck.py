@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import bisect
 import json
 import ntpath
 import os
@@ -1725,6 +1726,180 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
                     yield PolicyFinding(path.relative_to(root).as_posix(), node.lineno, "DUPLICATE_OWNED_FUNCTION", f"{node.name} duplicates {hit[0]}.{hit[1]}; import the owner")
 
 
+# The command tree a person searches with Ctrl+K is a view of the registry's
+# capabilities: a capability is a group, its ``ui.commands`` are the commands.
+# ``devctl render-map`` writes the view with render_command_tree; this check
+# keeps it current and the commands well formed, so the web never holds a
+# second list of what a person can do.
+COMMAND_TREE = "apps/monkeyhub/web/src/features/commands/tree.generated.ts"
+COMMAND_ID = re.compile(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+")
+COMMAND_CHANNELS = frozenset({"front", "side", "background"})
+COMMAND_TIERS = frozenset({"basic", "advanced", "developer"})
+# The fields a capability's ui and its commands may carry (plan 1.5); anything else is a typo the
+# view would drop without a word.
+COMMAND_UI_FIELDS = frozenset({"preview", "surface", "group", "tier", "channel", "commands"})
+COMMAND_FIELDS = frozenset({"id", "label", "label_zh", "aliases", "entries", "channel", "tier", "args", "opens",
+                            "surface", "group", "place", "when", "shortcut", "action", "in_place"})
+# An entry-audit row: the surface's short name and the row number (壳 Hub shell, 窗 Hub dialogs, 栏 project
+# bar, 模 Modeling, 板 Board, 排 Layout, 文 document page, 图 Drawings, 渲 Render, 树 Design tree,
+# 制 Fabrication, 量 Usage).
+COMMAND_ENTRY = re.compile(r"(?:壳|窗|栏|模|板|排|文|图|渲|树|制|量)[1-9]\d*")
+COMMAND_ARG = re.compile(r"[a-z][A-Za-z0-9]*")
+
+
+def _command_ui_problems(entry: dict[str, Any]) -> Iterator[str]:
+    """What is wrong with one capability's ui block, as COMMAND_UI messages."""
+
+    ui = entry.get("ui")
+    if ui is None:
+        return
+    if not isinstance(ui, dict):
+        yield "ui is an object"
+        return
+    for key in sorted(set(ui) - COMMAND_UI_FIELDS):
+        yield f"ui.{key} is not a field the command tree reads"
+    commands = ui.get("commands", [])
+    if not isinstance(commands, list):
+        yield "ui.commands is a list"
+        return
+    for command in commands:
+        if not isinstance(command, dict):
+            yield "each of ui.commands is an object"
+            continue
+        name = command.get("id", "?")
+        for key in sorted(set(command) - COMMAND_FIELDS):
+            yield f"{name}: {key} is not a command field"
+        for key in ("aliases", "when", "entries", "args"):
+            value = command.get(key, [])
+            if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+                yield f"{name}: {key} is a list of text"
+        for code in command.get("entries", []) if isinstance(command.get("entries"), list) else ():
+            if not isinstance(code, str) or not COMMAND_ENTRY.fullmatch(code):
+                yield f"{name}: entry {code!r} is not an audit row such as 模18"
+        for arg in command.get("args", []) if isinstance(command.get("args"), list) else ():
+            if isinstance(arg, str) and not COMMAND_ARG.fullmatch(arg):
+                yield f"{name}: argument {arg!r} is a camelCase name"
+        if "opens" in command and not isinstance(command["opens"], bool):
+            yield f"{name}: opens is true or false"
+        if command.get("shortcut") is not None and not isinstance(command["shortcut"], str):
+            yield f"{name}: shortcut is text"
+        # in_place: the command acts only where it renders (a dialog, a card, the composer, a row), so the
+        # advanced tools and Ctrl+K leave it out; it then stands nowhere else and no key reaches it from elsewhere.
+        if "in_place" in command:
+            if not isinstance(command["in_place"], bool):
+                yield f"{name}: in_place is true or false"
+            elif command["in_place"]:
+                if command.get("place"):
+                    yield f"{name}: a command that acts only where it renders has no standing place"
+                if command.get("shortcut"):
+                    yield f"{name}: a command that acts only where it renders has no shortcut"
+
+
+def _strings(value: Any) -> list[str]:
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+
+def command_tree(registry: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Every capability that lists ui.commands, and those commands, in registry order."""
+
+    capabilities: list[dict[str, Any]] = []
+    commands: list[dict[str, Any]] = []
+    for entry in registry.get("capabilities") or ():
+        ui = entry.get("ui") or {}
+        listed = [command for command in ui.get("commands") or () if isinstance(command, dict)]
+        if not listed:
+            continue
+        capability_id = str(entry.get("capability_id", ""))
+        capabilities.append({
+            "id": capability_id, "owner": entry.get("owner"), "kind": entry.get("kind"), "status": entry.get("status"),
+            "host": entry.get("host", "runtime"),
+            "purpose": {"en": entry.get("purpose", ""), "zh-CN": entry.get("purpose_zh") or entry.get("purpose", "")},
+            "terms": [*_strings(entry.get("goals")), *_strings(entry.get("aliases"))],
+        })
+        for command in listed:
+            surface = command.get("surface", ui.get("surface", "hub"))
+            commands.append({
+                "id": command.get("id"), "capability": capability_id,
+                "label": {"en": command.get("label", ""), "zh-CN": command.get("label_zh", "")},
+                "terms": _strings(command.get("aliases")),
+                "surface": surface,
+                "group": command.get("group", ui.get("group", surface)),
+                "channel": command.get("channel", ui.get("channel", "side")),
+                "tier": command.get("tier", ui.get("tier", "basic")),
+                "place": command.get("place"),
+                "when": _strings(command.get("when")),
+                "shortcut": command.get("shortcut"),
+                "entries": _strings(command.get("entries")),
+                "args": _strings(command.get("args")),
+                # Only commands that act where they render carry the flag; the palette and Advanced tools leave them out.
+                **({"inPlace": True} if command.get("in_place") is True else {}),
+            })
+    return {"capabilities": capabilities, "commands": commands}
+
+
+def render_command_tree(registry: dict[str, Any]) -> str:
+    """The web view of the command tree, exactly as it is committed."""
+
+    body = json.dumps(command_tree(registry), ensure_ascii=False, indent=2)
+    return "\n".join((
+        "// Generated by `python tools/governance/devctl.py render-map` from governance/module_registry.json.",
+        "// Edit the capabilities there and render again; archcheck reports COMMAND_TREE_STALE until you do.",
+        'import type { CommandTree } from "./tree";',
+        "",
+        f"export const COMMAND_TREE: CommandTree = {body};",
+        "",
+    ))
+
+
+def check_command_tree(root: Path) -> Iterator[PolicyFinding]:
+    """Commands have one well-formed id each and at most one standing place, and the view is current.
+
+    A command id is lowercase, dot-separated snake_case and unique across the
+    registry (COMMAND_ID); its labels exist in both languages and differ;
+    channel and tier take their registered values (COMMAND_FIELD); ``place``
+    names one standing place or none, since Ctrl+K and shortcuts are not
+    places (COMMAND_PLACE). A capability's ``ui`` and its commands carry only
+    the fields the view reads, entries name audit rows (模18; a row that
+    counted a set of options names several commands), and arguments are
+    camelCase names (COMMAND_UI). The
+    committed view must equal what render-map writes (COMMAND_TREE_STALE).
+    """
+
+    registry_path = root / "governance" / "module_registry.json"
+    if not registry_path.is_file():
+        return
+    rel_registry = registry_path.relative_to(root).as_posix()
+    data = json.loads(registry_path.read_text(encoding="utf-8"))
+    for entry in data.get("capabilities") or ():
+        for problem in _command_ui_problems(entry):
+            yield PolicyFinding(rel_registry, 1, "COMMAND_UI", f"{entry.get('capability_id')}: {problem}")
+    seen: dict[str, str] = {}
+    tree = command_tree(data)
+    for command in tree["commands"]:
+        command_id, capability = command["id"], command["capability"]
+        if not isinstance(command_id, str) or not COMMAND_ID.fullmatch(command_id):
+            yield PolicyFinding(rel_registry, 1, "COMMAND_ID", f"{capability}: command id {command_id!r} is not dot-separated snake_case")
+            continue
+        if command_id in seen:
+            yield PolicyFinding(rel_registry, 1, "COMMAND_ID", f"command {command_id} is listed by {seen[command_id]} and {capability}")
+        seen.setdefault(command_id, capability)
+        label = command["label"]
+        if not str(label["en"]).strip() or not str(label["zh-CN"]).strip() or label["en"] == label["zh-CN"]:
+            yield PolicyFinding(rel_registry, 1, "COMMAND_FIELD", f"{command_id}: label and label_zh are both needed and differ")
+        if command["channel"] not in COMMAND_CHANNELS:
+            yield PolicyFinding(rel_registry, 1, "COMMAND_FIELD", f"{command_id}: channel is one of {sorted(COMMAND_CHANNELS)}")
+        if command["tier"] not in COMMAND_TIERS:
+            yield PolicyFinding(rel_registry, 1, "COMMAND_FIELD", f"{command_id}: tier is one of {sorted(COMMAND_TIERS)}")
+        if command["place"] is not None and not isinstance(command["place"], str):
+            yield PolicyFinding(rel_registry, 1, "COMMAND_PLACE", f"{command_id}: a command has at most one standing place; Ctrl+K and shortcuts are not places")
+    target = root / COMMAND_TREE
+    if not tree["commands"] and not target.is_file():
+        return
+    committed = target.read_text(encoding="utf-8").replace("\r\n", "\n") if target.is_file() else None
+    if committed != render_command_tree(data):
+        yield PolicyFinding(COMMAND_TREE, 1, "COMMAND_TREE_STALE", "the command tree differs from the registry's capabilities; run `python tools/governance/devctl.py render-map`")
+
+
 WORK_REGISTRY = "governance/work_registry.json"
 ARCHITECTURE_POLICY = "governance/architecture_policy.json"
 # Since #358 the registry holds live GitHub Issue claims only. A commit whose
@@ -2288,6 +2463,347 @@ def check_changed_scopes(
             )
 
 
+# Interface entries (#300). Every control a person clicks renders a command of
+# the tree above and names it with data-command; a test or the palette reaches
+# it by that id. The controls that did not yet, counted per file in the
+# policy's ui_entries.baseline, may only become fewer (D-2 empties it). Each
+# standing place holds at most its budget of commands (ADR-014).
+UI_ENTRY_ROLE = re.compile(r"""\brole\s*=\s*\{?\s*["'](?:menuitem|menuitemcheckbox|menuitemradio)["']""")
+UI_ENTRY_CONTROL_ROLE = re.compile(r"""\brole\s*=\s*\{?\s*["'](?:button|tab|option|treeitem|switch|checkbox|radio)["']""")
+UI_ENTRY_CLICK = re.compile(r"\bonClick\s*=")
+UI_ENTRY_COMMAND = re.compile(r"\bdata-command\s*=")
+# A row of the command palette or the advanced tools is the command tree itself, not an entry on
+# the page; it says so with data-command-view, which counts only under ui_entries.view_rows.
+UI_ENTRY_VIEW_ROW = re.compile(r"\bdata-command-view\b(?!-)")
+
+
+def _ui_entries_policy(policy: dict[str, Any]) -> dict[str, Any] | None:
+    """The policy's ui_entries block, validated, or None when the policy has none."""
+
+    block = policy.get("ui_entries")
+    if block is None:
+        return None
+    if not isinstance(block, dict):
+        raise ArchitecturePolicyError("ui_entries must be an object")
+    for field in ("source_roots", "wrappers", "view_rows"):
+        values = block.get(field)
+        if not isinstance(values, list) or not all(isinstance(value, str) and value for value in values):
+            raise ArchitecturePolicyError(f"ui_entries.{field} must be a list of non-empty text")
+    for field in ("baseline", "budgets"):
+        counts = block.get(field)
+        if not isinstance(counts, dict) or not all(
+            isinstance(key, str) and key and isinstance(value, int) and not isinstance(value, bool) and value >= 0
+            for key, value in counts.items()
+        ):
+            raise ArchitecturePolicyError(f"ui_entries.{field} must map text to a count of zero or more")
+    return block
+
+
+JSX_TAG = re.compile(r"[A-Za-z][\w.:-]*")
+_CODE_SPECIAL = re.compile(r"[/'\"`<{}]")
+_ATTRIBUTE_SPECIAL = re.compile(r"[/'\"{>]")
+_CHILDREN_SPECIAL = re.compile(r"[{<]")
+_TEMPLATE_SPECIAL = re.compile(r"[\\`$]")
+# What may stand before an expression: there '<' opens JSX and '/' opens a regular expression;
+# after an identifier, ')' or ']' they compare, divide or open type arguments.
+_EXPRESSION_BEFORE = frozenset("([{,;:?=&|!~+-*%^<>}")
+_EXPRESSION_KEYWORDS = frozenset({"return", "yield", "await", "case", "default", "else", "typeof", "void", "delete", "in", "of", "new", "throw"})
+
+
+class _JsxScanner:
+    """Finds JSX opening elements where TSX code can hold them: never inside a comment, a string,
+    a template or regular-expression literal, a type-parameter list (``<T,>``) or JSX text, so an
+    example in a doc comment or an apostrophe in a label does not count or hide a control."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.openings: list[tuple[int, str, str]] = []
+
+    def _expression_may_start(self, index: int) -> bool:
+        text, position = self.text, index - 1
+        while position >= 0 and text[position] in " \t\r\n":
+            position -= 1
+        if position < 0:
+            return True
+        if text[position] in _EXPRESSION_BEFORE:
+            return True
+        end = position + 1
+        while position >= 0 and (text[position].isalnum() or text[position] in "_$"):
+            position -= 1
+        return text[position + 1:end] in _EXPRESSION_KEYWORDS
+
+    def _string(self, index: int) -> int:
+        text, quote = self.text, self.text[index]
+        index += 1
+        while index < len(text):
+            char = text[index]
+            if char == "\\":
+                index += 2
+                continue
+            if char == quote:
+                return index + 1
+            if char == "\n" and quote != "`":
+                return index
+            index += 1
+        return len(text)
+
+    def _template(self, index: int) -> int:
+        text, index = self.text, index + 1
+        while True:
+            found = _TEMPLATE_SPECIAL.search(text, index)
+            if found is None:
+                return len(text)
+            index = found.start()
+            char = text[index]
+            if char == "\\":
+                index += 2
+            elif char == "`":
+                return index + 1
+            elif text.startswith("${", index):
+                index = self.code(index + 2, until_brace=True)
+            else:
+                index += 1
+
+    def _regex(self, index: int) -> int:
+        text, position, in_class = self.text, index + 1, False
+        while position < len(text):
+            char = text[position]
+            if char == "\\":
+                position += 2
+                continue
+            if char == "\n":
+                return index + 1
+            if char == "[":
+                in_class = True
+            elif char == "]":
+                in_class = False
+            elif char == "/" and not in_class:
+                position += 1
+                while position < len(text) and text[position].isalpha():
+                    position += 1
+                return position
+            position += 1
+        return index + 1
+
+    def code(self, index: int, until_brace: bool = False) -> int:
+        text, depth = self.text, 0
+        while True:
+            found = _CODE_SPECIAL.search(text, index)
+            if found is None:
+                return len(text)
+            index = found.start()
+            char = text[index]
+            if char == "/":
+                following = text[index + 1:index + 2]
+                if following == "/":
+                    newline = text.find("\n", index)
+                    index = len(text) if newline < 0 else newline
+                elif following == "*":
+                    close = text.find("*/", index + 2)
+                    index = len(text) if close < 0 else close + 2
+                elif self._expression_may_start(index):
+                    index = self._regex(index)
+                else:
+                    index += 1
+            elif char in "'\"":
+                index = self._string(index)
+            elif char == "`":
+                index = self._template(index)
+            elif char == "<":
+                following = text[index + 1:index + 2]
+                if (following == ">" or following.isalpha()) and self._expression_may_start(index):
+                    index = self.element(index)
+                else:
+                    index += 1
+            elif char == "{":
+                depth += 1
+                index += 1
+            else:
+                if depth == 0 and until_brace:
+                    return index + 1
+                depth -= 1
+                index += 1
+
+    def element(self, index: int) -> int:
+        text = self.text
+        if text.startswith("<>", index):
+            return self.children(index + 2)
+        tag = JSX_TAG.match(text, index + 1)
+        if tag is None:
+            return index + 1
+        after = text[tag.end():tag.end() + 16].lstrip()
+        if after.startswith(",") or re.match(r"extends\b", after):
+            return tag.end()  # <T,>(…) => …: a type-parameter list, not an element
+        start, position = tag.end(), tag.end()
+        while True:
+            found = _ATTRIBUTE_SPECIAL.search(text, position)
+            if found is None:
+                return len(text)
+            position = found.start()
+            char = text[position]
+            if char in "'\"":
+                close = text.find(char, position + 1)
+                position = len(text) if close < 0 else close + 1
+            elif char == "{":
+                position = self.code(position + 1, until_brace=True)
+            elif char == "/" and text.startswith("/>", position):
+                self.openings.append((index, tag.group(), text[start:position]))
+                return position + 2
+            elif char == ">":
+                self.openings.append((index, tag.group(), text[start:position]))
+                return self.children(position + 1)
+            else:
+                position += 1
+
+    def children(self, index: int) -> int:
+        text = self.text
+        while True:
+            found = _CHILDREN_SPECIAL.search(text, index)
+            if found is None:
+                return len(text)
+            index = found.start()
+            if text[index] == "{":
+                index = self.code(index + 1, until_brace=True)
+            elif text.startswith("</", index):
+                close = text.find(">", index)
+                return len(text) if close < 0 else close + 1
+            elif text[index + 1:index + 2] == ">" or text[index + 1:index + 2].isalpha():
+                index = self.element(index)
+            else:
+                index += 1
+
+
+def _jsx_openings(text: str) -> Iterator[tuple[int, str, str]]:
+    """Each JSX opening element as (line, tag, the text between the tag name and its closing '>')."""
+
+    scanner = _JsxScanner(text)
+    scanner.code(0)
+    starts = [0] + [match.end() for match in re.finditer("\n", text)]
+    for position, tag, attributes in sorted(scanner.openings):
+        yield bisect.bisect_right(starts, position), tag, attributes
+
+
+def unregistered_ui_entries(text: str, wrappers: Iterable[str] = (), view_rows: bool = False) -> list[int]:
+    """Lines of the controls in one source file that run an action but name no command.
+
+    A control is a ``<button>`` (or a wrapper component that renders one) or an element with
+    a control role (button, tab, option, treeitem, switch, checkbox, radio) that has an
+    ``onClick``, or any element whose role is a menu item; it is registered when it carries
+    ``data-command``. A wrapper the policy does not list, a spread ``{...props}`` and an
+    expression that leaves ``data-command`` empty are for the browser tests to catch. With
+    ``view_rows`` (a file listed in ui_entries.view_rows), a row marked ``data-command-view`` is
+    the command tree's own row and is not a control.
+    """
+
+    clickable = {"button", *wrappers}
+    lines = []
+    for line, tag, attributes in _jsx_openings(text):
+        acts = ((tag in clickable or UI_ENTRY_CONTROL_ROLE.search(attributes)) and UI_ENTRY_CLICK.search(attributes)
+                or UI_ENTRY_ROLE.search(attributes))
+        if acts and view_rows and UI_ENTRY_VIEW_ROW.search(attributes):
+            continue
+        if acts and not UI_ENTRY_COMMAND.search(attributes):
+            lines.append(line)
+    return lines
+
+
+def _ui_entry_counts(root: Path, block: dict[str, Any]) -> dict[str, list[int]]:
+    found: dict[str, list[int]] = {}
+    for source_root in block["source_roots"]:
+        base = root / source_root
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*.tsx")):
+            if any(part in NOT_SOURCE_DIRECTORIES for part in path.relative_to(base).parts):
+                continue
+            relative = path.relative_to(root).as_posix()
+            view_rows = any(_scope_covers(scope, relative) for scope in block["view_rows"])
+            lines = unregistered_ui_entries(path.read_text(encoding="utf-8"), block["wrappers"], view_rows)
+            if lines:
+                found[relative] = lines
+    return found
+
+
+def _place_kind(place: str) -> str:
+    return place.split(":", 1)[0]
+
+
+def check_ui_entries(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding]:
+    """Controls name their command, the unnamed ones stay within the baseline, places within budget.
+
+    UI_ENTRY_UNREGISTERED: a file has more unnamed controls than ui_entries.baseline allows
+    it (a file the baseline does not list allows none). UI_ENTRY_BASELINE: the baseline
+    allows more than the file has, or names a file that is gone; lower it, so a control
+    once named cannot quietly lose its id. UI_ENTRY_BUDGET: the commands of the tree that
+    stand in one place of one surface (``place`` is ``<kind>`` or ``<kind>:<name>``) exceed
+    the budget of that kind of place, or the kind has no budget.
+    """
+
+    block = _ui_entries_policy(policy)
+    if block is None:
+        return
+    for source_root in block["source_roots"]:
+        if not (root / source_root).is_dir():
+            yield PolicyFinding(ARCHITECTURE_POLICY, 1, "UI_ENTRY_BASELINE", f"ui_entries.source_roots names {source_root}, which does not exist")
+    for view_root in block["view_rows"]:
+        if not (root / view_root).exists():
+            yield PolicyFinding(ARCHITECTURE_POLICY, 1, "UI_ENTRY_BASELINE", f"ui_entries.view_rows names {view_root}, which does not exist")
+    found = _ui_entry_counts(root, block)
+    baseline: dict[str, int] = block["baseline"]
+    for relative, lines in sorted(found.items()):
+        allowed = baseline.get(relative, 0)
+        if len(lines) > allowed:
+            shown = ", ".join(str(line) for line in lines[:12]) + (" …" if len(lines) > 12 else "")
+            yield PolicyFinding(relative, lines[0], "UI_ENTRY_UNREGISTERED",
+                                f"{len(lines)} controls run an action without data-command, the baseline allows {allowed} "
+                                f"(lines {shown}); give a new control the id of the command it renders")
+    for relative, allowed in sorted(baseline.items()):
+        count = len(found.get(relative, ()))
+        if not (root / relative).is_file():
+            yield PolicyFinding(ARCHITECTURE_POLICY, 1, "UI_ENTRY_BASELINE", f"ui_entries.baseline names {relative}, which does not exist; remove it")
+        elif count < allowed:
+            yield PolicyFinding(ARCHITECTURE_POLICY, 1, "UI_ENTRY_BASELINE",
+                                f"ui_entries.baseline allows {relative} {allowed} unnamed controls, it has {count}; lower the baseline to {count}")
+    registry_path = root / "governance" / "module_registry.json"
+    if not registry_path.is_file():
+        return
+    budgets: dict[str, int] = block["budgets"]
+    standing: Counter[tuple[str, str]] = Counter()
+    for command in command_tree(json.loads(registry_path.read_text(encoding="utf-8")))["commands"]:
+        if isinstance(command["place"], str) and command["place"]:
+            standing[(str(command["surface"]), command["place"])] += 1
+    for (surface, place), count in sorted(standing.items()):
+        kind = _place_kind(place)
+        if kind not in budgets:
+            yield PolicyFinding("governance/module_registry.json", 1, "UI_ENTRY_BUDGET",
+                                f"{surface}: place {place!r} has no budget; add its kind to ui_entries.budgets (ADR-014)")
+        elif count > budgets[kind]:
+            yield PolicyFinding("governance/module_registry.json", 1, "UI_ENTRY_BUDGET",
+                                f"{surface}: {count} commands stand in {place}, its budget is {budgets[kind]}; retire or fold one in the same change")
+
+
+def check_changed_ui_baseline(root: Path, base: str, policy_path: str = ARCHITECTURE_POLICY) -> Iterator[PolicyFinding]:
+    """The baseline of unnamed controls never grows across a branch (UI_ENTRY_BASELINE).
+
+    Compared at the merge base and at HEAD, so lowering it in one commit and raising it
+    again in a later one is still caught; a file the base did not list may not be added.
+    """
+
+    merge_base = _git(root, "merge-base", base, "HEAD").strip()
+    before, after = _git_json(root, merge_base, policy_path), _git_json(root, "HEAD", policy_path)
+    if after is None or not isinstance(after.get("ui_entries"), dict):
+        return
+    old = (before or {}).get("ui_entries")
+    old_counts = old.get("baseline", {}) if isinstance(old, dict) else None
+    if old_counts is None:
+        return
+    for relative, count in sorted((after["ui_entries"].get("baseline") or {}).items()):
+        if isinstance(count, int) and count > old_counts.get(relative, 0):
+            yield PolicyFinding(policy_path, 1, "UI_ENTRY_BASELINE",
+                                f"ui_entries.baseline raises {relative} from {old_counts.get(relative, 0)} to {count}; "
+                                "give the new control its data-command instead")
+
+
 def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
     """Check the tree under ``root``, which must be a Git checkout.
 
@@ -2306,6 +2822,8 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
     findings.extend(check_docs_layout(root))
     findings.extend(check_placement(root, policy))
     findings.extend(check_registry(root, policy))
+    findings.extend(check_command_tree(root))
+    findings.extend(check_ui_entries(root, policy))
     findings.extend(check_file_owners(root, policy))
     findings.extend(check_scopes(root, policy, load_work_registry(root)))
     imported: set[str] = set()
@@ -2387,6 +2905,7 @@ def main(argv: list[str] | None = None) -> int:
                             root, args.changed, relative_policy
                         )
                     )
+                    | set(check_changed_ui_baseline(root, args.changed, relative_policy))
                 )
             )
             checked = 0

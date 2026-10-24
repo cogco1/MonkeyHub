@@ -5,6 +5,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
+import { cmd } from "./commandLocator.mjs";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
 const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-error-boundary-browser-"));
@@ -72,11 +73,11 @@ try {
 
   const crashUrl = `${origin}?crash=render&project=villa`;
   await page.goto(crashUrl);
-  const reload = page.getByRole("button", { name: "Reload the page", exact: true });
+  const reload = cmd(page, "view.notice.retry", { arg: "page" });
   await reload.waitFor();
   const loadsBefore = await page.evaluate(() => Number(sessionStorage.getItem("fixture.documentLoads")));
   await Promise.all([page.waitForNavigation({ waitUntil: "domcontentloaded" }), reload.click()]);
-  await page.getByRole("button", { name: "Reload the page", exact: true }).waitFor();
+  await cmd(page, "view.notice.retry", { arg: "page" }).waitFor();
 
   assert.equal(page.url(), crashUrl, "reload must keep the exact current URL and project locator");
   assert.equal(await page.evaluate(() => Number(sessionStorage.getItem("fixture.documentLoads"))), loadsBefore + 1,

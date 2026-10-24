@@ -416,12 +416,20 @@ fn run() -> Result<(), String> {
     args.retain(|arg| arg != "--update-trial");
     let config = LaunchConfig::from_args(args)?;
     let instance = Uuid::new_v4();
-    // #373: one desktop per runtime root, taken before any window, log or Hub exists. A
-    // repeated launch has brought the open window forward and told the person; it stops here.
-    if !monkeyhub_desktop::single_instance::claim(&config.runtime_root, trial)? {
+    // #373: one desktop per runtime root (per account in 工作坊模式, #668), taken before any
+    // window, log or Hub exists. A repeated launch has brought the open window forward and told
+    // the person; it stops here.
+    if !monkeyhub_desktop::single_instance::claim(&config.runtime_root, trial, config.workshop)? {
         return Ok(());
     }
     let log = DiagnosticLog::open(&config.runtime_root, &instance.to_string())?;
+    if config.workshop {
+        log.write(&format!(
+            "event=workshop port={} preferred={}",
+            config.port,
+            monkeyhub_desktop::WORKSHOP_PORT
+        ));
+    }
     let data_directory = config.runtime_root.join("cache/desktop-webview");
     std::fs::create_dir_all(&data_directory)
         .map_err(|e| format!("Cannot prepare WebView cache: {e}"))?;

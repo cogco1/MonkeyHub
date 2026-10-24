@@ -9,9 +9,9 @@
  */
 
 import type { StudioClient } from "../api/project-runtime/client";
-import { asStudioApiError, StudioApiError } from "../api/project-runtime/error";
+import { StudioApiError } from "../api/project-runtime/error";
 import type { WorkingDraftDto, WorkingSourceDto } from "../api/project-runtime/generated";
-import { continueUndo, undoRequest, type ContinueUndo } from "../features/designTree/continueUndo";
+import { continueUndo, undoSwitch, type ContinueUndo, type UndoOutcome } from "../features/designTree/continueUndo";
 
 export interface HeadRef {
   readonly runId: string;
@@ -84,30 +84,19 @@ export function followsTreeMove(move: TreeHeadMove | null | undefined, followed:
 }
 
 /** What 撤销 did: put the base back, or nothing, because Current moved on or holds unrecorded model edits. */
-export type FollowUndoOutcome = "undone" | "moved-on" | "unsynced";
+export type FollowUndoOutcome = UndoOutcome;
 
 /**
- * 撤销 itself: the Design Tree's Undo write (`undoRequest`), against the working position as it is read
- * now. It holds only while Current still stands on the followed run, and unrecorded model edits keep their
- * own source, so it waits for them. A write that lost a race with an autosave reads again, up to three times.
+ * 撤销 itself: the Runtime's Undo (`POST /api/working-design/undo`, continueUndo.ts), the rule the Design Tree's Undo
+ * keeps too. It holds only while Current still stands on the followed run, and unrecorded model edits keep their own
+ * source, so it waits for them. The position is read first, so a page left on another project puts nothing back.
  */
-export async function undoFollow(studio: Pick<StudioClient, "workingDraft" | "selectWorkingDraft">, projectId: string,
+export async function undoFollow(studio: Pick<StudioClient, "workingDraft" | "undoWorkingDesign">, projectId: string,
   undo: ContinueUndo): Promise<FollowUndoOutcome> {
-  for (let attempt = 1; ; attempt += 1) {
-    const position = await studio.workingDraft();
-    if (position.projectId !== projectId) {
-      throw new StudioApiError({ status: 0, code: "EDITING_PROJECT_CHANGED",
-        detail: "The working position belongs to another project. Reconnect this project's runtime before undoing." });
-    }
-    if (position.localDraft) return "unsynced";
-    const request = undoRequest(projectId, undo, position);
-    if (request === null) return "moved-on";
-    try {
-      await studio.selectWorkingDraft(request);
-      return "undone";
-    } catch (cause) {
-      // An autosave moved the position between the read and this write.
-      if (asStudioApiError(cause).code !== "WORKING_DRAFT_STALE" || attempt >= 3) throw cause;
-    }
+  const position = await studio.workingDraft();
+  if (position.projectId !== projectId) {
+    throw new StudioApiError({ status: 0, code: "EDITING_PROJECT_CHANGED",
+      detail: "The working position belongs to another project. Reconnect this project's runtime before undoing." });
   }
+  return undoSwitch(studio, projectId, undo);
 }

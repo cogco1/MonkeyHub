@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
+import { cmd } from "./commandLocator.mjs";
 import rhino3dm from "rhino3dm";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -214,7 +215,7 @@ try {
 
   // A line starts on A and ends on B. XY remains authoritative over their roof Z.
   await load(); await setView();
-  await page.getByRole("button",{name:"Line",exact:true}).click();
+  await cmd(page,"draft.tools.line").click();
   cursor=await move([4,3,3],[9,-9]); await page.mouse.click(...cursor);
   cursor=await move([6,3,3],[-9,-9]);
   await page.waitForFunction(()=>document.querySelector(".viewport-snap")?.textContent.trim()==="End · projected");
@@ -231,7 +232,7 @@ try {
   console.log("PASS cross-object line commits the same projected point shown by the marker");
 
   await load([source,["neighbour",solid(6,1)]]); await setView();
-  await page.getByRole("button",{name:"Line",exact:true}).click();
+  await cmd(page,"draft.tools.line").click();
   cursor=await move([4,3,3]); await page.mouse.click(...cursor);
   await move([6,4,3]);
   near(await page.evaluate(()=>window.readInteraction().sketch.cursor),[6,4]);
@@ -248,7 +249,7 @@ try {
     await page.mouse.click(...await screen([2,1.5,3]));
     await page.waitForFunction(()=>window.picks.at(-1)?.draftElementId==="source");
     if(tool==="copy") await page.evaluate(()=>window.arm("copy"));
-    else await page.locator('button[data-model-tool="move"]').click();
+    else await cmd(page,"draft.tools.move").click();
     await page.locator(".stage-move").waitFor();
     const handle=await page.evaluate(axis=>window.handlePoint(axis),axis);
     const stable=await camera();
@@ -269,7 +270,7 @@ try {
   await load([source,["neighbour",solid(2,1.5,5,3,3,1)]]); await setView(true,true);
   await page.mouse.click(...await screen([2,1.5,3]));
   await page.waitForFunction(()=>window.picks.at(-1)?.draftElementId==="source");
-  await page.locator('button[data-model-tool="pushPull"]').click(); await page.locator(".stage-pushpull").waitFor();
+  await cmd(page,"draft.tools.push_pull").click(); await page.locator(".stage-pushpull").waitFor();
   await move([2,1.5,5],[2,1]); await marker().waitFor();
   near([await page.evaluate(()=>window.readInteraction().pushPull.distance)],[2]); await markerAt([2,1.5,5]);
   const field=page.getByRole("spinbutton",{name:"Distance m",exact:true}); await field.fill("1.125");

@@ -8,6 +8,7 @@ import type { DocumentAnnotationRefDto, DocumentCommentDto, DocumentGestureDto, 
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { startClientTiming, type ClientTimingSpan } from "../../app/clientTiming";
 import { useT } from "../../i18n/useT";
+import { InlineDecision } from "../../notifications/cards/InlineDecision";
 import { usePreferences } from "../../features/settings/preferences";
 import { eraseAt, inkPath, toPagePoint, zoomPageAt, type PagePoint, type PageView } from "./documentInk";
 import { useDocumentAnnotations, type createDocumentAnnotationsController } from "./useDocumentAnnotations";
@@ -17,6 +18,7 @@ import { DocumentTracingPanel } from "./DocumentTracingPanel";
 import { DocumentStudyPanel } from "./DocumentStudyPanel";
 import { useDocumentStudy } from "./useDocumentStudy";
 import { studyEvidenceToGestures, studyEvidenceFromGestures } from "./documentStudy";
+import { DOCUMENT_TOOLS, EVIDENCE_TOOLS } from "./documentTools";
 import "./DocumentCanvas.css";
 
 type DrawingTool = "freehand" | "line" | "arrow" | "circle" | "polyline";
@@ -384,14 +386,14 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
 
   return <div className="document-canvas">
     <div className="document-tools" role="toolbar" aria-label={t("document.tools")}>
-      {(["select", "freehand", "line", "polyline", "arrow", "circle", "text", "eraser", "pan"] as const).filter(kind => !evidenceOnly || ["select", "polyline", "eraser", "pan"].includes(kind)).map((kind) => <button key={kind} type="button"
+      {DOCUMENT_TOOLS.filter(kind => !evidenceOnly || EVIDENCE_TOOLS.includes(kind)).map((kind) => <button data-command={`view.markup_tools.${kind}`} key={kind} type="button"
         disabled={readOnly && kind !== "pan"} aria-pressed={tool === kind} aria-label={t(`document.tool.${kind}`)} title={t(`document.tool.${kind}`)}
         onClick={() => { cancel(); setOutline([]); setTool(kind); if (kind !== "select") setSelectedVectorId(null); }}><Icon name={kind} /><span>{t(`document.tool.${kind}`)}</span></button>)}
-      {tool === "polyline" && <button type="button" disabled={readOnly || outline.length < 3} onClick={closeOutline}>{t("document.trace.close")}</button>}
-      {selectedVector && <button type="button" disabled={readOnly} onClick={() => onChange(annotations.filter(mark => mark.id !== selectedVector.id))}>{t("document.trace.delete")}</button>}
+      {tool === "polyline" && <button data-command="view.markup_tools.close_outline" type="button" disabled={readOnly || outline.length < 3} onClick={closeOutline}>{t("document.trace.close")}</button>}
+      {selectedVector && <button data-command="view.markup_tools.delete_path" type="button" disabled={readOnly} onClick={() => onChange(annotations.filter(mark => mark.id !== selectedVector.id))}>{t("document.trace.delete")}</button>}
       <span className="document-tools__separator" />
-      <button type="button" disabled={!canUndo || readOnly} onClick={onUndo} title={t("document.undo")} aria-label={t("document.undo")}><Icon name="undo" /></button>
-      <button type="button" disabled={!canRedo || readOnly} onClick={onRedo} title={t("document.redo")} aria-label={t("document.redo")}><Icon name="redo" /></button>
+      <button data-command="view.markup_tools.undo" type="button" disabled={!canUndo || readOnly} onClick={onUndo} title={t("document.undo")} aria-label={t("document.undo")}><Icon name="undo" /></button>
+      <button data-command="view.markup_tools.redo" type="button" disabled={!canRedo || readOnly} onClick={onRedo} title={t("document.redo")} aria-label={t("document.redo")}><Icon name="redo" /></button>
       {!evidenceOnly && <><label className="document-color" title={t("document.color")}><span className="visually-hidden">{t("document.color")}</span><input type="color" value={color} disabled={readOnly} onChange={(event) => setColor(event.target.value)} /></label>
       {tool === "text" ? <select aria-label={t("document.text.size")} value={fontSize} disabled={readOnly} onChange={(event) => setFontSize(Number(event.target.value))}>
         <option value={0.018}>{t("document.text.small")}</option><option value={0.024}>{t("document.medium")}</option><option value={0.032}>{t("document.text.large")}</option>
@@ -399,10 +401,10 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
         <option value={0.002}>{t("document.thin")}</option><option value={0.004}>{t("document.medium")}</option><option value={0.008}>{t("document.thick")}</option>
       </select>}</>}
       <span className="document-tools__spacer" />
-      <button type="button" onClick={() => zoom(1 / 1.25)} aria-label={t("document.zoomOut")}>−</button>
+      <button data-command="view.canvas.zoom_out" type="button" onClick={() => zoom(1 / 1.25)} aria-label={t("document.zoomOut")}>−</button>
       <span className="document-zoom" aria-live="polite">{Math.round(view.scale * 100)}%</span>
-      <button type="button" onClick={() => zoom(1.25)} aria-label={t("document.zoomIn")}>+</button>
-      <button type="button" onClick={fit} title={t("document.fit")} aria-label={t("document.fit")}><Icon name="fit" /></button>
+      <button data-command="view.canvas.zoom_in" type="button" onClick={() => zoom(1.25)} aria-label={t("document.zoomIn")}>+</button>
+      <button data-command="view.canvas.fit" type="button" onClick={fit} title={t("document.fit")} aria-label={t("document.fit")}><Icon name="fit" /></button>
     </div>
     <div ref={host} className="document-viewport" tabIndex={0} role="region" aria-label={t("document.pageCanvas", { page: page.pageIndex + 1 })}
       data-tool={temporaryPan ? "pan" : tool} data-active={isActive} data-ready={renderReady}
@@ -825,7 +827,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
     else { if (studyMode) study.undo(); else draft.undo(); }
   }}>
     <div className="document-header">
-      <button type="button" className="btn" disabled={uploading || sending || study.busy || review !== null} onClick={() => input.current?.click()}>{t(uploading ? "document.uploading" : "document.open")}</button>
+      <button data-command="view.open_document.file" type="button" className="btn" disabled={uploading || sending || study.busy || review !== null} onClick={() => input.current?.click()}>{t(uploading ? "document.uploading" : "document.open")}</button>
       <input ref={input} className="visually-hidden" type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg"
         aria-label={t("document.open")} onChange={(event) => { const selected = event.target.files?.[0]; event.target.value = ""; if (selected) void upload(selected); }} />
       {documents.length > 0 && <select aria-label={t("document.source")} value={document ? optionKey(document) : selectedRevision ?? selectedSha ?? ""} disabled={uploading || sending || study.busy || review !== null}
@@ -836,14 +838,14 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
         {documents.map((item) => <option key={optionKey(item)} value={optionKey(item)}>{item.fileName}{item.revisionRef ? ` · ${item.revisionRef.split("/").at(-1)?.slice(0, 8)}` : ""}</option>)}
       </select>}
       {document && <div className="document-pages">
-        <button type="button" aria-label={t("document.previousPage")} disabled={uploading || sending || study.busy || pageIndex <= 0 || review !== null} onClick={() => { void switchDocumentPage(() => setPageIndex((value) => value - 1)); }}>‹</button>
+        <button data-command="view.canvas.previous_page" type="button" aria-label={t("document.previousPage")} disabled={uploading || sending || study.busy || pageIndex <= 0 || review !== null} onClick={() => { void switchDocumentPage(() => setPageIndex((value) => value - 1)); }}>‹</button>
         <label><span className="visually-hidden">{t("document.page")}</span><select aria-label={t("document.page")} value={pageIndex} disabled={uploading || sending || study.busy || review !== null} onChange={(event) => { const next = Number(event.target.value); void switchDocumentPage(() => setPageIndex(next)); }}>
           {!page && <option value={pageIndex} disabled>{t("document.linkUnavailable")}</option>}
           {document.pages.map((item) => <option key={item.pageIndex} value={item.pageIndex}>{item.pageIndex + 1} / {document.pageCount}</option>)}
         </select></label>
-        <button type="button" aria-label={t("document.nextPage")} disabled={uploading || sending || study.busy || pageIndex >= document.pageCount - 1 || review !== null} onClick={() => { void switchDocumentPage(() => setPageIndex((value) => value + 1)); }}>›</button>
+        <button data-command="view.canvas.next_page" type="button" aria-label={t("document.nextPage")} disabled={uploading || sending || study.busy || pageIndex >= document.pageCount - 1 || review !== null} onClick={() => { void switchDocumentPage(() => setPageIndex((value) => value + 1)); }}>›</button>
       </div>}
-      {studySource && <button type="button" aria-pressed={studyMode} disabled={studyBusy || review !== null}
+      {studySource && <button data-command="view.study.toggle" type="button" aria-pressed={studyMode} disabled={studyBusy || review !== null}
         onClick={() => { void (async () => { try {
           if (studyMode) await saveStudyIfDirty();
           else if (draft.ready && !draft.readOnly && (draft.dirty || draft.saving)) await draft.save();
@@ -867,20 +869,21 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
             <option value="">{t("document.modelSource.select")}</option>
             {modelSources.map((item) => <option key={modelSourceKey(item.modelSource)} value={modelSourceKey(item.modelSource)}>{item.label}</option>)}
           </select>
-          <button type="button" disabled={!modelChoice || bindingModel || uploading || busy} onClick={() => void bindModel()}>
+          <button data-command="document.model_source.link" type="button" disabled={!modelChoice || bindingModel || uploading || busy} onClick={() => void bindModel()}>
             {t(bindingModel ? "document.modelSource.associating" : "document.modelSource.associate")}
           </button>
         </> : <span>{t("document.modelSource.noModels")}</span>}
-      </div> : !modelMatches && <button type="button" disabled={continuingModel || busy} onClick={() => void continueModel()}>
-        {t(continuingModel ? "document.modelSource.continuing" : "document.modelSource.continue")}
-      </button>)}
+      </div> : !modelMatches && <InlineDecision className="document-model-source__decision" compact label={t("document.modelSource.mismatch")} choices={[
+        { command: "design.go_to_step.continue", primary: true, disabled: continuingModel || busy, onSelect: () => void continueModel(),
+          label: t(continuingModel ? "document.modelSource.continuing" : "document.modelSource.continue") },
+      ]} />)}
     </div>}
     {(error || draft.error) && <div className="document-error"><ErrorPanel error={(error ?? draft.error)!} what={t("document.workspace")} />
-      {draft.error && <><button type="button" onClick={() => void draft.save().then(() => setError(null)).catch((cause: unknown) => setError(asStudioApiError(cause)))}>{t("document.retrySave")}</button>
-        <button type="button" onClick={() => void draft.reload().then(() => setError(null)).catch((cause: unknown) => setError(asStudioApiError(cause)))}>{t("document.reload")}</button>
+      {draft.error && <><button data-command="view.notice.retry" data-command-arg="document_save" type="button" onClick={() => void draft.save().then(() => setError(null)).catch((cause: unknown) => setError(asStudioApiError(cause)))}>{t("document.retrySave")}</button>
+        <button data-command="view.notice.read_latest" data-command-arg="document" type="button" onClick={() => void draft.reload().then(() => setError(null)).catch((cause: unknown) => setError(asStudioApiError(cause)))}>{t("document.reload")}</button>
         <span>{t("document.reloadHint")}</span></>}
     </div>}
-    {review && <div className="document-review-banner"><span>{t("document.reviewVersion")}</span><button type="button" onClick={() => { setReview(null); setPageIndex(0); }}>{t("document.returnToEdit")}</button></div>}
+    {review && <div className="document-review-banner"><span>{t("document.reviewVersion")}</span><button data-command="view.markup_tools.return_to_edit" type="button" onClick={() => { setReview(null); setPageIndex(0); }}>{t("document.returnToEdit")}</button></div>}
     <div className="document-body">
       <div className="document-main">
         {file && page ? <DocumentPageCanvas key={`${documentRun}:${selectedSha}:${selectedRevision}:${pageIndex}`} file={file} page={page} timing={timing}
@@ -931,23 +934,23 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
             </select></div>
           <p id="document-drawing-source" className="document-drawing-styles__source">{t(!drawingModelSource ? "document.drawingNoSource"
             : documentModelSource ? "document.drawingFromDocument" : "document.drawingFromModel")}</p>
-          <button type="button" className="btn btn--accent document-drawing-styles__generate" aria-describedby="document-drawing-source"
+          <button data-command="drawing.sheet.generate" type="button" className="btn btn--accent document-drawing-styles__generate" aria-describedby="document-drawing-source"
             disabled={stylesLoading || !drawingStyles.some((style) => style.id === styleId) || !drawingModelSource || sheetBusy || busy || loading || !active}
             onClick={() => void generateSheet()}>{t(sheetBusy ? "document.drawingGenerating" : "document.drawingGenerate")}</button>
           {sheetBusy && <p role="status">{t("document.drawingGeneratingHint")}</p>}
           {stylesError && <ErrorPanel error={stylesError} what={t("document.drawingGenerate")} />}
           {sheetError && <p className="document-drawing-styles__error" role="alert">{sheetError.detail}</p>}
-          {stylesError && <button type="button" onClick={() => setStylesRetry((value) => value + 1)}>{t("document.drawingStylesRetry")}</button>}
+          {stylesError && <button data-command="view.notice.retry" data-command-arg="drawing_styles" type="button" onClick={() => setStylesRetry((value) => value + 1)}>{t("document.drawingStylesRetry")}</button>}
         </section>}
         <label htmlFor="document-comment">{t("document.comment")}</label>
         <textarea id="document-comment" value={review?.text ?? draft.comment} readOnly={draft.readOnly} disabled={!draft.ready || sending}
           onChange={(event) => draft.setComment(event.target.value)} onBlur={draft.flush} placeholder={t("document.commentHint")} />
         <div className="document-note-actions">
-          <button type="button" className="btn btn--accent" disabled={!documentVisualInputAvailable || !draft.ready || draft.readOnly || !draft.comment.trim() || !file || busy || sending || !modelMatches}
+          <button data-command="markup.hand_to_ai.submit_page_note" type="button" className="btn btn--accent" disabled={!documentVisualInputAvailable || !draft.ready || draft.readOnly || !draft.comment.trim() || !file || busy || sending || !modelMatches}
             onClick={() => void submit()}>{t(sending ? "document.submitting" : "document.submit")}</button></div>
         {!documentVisualInputAvailable && <p className="document-visual-unavailable" role="status">{t("document.visualUnavailable")}</p>}
         {review === null && <details className="document-references">
-          <summary>{t("document.references", { count: references.length })}</summary>
+          <summary data-command="view.disclosure.toggle" data-command-arg="document_references">{t("document.references", { count: references.length })}</summary>
           <p>{t("document.referenceHint")}</p>
           <div className="document-references__pages">{referenceChoices.map((choice) => {
             const selected = references.find((item) => pageKey(item) === pageKey(choice));
@@ -970,9 +973,9 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
           {referenceChoices.length === 0 && <p>{t("document.noReferencePages")}</p>}
         </details>}
         {feedback && <p role="status">{feedback}</p>}
-        <details className="document-submitted"><summary>{t("document.submittedNotes", { count: submitted.length })}</summary>
+        <details className="document-submitted"><summary data-command="view.handled.submitted_notes">{t("document.submittedNotes", { count: submitted.length })}</summary>
           {submitted.map((comment) => <article key={comment.commentRef}><p>{comment.utterance}</p>
-            {comment.documentAnnotations.map((ref) => <button key={`${pageKey(ref)}:${ref.revisionSha256}`} type="button" disabled={sending}
+            {comment.documentAnnotations.map((ref) => <button data-command="view.handled.view_page" data-command-arg={pageKey(ref)} key={`${pageKey(ref)}:${ref.revisionSha256}`} type="button" disabled={sending}
               onClick={() => { void switchDocumentPage(() => { setReview({ ref, text: comment.utterance }); setSelectedSha(ref.assetSha256); setSelectedRevision(ref.drawingRevisionRef ?? null); setSelectedRun(ref.runId); setPageIndex(ref.pageIndex); }); }}>
               {t("document.openSubmittedPage", { page: ref.pageIndex + 1 })}</button>)}
           </article>)}

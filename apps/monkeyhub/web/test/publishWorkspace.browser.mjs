@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
+import { cmd, commandProblems, waitForCommandLabel } from "./commandLocator.mjs";
 const root = fileURLToPath(new URL("..", import.meta.url)), repo = path.resolve(root, "../../..");
 const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-publish-browser-"));
 const processes = [], origins = {}, errors = [], passed = [];
@@ -101,9 +102,9 @@ try {
     await until(() => api('pub-a', '/api/board'), (value) => value.elements.filter((item) => item.type === 'image' && !item.isDeleted).length === 2, 'Board has the retained source page');
     await board().locator('.excalidraw').focus();
     await page.keyboard.press('Escape'); await page.keyboard.press('v'); await page.keyboard.press('Control+a');
-    const actions = bar().locator('details').filter({ has: page.locator('summary', { hasText: 'More board actions' }) });
-    if (!await actions.evaluate((element) => element.open)) await actions.locator('summary').click();
-    await bar().getByRole('button', { name: 'Add to Publish', exact: true }).click();
+    const actions = bar().locator('details').filter({ has: cmd(page, 'view.menu.toggle', { arg: 'board_more', includeHidden: true }) });
+    if (!await actions.evaluate((element) => element.open)) await cmd(actions, 'view.menu.toggle', { arg: 'board_more' }).click();
+    await cmd(bar(), 'board.manage.add_to_publish').click();
     await bar().getByLabel('Publication title').waitFor();
   }
   async function assertFailure({ code, status, detail, reason, next, developer = false }) {
@@ -112,14 +113,21 @@ try {
     assert.equal(await pub().getByRole('alert').count(), 1, 'the same failure is not announced twice');
     assert.match(await panel.locator('.error-panel__reason').innerText(), reason);
     assert.match(await panel.locator('.error-panel__next').innerText(), next);
+    // 2-7: the code, status and the service's own words wait for developer mode, where they start open.
     const details = panel.locator('details');
-    assert.equal(await details.evaluate((element) => element.open), developer, 'diagnostics follow developer mode');
-    assert.equal(await details.locator('[lang="en"]').isVisible(), developer, 'raw server detail is folded for ordinary use');
-    if (!developer) await details.locator('summary').click();
+    if (!developer) {
+      assert.equal(await details.count(), 0, 'outside developer mode the panel says only what happened and what to do');
+      assert.ok(!(await panel.innerText()).includes(detail), 'the raw server detail is not shown for ordinary use');
+      await page.locator('#developer-mode').click();
+    }
+    assert.equal(await details.evaluate((element) => element.open), true, 'diagnostics start open in developer mode');
     assert.equal(await details.locator('.error-panel__code').innerText(), code);
     assert.equal(await details.locator('.error-panel__status').innerText(), `HTTP ${status}`);
     assert.equal(await details.locator('[lang="en"]').innerText(), detail);
-    if (!developer) await details.locator('summary').click();
+    if (!developer) {
+      await page.locator('#developer-mode').click();
+      assert.equal(await details.count(), 0, 'turning developer mode off folds the diagnostics away again');
+    }
   }
   await step('failed initial publication read explains recovery in both languages and preserves technical details', async () => {
     const detail = 'Publication record fixture-282 could not be read.';
@@ -128,7 +136,7 @@ try {
       ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'PUBLICATION_READ_FAILED', detail }) }) : route.continue());
     for (const language of ['en', 'zh-CN']) {
       await page.goto(vite.resolvedUrls.local[0] + '?lang=' + language);
-      await until(() => pub().innerText().catch(() => ''), (text) => text.includes(detail) || /Technical details|技术详情/.test(text), 'publication read refusal rendered');
+      await until(() => pub().locator('.error-panel__reason').count(), (count) => count === 1, 'publication read refusal rendered');
       await page.screenshot({ path: path.join(temporary, `publish-read-failure-${language}.png`), fullPage: true });
       const refusal = { code: 'PUBLICATION_READ_FAILED', status: 503, detail,
         reason: language === 'en' ? /ran into a problem/ : /项目服务出错/,
@@ -140,19 +148,20 @@ try {
       await assertFailure(refusal);
     }
     await page.unroute(reading);
-    await pub().getByRole('button', { name: '重试', exact: true }).click();
+    await waitForCommandLabel(cmd(pub(), 'view.notice.retry', { arg: 'layout_load' }), '重试');
+    await cmd(pub(), 'view.notice.retry', { arg: 'layout_load' }).click();
     await bar().getByLabel('文件标题').waitFor();
     assert.equal(await pub().getByRole('alert').count(), 0, 'successful read clears its error');
     assert.deepEqual(await api('pub-a', '/fixture/head'), head);
   });
   await page.goto(vite.resolvedUrls.local[0] + "?lang=en");
   await step("create native text and a real registered image page", async () => {
-    await pub().getByRole("button", { name: "+ Page", exact: true }).click();
+    await cmd(pub(), "view.layout.add_page").click();
     await bar().getByLabel("Publication title").fill("Structure review");
-    await pub().getByRole("button", { name: "Add text", exact: true }).click();
+    await cmd(pub(), "view.layout.add_text").click();
     await pub().getByLabel("Text", { exact: true }).fill("One building, three rooms");
     await pub().getByLabel("Project drawing / image").selectOption({ label: "Room plan.png" });
-    await pub().getByRole("button", { name: "Place on page", exact: true }).click();
+    await cmd(pub(), "view.layout.place_image").click();
     await until(() => pub().locator('.publish-page img').count(), (n) => n === 1, "retained image loads");
     await until(() => api("pub-a", "/api/publication"), (x) => x.pages.length === 1 && x.title === "Structure review", "save page");
   });
@@ -169,15 +178,15 @@ try {
     await page.screenshot({ path: path.join(temporary, "publish-wide.png"), fullPage: true });
   });
   await step("PPTX and PDF export the saved source; switching project isolates pages", async () => {
-    for (const format of ["PPTX", "PDF"]) { const pending = page.waitForEvent("download"); await bar().getByRole("button", { name: format, exact: true }).click(); const result = await pending; const content = await readFile(await result.path()); assert.ok(content.length > 1000); assert.ok(result.suggestedFilename().endsWith(format.toLowerCase())); }
-    await page.locator('#project-switch').click(); await pub().getByRole("button", { name: "+ Page", exact: true }).waitFor();
+    for (const format of ["PPTX", "PDF"]) { const pending = page.waitForEvent("download"); await cmd(bar(), `publication.export.${format.toLowerCase()}`).click(); const result = await pending; const content = await readFile(await result.path()); assert.ok(content.length > 1000); assert.ok(result.suggestedFilename().endsWith(format.toLowerCase())); }
+    await page.locator('#project-switch').click(); await cmd(pub(), "view.layout.add_page").waitFor();
     assert.equal(await pub().locator('.publish-page').count(), 0);
     await page.locator('#project-switch').click(); await pub().locator('.publish-page').waitFor();
     assert.deepEqual(await api("pub-a", "/fixture/head"), head);
   });
   await step("multiple pages reorder and narrow screen has no horizontal overflow", async () => {
-    await pub().getByRole("button", { name: "+ Page", exact: true }).click(); await pub().getByRole("button", { name: "Add text", exact: true }).click();
-    await pub().getByLabel("Text", { exact: true }).fill("Second page"); await pub().getByRole("button", { name: "Move page up", exact: true }).click();
+    await cmd(pub(), "view.layout.add_page").click(); await cmd(pub(), "view.layout.add_text").click();
+    await pub().getByLabel("Text", { exact: true }).fill("Second page"); await cmd(pub(), "view.layout.move_page_up").click();
     await until(() => api("pub-a", "/api/publication"), (x) => x.pages[0].elements[0].text === "Second page", "page order persisted");
     for (const width of [900, 390]) { await page.setViewportSize({ width, height: 850 }); await delay(250); assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)); await page.screenshot({ path: path.join(temporary, `publish-${width}.png`), fullPage: true }); }
   });
@@ -199,6 +208,7 @@ try {
     await bar().getByLabel('Publication title').fill('Newer saved review');
     await until(() => api('pub-a', '/api/publication'), (value) => value.title === 'Newer saved review', 'new save reaches P036');
     await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'save response completes');
+    assert.deepEqual(await commandProblems(pub()), [], 'every visible Layout control names its command');
     release();
     await delay(250);
     assert.equal(await bar().getByLabel('Publication title').inputValue(), 'Newer saved review');
@@ -229,18 +239,18 @@ try {
       const response = await route.fetch(); captured = true; await gate; await route.fulfill({ response });
     });
     const download = page.waitForEvent('download');
-    await bar().getByRole('button', { name: 'PDF', exact: true }).click();
+    await cmd(bar(), 'publication.export.pdf').click();
     await until(() => captured, Boolean, 'export response delayed');
     await page.getByRole('button', { name: 'board', exact: true }).click();
     const handed = page.waitForResponse((response) => response.url().includes('/pub-a/api/publication/from-board') && response.request().method() === 'POST');
     await sendBoardSelection();
-    assert.equal(await bar().getByRole('button', { name: 'PDF', exact: true }).isDisabled(), true, 'export still owns the in-flight operation');
+    assert.equal(await cmd(bar(), 'publication.export.pdf').isDisabled(), true, 'export still owns the in-flight operation');
     release(); await download;
     const response = await handed;
     assert.equal(response.status(), 200, await response.text());
     const after = await api('pub-a', '/api/publication');
     assert.deepEqual(after.pages, before.pages, 'retrying the same retained Board selection is idempotent');
-    await until(() => bar().getByRole('button', { name: 'PDF', exact: true }).isEnabled(), Boolean, 'handoff response applied');
+    await until(() => cmd(bar(), 'publication.export.pdf').isEnabled(), Boolean, 'handoff response applied');
     assert.equal(await pub().locator('.publish-page').count(), 1, 'idempotent handoff still shows an existing page');
     assert.deepEqual(await api('pub-a', '/fixture/head'), head);
     await page.unroute('**/pub-a/api/publication/export');
@@ -254,13 +264,13 @@ try {
     });
     await page.getByRole('button', { name: 'board', exact: true }).click();
     await sendBoardSelection();
-    await pub().getByRole('button', { name: 'Retry save', exact: true }).waitFor();
+    await cmd(pub(), 'view.notice.retry', { arg: 'layout_save' }).waitFor();
     await assertFailure({ code: 'PUBLICATION_BOARD_SELECTION', status: 409, detail: 'The selected Board objects are not in this saved revision.', reason: /conflicts with the project/, next: /latest state/ });
     assert.equal(attempts, 1);
     assert.deepEqual(await api('pub-a', '/api/publication'), before, 'refused import does not change retained pages');
     await page.unroute('**/pub-a/api/publication/from-board');
     const retried = page.waitForResponse((reply) => reply.url().endsWith('/api/publication/from-board') && reply.request().method() === 'POST');
-    await pub().getByRole('button', { name: 'Retry save', exact: true }).click();
+    await cmd(pub(), 'view.notice.retry', { arg: 'layout_save' }).click();
     assert.equal((await retried).status(), 200);
     await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'live import retried');
     assert.equal(await pub().getByRole('alert').count(), 0);
@@ -269,7 +279,7 @@ try {
   });
   await step('a failed autosave keeps the draft and does not reimport deleted Board pages', async () => {
     const before = await api('pub-a', '/api/publication');
-    await pub().getByRole('button', { name: 'Delete page', exact: true }).click();
+    await cmd(pub(), 'view.layout.delete_page').click();
     await until(() => api('pub-a', '/api/publication'), (value) => value.pages.length === before.pages.length - 1, 'manual page deletion saved');
     const kept = (await api('pub-a', '/api/publication')).pages;
     const savingPublication = (url) => url.pathname === '/pub-a/api/publication';
@@ -281,19 +291,19 @@ try {
     });
     await bar().getByLabel('Publication title').fill('Retain this after failure');
     await until(() => failed, Boolean, 'save refused');
-    await pub().getByRole('button', { name: 'Retry save', exact: true }).waitFor();
+    await cmd(pub(), 'view.notice.retry', { arg: 'layout_save' }).waitFor();
     assert.equal(await bar().getByLabel('Publication title').inputValue(), 'Retain this after failure');
     await assertFailure({ code: 'PUBLICATION_WRITE_FAILED', status: 503, detail: 'Temporary save failure', reason: /could not be saved/, next: /project folder can be written to/ });
     await bar().getByLabel('Publication title').fill('Newest draft after failure');
     const dialog = page.waitForEvent('dialog');
-    const reloading = pub().getByRole('button', { name: 'Reload', exact: true }).click();
+    const reloading = cmd(pub(), 'view.notice.retry', { arg: 'layout_reload' }).click();
     const confirmation = await dialog;
     assert.equal(confirmation.message(), 'Discard unsaved changes and reload?');
     await confirmation.dismiss(); await reloading;
     assert.equal(await bar().getByLabel('Publication title').inputValue(), 'Newest draft after failure');
     assert.notEqual((await api('pub-a', '/api/publication')).title, 'Newest draft after failure');
     await page.unroute(savingPublication);
-    await pub().getByRole('button', { name: 'Retry save', exact: true }).click();
+    await cmd(pub(), 'view.notice.retry', { arg: 'layout_save' }).click();
     await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'retry acknowledged');
     assert.equal((await api('pub-a', '/api/publication')).title, 'Newest draft after failure');
     assert.equal(await pub().getByRole('alert').count(), 0, 'successful retry clears its error');
@@ -306,14 +316,14 @@ try {
     const downloads = []; const onDownload = (download) => downloads.push(download);
     page.on('download', onDownload);
     await page.route('**/pub-a/api/publication/export', (route) => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'PUBLICATION_SOURCE_CONFLICT', detail: 'The export source no longer matches fixture-282.' }) }));
-    await bar().getByRole('button', { name: 'PDF', exact: true }).click();
+    await cmd(bar(), 'publication.export.pdf').click();
     await pub().getByRole('alert').waitFor();
     await assertFailure({ code: 'PUBLICATION_SOURCE_CONFLICT', status: 409, detail: 'The export source no longer matches fixture-282.', reason: /conflicts with the project/, next: /latest state/ });
     assert.equal(downloads.length, 0, 'failed export never presents a successful file');
     assert.deepEqual(await api('pub-a', '/api/publication'), before, 'export failure leaves saved content unchanged');
     await page.unroute('**/pub-a/api/publication/export');
     const download = page.waitForEvent('download');
-    await bar().getByRole('button', { name: 'PDF', exact: true }).click();
+    await cmd(bar(), 'publication.export.pdf').click();
     assert.ok((await readFile(await (await download).path())).length > 1000);
     assert.equal(downloads.length, 1);
     assert.equal(await pub().getByRole('alert').count(), 0);
@@ -360,7 +370,7 @@ try {
     await bar().getByLabel('Publication title').fill('Pending across immediate reopen');
     await until(() => writeCaptured, Boolean, 'PUT held before commit');
     await page.locator('#project-switch').click();
-    await pub().getByRole('button', { name: '+ Page', exact: true }).waitFor();
+    await cmd(pub(), 'view.layout.add_page').waitFor();
     await page.locator('#project-switch').click();
     await until(() => readCaptured, Boolean, 'old GET captured on new surface');
     assert.equal(await bar().getByLabel('Publication title').inputValue(), 'Pending across immediate reopen');
@@ -381,17 +391,17 @@ try {
     await page.route(savingPublication, (route) => route.request().method() === 'PUT'
       ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Offline for close' }) }) : route.continue());
     await bar().getByLabel('Publication title').fill('Recover this after closing project');
-    await pub().getByRole('button', { name: 'Retry save', exact: true }).waitFor();
+    await cmd(pub(), 'view.notice.retry', { arg: 'layout_save' }).waitFor();
     await page.locator('#project-switch').click();
-    await pub().getByRole('button', { name: '+ Page', exact: true }).waitFor();
+    await cmd(pub(), 'view.layout.add_page').waitFor();
     assert.equal(await pub().getByRole('alert').count(), 0, 'the other project does not inherit this error');
     assert.deepEqual(await api('pub-b', '/api/publication'), other);
     assert.deepEqual(await api('pub-b', '/fixture/head'), otherHead);
     await page.locator('#project-switch').click();
-    await pub().getByRole('button', { name: 'Retry save', exact: true }).waitFor();
+    await cmd(pub(), 'view.notice.retry', { arg: 'layout_save' }).waitFor();
     assert.equal(await bar().getByLabel('Publication title').inputValue(), 'Recover this after closing project');
     await page.unroute(savingPublication);
-    await pub().getByRole('button', { name: 'Retry save', exact: true }).click();
+    await cmd(pub(), 'view.notice.retry', { arg: 'layout_save' }).click();
     await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'reopened failure recovered');
     assert.deepEqual(await api('pub-b', '/api/publication'), other);
     assert.deepEqual(await api('pub-b', '/fixture/head'), otherHead);
@@ -405,7 +415,7 @@ try {
     await sendBoardSelection();
     await until(() => captured, Boolean, 'Board POST pending');
     await page.locator('#project-switch').click();
-    await pub().getByRole('button', { name: '+ Page', exact: true }).waitFor();
+    await cmd(pub(), 'view.layout.add_page').waitFor();
     await page.locator('#project-switch').click();
     await bar().getByLabel('Publication title').waitFor();
     assert.equal(await bar().getByLabel('Publication title').isDisabled(), true, 'import owns the document until acknowledgement');
@@ -431,16 +441,16 @@ try {
     await page.getByRole('button', { name: 'board', exact: true }).click();
     await sendBoardSelection(); await until(() => captured, Boolean, 'import pending before close');
     await page.locator('#project-switch').click();
-    await pub().getByRole('button', { name: '+ Page', exact: true }).waitFor();
+    await cmd(pub(), 'view.layout.add_page').waitFor();
     await page.locator('#project-switch').click();
     await bar().getByLabel('Publication title').waitFor(); release();
-    await pub().getByRole('button', { name: 'Retry save', exact: true }).waitFor();
+    await cmd(pub(), 'view.notice.retry', { arg: 'layout_save' }).waitFor();
     await assertFailure({ code: 'PUBLICATION_BOARD_SELECTION', status: 503, detail: 'Delayed import failure', reason: /ran into a problem/, next: /restart MonkeyHub/ });
     assert.equal(imports, 1, 'failed import is not automatically resubmitted');
     assert.deepEqual(await api('pub-a', '/api/publication'), before);
     await page.unroute('**/pub-a/api/publication/from-board');
     const response = page.waitForResponse((reply) => reply.url().endsWith('/api/publication/from-board') && reply.request().method() === 'POST');
-    await pub().getByRole('button', { name: 'Retry save', exact: true }).click();
+    await cmd(pub(), 'view.notice.retry', { arg: 'layout_save' }).click();
     assert.equal((await response).status(), 200);
     await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'retained Board command retried');
     assert.equal(await pub().getByRole('alert').count(), 0);
@@ -448,34 +458,34 @@ try {
     assert.deepEqual(await api('pub-a', '/fixture/head'), head);
   });
   await step('repeatable layout separates multiple text boxes from images and refuses overfull content', async () => {
-    await pub().getByRole('button', { name: '+ Page', exact: true }).click();
+    await cmd(pub(), 'view.layout.add_page').click();
     for (const text of ['Title block', 'Second note', 'Third note']) {
-      await pub().getByRole('button', { name: 'Add text', exact: true }).click();
+      await cmd(pub(), 'view.layout.add_text').click();
       await pub().getByLabel('Text', { exact: true }).fill(text);
     }
     await pub().getByLabel('Project drawing / image').selectOption({ label: 'Room plan.png' });
-    await pub().getByRole('button', { name: 'Place on page', exact: true }).click();
-    await pub().getByRole('button', { name: 'Apply image + title layout', exact: true }).click();
+    await cmd(pub(), 'view.layout.place_image').click();
+    await cmd(pub(), 'view.layout.apply_layout').click();
     await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'rule saved');
     const layout = (await api('pub-a', '/api/publication')).pages.at(-1);
     const texts = layout.elements.filter((item) => item.kind === 'text'), picture = layout.elements.find((item) => item.kind === 'image');
     assert.ok(texts.every((item) => item.y + item.height <= picture.y));
     for (let i = 1; i < texts.length; ++i) assert.ok(texts[i-1].y + texts[i-1].height < texts[i].y);
-    await pub().getByRole('button', { name: 'Apply image + title layout', exact: true }).click();
+    await cmd(pub(), 'view.layout.apply_layout').click();
     await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'repeat rule saved');
     assert.deepEqual((await api('pub-a', '/api/publication')).pages.at(-1), layout);
     await pub().getByLabel('width', { exact: true }).fill('320');
-    await pub().getByRole('button', { name: 'Center horizontally', exact: true }).click();
+    await cmd(pub(), 'view.layout.center').click();
     assert.equal(await pub().getByLabel('x', { exact: true }).inputValue(), '320');
     await pub().locator('.publish-element').filter({ hasText: 'Third note' }).click();
     await pub().getByLabel('height', { exact: true }).fill('220');
     await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'large text box saved');
     const before = (await api('pub-a', '/api/publication')).pages;
-    await pub().getByRole('button', { name: 'Apply image + title layout', exact: true }).click();
+    await cmd(pub(), 'view.layout.apply_layout').click();
     await pub().getByRole('alert').filter({ hasText: 'not enough room' }).waitFor();
     assert.deepEqual((await api('pub-a', '/api/publication')).pages, before, 'refused rule preserves authored placement');
     await pub().getByLabel('height', { exact: true }).fill('75');
-    await pub().getByRole('button', { name: 'Apply image + title layout', exact: true }).click();
+    await cmd(pub(), 'view.layout.apply_layout').click();
     await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'layout repaired');
   });
   await step('image and PDF previews preserve transparency when composed over other content', async () => {
@@ -486,10 +496,10 @@ try {
     await page.getByRole('button', { name: 'render', exact: true }).click();
     await page.getByRole('button', { name: 'publish', exact: true }).click();
     await pub().getByLabel('Project drawing / image').locator('option', { hasText: 'Transparent.pdf' }).waitFor({ state: 'attached' });
-    await pub().getByRole('button', { name: '+ Page', exact: true }).click();
+    await cmd(pub(), 'view.layout.add_page').click();
     for (const name of ['Transparent.png', 'Transparent.pdf']) {
       await pub().getByLabel('Project drawing / image').selectOption({ label: name });
-      await pub().getByRole('button', { name: 'Place on page', exact: true }).click();
+      await cmd(pub(), 'view.layout.place_image').click();
       const image = pub().locator('.publish-element.selected img');
       await image.waitFor();
       const alpha = await image.evaluate((image) => {

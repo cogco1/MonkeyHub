@@ -284,6 +284,29 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
       workingDraft.revisionSha256 = digest(JSON.stringify([workingDraft.revisionSha256, name, body]));
       return json(workingDraftDto(projectId));
     }
+    // 2-6: Continue through the Runtime's Switch, answered with the Undo that puts back the Current it replaced;
+    // that Undo holds only while Current still stands on the run the Switch moved it to.
+    if (workingDraft && method === "POST" && name === "/api/working-design/switch") {
+      assert.equal(body.baseRevisionSha256, workingDraft.revisionSha256, "a Switch keeps its exact retained revision");
+      const replaced = workingDraft.current;
+      const previous = replaced?.runId && replaced.runId !== body.runId ? { runId: replaced.runId, branchId: replaced.branchId ?? null } : null;
+      workingDraft.current = { runId: body.runId, sourceStageRef: null, branchId: body.branchId ?? null,
+        updatedAt: "2026-09-25T00:00:00Z", label: null };
+      workingDraft.revisionSha256 = digest(JSON.stringify([workingDraft.revisionSha256, name, body]));
+      return json({ position: workingDraftDto(projectId),
+        undo: { previous, continued: body.runId, revisionAfter: workingDraft.revisionSha256 } });
+    }
+    if (workingDraft && method === "POST" && name === "/api/working-design/undo") {
+      if (workingDraft.current?.runId !== body.continued) {
+        await route.fulfill({ status: 409, json: { code: "DESIGN_TREE_UNDO_MOVED", detail: "Current moved on.",
+          currentRunId: workingDraft.current?.runId ?? null } });
+        return true;
+      }
+      workingDraft.current = { runId: body.previous.runId, sourceStageRef: null, branchId: body.previous.branchId ?? null,
+        updatedAt: "2026-09-25T00:00:00Z", label: null };
+      workingDraft.revisionSha256 = digest(JSON.stringify([workingDraft.revisionSha256, name, body]));
+      return json(workingDraftDto(projectId));
+    }
     // #562: Render keeps the view Modeling shows as a project image bound to the exact model source and its camera,
     // as the runtime's POST /api/render/views does; this fixture registers it with the project's documents.
     if (method === "POST" && name === "/api/render/views") {

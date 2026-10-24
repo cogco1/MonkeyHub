@@ -60,6 +60,8 @@ def updates_router(updates: DesktopUpdates) -> APIRouter:
 
     @routes.put("/api/updates/settings", response_model=UpdateStatus)
     def update_settings(body: UpdateSettings) -> UpdateStatus:
+        if body.workshopMode is not None:
+            return updates.set_workshop_mode(body.workshopMode)
         return updates.set_auto_update(body.autoUpdate)
 
     return routes

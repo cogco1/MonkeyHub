@@ -19,6 +19,7 @@ from . import (
     health,
     index,
     intents,
+    live_rhino,
     options,
     pick,
     program,
@@ -34,6 +35,7 @@ from . import (
     synchronization,
     validation,
     working_draft,
+    working_design,
 )
 
 router = APIRouter()
@@ -58,6 +60,7 @@ router.include_router(pick.router)
 router.include_router(proposals.router)
 router.include_router(construction.router)
 router.include_router(intents.router)
+router.include_router(live_rhino.router)
 router.include_router(options.router)
 router.include_router(candidates.router)
 router.include_router(capabilities.router)
@@ -66,5 +69,6 @@ router.include_router(validation.router)
 router.include_router(events.router)
 router.include_router(synchronization.router)
 router.include_router(working_draft.router)
+router.include_router(working_design.router)
 
 __all__ = ["router"]

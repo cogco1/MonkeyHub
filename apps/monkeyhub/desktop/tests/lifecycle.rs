@@ -45,6 +45,7 @@ impl Fixture {
             port: available_port().unwrap(),
             startup_timeout: Duration::from_secs(10),
             source_revision: "a".repeat(40),
+            workshop: false,
         };
         Self { root, config }
     }

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
+import { cmd, waitForCommandLabel } from "./commandLocator.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/").replace(/\/$/, "");
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
@@ -23,7 +24,7 @@ function Transfer({projectId}){
 }
 function App(){
  const [project,setProject]=useState('second-project'),preferences=usePreferences();
- window.fixture={setProject,setLanguage:preferences.setLanguage,setTheme:preferences.setTheme};
+ window.fixture={setProject,setLanguage:preferences.setLanguage,setTheme:preferences.setTheme,setDeveloperMode:preferences.setDeveloperMode};
  return <ProjectBar label="Surface menus"><Transfer key={project} projectId={project}/></ProjectBar>;
 }
 createRoot(document.getElementById('root')).render(<UserPreferencesProvider><App/></UserPreferencesProvider>);`;
@@ -82,53 +83,59 @@ try {
     return answer({ code: "UNEXPECTED", detail: url.pathname }, 404);
   });
   await page.goto(server.resolvedUrls.local[0]);
-  await page.getByText("Reuse drawing recipes", { exact: true }).click();
-  await page.getByRole("button", { name: "Export recipe", exact: true }).waitFor();
+  await cmd(page, "view.menu.toggle", { arg: "recipe_transfer" }).click();
+  await cmd(page, "drawing.recipe.export").waitFor();
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export recipe", exact: true }).click();
+  await cmd(page, "drawing.recipe.export").click();
   const file = await download;
   assert.equal(await readFile(await file.path(), "utf8"), content);
   // #349: the menu closes on Escape and on a click outside it, and once a chosen file waits in the row.
   const menu = page.locator("details.recipe-transfer"), isOpen = () => menu.evaluate(node => node.open);
   await page.keyboard.press("Escape");
   assert.equal(await isOpen(), false, "Escape closes the menu");
-  assert.equal(await menu.locator("summary").evaluate(node => node === document.activeElement), true, "focus returns to its word");
-  await menu.locator("summary").click();
+  assert.equal(await cmd(menu, "view.menu.toggle", { arg: "recipe_transfer" }).evaluate(node => node === document.activeElement), true, "focus returns to its word");
+  await cmd(menu, "view.menu.toggle", { arg: "recipe_transfer" }).click();
   await page.getByText("Drawing", { exact: true }).click();
   assert.equal(await isOpen(), false, "a click outside closes the menu");
-  await menu.locator("summary").click();
+  await cmd(menu, "view.menu.toggle", { arg: "recipe_transfer" }).click();
   await upload();
-  await page.getByRole("button", { name: "Import as project preference", exact: true }).waitFor();
+  await cmd(page, "drawing.recipe.import_confirm").waitFor();
   assert.equal(await isOpen(), false, "the file waiting for confirmation closes the menu, so its row is in sight");
   assert.equal(writes.length, 0, "choosing a file must not promote it");
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await cmd(page, "drawing.recipe.import_cancel").click();
   assert.equal(writes.length, 0);
   await upload();
-  await page.getByText("Version and source", { exact: true }).click();
-  await page.getByText(`Source revision: ${document.source.revisionSha256}`, { exact: true }).waitFor();
+  // 2-7: the file's hash, decision and source revision wait for developer mode.
+  await cmd(page, "drawing.recipe.import_confirm").waitFor();
+  assert.equal(await cmd(page, "view.disclosure.toggle", { arg: "recipe_version", includeHidden: true }).count(), 0, "outside developer mode the row shows no hashes");
+  assert.equal(await page.getByText(document.sha256, { exact: false }).count(), 0);
   await page.screenshot({ path: join(scratch, "wide.png"), fullPage: true });
-  await page.getByRole("button", { name: "Import as project preference", exact: true }).click();
+  await page.evaluate(() => window.fixture.setDeveloperMode(true));
+  await cmd(page, "view.disclosure.toggle", { arg: "recipe_version" }).click();
+  await page.getByText(`Source revision: ${document.source.revisionSha256}`, { exact: true }).waitFor();
+  await page.evaluate(() => window.fixture.setDeveloperMode(false));
+  await cmd(page, "drawing.recipe.import_confirm").click();
   await page.getByText("Imported as a project preference. New drawings can now use it.", { exact: true }).waitFor();
   await page.getByRole("alert").filter({ hasText: "Saved; refresh unavailable." }).waitFor();
-  assert.equal(await page.getByRole("button", { name: "Import as project preference", exact: true }).count(), 0, "failed refresh cannot invite a duplicate import");
+  assert.equal(await cmd(page, "drawing.recipe.import_confirm").count(), 0, "failed refresh cannot invite a duplicate import");
   assert.equal(writes.length, 1);
   assert.deepEqual({ ...writes[0], rawLanguage: undefined }, { projectId: "second-project", content, confirmed: true, sourceKind: "human", rawLanguage: undefined });
   assert.ok(writes[0].rawLanguage.includes(document.sha256));
   // The menu closed when the import was confirmed in the row; it opens again to refresh.
-  await page.getByText("Reuse drawing recipes", { exact: true }).click();
-  await page.getByRole("button", { name: "Refresh saved recipes" }).click();
+  await cmd(page, "view.menu.toggle", { arg: "recipe_transfer" }).click();
+  await cmd(page, "drawing.recipe.refresh").click();
   await upload();
-  await page.getByRole("button", { name: "Import as project preference", exact: true }).click();
+  await cmd(page, "drawing.recipe.import_confirm").click();
   await page.getByRole("alert").filter({ hasText: "already holds" }).waitFor();
   assert.equal(writes.length, 2, "conflict is shown without automatic overwrite or retry");
   await page.getByLabel("Choose a recipe file").setInputFiles({ name: "bad.json", mimeType: "application/json", buffer: Buffer.from("not json") });
   await page.getByRole("alert").waitFor();
-  assert.equal(await page.getByRole("button", { name: "Import as project preference", exact: true }).count(), 0);
+  assert.equal(await cmd(page, "drawing.recipe.import_confirm").count(), 0);
   await upload();
-  await page.getByRole("button", { name: "Import as project preference", exact: true }).waitFor();
+  await cmd(page, "drawing.recipe.import_confirm").waitFor();
   await page.setViewportSize({ width: 390, height: 820 });
   await page.evaluate(() => { window.fixture.setLanguage("zh-CN"); window.fixture.setTheme("dark"); });
-  await page.getByRole("button", { name: "导入为项目偏好", exact: true }).waitFor();
+  await waitForCommandLabel(cmd(page, "drawing.recipe.import_confirm"), "导入为项目偏好");
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await page.screenshot({ path: join(scratch, "narrow-dark.png"), fullPage: true });
   await page.evaluate(() => window.fixture.setLanguage("en"));
@@ -137,10 +144,10 @@ try {
   await page.waitForFunction(() => document.querySelector('input[type="file"]').disabled);
   project = "third-project";
   await page.evaluate(() => window.fixture.setProject("third-project"));
-  await page.getByText("Reuse drawing recipes", { exact: true }).click();
+  await cmd(page, "view.menu.toggle", { arg: "recipe_transfer" }).click();
   release?.();
-  await page.getByRole("button", { name: "Export recipe", exact: true }).waitFor();
-  assert.equal(await page.getByRole("button", { name: "Import as project preference", exact: true }).count(), 0, "a delayed preview cannot transfer across projects");
+  await cmd(page, "drawing.recipe.export").waitFor();
+  assert.equal(await cmd(page, "drawing.recipe.import_confirm").count(), 0, "a delayed preview cannot transfer across projects");
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: ["exact export", "explicit confirmation", "cancel", "readback failure", "conflict", "invalid file", "responsive bilingual", "project isolation"], screenshots: scratch }));
 } catch (error) {

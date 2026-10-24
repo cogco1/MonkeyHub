@@ -11,7 +11,7 @@ from __future__ import annotations
 import base64
 import binascii
 from hashlib import sha256
-from concurrent.futures import Future, InvalidStateError
+from concurrent.futures import Future, InvalidStateError, TimeoutError as FutureTimeout
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -183,6 +183,9 @@ class ChatStore:
         self._acp_sessions = {}
         self._acp_tools: dict[str, dict[str, dict]] = {}
         self._permissions: dict[tuple[str, str], Future] = {}
+        # A skill's question stays readable after the person answers it, so the
+        # chat tool that asked can read the answer on a later call.
+        self._skill_questions: dict[tuple[str, str], Future] = {}
         self.timeout_s = timeout_s
         self._lock = threading.RLock()
         self._sessions: dict[str, _SavedChat] = {}
@@ -1348,6 +1351,54 @@ class ChatStore:
                 running.trace.permission(permission.id)
             self._save(session)
         return future
+
+    def request_skill_permission(self, session_id: str, title: str) -> str:
+        """Put a skill's run and its access to the person in the running chat, as a question with three buttons."""
+
+        future = Future()
+        with self._lock:
+            session = self._session(session_id)
+            running = self._running.get(session_id)
+            if self._closing or running is None or running.stop.is_set():
+                raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is not running, so no one can be asked.")
+            permission = ChatPermission(id=str(uuid4()), title=title, options=[
+                ChatPermissionOption(optionId="allow_once", name="允许这一次 / Allow once", kind="allow_once"),
+                ChatPermissionOption(optionId="allow_always", name="这个版本一直允许 / Always allow this version",
+                                     kind="allow_always"),
+                ChatPermissionOption(optionId="reject", name="拒绝 / Deny", kind="reject_once"),
+            ])
+            session.messages.append(ChatMessage(
+                id=f"{self._answering(session)}:permission:{permission.id}", role="tool", content=permission.title,
+                createdAt=_now(), status="streaming", permission=permission,
+            ))
+            session.updatedAt = _now()
+            self._permissions[(session_id, permission.id)] = future
+            self._skill_questions[(session_id, permission.id)] = future
+            if running.trace:
+                running.trace.permission(permission.id)
+            self._save(session)
+        return permission.id
+
+    def skill_permission_answer(self, session_id: str, permission_id: str, wait: float) -> dict:
+        """The person's answer to a skill's question, waiting at most ``wait`` seconds for it.
+
+        status is "answered" (optionId says which button), "waiting", or
+        "withdrawn" when the turn ended or was stopped before anyone answered.
+        """
+
+        with self._lock:
+            self._session(session_id)
+            future = self._skill_questions.get((session_id, permission_id))
+        if future is None:
+            raise HubFailure(404, "CHAT_PERMISSION_NOT_FOUND", "This chat asked no such skill question.")
+        try:
+            option = future.result(timeout=wait)
+        except FutureTimeout:
+            return {"permissionId": permission_id, "status": "waiting", "optionId": None}
+        with self._lock:
+            self._skill_questions.pop((session_id, permission_id), None)
+        return {"permissionId": permission_id, "status": "withdrawn" if option is None else "answered",
+                "optionId": option}
 
     def resolve_permission(self, session_id: str, permission_id: str, request: ChatPermissionRequest) -> ChatDetail:
         with self._lock:
