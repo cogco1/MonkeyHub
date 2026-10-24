@@ -28,15 +28,16 @@ export function CardHistory({ states, empty, projectName }: {
 }) {
   const queue = useAttentionQueue();
   const t = useT();
-  const [cards, setCards] = useState<AttentionCard[] | null>(null);
+  const [cards, setCards] = useState<AttentionCard[] | "unread" | null>(null);
   const key = states.join(",");
   // Read again whenever the queue changes: an answer or a set-aside moves a card here.
   useEffect(() => {
     let current = true;
-    void cardsIn(key.split(",") as CardState[]).then((rows) => { if (current) setCards(queueOrder(rows)); }, () => { if (current) setCards([]); });
+    void cardsIn(key.split(",") as CardState[]).then((rows) => { if (current) setCards(queueOrder(rows)); }, () => { if (current) setCards("unread"); });
     return () => { current = false; };
   }, [key, queue]);
   if (cards === null) return null;
+  if (cards === "unread") return <p className="attention-queue__empty" role="status">{t("cards.unread")}</p>;
   if (!cards.length) return <p className="attention-queue__empty">{t(empty)}</p>;
   return <div className="attention-queue">{cards.map((card) =>
     <AttentionCardView key={card.id} card={card} project={projectName(card.projectDir)} />)}</div>;
