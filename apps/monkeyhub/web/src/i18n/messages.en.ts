@@ -1530,7 +1530,8 @@ export const hubCopy = {
 
 export const chatCopy = {
     projects: "Projects", add: "Add project", newChat: "New chat", settings: "Hub settings", settingsHeading: "Hub settings (global)", close: "Close", cancel: "Cancel", addProject: "Add project",
-    folder: "Project folder", folderHelp: "Paste the full path to an existing ArchFlow project folder.", folderPlaceholder: "For example D:\\projects\\my-project",
+    folder: "Project folder", folderHelp: "Choose the folder of an existing ArchFlow project and it is added at once, or paste the full path.", folderPlaceholder: "For example D:\\projects\\my-project",
+    chooseFolder: "Choose folder…", chooseFolderTitle: "Choose an existing ArchFlow project folder", chooseArchive: "Choose archive file…", chooseArchiveTitle: "Choose a project archive", picking: "Choose in the window that opened…",
     empty: "Start a project conversation", emptyHint: "Describe what you want to do. Open project tools on the right when you need them.", noProject: "Add a project to start a conversation",
     placeholder: "What would you like to do in this project?", send: "Send", stop: "Stop", thinking: "Working", interrupted: "Interrupted", failed: "Incomplete",
     progress: "Progress",

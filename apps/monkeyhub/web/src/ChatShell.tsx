@@ -695,6 +695,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     return next;
   }), []);
   const [folder, setFolder] = useState("");
+  const [picking, setPicking] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [projectInfo, setProjectInfo] = useState(false);
   const projectInfoButton = useRef<HTMLButtonElement>(null), projectInfoClose = useRef<HTMLButtonElement>(null);
@@ -1536,11 +1537,24 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     }
     finally { actionLock.current = false; setBusy(false); }
   };
+  /** Windows' own dialog, on this screen, in place of a typed path. Nothing is chosen when it is closed. */
+  const choosePath = async (kind: "folder" | "file", title: string, filter: "archive" | "any", apply: (path: string) => void) => {
+    if (picking) return;
+    setPicking(true); setDialogError(null);
+    try {
+      const picked = await request<{ path: string | null }>("/api/chat/pick-path", { kind, title, filter });
+      if (picked.path) apply(picked.path);
+    } catch (cause) { setDialogError(asFailure(cause)); }
+    finally { setPicking(false); }
+  };
   const addProject = async (event: FormEvent) => {
-    event.preventDefault(); if (actionLock.current || !folder.trim()) return;
+    event.preventDefault(); await addProjectAt(folder);
+  };
+  const addProjectAt = async (path: string) => {
+    if (actionLock.current || !path.trim()) return;
     actionLock.current = true; setBusy(true); setDialogError(null);
     try {
-      const body: ChatCreateRequest = { projectDir: folder.trim().replace(/^"(.*)"$/, "$1"), provider: defaults.provider, model: defaults.model };
+      const body: ChatCreateRequest = { projectDir: path.trim().replace(/^"(.*)"$/, "$1"), provider: defaults.provider, model: defaults.model };
       const created = await request<ChatDetail>("/api/chat/sessions", body);
       selectChat(created); setChat(created); addDialog.current?.close(); setFolder(""); await refresh();
     } catch (cause) { setDialogError(asFailure(cause)); }
@@ -2343,7 +2357,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       <div className="chat-dialog__actions"><button data-command="view.dialog.close" type="button" className="btn" onClick={() => newDialog.current?.close()}>{t.cancel}</button>
         <button data-command="project.create.new_confirm" type="submit" className="btn btn--primary" disabled={busy || !projectName.trim()}>{busy ? t.creating : t.create}</button></div>
     </form></dialog>
-    <dialog ref={addDialog} className="chat-dialog"><form onSubmit={(event) => void addProject(event)}><div className="chat-dialog__heading"><h2>{t.addExisting}</h2><button data-command="view.dialog.close" type="button" className="chat-icon" aria-label={t.close} onClick={() => addDialog.current?.close()}><Icon name="close" /></button></div><p className="chat-muted">{t.folderHelp}</p><label>{t.folder}<input autoFocus value={folder} placeholder={t.folderPlaceholder} required onChange={(event) => setFolder(event.target.value)} /></label>{dialogError && <Failure failure={dialogError} language={preferences.language} labels={t} />}<div className="chat-dialog__actions"><button data-command="view.dialog.close" type="button" className="btn" onClick={() => addDialog.current?.close()}>{t.cancel}</button><button data-command="project.create.add_existing_confirm" type="submit" className="btn btn--primary" disabled={busy || !folder.trim()}>{busy ? t.loading : t.add}</button></div></form></dialog>
+    <dialog ref={addDialog} className="chat-dialog"><form onSubmit={(event) => void addProject(event)}><div className="chat-dialog__heading"><h2>{t.addExisting}</h2><button data-command="view.dialog.close" type="button" className="chat-icon" aria-label={t.close} onClick={() => addDialog.current?.close()}><Icon name="close" /></button></div><p className="chat-muted">{t.folderHelp}</p><button data-command="project.create.choose_folder" type="button" className="btn btn--primary" disabled={busy || picking} onClick={() => void choosePath("folder", t.chooseFolderTitle, "any", (path) => { setFolder(path); void addProjectAt(path); })}>{picking ? t.picking : t.chooseFolder}</button><label>{t.folder}<input autoFocus value={folder} placeholder={t.folderPlaceholder} required onChange={(event) => setFolder(event.target.value)} /></label>{dialogError && <Failure failure={dialogError} language={preferences.language} labels={t} />}<div className="chat-dialog__actions"><button data-command="view.dialog.close" type="button" className="btn" onClick={() => addDialog.current?.close()}>{t.cancel}</button><button data-command="project.create.add_existing_confirm" type="submit" className="btn btn--primary" disabled={busy || !folder.trim()}>{busy ? t.loading : t.add}</button></div></form></dialog>
     <dialog ref={archiveDialog} className="chat-dialog chat-dialog--archive"><form onSubmit={(event) => void exportArchive(event)}>
       <div className="chat-dialog__heading"><h2>{t.archiveHeading}</h2><button data-command="view.dialog.close" type="button" className="chat-icon" aria-label={t.close} onClick={() => archiveDialog.current?.close()}><Icon name="close" /></button></div>
       <p className="chat-muted">{t.archiveHelp}</p>
@@ -2359,6 +2373,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     <dialog ref={restoreDialog} className="chat-dialog chat-dialog--archive"><form onSubmit={(event) => void restoreArchive(event)}>
       <div className="chat-dialog__heading"><h2>{t.restoreHeading}</h2><button data-command="view.dialog.close" type="button" className="chat-icon" aria-label={t.close} onClick={() => restoreDialog.current?.close()}><Icon name="close" /></button></div>
       <p className="chat-muted">{t.restoreHelp}</p>
+      <button data-command="project.archive.choose_file" type="button" className="btn" disabled={picking}
+        onClick={() => void choosePath("file", t.chooseArchiveTitle, "archive", (path) => { setRestorePath(path); setDialogError(null); })}>{picking ? t.picking : t.chooseArchive}</button>
       <label>{t.archivePath}<input autoFocus value={restorePath} placeholder={t.archivePathPlaceholder} required
         onChange={(event) => { setRestorePath(event.target.value); setDialogError(null); }} /></label>
       <label>{t.restoreTarget}<input value={restoreTarget} onChange={(event) => { setRestoreTarget(event.target.value); setDialogError(null); }} /></label>

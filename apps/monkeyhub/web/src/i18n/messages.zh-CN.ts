@@ -1486,7 +1486,8 @@ export const hubCopy = {
 
 export const chatCopy = {
     projects: "项目", add: "添加项目", newChat: "新对话", settings: "Hub 设置", settingsHeading: "Hub 设置（全局）", close: "关闭", cancel: "取消", addProject: "添加项目",
-    folder: "项目文件夹", folderHelp: "选择已有的 ArchFlow 项目，粘贴文件夹完整路径。", folderPlaceholder: "例如 D:\\projects\\my-project",
+    folder: "项目文件夹", folderHelp: "点「选择文件夹…」选已有的 ArchFlow 项目，选中就添加；也可以粘贴文件夹完整路径。", folderPlaceholder: "例如 D:\\projects\\my-project",
+    chooseFolder: "选择文件夹…", chooseFolderTitle: "选择已有的 ArchFlow 项目文件夹", chooseArchive: "选择归档文件…", chooseArchiveTitle: "选择项目归档文件", picking: "请在弹出的窗口里选择…",
     empty: "开始项目对话", emptyHint: "描述你想做的事。需要看模型或图纸时，在右侧打开工具。", noProject: "添加一个项目，开始对话",
     placeholder: "想在这个项目里做些什么？", send: "发送", stop: "停止", thinking: "正在处理", interrupted: "已中断", failed: "未完成",
     progress: "进展",

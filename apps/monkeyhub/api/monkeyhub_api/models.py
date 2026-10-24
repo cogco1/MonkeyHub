@@ -435,6 +435,20 @@ class ChatWorkspace(BaseModel):
     projects: list[str] = Field(default_factory=list)
 
 
+class ChatPickPathRequest(BaseModel):
+    """Ask the person to choose a folder or a file in the system's own dialog."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    kind: Literal["folder", "file"]
+    title: str = Field(min_length=1, max_length=200)
+    filter: Literal["archive", "any"] = "any"
+
+
+class ChatPickedPath(BaseModel):
+    path: str | None = Field(description="the chosen path; null when the dialog was closed without choosing")
+
+
 class ChatProjectRequest(BaseModel):
     """Create one empty project in the workspace; the name becomes its id."""
 

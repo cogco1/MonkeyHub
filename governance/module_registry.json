@@ -4432,6 +4432,13 @@
             "in_place": true
           },
           {
+            "id": "project.create.choose_folder",
+            "label": "Choose folder",
+            "label_zh": "选择文件夹",
+            "entries": [],
+            "in_place": true
+          },
+          {
             "id": "project.create.add_existing_confirm",
             "label": "Add the project",
             "label_zh": "添加项目",
@@ -4439,6 +4446,13 @@
               "窗8",
               "窗10"
             ],
+            "in_place": true
+          },
+          {
+            "id": "project.archive.choose_file",
+            "label": "Choose archive file",
+            "label_zh": "选择归档文件",
+            "entries": [],
             "in_place": true
           },
           {
@@ -10479,7 +10493,8 @@
         "the typed write operations (layer, polyline, extrusion, box, mesh, dot, import, transform, delete, attributes), checked in full before the document changes",
         "stamping created objects with monkeyhub.owner/write/label/project user text and refusing to touch unstamped objects unless allowUserObjects is true",
         "GET /api/live-rhino/instances, GET /api/live-rhino/document, POST /api/live-rhino/write, GET /api/live-rhino/capture",
-        "POST /api/live-rhino/snapshot: a copy of the open document, unsaved edits included (optionally only drawable objects or some layers), registered as an external model asset through project_runtime.documents; the architect's selection, path and modified flag are restored"
+        "POST /api/live-rhino/snapshot: a copy of the open document, unsaved edits included (optionally only drawable objects or some layers), registered as an external model asset through project_runtime.documents; the architect's selection, path and modified flag are restored",
+        "Opening Rhino for the person with its script server on (open_connected, POST /api/live-rhino/open): Rhino.exe beside RhinoCode.exe is started detached with /nosplash /runscript=\"_StartScriptServer\" and the .3dm file if one is named, then waited for until RhinoCode lists it; a Rhino that already answers with the document is returned as it is, and another Rhino running without a script server refuses (LIVE_RHINO_ALREADY_OPEN: a second Rhino would not have the first one's unsaved work). The caller asks the person first and sends confirmed true. RhinoCode.exe is found where Windows records Rhino (App Paths) and in Program Files; MONKEYHUB_RHINOCODE is only an override."
       ],
       "does_not_own": [
         "saving the document - the architect saves in Rhino",
@@ -10507,7 +10522,12 @@
         "write_document",
         "capture_view",
         "POST /api/live-rhino/snapshot",
-        "snapshot_document"
+        "snapshot_document",
+        "POST /api/live-rhino/open",
+        "open_connected",
+        "rhino_executable",
+        "LiveRhinoOpenRequest",
+        "LiveRhinoOpenDto"
       ],
       "depends_on": [
         "monkeycad.occt",
@@ -13647,7 +13667,8 @@
         "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
         "guess rules over the Runtime's edit log: the same element field or parameter changed the same way three times within the line's last five steps becomes one ask card whose answers send a sentence to the project's conversation; a field a person set aside stays quiet until its suppression ends; and the Runtime's drawing recipe suggestions (one pen changed the same way on two drawings or more) as one ask card per pen and direction, saving the value as the person's recipe decision",
         "What a person allowed skills to do on this machine (S-1): <runtime root>/config/skill-grants.json (MonkeyHubSkillGrants@1) beside applications.json, outside every project and never synced with a team; one grant per answer, for every skill, one skill by name and source, or one run bound to its project and code; withdrawn grants kept with when; a project's version grants from before S-1 carried over once as grants for that skill only; written only through monkeyhub_api/settings",
-        "An Agent's skill run (S-1): the project's approvals from before carried over, what the run still needs read from its Runtime (GET /api/skills/{id}/needs), and only that put to the person in the chat as one question (always allow, only this time, no); the Hub writes the grant from the answer, the Agent never names one"
+        "An Agent's skill run (S-1): the project's approvals from before carried over, what the run still needs read from its Runtime (GET /api/skills/{id}/needs), and only that put to the person in the chat as one question (always allow, only this time, no); the Hub writes the grant from the answer, the Agent never names one",
+        "Choosing a folder or a file in Windows' own dialog in place of a typed path (POST /api/chat/pick-path, path_picker.pick): a PowerShell child opens the dialog on the person's screen and is told what to ask through its environment; only a caller on this computer may ask; closing the dialog chooses nothing. Used by Add existing project and Restore archive."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -13799,7 +13820,9 @@
         "GET /api/settings/skill-grants",
         "POST /api/settings/skill-grants/{grant_id}/revoke",
         "POST /api/settings/skill-grants/carry",
-        "skill_plugins.installed_library"
+        "skill_plugins.installed_library",
+        "POST /api/chat/pick-path",
+        "path_picker.pick"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -13855,6 +13878,7 @@
       "files": [
         "apps/monkeyhub/api/monkeyhub_api/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/fabrication.py",
+        "apps/monkeyhub/api/monkeyhub_api/path_picker.py",
         "apps/monkeyhub/api/monkeyhub_api/app/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
         "apps/monkeyhub/api/monkeyhub_api/app/main.py",

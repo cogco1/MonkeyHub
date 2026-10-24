@@ -6859,6 +6859,44 @@ export type LiveRhinoInstancesDto = {
 };
 
 /**
+ * LiveRhinoOpenDto
+ */
+export type LiveRhinoOpenDto = {
+    /**
+     * Rhino
+     *
+     * the Rhino that now answers RhinoCode, as GET /api/live-rhino/instances lists it
+     */
+    rhino: {
+        [key: string]: unknown;
+    };
+    /**
+     * Opened
+     *
+     * false when a Rhino that answers RhinoCode already had the document
+     */
+    opened: boolean;
+};
+
+/**
+ * LiveRhinoOpenRequest
+ */
+export type LiveRhinoOpenRequest = {
+    /**
+     * Confirmed
+     *
+     * true only when the person said yes to MonkeyHub opening Rhino for them
+     */
+    confirmed: boolean;
+    /**
+     * Documentpath
+     *
+     * an existing .3dm file to open; omitted opens Rhino with its usual new model
+     */
+    documentPath?: string | null;
+};
+
+/**
  * LiveRhinoSnapshotDto
  *
  * The copy of the open document registered as an external model asset.
@@ -19794,6 +19832,41 @@ export type ReadLiveRhinoInstancesApiLiveRhinoInstancesGetResponses = {
 };
 
 export type ReadLiveRhinoInstancesApiLiveRhinoInstancesGetResponse = ReadLiveRhinoInstancesApiLiveRhinoInstancesGetResponses[keyof ReadLiveRhinoInstancesApiLiveRhinoInstancesGetResponses];
+
+export type OpenLiveRhinoApiLiveRhinoOpenPostData = {
+    body: LiveRhinoOpenRequest;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/live-rhino/open';
+};
+
+export type OpenLiveRhinoApiLiveRhinoOpenPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type OpenLiveRhinoApiLiveRhinoOpenPostError = OpenLiveRhinoApiLiveRhinoOpenPostErrors[keyof OpenLiveRhinoApiLiveRhinoOpenPostErrors];
+
+export type OpenLiveRhinoApiLiveRhinoOpenPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LiveRhinoOpenDto;
+};
+
+export type OpenLiveRhinoApiLiveRhinoOpenPostResponse = OpenLiveRhinoApiLiveRhinoOpenPostResponses[keyof OpenLiveRhinoApiLiveRhinoOpenPostResponses];
 
 export type ReadLiveRhinoDocumentApiLiveRhinoDocumentGetData = {
     body?: never;
