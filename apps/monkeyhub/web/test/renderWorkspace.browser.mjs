@@ -150,7 +150,13 @@ save_user_settings(UserSettingsDto(language='en',renderProvider='off'))
 app=create_app(HubSettings(runtime_root=root/'hub-runtime',port=port),source_root=source)
 app.state.chats.providers=lambda *args,**kwargs: []
 def snapshot(name):
-    return {str(p.relative_to(projects/name)).replace(chr(92),'/'):hashlib.sha256(p.read_bytes()).hexdigest() for p in (projects/name).rglob('*') if p.is_file() and not p.name.endswith('.lock')}
+    files={}
+    for p in (projects/name).rglob('*'):
+        if not p.is_file() or p.name.endswith('.lock'): continue
+        # A write that replaces a file while it is listed leaves it for the next read.
+        try: files[str(p.relative_to(projects/name)).replace(chr(92),'/')]=hashlib.sha256(p.read_bytes()).hexdigest()
+        except (FileNotFoundError, PermissionError): continue
+    return files
 baseline={name:snapshot(name) for name in ['cold-render','cold-arch']}
 @app.get('/fixture/metrics')
 def metrics(): return {'baseline':baseline,'current':{name:snapshot(name) for name in baseline}}
