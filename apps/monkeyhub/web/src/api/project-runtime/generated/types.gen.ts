@@ -19255,6 +19255,50 @@ export type ResolveApiMarkupResolvePostResponses = {
 
 export type ResolveApiMarkupResolvePostResponse = ResolveApiMarkupResolvePostResponses[keyof ResolveApiMarkupResolvePostResponses];
 
+export type ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Asset Sha256
+         */
+        asset_sha256: string;
+    };
+    query?: never;
+    url: '/api/model-assets/{asset_sha256}/parts';
+};
+
+export type ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetError = ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetErrors[keyof ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetErrors];
+
+export type ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetResponses = {
+    /**
+     * Response Read Model Asset Parts Api Model Assets  Asset Sha256  Parts Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetResponse = ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetResponses[keyof ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetResponses];
+
 export type CreateProposalApiProposalsPostData = {
     body: ProposalRequestDto;
     headers?: {

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import re
+import threading
 from urllib.parse import quote
 import threading
 from uuid import UUID
@@ -119,7 +120,23 @@ def create_model_asset(request: Request, payload: ModelAssetRequestDto) -> Proje
         # Its index is read now, beside the answer, so the model's first page is a lookup.
         threading.Thread(target=warm_model_index, args=(binding, projections, artifact.run_id, artifact.sha256),
                          name="model-index", daemon=True).start()
+    if artifact.representation == "external":
+        read_parts_soon(request, artifact.sha256)
     return artifact_dto(artifact)
+
+
+def read_parts_soon(request: Request, asset_sha256: str) -> None:
+    """Read a just attached model's parts in the background (#300 item 22): its first circled mark waits for none."""
+
+    from .markup import attached_parts
+
+    def read() -> None:
+        try:
+            attached_parts(request, asset_sha256)
+        except Exception:  # noqa: BLE001 - the first mark reads it then, and says what is wrong
+            pass
+
+    threading.Thread(target=read, name="model-parts", daemon=True).start()
 
 
 @router.post("/documents/{asset_sha256}/model-source", response_model=SourceDocumentDto, response_model_by_alias=True)

@@ -126,8 +126,10 @@ DRAWING_SOURCE = "drawing-source"
 #: A 3DM model asset's native index - identities, layers, blocks, materials and every object's bounds - read once
 #: from its exact bytes (``artifacts.read_model_source_index``), so a read pages it without decoding the model again.
 MODEL_INDEX = "model-index"
+#: What each object of a model from outside the project is (``model_parts``), read once per file and namer.
+MODEL_PARTS = "model-parts"
 #: The kinds drawn in the request that needs them (``ProjectionQueue.on_demand``), never by the worker.
-ON_DEMAND = frozenset({ELEVATION, SECTION_PERSPECTIVE, SHEET, DOCUMENT_PAGE, DRAWING_SOURCE, MODEL_INDEX})
+ON_DEMAND = frozenset({ELEVATION, SECTION_PERSPECTIVE, SHEET, DOCUMENT_PAGE, DRAWING_SOURCE, MODEL_INDEX, MODEL_PARTS})
 #: The role of an on-demand row's manifest among its files: the key, the other files and their facts.
 MANIFEST = "manifest"
 #: The file suffix each role of an on-demand projection's files is kept under.

@@ -11248,7 +11248,8 @@
         "the attributable, revisioned rejection, archival/restoration and endorsement of an exact retained Candidate or Stage; this changes no design position",
         "the one-call revision (revise over RevisionPorts, POST /api/revisions): base, keep decisions protected, a touched rejected option, conditions in reach that no check can verify, the build, the read-back and comparison, validation, admission and Continue, in that order, answered as landed, admitted, problems, needs_question or refused; every step is an existing route or function",
         "reading page marks (a circle, outline, stroke or arrow on a drawing, a view sheet or a model view's object-ID image, and a stroke on the model) into the components and elements they cover, with how much of each lies in the mark and why a mark has no clear target, deterministically and without a model call or write; a registered page is read as it was drawn and answered for by the record state it was drawn from (POST /api/markup/resolve)",
-        "the edit log: each retained candidate change along a run's line read again against its exact source record, as element and parameter edits with numeric before, after and direction, and gathered per field; a reading, never a new record"
+        "the edit log: each retained candidate change along a run's line read again against its exact source record, as element and parameter edits with numeric before, after and direction, and gathered per field; a reading, never a new record",
+        "reading a model attached from outside the project (a Live Rhino snapshot) as building parts, by each object's name, its layer and its shape and then the project's model, kept per file"
       ],
       "does_not_own": [
         "running the proposal - project_runtime.candidate",
@@ -11491,7 +11492,11 @@
         "edit_log",
         "edits_between",
         "by_target",
-        "EditStep"
+        "EditStep",
+        "GET /api/model-assets/{asset_sha256}/parts",
+        "model_parts",
+        "read_model_parts",
+        "snapshot_subjects"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -11641,7 +11646,8 @@
         "tests/integration/test_capability_registry.py",
         "services/project-runtime/tests/test_markup.py",
         "services/project-runtime/tests/test_markup_routes.py",
-        "services/project-runtime/tests/test_edit_log.py"
+        "services/project-runtime/tests/test_edit_log.py",
+        "services/project-runtime/tests/test_model_parts.py"
       ],
       "notes": "ADR-001's record, section 2.1, makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -11685,7 +11691,8 @@
         "services/project-runtime/src/project_runtime/application/markup.py",
         "services/project-runtime/src/project_runtime/api/routes/markup.py",
         "services/project-runtime/src/project_runtime/api/dto/markup.py",
-        "services/project-runtime/src/project_runtime/application/edit_log.py"
+        "services/project-runtime/src/project_runtime/application/edit_log.py",
+        "services/project-runtime/src/project_runtime/application/model_parts.py"
       ]
     },
     {
