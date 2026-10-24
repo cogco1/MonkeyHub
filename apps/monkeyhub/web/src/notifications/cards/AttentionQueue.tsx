@@ -45,9 +45,9 @@ export function AttentionQueue({ projectName }: { projectName(projectDir: string
   }, [queue.cards]);
   useEffect(() => () => { for (const timer of timers.current) window.clearTimeout(timer); }, []);
   // An empty queue is said by the page's heading.
-  if (!cards.length) return <AllAsRecommended cards={cards} />;
+  if (!cards.length) return <AllAsRecommended cards={cards} projectName={projectName} />;
   return <div className="attention-queue">
-    <AllAsRecommended cards={cards} />
+    <AllAsRecommended cards={cards} projectName={projectName} />
     {cards.map((card) => <AttentionCardView key={card.id} card={card} project={projectName(card.projectDir)} fresh={fresh.has(card.id)} />)}
   </div>;
 }
@@ -58,10 +58,11 @@ const recommendable = (card: AttentionCard) => isPending(card) && card.channel =
 
 /**
  * Two or more decisions whose recommendation the Hub can take back are answered at once, and taken back as one.
- * The button names the first few, wherever they are in the list; afterwards a line says what was done, and what an
+ * The button names the first few, wherever they are in the list, and their projects when it spans more than one,
+ * so an answer in one project does not change another unnoticed. Afterwards a line says what was done, and what an
  * undo could not take back. Two new ones bring the button back.
  */
-function AllAsRecommended({ cards }: { cards: readonly AttentionCard[] }) {
+function AllAsRecommended({ cards, projectName }: { cards: readonly AttentionCard[]; projectName(projectDir: string): string | null }) {
   const t = useT();
   const { language } = usePreferences();
   const [done, setDone] = useState<BulkResult | null>(null);
@@ -89,13 +90,18 @@ function AllAsRecommended({ cards }: { cards: readonly AttentionCard[] }) {
       else setFailure(cause);
     }).finally(() => setBusy(false));
   };
-  const named = recommended.slice(0, BULK_NAMED).map((card) => say(card.title, card.titleZh, language)).join(t("cards.bulkJoin"));
+  const projects = new Set(recommended.map((card) => card.projectDir));
+  const named = recommended.slice(0, BULK_NAMED).map((card) => {
+    const title = say(card.title, card.titleZh, language), project = projects.size > 1 ? projectName(card.projectDir) : null;
+    return project ? t("cards.bulkNameInProject", { project, title }) : title;
+  }).join(t("cards.bulkJoin"));
   return <div className="attention-queue__bulk" role="group" aria-label={t("cards.bulkGroup")}>
     {offered ? <>
       <button type="button" className="btn" data-command="attention.queue.bulk_recommended" disabled={busy} onClick={answer}>
         {t("cards.bulk", { count: recommended.length })}</button>
       <span className="attention-queue__bulk-names">{recommended.length > BULK_NAMED
-        ? t("cards.bulkNamesMore", { names: named, count: recommended.length }) : t("cards.bulkNames", { names: named })}</span>
+        ? t("cards.bulkNamesMore", { names: named, count: recommended.length }) : t("cards.bulkNames", { names: named })}
+        {projects.size > 1 && t("cards.bulkProjects", { count: projects.size })}</span>
     </> : done ? <>
       <span role="status">{t("cards.bulkDone", { count: done.items.length })}{done.skipped.length > 0 && t("cards.bulkSkipped", { count: done.skipped.length })}</span>
       <button type="button" className="menu-command" data-command="attention.queue.bulk_undo" disabled={busy} onClick={() => takeBack(done)}>{t("cards.undo")}</button>
