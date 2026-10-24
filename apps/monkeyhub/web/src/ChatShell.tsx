@@ -1423,6 +1423,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     sendAsWritten.current = false;
     setRouted(null);
     const target = projectDir, content = draft.trim(), key = draftKey, files = attachments;
+    // While the meaning search was asked the composer stayed open: what was typed or attached since then is
+    // not in this message, so it stays in the draft when the message is sent.
+    const written = draft;
+    const unsent = (now = "") => now.trim() === content ? "" : now.startsWith(written) ? now.slice(written.length).trimStart() : now;
+    let draftAt = key;
     const requestedContext = designContext, requestedContextMode = contextMode, contextProjectId = workspaceContext?.projectId;
     const requestedRender = renderDraft;
     if (requestedContextMode === "project" && !requestedContext) {
@@ -1438,8 +1443,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       if (!current) {
         const body: ChatCreateRequest = { projectDir: target, provider: usableDefaults.provider, model: usableProvider ? null : draftModel };
         current = await request<ChatDetail>("/api/chat/sessions", body);
-        setDrafts((value) => ({ ...value, [key]: "", [current!.id]: content }));
-        setDraftAttachments((value) => ({ ...value, [key]: [], [current!.id]: files }));
+        setDrafts((value) => ({ ...value, [key]: "", [current!.id]: value[key] || content }));
+        setDraftAttachments((value) => ({ ...value, [key]: [], [current!.id]: value[key] ?? files }));
+        draftAt = current.id;
         moveRender(key, current.id);
         if (selection.current.projectDir === target && selection.current.chatId === chatId) { setChatId(current.id); setChat(current); setFreshChat(false); }
       }
@@ -1463,8 +1469,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       if (files.length) body.attachments = await Promise.all(files.map(async (file) => ({ name: file.name, mimeType: file.type || "application/octet-stream", data: await fileData(file, t.attachmentRead) })));
       const posted = await request<ChatDetail>(`/api/chat/sessions/${current.id}/messages`, body);
       if (selection.current.projectDir === target && (selection.current.chatId === chatId || selection.current.chatId === current.id)) { setChatId(posted.id); setChat(posted); }
-      setDrafts((value) => ({ ...value, [key]: "", [posted.id]: "" }));
-      setDraftAttachments((value) => ({ ...value, [key]: [], [posted.id]: [] }));
+      setDrafts((value) => ({ ...value, [key]: "", [posted.id]: unsent(value[draftAt]) }));
+      setDraftAttachments((value) => ({ ...value, [key]: [], [posted.id]: (value[draftAt] ?? []).filter((file) => !files.includes(file)) }));
       setContextModes((value) => ({ ...value, [key]: "continue", [posted.id]: "continue" }));
       // The images stay with the conversation: a correction resends the same exact pages.
       moveRender(key, posted.id);

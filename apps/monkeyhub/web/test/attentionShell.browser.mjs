@@ -132,6 +132,8 @@ const route = async (handler) => {
     const meant = { "后台现在在忙什么呀": "view.background.toggle", "切到另一个项目": "project.open", "切到 Housing 13 户": "project.open" }[data().text] ?? null;
     // Ctrl K lists what a phrase means below what its words find.
     if (data().text === "那个东西挪远点") return json({ state: "ready", hits: [{ id: "draft.tools.move", score: 0.71, text: "把物体挪个位置" }], route: null });
+    // A slow answer, so the test can type while the composer waits for it.
+    if (data().text === "先看东立面") await new Promise((done) => setTimeout(done, 600));
     return json({ state: "ready", hits: meant ? [{ id: meant, score: 0.8, text: meant }] : [], route: meant });
   }
   if (url.pathname === "/api/settings/user") return json({ language: "zh-CN", theme: preferredTheme, fontScale: 1, sidebarPinned: true });
@@ -435,6 +437,15 @@ try {
   for (let wait = 0; chatPosts.at(-1)?.[1] !== "这个方案怎么样" && wait < 100; wait += 1) await page.waitForTimeout(50);
   assert.equal(chatPosts.at(-1)?.[1], "这个方案怎么样");
   assert.equal(await offer.count(), 0);
+  // What is typed while the meaning search is asked is not in the message that goes, and stays in the composer.
+  await said.fill("先看东立面");
+  await said.press("Enter");
+  await said.pressSequentially(" 再看西立面");
+  for (let wait = 0; chatPosts.at(-1)?.[1] !== "先看东立面" && wait < 100; wait += 1) await page.waitForTimeout(50);
+  assert.equal(chatPosts.at(-1)?.[1], "先看东立面", "the sentence as it was when sent");
+  for (let wait = 0; await said.inputValue() !== "再看西立面" && wait < 40; wait += 1) await page.waitForTimeout(50);
+  assert.equal(await said.inputValue(), "再看西立面", "the words typed while it waited are still there");
+  await said.fill("");
   // 一句话直接办: a sentence no phrasing says is found by its meaning, and one click does it.
   const before = chatPosts.length;
   await said.fill("后台现在在忙什么呀");
