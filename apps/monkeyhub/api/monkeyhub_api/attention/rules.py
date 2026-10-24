@@ -22,7 +22,8 @@ the same way on two drawings or more, which no recipe yet decides) and asks
 whether the project should keep that value. One card per pen and direction,
 so a further drawing joining the evidence updates the card rather than adding
 one; saving it is the person's recipe decision citing the page the suggestion
-names (``drawing.save_recipe``).
+names (``attention.answer_guess.save``, the Drawings page's own
+save-recipe answer).
 
 A person who sets a card aside quiets its rule for that field, or that pen and
 direction (``AttentionStore.dismiss`` writes the suppression, seven days by
@@ -136,7 +137,7 @@ def _recipe_card(target: str, offer: Mapping) -> AttentionDraft:
             id="save", label=f"Keep {shown}", labelZh=f"定成 {shown}",
             consequence=f"New drawings of this project draw the {name} at {shown}",
             consequenceZh=f"这个项目以后出的图，{name_zh}都用 {shown}",
-            action=CommandRef(commandId="drawing.save_recipe", args={
+            action=CommandRef(commandId="attention.answer_guess.save", args={
                 "field": offer["field"], "value": value, "runId": page.get("runId"),
                 "assetSha256": page.get("assetSha256"), "revisionRef": page.get("revisionRef"),
                 "pageIndex": page.get("pageIndex", 0)}))],

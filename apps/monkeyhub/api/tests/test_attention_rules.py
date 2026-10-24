@@ -154,7 +154,7 @@ class RecipeTests(unittest.TestCase):
         self.assertEqual(card.title, "You made the cut line thinner on 2 drawings: keep 0.25 mm for the project?")
         self.assertEqual(card.titleZh, "2 张图都把剖切线调细了，要把 0.25 mm 定成项目的出图规则吗？")
         [save] = card.options
-        self.assertEqual((save.action.commandId, save.labelZh), ("drawing.save_recipe", "定成 0.25 mm"))
+        self.assertEqual((save.action.commandId, save.labelZh), ("attention.answer_guess.save", "定成 0.25 mm"))
         self.assertEqual(save.action.args, {"field": "cutLineMm", "value": 0.25, "runId": "plan-b-run",
                                             "assetSha256": "a" * 64, "revisionRef": "studio://rev", "pageIndex": 0})
         self.assertIsNone(card.recommendation)
