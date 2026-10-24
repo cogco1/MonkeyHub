@@ -201,6 +201,20 @@ class CapabilityIndexTestCase(unittest.TestCase):
             self.assertIsNone(body["note"], said)
             self.assertTrue(body["capabilities"][0]["matched"], f"{said}: no evidence for the match")
 
+    def test_an_entry_that_shares_one_common_word_is_not_evidence(self) -> None:
+        entries = [
+            {"capability_id": "frame.set_level", "goals": ["raise a floor", "改楼层标高"]},
+            {"capability_id": "drawing.orthographic", "goals": ["make a floor plan", "生成平面图", "导出图纸"]},
+        ]
+        matched, _, note = capability_module.match_capabilities(entries, "raise a floor")
+        self.assertEqual([row["capability_id"] for row in matched], ["frame.set_level"], "'floor' alone does not bring the plan")
+        self.assertIsNone(note)
+        matched, _, note = capability_module.match_capabilities(entries, "出一套施工图纸并送审")
+        self.assertEqual(matched, (), "one two-character word of a long sentence is no match")
+        self.assertIn("not the list of everything the system does", note)
+        matched, _, _ = capability_module.match_capabilities(entries, "平面图")
+        self.assertEqual([row["capability_id"] for row in matched], ["drawing.orthographic"], "a short goal still finds its entry")
+
     def test_a_goal_this_index_has_no_words_for_still_answers_honestly(self) -> None:
         body = self.client.get("/api/capabilities", params={"goal": "出一套施工图纸并送审"}).json()
         self.assertEqual(body["matchCount"], 0)
@@ -378,7 +392,7 @@ class DescribedButNotPerformedTestCase(unittest.TestCase):
             "kind": "representation",
             "status": "MISSING",
             "purpose": "Cut a section through the selected candidate.",
-            "goals": ["cut a section", "出剖面"],
+            "goals": ["cut a stepped section", "出阶梯剖面"],
             "entrypoints": ["POST /api/drawings/elevations"],
         }]
         registry = self.root / "module_registry.json"
@@ -393,7 +407,7 @@ class DescribedButNotPerformedTestCase(unittest.TestCase):
         self.addCleanup(self.client.close)
 
     def test_the_second_entry_is_readable_and_refuses_to_be_run_here(self) -> None:
-        index = self.client.get("/api/capabilities", params={"goal": "出剖面"}).json()
+        index = self.client.get("/api/capabilities", params={"goal": "出阶梯剖面"}).json()
         self.assertEqual([row["capabilityId"] for row in index["capabilities"]], ["drawing.section"])
         described = self.client.get("/api/capabilities/drawing.section")
         self.assertEqual(described.status_code, 200, described.text)
