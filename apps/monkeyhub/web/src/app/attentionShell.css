@@ -17,6 +17,9 @@
 .attention-shell__row{display:flex;align-items:center;gap:8px;width:100%;min-height:38px;padding:6px 10px;border:0;border-radius:var(--radius-sm);background:transparent;
   color:var(--ink);font:inherit;font-size:var(--text-ui);text-align:left;cursor:pointer}
 .attention-shell__row svg{width:18px;height:18px;flex:none;color:var(--muted)}
+.attention-shell__name{display:flex;flex-direction:column;gap:1px;line-height:1.25}
+.attention-shell__name>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attention-shell__version{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px;font-weight:400;font-variant-numeric:tabular-nums}
 .attention-shell__row>span:not(.attention-shell__count):not(.attention-shell__working){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .attention-shell__row:hover{background:var(--surface-hover)}
 .attention-shell__row[aria-current]{background:var(--nav-on-bg,var(--panel-2));color:var(--nav-on-ink,var(--ink));font-weight:600}
