@@ -134,7 +134,7 @@ class QuestionTests(unittest.TestCase):
         self.assertEqual(card.summaryZh, "你写的：这里也薄一点")
         self.assertEqual([option.label for option in card.options], ["Plywood deck", "finish", "Say it in words"])
         self.assertEqual(card.options[0].action.args, {"cardId": card_id, "n": 2, "target": "plywood"})
-        self.assertEqual((card.options[-1].action.commandId, card.options[-1].action.args), ("chat.send_message", {}))
+        self.assertEqual((card.options[-1].action.commandId, card.options[-1].action.args), ("chat.composer.send", {}))
         self.assertEqual(card.source.markIds, ["m-edge"])
         self.assertEqual(unsure_cards("att_x", change_list(item2={"keep": False}), READINGS), [],
                          "an unticked item asks nothing")

@@ -154,7 +154,7 @@ def unsure_cards(card_id: str, change_list: ChangeList, readings: Sequence[Mappi
             id="say", label="Say it in words", labelZh="用一句话说",
             consequence="Send what you write on this card to the conversation",
             consequenceZh="把你在卡上写的话发到对话里",
-            action=CommandRef(commandId="chat.send_message")))
+            action=CommandRef(commandId="chat.composer.send")))
         cards.append(AttentionDraft(
             channel="decide", kind="choice",
             title=f"Which part did you mean in item {item.n}?",
