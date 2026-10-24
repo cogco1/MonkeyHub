@@ -447,7 +447,7 @@ try {
   await queuePage.getByRole("button", { name: "收起侧栏" }).first().click();
   // Two or more decisions whose recommendation can be taken back are answered at once, and taken back as one; V13's
   // archive could not be, so it is left to the person.
-  const archiveCard = (id, titleZh, undoable) => queueCard(id, "A", { channel: "decide", kind: "choice", title: titleZh, titleZh,
+  const archiveCard = (id, titleZh, undoable, projectId = "A") => queueCard(id, projectId, { channel: "decide", kind: "choice", title: titleZh, titleZh,
     options: [answer("archive", "Archive", "归档", "归档这一版", { recommended: true, undoable }), answer("keep", "Keep", "留着", "先不动")],
     recommendation: { optionId: "archive", reason: "Conflicts with the current design", reasonZh: "和当前方案冲突" }, createdAt: stamp(), updatedAt: stamp() });
   cards.push(archiveCard("v11b", "V11b 和当前冲突 78 处，归档吗", true), archiveCard("v13", "V13 和 V11b 一样，归档吗", false));
@@ -472,10 +472,13 @@ try {
   await queued("V16 和 V17 留哪个").waitFor();
   assert.deepEqual(attentionActions.at(-1), ["bulk_undo", "bulk-1", null]);
   assert.equal(await queuePage.locator(".attention-toast").filter({ hasText: "V16 和 V17" }).count(), 0, "what the undo brought back is no news");
-  // Another decision that can be taken back makes two again, and the button is back.
-  cards.push(archiveCard("v14", "V14 和 V16 一样，归档吗", true));
+  // Another decision that can be taken back makes two again, and the button is back; across two projects it names them.
+  cards.push(archiveCard("v14", "Housing 的 V14 和 V13 一样，归档吗", true, "B"));
   announce("attention/changed");
   await bulk.getByRole("button", { name: "全部按建议（2）" }).waitFor();
+  const across = await bulk.locator(".attention-queue__bulk-names").textContent();
+  assert.ok(across.includes("Thi Hemp 墙身节点·V16 和 V17 留哪个") && across.includes("Housing 13 户·Housing 的 V14") && across.endsWith("，共涉及 2 个项目"),
+    `each card with its project: ${across}`);
   // With no conversation chosen, a message goes to the project's attention conversation, which then opens.
   assert.ok(await queuePage.locator(".attention-shell__drawer").isHidden());
   assert.equal(await queuePage.locator(".attention-shell__recent .chat-thread[aria-current]").count(), 0, "no conversation is chosen");
