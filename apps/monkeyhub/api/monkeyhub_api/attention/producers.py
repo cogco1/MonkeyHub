@@ -74,26 +74,31 @@ def _archive(runs: list[str], label: Words) -> AttentionOption:
 def results(graph: Mapping[str, Any], *, now: datetime, handled: Iterable[str] = ()) -> list[AttentionDraft]:
     """Retained results nobody has decided on, from a project's Worktree Graph (GET /api/worktrees).
 
-    Two or more results of one Study are one A/B card. A result on its own asks
-    whether to switch to it, or to combine it when the combine rule accepts it
-    with the head. Results untouched for a week are one card offering to archive
-    them. An admitted, rejected, archived or superseded result asks nothing, nor
-    does one a person already answered for on a card (``handled``: the results
-    an answered card listed), unless it is compared with a new one.
+    Only an admitted Candidate has a Study and can be archived (a run nobody
+    admitted is not in the candidate pool). Two or more Candidates of one Study
+    are one A/B card. Any other result on its own asks whether to switch to it,
+    or to combine it when the combine rule accepts it with the head, and a
+    Candidate also offers to archive it. Candidates untouched for a week are one
+    card offering to archive them; a run nobody admitted that old asks nothing,
+    and the project's own cleaning keeps it. A rejected, superseded or archived
+    result asks nothing, nor does one a person already answered for on a card
+    (``handled``: the results an answered card listed), unless it is compared
+    with a new one.
     """
 
     handled = frozenset(handled)
     head = (graph.get("head") or {}).get("runId")
     open_lines = [line for line in graph.get("lines", ())
                   if line.get("kind") == "result" and line.get("runId") and line.get("status") == "ready"
-                  and line.get("admission") == "none" and line.get("relation") != "superseded"
+                  and line.get("admission") in {"admitted", "none"} and line.get("relation") != "superseded"
                   and line.get("review", "unreviewed") == "unreviewed"]
-    stale = [line for line in open_lines
-             if line.get("updatedAt") and datetime.fromisoformat(line["updatedAt"]) < now - STALE_AFTER]
-    fresh = [line for line in open_lines if line not in stale]
+    old = [line for line in open_lines
+           if line.get("updatedAt") and datetime.fromisoformat(line["updatedAt"]) < now - STALE_AFTER]
+    stale = [line for line in old if line["admission"] == "admitted"]
+    fresh = [line for line in open_lines if line not in old]
     studies: dict[str, list[dict]] = {}
     for line in fresh:
-        if line.get("studyId"):
+        if line.get("studyId") and line["admission"] == "admitted":
             studies.setdefault(line["studyId"], []).append(line)
     compared = {study: lines for study, lines in studies.items()
                 if len(lines) >= 2 and not {line["runId"] for line in lines} <= handled}
@@ -155,7 +160,9 @@ def _single(line: dict, head: str | None) -> AttentionDraft:
                         ("The current design becomes this result; the one before stays in the history",
                          "当前方案换成它，原来那一版留在修改历史里"),
                         "design.go_to_step", undoable=True, runId=run, branchId=line.get("branchId")),
-                _keep(), _archive([run], ("Archive", "归档"))]
+                _keep()]
+    if line.get("admission") == "admitted":
+        options.append(_archive([run], ("Archive", "归档")))
     return _card(
         (f"New result “{label}”: switch to it?" if label else "A new result: switch to it?",
          f"新结果「{label}」，要换上吗" if label else "有一个新结果，要换上吗"),
