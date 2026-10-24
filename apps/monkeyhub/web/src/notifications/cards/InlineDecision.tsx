@@ -68,7 +68,8 @@ export function InlineDecision({
       {summary && <p className="attention-card__summary">{summary}</p>}
     </header>}
     {children}
-    {answers.length > 0 && <div className="attention-card__answers" role="group" aria-label={label}>
+    {/* The card is the named group; its answers are not a second one of the same name. */}
+    {answers.length > 0 && <div className="attention-card__answers">
       {answers.map((choice, index) => <button key={`${choice.command}:${choice.arg ?? ""}:${index}`} type="button"
         data-command={choice.command} data-command-arg={choice.arg} data-action={choice.action}
         className={choice.primary ? "btn btn--primary attention-card__answer" : "btn attention-card__answer"}

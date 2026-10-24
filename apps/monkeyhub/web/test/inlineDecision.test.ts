@@ -34,7 +34,8 @@ test("a page's in-place decision is drawn as the queue's decision card, answers 
     assert.match(html, /^<article class="attention-card attention-card--inline attention-card--compact editing-base" data-channel="decide" data-kind="choice" role="group" aria-label="Editing base" data-source-match="different">/);
     assert.doesNotMatch(html, /data-unset/, "an unset attribute is left out");
     assert.match(html, /<header class="attention-card__head" role="status" aria-live="polite"><p class="attention-card__title">Viewing D · read-only<\/p><\/header>/);
-    assert.match(html, /<strong class="editing-base__name">home.3dm<\/strong><div class="attention-card__answers" role="group"/);
+    assert.match(html, /<strong class="editing-base__name">home.3dm<\/strong><div class="attention-card__answers">/);
+    assert.equal(html.match(/aria-label="Editing base"/g)?.length, 1, "one group carries the question's name");
     const buttons = [...html.matchAll(/<button ([^>]*)>([^<]*)<\/button>/g)].map(([, attributes, text]) => ({ attributes, text }));
     assert.deepEqual(buttons.map((button) => button.text), ["Continue from here", "Record and continue", "Retry"], "a false answer does not apply now");
     assert.match(buttons[0]!.attributes, /data-command="design.go_to_step.continue" class="btn attention-card__answer" title="Edit from this model"/);
