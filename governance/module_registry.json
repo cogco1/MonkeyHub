@@ -3592,6 +3592,16 @@
               "模151",
               "模152"
             ]
+          },
+          {
+            "id": "candidate.compare.decide",
+            "label": "Compare and decide",
+            "label_zh": "比较并决定",
+            "args": [
+              "runIds"
+            ],
+            "entries": [],
+            "opens": true
           }
         ]
       }
