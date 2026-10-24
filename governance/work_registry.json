@@ -581,6 +581,23 @@
             "services/project-runtime/src/project_runtime/jobs.py"
           ],
           "depends_on": []
+        },
+        {
+          "id": "gap-45",
+          "status": "active",
+          "branch": "claude/300-batch1",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-batch1",
+          "base_ref": "bc41a4caecb79198c2b1ea15b755a59169e33617",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Gap 45: deleting a component's only element in the view leaves an empty component that the candidate refuses; the fix from #677 (its session handed it over), folded into the first redesign batch.",
+          "modules": [
+            "project_runtime.intent"
+          ],
+          "write_scope": [
+            "services/project-runtime/src/project_runtime/application/intent.py"
+          ],
+          "depends_on": []
         }
       ]
     }
