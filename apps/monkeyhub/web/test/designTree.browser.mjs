@@ -192,6 +192,8 @@ async function runtime(request, response, url, body) {
     if (error instanceof fixtureModule.FixtureRefusal) return json({ code: error.code, detail: error.message }, error.status);
     throw error;
   }
+  // A Hub that does not serve the attention queue yet (1-4), as main's does.
+  if (name.startsWith("/api/attention")) return json({ code: "NOT_FOUND", detail: "This Hub does not serve the attention queue yet." }, 404);
   unexpected.push(`${method} ${name}`);
   return json({ code: "FIXTURE_UNEXPECTED", detail: `Unexpected request ${method} ${name}` }, 404);
 }
