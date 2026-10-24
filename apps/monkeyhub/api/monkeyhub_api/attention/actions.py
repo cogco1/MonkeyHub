@@ -255,7 +255,7 @@ def _acknowledge(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
         run.executor.hub.acknowledge_operation(run.item.projectId, run.item.projectDir, operation)
         return _Done({"operationId": operation})
     # Read and put away: taking it back only brings the card back.
-    return _Done(undo=UndoSpec(action=CommandRef(commandId="attention.reopen")))
+    return _Done(undo=UndoSpec(action=CommandRef(commandId="attention.queue.reopen")))
 
 
 @dataclass(frozen=True)
@@ -284,14 +284,14 @@ COMMANDS: dict[str, Command] = {
     # optionId null cancels the request, as the conversation's own Cancel does.
     "chat.answer_permission": Command(_answer_permission, takes=("sessionId", "permissionId", "optionId"),
                                       needs=("sessionId", "permissionId")),
-    "attention.answer_guess": Command(_answer_guess, takes=("sessionId", "messageId", "revision"),
+    "attention.queue.answer_guess": Command(_answer_guess, takes=("sessionId", "messageId", "revision"),
                                       needs=("sessionId", "messageId", "revision")),
     # content, or what the person writes on the card, is sent as their message to sessionId, or
     # without one to the project's attention conversation.
     "chat.send_message": Command(_send_message, takes=("sessionId", "content")),
     "hub.update_apply": Command(_update_apply),
     # With operationId, the operation journal's acknowledge; without, the card is only put away.
-    "attention.acknowledge": Command(_acknowledge, takes=("operationId",)),
+    "attention.queue.acknowledge": Command(_acknowledge, takes=("operationId",)),
 }
 @dataclass(frozen=True)
 class Opening:
@@ -407,7 +407,7 @@ class AttentionExecutor:
             undo = item.resolution.undo if item.state == "done" and item.resolution else None
             if undo is None:
                 raise HubFailure(409, "ATTENTION_NOT_UNDOABLE", "This card's handling cannot be taken back.")
-            if undo.action.commandId == "attention.reopen":
+            if undo.action.commandId == "attention.queue.reopen":
                 return AttentionActionResult(item=self.store.undone(item_id, by=by))
             if undo.action.commandId not in COMMANDS:
                 raise HubFailure(409, "ATTENTION_NOT_UNDOABLE", "This card's handling cannot be taken back.")
@@ -441,7 +441,7 @@ class AttentionExecutor:
                                 consequenceZh="当前方案换回这张卡处理之前的那一版", action=undo.action, undoable=True),
                 AttentionOption(id="keep", label="Keep it", labelZh="不用了",
                                 consequence="The current design stays as it is", consequenceZh="当前方案保持现在这样",
-                                action=CommandRef(commandId="attention.acknowledge")),
+                                action=CommandRef(commandId="attention.queue.acknowledge")),
             ]))
 
     def partly_done(self, item: AttentionItem, runs: list[str], *, archived: bool) -> AttentionItem:
@@ -462,7 +462,7 @@ class AttentionExecutor:
                                 action=CommandRef(commandId=reverse, args={"runIds": runs}), undoable=True),
                 AttentionOption(id="keep", label="Leave them", labelZh="就这样",
                                 consequence=f"They stay {state}", consequenceZh=f"它们保持{state_zh}",
-                                action=CommandRef(commandId="attention.acknowledge")),
+                                action=CommandRef(commandId="attention.queue.acknowledge")),
             ]))
 
     def bulk(self, ids: list[str]) -> AttentionBulkResult:

@@ -272,7 +272,7 @@ class AttentionExecutorTests(unittest.TestCase):
 
         guess = self.card(AttentionDraft.model_validate({
             "channel": "guess", "kind": "suggestion", "title": "出一套期中评图的图", "dedupeKey": "sug:m1",
-            "options": [option("go", "就这样做", "attention.answer_guess", sessionId="c1",
+            "options": [option("go", "就这样做", "attention.queue.answer_guess", sessionId="c1",
                                messageId="0b8f2b49-6f4e-4d6a-9d36-3c1b5a1e2f10", revision=2)]}))
         self.executor.resolve(guess, "go")
         session, request = self.chats.posts[-1]
@@ -298,12 +298,12 @@ class AttentionExecutorTests(unittest.TestCase):
     def test_notices_are_read_and_put_away(self):
         failed = self.card(AttentionDraft.model_validate({
             "channel": "notice", "kind": "info", "title": "改模型没有完成", "dedupeKey": "op:o1:failed",
-            "options": [option("ok", "知道了", "attention.acknowledge", operationId="o1")]}))
+            "options": [option("ok", "知道了", "attention.queue.acknowledge", operationId="o1")]}))
         self.executor.resolve(failed, "ok")
         self.assertEqual(self.hub.acknowledged, ["o1"])
         plain = self.card(AttentionDraft.model_validate({
             "channel": "notice", "kind": "info", "title": "出图完成", "dedupeKey": "info:1",
-            "options": [option("ok", "知道了", "attention.acknowledge")]}))
+            "options": [option("ok", "知道了", "attention.queue.acknowledge")]}))
         self.executor.resolve(plain, "ok")
         self.assertEqual(self.executor.undo(plain).item.state, "open")
 
