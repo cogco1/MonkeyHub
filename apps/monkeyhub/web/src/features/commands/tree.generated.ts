@@ -179,6 +179,35 @@ export const COMMAND_TREE: CommandTree = {
         "打印",
         "制作"
       ]
+    },
+    {
+      "id": "shell.controls",
+      "owner": "hub.shell",
+      "kind": "shell",
+      "status": "PRODUCTION",
+      "host": "hub",
+      "purpose": {
+        "en": "The controls every page shares: trying again what did not load or save, opening a folded section or a menu, closing a dialog or a notice.",
+        "zh-CN": "各页共用的控件：没读到或没存上时再试一次，展开收起的段落和菜单，关掉对话框和提示。"
+      },
+      "terms": [
+        "try loading again",
+        "show the details",
+        "open the menu",
+        "close the dialog",
+        "再试一次",
+        "展开详情",
+        "打开菜单",
+        "关掉对话框",
+        "retry",
+        "disclosure",
+        "menu",
+        "dismiss",
+        "重试",
+        "展开",
+        "菜单",
+        "关闭"
+      ]
     }
   ],
   "commands": [
@@ -420,7 +449,13 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": "Alt+2",
       "entries": [
-        "壳92"
+        "壳92",
+        "模4",
+        "模22",
+        "模115",
+        "板1",
+        "文1",
+        "文3"
       ],
       "args": []
     },
@@ -488,7 +523,9 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [
-        "壳93"
+        "壳93",
+        "模2",
+        "模95"
       ],
       "args": []
     },
@@ -511,7 +548,9 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [
-        "壳94"
+        "壳94",
+        "模114",
+        "文2"
       ],
       "args": []
     },
@@ -809,6 +848,155 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳96"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.notice.retry",
+      "capability": "shell.controls",
+      "label": {
+        "en": "Try again",
+        "zh-CN": "再试一次"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模90",
+        "模112",
+        "模116",
+        "模138",
+        "模149",
+        "板16",
+        "板17",
+        "板84",
+        "排4",
+        "排5",
+        "排7",
+        "排14",
+        "文11",
+        "文12",
+        "文41",
+        "图18",
+        "渲23",
+        "树8",
+        "制3",
+        "量5"
+      ],
+      "args": [
+        "notice"
+      ]
+    },
+    {
+      "id": "view.notice.dismiss",
+      "capability": "shell.controls",
+      "label": {
+        "en": "Dismiss the notice",
+        "zh-CN": "关掉提示"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板18"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.disclosure.toggle",
+      "capability": "shell.controls",
+      "label": {
+        "en": "Show or hide the details",
+        "zh-CN": "展开或收起"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模41",
+        "模94",
+        "模107",
+        "模141",
+        "模143",
+        "模150",
+        "文44",
+        "文88",
+        "图8",
+        "图31",
+        "渲29",
+        "树27",
+        "制9",
+        "制16",
+        "量9",
+        "量10",
+        "量19"
+      ],
+      "args": [
+        "section"
+      ]
+    },
+    {
+      "id": "view.menu.toggle",
+      "capability": "shell.controls",
+      "label": {
+        "en": "Open or close the menu",
+        "zh-CN": "打开或收起菜单"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模6",
+        "模9",
+        "模55",
+        "板6",
+        "图2",
+        "图5",
+        "图12"
+      ],
+      "args": [
+        "menu"
+      ]
+    },
+    {
+      "id": "view.dialog.close",
+      "capability": "shell.controls",
+      "label": {
+        "en": "Close the dialog",
+        "zh-CN": "关掉对话框"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板71",
+        "板75",
+        "板82"
       ],
       "args": []
     }
