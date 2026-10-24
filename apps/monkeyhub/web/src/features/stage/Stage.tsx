@@ -1597,15 +1597,17 @@ export function Stage({
           starts from, Versions, the Design Tree, the commands on the editing base, then Export and More (#352). */}
       <SurfaceMenus label={t("stage.ariaLabel")} active={active}>
         {editingBaseRunId !== null && <><span className="stage-bar__model" title={editingLabel ?? undefined}>{editingLabel}</span><MenuSeparator /></>}
-        {!documentOpen && <MenuCommand data-command="design.go_to_step.versions" className="stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel" onClick={toggleVersions}>
+        {/* Versions and the Design Tree stay over a document page: a drawing comment views and continues Stages (#302).
+            Export and More act on the 3D model and wait until the page is closed. */}
+        <MenuCommand data-command="design.go_to_step.versions" className="stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel" onClick={toggleVersions}>
           {t("stage.versions.open")}
           {!onOpenTree && <>
             <span className="quiet">{versionCount}</span>
             {!documentOpen && hasModel && contextLabel && <span className="stage__versions-current"><span className="quiet">{t("stage.context.viewing")} </span>{contextLabel}</span>}
             {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
           </>}
-        </MenuCommand>}
-        {!documentOpen && onOpenTree && <MenuCommand data-command="view.design_tree.open" className="stage__tree-link" onClick={onOpenTree}>{t("stage.tree.open")}</MenuCommand>}
+        </MenuCommand>
+        {onOpenTree && <MenuCommand data-command="view.design_tree.open" className="stage__tree-link" onClick={onOpenTree}>{t("stage.tree.open")}</MenuCommand>}
         {explicitBase && <MenuCommand data-command="design.go_to_step.default_base" disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading"}
           onClick={onDefaultBase}>{t("stage.base.default")}</MenuCommand>}
         {!onReturnToBoard && picked && onOpenBoard && <MenuCommand data-command="view.tab.board" onClick={onOpenBoard}>{t("workspace.monkeyboard")}</MenuCommand>}
