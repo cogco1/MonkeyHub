@@ -20,6 +20,7 @@ import { useDocumentStudy } from "./useDocumentStudy";
 import { studyEvidenceToGestures, studyEvidenceFromGestures } from "./documentStudy";
 import { DOCUMENT_TOOLS, EVIDENCE_TOOLS } from "./documentTools";
 import "./DocumentCanvas.css";
+import { AutoRetry } from "../../app/AutoRetry";
 
 type DrawingTool = "freehand" | "line" | "arrow" | "circle" | "polyline";
 type VectorEditTool = "select";
@@ -977,7 +978,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
           {sheetBusy && <p role="status">{t("document.drawingGeneratingHint")}</p>}
           {stylesError && <ErrorPanel error={stylesError} what={t("document.drawingGenerate")} />}
           {sheetError && <p className="document-drawing-styles__error" role="alert">{sheetError.detail}</p>}
-          {stylesError && <button data-command="view.notice.retry" data-command-arg="drawing_styles" type="button" onClick={() => setStylesRetry((value) => value + 1)}>{t("document.drawingStylesRetry")}</button>}
+          {stylesError && <AutoRetry failure={stylesError} data-command="view.notice.retry" data-command-arg="drawing_styles" retry={() => setStylesRetry((value) => value + 1)}>{t("document.drawingStylesRetry")}</AutoRetry>}
         </section>}
         <label htmlFor="document-comment">{t("document.comment")}</label>
         <textarea id="document-comment" value={review?.text ?? draft.comment} readOnly={draft.readOnly} disabled={!draft.ready || sending}

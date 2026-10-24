@@ -14,6 +14,7 @@ import { ResultActions } from "../../features/results/ResultActions";
 import { findSource, pageSource, type PageSource } from "../monkeyboard/boardScene";
 import { savedView, type SavedView } from "../monkeyarch/viewer/renderView";
 import { RENDER_VIEWS } from "./renderViews";
+import { AutoRetry } from "../../app/AutoRetry";
 
 export function useDocumentImage(image: SourceDocumentDto | undefined, active: boolean, attempt = 0) {
   const studio = useStudio();
@@ -109,7 +110,7 @@ export default function RenderResults({ active, jobs, documents, selectedId, onS
   const projection = camera?.projection === "orthographic" ? (zh ? "正投影" : "Orthographic")
     : camera?.projection === "perspective" ? (zh ? "透视" : "Perspective") : null;
   return <section className="render-results" aria-label={zh ? "渲染历史" : "Render history"}>
-    {error && <div className="render-error" role="alert">{error} <button data-command="view.notice.retry" data-command-arg="render_image" type="button" onClick={() => setAttempt((value) => value + 1)}>{zh ? "重读图像" : "Reload image"}</button></div>}
+    {error && <div className="render-error" role="alert">{error} <AutoRetry failure={error} data-command="view.notice.retry" data-command-arg="render_image" retry={() => setAttempt((value) => value + 1)}>{zh ? "重读图像" : "Reload image"}</AutoRetry></div>}
     {!jobs.length ? <div className="render-empty"><h2>{zh ? "从一张已有设计图开始" : "Start with an existing design image"}</h2>
       <p>{zh ? "选择底图、参考图和视觉方向。每次生成的来源与结果独立保留。" : "Choose a source image, references and visual direction. Each generation retains its own source and result."}</p></div>
       : <div className="render-content">

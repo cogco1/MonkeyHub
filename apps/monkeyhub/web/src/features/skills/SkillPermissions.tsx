@@ -22,6 +22,7 @@ import {
   type HubSettingsApi, type RunSettingActions, type RunSettingState,
 } from "./skillRunSetting";
 import "./skills.css";
+import { AutoRetry } from "../../app/AutoRetry";
 
 const STATUS_KEYS = { active: "skills.grants.status.active", used: "skills.grants.status.used", revoked: "skills.grants.status.revoked" } as const;
 const PROBLEM_KEYS = {
@@ -63,7 +64,7 @@ export function SkillRunChoiceView({ state, actions }: { state: RunSettingState;
     {saving && <p className="chat-muted" role="status">{t("skills.agentRuns.saving")}</p>}
     {loadError && <div className="skills__error" role="alert">
       <p>{t("skills.agentRuns.loadFailed")} {loadError.detail}</p>
-      <button type="button" className="btn" onClick={() => void actions.load()}>{t("skills.retry")}</button>
+      <AutoRetry failure={loadError} place="skills_agent_runs" className="btn" retry={() => void actions.load()}>{t("skills.retry")}</AutoRetry>
     </div>}
     {saveError && <p className="skills__error" role="alert">{t("skills.agentRuns.saveFailed")} {saveError.detail}</p>}
   </fieldset>;
@@ -90,7 +91,7 @@ export function SkillGrantsView({ state, actions, runChoice }: {
     {loading && !grants && <p className="chat-muted wait-late" role="status">{t("skills.grants.loading")}</p>}
     {loadError && <div className="skills__error" role="alert">
       <p>{t("skills.grants.loadFailed")} {loadError.detail}</p>
-      <button type="button" className="btn" disabled={loading} onClick={() => void actions.load()}>{t("skills.retry")}</button>
+      <AutoRetry failure={loadError} place="skills_grants" className="btn" disabled={loading} retry={() => void actions.load()}>{t("skills.retry")}</AutoRetry>
     </div>}
     {grants && grants.length === 0 && (!toolGrants || toolGrants.length === 0) && <p className="chat-muted">{t("skills.grants.empty")}</p>}
     {toolGrants && toolGrants.length > 0 && <section className="skills__tools" aria-labelledby="skills-tools-heading">

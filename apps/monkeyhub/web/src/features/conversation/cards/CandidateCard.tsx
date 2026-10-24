@@ -20,6 +20,7 @@ import { BilingualText } from "../../../i18n/BilingualText";
 import { useT } from "../../../i18n/useT";
 import { usePreferences } from "../../settings/preferences";
 import { Verbatim } from "./Verbatim";
+import { AutoRetry } from "../../../app/AutoRetry";
 
 export function CandidateCard({
   candidateId,
@@ -138,7 +139,7 @@ export function CandidateCard({
         </div>
       )}
       {(job.status === "failed" || candidate.status === "failed") && (
-        <div className="card__row"><button data-command="view.notice.retry" data-command-arg="candidate" type="button" className="btn btn--small" onClick={onRetry}>{t("stage.base.retry")}</button></div>
+        <div className="card__row"><AutoRetry failure={job.status === "failed" || candidate.status === "failed"} data-command="view.notice.retry" data-command-arg="candidate" className="btn btn--small" retry={onRetry}>{t("stage.base.retry")}</AutoRetry></div>
       )}
       {candidate.status === "ready" && (
         <CandidateReadout

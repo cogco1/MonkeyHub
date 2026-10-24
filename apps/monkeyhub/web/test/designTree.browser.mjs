@@ -337,6 +337,8 @@ try {
   // ------------------------------------------------------------------ Part A: the tree in ProjectWorkspace.
   // 2-3c: the new shell is the default; these passes are the old one's, the way back (attentionShell.browser.mjs has the new).
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en-US" });
+  // These passes press each retry themselves: quiet retries (F046) are off for them.
+  await context.addInitScript(() => localStorage.setItem("monkeyhub.quietRetry", "off"));
   await context.addInitScript(() => localStorage.setItem("monkeyhub.shell", "workbench"));
   await context.route((url) => ["http:", "https:"].includes(url.protocol) && url.origin !== origin, (route) => {
     external.push(route.request().url()); return route.abort("blockedbyclient");
@@ -1027,6 +1029,7 @@ try {
 
   // ------------------------------------------------------------------ Part B: the Hub rail's 状态树 entry.
   const hubContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en-US" });
+  await hubContext.addInitScript(() => localStorage.setItem("monkeyhub.quietRetry", "off"));
   await hubContext.addInitScript(() => localStorage.setItem("monkeyhub.shell", "workbench"));
   await hubContext.route((url) => ["http:", "https:"].includes(url.protocol) && url.origin !== origin, (route) => {
     external.push(route.request().url()); return route.abort("blockedbyclient");
@@ -1250,6 +1253,7 @@ try {
   // behind one control, the drafts fold where the line moved on, and returning to a step is the existing Continue.
   fixture = fixtureModule.createDesignTreeFixture(fixtureModule.unadmittedLineFacts());
   const lineContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en-US" });
+  await lineContext.addInitScript(() => localStorage.setItem("monkeyhub.quietRetry", "off"));
   await lineContext.addInitScript(() => localStorage.setItem("monkeyhub.shell", "workbench"));
   await lineContext.route((url) => ["http:", "https:"].includes(url.protocol) && url.origin !== origin, (route) => {
     external.push(route.request().url()); return route.abort("blockedbyclient");
@@ -1384,6 +1388,7 @@ try {
   // later step is continued again from its own inspector.
   fixture = fixtureModule.createDesignTreeFixture(fixtureModule.landedChangesFacts());
   const landedContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
+  await landedContext.addInitScript(() => localStorage.setItem("monkeyhub.quietRetry", "off"));
   await landedContext.addInitScript(() => localStorage.setItem("monkeyhub.shell", "workbench"));
   await landedContext.route((url) => ["http:", "https:"].includes(url.protocol) && url.origin !== origin, (route) => {
     external.push(route.request().url()); return route.abort("blockedbyclient");

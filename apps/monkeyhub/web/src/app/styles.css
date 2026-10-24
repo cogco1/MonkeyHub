@@ -3142,3 +3142,5 @@ button.model-tool-button:focus-visible {
 }
 
 }
+/* F046: a read being tried again by itself, in the place of its retry button. */
+.auto-retry { color: var(--muted); font-size: var(--text-caption, 12px); }
