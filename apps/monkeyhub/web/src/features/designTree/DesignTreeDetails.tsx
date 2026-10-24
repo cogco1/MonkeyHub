@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePreferences } from "../settings/preferences";
 import { useT } from "../../i18n/useT";
+import { InlineDecision } from "../../notifications/cards/InlineDecision";
 import { CleanedDrafts } from "./DesignTreeCleaned";
 import { continuable, CURRENT, type GrowthTree, type TreeNode } from "./model";
 import { DESIGN_TREE_UNSYNCED, useRecordAndContinue, type DesignTreeData } from "./useDesignTree";
@@ -152,13 +153,13 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
         {review && <p className="design-tree-inspector__note">{review.endorsed ? t("designTree.review.endorsed") : ""}
           {disposition ? ` · ${disposition}` : ""}
           {review.reason ? ` — ${review.reason}` : ""}</p>}
-        <div className="design-tree-inspector__actions">
-          <button data-command="candidate.compare.view" type="button" className="btn btn--small btn--primary" disabled={!node.runId} onClick={() => onView(node)}>{t("designTree.action.view")}</button>
-          <button data-command="design.go_to_step.continue" type="button" className="btn btn--small" data-action="continue" disabled={busy || !data.canContinue || isAnchor}
-            onClick={() => void data.continueFrom(node.id)}>{continuing ? t("designTree.action.continuing") : t("designTree.action.continue")}</button>
-          {node.kind === "candidate" && onCompare && <button data-command="candidate.compare.with_original" type="button" className="btn btn--small" data-action="compare" disabled={!node.runId}
-            onClick={() => onCompare(node)}>{t("designTree.action.compare")}</button>}
-        </div>
+        <InlineDecision className="design-tree-inspector__actions" compact label={t("designTree.action.continue")} choices={[
+          { command: "candidate.compare.view", primary: true, disabled: !node.runId, label: t("designTree.action.view"), onSelect: () => onView(node) },
+          { command: "design.go_to_step.continue", action: "continue", disabled: busy || !data.canContinue || isAnchor,
+            label: continuing ? t("designTree.action.continuing") : t("designTree.action.continue"), onSelect: () => void data.continueFrom(node.id) },
+          node.kind === "candidate" && onCompare && { command: "candidate.compare.with_original", action: "compare", disabled: !node.runId,
+            label: t("designTree.action.compare"), onSelect: () => onCompare(node) },
+        ]} />
         {data.canReview && (node.kind === "candidate" || node.kind === "stage") && <div className="design-tree-inspector__actions">
           <button data-command="candidate.review.endorse" type="button" className="btn btn--small" disabled={busy} onClick={() => void data.review(node.id, "endorse")}>{t("designTree.action.endorse")}</button>
           {node.kind === "candidate" && <>
@@ -200,12 +201,10 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
         </div>}
       </div>}
       {node.kind === "pending" && <p className="design-tree-inspector__note">{t("designTree.pendingNote")}</p>}
-      {refusal && <p className="design-tree-inspector__refusal" role="alert">{refusal}</p>}
-      {recordable && <div className="design-tree-inspector__actions">
-        <button data-command="draft.record.continue" type="button" className="btn btn--small btn--primary" data-action="record" disabled={recording || busy}
-          onClick={() => void recordAndContinue(node.id)}>{t(recording ? "stage.record.busy" : "stage.record.continue")}</button>
-      </div>}
-      {failure && <p className="design-tree-inspector__refusal" role="alert">{t("stage.record.failed", { reason: failure.detail })}</p>}
+      {(refusal || failure) && <InlineDecision className="design-tree-inspector__refusal" compact label={t("stage.record.continue")}
+        failure={<>{refusal}{refusal && failure && " "}{failure && t("stage.record.failed", { reason: failure.detail })}</>}
+        choices={[recordable && { command: "draft.record.continue", action: "record", primary: true, disabled: recording || busy,
+          label: t(recording ? "stage.record.busy" : "stage.record.continue"), onSelect: () => void recordAndContinue(node.id) }]} />}
       {developerMode && <details className="design-tree-inspector__details">
         <summary data-command="view.disclosure.toggle" data-command-arg="technical_details">{t("designTree.details")}</summary>
         <dl>{technical(node).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>

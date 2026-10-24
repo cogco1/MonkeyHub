@@ -2,6 +2,7 @@ import { useState } from "react";
 import { asStudioApiError } from "../../api/project-runtime/client";
 import type { ParameterDto } from "../../api/project-runtime/generated";
 import { useT } from "../../i18n/useT";
+import { InlineDecision } from "../../notifications/cards/InlineDecision";
 import { usePreferences } from "../settings/preferences";
 import "./ModelEditPanel.css";
 import "./ParameterLocksPanel.css";
@@ -61,11 +62,13 @@ export function ParameterLocksPanel({ controls, onClose }: {
           <span>{parameter.lockAuthority ? (zh ? "已锁定" : "Locked") : (zh ? "可修改" : "Editable")}</span>
         </label>)}
       </div>}
-    {controls.disabledReason && <p role="status">{controls.disabledReason}</p>}
     {/* Once recorded, the locks are free to apply: the selection above is kept for them. */}
-    {controls.disabledReason && controls.record && <button data-command="draft.record.continue" type="button" className="btn btn--small" disabled={recording}
-      onClick={() => void record()}>{t(recording ? "stage.record.busy" : "stage.record.continue")}</button>}
-    {recordError && <p className="model-edit-panel__error" role="alert">{recordError}</p>}
+    {controls.disabledReason && <InlineDecision className="parameter-locks__decision" live compact label={controls.disabledReason}
+      title={controls.disabledReason} failure={recordError || undefined} choices={[
+        controls.record && { command: "draft.record.continue", primary: true, disabled: recording,
+          label: t(recording ? "stage.record.busy" : "stage.record.continue"), onSelect: () => void record() },
+      ]} />}
+    {!controls.disabledReason && recordError && <p className="model-edit-panel__error" role="alert">{recordError}</p>}
     {controls.busy && <p role="status">{zh ? "正在保存…" : "Saving…"}</p>}
     {controls.error && <p className="model-edit-panel__error" role="alert">{controls.error}</p>}
     <div className="parameter-locks__actions">
