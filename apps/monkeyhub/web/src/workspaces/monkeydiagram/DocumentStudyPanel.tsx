@@ -362,7 +362,7 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
                 <button data-command="study.run.remove_comparison" data-command-arg={index} type="button" onClick={() => changeResearch({ comparisons: comparisonDefinitions.filter((_, position) => position !== index) })}>
                   {text("Remove archived comparison", "移除归档比较")}</button></div>
               <details><summary data-command="view.disclosure.toggle" data-command-arg="study_saved_inputs">{text("Saved inputs", "保存的输入版本")}</summary>
-                {definition.studies.map(row => <p key={`${row.studyId}:${row.ledgerRef}`}>{comparisonStudyName(row.studyId)}<small>{row.ledgerRef}</small></p>)}
+                {definition.studies.map(row => <p key={`${row.studyId}:${row.ledgerRef}`}>{comparisonStudyName(row.studyId)}{developerMode && <small>{row.ledgerRef}</small>}</p>)}
               </details>
               {result ? comparisonResult(result) : <p>{text("This comparison has no saved result yet. Save the study to compute and retain it.", "此比较尚无保存结果。保存研究以计算并保留结果。")}</p>}
             </article>;
