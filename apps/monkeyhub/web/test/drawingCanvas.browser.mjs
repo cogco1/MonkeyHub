@@ -327,13 +327,13 @@ try {
   let oldRevision;
   await step("appearance updates retain semantic dimension and previous revision without design calls", async () => {
     await revision().selectOption(JSON.stringify([legacyDocument.runId, legacyDocument.assetSha256, legacyDocument.revisionRef]));
+    // B7: the saved dimensions are a folded group under the appearance; its label shows once it is opened.
+    assert.equal(await group("dimensions").evaluate(node => node.open), false, "the group starts folded");
+    await openGroup("dimensions");
     await page.getByText("900 mm", { exact: true }).waitFor();
     oldRevision = await revision().inputValue();
     assert.equal(await saveButton().count(), 0, "appearance has no Save button, only a retry after a refusal");
     await page.getByLabel("Scale denominator (1 : n)", { exact: true }).fill("50");
-    // B7: the saved dimensions are a folded group under the appearance.
-    assert.equal(await group("dimensions").evaluate(node => node.open), false, "the group starts folded");
-    await openGroup("dimensions");
     await page.getByLabel("Label offset (paper mm)", { exact: true }).fill("16");
     // GH-302: an open drawing's autosave says it is saving its appearance.
     await page.getByText("Saving appearance…", { exact: true }).waitFor();
