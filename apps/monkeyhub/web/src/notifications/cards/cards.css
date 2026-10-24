@@ -55,4 +55,3 @@
 .attention-card__change-text{display:grid;gap:2px;min-width:0}
 .attention-card__change-text small{color:var(--muted)}
 .attention-card__changes li[data-unsure] .attention-card__change-text small{color:var(--warn,var(--muted))}
-

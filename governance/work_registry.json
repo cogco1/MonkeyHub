@@ -78,9 +78,7 @@
           "base_ref": "9e24d9493",
           "contributor": "Claude",
           "reviewer": null,
-          "depends_on": [
-            "GH-300/change-list"
-          ],
+          "depends_on": [],
           "handoff": "3-4: the change-list card — each change as the agent understood it, ticked to run (an unsure one starts unticked); the ticked numbers go with the answer. Stacked on b3-change-list.",
           "modules": [
             "hub.shell"
