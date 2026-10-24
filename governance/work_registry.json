@@ -163,7 +163,6 @@
           "write_scope": [
             "apps/monkeyhub/web/src/FabPage.tsx",
             "apps/monkeyhub/web/src/MonitorPage.tsx",
-            "apps/monkeyhub/web/src/app/App.tsx",
             "apps/monkeyhub/web/src/app/ErrorBoundary.tsx",
             "apps/monkeyhub/web/src/features/chrome/SurfaceChrome.tsx",
             "apps/monkeyhub/web/src/features/componentInfo/ComponentInfoCard.tsx",
@@ -177,9 +176,7 @@
             "apps/monkeyhub/web/src/features/conversation/cards/ProposalCard.tsx",
             "apps/monkeyhub/web/src/features/conversation/cards/QuestionCard.tsx",
             "apps/monkeyhub/web/src/features/conversation/cards/VerdictCard.tsx",
-            "apps/monkeyhub/web/src/features/designTree/DesignTreeBar.tsx",
             "apps/monkeyhub/web/src/features/designTree/DesignTreeCleaned.tsx",
-            "apps/monkeyhub/web/src/features/designTree/DesignTreeDetails.tsx",
             "apps/monkeyhub/web/src/features/designTree/DesignTreeList.tsx",
             "apps/monkeyhub/web/src/features/designTree/DesignTreeSurface.tsx",
             "apps/monkeyhub/web/src/features/designTree/DesignTreeToast.tsx",
@@ -187,18 +184,14 @@
             "apps/monkeyhub/web/src/features/stage/ElevationPanel.tsx",
             "apps/monkeyhub/web/src/features/stage/ModelEditPanel.tsx",
             "apps/monkeyhub/web/src/features/stage/ParameterLocksPanel.tsx",
-            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
-            "apps/monkeyhub/web/src/features/stage/VersionsStrip.tsx",
             "apps/monkeyhub/web/src/features/stage/tools.ts",
             "apps/monkeyhub/web/src/workspaces/monkeyarch/Annotate.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeyarch/gestureTools.ts",
             "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/ModelComparison.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
-            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentStudyPanel.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentTextLayer.tsx",
-            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentTracingPanel.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingDressing.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingMenu.tsx",
@@ -251,6 +244,31 @@
             "apps/monkeyhub/web/test/viewportSelection.browser.mjs",
             "apps/monkeyhub/web/test/workModelExport.browser.mjs",
             "apps/monkeyhub/web/test/workingCopy.browser.mjs"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "decision-rows",
+          "status": "active",
+          "branch": "claude/300-decision-rows",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-decision-rows",
+          "base_ref": "587a67be2ce78c78d19c4ed683a5eb56c82c5109",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Three-channel convergence 6-2 (ADR-014 B4): the embedded pages' 13 'continue from here' and 'record changes and continue' rows become one in-page decision card that looks like the attention queue's DecisionCard and appears only when needed. Stacked on GH-300/shell (#695) with GH-300/tests (#684) merged; the seven page files are handed over from GH-300/tests, whose work on them (T-1a) is done.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/app/App.tsx",
+            "apps/monkeyhub/web/src/features/designTree/DesignTreeBar.tsx",
+            "apps/monkeyhub/web/src/features/designTree/DesignTreeDetails.tsx",
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/src/features/stage/VersionsStrip.tsx",
+            "apps/monkeyhub/web/src/notifications/cards/InlineDecision.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentTracingPanel.tsx",
+            "apps/monkeyhub/web/test/inlineDecision.test.ts"
           ],
           "depends_on": []
         }
