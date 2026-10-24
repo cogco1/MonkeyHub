@@ -173,6 +173,31 @@ export type AttentionBulkResult = {
 };
 
 /**
+ * AttentionChangeListRequest
+ *
+ * The changes a design-loop turn read the architect's marks as (design_ask with changes), for the message they
+ * answer.
+ */
+export type AttentionChangeListRequest = {
+    /**
+     * Sessionid
+     */
+    sessionId: string;
+    /**
+     * Messageid
+     */
+    messageId: string;
+    /**
+     * Question
+     */
+    question: string;
+    /**
+     * Changes
+     */
+    changes: Array<ChangeListItem>;
+};
+
+/**
  * AttentionConversation
  */
 export type AttentionConversation = {
@@ -256,6 +281,17 @@ export type AttentionItem = {
      */
     opens?: Array<CommandRef>;
     recommendation?: Recommendation | null;
+    changeList?: ChangeList | null;
+    /**
+     * Changewords
+     */
+    changeWords?: Array<string>;
+    /**
+     * Markreadings
+     */
+    markReadings?: Array<{
+        [key: string]: unknown;
+    }>;
     /**
      * Id
      */
@@ -404,6 +440,10 @@ export type AttentionResolveRequest = {
      * Note
      */
     note?: string | null;
+    /**
+     * Items
+     */
+    items?: Array<number> | null;
 };
 
 /**
@@ -517,6 +557,123 @@ export type AttentionSummary = {
 };
 
 /**
+ * ChangeList
+ *
+ * The items of one reading of one frame's marks, numbered from 1 in order.
+ */
+export type ChangeList = {
+    /**
+     * Frameid
+     */
+    frameId?: string | null;
+    /**
+     * Boardrevision
+     */
+    boardRevision?: string | null;
+    /**
+     * Runid
+     */
+    runId?: string | null;
+    /**
+     * Items
+     */
+    items: Array<ChangeListItem>;
+};
+
+/**
+ * ChangeListItem
+ *
+ * One change as the agent understood it from the marks and the words.
+ */
+export type ChangeListItem = {
+    /**
+     * N
+     */
+    n: number;
+    /**
+     * Markids
+     */
+    markIds?: Array<string>;
+    crop?: AttentionMedia | null;
+    /**
+     * Note
+     */
+    note: string;
+    /**
+     * Understanding
+     */
+    understanding: string;
+    /**
+     * Understandingzh
+     */
+    understandingZh?: string | null;
+    /**
+     * Targets
+     */
+    targets?: Array<string>;
+    /**
+     * Protected
+     */
+    protected?: Array<string>;
+    /**
+     * Unsure
+     */
+    unsure?: boolean;
+    /**
+     * Extra
+     */
+    extra?: boolean;
+    /**
+     * Keep
+     */
+    keep?: boolean;
+};
+
+/**
+ * ChatApprovalQuote
+ *
+ * The items taken from one passage of the architect's words, and the span a submission binds for them.
+ */
+export type ChatApprovalQuote = {
+    /**
+     * Items
+     */
+    items: Array<number>;
+    /**
+     * Feedbackquote
+     */
+    feedbackQuote?: string | null;
+    /**
+     * Clauses
+     */
+    clauses?: Array<string>;
+};
+
+/**
+ * ChatApprovedChange
+ *
+ * One item of a change list the architect ran, as the card states it.
+ */
+export type ChatApprovedChange = {
+    /**
+     * N
+     */
+    n: number;
+    /**
+     * Understanding
+     */
+    understanding: string;
+    /**
+     * Targets
+     */
+    targets: Array<string>;
+    /**
+     * Protected
+     */
+    protected?: Array<string>;
+};
+
+/**
  * ChatArchiveRequest
  */
 export type ChatArchiveRequest = {
@@ -614,6 +771,29 @@ export type ChatAttachmentInput = {
      * Data
      */
     data: string;
+};
+
+/**
+ * ChatChangeListApproval
+ *
+ * The ticked items of a change list card, sent by the Hub in the architect's name with their own words.
+ *
+ * The message's text is only what the architect wrote; what each item means
+ * travels here, so nothing the Agent wrote reads as the person's.
+ */
+export type ChatChangeListApproval = {
+    /**
+     * Cardid
+     */
+    cardId: string;
+    /**
+     * Items
+     */
+    items: Array<ChatApprovedChange>;
+    /**
+     * Quotes
+     */
+    quotes: Array<ChatApprovalQuote>;
 };
 
 /**
@@ -801,6 +981,42 @@ export type ChatDocumentRef = {
 };
 
 /**
+ * ChatMarkupContext
+ *
+ * The marks one message is about: a saved revision of the ink on one registered page (#300 3-3).
+ *
+ * The design loop reads what each mark lies on from this exact revision
+ * (``design_read part=marks``), and the architect's words are this message's
+ * text with the page's own comment and text marks; never a newer revision.
+ */
+export type ChatMarkupContext = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Pageindex
+     */
+    pageIndex?: number;
+    /**
+     * Revisionsha256
+     *
+     * The saved annotation revision of the page.
+     */
+    revisionSha256: string;
+    /**
+     * Drawingrevisionref
+     *
+     * A view drawing's revisionRef.
+     */
+    drawingRevisionRef?: string | null;
+};
+
+/**
  * ChatMessage
  */
 export type ChatMessage = {
@@ -863,6 +1079,8 @@ export type ChatMessage = {
      * Interjection
      */
     interjection?: 'pending' | 'delivered' | 'restarted' | 'undelivered' | null;
+    markup?: ChatMarkupContext | null;
+    changeListApproval?: ChatChangeListApproval | null;
 };
 
 /**
@@ -950,6 +1168,8 @@ export type ChatPostRequest = {
     contextMode?: 'continue' | 'project' | 'stage';
     suggestionSelection?: ChatSuggestionSelection | null;
     renderContext?: ChatRenderContext | null;
+    markupContext?: ChatMarkupContext | null;
+    changeListApproval?: ChatChangeListApproval | null;
 };
 
 /**
@@ -5085,6 +5305,31 @@ export type AttentionQuestionApiAttentionQuestionsPostResponses = {
 };
 
 export type AttentionQuestionApiAttentionQuestionsPostResponse = AttentionQuestionApiAttentionQuestionsPostResponses[keyof AttentionQuestionApiAttentionQuestionsPostResponses];
+
+export type AttentionChangeListApiAttentionChangeListsPostData = {
+    body: AttentionChangeListRequest;
+    path?: never;
+    query?: never;
+    url: '/api/attention/change-lists';
+};
+
+export type AttentionChangeListApiAttentionChangeListsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AttentionChangeListApiAttentionChangeListsPostError = AttentionChangeListApiAttentionChangeListsPostErrors[keyof AttentionChangeListApiAttentionChangeListsPostErrors];
+
+export type AttentionChangeListApiAttentionChangeListsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: AttentionItem;
+};
+
+export type AttentionChangeListApiAttentionChangeListsPostResponse = AttentionChangeListApiAttentionChangeListsPostResponses[keyof AttentionChangeListApiAttentionChangeListsPostResponses];
 
 export type GetUserSettingsApiSettingsUserGetData = {
     body?: never;

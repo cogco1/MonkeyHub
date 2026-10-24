@@ -38,7 +38,8 @@ from . import activity, guides, mcp_server, media, providers, skill_plugins, stu
 from ..settings.store import read_application_settings
 
 from ..models import (
-    ChatAttachment, ChatAttention, ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
+    ChatAttachment, ChatAttention, ChatChangeListApproval, ChatCreateRequest, ChatDesignContext, ChatDetail,
+    ChatMarkupContext, ChatMessage, ChatPostRequest, ChatProject,
     ChatDocument, ChatDocumentRef, ChatPresentationBindRequest, ChatPresentationBinding, ChatPresentationRequest,
     ChatPermission, ChatPermissionOption, ChatPermissionRequest, ChatSuggestion,
     ChatProjectRequest, ChatProvider, ChatSummary, ChatUsageSource, ChatWorkspace, HubError, HubFailure,
@@ -150,6 +151,9 @@ class _Running:
     # The registered images this turn's message discusses, already bound to
     # its project with the roles the user chose (#253); this turn only.
     render: tuple[ChatDocument, ...] = ()
+    # The marks this turn's message is about, and the change list items it runs (#300 3-3); this turn only.
+    markup: ChatMarkupContext | None = None
+    approval: ChatChangeListApproval | None = None
     # #301. The user messages this turn has handed to the Agent, first to last:
     # a call opened under one of them keeps its row when it finishes later.
     turns: list[str] = field(default_factory=list)
@@ -934,14 +938,16 @@ class ChatStore:
                                                 contextMode="continue" if request.contextMode == "stage" else request.contextMode,
                                                 suggestionSelection=request.suggestionSelection,
                                                 attachments=[attachment for attachment, _ in attachments],
-                                                documents=images))
+                                                documents=images, markup=request.markupContext,
+                                                changeListApproval=request.changeListApproval))
             session.status, session.error, session.updatedAt = "running", None, _now()
             self._save(session, tuple(attachments))
             self._sessions[session_id] = session
             self._progress_rows.pop(session_id, None)
             running = _Running(design_context=request.designContext, context_mode=request.contextMode,
                                attachments=tuple((attachment, self._attachment_path(session.id, attachment))
-                                                 for attachment, _ in attachments), render=tuple(images), trace=HubTurnObserver(
+                                                 for attachment, _ in attachments), render=tuple(images),
+                               markup=request.markupContext, approval=request.changeListApproval, trace=HubTurnObserver(
                 self.usage_log, _turn_id(session), session.projectId, session.provider, session.model,
             ))
             self._start(session_id, running, content)
@@ -980,6 +986,10 @@ class ChatStore:
         if request.renderContext is not None:
             # The running turn was bound to its own images; new ones start a turn of their own.
             raise HubFailure(409, "CHAT_INTERJECTION_IMAGES", "Send the selected images after this reply finishes, or stop it first.")
+        if request.markupContext is not None or request.changeListApproval is not None:
+            # Marks and a change list each answer a turn of their own, as images do.
+            raise HubFailure(409, "CHAT_INTERJECTION_MARKS", "Send the marks or run the change list after this reply "
+                                                             "finishes, or stop it first.")
         content = providers._redact(request.content.strip(), providers._claude_env())
         if not content:
             raise HubFailure(422, "CHAT_MESSAGE_EMPTY", "Enter a message or attach a file.")
@@ -1754,6 +1764,13 @@ class ChatStore:
                      "page": {"runId": row.runId, "assetSha256": row.assetSha256,
                               "revisionRef": row.revisionRef, "pageIndex": row.pageIndex}}
                     for row in running.render], ensure_ascii=False))
+            enforced = read_application_settings(self.runtime_root).design_loop == studio_tool.DESIGN_LOOP_ENFORCED
+            if running.markup is not None:
+                prompt += "\n\n" + turn_context.markup_note(enforced) + "\n" + json.dumps(
+                    running.markup.model_dump(exclude_none=True), ensure_ascii=False)
+            if running.approval is not None:
+                prompt += "\n\n" + turn_context._APPROVAL_NOTE + "\n" + json.dumps(
+                    running.approval.model_dump(exclude_none=True), ensure_ascii=False)
             prepared = None
             library = self._turn_library()
             if running.design_context is not None:

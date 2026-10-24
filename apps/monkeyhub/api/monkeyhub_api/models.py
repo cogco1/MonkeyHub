@@ -307,6 +307,58 @@ class ChatSuggestion(BaseModel):
         return value
 
 
+class ChatMarkupContext(BaseModel):
+    """The marks one message is about: a saved revision of the ink on one registered page (#300 3-3).
+
+    The design loop reads what each mark lies on from this exact revision
+    (``design_read part=marks``), and the architect's words are this message's
+    text with the page's own comment and text marks; never a newer revision.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+
+    runId: str = Field(min_length=1)
+    assetSha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    pageIndex: int = Field(default=0, ge=0)
+    revisionSha256: str = Field(pattern=r"^[0-9a-f]{64}$", description="The saved annotation revision of the page.")
+    drawingRevisionRef: str | None = Field(default=None, description="A view drawing's revisionRef.")
+
+
+class ChatApprovedChange(BaseModel):
+    """One item of a change list the architect ran, as the card states it."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+
+    n: int = Field(ge=1, le=30)
+    understanding: str = Field(min_length=1, max_length=240)
+    targets: list[str] = Field(min_length=1, max_length=100)
+    protected: list[str] = Field(default_factory=list, max_length=100)
+
+
+class ChatApprovalQuote(BaseModel):
+    """The items taken from one passage of the architect's words, and the span a submission binds for them."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+
+    items: list[int] = Field(min_length=1, max_length=30)
+    feedbackQuote: str | None = Field(default=None, max_length=2000)
+    clauses: list[str] = Field(default_factory=list, max_length=30)
+
+
+class ChatChangeListApproval(BaseModel):
+    """The ticked items of a change list card, sent by the Hub in the architect's name with their own words.
+
+    The message's text is only what the architect wrote; what each item means
+    travels here, so nothing the Agent wrote reads as the person's.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+
+    cardId: str = Field(pattern=r"^att_[0-9a-f]{32}$")
+    items: list[ChatApprovedChange] = Field(min_length=1, max_length=30)
+    quotes: list[ChatApprovalQuote] = Field(min_length=1, max_length=30)
+
+
 class ChatSuggestionSelection(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
 
@@ -338,6 +390,9 @@ class ChatMessage(BaseModel):
     # it got: waiting for the Agent's next step, read by it, sent after the
     # current step was stopped for it, or never read because the turn ended.
     interjection: Literal["pending", "delivered", "restarted", "undelivered"] | None = None
+    # The marks this message is about, and the change list items it runs (#300 3-3).
+    markup: ChatMarkupContext | None = None
+    changeListApproval: ChatChangeListApproval | None = None
 
 
 class ChatSummary(BaseModel):
@@ -560,6 +615,9 @@ class ChatPostRequest(BaseModel):
     suggestionSelection: ChatSuggestionSelection | None = None
     # The registered images this message discusses (#253), bound for this turn only.
     renderContext: ChatRenderContext | None = None
+    # The marks it is about, and the change list items a card runs in the architect's name (#300 3-3).
+    markupContext: ChatMarkupContext | None = None
+    changeListApproval: ChatChangeListApproval | None = None
 
     @model_validator(mode="after")
     def project_context_requires_source(self):

@@ -1215,6 +1215,14 @@ there, and `design_loop.py stop-hook --state <file>`, run as the CLI's Stop hook
 change landed, the architect was asked or a limitation was reported, at most three times.
 `design_loop.cli_profile` gives the system prompt, settings, environment and allowed tools of such a turn.
 
+A message about marks on a page (`markupContext`: the page and its saved annotation revision) is read with
+`design_read part=marks`: the Hub reads that revision's ink and `POST /api/markup/resolve` answers what each mark
+lies on. The Agent then asks with `design_ask` and `changes`; the Hub checks the list itself against that reading,
+the architect's own words (the message, the page comment, its text marks) and the working design's catalogue, and
+puts it on one `change_list` card (`POST /api/attention/change-lists`, refused with `422 CHANGE_LIST_REFUSED`),
+with a question for each unsure item. Running the card posts the architect's own passages with the ticked items
+as `changeListApproval`, and the Agent builds each group with `design_submit` and that group's `feedbackQuote`.
+
 ## 6. Pick and gesture resolution
 
 A pick sends what the object on screen claims about itself — its `archflow:*` user strings, the

@@ -4,10 +4,11 @@ Four tools over the one-call revision, ``POST /api/revisions``:
 
 - ``design_read``: what a change is written from - the working design, what the architect kept and
   rejected in their own words, every condition with whether a check can verify it, the last landed
-  change - and the model itself;
+  change - and the model itself; and, for a message about marks on a page, what each mark lies on;
 - ``design_submit``: one change, carried through every check onto the working design or stopped with
   the reason;
-- ``design_ask``: the question only the architect can settle, with the reason it cannot be settled here;
+- ``design_ask``: the question only the architect can settle, with the reason it cannot be settled here,
+  or, for marks, the changes the marks were read as, which wait on the architect's card until they run them;
 - ``design_report_limitation``: what MonkeyHub cannot do for this request.
 
 Each call goes through ``studio_request`` and its bindings; nothing here talks to a Runtime of its own.
@@ -77,6 +78,8 @@ GUIDE = chr(10).join([
     "submit the change, and MonkeyHub checks it on the built model and says what it measured. outside lists each change made outside MonkeyHub, newest file first, none in the",
     "design: name each with its amount and ask the architect whether to adopt it; a change that reaches one asks first.",
     "After {budget} changes with problems, ask or report a limitation instead of submitting again.",
+    "A message about marks on a page: design_read part=marks says what each mark lies on; ask with design_ask",
+    "changes before building anything (the message says how), and build only the items the architect runs.",
 ])
 
 
@@ -152,8 +155,9 @@ def tool_definitions() -> list[dict]:
     return [
         {"name": "design_read", "description": GUIDE.replace("{budget}", str(budget)), "inputSchema": {
             "type": "object", "properties": {
-                "part": {"type": "string", "enum": ["all", "context", "model", "vocabulary"], "default": "all",
-                         "description": "all is the context and the model; vocabulary is the construction language."}},
+                "part": {"type": "string", "enum": ["all", "context", "model", "vocabulary", "marks"],
+                         "default": "all", "description": "all is the context and the model; vocabulary is the "
+                         "construction language; marks is what each mark of the architect's message lies on."}},
             "additionalProperties": False}},
         {"name": "design_submit", "description": "Carry one change onto the working design through every check "
          "(POST /api/revisions); the chat binds the architect's message and words. See design_read for the fields.",
@@ -169,13 +173,48 @@ def tool_definitions() -> list[dict]:
          "reason says why it cannot be settled here (a kept target, a rejected option, a condition no check can "
          "verify, something the design does not state).", "inputSchema": {"type": "object", "properties": {
              "question": {**text, "maxLength": 2000}, "reason": {**text, "maxLength": 1000},
-             "refs": {"type": "array", "items": {"type": "string"}, "maxItems": 20}},
+             "refs": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+             "changes": {"type": "array", "maxItems": 30, "description": "For a message about marks: the changes you "
+                         "read them as, numbered n = 1, 2, 3; the architect runs them from a card.", "items": {
+                             "type": "object", "properties": {
+                                 "n": {"type": "integer", "minimum": 1}, "markIds": {"type": "array", "items": text},
+                                 "note": {**text, "maxLength": 400, "description": "Whole clauses of the architect's "
+                                          "words, exactly as written."},
+                                 "understanding": {**text, "maxLength": 240}, "understandingZh": {**text, "maxLength": 240},
+                                 "targets": {"type": "array", "items": text}, "protected": {"type": "array", "items": text},
+                                 "unsure": {"type": "boolean"}, "extra": {"type": "boolean"}},
+                             "required": ["n", "note", "understanding"], "additionalProperties": False}}},
              "required": ["question", "reason"], "additionalProperties": False}},
         {"name": "design_report_limitation", "description": "Report what MonkeyHub cannot do for this request (a missing "
          "operation, not a missing fact), and end the turn with it.", "inputSchema": {"type": "object", "properties": {
              "capability": {**text, "maxLength": 300}, "detail": {**text, "maxLength": 2000}},
              "required": ["capability", "detail"], "additionalProperties": False}},
     ]
+
+
+def _marks(hub: str, chat_id: str) -> dict:
+    """What each mark of the current user message lies on, from its exact saved page revision (#300 3-3)."""
+    from urllib.parse import urlencode
+
+    from .. import projects
+    from ..models import HubFailure
+    from . import judgments, tool_calls, transport
+
+    session = transport._request_json(hub, f"/api/chat/sessions/{projects._identifier(chat_id)}")
+    markup = judgments._user_message(chat_id, session, "Reading marks").get("markup")
+    if not markup:
+        raise HubFailure(409, "MARKS_MISSING", "This message names no marks on a page.")
+    target = {key: markup[key] for key in ("runId", "assetSha256", "pageIndex", "drawingRevisionRef")
+              if markup.get(key) is not None}
+    page = tool_calls.call_tool(hub, chat_id, "studio_request", {"method": "GET", "path": "/api/document-annotations?"
+                                + urlencode({**target, "revisionSha256": markup["revisionSha256"]})})
+    ink = page.get("annotations") or []
+    read = tool_calls.call_tool(hub, chat_id, "studio_request", {"method": "POST", "path": "/api/markup/resolve",
+                                                                 "body": {"page": target, "marks": ink}})
+    return {"page": target, "comment": page.get("comment") or "",
+            "marks": [{"markId": row.get("id"), "kind": row.get("kind"),
+                       **({"label": row["label"]} if row.get("label") else {})} for row in ink],
+            "source": read.get("source"), "stateDigest": read.get("stateDigest"), "readings": read.get("readings") or []}
 
 
 # ---- the loop state of each answered user message ------------------------------------------------
@@ -249,12 +288,34 @@ def call(hub: str, chat_id: str, name: str, arguments: Mapping[str, Any]) -> dic
     if name == "design_read":
         part = arguments.get("part", "all")
         reads = {"context": "/api/revisions/context", "model": "/api/construction/model", "vocabulary": "/api/construction"}
+        if part == "marks":
+            return {"marks": _marks(hub, chat_id)}
         wanted = ("context", "model") if part == "all" else (part,)
         if any(item not in reads for item in wanted):
-            raise HubFailure(422, "CHAT_TOOL_INVALID", "part is all, context, model or vocabulary.")
+            raise HubFailure(422, "CHAT_TOOL_INVALID", "part is all, context, model, vocabulary or marks.")
         return {item: tool_calls.call_tool(hub, chat_id, "studio_request", {"method": "GET", "path": reads[item]})
                 for item in wanted}
     held = _loop(chat_id, _message_id(hub, chat_id))
+    if name == "design_ask" and arguments.get("changes"):
+        from . import transport
+
+        try:
+            # The Hub checks the list against its own reading of the marks and the architect's words (#300 3-3).
+            card = transport._request_json(hub, "/api/attention/change-lists", "POST", {
+                "sessionId": chat_id, "messageId": held["messageId"], "question": arguments["question"],
+                "changes": list(arguments["changes"])}, timeout=60,
+                headers={"Authorization": "Bearer " + os.environ.get("MONKEYHUB_PRESENTATION_TOKEN", "")})
+        except HubFailure as exc:
+            if exc.status != 422:
+                raise
+            return {"recorded": None, "code": exc.error.code, "detail": exc.error.detail, "note": "Nothing was asked: "
+                    "correct the list as the detail says and ask again, or ask without changes."}
+        held["asked"] = {"question": arguments["question"], "reason": arguments["reason"],
+                         "refs": list(arguments.get("refs") or ()), "changeList": card["id"]}
+        _write_state(held)
+        return {"recorded": "asked", "cardId": card["id"], "note": "Say in your reply how you read the marks, item by "
+                "item, and that the list waits on the architect's card, every sure item ticked; end the turn. Nothing "
+                "is built until they run it."}
     if name == "design_ask":
         held["asked"] = {"question": arguments["question"], "reason": arguments["reason"],
                          "refs": list(arguments.get("refs") or ())}

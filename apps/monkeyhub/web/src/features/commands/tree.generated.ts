@@ -8053,6 +8053,48 @@ export const COMMAND_TREE: CommandTree = {
       ]
     },
     {
+      "id": "attention.change_list.execute",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Make the ticked changes",
+        "zh-CN": "按勾选的改"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "items"
+      ]
+    },
+    {
+      "id": "attention.change_list.choose_target",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Choose the part an item meant",
+        "zh-CN": "选这条指的构件"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "cardId",
+        "n",
+        "target"
+      ]
+    },
+    {
       "id": "chat.new_conversation",
       "capability": "chat.conversation",
       "label": {

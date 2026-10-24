@@ -26,12 +26,11 @@ travels as the person's. It runs nothing itself.
 from collections.abc import Iterable, Mapping, Sequence
 import re
 
-from pydantic import Field, model_validator
+from .models import (
+    MAX_CHANGE_ITEMS as MAX_ITEMS, AttentionDraft, AttentionOption, AttentionSource, ChangeList, ChangeListItem, CommandRef,
+)
 
-from .models import AttentionDraft, AttentionMedia, AttentionOption, AttentionSource, CommandRef, _Record
-
-#: At most this many items on one list, and this many components offered on an unsure item's question.
-MAX_ITEMS = 30
+#: At most this many components offered on an unsure item's question.
 MAX_CHOICES = 3
 #: A list touching at most this many components, sure and borne out by its marks, may be applied first and
 #: offered undo (decision 5 of the three-channel plan); anything larger is shown as A/B first.
@@ -41,47 +40,6 @@ RAW_LANGUAGE_LIMIT = 2000
 #: What ends a clause of the architect's text; a note is whole clauses of it.
 _ENDS = "。！？；，,.;!?\n\r"
 _CLAUSE = re.compile(f"[^{re.escape(_ENDS)}]+")
-
-
-class ChangeListItem(_Record):
-    """One change as the agent understood it from the marks and the words."""
-
-    n: int = Field(ge=1, le=MAX_ITEMS)
-    markIds: list[str] = Field(default_factory=list, max_length=50)
-    crop: AttentionMedia | None = None
-    note: str = Field(min_length=1, max_length=400)
-    understanding: str = Field(min_length=1, max_length=240)
-    understandingZh: str | None = Field(default=None, min_length=1, max_length=240)
-    targets: list[str] = Field(default_factory=list, max_length=100)
-    protected: list[str] = Field(default_factory=list, max_length=100)
-    unsure: bool = False
-    extra: bool = False
-    keep: bool = True
-
-    @model_validator(mode="after")
-    def _consistent(self):
-        if self.crop is not None and self.crop.kind != "crop":
-            raise ValueError("An item's picture is the crop of its own marks.")
-        if not self.unsure and not self.targets:
-            raise ValueError(f"Item {self.n} names no component; an item without one is unsure.")
-        if set(self.targets) & set(self.protected):
-            raise ValueError(f"Item {self.n} would both change and keep {sorted(set(self.targets) & set(self.protected))}.")
-        return self
-
-
-class ChangeList(_Record):
-    """The items of one reading of one frame's marks, numbered from 1 in order."""
-
-    frameId: str | None = None
-    boardRevision: str | None = None
-    runId: str | None = None
-    items: list[ChangeListItem] = Field(min_length=1, max_length=MAX_ITEMS)
-
-    @model_validator(mode="after")
-    def _numbered(self):
-        if [item.n for item in self.items] != list(range(1, len(self.items) + 1)):
-            raise ValueError("Change list items are numbered 1, 2, 3 … in order.")
-        return self
 
 
 def check_against(change_list: ChangeList, readings: Sequence[Mapping], words: Sequence[str],
@@ -120,6 +78,39 @@ def check_against(change_list: ChangeList, readings: Sequence[Mapping], words: S
                 "no cited mark lies on; an item naming other components is an extra")
             problems.append(f"Item {item.n} touches {', '.join(stray)}, which {where}.")
     return problems
+
+
+#: The card a list rides on is keyed by the conversation and the message it answers.
+CHANGES = "changes:"
+
+
+def change_list_card(session_id: str, message_id: str, change_list: ChangeList, readings: Sequence[Mapping],
+                     words: Sequence[str], question: str) -> AttentionDraft:
+    """The one card a checked list rides on: its items, ticked as proposed, and the command that runs them.
+
+    It keeps the architect's words and the readings the list was checked
+    against, so running it and answering an unsure item check against the same.
+    """
+
+    count = len(change_list.items)
+    return AttentionDraft(
+        channel="annotate", kind="change_list",
+        title=f"I read your marks as {count} change{'s' if count != 1 else ''}",
+        titleZh=f"我把你的批注读成 {count} 条修改",
+        summary=_short(question, 400), summaryZh=_short(question, 400),
+        source=AttentionSource(chatSessionId=session_id, chatMessageId=message_id, frameId=change_list.frameId,
+                               boardRevision=change_list.boardRevision,
+                               runIds=[change_list.runId] if change_list.runId else [],
+                               markIds=list(dict.fromkeys(mark for item in change_list.items for mark in item.markIds))),
+        dedupeKey=f"{CHANGES}{session_id}:{message_id}",
+        media=[item.crop for item in change_list.items if item.crop is not None][:8],
+        options=[AttentionOption(
+            id="run", label="Make the ticked changes", labelZh="按勾选的改",
+            consequence="The ticked items go to the conversation, each built through every check; unsure ones wait",
+            consequenceZh="勾选的条目交给对话去改，每条都过检查；拿不准的先不改",
+            action=CommandRef(commandId="attention.change_list.execute"))],
+        changeList=change_list, changeWords=list(words), markReadings=[dict(row) for row in readings],
+    )
 
 
 def unsure_cards(card_id: str, change_list: ChangeList, readings: Sequence[Mapping], *,
@@ -333,12 +324,14 @@ def _subjects(reading: Mapping) -> set[str]:
 
 
 __all__ = [
+    "CHANGES",
     "ChangeList",
     "ChangeListItem",
     "MAX_ITEMS",
     "SMALL_CHANGE",
     "applies_without_asking",
     "approval",
+    "change_list_card",
     "check_against",
     "unsure_cards",
 ]
