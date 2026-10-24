@@ -123,8 +123,11 @@ const settingsTab = (name) => cmd(dialog, "view.settings.page", { arg: PAGES[nam
 const developerMode = async (on) => {
   await settingsTab("Workspace").click();
   const box = page.locator("#developer-mode");
-  if (!(await box.isVisible())) await cmd(dialog, "view.disclosure.toggle", { arg: "launch_options" }).click();
+  const toggle = cmd(dialog, "view.disclosure.toggle", { arg: "launch_options" });
+  const opened = !(await box.isVisible());
+  if (opened) await toggle.click();
   await (on ? box.check() : box.uncheck());
+  if (opened) await toggle.click();
   await settingsTab("Display").click();
 };
 const openPage = async (name) => {
