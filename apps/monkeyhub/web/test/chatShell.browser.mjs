@@ -597,6 +597,11 @@ const settingsSaved = () => page.waitForFunction(() => document.querySelector("#
 // #328: Settings is paged; each page opens from the list beside it.
 const settingsPage = (name) => page.getByRole("dialog").getByRole("tab", { name, exact: true }).click();
 /** 2-7: technical details, raw lines and the page's address show in developer mode, switched in Hub settings. */
+/** The same switch written into the saved preferences, for the next page load at any width. */
+const developerModeOnNextLoad = (on) => page.evaluate((mode) => {
+  const key = "archflow-studio.user-preferences", saved = JSON.parse(localStorage.getItem(key) ?? '{"version":1}');
+  localStorage.setItem(key, JSON.stringify({ ...saved, version: 1, developer: { mode, eventStream: true } }));
+}, on);
 async function setDeveloperMode(on) {
   await page.getByRole("button", { name: /^(Hub settings|Hub 设置)$/ }).first().click();
   const settings = page.locator("dialog.chat-dialog--settings");
@@ -1433,10 +1438,16 @@ async function suggestionCards() {
       assert.deepEqual(overflow, { card: false, page: false }, `${language} suggestions fit at ${width}px`);
       await estimateCard.screenshot({ path: path.join(temporary, `suggestion-${language}-${theme}-${width}.png`) });
     }
+    // The bases wait for developer mode.
+    assert.equal(await estimateCard.locator("details").count(), 0, "outside developer mode the bases are not offered");
+    await developerModeOnNextLoad(true);
+    await visit(estimatesSession);
+    await estimateCard.waitFor();
     for (const disclosure of await estimateCard.locator("details").all()) {
       if (!await disclosure.getAttribute("open")) await disclosure.locator(":scope > summary").click();
     }
     for (const estimate of [estimated.suggestion.timeEstimate, estimated.suggestion.costEstimate]) await estimateCard.getByText(estimate.basis).waitFor();
+    await developerModeOnNextLoad(false);
   }
 
   preferences = { ...preferences, language: "en", theme: "light" };
