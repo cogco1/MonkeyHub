@@ -44,6 +44,16 @@ class SkillRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, status, response.text)
         return response.json()
 
+    def test_the_inputs_a_run_must_give_are_kept_and_spelled_as_input_names(self):
+        manifest = {"inputs": ["model: a 3dm", "mesh: a mesh file"], "requiredInputs": ["image", "model|mesh"]}
+        added = self.add(skill(name="needs-inputs", manifest=manifest))
+        self.assertEqual(added["manifest"]["requiredInputs"], ["image", "model|mesh"])
+        self.assertEqual(self.client.get("/api/skills/skill:needs-inputs").json()["manifest"]["requiredInputs"], ["image", "model|mesh"])
+        for bad in (["Image"], ["model | mesh"], ["model|"], ["1st"], ["a" * 40], [f"input{n}" for n in range(33)]):
+            with self.subTest(bad=bad[:2]):
+                refused = self.client.post("/api/skills", json=skill(name="bad-inputs", manifest={"requiredInputs": bad}))
+                self.assertIn(refused.status_code, (422,), refused.text)
+
     def test_an_empty_library_reads_as_no_skills_and_creates_no_run(self):
         response = self.client.get("/api/skills")
         self.assertEqual(response.status_code, 200, response.text)
@@ -55,7 +65,8 @@ class SkillRoutesTest(unittest.TestCase):
         first = self.add(skill(manifest={"inputs": ["plan drawing"], "permissions": ["read drawings"]}))
         self.assertEqual((first["id"], first["version"], first["latestVersion"]), ("skill:hatch-review", 1, 1))
         self.assertEqual(first["body"], BODY)
-        self.assertEqual(first["manifest"], {"inputs": ["plan drawing"], "outputs": [], "permissions": ["read drawings"]})
+        self.assertEqual(first["manifest"], {"inputs": ["plan drawing"], "outputs": [], "permissions": ["read drawings"],
+                                              "requiredInputs": []}, "a skill that requires nothing is stored as it always was")
         self.assertEqual(require_registered(STUDIO_SKILL).schema, "StudioSkill@1")
 
         # The index is what an agent lists before it uses a skill: no body.

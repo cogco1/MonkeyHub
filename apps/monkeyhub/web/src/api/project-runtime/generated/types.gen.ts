@@ -13112,6 +13112,12 @@ export type SkillManifestDto = {
      * Permissions
      */
     permissions?: Array<string>;
+    /**
+     * Requiredinputs
+     *
+     * input names a run request must give, or alternatives joined by |, e.g. model|mesh; a run without them is refused before it starts
+     */
+    requiredInputs?: Array<string>;
 };
 
 /**

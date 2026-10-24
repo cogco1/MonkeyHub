@@ -534,6 +534,36 @@ with open(os.path.join(args.outputs, "kept.csv"), "w", encoding="utf-8") as out:
         self.assertEqual(skill_runs.verify_outputs(manifest, ["sub/summary.json", "merged.3dm"])["missing"], ["merge_report.json"],
                          "a declared file counts when it is under any subfolder")
 
+    # ---- a request that lacks what the skill needs is refused before anything else ----
+
+    REQUIRES = {"inputs": ["image: 一张登记过的图片", "model: 项目内已登记的模型资产（3dm）", "mesh（代替 model）: 本机网格文件"],
+                "requiredInputs": ["image", "model|mesh"]}
+
+    def test_a_request_without_an_input_the_skill_requires_is_refused_before_anyone_is_asked_for_anything(self):
+        self.install(manifest=self.REQUIRES, access={"programs": ["blender"]})
+        refused = self.start(status=422)
+        self.assertEqual(refused["code"], "SKILL_INPUT_MISSING")
+        self.assertIn("site-palette cannot run yet: it needs model (项目内已登记的模型资产（3dm）) or mesh (本机网格文件).",
+                      refused["detail"])
+        self.assertIn("This request gave image.", refused["detail"])
+        self.assertIn("Next (fix_input)", refused["detail"])
+        self.assertEqual((self.skill_runs(), self.retained()), ([], []), "nothing ran and nothing was retained")
+        # Nothing was allowed either, and the refusal is not a question about allowing: it would be the next answer.
+        self.assertEqual(self.start(status=422, inputs={})["detail"].count("; and "), 1, "everything missing is named at once")
+        source = Path(tempfile.mkdtemp(prefix="skill mesh ")) / "site.stl"
+        source.write_bytes(b"solid x")
+        enough = {"image": {"runId": self.image.run_id, "assetSha256": self.image.asset_sha256},
+                  "mesh": {"kind": "file", "path": str(source)}}
+        self.assertEqual(self.start(status=403, inputs=enough)["code"], "SKILL_ACCESS_NEEDED", "now it asks for permission")
+        self.allow({"programs": ["blender"]})
+        self.assertEqual(self.run_skill(inputs=enough)["status"], "succeeded")
+
+    def test_a_skill_that_requires_nothing_is_not_held_to_inputs(self):
+        self.install(manifest={"inputs": ["image: 一张登记过的图片"]})
+        self.assertEqual(self.run_skill()["status"], "succeeded")
+        self.assertEqual(skill_runs.missing_required({"requiredInputs": ["a", "b|c"]}, {"b": {}}), ["a"])
+        self.assertEqual(skill_runs.missing_required(None, {}), [])
+
     # ---- what to do after a failure ----
 
     def test_every_refusal_and_failure_says_what_to_do_next(self):

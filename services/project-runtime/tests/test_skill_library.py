@@ -145,6 +145,23 @@ class SkillLibraryTest(unittest.TestCase):
         write_package(self.user / "typo-skill")
         self.assertIsNotNone(skill_library.installed().find("typo-skill").content)
 
+    def test_a_package_names_the_inputs_a_run_must_give_and_a_misspelt_one_is_listed_with_why(self):
+        write_package(self.user / "needs-image")
+        (self.user / "needs-image" / "skill.json").write_text(json.dumps({
+            "name": "needs-image", "description": "x", "entry": "scripts/run.py",
+            "manifest": {"inputs": ["image: a picture"], "outputs": ["card.pdf: the card"], "requiredInputs": ["image"]}}),
+            encoding="utf-8")
+        write_package(self.user / "misspelt")
+        (self.user / "misspelt" / "skill.json").write_text(json.dumps({
+            "name": "misspelt", "description": "x", "entry": "scripts/run.py",
+            "manifest": {"requiredInputs": ["Image File"]}}), encoding="utf-8")
+        found = skill_library.installed()
+        self.assertEqual(found.find("needs-image").content["manifest"]["requiredInputs"], ["image"])
+        broken = found.find("misspelt")
+        self.assertIsNone(broken.content)
+        self.assertIn("requiredInputs", broken.error["detail"])
+        self.assertEqual(broken.error["code"], "SKILL_INVALID")
+
     def test_an_invalid_package_is_listed_with_why_and_runs_nothing(self):
         write_package(self.user / "bad-name")
         (self.user / "bad-name" / "skill.json").write_text(json.dumps({"name": "Bad Name", "description": "x"}),

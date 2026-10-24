@@ -11785,7 +11785,8 @@
         "POST /api/skills, GET /api/skills (the index, no bodies) and GET /api/skills/{skill_id} with ?version=",
         "optional script files and an entry per version, and its codeSha256 over body, entry and files",
         "a project's approvals of one version's exact code from before S-1 (StudioSkillApproval@1 and their revocations), retained and listed by GET /api/skills/approvals for the Hub to carry over; they allow no run",
-        "What a person allows skills to do (S-1, skill_access): an access in the form a person allows it (network, programs by name, ssh hosts, write folders, packages by distribution; reading is not asked), the items that allow anything and are never allowed for every skill, and reading MonkeyHubSkillGrants@1 at the path MONKEYHUB_SKILL_GRANTS names to say what a run of one skill still needs or which one-run grant covers it"
+        "What a person allows skills to do (S-1, skill_access): an access in the form a person allows it (network, programs by name, ssh hosts, write folders, packages by distribution; reading is not asked), the items that allow anything and are never allowed for every skill, and reading MonkeyHubSkillGrants@1 at the path MONKEYHUB_SKILL_GRANTS names to say what a run of one skill still needs or which one-run grant covers it",
+        "The inputs a skill's run must be given (manifest.requiredInputs): input names in the order a person would list them, alternatives joined by | (model|mesh); optional, so a skill that names none is stored and run as it always was; a misspelt entry makes the package invalid and says why"
       ],
       "does_not_own": [
         "Loading skills into an agent: hub.shell materializes the installed skills into a plugin directory in its cache and the agent's native mechanism loads it",
@@ -11824,7 +11825,8 @@
         "SkillGrantsDto",
         "SkillGrantDto",
         "SkillAccessDto",
-        "SkillRefDto"
+        "SkillRefDto",
+        "REQUIRED_INPUTS"
       ],
       "depends_on": [
         "project_runtime.binding",
@@ -11869,7 +11871,8 @@
         "each skill's own package folder installed with an external pip for the runtime's Python",
         "registering PDF/PNG/JPEG outputs as documents, 3dm outputs as model assets with an undrawable report, small text in the record and other files as P036 objects",
         "before a run starts, what the skill declares read against the grants the Hub keeps (MONKEYHUB_SKILL_GRANTS) and a one-run grant bound to the project, skill and code, refused with SKILL_ACCESS_NEEDED naming what still needs allowing; the run record keeps the folder it came from and each grant it went ahead on",
-        "what a person or an Agent does after a failure: every refusal and failed run says fix_input, ask_person or stop (NEXT_STEPS, failureNext); a run that writes no file fails with SKILL_OUTPUT_MISSING; a failed run whose error names an input its manifest declares and the request did not give fails with SKILL_INPUT_MISSING; a succeeded run carries verification (passed, failed or inconclusive) against the files its manifest says it writes, without losing the outputs it did write; an Agent's request that failed twice in a row within 30 minutes is refused with SKILL_REPEATED_FAILURE"
+        "what a person or an Agent does after a failure: every refusal and failed run says fix_input, ask_person or stop (NEXT_STEPS, failureNext); a run that writes no file fails with SKILL_OUTPUT_MISSING; a failed run whose error names an input its manifest declares and the request did not give fails with SKILL_INPUT_MISSING; a succeeded run carries verification (passed, failed or inconclusive) against the files its manifest says it writes, without losing the outputs it did write; an Agent's request that failed twice in a row within 30 minutes is refused with SKILL_REPEATED_FAILURE",
+        "Refusing a request that lacks a required input (manifest.requiredInputs) before anyone is asked to allow anything: 422 SKILL_INPUT_MISSING, in words that name each missing input with what the manifest says it is and what the request gave, and a fix_input next step"
       ],
       "does_not_own": [
         "approving a version - project_runtime.skills",
@@ -11901,7 +11904,9 @@
         "verify_outputs",
         "declared_outputs",
         "declared_inputs",
-        "request_digest"
+        "request_digest",
+        "missing_required",
+        "required_words"
       ],
       "depends_on": [
         "archflow.project.ports",

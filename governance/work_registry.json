@@ -5,18 +5,19 @@
       "id": "GH-300",
       "lanes": [
         {
-          "id": "skill-guard",
+          "id": "skill-required",
           "status": "active",
-          "branch": "claude/300-skill-guard",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-skill-guard",
-          "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
+          "branch": "claude/300-b3-skill-required",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-skill-required",
+          "base_ref": "90f86afcc4330c50d3d01e4a0cf0ec4c55742b44",
           "contributor": "Claude",
           "reviewer": null,
-          "handoff": "Fewer broken skills reach the user (from 10_harness论文对S-1的启发.md, items 1-3): a package that cannot run is caught when it is read and named in plain words in Settings; a run that writes nothing fails and one that misses a file its manifest names says so; every failure says what to do next and an Agent's exact request is not run a third time. Merged with batch 3 after the paper relay.",
+          "handoff": "skill.json can name the inputs a run must be given (manifest.requiredInputs); a request that lacks one is refused before anyone is asked to allow anything, in words that name what is missing. Stacked on claude/300-skill-guard (batch 3): that lane's work is in this branch, so its claim is dropped here and its files are claimed again by this lane. Merged with batch 3 after the paper relay.",
           "modules": [
             "hub.shell",
             "project_runtime.skill_library",
-            "project_runtime.skill_runs"
+            "project_runtime.skill_runs",
+            "project_runtime.skills"
           ],
           "write_scope": [
             "apps/monkeyhub/api/monkeyhub_api/settings/routes.py",
@@ -26,6 +27,7 @@
             "apps/monkeyhub/web/src/api/generated/sdk.gen.ts",
             "apps/monkeyhub/web/src/api/generated/types.gen.ts",
             "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
             "apps/monkeyhub/web/src/features/skills/SkillPermissions.tsx",
             "apps/monkeyhub/web/src/features/skills/skillGrants.ts",
             "apps/monkeyhub/web/src/features/skills/skills.css",
@@ -33,11 +35,14 @@
             "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
             "apps/monkeyhub/web/test/skillPermissions.test.ts",
             "apps/monkeyhub/web/test/skillRunSetting.test.ts",
+            "services/project-runtime/src/project_runtime/api/dto/skills.py",
             "services/project-runtime/src/project_runtime/api/routes/skills.py",
             "services/project-runtime/src/project_runtime/application/skill_library.py",
             "services/project-runtime/src/project_runtime/application/skill_runs.py",
+            "services/project-runtime/src/project_runtime/application/skills.py",
             "services/project-runtime/tests/test_skill_library.py",
-            "services/project-runtime/tests/test_skill_runs.py"
+            "services/project-runtime/tests/test_skill_runs.py",
+            "services/project-runtime/tests/test_skills.py"
           ],
           "depends_on": []
         }

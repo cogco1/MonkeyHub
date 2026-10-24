@@ -1973,7 +1973,9 @@ export const readSkillApiSkillsSkillIdGet = <ThrowOnError extends boolean = fals
  *
  * Refused before anything runs with SKILL_NOT_INSTALLED, SKILL_NOT_RUNNABLE,
  * SKILL_CHANGED, SKILL_ACCESS_NEEDED (what a person still has to allow) or
- * SKILL_REPEATED_FAILURE (an Agent's exact request that just failed twice). A
+ * SKILL_REPEATED_FAILURE (an Agent's exact request that just failed twice) or
+ * SKILL_INPUT_MISSING (an input the skill's manifest requires, ``requiredInputs``,
+ * that the request did not give; nothing is asked of the person first). A
  * run that tries what it did not declare fails with SKILL_PERMISSION_NEEDED
  * and names what it tried; one that writes no file fails with
  * SKILL_OUTPUT_MISSING; one that lacks an input its manifest names fails with
