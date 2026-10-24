@@ -6262,6 +6262,24 @@
             ]
           },
           {
+            "id": "view.notice.ask_ai",
+            "label": "Ask the AI to fix it",
+            "label_zh": "交给 AI 处理",
+            "args": [
+              "notice"
+            ],
+            "entries": []
+          },
+          {
+            "id": "view.notice.undo",
+            "label": "Undo the last edit",
+            "label_zh": "撤销上一步修改",
+            "args": [
+              "notice"
+            ],
+            "entries": []
+          },
+          {
             "id": "view.notice.open",
             "label": "Show what a notice is about",
             "label_zh": "查看提示说的事",

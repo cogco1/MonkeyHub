@@ -44,6 +44,10 @@ interface CommandsValue {
   /** `onScreen` is the set of commands whose standing entry is shown, read once by the caller; without it the page is read. */
   stateOf(command: Command, onScreen?: ReadonlySet<string>): CommandState;
   openPalette(): void;
+  /** Hands words to the AI in the open conversation, as if typed there; false when no conversation can take them. */
+  askAI(text: string): boolean;
+  /** Whether `askAI` would be taken now. */
+  canAskAI(): boolean;
   tree: CommandTree;
   usage: CommandUsage;
 }
@@ -194,14 +198,28 @@ export function CommandProvider({ children, tree = COMMAND_TREE }: { children: R
   }, [byShortcut, run, stateOf, open]);
 
   const note = useCallback((id: string, source: UseSource) => { if (byId.has(id)) setUsage(recordUse(storage(), id, source)); }, [byId]);
-  const value = useMemo<CommandsValue>(() => ({ register, run, note, stateOf, openPalette: () => setOpen(true), tree, usage }),
-    [register, run, note, stateOf, tree, usage]);
+  const canAskAI = useCallback(() => {
+    const handler = handlers.current.get(ASK_AI_ACTION);
+    return handler !== undefined && (handler.available?.() ?? true) === true;
+  }, [version]);
+  const askAI = useCallback((text: string) => {
+    if (!canAskAI()) return false;
+    void handlers.current.get(ASK_AI_ACTION)!.run({ text });
+    return true;
+  }, [canAskAI]);
+  const value = useMemo<CommandsValue>(() => ({ register, run, note, stateOf, openPalette: () => setOpen(true), askAI, canAskAI, tree, usage }),
+    [register, run, note, stateOf, askAI, canAskAI, tree, usage]);
   return <CommandsContext.Provider value={value}>
     {children}
     {open && <CommandPalette language={language} onClose={() => setOpen(false)}
       askAI={(handlers.current.get(ASK_AI_ACTION)?.available?.() ?? handlers.current.has(ASK_AI_ACTION)) === true
         ? (text) => { setOpen(false); window.setTimeout(() => void handlers.current.get(ASK_AI_ACTION)?.run({ text }), 0); } : null} />}
   </CommandsContext.Provider>;
+}
+
+/** The commands where a component may render outside the provider too (a test, a framed page): none there. */
+export function useOptionalCommands(): CommandsValue | null {
+  return useContext(CommandsContext);
 }
 
 export function useCommands(): CommandsValue {
