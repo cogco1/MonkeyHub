@@ -440,7 +440,8 @@ function App() {
   };
   // #300: every Hub view carries the notices; a view framed in another Hub page leaves them to that page.
   const attention = <AttentionHost language={preferences.language} />;
-  if (fabView) return <><FabPage preferences={preferences} client={hubClient} readResult={responseData} />{attention}</>;
+  // The fab page's own reads retry quietly (AutoRetry) and its cards speak the person's language: both read the preferences.
+  if (fabView) return <UserPreferencesProvider appearance={preferences}><FabPage preferences={preferences} client={hubClient} readResult={responseData} />{attention}</UserPreferencesProvider>;
   // One detection answers both places: what a connection is, and what it lists.
   const connectionWords = (row: ChatProvider) => !row.installed ? t("notInstalled")
     : row.id === "coding-plan" && !row.available ? t("notConfigured")
