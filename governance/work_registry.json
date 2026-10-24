@@ -419,6 +419,39 @@
             "services/project-runtime/tests/test_working_copies.py"
           ],
           "depends_on": []
+        },
+        {
+          "id": "waits",
+          "status": "active",
+          "branch": "claude/300-b3-decision-rows",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-decision-rows",
+          "base_ref": "f15fa50624f83fd003760faed3942778af3b5759",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Todo 14. The 13 'continue / record' decision rows of ADR-014 B4 are already the decision card (#700: nine converted; the other four go with D-3 and 4-4). What remains is the polish rule 'a wait is shown by how long it lasts': eighteen reading and loading lines in fifteen files take the class wait-late (base.css) and show after a second. Based on claude/300-batch3 (the polish rules are there). Merged with batch 3.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatMessageContent.tsx",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/FabPage.tsx",
+            "apps/monkeyhub/web/src/MonitorPage.tsx",
+            "apps/monkeyhub/web/src/features/conversation/cards/CandidateCard.tsx",
+            "apps/monkeyhub/web/src/features/designHistory/HistoryPage.tsx",
+            "apps/monkeyhub/web/src/features/designTree/DesignTreeSurface.tsx",
+            "apps/monkeyhub/web/src/features/skills/SkillPermissions.tsx",
+            "apps/monkeyhub/web/src/features/skills/SkillsPanel.tsx",
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/src/features/stage/VersionsStrip.tsx",
+            "apps/monkeyhub/web/src/main.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
+            "apps/monkeyhub/web/test/waitLate.browser.mjs",
+            "docs/decisions/011-interface-information-hierarchy.md",
+            "packages/web-shared/src/base.css"
+          ],
+          "depends_on": []
         }
       ]
     }

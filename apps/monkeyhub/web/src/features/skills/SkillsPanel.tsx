@@ -56,7 +56,7 @@ export function SkillsView({ library, loading, error, reload, close }: {
       <button type="button" className="btn" onClick={close}>{t("skills.close")}</button>
     </div>
     <p className="chat-muted">{t("skills.intro")}</p>
-    {loading && !library && <p className="chat-muted" role="status">{t("skills.library.loading")}</p>}
+    {loading && !library && <p className="chat-muted wait-late" role="status">{t("skills.library.loading")}</p>}
     {error && <div className="skills__error" role="alert">
       <p>{t("skills.library.loadFailed")} {error.detail}</p>
       <button type="button" className="btn" disabled={loading} onClick={reload}>{t("skills.retry")}</button>

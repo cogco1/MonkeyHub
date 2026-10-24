@@ -519,7 +519,7 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPubl
   if (loaded) return <BoardCanvas {...loaded} onSubmit={onSubmit} onSketch={onSketch} onOpenDocument={onOpenDocument} onPublish={onPublish} onRenderChatRequest={onRenderChatRequest} restoreView={restoreView} active={active} refreshKey={refreshKey} pageRequest={pageRequest} />;
   return <section className="monkeyboard monkeyboard-loading" aria-live="polite">
     <strong>MonkeyBoard</strong>
-    <p>{error === null ? text.loading : text.loadFailed}</p>
+    <p className={error === null ? "wait-late" : undefined}>{error === null ? text.loading : text.loadFailed}</p>
     {error !== null && <><p className="monkeyboard-error-detail">{errorText(error)}</p><button data-command="view.notice.retry" data-command-arg="board_open" onClick={() => setAttempt((value) => value + 1)}>{text.retry}</button></>}
   </section>;
 }

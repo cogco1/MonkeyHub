@@ -67,7 +67,7 @@ export function CandidateCard({
           <span className={`status status--${status}`}>
             {job.status === "ready"
               ? job.value.status
-              : t("candidate.status.reading")}
+              : <span className="wait-late">{t("candidate.status.reading")}</span>}
           </span>
           {developerMode && job.status === "ready" && job.value.wallTimeS !== null && (
             <span className="quiet"> {job.value.wallTimeS.toFixed(1)} s</span>
@@ -126,7 +126,7 @@ export function CandidateCard({
       )}
       {candidate.status === "loading" && (
         <div className="card__row">
-          <p className="quiet">{t("candidate.readingRecords")}</p>
+          <p className="quiet wait-late">{t("candidate.readingRecords")}</p>
         </div>
       )}
       {candidate.status === "failed" && (

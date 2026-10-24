@@ -302,7 +302,7 @@ export function VersionsStrip({
                     onClick={() => onOpen(artifact, sourceLabel)}
                   >
                     <ModelThumbnail source={artifact.modelSource} />
-                    <span className="vcard__asset-kind">{loadingThis ? t("stage.versions.loading") : t(artifact.representation === "external" ? "artifact.kind.external3dm" : artifact.representation === "composed" ? "stage.versions.completeModel" : "stage.versions.nativeExport")}</span>
+                    <span className="vcard__asset-kind">{loadingThis ? <span className="wait-late">{t("stage.versions.loading")}</span> : t(artifact.representation === "external" ? "artifact.kind.external3dm" : artifact.representation === "composed" ? "stage.versions.completeModel" : "stage.versions.nativeExport")}</span>
                     <span className="vcard__filename">{artifact.fileName}</span>
                     {(developerMode || artifact.representation === "preview") && <span className="quiet">{developerMode ? `${seat} · ` : ""}{t(artifactKindKey(artifact))}</span>}
                     {!artifact.available && ` · ${t("stage.versions.unavailable")}`}

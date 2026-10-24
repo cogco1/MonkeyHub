@@ -481,5 +481,11 @@
 
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* A reading or loading line shows nothing for its first second (ADR-011 section 8): it is in the page at once, for
+   assistive technology, and fades in only if the wait lasts. Under reduced motion it still waits, then appears. */
+@keyframes wait-late-in { from { opacity: 0; } to { opacity: 1; } }
+.wait-late { animation: wait-late-in 160ms ease-out 1s both; }
+@media (prefers-reduced-motion: reduce) { .wait-late { animation-duration: 0s; } }
+
 /* #328: Night flight marks focus in amber, apart from its cyan instruments. */
 :root[data-ui-style="night"] :focus-visible { outline-color: #f2a93b; }
