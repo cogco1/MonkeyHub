@@ -3252,7 +3252,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     return () => window.clearTimeout(timer);
   }, [active, localModel, draftSnapshot, localModel?.busy, localModel?.error, viewOnlyReason]);
   // A new edit makes the last record's 撤销 a different act: what it would put back is no longer what is on screen.
-  useEffect(() => { if (draftSnapshot && localModel && unsynced(localModel)) setRecorded(null); }, [draftSnapshot, localModel]);
+  // Only while there is one to clear: a state write, even of the same null, renders App again mid-edit.
+  useEffect(() => { if (recorded && draftSnapshot && localModel && unsynced(localModel)) setRecorded(null); }, [recorded, draftSnapshot, localModel]);
   /** 撤销 a record: the Runtime's Undo puts the base it replaced back while the record is still Current. */
   const undoRecorded = useCallback(async () => {
     const last = recorded;
