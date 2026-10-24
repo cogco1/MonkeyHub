@@ -223,7 +223,10 @@ try {
     await dialog.getByText("More launch options", { exact: true }).click();
     // The port, the reference run, model export and the service controls are for developer mode.
     assert.equal(await page.locator("#studio-port, #reference-run, #cad-export").count(), 0, "launch internals wait for developer mode");
+    await dialog.screenshot({ path: path.join(screenshots, "settings-launch-ordinary-en.png") });
     await dialog.getByRole("checkbox", { name: "Developer / Research Mode", exact: true }).check();
+    await page.locator("#studio-port").waitFor();
+    await dialog.screenshot({ path: path.join(screenshots, "settings-launch-developer-en.png") });
     await page.locator("#studio-port").fill("80");
     await dialog.getByRole("alert").filter({ hasText: "The project runtime port must be a whole number from 1024 to 65535." }).waitFor();
     await page.locator("#studio-port").fill("18788");
