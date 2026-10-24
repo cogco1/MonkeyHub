@@ -297,6 +297,16 @@ class GeminiAdapterTests(unittest.TestCase):
         self.assertTrue(capability.available)
         self.assertEqual(capability.max_references, 3)
 
+    def test_a_key_alone_renders_with_the_default_model_and_a_named_model_still_wins(self):
+        settings = SimpleNamespace(render_provider="gemini", render_api_key=KEY, render_model=None, render_timeout_s=120)
+        capability = gemini.adapter_from_settings(settings).capability()
+        self.assertEqual((capability.available, capability.model), (True, gemini.DEFAULT_MODEL))
+        self.assertIn(gemini.DEFAULT_MODEL, gemini.MODELS)
+        settings.render_model = "gemini-3-pro-image"
+        self.assertEqual(gemini.adapter_from_settings(settings).capability().model, "gemini-3-pro-image")
+        settings.render_model = "not-a-model"
+        self.assertFalse(gemini.adapter_from_settings(settings).capability().available)
+
     def test_default_transport_bounds_read_and_disables_redirects(self):
         response = Mock(code=200, headers={"Content-Type": "application/json"})
         response.__enter__ = Mock(return_value=response)

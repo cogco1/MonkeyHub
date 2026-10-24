@@ -149,7 +149,7 @@ try {
 
   await step("Settings opens on Display, its pages follow the list, and a style card saves at once", async () => {
     assert.equal(await settingsTab("Display").getAttribute("aria-selected"), "true");
-    assert.deepEqual(await dialog.getByRole("tab").allInnerTexts(), ["Display", "Conversations", "AI Render", "Workspace", "Software update"]);
+    assert.deepEqual(await dialog.getByRole("tab").allInnerTexts(), ["Display", "Conversations", "AI Render", "Workspace", "What the AI may do", "Software update"]);
     const before = userWrites.length;
     await cmd(dialog, "preference.appearance.style_titleblock").check();
     await until(() => userWrites.length === before + 1, "choosing a style writes the preferences document");
@@ -181,6 +181,8 @@ try {
     await page.locator("#gemini-key-state").filter({ hasText: "Saved in this computer's Windows Credential Manager, for this account only." }).waitFor();
     assert.equal(await field.inputValue(), "", "the field empties once the key is saved");
     assert.deepEqual(keyWrites, [["gemini", "AIzaSyFixture-settings-key-01"]]);
+    await dialog.getByText("Google accepted this key.", { exact: true }).waitFor();
+    assert.equal(await page.locator("#render-model").getAttribute("placeholder"), "gemini-3.1-flash-image (default)", "the model needs no typing");
     await cmd(dialog, "preference.render_provider.check").click();
     await dialog.getByText("Google accepted this key.", { exact: true }).waitFor();
     await cmd(dialog, "preference.secret.get_link", { arg: "gemini" }).click();

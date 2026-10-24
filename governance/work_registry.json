@@ -248,6 +248,32 @@
             "docs/architecture/project-runtime.md"
           ],
           "depends_on": []
+        },
+        {
+          "id": "small-fields",
+          "status": "active",
+          "branch": "claude/300-b3-small-fields",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-small-fields",
+          "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Fewer small things to type (05 B3, D6): AI render needs no model name (the default renders) and a pasted Gemini key is checked at once; MonkeyFab keeps the printer address that was reached. B2 (endpoint by provider) is already in main; D3 (Codex import) is not in main yet; the access code is still typed each time. Merged with batch 3.",
+          "modules": [
+            "hub.shell",
+            "project_runtime.render"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/FabPage.tsx",
+            "apps/monkeyhub/web/src/features/fab/printerHost.ts",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/src/main.tsx",
+            "apps/monkeyhub/web/test/fabPrinterHost.test.ts",
+            "apps/monkeyhub/web/test/settingsAutosave.browser.mjs",
+            "services/project-runtime/src/project_runtime/render_adapters/gemini.py",
+            "services/project-runtime/tests/test_render_gemini_adapter.py"
+          ],
+          "depends_on": []
         }
       ]
     }

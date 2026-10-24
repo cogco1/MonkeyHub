@@ -60,7 +60,7 @@ const PLAN_PRESETS: readonly { id: string; label: Record<Language, string>; url:
 ];
 const KEY_WORDS = {
   "zh-CN": {
-    renderIntro: "选 Gemini，填好受支持的图像模型和 API 密钥，下次打开项目 Runtime 就能渲染，不用重启 Hub。供应商、模型和超时也从下次打开起生效。",
+    renderIntro: "选 Gemini 并贴上 API 密钥，下次打开项目 Runtime 就能渲染，不用重启 Hub；模型和超时不填就用默认值。供应商、模型和超时也从下次打开起生效。",
     geminiKey: "Gemini API 密钥", getKey: "获取密钥", check: "检查", clear: "清除",
     keyHint: "粘贴后按回车或离开输入框即保存；保存后不再显示。",
     notSet: "未设置。", reading: "正在读取…", fromStore: "已保存在本机的 Windows 凭据管理器，只属于当前账户。",
@@ -76,7 +76,7 @@ const KEY_WORDS = {
     planProvider: "服务商", planCustom: "其他（手动填写）", planUrl: "端点地址", planToken: "令牌", getToken: "获取令牌",
   },
   en: {
-    renderIntro: "Choose Gemini, name a supported image model and enter an API key: the next project Runtime you open can render, with no Hub restart. Provider, model and timeout also apply from the next Runtime.",
+    renderIntro: "Choose Gemini and paste an API key: the next project Runtime you open can render, with no Hub restart. Leave the model and timeout empty to use the defaults. Provider, model and timeout also apply from the next Runtime.",
     geminiKey: "Gemini API key", getKey: "Get a key", check: "Check", clear: "Clear",
     keyHint: "Paste it, then press Enter or leave the field to save. It is not shown again.",
     notSet: "Not set.", reading: "Reading…", fromStore: "Saved in this computer's Windows Credential Manager, for this account only.",
@@ -466,7 +466,11 @@ function App() {
   const renderInvalid = !appearanceSave.pending && appearanceDirty ? renderProblem(renderDraft) : null;
   const planInvalid = !appearanceSave.pending && appearanceDirty ? planProblem(chatDraft) : null;
   const keyWords = KEY_WORDS[preferences.language];
-  const keyChanged = (row: CredentialStatus) => { setCredentialRows((current) => ({ ...current, [row.id]: row })); setGeminiCheck(null); void readSettings(true); };
+  // A pasted Gemini key is checked at once: the person asked for nothing but to use it.
+  const keyChanged = (row: CredentialStatus) => {
+    setCredentialRows((current) => ({ ...current, [row.id]: row })); setGeminiCheck(null); void readSettings(true);
+    if (row.id === "gemini" && row.configured) void checkGemini();
+  };
   const checkGemini = async () => {
     setGeminiCheck("checking");
     try { setGeminiCheck((await responseData<CredentialCheck>(checkGeminiApiCredentialsGeminiCheckPost({ client: hubClient }))).result); }
@@ -575,7 +579,7 @@ function App() {
           editDefaults(0); setRenderDraft((value) => ({ ...value, renderProvider: event.target.value as RenderDefaults["renderProvider"] }));
         }}><option value="off">{t("renderOff")}</option><option value="gemini">Gemini</option></select></div>
       <div className="settings-row"><label htmlFor="render-model">{t("renderModel")}</label>
-        <input data-command="preference.render_provider.model" id="render-model" value={renderDraft.renderModel ?? ""} placeholder="gemini-3.1-flash-image" onChange={(event) => {
+        <input data-command="preference.render_provider.model" id="render-model" value={renderDraft.renderModel ?? ""} placeholder={t("renderModelDefault")} onChange={(event) => {
           editDefaults(TYPING_PAUSE_MS); setRenderDraft((value) => ({ ...value, renderModel: event.target.value.trim() || null }));
         }} /></div>
       <div className="settings-row"><label htmlFor="render-timeout">{t("renderTimeout")}</label>
