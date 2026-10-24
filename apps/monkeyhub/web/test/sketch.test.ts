@@ -10,6 +10,7 @@ import {
   arcOf,
   circleOf,
   enclosesArea,
+  cleanedProfile,
   finished,
   rectangleOf,
   lockedPoint,
@@ -58,6 +59,21 @@ test("two-point arcs preserve endpoints, signed bulge and major-arc direction", 
   assert.deepEqual(arcOf([0, 0], [0, 0], 1), []);
   assert.deepEqual(arcOf([0, 0], [2, 0], 0), []);
   assert.deepEqual(arcOf([0, 0], [2, 0], Number.NaN), []);
+});
+
+test("clicking back on the first point closes the outline: the closing point is not sent as a corner", () => {
+  const triangle: SketchState = { ...IDLE, tool: "line", phase: "profile", plane: WORK_PLANES.xz, height: 5,
+    profile: [[0, 0], [3, 0], [2, 2], [0, 0]] };
+  assert.deepEqual(finished(triangle, true, false), { profile: [[0, 0], [3, 0], [2, 2]], base: 0, height: 0, plane: WORK_PLANES.xz },
+    "a line that came back to its start is a flat face of three corners, not an open curve visiting one point twice");
+  // A double click says a corner twice; a polygon closed on its start says the start twice. Neither reaches the project.
+  const polygon: SketchState = { ...IDLE, tool: "polygon", phase: "height", plane: WORK_PLANES.xz, height: 2,
+    profile: [[0, 0], [3, 0], [3, 0], [2, 2], [0, 0]] };
+  assert.deepEqual(finished(polygon)?.profile, [[0, 0], [3, 0], [2, 2]]);
+  assert.deepEqual(cleanedProfile([[0, 0], [1, 0], [1, 1]]), [[0, 0], [1, 0], [1, 1]], "an open path is left as it is");
+  assert.deepEqual(cleanedProfile([[0, 0], [1, 0], [0, 0]]), [[0, 0], [1, 0], [0, 0]], "two corners and back is not a loop");
+  // A line out and back on itself closes on nothing.
+  assert.equal(finished({ ...triangle, profile: [[0, 0], [3, 0], [1.5, 0], [0, 0]] }, true, false), null);
 });
 
 test("open paths keep every settled point and never acquire a face or height", () => {

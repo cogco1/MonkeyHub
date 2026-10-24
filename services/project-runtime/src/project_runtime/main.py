@@ -125,8 +125,19 @@ async def _handle_http_exception(
 async def _handle_validation_error(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
+    errors = exc.errors()
+    # A body that may take one of several shapes is reported once per shape: with the shapes it is not, a run of
+    # "Extra inputs are not permitted". Say only what is wrong with the shape it came closest to (the one with the
+    # fewest faults).
+    shapes: dict[str, list] = {}
+    for error in errors:
+        loc = error.get("loc", ())
+        if len(loc) > 1 and loc[0] == "body" and isinstance(loc[1], str) and (loc[1][:1].isupper() or loc[1].startswith("function-")):
+            shapes.setdefault(loc[1], []).append(error)
+    if len(shapes) > 1:
+        errors = min(shapes.values(), key=len)
     parts = []
-    for error in exc.errors():
+    for error in errors:
         location = ".".join(str(piece) for piece in error.get("loc", ()))
         message = str(error.get("msg", "invalid"))
         parts.append(f"{location}: {message}" if location else message)

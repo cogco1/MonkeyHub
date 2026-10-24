@@ -231,14 +231,34 @@ export interface FinishedSketch {
   readonly closed?: boolean;
 }
 
+const SAME_POINT = 1e-6;
+const samePoint = (a: PlanPoint, b: PlanPoint) => Math.hypot(a[0] - b[0], a[1] - b[1]) <= SAME_POINT;
+
+/**
+ * A profile as the project takes it: no point said twice in a row (a double click) and no end that repeats the start.
+ * Clicking back on the first point is how a person closes an outline, so the closing point is dropped here and the
+ * outline closes on its own. Only a profile that came back to its start (at least three corners) is trimmed this way.
+ */
+export function cleanedProfile(profile: readonly PlanPoint[]): readonly PlanPoint[] {
+  const kept: PlanPoint[] = [];
+  for (const point of profile) if (!kept.length || !samePoint(kept.at(-1)!, point)) kept.push(point);
+  return kept.length > 3 && samePoint(kept.at(-1)!, kept[0]!) ? kept.slice(0, -1) : kept;
+}
+
 export function finished(state: SketchState, allowFlat = false, closed = true): FinishedSketch | null {
   if (!closed) {
     if (state.phase !== "profile" || state.profile.length < 2 || state.profile.some((point) => !point.every(Number.isFinite)) ||
         !state.profile.some((point) => Math.hypot(point[0] - state.profile[0]![0], point[1] - state.profile[0]![1]) > 1e-6)) return null;
-    return { profile: state.profile, height: 0, base: state.base, closed: false, ...(state.plane ? { plane: state.plane } : {}) };
+    const path = cleanedProfile(state.profile);
+    // A line that ends where it began has closed: it is a flat face, not an open curve that visits one point twice.
+    if (state.profile.length > 3 && samePoint(state.profile.at(-1)!, state.profile[0]!)) {
+      return enclosesArea(path) ? { profile: path, height: 0, base: state.base, ...(state.plane ? { plane: state.plane } : {}) } : null;
+    }
+    return { profile: path, height: 0, base: state.base, closed: false, ...(state.plane ? { plane: state.plane } : {}) };
   }
-  if (state.phase !== "height" || !enclosesArea(state.profile) || !Number.isFinite(state.height) || (!allowFlat && Math.abs(state.height) <= 1e-6)) return null;
-  return { profile: state.profile, height: state.height, base: state.base, ...(state.plane ? { plane: state.plane } : {}) };
+  const outline = cleanedProfile(state.profile);
+  if (state.phase !== "height" || !enclosesArea(outline) || !Number.isFinite(state.height) || (!allowFlat && Math.abs(state.height) <= 1e-6)) return null;
+  return { profile: outline, height: state.height, base: state.base, ...(state.plane ? { plane: state.plane } : {}) };
 }
 
 /** Esc, and anything else that abandons the action: back to nothing drawn. */
