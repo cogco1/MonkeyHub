@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import bisect
 import json
 import ntpath
 import os
@@ -2402,9 +2403,9 @@ def check_changed_scopes(
 # policy's ui_entries.baseline, may only become fewer (D-2 empties it). Each
 # standing place holds at most its budget of commands (ADR-014).
 UI_ENTRY_ROLE = re.compile(r"""\brole\s*=\s*\{?\s*["'](?:menuitem|menuitemcheckbox|menuitemradio)["']""")
+UI_ENTRY_CONTROL_ROLE = re.compile(r"""\brole\s*=\s*\{?\s*["'](?:button|tab|option|treeitem|switch|checkbox|radio)["']""")
 UI_ENTRY_CLICK = re.compile(r"\bonClick\s*=")
 UI_ENTRY_COMMAND = re.compile(r"\bdata-command\s*=")
-JSX_OPENING = re.compile(r"<([A-Za-z][\w.]*)")
 
 
 def _ui_entries_policy(policy: dict[str, Any]) -> dict[str, Any] | None:
@@ -2429,49 +2430,205 @@ def _ui_entries_policy(policy: dict[str, Any]) -> dict[str, Any] | None:
     return block
 
 
-def _jsx_openings(text: str) -> Iterator[tuple[int, str, str]]:
-    """Each JSX opening element as (line, tag, the text between the tag name and its closing '>').
+JSX_TAG = re.compile(r"[A-Za-z][\w.:-]*")
+_CODE_SPECIAL = re.compile(r"[/'\"`<{}]")
+_ATTRIBUTE_SPECIAL = re.compile(r"[/'\"{>]")
+_CHILDREN_SPECIAL = re.compile(r"[{<]")
+_TEMPLATE_SPECIAL = re.compile(r"[\\`$]")
+# What may stand before an expression: there '<' opens JSX and '/' opens a regular expression;
+# after an identifier, ')' or ']' they compare, divide or open type arguments.
+_EXPRESSION_BEFORE = frozenset("([{,;:?=&|!~+-*%^<>}")
+_EXPRESSION_KEYWORDS = frozenset({"return", "yield", "await", "case", "default", "else", "typeof", "void", "delete", "in", "of", "new", "throw"})
 
-    Braces, quoted attribute values and template literals are skipped, so a '>' inside
-    ``onClick={() => …}`` or ``title="a > b"`` does not end the element.
-    """
 
-    for match in JSX_OPENING.finditer(text):
-        start = match.start()
-        if start and (text[start - 1].isalnum() or text[start - 1] in "_$"):
-            continue
-        depth, quote, index = 0, "", match.end()
+class _JsxScanner:
+    """Finds JSX opening elements where TSX code can hold them: never inside a comment, a string,
+    a template or regular-expression literal, a type-parameter list (``<T,>``) or JSX text, so an
+    example in a doc comment or an apostrophe in a label does not count or hide a control."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.openings: list[tuple[int, str, str]] = []
+
+    def _expression_may_start(self, index: int) -> bool:
+        text, position = self.text, index - 1
+        while position >= 0 and text[position] in " \t\r\n":
+            position -= 1
+        if position < 0:
+            return True
+        if text[position] in _EXPRESSION_BEFORE:
+            return True
+        end = position + 1
+        while position >= 0 and (text[position].isalnum() or text[position] in "_$"):
+            position -= 1
+        return text[position + 1:end] in _EXPRESSION_KEYWORDS
+
+    def _string(self, index: int) -> int:
+        text, quote = self.text, self.text[index]
+        index += 1
         while index < len(text):
             char = text[index]
-            if quote:
-                if char == "\\":
+            if char == "\\":
+                index += 2
+                continue
+            if char == quote:
+                return index + 1
+            if char == "\n" and quote != "`":
+                return index
+            index += 1
+        return len(text)
+
+    def _template(self, index: int) -> int:
+        text, index = self.text, index + 1
+        while True:
+            found = _TEMPLATE_SPECIAL.search(text, index)
+            if found is None:
+                return len(text)
+            index = found.start()
+            char = text[index]
+            if char == "\\":
+                index += 2
+            elif char == "`":
+                return index + 1
+            elif text.startswith("${", index):
+                index = self.code(index + 2, until_brace=True)
+            else:
+                index += 1
+
+    def _regex(self, index: int) -> int:
+        text, position, in_class = self.text, index + 1, False
+        while position < len(text):
+            char = text[position]
+            if char == "\\":
+                position += 2
+                continue
+            if char == "\n":
+                return index + 1
+            if char == "[":
+                in_class = True
+            elif char == "]":
+                in_class = False
+            elif char == "/" and not in_class:
+                position += 1
+                while position < len(text) and text[position].isalpha():
+                    position += 1
+                return position
+            position += 1
+        return index + 1
+
+    def code(self, index: int, until_brace: bool = False) -> int:
+        text, depth = self.text, 0
+        while True:
+            found = _CODE_SPECIAL.search(text, index)
+            if found is None:
+                return len(text)
+            index = found.start()
+            char = text[index]
+            if char == "/":
+                following = text[index + 1:index + 2]
+                if following == "/":
+                    newline = text.find("\n", index)
+                    index = len(text) if newline < 0 else newline
+                elif following == "*":
+                    close = text.find("*/", index + 2)
+                    index = len(text) if close < 0 else close + 2
+                elif self._expression_may_start(index):
+                    index = self._regex(index)
+                else:
                     index += 1
-                elif char == quote:
-                    quote = ""
-            elif char in "\"'`":
-                quote = char
+            elif char in "'\"":
+                index = self._string(index)
+            elif char == "`":
+                index = self._template(index)
+            elif char == "<":
+                following = text[index + 1:index + 2]
+                if (following == ">" or following.isalpha()) and self._expression_may_start(index):
+                    index = self.element(index)
+                else:
+                    index += 1
             elif char == "{":
                 depth += 1
-            elif char == "}":
+                index += 1
+            else:
+                if depth == 0 and until_brace:
+                    return index + 1
                 depth -= 1
-            elif char == ">" and depth == 0 and text[index - 1] != "=":
-                break
-            index += 1
-        yield text.count("\n", 0, start) + 1, match.group(1), text[match.end():index]
+                index += 1
+
+    def element(self, index: int) -> int:
+        text = self.text
+        if text.startswith("<>", index):
+            return self.children(index + 2)
+        tag = JSX_TAG.match(text, index + 1)
+        if tag is None:
+            return index + 1
+        after = text[tag.end():tag.end() + 16].lstrip()
+        if after.startswith(",") or re.match(r"extends\b", after):
+            return tag.end()  # <T,>(…) => …: a type-parameter list, not an element
+        start, position = tag.end(), tag.end()
+        while True:
+            found = _ATTRIBUTE_SPECIAL.search(text, position)
+            if found is None:
+                return len(text)
+            position = found.start()
+            char = text[position]
+            if char in "'\"":
+                close = text.find(char, position + 1)
+                position = len(text) if close < 0 else close + 1
+            elif char == "{":
+                position = self.code(position + 1, until_brace=True)
+            elif char == "/" and text.startswith("/>", position):
+                self.openings.append((index, tag.group(), text[start:position]))
+                return position + 2
+            elif char == ">":
+                self.openings.append((index, tag.group(), text[start:position]))
+                return self.children(position + 1)
+            else:
+                position += 1
+
+    def children(self, index: int) -> int:
+        text = self.text
+        while True:
+            found = _CHILDREN_SPECIAL.search(text, index)
+            if found is None:
+                return len(text)
+            index = found.start()
+            if text[index] == "{":
+                index = self.code(index + 1, until_brace=True)
+            elif text.startswith("</", index):
+                close = text.find(">", index)
+                return len(text) if close < 0 else close + 1
+            elif text[index + 1:index + 2] == ">" or text[index + 1:index + 2].isalpha():
+                index = self.element(index)
+            else:
+                index += 1
+
+
+def _jsx_openings(text: str) -> Iterator[tuple[int, str, str]]:
+    """Each JSX opening element as (line, tag, the text between the tag name and its closing '>')."""
+
+    scanner = _JsxScanner(text)
+    scanner.code(0)
+    starts = [0] + [match.end() for match in re.finditer("\n", text)]
+    for position, tag, attributes in sorted(scanner.openings):
+        yield bisect.bisect_right(starts, position), tag, attributes
 
 
 def unregistered_ui_entries(text: str, wrappers: Iterable[str] = ()) -> list[int]:
     """Lines of the controls in one source file that run an action but name no command.
 
-    A control is a ``<button>`` (or a wrapper component that renders one) with an
+    A control is a ``<button>`` (or a wrapper component that renders one) or an element with
+    a control role (button, tab, option, treeitem, switch, checkbox, radio) that has an
     ``onClick``, or any element whose role is a menu item; it is registered when it carries
-    ``data-command``.
+    ``data-command``. A wrapper the policy does not list, a spread ``{...props}`` and an
+    expression that leaves ``data-command`` empty are for the browser tests to catch.
     """
 
     clickable = {"button", *wrappers}
     lines = []
     for line, tag, attributes in _jsx_openings(text):
-        acts = tag in clickable and UI_ENTRY_CLICK.search(attributes) or UI_ENTRY_ROLE.search(attributes)
+        acts = ((tag in clickable or UI_ENTRY_CONTROL_ROLE.search(attributes)) and UI_ENTRY_CLICK.search(attributes)
+                or UI_ENTRY_ROLE.search(attributes))
         if acts and not UI_ENTRY_COMMAND.search(attributes):
             lines.append(line)
     return lines

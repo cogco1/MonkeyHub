@@ -42,6 +42,13 @@ class UnregisteredEntryTests(unittest.TestCase):
                 '<Panel onClick={close} />')
         self.assertEqual(unregistered_ui_entries(text, ["MenuCommand"]), [1, 2])
 
+    def test_elements_with_a_control_role_and_a_click_count(self):
+        text = ('<li role="treeitem" onClick={pick}>Row</li>\n'
+                '<div role="option" onClick={run} data-command="view.menu.toggle">Run</div>\n'
+                '<div role="button" tabIndex={0}>Inert</div>\n'
+                '<div role="region" onClick={focus}>Area</div>')
+        self.assertEqual(unregistered_ui_entries(text), [1])
+
     def test_arrows_comparisons_and_quoted_angles_do_not_end_an_element_early(self):
         text = ('<button title="a > b" onClick={() => setZoom((value) => value > 1 ? value / 2 : value)}\n'
                 '  data-command="view.canvas.zoom_out">−</button>')
@@ -50,6 +57,25 @@ class UnregisteredEntryTests(unittest.TestCase):
     def test_type_parameters_and_comparisons_are_not_controls(self):
         text = "const [x, setX] = useState<number>(0); if (a <b) run(); function f<T extends string>(v: T) {}"
         self.assertEqual(unregistered_ui_entries(text), [])
+
+    def test_comments_strings_templates_and_regular_expressions_hold_no_controls(self):
+        text = ('// a <button onClick={x}> used to live here\n'
+                '/** e.g. <button onClick={open}>More</button> */\n'
+                'const doc = "<button onClick={x}>", other = \'<button onClick={y}>\';\n'
+                'const html = `<button onClick=${run}>`;\n'
+                'const path = value.replace(/^"(.*)"$/, "$1");\n'
+                'const view = <div>{/* <button onClick={old}> */}<button onClick={go}>Go</button></div>;')
+        self.assertEqual(unregistered_ui_entries(text), [6])
+
+    def test_jsx_text_with_apostrophes_or_addresses_hides_nothing(self):
+        text = ("const view = <p>Don't stop · http://example.test</p>;\n"
+                "const next = <section><b>it's</b> fine <button onClick={go}>Won't</button></section>;")
+        self.assertEqual(unregistered_ui_entries(text), [2])
+
+    def test_a_generic_arrow_function_is_not_an_element(self):
+        text = ("const queue = useCallback(<T,>(write: () => Promise<T>): Promise<T> => write(), []);\n"
+                "const view = <><button onClick={go}>Go</button></>;")
+        self.assertEqual(unregistered_ui_entries(text), [2])
 
 
 class BaselineTests(unittest.TestCase):
