@@ -2333,20 +2333,32 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     // The attention shell places the same nodes; which surface shows is the same panel and tool the workbench uses.
     const view: CenterView = !panel || !activeTool ? "attention" : activeTool === "monkeyboard" || activeTool === "publish" ? "board"
       : activeTool === "monkeyarch" ? "model" : "tool";
+    // What waits on the architect counts active conversations only, whichever list the column shows; archived ones are listed in full.
+    const waiting = sessions.filter((session) => !session.archived && session.attention === "permission");
+    const archiveBlocked = (session: ChatSummary) => session.status === "running" ? t.archiveRunning
+      : busy || modelBusy || archiveBusy !== null ? t.actionPending : null;
     const shellProjects: ShellProject[] = projects.map((item) => {
-      const threads = visibleSessions.filter((session) => session.projectDir === item.projectDir);
+      const threads = visibleSessions.filter((session) => session.projectDir === item.projectDir).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       return { projectDir: item.projectDir, name: item.name, current: item.projectDir === projectDir,
-        needs: threads.filter((session) => session.attention === "permission").length, working: busyProjects.has(item.projectDir),
-        recent: [...threads].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, RECENT_CONVERSATIONS).map((session) => ({
-          id: session.id, title: session.title, status: session.status ?? "idle", current: session.id === chatId, needsYou: session.attention === "permission" })) };
+        needs: waiting.filter((session) => session.projectDir === item.projectDir).length, working: busyProjects.has(item.projectDir),
+        recent: (archivedView ? threads : threads.slice(0, RECENT_CONVERSATIONS)).map((session) => ({
+          id: session.id, title: session.title, status: session.status ?? "idle", current: session.id === chatId, needsYou: session.attention === "permission",
+          archived: Boolean(session.archived), archiveBlocked: archiveBlocked(session) })) };
     });
     return <AttentionShell Icon={Icon} projects={shellProjects}
-      attentionCount={visibleSessions.filter((session) => session.attention === "permission").length}
+      attentionCount={waiting.length}
       view={view} toolLabel={view === "tool" && activeTool ? t[labelOf(activeTool)] : null} surfaceBlocked={project ? null : t.projectRequired}
       onView={(next) => { if (next === "attention") setPanel(false); else void openTool(next === "board" ? "monkeyboard" : "monkeyarch"); }}
       history={{ back: trail.index > 0, forward: trail.index < trail.ids.length - 1, onBack: () => walk(-1), onForward: () => walk(1) }}
       onSelectProject={(dir) => { const item = projects.find((row) => row.projectDir === dir); if (item) selectProject(item); }}
       onSelectConversation={(id) => { const item = sessions.find((row) => row.id === id); if (item) selectChat(item); }}
+      onNewConversation={(dir) => {
+        // Another project's surfaces follow it, as choosing its row does.
+        if (dir !== projectDir) { const open = tabs.find((tab) => tab.projectDir === dir); setProjectDir(dir); setActiveTool(open?.id ?? null); setPanel(Boolean(open)); }
+        startChat();
+      }}
+      onArchiveConversation={(id) => { const item = sessions.find((row) => row.id === id); if (item) void setArchived(item, !item.archived); }}
+      archivedView={archivedView} onArchivedView={setArchivedView}
       onNewProject={openNewProject} onAddProject={openAddProject} onSettings={openSettings}
       usage={{ label: usageFigure ? `${t.monitor} · ${t.usageWeek(usageFigure.short)}` : t.monitor, onOpen: () => void openTool("monkeymonitor", { projectId: "" }) }}
       background={{ running: tasks.filter((task) => task.state === "running").length, queued: tasks.filter((task) => task.state !== "running").length }}

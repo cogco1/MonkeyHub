@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 
 
 import { useCommandActions, useCommands } from "../features/commands/CommandProvider";
 import type { MessageKey } from "../i18n/messages.en";
-import { MenuTabs } from "../features/chrome/SurfaceChrome";
 import { useT } from "../i18n/useT";
 import { AdvancedTools } from "./AdvancedTools";
 import "./attentionShell.css";
@@ -27,6 +26,9 @@ export interface ShellConversation {
   readonly status: string;
   readonly current: boolean;
   readonly needsYou: boolean;
+  readonly archived: boolean;
+  /** Why it cannot be archived or restored right now, if it cannot. */
+  readonly archiveBlocked: string | null;
 }
 
 export interface ShellProject {
@@ -53,6 +55,11 @@ export interface AttentionShellProps {
   history: { back: boolean; forward: boolean; onBack(): void; onForward(): void };
   onSelectProject(projectDir: string): void;
   onSelectConversation(id: string): void;
+  onNewConversation(projectDir: string): void;
+  onArchiveConversation(id: string): void;
+  /** The column lists archived conversations instead of the active ones. */
+  archivedView: boolean;
+  onArchivedView(value: boolean): void;
   onNewProject(): void;
   onAddProject(): void;
   onSettings(): void;
@@ -99,7 +106,7 @@ export function AttentionShell(props: AttentionShellProps) {
     { value: "model", label: t("shell.view.model") },
   ] as const;
 
-  return <div className="attention-shell" data-side={side ?? "closed"} data-left={leftOpen ? "open" : "closed"}>
+  return <div className="attention-shell" data-view={view} data-side={side ?? "closed"} data-left={leftOpen ? "open" : "closed"}>
     <header className="attention-shell__top">
       <button type="button" className="chat-icon" aria-label={t("shell.back")} title={t("shell.back")} disabled={!props.history.back}
         data-command="view.conversation_history.back" onClick={props.history.onBack}><Icon name="back" /></button>
@@ -118,21 +125,33 @@ export function AttentionShell(props: AttentionShellProps) {
         <Glyph path={QUEUE} /><span>{t("shell.view.attention")}</span>
         {props.attentionCount > 0 && <span className="attention-shell__count">{props.attentionCount}</span>}
       </button>
-      <p className="attention-shell__caption">{t("shell.projects")}</p>
+      <div className="attention-shell__caption">
+        <span>{props.archivedView ? t("shell.archived") : t("shell.projects")}</span>
+        <button type="button" className="chat-icon" aria-pressed={props.archivedView} aria-label={t("shell.archived")} title={t("shell.archived")}
+          onClick={() => props.onArchivedView(!props.archivedView)}><Icon name="archive" /></button>
+      </div>
       {!projects.length && <p className="attention-shell__empty">{t("shell.noProjects")}</p>}
       <ul className="attention-shell__projects">{projects.map((project) => <li key={project.projectDir}>
-        <button type="button" className="attention-shell__row" aria-current={project.current ? "true" : undefined} title={project.projectDir}
-          onClick={() => { props.onSelectProject(project.projectDir); setLeftOpen(false); }}>
-          <Icon name="folder" /><span>{project.name}</span>
-          {project.needs > 0 ? <span className="attention-shell__count" aria-label={t("shell.needs", { count: project.needs })}>{project.needs}</span>
-            : project.working ? <span className="attention-shell__working" aria-label={t("shell.working")} /> : null}
-        </button>
-        {project.recent.length > 0 && <ul className="attention-shell__recent">{project.recent.map((item) => <li key={item.id}>
+        <div className="attention-shell__project">
+          <button type="button" className="attention-shell__row" aria-current={project.current ? "true" : undefined} title={project.projectDir}
+            onClick={() => { props.onSelectProject(project.projectDir); setLeftOpen(false); }}>
+            <Icon name="folder" /><span>{project.name}</span>
+            {project.needs > 0 ? <span className="attention-shell__count" aria-label={t("shell.needs", { count: project.needs })}>{project.needs}</span>
+              : project.working ? <span className="attention-shell__working" aria-label={t("shell.working")} /> : null}
+          </button>
+          <button type="button" className="chat-icon attention-shell__new" aria-label={t("shell.newConversationIn", { project: project.name })}
+            title={t("shell.newConversationIn", { project: project.name })} onClick={() => { props.onNewConversation(project.projectDir); setLeftOpen(false); }}><Icon name="plus" /></button>
+        </div>
+        {project.recent.length > 0 && <ul className="attention-shell__recent">{project.recent.map((item) => <li key={item.id} className="chat-thread-row">
           <button type="button" className="chat-thread" aria-current={item.current ? "page" : undefined} title={item.title}
             onClick={() => { props.onSelectConversation(item.id); setDrawer(true); setLeftOpen(false); }}>
             <span className="chat-thread__dot" data-status={item.status} /><span className="chat-thread__title">{item.title}</span>
             {item.needsYou && <span className="chat-needs">{t("shell.needsYou")}</span>}
           </button>
+          <button type="button" className="chat-icon chat-thread-action" disabled={item.archiveBlocked !== null}
+            aria-label={`${item.archived ? t("shell.restoreConversation") : t("shell.archiveConversation")}: ${item.title}`}
+            title={item.archiveBlocked ?? (item.archived ? t("shell.restoreConversation") : t("shell.archiveConversation"))}
+            onClick={() => props.onArchiveConversation(item.id)}><Icon name={item.archived ? "restore" : "archive"} /></button>
         </li>)}</ul>}
       </li>)}</ul>
       <div className="attention-shell__left-foot">
@@ -149,8 +168,12 @@ export function AttentionShell(props: AttentionShellProps) {
 
     <main className="attention-shell__center">
       <div className="surface-bar attention-shell__tabs">
-        <MenuTabs label={t("shell.views")} value={view === "tool" ? "" : view} options={tabs}
-          onChange={(value) => props.onView(value as Exclude<CenterView, "tool">)} />
+        {/* The Board and the model need an open project; without one their tabs say why, as Ctrl K does. */}
+        <div className="menu-tabs" role="group" aria-label={t("shell.views")}>{tabs.map((tab) => {
+          const blocked = tab.value !== "attention" ? props.surfaceBlocked : null;
+          return <button key={tab.value} type="button" className="menu-tab" aria-pressed={view === tab.value} aria-disabled={blocked ? true : undefined}
+            title={blocked ?? undefined} onClick={() => { if (!blocked) props.onView(tab.value); }}>{tab.label}</button>;
+        })}</div>
         {view === "tool" && props.toolLabel && <span className="attention-shell__tool">{props.toolLabel}</span>}
         {props.surfaceBlocked && view === "attention" && <span className="surface-bar__end">{props.surfaceBlocked}</span>}
       </div>

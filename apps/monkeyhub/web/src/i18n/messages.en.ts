@@ -1355,6 +1355,10 @@ export const messagesEn = {
   "shell.side.handled.empty": "Cards you handled stay here, ready to undo.",
   "shell.side.ignored.empty": "Cards you set aside stay here, ready to bring back.",
   "shell.side.tools.empty": "No functions are registered.",
+  "shell.archived": "Archived conversations",
+  "shell.newConversationIn": "New conversation in {project}",
+  "shell.archiveConversation": "Archive",
+  "shell.restoreConversation": "Restore",
 } as const;
 
 export type MessageKey = keyof typeof messagesEn;

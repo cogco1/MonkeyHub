@@ -8,7 +8,8 @@ import { createProjectWorkspaceFixture } from "./projectWorkspaceFixture.mjs";
 
 // The attention shell (?shell=attention) over the real built Hub: the projects column with what
 // waits on the architect, the Attention, Board and Model tabs over the same open surfaces, the
-// conversation drawer above the composer, the side panel's pages and the phone drawers.
+// conversation drawer above the composer (lying over the Board and the model), the side panel's
+// pages, the notices clear of the side panel, and the phone drawers.
 // ATTENTION_SHELL_SHOTS=<dir> saves desktop and phone, light and dark. With ATTENTION_SHELL_STYLE=board the
 // shots are drawn in that interface style too, on a build that has it.
 const root = path.resolve(process.env.MONKEYHUB_WEB_DIST ?? fileURLToPath(new URL("../dist/", import.meta.url)));
@@ -25,7 +26,7 @@ const sessions = [
   { id: "a2", projectId: "A", projectDir: "D:\\fixture\\A", title: "斜撑留不留", provider: "codex", status: "idle", createdAt: now, updatedAt: "2026-10-01T00:00:00Z",
     messages: [message("a2-u", "user", "斜撑留不留"), { id: "a2-p", role: "tool", content: "", status: "pending", createdAt: now,
       permission: { id: "perm-1", title: "允许运行 model-split v2 吗？", options: [{ optionId: "once", name: "允许一次" }] } }] },
-  { id: "b1", projectId: "B", projectDir: "D:\\fixture\\B", title: "东南角入口", provider: "codex", status: "idle", createdAt: now, updatedAt: now, messages: [] },
+  { id: "b1", projectId: "B", projectDir: "D:\\fixture\\B", title: "东南角入口", provider: "codex", status: "running", createdAt: now, updatedAt: now, messages: [] },
 ];
 const summary = (session) => ({ ...session, messages: undefined, attention: session.messages.some((item) => item.permission) ? "permission" : null });
 const runtimes = new Map();
@@ -71,6 +72,8 @@ origin = `http://127.0.0.1:${server.address().port}`;
 const unexpected = [];
 // The theme each pass loads with, as the saved preferences say it.
 let preferredTheme = "light";
+// The projects the Hub lists; one pass empties it to see the Board and the model refuse.
+let listed = projects;
 const route = async (handler) => {
   const request = handler.request(), url = new URL(request.url()), method = request.method();
   if (url.pathname === "/api/runtime/events") return handler.continue();
@@ -98,11 +101,18 @@ const route = async (handler) => {
     start(projectDir);
     return json({ projectId: projects.find((row) => row.projectDir === projectDir).projectId, initialized: true });
   }
-  if (url.pathname === "/api/chat/workspace") return json({ workspaceDir: "D:\\fixture", configured: true, projects: projects.map((row) => row.projectId) });
-  if (url.pathname === "/api/chat/projects") return json(projects);
+  if (url.pathname === "/api/chat/workspace") return json({ workspaceDir: "D:\\fixture", configured: true, projects: listed.map((row) => row.projectId) });
+  if (url.pathname === "/api/chat/projects") return json(listed);
   if (url.pathname === "/api/chat/providers") return json([{ id: "codex", label: "Codex CLI", available: true, detail: "Fixture", installed: true, signedIn: true,
     models: ["fixture-model"], modelCatalog: "ready", modelDetail: "Fixture" }]);
-  if (url.pathname === "/api/chat/sessions" && method === "GET") return json(url.searchParams.get("archived") === "true" ? [] : sessions.map(summary));
+  if (url.pathname === "/api/chat/sessions" && method === "GET") return json(listed !== projects ? []
+    : sessions.filter((row) => Boolean(row.archived) === (url.searchParams.get("archived") === "true")).map(summary));
+  const archive = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)\/archive$/);
+  if (archive && method === "PUT") {
+    const session = sessions.find((row) => row.id === archive[1]);
+    Object.assign(session, { archived: data().archived, updatedAt: new Date().toISOString() });
+    return json({ ...session, attention: summary(session).attention });
+  }
   const chat = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)$/);
   if (chat && method === "GET") { const session = sessions.find((row) => row.id === chat[1]); return session ? json({ ...session, attention: summary(session).attention }) : json({ code: "CHAT_NOT_FOUND", detail: "No such chat" }, 404); }
   unexpected.push(`${method} ${url.pathname}`);
@@ -114,6 +124,7 @@ const browser = await chromium.launch({ headless: true, channel: "chrome" });
 if (shots) await mkdir(shots, { recursive: true });
 const errors = [];
 const shoot = async (page, name) => { if (shots) await page.screenshot({ path: path.join(shots, `${name}.png`) }); };
+const box = (locator) => locator.boundingBox();
 const style = (page, value, family) => page.evaluate(([value, family]) => {
   document.documentElement.dataset.uiStyle = value; document.documentElement.dataset.uiFamily = family; }, [value, family]);
 const look = process.env.ATTENTION_SHELL_STYLE ?? null;
@@ -150,6 +161,20 @@ try {
   await page.locator(".attention-shell__recent .chat-thread").filter({ hasText: "楼板再薄一点" }).click();
   await page.locator(".attention-shell__drawer").getByText("我把 V16 的楼板改成只留一层胶合板。").waitFor();
 
+  // A project's row starts a new conversation there; a conversation's row archives it, and the archived list restores it.
+  await page.getByRole("button", { name: "在Housing 13 户里开新对话" }).click();
+  await page.waitForFunction(() => document.querySelector(".attention-shell__projects .attention-shell__row[aria-current]")?.textContent.includes("Housing"));
+  assert.equal(await page.locator(".attention-shell__recent .chat-thread[aria-current]").count(), 0, "a new conversation has no row yet");
+  assert.ok(await page.getByRole("button", { name: "归档: 东南角入口" }).isDisabled(), "a running conversation cannot be archived");
+  await page.getByRole("button", { name: "归档: 楼板再薄一点" }).click();
+  await page.locator(".attention-shell__recent .chat-thread").filter({ hasText: "楼板再薄一点" }).waitFor({ state: "detached" });
+  await page.locator(".attention-shell__caption").getByRole("button", { name: "已归档的对话" }).click();
+  await page.locator(".attention-shell__caption").getByText("已归档的对话").waitFor();
+  await page.getByRole("button", { name: "恢复: 楼板再薄一点" }).click();
+  await page.locator(".attention-shell__recent .chat-thread[aria-current]").filter({ hasText: "楼板再薄一点" }).waitFor();
+  await page.locator(".attention-shell__caption").getByText("项目").waitFor();
+  assert.deepEqual(await page.locator(".attention-shell__recent").first().locator(".chat-thread__title").allTextContents(), ["楼板再薄一点", "斜撑留不留"]);
+
   // Board and Model are the same open surfaces as the workbench's; Alt+1 returns to Attention.
   await page.locator(".attention-shell__tabs .menu-tab").filter({ hasText: "画板" }).click();
   await page.locator(".attention-shell__surfaces .chat-project-workspace:not([hidden])").waitFor();
@@ -165,6 +190,23 @@ try {
   await page.keyboard.press("Alt+3");
   await page.waitForFunction(() => document.querySelector(".menu-tab[aria-pressed=true]")?.textContent === "模型");
 
+  // Over the model the open drawer lies on the surface, and the composer keeps to one line until it is used.
+  const body = page.locator(".attention-shell__body"), composer = page.locator(".attention-shell .chat-composer");
+  assert.ok(await page.locator(".attention-shell__drawer").isVisible(), "the drawer stays open across tabs");
+  const withDrawer = await box(body);
+  const drawer = await box(page.locator(".attention-shell__drawer"));
+  assert.ok(drawer.y < withDrawer.y + withDrawer.height, "the drawer lies over the surface");
+  assert.ok((await box(composer)).height < 60, `the idle composer is one line (${(await box(composer)).height}px)`);
+  await page.waitForFunction(() => [...document.querySelectorAll(".attention-shell__surfaces canvas")].some((canvas) => canvas.offsetParent && canvas.width > 0));
+  await page.waitForFunction(() => !document.querySelector(".attention-shell__surfaces .boot"));
+  await shoot(page, "attention-model-drawer-desktop-light");
+  await page.getByRole("button", { name: "收起对话" }).click();
+  assert.equal((await box(body)).height, withDrawer.height, "opening the drawer does not push the surface up");
+  await page.locator(".attention-shell #chat-input").focus();
+  await page.waitForFunction(() => document.querySelector(".attention-shell .chat-composer").getBoundingClientRect().height > 90);
+  await page.locator(".attention-shell #chat-input").blur();
+  await page.waitForFunction(() => document.querySelector(".attention-shell .chat-composer").getBoundingClientRect().height < 60);
+
   // The side panel: background, and the advanced tools that run the command tree.
   await page.locator(".attention-shell__rail-item").filter({ hasText: "高级工具" }).click();
   await page.locator(".advanced-tools__group h3").first().waitFor();
@@ -175,6 +217,30 @@ try {
   await page.keyboard.press("Escape");
   await page.locator(".attention-shell__rail-item").filter({ hasText: "后台" }).click();
   await page.locator(".attention-shell__panel .chat-tasks").waitFor();
+  const sideTabs = await page.locator(".attention-shell__side-tabs .menu-tab").evaluateAll((tabs) => tabs.map((tab) => tab.scrollWidth <= tab.clientWidth + 1
+    && tab.getBoundingClientRect().right <= tab.parentElement.getBoundingClientRect().right + 1));
+  assert.deepEqual(sideTabs, [true, true, true, true, true], "every side page's name shows in full");
+
+  // A notice in this shell keeps clear of the side panel and its rail, and above the composer.
+  sessions.find((row) => row.id === "b1").messages.push({ id: "b1-p", role: "tool", content: "", status: "pending", createdAt: now,
+    permission: { id: "perm-2", title: "允许改东南角入口的门宽吗？", options: [{ optionId: "once", name: "允许一次" }] } });
+  await page.locator('.attention-toast[data-kind="permission"]').waitFor({ timeout: 12_000 });
+  const clear = async (what) => {
+    const stack = await box(page.locator(".attention-toasts")), side = await box(page.locator(".attention-shell__side"));
+    const bottom = await box(page.locator(".attention-shell__bottom"));
+    assert.ok(stack.x + stack.width <= side.x, `${what}: the notice ends left of the side (${stack.x + stack.width} > ${side.x})`);
+    assert.ok(stack.y + stack.height <= bottom.y + 1, `${what}: the notice sits above the status line and the composer`);
+  };
+  await clear("panel open");
+  await shoot(page, "attention-toast-desktop-light");
+  await page.getByRole("button", { name: "收起侧栏" }).first().click();
+  await page.locator(".attention-shell__panel").waitFor({ state: "detached" });
+  await page.waitForFunction(() => {
+    const stack = document.querySelector(".attention-toasts")?.getBoundingClientRect(), rail = document.querySelector(".attention-shell__side")?.getBoundingClientRect();
+    return stack && rail && stack.right <= rail.left;
+  });
+  await clear("rail only");
+  await page.locator(".attention-shell__rail-item").filter({ hasText: "后台" }).click();
   // Ctrl+K from the top row's search.
   await page.locator(".attention-shell__search").click();
   await page.locator("dialog.command-palette[open]").waitFor();
@@ -190,6 +256,22 @@ try {
   await darkPage.locator(".attention-shell__row--attention .attention-shell__count").waitFor();
   await shoot(darkPage, "attention-desktop-dark");
   await dark.close();
+
+  // With no project yet, the Board and the model tabs say why they cannot open.
+  listed = [];
+  const empty = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const emptyPage = await empty.newPage(); emptyPage.setDefaultTimeout(15_000);
+  emptyPage.on("pageerror", (error) => errors.push(error.message));
+  await emptyPage.route((url) => url.pathname.startsWith("/api/"), route);
+  await open(emptyPage);
+  await emptyPage.getByText("还没有项目。").waitFor();
+  const blocked = emptyPage.locator(".attention-shell__tabs .menu-tab").filter({ hasText: "画板" });
+  assert.equal(await blocked.getAttribute("aria-disabled"), "true");
+  assert.ok(await blocked.getAttribute("title"), "a blocked tab says why");
+  await blocked.click({ force: true });
+  assert.equal(await emptyPage.locator(".menu-tab[aria-pressed=true]").textContent(), "关注", "a blocked tab does not open");
+  await empty.close();
+  listed = projects;
 
   // Phone: the projects column and the side panel open over the center.
   for (const colour of ["light", "dark"]) {

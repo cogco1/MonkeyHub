@@ -1318,6 +1318,10 @@ export const messagesZhCN = {
   "shell.side.handled.empty": "处理过的卡片留在这里，可以撤销。",
   "shell.side.ignored.empty": "暂时忽略的卡片留在这里，可以找回。",
   "shell.side.tools.empty": "没有登记的功能。",
+  "shell.archived": "已归档的对话",
+  "shell.newConversationIn": "在{project}里开新对话",
+  "shell.archiveConversation": "归档",
+  "shell.restoreConversation": "恢复",
 } satisfies MessageCatalog;
 
 export const hubCopy = {
