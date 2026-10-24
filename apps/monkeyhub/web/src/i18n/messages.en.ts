@@ -1359,6 +1359,23 @@ export const messagesEn = {
   "shell.newConversationIn": "New conversation in {project}",
   "shell.archiveConversation": "Archive",
   "shell.restoreConversation": "Restore",
+  "cards.channel.decide": "Needs your decision",
+  "cards.channel.annotate": "On the drawing",
+  "cards.channel.guess": "A guess",
+  "cards.channel.notice": "Notice",
+  "cards.answers": "Answers",
+  "cards.recommended": "Recommended",
+  "cards.working": "Carrying out your answer…",
+  "cards.chosen": "You chose: {option}",
+  "cards.handledForYou": "Handled for you: {option}",
+  "cards.done": "Handled",
+  "cards.later": "Later",
+  "cards.dismiss": "Set aside",
+  "cards.undo": "Undo",
+  "cards.reopen": "Bring back",
+  "cards.evidence": "Evidence",
+  "cards.words": "What to send",
+  "cards.unread": "This list could not be read; it is read again when the queue changes.",
 } as const;
 
 export type MessageKey = keyof typeof messagesEn;

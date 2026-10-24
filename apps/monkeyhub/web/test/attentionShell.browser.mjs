@@ -9,7 +9,9 @@ import { createProjectWorkspaceFixture } from "./projectWorkspaceFixture.mjs";
 // The attention shell (?shell=attention) over the real built Hub: the projects column with what
 // waits on the architect, the Attention, Board and Model tabs over the same open surfaces, the
 // conversation drawer above the composer (lying over the Board and the model), the side panel's
-// pages, the notices clear of the side panel, and the phone drawers.
+// pages, the notices clear of the side panel, and the phone drawers. One pass serves the attention queue
+// (1-4): its cards on the Attention page, their answers, the handled and set-aside pages, and a new card's
+// notice kept above the model's floating toolbar.
 // ATTENTION_SHELL_SHOTS=<dir> saves desktop and phone, light and dark. With ATTENTION_SHELL_STYLE=board the
 // shots are drawn in that interface style too, on a build that has it.
 const root = path.resolve(process.env.MONKEYHUB_WEB_DIST ?? fileURLToPath(new URL("../dist/", import.meta.url)));
@@ -52,11 +54,19 @@ const snapshot = () => ({ serverId: "fixture-hub", sequence: 1, workers: [], pro
     instanceId: "instance-2000", processId: 2000, desiredState: "running", healthy: true, state: "ready", url: app.apiUrl, error: null }] : [],
     sessions: sessions.filter((row) => row.projectId === runtime.projectId).map(summary) };
 }) });
+// The open event streams, so the fixture can say what changed, as the Hub does.
+const streams = new Set();
+let sequence = 1;
+const announce = (kind) => {
+  for (const stream of streams) stream.write(`event: runtime\ndata: ${JSON.stringify({ serverId: "fixture-hub", sequence: ++sequence, kind, runtimeId: null })}\n\n`);
+};
 const server = createServer(async (request, response) => {
   const pathname = new URL(request.url, "http://localhost").pathname;
   if (pathname === "/api/runtime/events") {
     response.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
     response.write(`retry: 250\nevent: runtime\ndata: ${JSON.stringify({ serverId: "fixture-hub", sequence: 1, kind: "snapshot", snapshot: snapshot() })}\n\n`);
+    streams.add(response);
+    request.on("close", () => streams.delete(response));
     return;
   }
   const file = path.resolve(root, `.${pathname === "/" ? "/index.html" : pathname}`);
@@ -74,6 +84,28 @@ const unexpected = [];
 let preferredTheme = "light";
 // The projects the Hub lists; one pass empties it to see the Board and the model refuse.
 let listed = projects;
+// The attention queue (1-4): served in one pass, as the Hub will after 0-2; elsewhere a 404, as main's Hub answers.
+let attentionServed = false;
+const stamp = () => new Date().toISOString();
+const queueCard = (id, projectId, overrides) => ({ id: `att_${id}`, projectId, projectDir: `D:\\fixture\\${projectId}`, state: "open",
+  source: {}, media: [], evidence: [], options: [], opens: [], createdAt: now, updatedAt: now, ...overrides });
+const answer = (id, label, labelZh, consequenceZh, extra = {}) => ({ id, label, labelZh, consequence: consequenceZh, consequenceZh,
+  action: { commandId: "candidate.review.archive", args: {} }, ...extra });
+const seedCards = () => [
+  queueCard("decide", "A", { channel: "decide", kind: "ab", title: "Keep V16 or V17", titleZh: "V16 和 V17 留哪个",
+    summary: "The two differ only in floor thickness.", summaryZh: "两版只差楼板厚度。",
+    evidence: [{ key: "floor", label: "Floor", labelZh: "楼板", text: "V17 is 40 mm thinner", textZh: "V17 薄 40 mm", status: "ok" }],
+    options: [answer("v16", "Keep V16", "留 V16", "V17 归档"), answer("v17", "Keep V17", "留 V17", "V16 归档", { recommended: true, undoable: true })],
+    recommendation: { optionId: "v17", reason: "Thinner, and every check passes", reasonZh: "更薄，检查都过了" },
+    opens: [{ commandId: "chat.open_conversation", args: { sessionId: "a1" } }, { commandId: "candidate.compare", args: { runIds: ["v16", "v17"] } }] }),
+  queueCard("guess", "B", { channel: "guess", kind: "ask", title: "Which side for the entrance", titleZh: "入口放在哪边",
+    options: [answer("south", "South", "南边", "按南边入口改"), answer("east", "East", "东边", "按东边入口改")] }),
+  queueCard("notice", "A", { channel: "notice", kind: "info", title: "The section is ready", titleZh: "剖面图出好了" }),
+  queueCard("ask", "A", { channel: "guess", kind: "ask", title: "How wide should the stair be", titleZh: "楼梯宽度你想怎么定",
+    options: [answer("say", "Say it", "我来说", "把你写的话交给对话", { action: { commandId: "chat.composer.send", args: {} }, undoable: true })] }),
+];
+let cards = [];
+const attentionActions = [], attentionNotes = [];
 const route = async (handler) => {
   const request = handler.request(), url = new URL(request.url()), method = request.method();
   if (url.pathname === "/api/runtime/events") return handler.continue();
@@ -115,6 +147,39 @@ const route = async (handler) => {
   }
   const chat = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)$/);
   if (chat && method === "GET") { const session = sessions.find((row) => row.id === chat[1]); return session ? json({ ...session, attention: summary(session).attention }) : json({ code: "CHAT_NOT_FOUND", detail: "No such chat" }, 404); }
+  if (url.pathname.startsWith("/api/attention")) {
+    if (!attentionServed) return json({ code: "NOT_FOUND", detail: "This Hub does not serve the attention queue yet." }, 404);
+    if (url.pathname === "/api/attention" && method === "GET") {
+      const states = url.searchParams.getAll("state");
+      const wanted = states.length ? states : ["open", "review", "later", "working"];
+      return json(cards.filter((card) => wanted.includes(card.state)));
+    }
+    if (url.pathname === "/api/attention/summary") {
+      const count = (projectId, states) => cards.filter((card) => card.projectId === projectId && states.includes(card.state)).length;
+      const rows = projects.map((project) => ({ projectId: project.projectId, projectDir: project.projectDir,
+        open: count(project.projectId, ["open", "review"]), later: count(project.projectId, ["later"]), working: count(project.projectId, ["working"]) }));
+      const total = (key) => rows.reduce((sum, row) => sum + row[key], 0);
+      return json({ projects: rows, hub: null, open: total("open"), later: total("later"), working: total("working") });
+    }
+    const act = url.pathname.match(/^\/api\/attention\/([^/]+)\/(resolve|later|dismiss|reopen|undo)$/);
+    if (act && method === "POST") {
+      const item = cards.find((card) => card.id === act[1]);
+      const option = act[2] === "resolve" ? item.options.find((row) => row.id === data().optionId) : null;
+      attentionActions.push([act[2], item.id, option?.id ?? null]);
+      if (act[2] === "resolve" && data().note !== undefined) attentionNotes.push(data().note);
+      // Taking the stair answer back finds the project moved on: the Hub asks instead, and the card stays handled.
+      const followUp = act[2] === "undo" && item.id === "att_ask" ? queueCard("ask_next", "A", { channel: "decide", kind: "choice",
+        title: "The stair changed since: go back anyway", titleZh: "楼梯已经改过了，还要回到原来吗", options: [answer("yes", "Go back", "回去", "撤回楼梯的改动")],
+        createdAt: stamp(), updatedAt: stamp() }) : null;
+      if (followUp) cards.push(followUp);
+      else Object.assign(item, { updatedAt: stamp() }, act[2] === "resolve"
+        ? { state: "done", resolution: { optionId: option.id, by: "person", at: stamp(), undo: option.undoable ? { action: option.action } : null } }
+        : act[2] === "later" ? { state: "later" } : act[2] === "dismiss" ? { state: "dismissed" } : { state: "open", resolution: null });
+      // As the Hub does: the change is published when it is stored, before the answer goes back.
+      announce("attention/changed");
+      return json(act[2] === "resolve" || act[2] === "undo" ? { item, followUp } : item);
+    }
+  }
   unexpected.push(`${method} ${url.pathname}`);
   return json({ code: "FIXTURE_NOT_SERVED", detail: `${method} ${url.pathname}` }, 404);
 };
@@ -272,6 +337,106 @@ try {
   assert.equal(await emptyPage.locator(".menu-tab[aria-pressed=true]").textContent(), "关注", "a blocked tab does not open");
   await empty.close();
   listed = projects;
+
+  // The attention queue, where the Hub serves it (1-4).
+  attentionServed = true; cards = seedCards(); preferredTheme = "light";
+  const served = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const queuePage = await served.newPage(); queuePage.setDefaultTimeout(15_000);
+  queuePage.on("pageerror", (error) => errors.push(error.message));
+  await queuePage.route((url) => url.pathname.startsWith("/api/"), route);
+  await open(queuePage);
+  const queueCards = queuePage.locator(".attention-shell__queue .attention-card");
+  const queued = (text) => queueCards.filter({ hasText: text });
+  await queueCards.nth(3).waitFor();
+  sessions.find((row) => row.id === "b1").status = "idle";
+  await queuePage.locator(".attention-toast").filter({ hasText: "「东南角入口」已完成" }).waitFor({ timeout: 12_000 });
+  assert.equal(await queuePage.locator('.attention-toast[data-kind="permission"]').count(), 0, "a waiting permission is a card here, not a second notice");
+  assert.deepEqual(await queueCards.evaluateAll((nodes) => nodes.map((node) => node.dataset.channel)), ["decide", "guess", "notice", "guess"]);
+  // The counts are the queue's own.
+  await queuePage.locator(".attention-shell__row--attention .attention-shell__count").filter({ hasText: "4" }).waitFor();
+  const projectCount = (name) => queuePage.locator(".attention-shell__projects .attention-shell__row").filter({ hasText: name }).locator(".attention-shell__count");
+  assert.equal(await projectCount("Thi Hemp").textContent(), "3");
+  assert.equal(await projectCount("Housing").textContent(), "1");
+  // A decision: what each answer does, the recommended one first with its reason, and what it opens.
+  const decide = queued("V16 和 V17 留哪个");
+  assert.match(await decide.locator(".attention-card__answer").first().innerText(), /^留 V17\s*建议\s*V16 归档$/);
+  await decide.getByText("更薄，检查都过了").waitFor();
+  await decide.getByText("V17 薄 40 mm").waitFor();
+  assert.equal(await decide.getByRole("button", { name: "打开对话" }).getAttribute("aria-disabled"), null, "a registered command it opens is offered");
+  assert.equal(await decide.locator(".attention-card__opens button").count(), 1, "one the command tree does not know yet is left out");
+  await shoot(queuePage, "attention-queue-desktop-light");
+  // Later keeps a card in the queue, put off, and takes it out of the count.
+  await queued("入口放在哪边").getByRole("button", { name: "稍后" }).click();
+  await queued("入口放在哪边").getByRole("button", { name: "找回" }).waitFor();
+  await queuePage.waitForFunction(() => ![...document.querySelectorAll(".attention-shell__projects .attention-shell__row")]
+    .find((row) => row.textContent.includes("Housing"))?.querySelector(".attention-shell__count"));
+  // An answer goes to the Hub, which carries it out; the card moves to Handled, where it can be undone.
+  await decide.locator(".attention-card__answer").first().click();
+  await decide.waitFor({ state: "detached" });
+  assert.deepEqual(attentionActions.slice(0, 2), [["later", "att_guess", null], ["resolve", "att_decide", "v17"]]);
+  await queuePage.locator(".attention-shell__rail-item").filter({ hasText: "已处理" }).click();
+  const handled = queuePage.locator(".attention-shell__panel .attention-card").filter({ hasText: "V16 和 V17 留哪个" });
+  await handled.getByText("你选了：留 V17").waitFor();
+  await handled.getByRole("button", { name: "撤销" }).click();
+  await queued("V16 和 V17 留哪个").waitFor();
+  assert.equal(await queuePage.locator(".attention-toast").filter({ hasText: "V16 和 V17 留哪个" }).count(), 0, "a card brought back here is no news");
+  // Set aside leaves the queue for the set-aside page, which brings it back.
+  await queued("剖面图出好了").getByRole("button", { name: "忽略" }).click();
+  await queued("剖面图出好了").waitFor({ state: "detached" });
+  await queuePage.locator(".attention-shell__rail-item").filter({ hasText: "已忽略" }).click();
+  await queuePage.locator(".attention-shell__panel .attention-card").filter({ hasText: "剖面图出好了" }).getByRole("button", { name: "找回" }).click();
+  await queued("剖面图出好了").waitFor();
+  // An answer that sends the architect's own words waits for them.
+  const ask = queued("楼梯宽度你想怎么定");
+  assert.equal(await ask.locator('[data-option="say"]').isDisabled(), true, "nothing to send yet");
+  await ask.locator("textarea").fill("1.2 米，和走廊一样宽");
+  await ask.locator('[data-option="say"]').click();
+  await ask.waitFor({ state: "detached" });
+  assert.deepEqual(attentionNotes, ["1.2 米，和走廊一样宽"]);
+  // Taking it back after the project moved on: the card the Hub raised instead is shown, with no notice.
+  await queuePage.locator(".attention-shell__rail-item").filter({ hasText: "已处理" }).click();
+  await queuePage.locator(".attention-shell__panel .attention-card").filter({ hasText: "楼梯宽度你想怎么定" }).getByRole("button", { name: "撤销" }).click();
+  await queuePage.waitForFunction(() => document.activeElement?.id === "attention-card-att_ask_next");
+  assert.equal(await queuePage.locator(".attention-toast").filter({ hasText: "楼梯已经改过了" }).count(), 0, "nor one the undo raised");
+  await queuePage.getByRole("button", { name: "收起侧栏" }).first().click();
+  // A card that comes to need the architect is a notice; over the model, with the side panel open, it keeps
+  // left of the side and above the floating toolbar where they share columns.
+  await queuePage.keyboard.press("Alt+3");
+  await queuePage.waitForFunction(() => document.querySelector(".menu-tab[aria-pressed=true]")?.textContent === "模型");
+  await queuePage.locator(".attention-shell__surfaces .viewtools.model-tools").waitFor();
+  await queuePage.locator(".attention-shell__rail-item").filter({ hasText: "后台" }).click();
+  cards.push(queueCard("stairs", "B", { channel: "decide", kind: "choice", title: "Move the stair east", titleZh: "要不要把楼梯挪到东侧",
+    options: [answer("move", "Move it", "挪", "楼梯挪到东侧"), answer("keep", "Keep it", "不挪", "楼梯不动")], createdAt: stamp(), updatedAt: stamp() }));
+  announce("attention/changed");
+  const cardNotice = queuePage.locator('.attention-toast[data-kind="card"]').filter({ hasText: "要你决定：要不要把楼梯挪到东侧" });
+  await cardNotice.waitFor();
+  await queuePage.waitForFunction(() => {
+    const stack = document.querySelector(".attention-toasts")?.getBoundingClientRect(), side = document.querySelector(".attention-shell__side")?.getBoundingClientRect();
+    const tools = document.querySelector(".attention-shell__surfaces .viewtools.model-tools")?.getBoundingClientRect();
+    if (!stack || !side || !tools || !stack.height) return false;
+    const shared = tools.left < stack.right && tools.right > stack.left;
+    return stack.right <= side.left && (!shared || stack.bottom <= tools.top);
+  });
+  await shoot(queuePage, "attention-card-notice-model-desktop-light");
+  // Its View shows the card in the queue.
+  await cardNotice.getByRole("button", { name: "查看" }).click();
+  await queuePage.waitForFunction(() => document.querySelector(".menu-tab[aria-pressed=true]")?.textContent === "关注");
+  await queuePage.waitForFunction(() => document.activeElement?.id === "attention-card-att_stairs");
+  await served.close();
+  for (const [colour, viewport, name] of [["dark", { width: 1440, height: 900 }, "attention-queue-desktop-dark"], ["light", { width: 390, height: 844 }, "attention-queue-phone-light"]]) {
+    preferredTheme = colour; cards = seedCards();
+    const look = await browser.newContext({ viewport, ...(viewport.width < 500 ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}) });
+    const lookPage = await look.newPage(); lookPage.setDefaultTimeout(15_000);
+    lookPage.on("pageerror", (error) => errors.push(error.message));
+    await lookPage.route((url) => url.pathname.startsWith("/api/"), route);
+    await open(lookPage);
+    await lookPage.locator(".attention-shell__queue .attention-card").nth(2).waitFor();
+    const width = await lookPage.evaluate(() => document.documentElement.scrollWidth);
+    assert.ok(width <= viewport.width, `${name}: no sideways scroll (${width}px)`);
+    await shoot(lookPage, name);
+    await look.close();
+  }
+  attentionServed = false; cards = [];
 
   // Phone: the projects column and the side panel open over the center.
   for (const colour of ["light", "dark"]) {

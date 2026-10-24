@@ -1322,6 +1322,23 @@ export const messagesZhCN = {
   "shell.newConversationIn": "在{project}里开新对话",
   "shell.archiveConversation": "归档",
   "shell.restoreConversation": "恢复",
+  "cards.channel.decide": "要你决定",
+  "cards.channel.annotate": "在图上看",
+  "cards.channel.guess": "猜你想要",
+  "cards.channel.notice": "通知",
+  "cards.answers": "回答",
+  "cards.recommended": "建议",
+  "cards.working": "正在照你的回答去做…",
+  "cards.chosen": "你选了：{option}",
+  "cards.handledForYou": "已替你处理：{option}",
+  "cards.done": "已处理",
+  "cards.later": "稍后",
+  "cards.dismiss": "忽略",
+  "cards.undo": "撤销",
+  "cards.reopen": "找回",
+  "cards.evidence": "依据",
+  "cards.words": "要发出的话",
+  "cards.unread": "没读到这一页；队列一有变化会再读。",
 } satisfies MessageCatalog;
 
 export const hubCopy = {

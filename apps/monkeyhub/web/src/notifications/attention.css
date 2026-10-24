@@ -4,7 +4,7 @@
 .attention-toast{pointer-events:auto;display:flex;align-items:center;gap:10px;min-height:48px;padding:6px 6px 6px 14px;border:1px solid var(--line);border-radius:var(--toast-radius,12px);background:var(--toast-bg,var(--ground));color:var(--toast-ink,var(--ink));box-shadow:var(--shadow);font:var(--text-ui)/1.5 var(--font-ui);animation:attention-enter .18s ease-out;transition:opacity .2s ease,transform .2s ease}
 .attention-toast[data-leaving]{opacity:0;transform:translateY(4px)}
 .attention-toast__mark{flex:none;width:8px;height:8px;border-radius:50%;background:var(--held)}
-.attention-toast[data-kind=permission] .attention-toast__mark{background:var(--accent)}
+.attention-toast[data-kind=permission] .attention-toast__mark,.attention-toast[data-kind=card]:not([data-channel=notice]) .attention-toast__mark{background:var(--accent)}
 .attention-toast[data-kind=failed] .attention-toast__mark{background:var(--violated)}
 .attention-toast__text{flex:1;min-width:0;margin:0;display:flex;flex-wrap:wrap;align-items:center;column-gap:6px;overflow-wrap:anywhere}
 .attention-toast__dot{color:var(--toast-muted,var(--muted))}
@@ -19,7 +19,7 @@
 @media(prefers-reduced-motion:reduce){.attention-toast{animation:none;transition:none}}
 /* #328: in the instrument styles a notice carries its state as a bar on its left edge instead of a dot. */
 :where([data-ui-family=instrument]) .attention-toast{border-left:var(--stroke-mark) solid var(--held);border-radius:var(--radius-lg)}
-:where([data-ui-family=instrument]) .attention-toast[data-kind=permission]{border-left-color:var(--accent)}
+:where([data-ui-family=instrument]) :is(.attention-toast[data-kind=permission],.attention-toast[data-kind=card]:not([data-channel=notice])){border-left-color:var(--accent)}
 :where([data-ui-family=instrument]) .attention-toast[data-kind=failed]{border-left-color:var(--violated)}
 :where([data-ui-family=instrument]) .attention-toast__mark{display:none}
 :where([data-ui-family=instrument]) .attention-toast__view{font-weight:600}

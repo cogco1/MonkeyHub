@@ -94,6 +94,10 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
   if (url.pathname === "/api/chat/workspace") return json({ workspaceDir: "D:\\fixture", configured: true, projects: [project.projectId] });
   if (url.pathname === "/api/chat/projects") return json([project]);
   if (url.pathname === "/api/chat/sessions") return json([]);
+  // #334: Settings lists which keys are in use; this Hub has none.
+  if (url.pathname === "/api/credentials") return json([]);
+  // A Hub that does not serve the attention queue yet (1-4), as main's does.
+  if (url.pathname.startsWith("/api/attention")) return json({ code: "NOT_FOUND", detail: "This Hub does not serve the attention queue yet." }, 404);
   unexpected.push(`${method} ${url.pathname}`); return json({ detail: "Not part of this fixture" }, 404);
 });
 

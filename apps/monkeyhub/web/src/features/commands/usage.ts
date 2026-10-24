@@ -5,7 +5,7 @@
  * counts and how each was reached — never what the command acted on.
  */
 
-export type UseSource = "palette" | "tools" | "shortcut" | "button" | "composer";
+export type UseSource = "palette" | "tools" | "shortcut" | "button" | "composer" | "card";
 
 export interface CommandUsage {
   readonly counts: Readonly<Record<string, Readonly<Partial<Record<UseSource, number>>>>>;
