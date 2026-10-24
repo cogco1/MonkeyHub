@@ -182,7 +182,7 @@ def _readable_model_source(
 
 def _complete_source(
     binding: ProjectBinding, model: ModelSource | DrawingAssetSource, stage_ref: ProjectRecordRef | None,
-    *, read_only: bool = False, loaded: list | None = None,
+    *, read_only: bool = False, loaded: list | None = None, geometry: bool = True,
 ) -> tuple[ElevationSource | NativeModelSource, dict[str, Any]]:
     """The exact complete model ``model`` names and its CAD receipt.
 
@@ -191,7 +191,11 @@ def _complete_source(
     that builds on the model keeps the default, which requires current HEAD.
     A native model is read to find its receipt; ``loaded`` then receives what
     was read, so a caller that draws it does not read it again. Without
-    ``loaded``, a running drawing pool reads it in a worker (#300).
+    ``loaded``, a running drawing pool reads it in a worker (#300). A caller that
+    needs only the length unit passes ``geometry=False``: the unit comes from
+    the registration, which was checked against the decoded model when it was
+    registered, and the shapes are not decoded again (#12: listing a large
+    composed model's dimension choices decoded every object each time).
     """
 
     if isinstance(model, DrawingAssetSource):
@@ -207,6 +211,8 @@ def _complete_source(
     if artifact.representation in {"composed", "external"}:
         registered = binding.repository.load_json(cad_ref)
         native = NativeModelSource(model.run_id, cad_ref, ProjectArtifactRef(**registered["artifact"]))
+        if not geometry and isinstance(registered.get("lengthUnit"), str):
+            return native, {"identity": {"length_unit": registered["lengthUnit"]}}
         pool = drawing_pool.drawer() if loaded is None else None
         try:
             verified = (read_elevation_source(binding.repository, native) if pool is None
@@ -667,6 +673,66 @@ def material_view(binding: ProjectBinding, *, model_source: ModelSource, view: s
     legend = {"materials": [materials[group] for group in sorted(materials)],
               "undeclared": undeclared[0], "undeclaredVisible": undeclared[1]}
     return _keep_model_view(key, MaterialView(drawn.png, drawn.width, drawn.height, legend))
+
+
+def select_drawing_source(binding: ProjectBinding, *, model_source: ModelSource | None = None,
+                          source_asset: dict[str, str] | None = None, source_stage_ref: str | None = None):
+    """The model version or imported asset a drawing route would draw, checked by its records alone."""
+
+    return _selected_source(binding, source_stage_ref, model_source, source_asset)
+
+
+def load_drawing_source(binding: ProjectBinding, *, model_source: ModelSource | None = None,
+                        source_asset: dict[str, str] | None = None, source_stage_ref: str | None = None):
+    """The exact model a drawing route would draw, verified and read once; nothing is written.
+
+    Answers ``(selected, source, receipt, verified)``: the model version or
+    imported asset (``sourceAsset``) selected as the drawing routes select it,
+    its exact source and CAD receipt, and its read shapes.
+    """
+
+    selected, stage_ref = _selected_source(binding, source_stage_ref, model_source, source_asset)
+    kept: list = []
+    source, receipt = _complete_source(binding, selected, stage_ref, read_only=True, loaded=kept)
+    try:
+        verified = kept[0] if kept else read_elevation_source(binding.repository, source)
+    except DrawingElevationError as exc:
+        raise StudioError(409, "DRAWING_SOURCE_INVALID", str(exc)) from exc
+    return selected, source, receipt, verified
+
+
+def object_groups(binding: ProjectBinding, selected, source, object_ids, by: str) -> dict[str, str]:
+    """Each drawn object's layer path or material name, as the exact model asset's own index names it.
+
+    A block member (a path of GUIDs) is looked up by its own GUID, then by its
+    instance's; an object the index does not name exactly once is grouped as
+    "unknown" rather than given a guessed layer or material.
+    """
+
+    if by not in ("layer", "material"):
+        raise StudioError(422, "CAMERA_PASS_INVALID", "Group the ID image by object, layer or material.")
+    _, data = artifact_bytes(binding, selected.asset_sha256, run_id=selected.run_id)
+    try:
+        rows = inspect_three_dm_index(data)["objects"]
+    except ThreeDmInspectionError as exc:
+        raise StudioError(422, "MODEL_INDEX_UNAVAILABLE", exc.message) from exc
+    native = isinstance(source, NativeModelSource)
+    named: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        named.setdefault(row["object_id"] if native else row["name"], []).append(row)
+    groups = {}
+    for object_id in object_ids:
+        parts = object_id.split("/") if native else [object_id]
+        candidates = [parts[-1], parts[0]] if native else parts
+        row = next((named[key.lower() if native else key][0] for key in candidates
+                    if len(named.get(key.lower() if native else key, ())) == 1), None)
+        if row is None:
+            groups[object_id] = "unknown"
+        elif by == "layer":
+            groups[object_id] = row.get("layer_path") or "unknown"
+        else:
+            groups[object_id] = (row.get("material") or {}).get("name") or "no material"
+    return groups
 
 
 def _worn_materials(binding, model_source: ModelSource, source, object_ids) -> dict[str, dict[str, Any]]:

@@ -313,7 +313,9 @@ def export_publication(binding, revision, format, projections=None):
         for item in page["elements"]:
             x, y, w, h = (item[key] for key in ("x", "y", "width", "height"))
             fragment = BytesIO()
-            canvas = Canvas(fragment, pagesize=(width, height), invariant=1, pageCompression=1) if pdf is not None else None
+            # Start on the embedded face: reportlab's default names an unembedded Helvetica (gap 13).
+            canvas = Canvas(fragment, pagesize=(width, height), invariant=1, pageCompression=1,
+                            initialFontName=_font()[0].fontName) if pdf is not None else None
             if item["kind"] == "image":
                 source = item["source"]
                 document, data = document_bytes(binding, source["runId"], source["assetSha256"], source.get("revisionRef"))

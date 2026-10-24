@@ -56,10 +56,12 @@ _log = logging.getLogger(__name__)
 class Preference(Protocol):
     def enabled(self) -> bool: ...
     def set(self, enabled: bool) -> None: ...
+    def workshop(self) -> bool: ...
+    def set_workshop(self, enabled: bool) -> None: ...
 
 
 class UserPreference:
-    """自动更新 is saved with the other user settings; absent means on."""
+    """自动更新 and 工作坊模式 are saved with the other user settings; absent means on and off."""
 
     def enabled(self) -> bool:
         from ..settings.store import read_user_settings
@@ -70,6 +72,15 @@ class UserPreference:
         # Only "off" is written: the default stays absent, which versions
         # older than this setting can still read.
         save_user_settings(read_user_settings().model_copy(update={"auto_update": None if enabled else False}))
+
+    def workshop(self) -> bool:
+        from ..settings.store import read_user_settings
+        return read_user_settings().workshop_mode is True
+
+    def set_workshop(self, enabled: bool) -> None:
+        from ..settings.store import read_user_settings, save_user_settings
+        # Only "on" is written, for the same reason.
+        save_user_settings(read_user_settings().model_copy(update={"workshop_mode": True if enabled else None}))
 
 
 def _command_path(path: Path) -> str:
@@ -222,7 +233,16 @@ class DesktopUpdates:
         return bool(self._preparing or self._verifying or self._restart_commit or self._finishing
                     or self._activation_pending() or self._owns_pending(self._record) or undone)
 
+    def _workshop(self) -> bool:
+        try:
+            return bool(self._preference.workshop())
+        except (OSError, ValueError):
+            # Unreadable settings keep the documented default.
+            return False
+
     def _auto_enabled(self) -> bool:
+        if self._workshop():
+            return False
         try:
             return bool(self._preference.enabled())
         except (OSError, ValueError):
@@ -285,7 +305,7 @@ class DesktopUpdates:
                 channel=CHANNEL if self.supported else None, autoUpdate=auto,
                 # Switched in at quit when on; already switched once activated.
                 nextLaunch=bool(state == "ready" and (auto or record.get("state") in {"activated", "applied"})),
-                check=self._check_view(),
+                check=self._check_view(), workshopMode=self._workshop(),
             )
 
     def begin_upload(self) -> Path:
@@ -490,7 +510,9 @@ class DesktopUpdates:
                 self._spawn(self._finish_activation, port, instance, name="hub-finish-update")
             elif abandoned:
                 self._spawn(self._restore_abandoned, name="hub-restore-update")
-            self._ensure_checker()
+            if not self._workshop():
+                # In 工作坊模式 nothing is checked for until it is turned off.
+                self._ensure_checker()
 
     def _own_health(self, port: int, instance: str | None) -> bool | None:
         """True once this process answers its own health route; None when closing."""
@@ -670,19 +692,36 @@ class DesktopUpdates:
             tail = " / ".join((result.stderr or result.stdout).strip().splitlines()[-3:])
             raise ValueError(f"The new version's runtime could not load MonkeyHub: {tail or result.returncode}")
 
+    def _refuse_in_workshop(self) -> None:
+        if self._workshop():
+            raise HubFailure(409, "UPDATE_WORKSHOP_MODE", "Workshop mode is on: MonkeyHub neither checks for nor "
+                             "downloads updates. Turn workshop mode off in Settings > Software update first.")
+
     def set_auto_update(self, enabled: bool) -> UpdateStatus:
         if not self.supported:
             raise HubFailure(409, "UPDATE_UNSUPPORTED", "Automatic updates require the packaged desktop application.")
+        self._refuse_in_workshop()
         with self.mutation():
             self._preference.set(enabled)
         if enabled:
             self._wake.set()
         return self.status()
 
+    def set_workshop_mode(self, enabled: bool) -> UpdateStatus:
+        """Saved for every version on this account; the desktop's lock and port follow at its next launch."""
+        with self.mutation():
+            self._preference.set_workshop(enabled)
+        with self._lock:
+            if not enabled and self.supported and self._started:
+                self._ensure_checker()
+                self._wake.set()
+        return self.status()
+
     def check_now(self) -> UpdateStatus:
         with self._lock:
             if not self.supported:
                 raise HubFailure(409, "UPDATE_UNSUPPORTED", "Automatic updates require the packaged desktop application.")
+            self._refuse_in_workshop()
             if self._update_busy():
                 raise HubFailure(409, "UPDATE_BUSY", "An update is being prepared, applied or finished. Check again afterwards.")
             self._explicit = True
@@ -701,6 +740,11 @@ class DesktopUpdates:
             with self._lock:
                 explicit, self._explicit = self._explicit, False
             delay = CHECK_INTERVAL_SECONDS
+            if self._workshop():
+                # Turned on while this Hub runs: a check asked for before it is dropped too.
+                with self._lock:
+                    self._progress = None
+                continue
             if (explicit or self._auto_enabled()) and not self._run_check(explicit=explicit):
                 # A new version finishing its own start checks again shortly after.
                 delay = BUSY_RETRY_SECONDS

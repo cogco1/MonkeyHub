@@ -9,6 +9,10 @@ import struct
 from uuid import UUID
 
 FORMATS = ("3dm", "skp", "glb", "dwg")
+# Written, never read as a source: a print mesh carries no layers, materials or
+# objects to bring back.
+OUTPUT_ONLY_FORMATS = ("stl",)
+TARGET_FORMATS = FORMATS + OUTPUT_ONLY_FORMATS
 VERSION = "monkeyhub-mesh/1"
 # Display colour of a mesh whose source carried no material: a light neutral
 # grey, not the black a new 3DM layer and object would otherwise draw with.
@@ -47,6 +51,8 @@ class Scene:
     units: str
     warnings: list[str]
     display: dict = field(default_factory=dict)
+    # What a tolerant read left out, by entity type; empty for a strict read.
+    omitted: dict = field(default_factory=dict)
 
     def metrics(self):
         points = [p for m in self.meshes for p in m.vertices]
@@ -212,8 +218,15 @@ class ThreeDM:
         self.r = rhino3dm
         self.version = "rhino3dm/" + rhino3dm.__version__
 
-    def read(self, data):
+    def read(self, data, *, omit_unsupported=False):
+        """Every mesh, and every Brep or extrusion by its saved render mesh.
+
+        A strict read refuses anything else. ``omit_unsupported`` (print meshes)
+        leaves curves, text, hatches and render-meshless solids out and counts
+        them in ``scene.omitted`` instead.
+        """
         r = self.r
+        omitted = {}
         if not data.startswith(b"3D Geometry File Format"):
             raise ConversionError("Invalid 3DM signature.")
         model = r.File3dm.FromByteArray(data)
@@ -228,11 +241,20 @@ class ThreeDM:
             geometry = item.Geometry
             if isinstance(geometry, r.Mesh):
                 pieces = [geometry]
-            elif isinstance(geometry, r.Brep):
-                pieces = [face.GetMesh(r.MeshType.Render) for face in geometry.Faces]
+            elif isinstance(geometry, (r.Brep, r.Extrusion)):
+                pieces = ([face.GetMesh(r.MeshType.Render) for face in geometry.Faces] if isinstance(geometry, r.Brep)
+                          else [geometry.GetMesh(r.MeshType.Render)])
                 if not pieces or any(p is None for p in pieces):
+                    if omit_unsupported:
+                        key = type(geometry).__name__ + " without render mesh"
+                        omitted[key] = omitted.get(key, 0) + 1
+                        continue
                     raise ConversionError("A BREP has no saved render mesh; a real tessellation runtime is required.")
                 warnings.append("Exact BREP geometry is approximated by its saved render mesh.")
+            elif omit_unsupported:
+                key = type(geometry).__name__
+                omitted[key] = omitted.get(key, 0) + 1
+                continue
             else:
                 raise ConversionError("Unsupported 3DM entity: " + type(geometry).__name__ + ". No entities were silently dropped.")
             vertices, triangles, normals, colors = [], [], [], []
@@ -253,7 +275,9 @@ class ThreeDM:
             meshes.append(Mesh(item.Attributes.Name or "Mesh", vertices, triangles, layer.Name if layer else "Default",
                                str(item.Attributes.Id), normals, colors, self._material(model, item.Attributes, layer)))
         warnings.append("Materials, textures, custom normals, CAD metadata and layer hierarchy are not preserved; layers are flattened into the default layer in GLB.")
-        scene = Scene(meshes, str(units), list(dict.fromkeys(warnings)))
+        if omitted:
+            warnings.append("Left out of the print mesh: " + ", ".join(f"{count} {kind}" for kind, count in sorted(omitted.items())) + ".")
+        scene = Scene(meshes, str(units), list(dict.fromkeys(warnings)), omitted=omitted)
         scene.metrics()
         return scene
 
@@ -469,15 +493,67 @@ class GLB:
         return struct.pack("<4sII", b"glTF", 2, 28+len(encoded)+len(binary)) + struct.pack("<I4s", len(encoded), b"JSON") + encoded + struct.pack("<I4s", len(binary), b"BIN\x00") + binary
 
 
+class STL:
+    """Binary STL in millimetres at full size, Z up: one triangle soup for printing.
+
+    Scaling to a model scale and cutting into parts belong to the print step
+    (MonkeyFab), which knows the printer; this file is printer-independent.
+    """
+
+    version = "monkeyhub-stl/1"
+    HEADER = b"MonkeyHub STL: millimetres at full size, Z up"
+
+    def write(self, scene):
+        triangles = [(mesh.vertices[a], mesh.vertices[b], mesh.vertices[c])
+                     for mesh in scene.meshes for a, b, c in mesh.triangles]
+        out = bytearray(self.HEADER.ljust(80, b" ")[:80])
+        out += struct.pack("<I", len(triangles))
+        for corners in triangles:
+            millimetres = [tuple(v * 1000.0 for v in point) for point in corners]
+            normal = _unit(_cross(tuple(millimetres[1][i] - millimetres[0][i] for i in range(3)),
+                                  tuple(millimetres[2][i] - millimetres[0][i] for i in range(3)))) or (0.0, 0.0, 0.0)
+            out += struct.pack("<3f", *normal)
+            for point in millimetres:
+                out += struct.pack("<3f", *point)
+            out += b"\x00\x00"
+        return bytes(out)
+
+    def read(self, data):
+        if len(data) < 84:
+            raise ConversionError("Invalid STL: shorter than its header.")
+        count = struct.unpack_from("<I", data, 80)[0]
+        if len(data) != 84 + 50 * count:
+            raise ConversionError("Invalid STL: the triangle count does not match the file size.")
+        vertices, triangles = [], []
+        for n in range(count):
+            values = struct.unpack_from("<12f", data, 84 + 50 * n)
+            for k in range(3):
+                vertices.append(tuple(values[3 + 3 * k + i] / 1000.0 for i in range(3)))
+            triangles.append((3 * n, 3 * n + 1, 3 * n + 2))
+        scene = Scene([Mesh("STL", vertices, triangles)], "Millimeters", [])
+        scene.metrics()
+        return scene
+
+
+def _reader_for(source, target):
+    reader = {"3dm": ThreeDM, "glb": GLB}[source]()
+    if source == "3dm" and target == "stl":
+        return reader, lambda data: reader.read(data, omit_unsupported=True)
+    return reader, reader.read
+
+
 def encode_mesh(data, source, target):
     """Produce mesh bytes; the provider's separate validate step must approve them."""
-    adapters = {"3dm": ThreeDM, "glb": GLB}
-    reader, writer = adapters[source](), adapters[target]()
-    scene = reader.read(data)
+    adapters = {"3dm": ThreeDM, "glb": GLB, "stl": STL}
+    reader, read = _reader_for(source, target)
+    writer = adapters[target]()
+    scene = read(data)
     output = data if source == target else writer.write(scene)
     details = {"converter": [reader.version, writer.version],
                "warnings": [] if source == target else scene.warnings,
                "converted": source != target}
+    if scene.omitted:
+        details["omitted"] = dict(scene.omitted)
     if scene.display and source != target:
         details["display"] = scene.display
     return output, details
@@ -485,13 +561,18 @@ def encode_mesh(data, source, target):
 
 def validate_mesh(data, source, target, output):
     """Reopen both original and output; never validate metrics supplied by a writer."""
-    adapters = {"3dm": ThreeDM, "glb": GLB}
-    original, reopened = adapters[source]().read(data), adapters[target]().read(output)
+    adapters = {"3dm": ThreeDM, "glb": GLB, "stl": STL}
+    _, read = _reader_for(source, target)
+    original, reopened = read(data), adapters[target]().read(output)
     before, after = original.metrics(), reopened.metrics()
-    if before["objectCount"] != after["objectCount"] or before["triangleCount"] != after["triangleCount"]:
+    # A print mesh is one triangle soup: its object count is not kept, and its
+    # coordinates are 32-bit floats in millimetres.
+    objects_kept = target != "stl"
+    if (objects_kept and before["objectCount"] != after["objectCount"]) or before["triangleCount"] != after["triangleCount"]:
         raise ConversionError("Output validation changed mesh or triangle counts.")
+    rel, absolute = (2e-6, 1e-6) if objects_kept else (1e-6, 1e-5)
     for a, b in zip(sum(before["boundsMetersZUp"], []), sum(after["boundsMetersZUp"], [])):
-        if not math.isclose(a, b, rel_tol=2e-6, abs_tol=1e-6):
+        if not math.isclose(a, b, rel_tol=rel, abs_tol=absolute):
             raise ConversionError("Output validation changed model scale or placement.")
     if target == "3dm" and source != target:
         # A shaded viewer draws a mesh without normals or material dark.

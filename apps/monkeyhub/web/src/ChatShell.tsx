@@ -24,6 +24,8 @@ import { clock, currentStep, describeCall, describeStep, dismissible, operationS
 import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } from "./monitorData";
 import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
+import { ProjectSkills } from "./features/skills/SkillsPanel";
+import { ProjectSkillGrants, SkillRunChoice } from "./features/skills/SkillPermissions";
 import { editFocused, HubMenuBar, type HubMenu, type HubMenuItem } from "./HubMenu";
 import "./ChatShell.css";
 
@@ -328,6 +330,7 @@ function Icon({ name }: { name: string }) {
     tree: <><circle cx="5" cy="12" r="2" /><circle cx="19" cy="12" r="2" /><circle cx="12" cy="5" r="2" /><path d="M7 12h10M12 7v5M12 12l-4 6M12 12l4 6" /></>,
     settings: <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="3" /><circle cx="15" cy="17" r="3" /></>,
     display: <><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5a8.5 8.5 0 0 1 0 17Z" fill="currentColor" /></>,
+    shield: <path d="M12 3 5 6v5.5c0 4.4 3 7.9 7 9.5 4-1.6 7-5.1 7-9.5V6Z" />,
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] ?? paths.chat}</svg>;
 }
@@ -691,6 +694,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // #271: the read-only Worktree Graph the project card's status is read from.
   const [worktrees, setWorktrees] = useState<{ runtimeId: string; graph: WorktreeGraphDto } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const skillsDialog = useRef<HTMLDialogElement>(null);
   const [updateRestarting, setUpdateRestarting] = useState(false);
   // The model this conversation will use next. An existing chat keeps its own;
   // a new one starts from the saved default until it is sent.
@@ -1084,7 +1089,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     return () => { live = false; window.clearInterval(timer); };
   }, [settingsOpen]);
   // Settings opens on its first page; a ready update opens straight on Software update.
-  const settingsTabs = [...settings.pages, { id: "update", label: settings.updateLabel, icon: "update" }];
+  // Skill permissions belong to the project on screen, so the shell adds that page too.
+  const settingsTabs = [...settings.pages, { id: "skill-permissions", label: t.skillPermissions, icon: "shield" },
+    { id: "update", label: settings.updateLabel, icon: "update" }];
   const shownSettingsPage = settingsPage ?? settingsTabs[0].id;
   const showSettingsPage = (page: string | null) => { setSettingsPage(page); settingsPane.current?.scrollTo({ top: 0 }); };
   const openSettings = () => { showSettingsPage(null); setSettingsOpen(true); settingsDialog.current?.showModal(); };
@@ -2371,6 +2378,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             </div>
           </> : <p className="chat-muted">{t.connectionNone}</p>}
         </details>
+        {/* The project's skills, read from its runtime: the one place a person approves a version to run. */}
+        <div className="chat-project-card__skills">
+          <button type="button" className="chat-activity__open" disabled={!projectRuntime} title={projectRuntime ? undefined : t.skillsUnavailable}
+            aria-description={projectRuntime ? undefined : t.skillsUnavailable} onClick={() => { setSkillsOpen(true); skillsDialog.current?.showModal(); }}>
+            <Icon name="file" /><span>{t.skills}</span></button>
+        </div>
         {/* A whole project moved as one file: written from what is retained,
             and read back into a folder of its own. Neither touches this view. */}
         <div className="chat-project-card__archive">
@@ -2429,6 +2442,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       <div className="chat-dialog__actions"><button type="button" className="btn" onClick={() => restoreDialog.current?.close()}>{t.close}</button>
         <button type="submit" className="btn btn--primary" disabled={busy || !restorePath.trim()}>{busy ? t.restoring : t.restoreRun}</button></div>
     </form></dialog>
+    <dialog ref={skillsDialog} className="chat-dialog chat-dialog--skills" aria-labelledby="skills-heading" onClose={() => setSkillsOpen(false)}>
+      {skillsOpen && projectRuntime && <ProjectRuntimeProvider key={`skills:${projectRuntime.runtimeId}`} runtimeId={projectRuntime.runtimeId}
+        baseUrl={`${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`}>
+        <ProjectSkills close={() => skillsDialog.current?.close()} />
+      </ProjectRuntimeProvider>}
+    </dialog>
     <dialog ref={settingsDialog} className="chat-dialog chat-dialog--settings" aria-labelledby="settings-heading" closedby={updateRestarting ? "none" : "closerequest"}
       onClose={() => setSettingsOpen(false)} onCancel={(event) => { if (updateRestarting) event.preventDefault(); }}>
       <button className="chat-icon settings-close" aria-label={t.close} disabled={updateRestarting} onClick={() => settingsDialog.current?.close()}><Icon name="close" /></button>
@@ -2444,6 +2463,18 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         <div inert={updateRestarting}>{settings.notice}
           {settings.pages.map((page) => <section key={page.id} role="tabpanel" id={`settings-page-${page.id}`} className="settings-page" aria-labelledby={`settings-tab-${page.id}`}
             hidden={page.id !== shownSettingsPage}>{page.body}</section>)}
+          <section role="tabpanel" id="settings-page-skill-permissions" className="settings-page" aria-labelledby="settings-tab-skill-permissions"
+            hidden={shownSettingsPage !== "skill-permissions"}>
+            {/* Read each time the page is shown, for the project on screen; only this page and the Skills panel grant or revoke.
+                The Hub-wide choice of how a chat's AI runs skills shows without a project too. */}
+            {settingsOpen && shownSettingsPage === "skill-permissions" && (projectRuntime
+              ? <ProjectRuntimeProvider key={`skill-grants:${projectRuntime.runtimeId}`} runtimeId={projectRuntime.runtimeId}
+                baseUrl={`${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`}>
+                <ProjectSkillGrants projectName={project?.name ?? null} />
+              </ProjectRuntimeProvider>
+              : <div className="skills skill-grants"><h2>{t.skillPermissions}</h2><SkillRunChoice />
+                <p className="settings-intro">{t.skillPermissionsUnavailable}</p></div>)}
+          </section>
         </div>
         <section role="tabpanel" id="settings-page-update" className="settings-page" aria-labelledby="settings-tab-update" hidden={shownSettingsPage !== "update"}>
           <SoftwareUpdateSettings language={preferences.language} open={settingsOpen} restartBlocker={restartBlocker} onRestarting={setUpdateRestarting} />

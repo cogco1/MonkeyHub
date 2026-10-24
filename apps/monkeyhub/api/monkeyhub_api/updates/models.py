@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..models import HubError
 
@@ -42,6 +42,8 @@ class UpdateStatus(BaseModel):
     autoUpdate: bool = False
     nextLaunch: bool = False
     check: UpdateCheck = Field(default_factory=UpdateCheck)
+    # 工作坊模式 (#668): no update is checked for or downloaded, and autoUpdate reads false.
+    workshopMode: bool = False
 
 
 class CompleteUpdate(BaseModel):
@@ -54,5 +56,13 @@ class RollbackUpdate(CompleteUpdate):
 
 
 class UpdateSettings(BaseModel):
+    """One switch per request: autoUpdate or workshopMode."""
     model_config = ConfigDict(extra="forbid")
-    autoUpdate: bool = Field(strict=True)
+    autoUpdate: bool | None = Field(default=None, strict=True)
+    workshopMode: bool | None = Field(default=None, strict=True)
+
+    @model_validator(mode="after")
+    def _one_switch(self) -> "UpdateSettings":
+        if (self.autoUpdate is None) == (self.workshopMode is None):
+            raise ValueError("Send exactly one of autoUpdate and workshopMode.")
+        return self

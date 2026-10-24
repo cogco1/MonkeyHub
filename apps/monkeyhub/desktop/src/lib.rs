@@ -17,6 +17,8 @@ pub mod updates;
 pub mod single_instance;
 
 pub const SOURCE_REVISION: &str = env!("ARCHFLOW_SOURCE_REVISION");
+/// The port a workshop-mode desktop asks for first, so a restart keeps the page's address (#668).
+pub const WORKSHOP_PORT: u16 = 8790;
 
 #[derive(Clone, Debug)]
 pub struct LaunchConfig {
@@ -26,6 +28,8 @@ pub struct LaunchConfig {
     pub port: u16,
     pub startup_timeout: Duration,
     pub source_revision: String,
+    /// 工作坊模式 (#668): one desktop per account and the same port on every launch.
+    pub workshop: bool,
 }
 
 impl LaunchConfig {
@@ -113,8 +117,13 @@ impl LaunchConfig {
         }
         fs::create_dir_all(&runtime_root)
             .map_err(|e| format!("Cannot create runtime directory: {e}"))?;
+        let workshop = workshop_mode();
         if port == 0 {
-            port = available_port()?;
+            port = if workshop {
+                preferred_port(WORKSHOP_PORT)?
+            } else {
+                available_port()?
+            };
         }
         Ok(Self {
             source_root,
@@ -123,6 +132,7 @@ impl LaunchConfig {
             port,
             startup_timeout: Duration::from_secs(timeout),
             source_revision,
+            workshop,
         })
     }
 
@@ -197,6 +207,33 @@ pub fn read_source_revision(root: &Path) -> Result<String, String> {
         return Err("Invalid source-version.txt; expected a full Git commit".into());
     }
     Ok(value)
+}
+
+/// Whether the account's settings turn 工作坊模式 on (#668). They are the file every installed
+/// Hub version shares, `%APPDATA%\MonkeyArch\settings.json`; a missing or unreadable file, or
+/// anything but `"workshopMode": true`, is off.
+pub fn workshop_mode() -> bool {
+    env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .filter(|appdata| appdata.is_absolute())
+        .is_some_and(|appdata| workshop_mode_in(&appdata.join("MonkeyArch").join("settings.json")))
+}
+
+pub fn workshop_mode_in(settings: &Path) -> bool {
+    let Ok(bytes) = fs::read(settings) else {
+        return false;
+    };
+    let text = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
+    serde_json::from_slice::<serde_json::Value>(text)
+        .is_ok_and(|value| value.get("workshopMode") == Some(&serde_json::Value::Bool(true)))
+}
+
+/// `port` when it is free on the loopback address, else any free port.
+pub fn preferred_port(port: u16) -> Result<u16, String> {
+    match TcpListener::bind((Ipv4Addr::LOCALHOST, port)) {
+        Ok(_) => Ok(port),
+        Err(_) => available_port(),
+    }
 }
 
 pub fn available_port() -> Result<u16, String> {

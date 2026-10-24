@@ -383,7 +383,9 @@ class RenderRoutesTests(unittest.TestCase):
         listing = self.call(client, "studio_schema", {"pathPrefix": "/api/render"})
         self.assertEqual({(row["method"], row["path"]) for row in listing["actions"]}, {
             ("GET", "/api/render/capabilities"), ("GET", "/api/render/jobs"),
-            ("GET", "/api/render/jobs/{job_id}"), ("POST", "/api/render/jobs")})
+            ("GET", "/api/render/jobs/{job_id}"), ("POST", "/api/render/jobs"),
+            # A chat may export a perspective camera's ID, line and depth images (gap 19).
+            ("POST", "/api/render/views/passes")})
         self.assertEqual(listing["guide"], guides._GUIDES["/api/render"])
         contract = self.call(client, "studio_schema", {"method": "POST", "path": "/api/render/jobs"})
         self.assertEqual(contract["path"], "/api/render/jobs")

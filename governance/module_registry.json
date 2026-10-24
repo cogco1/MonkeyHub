@@ -474,7 +474,8 @@
         "project_occt_section_perspective",
         "OcctSectionPerspective",
         "read_three_dm",
-        "preview.clear_shape_triangulation"
+        "preview.clear_shape_triangulation",
+        "drawable_report"
       ],
       "depends_on": [
         "archflow.project.refs",
@@ -940,7 +941,14 @@
         "CREASE_DEGREES",
         "ANGULAR_DEFLECTION",
         "MAX_SIZE_PX",
-        "mesh_pipeline"
+        "mesh_pipeline",
+        "camera_passes",
+        "PerspectiveCamera",
+        "CameraPasses",
+        "MAX_CAMERA_EDGE_PX",
+        "CAMERA_RENDERER_VERSION",
+        "DEPTH_NEAREST",
+        "ID_BACKGROUND"
       ],
       "depends_on": [
         "monkeycad.occt",
@@ -4340,9 +4348,11 @@
         "list_artifacts",
         "list_document_work_copies",
         "list_documents",
+        "load_drawing_source",
         "material_view",
         "model_view",
         "model_view_pipeline",
+        "object_groups",
         "on_demand_spec",
         "open_document_work_copy",
         "open_projections",
@@ -4362,6 +4372,7 @@
         "save_document",
         "save_viewport_capture",
         "seal_model",
+        "select_drawing_source",
         "tree_model_sources",
         "DrawingPool",
         "drawing_sources"
@@ -4479,6 +4490,68 @@
         "services/project-runtime/src/project_runtime/api/dto/projections.py",
         "services/project-runtime/src/project_runtime/application/state_files.py",
         "services/project-runtime/src/project_runtime/application/drawing_pool.py"
+      ]
+    },
+    {
+      "module_id": "project_runtime.live_rhino",
+      "owner_path": "services/project-runtime/src/project_runtime/application/live_rhino.py",
+      "purpose": "Work in the Rhino document the architect has open: find running Rhinos through Rhino 8's RhinoCode CLI, read the open document as it is now (unsaved edits included), add or change objects in it as one undoable Rhino command, and capture a view.",
+      "owns": [
+        "listing running Rhinos whose script server is on (rhinocode list --json) and choosing the one a request names by rhinoId, open document path, or as the only one",
+        "the generated CPython script Rhino runs, its request/result files in a temporary directory, and waiting for its answer",
+        "the typed write operations (layer, polyline, extrusion, box, mesh, dot, import, transform, delete, attributes), checked in full before the document changes",
+        "stamping created objects with monkeyhub.owner/write/label/project user text and refusing to touch unstamped objects unless allowUserObjects is true",
+        "GET /api/live-rhino/instances, GET /api/live-rhino/document, POST /api/live-rhino/write, GET /api/live-rhino/capture",
+        "POST /api/live-rhino/snapshot: a copy of the open document, unsaved edits included (optionally only drawable objects or some layers), registered as an external model asset through project_runtime.documents; the architect's selection, path and modified flag are restored"
+      ],
+      "does_not_own": [
+        "saving the document - the architect saves in Rhino",
+        "registering a saved .3dm as a project model source - project_runtime.documents",
+        "the hidden Rhino the CAD backend starts - monkeycad.rhino"
+      ],
+      "inputs": [
+        "rhinoId or documentPath",
+        "LiveRhinoWriteRequest",
+        "layer prefix, object ids and paging for a read"
+      ],
+      "outputs": [
+        "instance rows",
+        "document, layer and object summaries",
+        "created/changed/deleted object ids",
+        "PNG of a view"
+      ],
+      "public_api": [
+        "GET /api/live-rhino/instances",
+        "GET /api/live-rhino/document",
+        "POST /api/live-rhino/write",
+        "GET /api/live-rhino/capture",
+        "list_instances",
+        "read_document",
+        "write_document",
+        "capture_view",
+        "POST /api/live-rhino/snapshot",
+        "snapshot_document"
+      ],
+      "depends_on": [
+        "monkeycad.occt",
+        "monkeycad.rhino",
+        "project_runtime.documents",
+        "project_runtime.shell"
+      ],
+      "invariants": [
+        "a write runs as one _-RunPythonScript command, so one Undo in Rhino removes all of it",
+        "nothing here writes the project folder or saves the Rhino document",
+        "an object without monkeyhub.owner=agent is moved, changed or deleted only when the request sets allowUserObjects"
+      ],
+      "status": "canonical",
+      "tests": [
+        "services/project-runtime/tests/test_live_rhino.py"
+      ],
+      "notes": "The user types StartScriptServer once in their Rhino; RhinoCode then reaches it.",
+      "files": [
+        "services/project-runtime/src/project_runtime/application/live_rhino.py",
+        "services/project-runtime/src/project_runtime/api/routes/live_rhino.py",
+        "services/project-runtime/src/project_runtime/api/dto/live_rhino.py"
       ]
     },
     {
@@ -5624,7 +5697,9 @@
         "RenderCapability",
         "GeminiImageRenderAdapter",
         "adapter_from_settings",
-        "POST /api/render/views"
+        "POST /api/render/views",
+        "POST /api/render/views/passes",
+        "GET /api/render/views/passes/{pass_id}"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -5678,7 +5753,9 @@
       "owns": [
         "The StudioSkill@1 record: id skill:<kebab-name>, version, name, description, SKILL.md body without frontmatter (at most 64 KiB) and an optional declared manifest of inputs, outputs and permissions",
         "The fixed studio-skills run, created only by the first added skill, and the per-skill version chain 1..n with each version naming the ref it supersedes",
-        "POST /api/skills, GET /api/skills (the index, no bodies) and GET /api/skills/{skill_id} with ?version="
+        "POST /api/skills, GET /api/skills (the index, no bodies) and GET /api/skills/{skill_id} with ?version=",
+        "optional script files and an entry per version, and its codeSha256 over body, entry and files",
+        "a person's approval of one version's exact code hash (StudioSkillApproval@1 in studio-skills) and the refusals SKILL_NOT_APPROVED, SKILL_CODE_CHANGED and SKILL_NOT_RUNNABLE"
       ],
       "does_not_own": [
         "Loading skills into an agent: hub.shell materializes the library's current versions into a plugin directory in its cache and the agent's native mechanism loads it",
@@ -5687,12 +5764,28 @@
         "Recipes and scoped decisions: project_runtime.intent"
       ],
       "public_api": [
-        "POST /api/skills",
         "GET /api/skills",
+        "GET /api/skills/approvals",
+        "GET /api/skills/library",
         "GET /api/skills/{skill_id}",
+        "POST /api/skills",
+        "POST /api/skills/approvals/{approval_id}/revoke",
+        "POST /api/skills/import",
+        "POST /api/skills/{skill_id}/approvals",
         "add_skill",
+        "approvals",
+        "approve_skill",
+        "code_sha256",
+        "grant_rows",
+        "latest_version",
         "list_skills",
         "read_skill",
+        "require_approved",
+        "require_granted",
+        "revocations",
+        "revoke_approval",
+        "same_content",
+        "skill_content",
         "skill_versions"
       ],
       "depends_on": [
@@ -5722,6 +5815,162 @@
         "Adding an existing name without superseding, or superseding a version that is not the latest, refuses",
         "Competing or missing versions refuse on read rather than being resolved by picking a file",
         "No skill operation accepts a Stage, moves HEAD or grants a permission"
+      ]
+    },
+    {
+      "module_id": "project_runtime.skill_runs",
+      "owner_path": "services/project-runtime/src/project_runtime/application/skill_runs.py",
+      "purpose": "Run one granted skill version as a background job in the person's own environment, held to its grant by an audit hook, and retain the run: version, code hash, grant, inputs and outputs, programs started, hosts reached, writes outside its folders, and what it needed beyond the grant.",
+      "owns": [
+        "the run contract: python -B -X utf8 <bootstrap> <entry> --inputs <dir> --params <file> --outputs <dir>, without isolation, in the user's environment",
+        "the audit-hook bootstrap that checks programs, ssh, network and writes against the grant and records them",
+        "one P036 run skill-run-<id> per execution with StudioSkillRun@1 records from queued to succeeded or failed",
+        "each skill's own package folder installed with an external pip for the runtime's Python",
+        "registering PDF/PNG/JPEG outputs as documents, 3dm outputs as model assets with an undrawable report, small text in the record and other files as P036 objects"
+      ],
+      "does_not_own": [
+        "approving a version - project_runtime.skills",
+        "what the script does on this machine - the person's approval of its code"
+      ],
+      "inputs": [
+        "skill id and version",
+        "input name -> registered document (runId, assetSha256)",
+        "parameters object"
+      ],
+      "outputs": [
+        "StudioSkillRun@1 payload",
+        "registered SourceDocument rows"
+      ],
+      "public_api": [
+        "POST /api/skills/{skill_id}/run",
+        "GET /api/skills/{skill_id}/runs",
+        "GET /api/skills/runs/{run_id}",
+        "GET /api/skills/runs/{run_id}/outputs/{name}",
+        "submit_skill_run",
+        "run_report",
+        "list_skill_runs",
+        "output_bytes",
+        "used_once_grants"
+      ],
+      "depends_on": [
+        "archflow.project.ports",
+        "archflow.project.record_kinds",
+        "archflow.project.repository",
+        "monkeycad.occt",
+        "project_runtime.binding",
+        "project_runtime.documents",
+        "project_runtime.shell",
+        "project_runtime.skills"
+      ],
+      "invariants": [
+        "only a version whose recomputed code hash has a grant in force runs; a once grant is taken by one run; an agent's run uses a version grant, or the once grant a person gave in the chat for that run",
+        "a run's environment carries none of the runtime's settings and no variable named as a credential, and a Credential Manager lookup is refused: the Hub's keys never reach a skill",
+        "what the audit hook cannot see (native code, ctypes, grandchild programs) is outside the check, and the protocol says so",
+        "nothing enters the project except through P036"
+      ],
+      "status": "canonical",
+      "tests": [
+        "services/project-runtime/tests/test_skill_runs.py"
+      ],
+      "notes": "A grant makes a skill as capable as the user's account as far as it reaches; the Hub page's button is the gate.",
+      "files": [
+        "services/project-runtime/src/project_runtime/application/skill_runs.py"
+      ]
+    },
+    {
+      "module_id": "project_runtime.camera_passes",
+      "owner_path": "services/project-runtime/src/project_runtime/application/camera_passes.py",
+      "purpose": "Draw an object-ID, a line and a depth image of one exact model through a perspective camera as a background job in its own run, and register the three images beside the model (#19).",
+      "owns": [
+        "the camera pass request: a saved perspective model view, or a camera with a size and one model",
+        "one P036 run camera-pass-<id> with StudioCameraPass@1 records from queued to succeeded or failed",
+        "registering the three PNGs with the camera, size, ID legend and depth range in their recipes"
+      ],
+      "does_not_own": [
+        "drawing the passes - monkeydiagram.projection.mesh_views",
+        "selecting and reading the model - project_runtime.drawings"
+      ],
+      "inputs": [
+        "a saved model view, or a camera with a size and a model version or sourceAsset",
+        "long edge, ID grouping"
+      ],
+      "outputs": [
+        "StudioCameraPass@1 payload",
+        "three registered SourceDocument rows"
+      ],
+      "public_api": [
+        "POST /api/render/views/passes",
+        "GET /api/render/views/passes/{pass_id}",
+        "submit_camera_passes",
+        "pass_report"
+      ],
+      "depends_on": [
+        "archflow.project.ports",
+        "archflow.project.record_kinds",
+        "archflow.project.repository",
+        "monkeydiagram.projection.mesh_views",
+        "project_runtime.binding",
+        "project_runtime.documents",
+        "project_runtime.shell"
+      ],
+      "invariants": [
+        "the three images come from one depth buffer and line up pixel for pixel",
+        "every ID key has its own colour",
+        "nothing enters the project except through P036"
+      ],
+      "status": "canonical",
+      "tests": [
+        "services/project-runtime/tests/test_camera_passes.py",
+        "packages/monkeydiagram/tests/test_camera_passes.py"
+      ],
+      "notes": "A large model takes minutes, so the work is a background job; the Hub's health check can miss a worker busy loading a model and answer 503 for a while.",
+      "files": [
+        "services/project-runtime/src/project_runtime/application/camera_passes.py"
+      ]
+    },
+    {
+      "module_id": "project_runtime.skill_library",
+      "owner_path": "services/project-runtime/src/project_runtime/application/skill_library.py",
+      "purpose": "Read the skill packages shipped with MonkeyHub (apps/monkeyhub/skills, at the same path in the release) and the user's own (%LOCALAPPDATA%\\MonkeyHub\\skill-packages), and register one into the bound project as a version of its skill.",
+      "owns": [
+        "the package folder: skill.json, SKILL.md without frontmatter, and its other UTF-8 text files",
+        "the two package places and the MONKEYHUB_SKILL_PACKAGES override",
+        "listing every package with the version the project holds and whether it matches"
+      ],
+      "does_not_own": [
+        "retaining a version - project_runtime.skills",
+        "allowing a version to run - a person's grant"
+      ],
+      "inputs": [
+        "source (bundled or user) and package folder name"
+      ],
+      "outputs": [
+        "the package rows",
+        "a StudioSkill@1 version when the package changed"
+      ],
+      "public_api": [
+        "library",
+        "import_package",
+        "read_package",
+        "roots",
+        "user_root"
+      ],
+      "depends_on": [
+        "project_runtime.binding",
+        "project_runtime.shell",
+        "project_runtime.skills"
+      ],
+      "invariants": [
+        "an unchanged package adds no version",
+        "importing grants nothing"
+      ],
+      "status": "canonical",
+      "tests": [
+        "services/project-runtime/tests/test_skill_library.py"
+      ],
+      "notes": "The repository is public: a bundled package carries no project's own data.",
+      "files": [
+        "services/project-runtime/src/project_runtime/application/skill_library.py"
       ]
     },
     {

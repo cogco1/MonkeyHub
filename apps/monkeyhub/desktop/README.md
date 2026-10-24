@@ -99,8 +99,15 @@ activation, and the update helper rolls back. Other runtime roots use other
 names, so explicit independent roots still run side by side. `hub.lock` stays
 the second guard, including against the browser entry.
 
-The shell selects an ephemeral `127.0.0.1` port and sends Hub a fresh managed
-instance UUID. A positive `/api/health` must match the spawned PID, desktop parent
+工作坊模式 (#668) is `"workshopMode": true` in `%APPDATA%\MonkeyArch\settings.json`,
+the file every installed version shares; the shell reads it before it takes the mutex.
+Then the mutex name is the account's rather than the root's, so a launch on any root
+follows the open desktop, and the shell asks for port 8790 before an ephemeral one, so
+a restarted Hub keeps its address and an open page's event stream reconnects by itself.
+The log records `event=workshop port=<used> preferred=8790`.
+
+The shell selects an ephemeral `127.0.0.1` port (8790 first in 工作坊模式) and sends Hub
+a fresh managed instance UUID. A positive `/api/health` must match the spawned PID, desktop parent
 PID, UUID, source revision and `monkeyhub-api` protocol `0.1.0` before navigation.
 It never attaches to an occupied port. `--port <number>` selects a diagnostic
 port, and `--startup-timeout-seconds <1..600>` adjusts the default 60-second wait.
