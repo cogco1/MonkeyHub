@@ -108,6 +108,8 @@ function versionButton(option) {
 }
 async function openVersions() {
   const button = cmd(page.locator(".project-bar"), "design.go_to_step.versions", { includeHidden: true });
+  // Over a document page Modeling shows no model menus; Versions stays as it was left.
+  if (!await button.count()) return;
   if (await button.getAttribute("aria-expanded") !== "true") await button.click();
 }
 // Observe the real mounted App state; the retired Settings/Composer launcher

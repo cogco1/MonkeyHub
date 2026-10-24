@@ -350,7 +350,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   faults["/api/document-annotations"] = false;
   const acceptedFrom = writes("/api/document-annotations");
   await page.evaluate(() => {
-    const entry = [...document.querySelectorAll("button")].find((button) => button.textContent.trim() === "MonkeyBoard · Board");
+    const entry = [...document.querySelectorAll('button[data-command="view.tab.board"]')].find((button) => button.offsetParent !== null);
     entry.click(); entry.click();
   });
   await page.locator(".monkeyboard-canvas canvas").first().waitFor();
