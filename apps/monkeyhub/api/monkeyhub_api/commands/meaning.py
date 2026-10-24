@@ -281,6 +281,15 @@ class _BlasThreads:
             self.lib.scipy_openblas_set_num_threads64_(self.before)
 
 
+def _keep_vectors(target: Path, vectors: np.ndarray) -> None:
+    """Keep computed vectors in the Hub's cache, whole or not at all, for the next start to read."""
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = target.with_suffix(".partial.npy")
+    np.save(partial, vectors)
+    os.replace(partial, target)
+
+
 class MeaningIndex:
     """The commands' texts as vectors in memory; a search compares one sentence with all of them.
 
@@ -306,11 +315,7 @@ class MeaningIndex:
             with _BlasThreads():
                 vectors = encoder.encode(self.texts)
             if caches:
-                target = caches[-1] / name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                partial = target.with_suffix(".partial.npy")
-                np.save(partial, vectors)
-                os.replace(partial, target)
+                _keep_vectors(caches[-1] / name, vectors)
         self.vectors = vectors
 
     def search(self, sentence: str, limit: int = 5, allowed: Iterable[str] | None = None) -> list[MeaningHit]:

@@ -13799,6 +13799,7 @@
         "GET /api/settings/skill-grants",
         "POST /api/settings/skill-grants/{grant_id}/revoke",
         "POST /api/settings/skill-grants/carry",
+        "POST /api/commands/meaning",
         "skill_plugins.installed_library"
       ],
       "invariants": [
@@ -13983,6 +13984,9 @@
         "apps/monkeyhub/api/monkeyhub_api/attention/models.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/store.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/routes.py",
+        "apps/monkeyhub/api/monkeyhub_api/commands/__init__.py",
+        "apps/monkeyhub/api/monkeyhub_api/commands/meaning.py",
+        "apps/monkeyhub/api/monkeyhub_api/commands/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/actions.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/hub.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/producers.py",
@@ -13991,6 +13995,7 @@
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
+        "apps/monkeyhub/api/tests/test_command_meaning.py",
         "apps/monkeyhub/api/tests/test_hub_locator.py",
         "apps/monkeyhub/api/tests/test_launch_hub.py",
         "apps/monkeyhub/api/tests/test_applications.py",

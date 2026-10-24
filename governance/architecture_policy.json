@@ -1247,6 +1247,17 @@
       "kind": "cli_workspace",
       "owner": "tools.project.state_file",
       "reason": "Creates the caller's --work-root and writes workflow.json there, the one-stage workflow handed to freeze_project_stage_workflow.py; the project's own files are written by the repository and the project tools."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/commands/meaning.py",
+      "function": "_keep_vectors",
+      "operations": [
+        "mkdir",
+        "replace"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Keeps the vectors of the commands' names and phrasings, computed once by the local embedding model, at cache/command-vectors/ under the nonproject Hub runtime root, named by the model and a digest of the texts, so the next start reads them instead of computing them again (一句话直接办). No project data is written."
     }
   ],
   "forbidden_layer_imports": [

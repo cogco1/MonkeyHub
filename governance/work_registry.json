@@ -37,8 +37,10 @@
             "apps/monkeyhub/web/test/commandMeaning.test.ts",
             "governance/command_meaning_cases.json",
             "governance/module_registry.json",
+            "tests/packaging/test_package_monkeyapps.py",
             "tools/release/package_monkeyapps.py"
-          ]
+          ],
+          "depends_on": []
         }
       ]
     }
