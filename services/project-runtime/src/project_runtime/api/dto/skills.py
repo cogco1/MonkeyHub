@@ -26,6 +26,10 @@ class SkillManifestDto(_Frozen):
     inputs: list[_Item] = Field(default_factory=list, max_length=32)
     outputs: list[_Item] = Field(default_factory=list, max_length=32)
     permissions: list[_Item] = Field(default_factory=list, max_length=32)
+    required_inputs: list[_Item] = Field(
+        default_factory=list, max_length=32, alias="requiredInputs",
+        description="input names a run request must give, or alternatives joined by |, e.g. model|mesh; "
+                    "a run without them is refused before it starts")
 
 
 class SkillAccessDto(_Frozen):

@@ -182,6 +182,25 @@ def verify_outputs(manifest: Mapping[str, Any] | None, written: list[str]) -> di
     return {"status": "failed" if missing else "passed", "declared": declared, "missing": missing}
 
 
+def missing_required(manifest: Mapping[str, Any] | None, given: Mapping[str, Any]) -> list[str]:
+    """The required inputs (``requiredInputs``) a request did not give: each entry, written as it is (``model|mesh``)."""
+
+    return [group for group in (manifest or {}).get(skills.REQUIRED_INPUTS) or ()
+            if not any(name in given for name in str(group).split("|"))]
+
+
+def required_words(skill: skill_library.InstalledSkill, lacking: list[str], given: Mapping[str, Any]) -> str:
+    """What a refused request lacks, in a sentence: each missing input with what its manifest says it is."""
+
+    described = declared_inputs(skill.content.get("manifest") if skill.content else None)
+    parts = []
+    for group in lacking:
+        names = [f"{name} ({described[name]})" if described.get(name) else name for name in group.split("|")]
+        parts.append(" or ".join(names))
+    return (f"{skill.name} cannot run yet: it needs {'; and '.join(parts)}. "
+            f"This request gave {', '.join(sorted(given)) or 'no inputs'}.")
+
+
 def _missing_input(manifest: Mapping[str, Any] | None, given: Mapping[str, Any], stderr: str) -> tuple[str, str] | None:
     """The input a failed run needed and was not given, when its error names it (KeyError: 'image'), else None."""
 
@@ -681,6 +700,10 @@ def submit_skill_run(binding: ProjectBinding, jobs, skill_id: str, *, version: i
             raise StudioError(409, "SKILL_CHANGED",
                               f"{skill_id} in the {skill.source} skill folder is not version {version} of this project any more. "
                               "Read it again before running it.")
+        # Before anyone is asked to allow anything: a run that cannot happen asks for nothing.
+        lacking = missing_required(skill.content.get("manifest"), inputs)
+        if lacking:
+            raise StudioError(422, "SKILL_INPUT_MISSING", required_words(skill, lacking, inputs))
         grant = allowed(binding, skill, grant_id=grant_id, now=now)
         parameters_text = json.dumps(dict(parameters), ensure_ascii=False, sort_keys=True)
         if len(parameters_text.encode("utf-8")) > MAX_PARAMETERS_BYTES:

@@ -92,7 +92,7 @@ def add_skill(request: Request, payload: SkillRequestDto) -> SkillDto:
         raise StudioError(403, "PROJECT_MISMATCH", "The skill names another project.")
     row = skills.add_skill(
         binding, name=payload.name, description=payload.description, body=payload.body,
-        manifest=None if payload.manifest is None else payload.manifest.model_dump(),
+        manifest=None if payload.manifest is None else payload.manifest.model_dump(by_alias=True),
         supersedes_version=payload.supersedes_version, attribution=request_attribution(request),
         files=payload.files, entry=payload.entry,
         access=None if payload.access is None else payload.access.model_dump(),
@@ -106,7 +106,9 @@ def run_skill(request: Request, skill_id: str, payload: SkillRunRequestDto) -> d
 
     Refused before anything runs with SKILL_NOT_INSTALLED, SKILL_NOT_RUNNABLE,
     SKILL_CHANGED, SKILL_ACCESS_NEEDED (what a person still has to allow) or
-    SKILL_REPEATED_FAILURE (an Agent's exact request that just failed twice). A
+    SKILL_REPEATED_FAILURE (an Agent's exact request that just failed twice) or
+    SKILL_INPUT_MISSING (an input the skill's manifest requires, ``requiredInputs``,
+    that the request did not give; nothing is asked of the person first). A
     run that tries what it did not declare fails with SKILL_PERMISSION_NEEDED
     and names what it tried; one that writes no file fails with
     SKILL_OUTPUT_MISSING; one that lacks an input its manifest names fails with
