@@ -1,4 +1,41 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-300",
+      "lanes": [
+        {
+          "id": "b3-markup",
+          "status": "active",
+          "branch": "claude/300-b3-markup",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-markup",
+          "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "第三批第 8 条「圈一下说一句就改」第 1 步 (03 3-2): POST /api/markup/resolve reads marks on a drawing, a view sheet or a camera pass's ID image, and strokes on the model, into the components and elements they lie on.",
+          "modules": [
+            "project_runtime.intent",
+            "project_runtime.documents",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "services/project-runtime/src/project_runtime/application/markup.py",
+            "services/project-runtime/src/project_runtime/application/drawings.py",
+            "services/project-runtime/src/project_runtime/api/routes/markup.py",
+            "services/project-runtime/src/project_runtime/api/dto/markup.py",
+            "services/project-runtime/src/project_runtime/api/routes/__init__.py",
+            "services/project-runtime/tests/test_markup_routes.py",
+            "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
+            "governance/module_registry.json",
+            "docs/architecture/system-map.md",
+            "docs/protocols/project-runtime-api.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
