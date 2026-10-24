@@ -653,7 +653,7 @@ try {
     await refreshSources();
     await page.locator(".drawing-attention .drawing-error .error-panel").waitFor();
     // The panel says what happened in words; the server's own words are folded beneath it.
-    assert.equal(await page.locator(".drawing-error .error-panel__detail").textContent(), "Fixture could not read the documents.");
+    assert.equal(await page.locator(".drawing-error").getByText("Fixture could not read the documents.", { exact: true }).count(), 1);
     await cmd(page.locator(".drawing-attention"), "drawing.plan.refresh").click();
     await cmd(page, "drawing.plan.refresh").waitFor({ state: "detached" });
     assert.equal(await page.locator(".drawing-error").count(), 0);
