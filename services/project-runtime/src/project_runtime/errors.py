@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from typing import Mapping
 
+from archflow.contracts.failures import failure_body
+
 # The three refusing outcomes, as wire codes. ``BLOCKED_NEEDS_HUMAN`` keeps the
 # name it has had since round 1: it is still the one refusal a person answers.
 BLOCKED_NEEDS_HUMAN = "BLOCKED_NEEDS_HUMAN"
@@ -58,7 +60,7 @@ class StudioError(Exception):
         self.detail = detail
 
     def body(self) -> dict[str, object]:
-        return {"code": self.code, "detail": self.detail}
+        return failure_body(self.code, self.detail)
 
 
 class ClarificationRefused(StudioError):

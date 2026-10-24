@@ -305,12 +305,25 @@ def operations(records: Iterable[OperationRecord]) -> list[AttentionDraft]:
             source=AttentionSource(operationId=record.operationId, jobId=record.jobId,
                                    runIds=[record.candidateId] if record.candidateId else []),
             dedupeKey=f"{OPERATIONS}{record.operationId}:{record.status}",
-            options=[_option("ok", ("Got it", "知道了"), ("The notice is put away; the record stays",
+            options=[*([_option("ai", ("Ask the AI to handle it", "交给 AI 处理"),
+                                ("The project's conversation is told what failed and asked to deal with it",
+                                 "把出错的情况发给项目对话，让 AI 处理"),
+                                "chat.composer.send", content=_failure_words(record, what, zh))]
+                       if record.status == "failed" else []),
+                     _option("ok", ("Got it", "知道了"), ("The notice is put away; the record stays",
                                                          "收起这条提示，操作记录不变"),
                              "attention.queue.acknowledge", operationId=record.operationId)],
             opens=[CommandRef(commandId=OPEN_CONVERSATION, args={"sessionId": record.sessionId})]
             if record.sessionId else []))
     return drafts
+
+
+def _failure_words(record: OperationRecord, what: str, zh: str) -> str:
+    # What the AI is told, in both languages: what failed, how many times it was sent, its code and its sentence.
+    tries = "" if record.attempts <= 1 else f" after {record.attempts} tries / 试了 {record.attempts} 次"
+    code = f" [{record.errorCode}]" if record.errorCode else ""
+    return (f"{what} did not finish{tries}{code}: {record.reason or 'no reason was given'}. Please find out why and "
+            f"deal with it. / {zh}没有完成{code}：{record.reason or '没有给出原因'}。请查明原因并处理。")[:1900]
 
 
 def updates(status: UpdateStatus) -> list[AttentionDraft]:

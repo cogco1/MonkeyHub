@@ -215,6 +215,39 @@
             "services/project-runtime/tests/test_skills.py"
           ],
           "depends_on": []
+        },
+        {
+          "id": "b3-errors",
+          "status": "active",
+          "branch": "claude/300-b3-errors",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-errors",
+          "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "第三批「出错不用自己去点重试」(03 的 4-1、4-3): one table of failure kinds for the Hub and the Runtime; the Hub sends again what did nothing and says how many times; a failed operation's card hands it to the AI.",
+          "modules": [
+            "archflow.contracts.failures",
+            "hub.shell",
+            "project_runtime.shell"
+          ],
+          "write_scope": [
+            "packages/archflow/src/archflow/contracts/failures.py",
+            "packages/archflow/tests/test_failures.py",
+            "services/project-runtime/src/project_runtime/errors.py",
+            "apps/monkeyhub/api/monkeyhub_api/models.py",
+            "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
+            "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
+            "apps/monkeyhub/api/monkeyhub_api/runtime/models.py",
+            "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
+            "apps/monkeyhub/api/monkeyhub_api/updates/desktop_updates.py",
+            "apps/monkeyhub/api/monkeyhub_api/attention/producers.py",
+            "apps/monkeyhub/api/tests/test_runtime_operations.py",
+            "apps/monkeyhub/api/tests/test_attention_producers.py",
+            "apps/monkeyhub/web/src/api/generated/index.ts",
+            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+            "docs/architecture/project-runtime.md"
+          ],
+          "depends_on": []
         }
       ]
     }

@@ -25,6 +25,7 @@ from pydantic import ValidationError
 from starlette.requests import Request
 from monkeycad.integration_packs import IntegrationPackManager
 
+from archflow.contracts.failures import failure_body
 from project_runtime.errors import StudioError
 
 from .. import project_archive
@@ -148,7 +149,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
 
     @app.exception_handler(HubFailure)
     async def handle_hub_error(request: Request, exc: HubFailure):
-        return JSONResponse(exc.error.model_dump(), status_code=exc.status)
+        return JSONResponse(failure_body(exc.error.code, exc.error.detail), status_code=exc.status)
 
     @app.exception_handler(RequestValidationError)
     async def handle_request_validation(request: Request, exc: RequestValidationError):
@@ -222,7 +223,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
                 else:
                     response = await call_next(request)
             except HubFailure as exc:
-                response = JSONResponse(exc.error.model_dump(), status_code=exc.status)
+                response = JSONResponse(failure_body(exc.error.code, exc.error.detail), status_code=exc.status)
         if origin in worker_origins:
             response.headers.update({"Access-Control-Allow-Origin": origin, "Vary": "Origin",
                 "Access-Control-Allow-Methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS",

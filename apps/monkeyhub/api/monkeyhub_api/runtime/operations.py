@@ -277,6 +277,7 @@ class OperationManager:
                 record.reason = None if outcome in _REVISION_DONE else str(payload.get("detail") or outcome)[:1200]
             elif response.status >= 400:
                 code = str(payload.get("code", ""))
+                record.errorCode = code or None
                 admitted = any(isinstance(payload.get(name), str) for name in ("proposalId", "jobId", "candidateId"))
                 if response.status in _REFUSAL_STATUSES and not admitted and code not in _RETAINED_CODES:
                     record.status = "refused"
@@ -292,6 +293,13 @@ class OperationManager:
                 self._save()
             finally:
                 admission.finished.set()
+
+    def sending_again(self, admission: _Admission) -> int:
+        """Count one more send of an admitted request; nothing it answered before was retained."""
+
+        with self._lock:
+            admission.record.attempts += 1
+            return admission.record.attempts
 
     def interrupted(self, admission: _Admission, reason: str) -> None:
         with self._lock:

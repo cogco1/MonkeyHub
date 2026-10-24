@@ -1735,6 +1735,18 @@ export type HubError = {
      * Detail
      */
     detail: string;
+    /**
+     * Category
+     *
+     * transient: it passes by itself; conflict: the project moved, read it again before deciding. Left out for a failure the caller or a person answers. The Hub's answer adds it from archflow.contracts.failures; this module stays importable without archflow (an update's trial load).
+     */
+    category?: 'transient' | 'conflict' | null;
+    /**
+     * Resend
+     *
+     * True when nothing was done, so the same request may be sent again unchanged.
+     */
+    resend?: boolean | null;
 };
 
 /**
@@ -2035,6 +2047,18 @@ export type OperationRecord = {
      * True only while this operation needs recovery and the Hub can still resolve it from retained results: the candidate run the request named is retained with its runner receipt, and an acceptance named the Stage it expected to succeed and its branch has not moved past it. False for every other status and for a request that named no run, such as POST /api/proposals or POST /api/drawings/sheets. Before the Hub has read the project since the reply was lost or it started, an operation that named a run counts as recoverable unless its notice was dismissed.
      */
     recoverable?: boolean;
+    /**
+     * Errorcode
+     *
+     * The code of the failure it ended with; None while it has not failed.
+     */
+    errorCode?: string | null;
+    /**
+     * Attempts
+     *
+     * How many times the Hub sent this request: more than one when a failure that did nothing passed and it was sent again (archflow.contracts.failures).
+     */
+    attempts?: number;
     /**
      * Acknowledgedat
      *

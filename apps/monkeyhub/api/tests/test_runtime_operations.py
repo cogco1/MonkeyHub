@@ -1046,5 +1046,57 @@ class JournalSpellingTests(unittest.TestCase):
         self.assertFalse(current.exists(), "nothing was taken in, so nothing was written")
 
 
+
+class ResendTests(unittest.TestCase):
+    """A failure that did nothing passes without the person: the Hub sends the same request again (#300 4-3)."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        self.operations = OperationManager("demo", project_dir=str(root / "demo"), journal_path=root / "operations.json")
+        self.runtime = ProjectRuntime("resend-runtime", "demo", str(root / "demo"), self.operations,
+                                      SimpleNamespace(run_ids=lambda: ()))
+        self.hub = ProjectRuntimeManager(None, None)
+        self.worker = SimpleNamespace(url="http://isolated-worker", instance_id="worker-1")
+        paused = patch("monkeyhub_api.runtime.manager._pause")
+        self.pauses = paused.start()
+        self.addCleanup(paused.stop)
+
+    @staticmethod
+    def answer(status, code=None):
+        body = {"code": code, "detail": code} if code else {"documentId": "d1"}
+        return HttpResult(status, json.dumps(body).encode("utf-8"), {"content-type": "application/json"})
+
+    def draw(self, *answers):
+        with patch.object(self.hub, "service", return_value=self.worker), patch.object(self.hub, "emit"),                 patch("monkeyhub_api.runtime.manager.request_http", side_effect=list(answers)) as sent:
+            result = self.hub.forward(self.runtime, "/api/drawings/elevations", "POST", b"{}",
+                                      {"idempotency-key": str(uuid4())})
+        record, = self.operations.records()
+        return result, record, sent.call_count
+
+    def test_a_drawing_whose_worker_stopped_is_sent_again_and_says_how_often(self):
+        result, record, sends = self.draw(self.answer(503, "DRAWING_WORKER_LOST"), self.answer(503, "DRAWING_WORKER_LOST"),
+                                          self.answer(201))
+        self.assertEqual((result.status, sends, record.status, record.attempts, record.errorCode), (201, 3, "completed", 3, None))
+        self.assertEqual(self.pauses.call_count, 2)
+
+    def test_a_failure_that_keeps_coming_back_ends_the_operation_with_its_code(self):
+        result, record, sends = self.draw(*[self.answer(503, "DRAWING_WORKER_LOST")] * 5)
+        self.assertEqual((result.status, sends, record.status, record.attempts, record.errorCode),
+                         (503, 3, "failed", 3, "DRAWING_WORKER_LOST"))
+
+    def test_a_failure_a_person_answers_is_sent_once(self):
+        result, record, sends = self.draw(self.answer(500, "SEAT_FAILED"), self.answer(201))
+        self.assertEqual((result.status, sends, record.status, record.attempts, record.errorCode),
+                         (500, 1, "failed", 1, "SEAT_FAILED"))
+
+    def test_a_read_waits_for_a_starting_worker(self):
+        starting = HubFailure(503, "WORKER_STARTING", "The project's Studio is starting.")
+        with patch.object(self.hub, "service", side_effect=[starting, starting, self.worker]),                 patch("monkeyhub_api.runtime.manager.request_http", return_value=self.answer(200)):
+            result = self.hub.forward(self.runtime, "/api/documents", "GET", b"", {})
+        self.assertEqual((result.status, self.pauses.call_count), (200, 2))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -24,6 +24,7 @@ import time
 from urllib.parse import parse_qs, urlencode, urlsplit
 from uuid import uuid4, uuid5, NAMESPACE_URL
 
+from archflow.contracts.failures import failure_kind, resend_wait
 from archflow.project.record_kinds import STUDIO_DOCUMENT_MODEL_SOURCE, STUDIO_SOURCE_DOCUMENT
 from archflow.project.repository import ProjectRepositoryError
 from project_runtime.application.artifacts import (
@@ -204,6 +205,18 @@ class ProjectRuntime:
     # project that say it moved (``index_hint``): the observer's idle reads
     # compare it, since nothing watches the project (ADR-012).
     index_moves: int = 0
+
+
+# Waits between sends of one request; a test passes without sleeping.
+_pause = time.sleep
+
+
+def _failure_code(result: HttpResult) -> str | None:
+    try:
+        payload = result.json()
+    except (ValueError, UnicodeError):
+        return None
+    return payload.get("code") if isinstance(payload, dict) else None
 
 
 class ProjectRuntimeManager:
@@ -779,7 +792,7 @@ class ProjectRuntimeManager:
                     raise StudioError(result.status, error.get("code", "DOCUMENT_WORK_COPY_FAILED"),
                                       error.get("detail", "The edited page was not registered."))
             except HubFailure as exc:
-                if exc.error.code == "WORKER_UNAVAILABLE":
+                if exc.error.code in {"WORKER_UNAVAILABLE", "WORKER_STARTING"}:
                     # No request was sent; the file stays pending until Studio
                     # is ready. A dispatched request with a lost reply is never retried.
                     observed.observed_sha256 = baseline
@@ -940,10 +953,11 @@ class ProjectRuntimeManager:
             # its own time limit and nothing is replayed.
             return worker
         if worker is None or worker.state not in {"ready", "busy"} or not worker.healthy or not worker.url:
-            if worker is not None and worker.state == "crashed":
+            if worker is None or worker.state in {"starting", "recovering"}:
+                # A starting Studio passes by itself; nothing was sent (archflow.contracts.failures).
+                raise HubFailure(503, "WORKER_STARTING", "The project's Studio is starting. Try again in a moment.")
+            if worker.state == "crashed":
                 detail = "The project's Studio stopped unexpectedly. Recover it explicitly before continuing."
-            elif worker is None or worker.state in {"starting", "recovering"}:
-                detail = "The project's Studio is starting. Try again in a moment."
             else:
                 detail = "The project's Studio is not ready. Recover a crashed worker explicitly before continuing."
             raise HubFailure(503, "WORKER_UNAVAILABLE", detail)
@@ -962,6 +976,21 @@ class ProjectRuntimeManager:
             if worker is None or worker.state in {"ready", "busy", "crashed"} or time.monotonic() >= deadline:
                 return worker
             time.sleep(0.2)
+
+    def _serving(self, runtime: ProjectRuntime):
+        """The project's worker, waited for a few seconds while it starts or restarts (WORKER_STARTING)."""
+
+        tries = 0
+        while True:
+            try:
+                return self.service(runtime)
+            except HubFailure as exc:
+                tries += 1
+                kind = failure_kind(exc.error.code)
+                wait = None if kind is None else resend_wait(kind, tries)
+                if wait is None:
+                    raise
+                _pause(wait)
 
     def forward(self, runtime: ProjectRuntime, path: str, method: str, body: bytes,
                 headers: dict[str, str], *, source: str | None = None) -> HttpResult:
@@ -1008,7 +1037,7 @@ class ProjectRuntimeManager:
             self.emit("operation/started", runtime.runtime_id)
         dispatched = False
         try:
-            worker = self.service(runtime)
+            worker = self._serving(runtime)
             forwarded = {key: value for key, value in headers.items()
                          if key in {"content-type", "x-monkey-operation", "x-monkey-parent", "if-none-match",
                                     "x-monkey-turn-id", "x-monkey-parent-span-id"}}
@@ -1041,6 +1070,20 @@ class ProjectRuntimeManager:
             # A revision waits for its own build, read-back and validation (#185).
             timeout = REVISION_TIMEOUT_S if parsed.path == "/api/revisions" else 180
             result = request_http(worker.url, path, method, body or None, forwarded, timeout=timeout)
+            sends = 1
+            # A failure that did nothing passes without the person: the same request goes again, a few times
+            # at most, and the operation says how many (#300 4-3).
+            while (result.status >= 400 and (kind := failure_kind(_failure_code(result))) is not None
+                   and (wait := resend_wait(kind, sends)) is not None):
+                if admission:
+                    runtime.operations.sending_again(admission)
+                    self.emit("operation/progress", runtime.runtime_id)
+                _pause(wait)
+                worker = self._serving(runtime)
+                if "X-Monkey-Worker" in forwarded:
+                    forwarded["X-Monkey-Worker"] = worker.instance_id
+                result = request_http(worker.url, path, method, body or None, forwarded, timeout=timeout)
+                sends += 1
             if admission:
                 result.headers["X-Monkey-Operation-Id"] = admission.record.operationId
                 runtime.operations.replied(admission, result)
