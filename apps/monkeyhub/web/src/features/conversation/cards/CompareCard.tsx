@@ -109,7 +109,7 @@ export function CompareCard({
       )}
       <div className="card__row">
         <details className="compare__objects">
-          <summary className="quiet">
+          <summary data-command="view.disclosure.toggle" data-command-arg="compare_objects" className="quiet">
             {t("compare.everyObject", { count: comparison.objects.length })}
           </summary>
           <ul className="reflist">
@@ -128,7 +128,7 @@ export function CompareCard({
       </div>
       <div className="card__row actions">
         {onCompareInModel && (
-          <button type="button" className="btn" onClick={onCompareInModel}>
+          <button data-command="candidate.compare.in_model" type="button" className="btn" onClick={onCompareInModel}>
             {t("compare.inModel")}
           </button>
         )}

@@ -78,7 +78,7 @@ export function EvidenceDrawer({
           <p className="drawer__title">{t("evidence.drawer.title")}</p>
         </div>
         <div className="drawer__controls">
-          <button
+          <button data-command="view.evidence.pin"
             type="button"
             className="btn btn--small"
             aria-pressed={pinned}
@@ -87,7 +87,7 @@ export function EvidenceDrawer({
             {pinned ? t("evidence.drawer.unpin") : t("evidence.drawer.pin")}
           </button>
           {!pinned && (
-            <button
+            <button data-command="view.evidence.close"
               type="button"
               className="icon-x"
               aria-label={t("evidence.drawer.close")}
@@ -100,7 +100,7 @@ export function EvidenceDrawer({
       </div>
       <div className="drawer__tabs" role="tablist">
         {TABS.map((item) => (
-          <button
+          <button data-command="view.evidence.tab" data-command-arg={item.id}
             key={item.id}
             type="button"
             role="tab"

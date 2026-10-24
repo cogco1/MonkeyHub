@@ -17,52 +17,16 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
 import type { GestureDto, GestureHitDto, ModelAnnotationsDto } from "../../api/project-runtime/generated";
-import type { MessageKey } from "../../i18n/messages.en";
 import { useT } from "../../i18n/useT";
 import type { CameraState, SampleHit, Vec3, ViewportController } from "./viewer/ThreeDmViewport";
+import { GESTURE_TOOLS, type GestureTool } from "./gestureTools";
 
-export type GestureTool = GestureDto["kind"];
+export { GESTURE_TOOLS, type GestureTool };
 
 export interface AnnotationStyle {
   readonly color: string;
   readonly lineWidth: 2 | 4 | 6;
 }
-
-export const GESTURE_TOOLS: ReadonlyArray<{
-  kind: GestureTool;
-  glyph: string;
-  labelKey: MessageKey;
-  titleKey: MessageKey;
-}> = [
-  {
-    kind: "circle",
-    glyph: "◯",
-    labelKey: "stage.tools.circle.label",
-    titleKey: "stage.tools.circle.title",
-  },
-  {
-    kind: "arrow",
-    glyph: "↗",
-    labelKey: "stage.tools.arrow.label",
-    titleKey: "stage.tools.arrow.title",
-  },
-  { kind: "freehand", glyph: "✎", labelKey: "stage.tools.freehand.label", titleKey: "stage.tools.freehand.title" },
-  { kind: "line", glyph: "╱", labelKey: "stage.tools.line.label", titleKey: "stage.tools.line.title" },
-  { kind: "ruler", glyph: "↔", labelKey: "stage.tools.ruler.label", titleKey: "stage.tools.ruler.title" },
-  { kind: "arc", glyph: "⌒", labelKey: "stage.tools.arc.label", titleKey: "stage.tools.arc.title" },
-  {
-    kind: "keep",
-    glyph: "✓",
-    labelKey: "stage.tools.keep.label",
-    titleKey: "stage.tools.keep.title",
-  },
-  {
-    kind: "remove",
-    glyph: "✗",
-    labelKey: "stage.tools.remove.label",
-    titleKey: "stage.tools.remove.title",
-  },
-];
 
 /** A stroke is sampled every this many pixels along its length. */
 const SAMPLE_PX = 8;

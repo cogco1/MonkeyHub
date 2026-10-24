@@ -242,10 +242,10 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
     <header className="render-toolbar render-mode-toolbar">
       <strong>Render</strong>
       <div role="group" aria-label={zh ? "工作模式" : "Render mode"}>
-        <button type="button" aria-pressed={mode === "ai"} onClick={() => setMode("ai")}>AI</button>
-        <button type="button" aria-pressed={mode === "physical"} onClick={() => setMode("physical")}>Physical</button>
+        <button data-command="render.run.mode_ai" type="button" aria-pressed={mode === "ai"} onClick={() => setMode("ai")}>AI</button>
+        <button data-command="render.run.mode_physical" type="button" aria-pressed={mode === "physical"} onClick={() => setMode("physical")}>Physical</button>
       </div>
-      <button type="button" onClick={() => void refresh()} disabled={loading}>{loading ? (zh ? "读取中…" : "Reading…") : (zh ? "刷新状态" : "Refresh status")}</button>
+      <button data-command="render.run.refresh" type="button" onClick={() => void refresh()} disabled={loading}>{loading ? (zh ? "读取中…" : "Reading…") : (zh ? "刷新状态" : "Refresh status")}</button>
     </header>
     <ModelPreview active={active} readView={readModelView} onModeling={onModeling} onCapture={() => void captureModelView()} onReady={setModelViewReady}
       capturing={uploading || sending} zh={zh} />
@@ -293,9 +293,9 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
               return <li key={`${index}:${JSON.stringify(reference)}`}>
                 {image && <ImageThumbnail image={image} active={active && mode === "ai"} />}
                 <span>{index + 1}. {image?.fileName ?? (zh ? "参考图不可用" : "Reference unavailable")}</span>
-                <div><button type="button" disabled={index === 0} onClick={() => move(-1)} aria-label={`${zh ? "上移参考图" : "Move reference up"} ${index + 1}`}>↑</button>
-                  <button type="button" disabled={index === references.length - 1} onClick={() => move(1)} aria-label={`${zh ? "下移参考图" : "Move reference down"} ${index + 1}`}>↓</button>
-                  <button type="button" onClick={() => setReferences((rows) => rows.filter((_, i) => i !== index))} aria-label={`${zh ? "移除参考图" : "Remove reference"} ${index + 1}`}>×</button></div>
+                <div><button data-command="render.run.reference_up" data-command-arg={index} type="button" disabled={index === 0} onClick={() => move(-1)} aria-label={`${zh ? "上移参考图" : "Move reference up"} ${index + 1}`}>↑</button>
+                  <button data-command="render.run.reference_down" data-command-arg={index} type="button" disabled={index === references.length - 1} onClick={() => move(1)} aria-label={`${zh ? "下移参考图" : "Move reference down"} ${index + 1}`}>↓</button>
+                  <button data-command="render.run.reference_remove" data-command-arg={index} type="button" onClick={() => setReferences((rows) => rows.filter((_, i) => i !== index))} aria-label={`${zh ? "移除参考图" : "Remove reference"} ${index + 1}`}>×</button></div>
               </li>;
             })}
           </ol>
@@ -309,7 +309,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
         </fieldset>
         {submitError && <div className="render-error" role="alert">{submitError}</div>}
         {uncertain && <p className="render-note" role="alert">{zh ? "提交结果未知，可能已计费。先刷新状态；再次生成会创建新请求。" : "Submission outcome is unknown and may be charged. Refresh status first; generating again creates a new request."}<small>{uncertain}</small></p>}
-        <button type="submit" className="render-generate" disabled={sending || hasPending || uploading || !sourceDocument || !provider?.available || !direction.trim()
+        <button data-command="render.run.generate" type="submit" className="render-generate" disabled={sending || hasPending || uploading || !sourceDocument || !provider?.available || !direction.trim()
           || references.length > referenceLimit || references.some((ref) => !findSource(images, ref)) || !actualSize || !actualAspect}>
           {sending ? (zh ? "正在提交…" : "Submitting…") : uncertain ? (zh ? "新建一次生成" : "Generate a new attempt") : (zh ? "生成" : "Generate")}
         </button>

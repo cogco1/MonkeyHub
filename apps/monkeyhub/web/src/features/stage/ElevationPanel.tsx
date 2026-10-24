@@ -67,14 +67,14 @@ export function ElevationPanel({ controls, busy, error, onReference }: {
             onFocus={event => { event.currentTarget.select(); onReference(field === "height" ? facts.top : facts[field]); }}
             onBlur={() => onReference(null)} />
         </label>
-        <button type="submit" disabled={blocked} aria-label={`${zh ? "应用" : "Apply"} ${field}`}>{zh ? "应用" : "Apply"}</button>
+        <button data-command="frame.set_level.apply" data-command-arg={field} type="submit" disabled={blocked} aria-label={`${zh ? "应用" : "Apply"} ${field}`}>{zh ? "应用" : "Apply"}</button>
       </form>)}
     </div>
     {referenceInput("base", facts.baseReference)}
     {referenceInput("top", facts.topReference)}
     <small>{zh ? "输入数值保留当前引用并调整偏移。" : "Numeric edits keep the reference and adjust its offset."}</small>
     <details>
-      <summary>{zh ? "参考标高" : "Reference elevations"}</summary>
+      <summary data-command="view.disclosure.toggle" data-command-arg="reference_elevations">{zh ? "参考标高" : "Reference elevations"}</summary>
       <label>{zh ? "基准" : "Datum"}<select aria-label="Datum" value={datumId} disabled={busy}
         onChange={event => { setDatumId(event.target.value); onReference(levels.find(row => row.levelId === event.target.value)?.elevation ?? null); }}>
         <option value="">{zh ? "新建基准" : "New datum"}</option>
@@ -90,7 +90,7 @@ export function ElevationPanel({ controls, busy, error, onReference }: {
         <label>{zh ? "名称" : "Name"}<input name="name" required maxLength={120} aria-label="Datum name" defaultValue={selectedDatum?.name ?? ""} disabled={busy} /></label>
         <label>{zh ? "标高 m" : "Elevation m"}<input name="elevation" required type="number" step="any" aria-label="Datum elevation"
           defaultValue={selectedDatum?.elevation ?? facts.base} disabled={busy} onFocus={() => onReference(selectedDatum?.elevation ?? facts.base)} /></label>
-        <button type="submit" disabled={busy}>{datumId ? (zh ? "更新基准" : "Update datum") : (zh ? "创建基准" : "Create datum")}</button>
+        <button data-command="frame.set_level.datum" type="submit" disabled={busy}>{datumId ? (zh ? "更新基准" : "Update datum") : (zh ? "创建基准" : "Create datum")}</button>
       </form>
     </details>
     {locked && <small>{zh ? "此体块使用参数控制，请通过已有参数调整。" : "This mass uses parameter controls; adjust its existing parameters."}</small>}

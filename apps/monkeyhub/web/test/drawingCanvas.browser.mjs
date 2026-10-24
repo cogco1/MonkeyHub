@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
+import { cmd, commandProblems, waitForCommandLabel } from "./commandLocator.mjs";
 
 // Actual Drawing component and generated SDK; disposable HTTP sources only.
 const root = fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/").replace(/\/$/, "");
@@ -116,7 +117,7 @@ async function step(name, action) { current = name; await action(); passed.push(
 const revision = () => page.getByRole("combobox", { name: "Drawing", exact: true });
 const source = () => page.getByRole("combobox", { name: "Version to draw", exact: true });
 // GH-302: appearance saves itself; the only save button left is Retry after a refusal.
-const saveButton = () => page.getByRole("button", { name: "Retry saving", exact: true });
+const saveButton = () => cmd(page, "view.notice.retry", { arg: "drawing_save" });
 const pen = label => page.getByLabel(label, { exact: true });
 const objectChoice = () => page.getByRole("combobox", { name: "Projected object", exact: true });
 // #337: the source's state is a quiet word at the bar's right end while all is well, and a row above the drawing while
@@ -127,9 +128,9 @@ const sourceRow = (attributes = "") => page.locator(`.drawing-attention .drawing
 // The bar's menus: the version to draw under Draw another version; Download SVG and Refresh sources under More.
 const menu = name => page.locator(`details.drawing-${name}`);
 const isOpen = name => menu(name).evaluate(node => node.open);
-const openMenu = async name => { if (!await isOpen(name)) await menu(name).locator("summary").click(); };
-const moreCommand = async name => { await openMenu("more"); return page.getByRole("button", { name, exact: true }); };
-const refreshSources = async () => (await moreCommand("Refresh sources")).click();
+const openMenu = async name => { if (!await isOpen(name)) await cmd(menu(name), "view.menu.toggle", { arg: `drawing_${name}` }).click(); };
+const moreCommand = async id => { await openMenu("more"); return cmd(page, id); };
+const refreshSources = async () => (await moreCommand("drawing.plan.refresh")).click();
 // The page's own drawing of a projected object, and where a plan point is on screen.
 const drawn = object => page.locator(`svg.drawing-vector-base .drawing-plan__lines [data-object="${object}"]`);
 const planPoint = (x, y) => page.evaluate(([x, y]) => {
@@ -299,16 +300,17 @@ try {
     assert.equal(await page.getByRole("combobox", { name: "Choose a door", exact: true }).count(), 0);
     assert.equal(await page.getByRole("button", { name: "Add dimension", exact: true }).count(), 0);
     await revision().selectOption("");
-    await page.getByRole("button", { name: "Generate cut plan", exact: true }).waitFor();
+    await cmd(page, "drawing.plan.generate").waitFor();
     const nameField = page.getByRole("group", { name: "Drawing appearance", exact: true }).locator("label").filter({ hasText: "New cut-plan name" }).locator("input");
     await nameField.fill("Ground Floor A");
     assert.equal(await page.getByRole("group", { name: "Saved dimensions", exact: true }).count(), 0);
     // A new drawing's pens are left to the project recipe until a person sets one.
-    await page.getByText("Linework and hatch", { exact: true }).click();
+    await cmd(page, "view.disclosure.toggle", { arg: "drawing_graphics" }).click();
     assert.equal(await pen("Hatch spacing (paper mm)").inputValue(), "");
     assert.equal(await pen("Hatch spacing (paper mm)").getAttribute("placeholder"), "Project recipe");
-    await page.getByRole("button", { name: "Generate cut plan", exact: true }).click();
+    await cmd(page, "drawing.plan.generate").click();
     await page.locator('.drawing-preview__viewport[data-ready="true"]').waitFor();
+    assert.deepEqual(await commandProblems(page.locator(".drawing-workspace")), [], "every visible Drawings control names its command");
     assert.deepEqual(requests[0].modelSource, modelA); assert.equal(requests[0].sourceStageRef, "stage-A");
     assert.equal(requests[0].fileName, "Ground Floor A");
     assert.match(await revision().locator("option:checked").textContent(), /Ground Floor A\.png · Accepted A · /);
@@ -317,7 +319,7 @@ try {
     // The drawing then shows the values it was made with: the recipe's hatch spacing and the defaults.
     await until(() => pen("Hatch spacing (paper mm)").inputValue(), value => value === "3", "the recipe's hatch spacing shown");
     assert.equal(await pen("Cut line (paper mm)").inputValue(), "0.35"); assert.equal(await pen("Visible line (paper mm)").inputValue(), "0.18");
-    await page.getByText("Linework and hatch", { exact: true }).click();
+    await cmd(page, "view.disclosure.toggle", { arg: "drawing_graphics" }).click();
   });
   let oldRevision;
   await step("appearance updates retain semantic dimension and previous revision without design calls", async () => {
@@ -349,7 +351,7 @@ try {
     assert.equal(requests.length, generationCount, "an earlier revision is never rebuilt automatically");
     assert.deepEqual(await page.evaluate(() => window.drawingFixture.documents.find(document => document.revisionRef === "revision-legacy")), retainedBefore,
       "the original document's ModelSource, Stage, bytes and recipe remain unchanged");
-    await page.getByRole("button", { name: "Open the current revision", exact: true }).click();
+    await cmd(page, "drawing.plan.open_latest").click();
     await until(() => Promise.resolve(requests.length), value => value === generationCount + 1, "one automatic rebuild on the moved head");
     assert.deepEqual(requests.at(-1).modelSource, modelB); assert.equal(requests.at(-1).sourceStageRef, "stage-B");
     assert.equal(requests.at(-1).dimensions[0].id, savedDimension.id, "rebuilding keeps the retained dimension intention");
@@ -382,7 +384,7 @@ try {
     assert.deepEqual(statusRequests.at(-1).targetModelSource, modelA);
     assert.equal(requests.length, generationCount, "choosing a version never rebuilds by itself");
     assert.equal(await page.getByText("Change design width", { exact: true }).count(), 0);
-    await page.getByRole("button", { name: "Rebuild on this version", exact: true }).click();
+    await cmd(page, "drawing.recipe.rebuild").click();
     await until(() => Promise.resolve(requests.length), value => value === generationCount + 1, "explicit rebuild");
     await sourceRow('[data-status="current"]' + settled).waitFor();
     assert.notEqual(await revision().inputValue(), oldSelection);
@@ -398,7 +400,7 @@ try {
     await page.getByText("Drawn from a chosen version · not updated automatically", { exact: true }).waitFor();
     await new Promise(resolve => setTimeout(resolve, 300));
     assert.equal(requests.length, generationCount, "reopening never rebuilds a kept drawing on the head");
-    await page.getByRole("button", { name: "Follow the current model again", exact: true }).click();
+    await cmd(page, "drawing.recipe.follow_live").click();
     await until(() => Promise.resolve(requests.length), value => value === generationCount + 1, "explicit return to LIVE");
     assert.equal(requests.at(-1).follow, "live"); assert.deepEqual(requests.at(-1).modelSource, modelB);
     await sourceWord('[data-follow="live"][data-status="current"]' + settled).waitFor();
@@ -544,7 +546,7 @@ try {
     const saved = page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/api/drawings/plans")
       && response.request().method() === "POST" && response.request().postDataJSON().projectId === "drawing-project");
     await page.evaluate(() => window.drawingFixture.setProject("other-project"));
-    await page.getByRole("button", { name: "Generate cut plan", exact: true }).waitFor();
+    await cmd(page, "drawing.plan.generate").waitFor();
     release();
     await (await saved).finished();
     await new Promise(resolve => setTimeout(resolve, 1200));
@@ -559,29 +561,29 @@ try {
     await until(() => page.getByLabel("Cut height (meter)", { exact: true }).isEnabled(), Boolean, "active form");
     // Choose a version again: the previous step returned this drawing to LIVE.
     const another = page.locator("details.drawing-another");
-    if (!await another.evaluate(node => node.open)) await another.locator("summary").click();
+    if (!await another.evaluate(node => node.open)) await cmd(another, "view.menu.toggle", { arg: "drawing_another" }).click();
     await source().selectOption("stage-A");
     const before = requests.length;
     await page.getByLabel("Cut height (meter)", { exact: true }).fill("");
-    await page.getByRole("button", { name: "Rebuild on this version", exact: true }).click();
+    await cmd(page, "drawing.recipe.rebuild").click();
     assert.equal(requests.length, before);
     assert.equal(await page.getByLabel("Cut height (meter)", { exact: true }).evaluate(node => node.validity.valueMissing), true);
     await page.getByLabel("Cut height (meter)", { exact: true }).fill("1.2");
   });
   await step("SVG people and trees remain independently editable through drag, keyboard, mirror, save and reopen", async () => {
-    await page.getByRole("button", { name: "Add person", exact: true }).click();
+    await cmd(page, "drawing.entourage.add_person").click();
     const object = page.locator('[data-dressing-id]').first();
     await object.waitFor();
     const id = await object.getAttribute("data-dressing-id");
     await page.getByLabel("Symbol size (meter)", { exact: true }).fill("1.2");
-    await page.getByRole("button", { name: "Mirror horizontally", exact: true }).click();
+    await cmd(page, "drawing.entourage.flip").click();
     await object.focus(); await page.keyboard.press("ArrowRight");
     assert.ok(Number(await page.getByLabel("Horizontal position / offset (meter)", { exact: true }).inputValue()) > 5);
     const bounds = await object.boundingBox();
     await page.mouse.move(bounds.x+bounds.width/2, bounds.y+bounds.height/2); await page.mouse.down();
     await page.mouse.move(bounds.x+bounds.width/2+35, bounds.y+bounds.height/2-20, { steps: 5 }); await page.mouse.up();
     assert.ok(Number(await page.getByLabel("Vertical position / offset (meter)", { exact: true }).inputValue()) > 3);
-    await page.getByRole("button", { name: "Add tree", exact: true }).click();
+    await cmd(page, "drawing.entourage.add_tree").click();
     assert.equal(await page.locator('[data-dressing-id]').count(), 2);
     await page.getByLabel("Position follows", { exact: true }).selectOption("obj-wall");
     await until(() => Promise.resolve(requests.at(-1).dressing?.[1]?.anchorObjectId === "obj-wall"), Boolean, "dressing revision");
@@ -594,7 +596,7 @@ try {
     await revision().selectOption(old); await until(() => page.locator('[data-dressing-id]').count(), value => value === 0, "old recipe remains intact");
     await revision().selectOption(newRevision); await until(() => page.locator('[data-dressing-id]').count(), value => value === 2, "reopened SVG objects");
     await page.getByLabel("Selected object", { exact: true }).selectOption(id);
-    await page.getByRole("button", { name: "Delete object", exact: true }).click();
+    await cmd(page, "drawing.entourage.remove").click();
     assert.equal(await page.locator('[data-dressing-id]').count(), 1);
     await until(() => revision().inputValue(), value => value !== newRevision, "deletion retained");
     assert.equal(requests.at(-1).dressing.length, 1);
@@ -603,7 +605,7 @@ try {
   });
   await step("SVG download preserves exact saved vector bytes, scale, source objects and entourage", async () => {
     // #337: Download SVG is a command in the bar's More menu, which its click closes.
-    const downloadButton = () => moreCommand("Download SVG");
+    const downloadButton = () => moreCommand("drawing.export.svg");
     await until(async () => (await downloadButton()).isEnabled(), Boolean, "saved SVG available");
     const [, , revisionRef] = JSON.parse(await revision().inputValue());
     const [download] = await Promise.all([page.waitForEvent("download"), (await downloadButton()).click()]);
@@ -615,7 +617,7 @@ try {
     assert.match(svg, /width="[\d.]+mm"/); assert.ok(svg.includes(`data-scale="${savedScale}"`), "the download keeps the saved revision's scale");
     assert.match(svg, /data-object="obj-wall"/); assert.match(svg, /data-dressing=/);
     const beforeAdd = await revision().inputValue();
-    await page.getByRole("button", { name: "Add person", exact: true }).click();
+    await cmd(page, "drawing.entourage.add_person").click();
     assert.equal(await (await downloadButton()).isDisabled(), true, "unsaved appearance cannot be downloaded as a retained version");
     await until(() => revision().inputValue(), value => value !== beforeAdd, "the added person saved itself");
     await until(async () => (await downloadButton()).isEnabled(), Boolean, "the saved revision downloads again");
@@ -627,7 +629,7 @@ try {
     assert.doesNotMatch(oldSvg, /data-dressing=/, "historical download never inherits new or unsaved entourage");
   });
   await step("retained dimensions can be removed without rewriting their original revision", async () => {
-    await page.getByRole("button", { name: "Remove dimension", exact: true }).click();
+    await cmd(page, "drawing.plan.remove_dimension").click();
     assert.equal(await page.getByRole("group", { name: "Saved dimensions", exact: true }).count(), 0);
     await until(() => revision().inputValue(), value => value !== oldRevision, "dimension removal retained");
     assert.deepEqual(requests.at(-1).dimensions, []);
@@ -652,14 +654,14 @@ try {
   await step("keyboard controls and English/Chinese narrow layouts keep the drawing usable", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => window.drawingFixture.setLanguage("zh-CN"));
-    await page.getByText("更多", { exact: true }).waitFor();
+    await waitForCommandLabel(cmd(page, "view.menu.toggle", { arg: "drawing_more" }), "更多");
     await page.evaluate(() => { document.querySelector('.drawing-body').scrollTop = 0; document.querySelector('.drawing-controls__fields').scrollTop = 0; });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: join(screenshots, "drawing-narrow.png"), fullPage: true });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.evaluate(() => { window.drawingFixture.setLanguage("en"); window.drawingFixture.setTheme("dark"); });
     await page.evaluate(() => { document.querySelector('.drawing-body').scrollTop = 0; document.querySelector('.drawing-controls__fields').scrollTop = 0; });
-    const actionBounds = await menu("more").locator("summary").boundingBox();
+    const actionBounds = await cmd(menu("more"), "view.menu.toggle", { arg: "drawing_more" }).boundingBox();
     assert.ok(actionBounds && actionBounds.y >= 0 && actionBounds.y + actionBounds.height <= 900, "the drawing's commands stay in sight above it while settings scroll");
     await page.screenshot({ path: join(screenshots, "drawing-wide-dark.png"), fullPage: true });
     // Choosing another version is a disclosed, explicit action; the LIVE drawing needs no choice.
@@ -674,14 +676,14 @@ try {
     // Reuse drawing recipes, which reads the project's decisions when it opens, is covered by its own suite.
     for (const name of ["another", "more"]) {
       const word = menu(name);
-      if (!await word.evaluate(node => node.open)) await word.locator("summary").click();
+      if (!await word.evaluate(node => node.open)) await cmd(word, "view.menu.toggle", { arg: `drawing_${name}` }).click();
       await page.locator(".drawing-preview__viewport").click({ position: { x: 4, y: 4 } });
       assert.equal(await word.evaluate(node => node.open), false, `${name} closes on a click outside it`);
-      await word.locator("summary").click();
+      await cmd(word, "view.menu.toggle", { arg: `drawing_${name}` }).click();
       assert.equal(await word.evaluate(node => node.open), true);
       await page.keyboard.press("Escape");
       assert.equal(await word.evaluate(node => node.open), false, `${name} closes on Escape`);
-      assert.equal(await word.locator("summary").evaluate(node => node === document.activeElement), true, "focus returns to its word");
+      assert.equal(await cmd(word, "view.menu.toggle", { arg: `drawing_${name}` }).evaluate(node => node === document.activeElement), true, "focus returns to its word");
     }
   });
   await step("an imported 3DM draws from its retained asset and reopens without following HEAD", async () => {
@@ -695,7 +697,7 @@ try {
     await until(() => Promise.resolve(dimensionQueries.at(-1)), value => value?.sourceAssetRunId === externalAsset.runId, "external model units queried");
     assert.equal(dimensionQueries.at(-1).sourceAssetSha256, externalAsset.assetSha256);
     assert.equal(dimensionQueries.at(-1).stateDigest, undefined);
-    await page.getByRole("button", { name: "Generate cut plan", exact: true }).click();
+    await cmd(page, "drawing.plan.generate").click();
     await until(() => revision().inputValue(), value => value !== "", "external drawing saved");
     assert.deepEqual(requests.at(-1).sourceAsset, externalAsset);
     assert.equal(requests.at(-1).modelSource, undefined);
@@ -711,7 +713,7 @@ try {
     await page.evaluate(() => window.drawingFixture.setActive(true));
     await sourceRow('[data-follow="frozen"][data-status="current"]' + settled).waitFor();
     assert.equal(requests.length, count, "reopening an external drawing never rebinds the Working Head");
-    assert.equal(await page.getByText("Follow the current model again", { exact: true }).count(), 0);
+    assert.equal(await cmd(page, "drawing.recipe.follow_live", { includeHidden: true }).count(), 0);
     await page.getByLabel("Scale denominator (1 : n)", { exact: true }).fill("75");
     await until(() => revision().inputValue(), value => value !== saved, "external appearance revision saved");
     assert.deepEqual(requests.at(-1).sourceAsset, externalAsset);
@@ -726,7 +728,7 @@ try {
     await openMenu("another");
     assert.equal(await source().inputValue(), `asset:uploaded-skp:${"f".repeat(64)}`, "uploaded model selected");
     assert.equal(await source().locator("option").filter({ hasText: /^house\.skp$/ }).count(), 1);
-    await page.getByRole("button", { name: "Generate cut plan", exact: true }).click();
+    await cmd(page, "drawing.plan.generate").click();
     await until(() => revision().inputValue(), value => value !== "", "uploaded model drawing saved");
     assert.deepEqual(requests.at(-1).sourceAsset, { runId: "uploaded-skp", assetSha256: "f".repeat(64) });
     assert.equal(requests.at(-1).modelSource, undefined);
@@ -737,7 +739,7 @@ try {
     await scale.fill(await scale.inputValue() === "60" ? "65" : "60");
     await until(() => Promise.resolve(Boolean(release)), Boolean, "held project generation");
     await page.evaluate(() => window.drawingFixture.setProject("another-project"));
-    await page.getByRole("button", { name: "Generate cut plan", exact: true }).waitFor();
+    await cmd(page, "drawing.plan.generate").waitFor();
     release();
     await until(() => Promise.resolve(release === null), Boolean, "old response released");
     assert.equal(await revision().inputValue(), "");
@@ -750,7 +752,7 @@ try {
     assert.equal(await nameField.inputValue(), "", "a new cut plan does not reuse another drawing's name");
     await nameField.fill("Only the cut plan");
     await page.getByText("Optional; applies to the new cut plan, not a section perspective. Later revisions keep this name.", { exact: true }).waitFor();
-    await page.locator("details.drawing-section > summary").click();
+    await cmd(page, "drawing.section_perspective.toggle").click();
     const eyeHeight = page.getByLabel("Eye height above the lowest cut point (meter)", { exact: true });
     await until(() => eyeHeight.isEnabled(), Boolean, "the section form knows the model unit");
     assert.equal(await eyeHeight.inputValue(), "1.6", "the default eye is 1.6 m above the lowest cut point, in the model unit");
@@ -759,12 +761,12 @@ try {
     await page.getByLabel("Position (meter)", { exact: true }).fill("2.5");
     await page.getByRole("combobox", { name: "Look toward", exact: true }).selectOption("-");
     await eyeHeight.fill("");
-    await page.getByRole("button", { name: "Generate section perspective", exact: true }).click();
+    await cmd(page, "drawing.section_perspective.generate").click();
     assert.equal(sectionRequests.length, 0, "an empty section field is marked, never sent");
     assert.equal(await eyeHeight.evaluate(node => node.validity.valueMissing), true);
     await eyeHeight.fill("1.5");
     await page.getByLabel("Field of view (degrees)", { exact: true }).fill("60");
-    await page.getByRole("button", { name: "Generate section perspective", exact: true }).click();
+    await cmd(page, "drawing.section_perspective.generate").click();
     await until(() => Promise.resolve(sectionRequests.length), value => value === 1, "one section perspective request");
     const head = await page.evaluate(() => window.drawingFixture.head);
     assert.deepEqual(sectionRequests[0].modelSource, head === "stage-B" ? modelB : modelA);
@@ -777,11 +779,11 @@ try {
     await page.locator('.drawing-preview__viewport[data-ready="true"]').waitFor();
     await page.screenshot({ path: join(screenshots, "drawing-section-perspective.png"), fullPage: true });
     assert.equal(await page.getByLabel("Cut height (meter)", { exact: true }).count(), 0, "cut-plan appearance is not offered for it");
-    assert.equal(await menu("more").locator("button", { hasText: "Download SVG" }).count(), 0, "a section perspective has no SVG to download");
+    assert.equal(await cmd(menu("more"), "drawing.export.svg", { includeHidden: true }).count(), 0, "a section perspective has no SVG to download");
     assert.deepEqual(planOnlyCalls, [], "no cut-plan status or vector is asked for a section perspective");
     assert.equal(requests.length, generations, "no cut plan was generated");
     await page.evaluate(() => window.drawingFixture.setLanguage("zh-CN"));
-    await page.getByRole("button", { name: "生成剖透视", exact: true }).waitFor();
+    await waitForCommandLabel(cmd(page, "drawing.section_perspective.generate"), "生成剖透视");
     await page.evaluate(() => window.drawingFixture.setLanguage("en"));
   });
   await step("a section perspective from an imported SKP keeps its exact asset and warning on reopen", async () => {
@@ -791,8 +793,8 @@ try {
     await source().selectOption(`asset:${externalAsset.runId}:${externalAsset.assetSha256}`);
     await page.getByText("Layer Roof was skipped.", { exact: true }).waitFor();
     const before = sectionRequests.length;
-    const button = page.getByRole("button", { name: "Generate section perspective", exact: true });
-    if (!await button.isVisible()) await page.locator("details.drawing-section > summary").click();
+    const button = cmd(page, "drawing.section_perspective.generate");
+    if (!await button.isVisible()) await cmd(page, "drawing.section_perspective.toggle").click();
     await until(() => button.isEnabled(), Boolean, "imported model units resolved for section");
     await button.click();
     await until(() => Promise.resolve(sectionRequests.length), value => value === before + 1, "imported section saved");
@@ -837,18 +839,18 @@ try {
     await page.mouse.click(table.x, table.y);
     assert.equal(await objectChoice().inputValue(), "obj-table");
     const before = await revision().inputValue(), sent = requests.length;
-    await page.getByRole("button", { name: "Hide this object", exact: true }).click();
+    await cmd(page, "drawing.plan.hide_object").click();
     assert.equal(await drawn("obj-table").count(), 0, "the hidden object leaves the page at once");
     assert.equal(requests.length, sent, "before its revision is saved");
     await until(() => revision().inputValue(), value => value !== before, "hiding saved itself as a revision");
     assert.equal(requests.length, sent + 1); assert.deepEqual(requests.at(-1).hiddenObjectIds, ["obj-table"]);
     assert.equal(requests.at(-1).previousRevisionRef, legacyDocument.revisionRef);
-    await page.getByRole("button", { name: "Show again: Table · Oak", exact: true }).waitFor();
+    await cmd(page, "drawing.plan.show_object", { arg: "obj-table" }).waitFor();
     const another = page.locator("details.drawing-another");
-    if (!await another.evaluate(node => node.open)) await another.locator("summary").click();
+    if (!await another.evaluate(node => node.open)) await cmd(another, "view.menu.toggle", { arg: "drawing_another" }).click();
     await source().selectOption("stage-B");
     const hiddenRevision = await revision().inputValue();
-    await page.getByRole("button", { name: "Rebuild on this version", exact: true }).click();
+    await cmd(page, "drawing.recipe.rebuild").click();
     await until(() => revision().inputValue(), value => value !== hiddenRevision, "the rebuild opened");
     assert.equal(requests.length, sent + 2); assert.deepEqual(requests.at(-1).modelSource, modelB);
     assert.deepEqual(requests.at(-1).hiddenObjectIds, ["obj-table"], "the rebuild asks for the object to stay hidden");
@@ -860,7 +862,7 @@ try {
     assert.equal(await objectChoice().locator("option", { hasText: "Table" }).count(), 0);
     assert.equal(drives.length, 0, "hiding never proposes a design change");
     assert.deepEqual(await page.evaluate(() => window.drawingFixture.handoffs), []);
-    await page.getByRole("button", { name: "Show again: Table · Oak", exact: true }).click();
+    await cmd(page, "drawing.plan.show_object", { arg: "obj-table" }).click();
     await until(() => Promise.resolve(requests.length), value => value === sent + 3, "showing it again saved itself");
     assert.deepEqual(requests.at(-1).hiddenObjectIds, []);
     await drawn("obj-table").waitFor();
@@ -879,19 +881,19 @@ try {
     const sent = requests.length;
     await objectChoice().selectOption("obj-screen");
     assert.equal(await page.locator(".drawing-object-picked > strong").textContent(), "Screen · Steel · beyond");
-    await page.getByRole("button", { name: "Hide this object", exact: true }).click();
+    await cmd(page, "drawing.plan.hide_object").click();
     await until(() => Promise.resolve(requests.length), value => value === sent + 1, "hiding from the list saved a revision");
     assert.deepEqual(requests.at(-1).hiddenObjectIds, ["obj-screen"]); assert.equal(requests.at(-1).previousRevisionRef, dense.revisionRef);
     await until(() => page.getByText("Saving appearance…", { exact: true }).count(), value => value === 0, "the hidden object saved");
   });
   await step("a new drawing sends only the pens a person set and shows the ones it was drawn with", async () => {
     await revision().selectOption("");
-    const graphics = page.locator("details", { has: page.getByText("Linework and hatch", { exact: true }) });
-    if (!await graphics.evaluate(node => node.open)) await page.getByText("Linework and hatch", { exact: true }).click();
+    const graphics = page.locator("details", { has: cmd(page, "view.disclosure.toggle", { arg: "drawing_graphics", includeHidden: true }) });
+    if (!await graphics.evaluate(node => node.open)) await cmd(page, "view.disclosure.toggle", { arg: "drawing_graphics" }).click();
     assert.equal(await pen("Cut line (paper mm)").inputValue(), "");
     await pen("Cut line (paper mm)").fill("0.5");
     const sent = requests.length;
-    await page.getByRole("button", { name: "Generate cut plan", exact: true }).click();
+    await cmd(page, "drawing.plan.generate").click();
     await until(() => revision().inputValue(), value => value !== "", "the new drawing opened");
     assert.equal(requests.length, sent + 1);
     assert.equal(requests.at(-1).cutLineMm, 0.5, "the pen a person set is asked for");
@@ -921,7 +923,7 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "the offers fit a narrow screen");
     await page.screenshot({ path: join(screenshots, "drawing-recipe-offers-narrow.png") });
     await page.setViewportSize({ width: 1280, height: 900 });
-    await cutOffer().getByRole("button", { name: "Ignore", exact: true }).click();
+    await cmd(cutOffer(), "attention.answer_guess.ignore").click();
     await cutOffer().waitFor({ state: "detached" });
     assert.deepEqual(decisionCalls, [], "ignoring an offer writes nothing");
     // Another project and back: the Drawing opens anew, and the ignored offer stays ignored in this session.
@@ -941,7 +943,7 @@ try {
     await revision().selectOption(legacyKey);
     await drawn("obj-wall").first().waitFor({ state: "attached" });
     await objectChoice().selectOption("obj-wall");
-    await hatchOffer().getByRole("button", { name: "Save", exact: true }).click();
+    await cmd(hatchOffer(), "attention.answer_guess.save").click();
     await page.locator(".status-line").getByText("Saved: new drawings start from hatch spacing 4 mm.", { exact: true }).waitFor();
     assert.deepEqual(decisionCalls, ["POST"], "exactly one decision is written");
     assert.deepEqual(decisionRequests[0], { projectId: "drawing-project", rawLanguage: "Save as project recipe: 2 drawings set hatch spacing to 4 mm.",
@@ -952,16 +954,16 @@ try {
     await page.locator(".status-line").getByText("Picked Table · Oak · beyond", { exact: true }).waitFor();
     assert.equal(await page.getByText("Saved: new drawings start from hatch spacing 4 mm.", { exact: true }).count(), 0, "a new pick clears the note");
     await revision().selectOption("");
-    await page.getByRole("button", { name: "Generate cut plan", exact: true }).click();
+    await cmd(page, "drawing.plan.generate").click();
     await until(() => revision().inputValue(), value => value !== "", "a new drawing opened");
     assert.equal("hatchSpacingMm" in requests.at(-1), false, "a new drawing leaves the hatch spacing to the recipe");
-    const graphics = page.locator("details", { has: page.getByText("Linework and hatch", { exact: true }) });
-    if (!await graphics.evaluate(node => node.open)) await page.getByText("Linework and hatch", { exact: true }).click();
+    const graphics = page.locator("details", { has: cmd(page, "view.disclosure.toggle", { arg: "drawing_graphics", includeHidden: true }) });
+    if (!await graphics.evaluate(node => node.open)) await cmd(page, "view.disclosure.toggle", { arg: "drawing_graphics" }).click();
     assert.equal(await pen("Hatch spacing (paper mm)").inputValue(), "4", "the saved recipe is what the new drawing was drawn with");
     assert.deepEqual(decisionCalls, ["POST"]);
   });
   await step("the linework controls save an open drawing's values as the project recipe, superseding a value it changes", async () => {
-    const saveRecipe = page.getByRole("button", { name: "Save as project recipe", exact: true });
+    const saveRecipe = cmd(page, "drawing.plan.save_recipe");
     const [, , shownRef] = JSON.parse(await revision().inputValue());
     const shown = await page.evaluate(ref => window.drawingFixture.documents.find(d => d.revisionRef === ref), shownRef);
     await saveRecipe.click();
@@ -1019,15 +1021,15 @@ try {
     assert.equal(await depth.inputValue(), "3");
     for (const label of ["Cut height (meter)", "View bottom (meter)"])
       assert.equal(await appearance.getByLabel(label, { exact: true }).count(), 0, `${label} is a plan's`);
-    assert.equal(await page.getByRole("button", { name: "Add person", exact: true }).count(), 0, "plan symbols are a plan's");
+    assert.equal(await cmd(page, "drawing.entourage.add_person").count(), 0, "plan symbols are a plan's");
     assert.equal(await page.locator(".drawing-dressing-overlay").count(), 0);
     assert.equal(await page.getByRole("group", { name: "Saved dimensions", exact: true }).count(), 0);
     await depth.fill("4.5");
     const deeper = await until(() => Promise.resolve(requests[before + 1]), Boolean, "the depth saved itself");
     assert.deepEqual([asked(deeper), deeper.depth, deeper.previousRevisionRef], [["depth"], 4.5, `revision-${before + 1}`]);
     await until(() => revision().inputValue(), value => JSON.parse(value)[2] === `revision-${before + 2}`, "the deeper section opened");
-    const graphics = page.locator("details", { has: page.getByText("Linework and hatch", { exact: true }) });
-    if (!await graphics.evaluate(node => node.open)) await page.getByText("Linework and hatch", { exact: true }).click();
+    const graphics = page.locator("details", { has: cmd(page, "view.disclosure.toggle", { arg: "drawing_graphics", includeHidden: true }) });
+    if (!await graphics.evaluate(node => node.open)) await cmd(page, "view.disclosure.toggle", { arg: "drawing_graphics" }).click();
     await pen("Cut line (paper mm)").fill("0.5");
     const inked = await until(() => Promise.resolve(requests[before + 2]), Boolean, "the pen saved itself");
     assert.deepEqual([asked(inked), inked.cutLineMm], [["cutLineMm"], .5], "only the changed pen is asked for");
@@ -1040,7 +1042,7 @@ try {
   await step("a genuinely zero-Stage project draws its retained unaccepted Working Head", async () => {
     const before = requests.length;
     await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/?lang=en&zeroStage=1`);
-    const generate = page.getByRole("button", { name: "Generate cut plan", exact: true });
+    const generate = cmd(page, "drawing.plan.generate");
     await until(() => generate.isEnabled(), Boolean, "retained Working Head enables drawing without Stages");
     assert.equal(await revision().inputValue(), "");
     assert.equal(await revision().locator("option").count(), 1);

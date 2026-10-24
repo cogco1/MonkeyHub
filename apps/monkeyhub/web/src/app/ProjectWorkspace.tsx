@@ -280,7 +280,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
 
   if (server.status === "failed") return <div className="project-workspace"><div className="refusal" role="alert">
     <ErrorPanel error={server.error} what="GET /api/protocol" />
-    <button type="button" onClick={() => setAttempt((value) => value + 1)}>Retry</button>
+    <button data-command="view.notice.retry" data-command-arg="project_runtime" type="button" onClick={() => setAttempt((value) => value + 1)}>Retry</button>
   </div></div>;
   if (server.status !== "ready") return <div className="project-workspace"><LoadingOverlay mode="boot" status="Project Runtime" /></div>;
   // What is on screen: the comparison covers the surface it was opened over, which stays mounted.

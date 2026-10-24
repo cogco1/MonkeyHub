@@ -8,6 +8,7 @@ import { createServer } from "vite";
 import react from "@vitejs/plugin-react";
 import { createRetainedModelFixture } from "./retainedModelFixture.mjs";
 import { workspaceFixture } from "./workspaceFixture.mjs";
+import { cmd } from "./commandLocator.mjs";
 
 /**
  * GH-355: the retained-model notification regressions, on the real ProjectWorkspace,
@@ -52,10 +53,10 @@ const cacheDir = await mkdtemp(path.join(tmpdir(), "monkeyhub-version-notificati
 const screenshotDir = await mkdtemp(path.join(tmpdir(), "monkeyhub-version-notifications-review-"));
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 const state = () => page.evaluate(() => window.__versionWorkspace?.());
-const versions = () => page.locator("button[aria-controls='stage-versions-panel']");
-const more = () => page.locator("button[aria-controls='stage-more-menu']");
-const readyNotice = () => page.locator(".stage-chip__ready").filter({ hasText: "1 option ready" });
-const choice = () => page.locator(`[role="treeitem"][data-node=${JSON.stringify(`candidate:${B.runId}`)}]`);
+const versions = () => cmd(page.locator(".project-bar"), "design.go_to_step.versions", { includeHidden: true });
+const more = () => cmd(page, "view.menu.toggle", { arg: "modeling_more", includeHidden: true });
+const readyNotice = () => cmd(page, "attention.decide.show_ready", { includeHidden: true }).filter({ hasText: "1 option ready" });
+const choice = () => cmd(page, "view.design_tree.select_row", { arg: `candidate:${B.runId}`, includeHidden: true });
 const listCounts = () => Object.fromEntries(listPaths.map((name) => [name,
   requests.filter((request) => request.path === name && request.completed).length]));
 async function until(read, accept, message, timeout = 30_000) {
@@ -148,14 +149,14 @@ async function showVersions(open) {
   await painted();
 }
 async function backToModel() {
-  await page.locator(".stage-chip[aria-pressed='true']").click();
+  await cmd(page, "view.design_history.toggle").and(page.locator("[aria-pressed='true']")).click();
   await versions().waitFor();
   await painted();
 }
 async function assertChoices() {
-  await page.locator(".stage-chip").click();
+  await cmd(page, "view.design_history.toggle").click();
   await page.locator(".design-tree").waitFor();
-  await page.getByRole("button", { name: "List", exact: true }).click();
+  await cmd(page, "view.design_tree.list").click();
   await choice().waitFor();
   assert.equal(await choice().getAttribute("data-kind"), "candidate");
   await backToModel();
@@ -355,7 +356,7 @@ window.addEventListener("pagehide", () => { stopRelay(); stream.close(); project
     }
     await readyNotice().click();
     await page.locator(`.design-tree-inspector[data-node=${JSON.stringify(`candidate:${B.runId}`)}]`).waitFor();
-    await page.getByRole("button", { name: "List", exact: true }).click();
+    await cmd(page, "view.design_tree.list").click();
     await choice().waitFor();
     assert.equal(await choice().getAttribute("aria-selected"), "true");
     assert.equal(await readyNotice().count(), 0, "Inspecting the ready candidate acknowledges it without viewing or continuing it");
@@ -394,7 +395,7 @@ window.addEventListener("pagehide", () => { stopRelay(); stream.close(); project
     // A real view control first proves the camera is live. No fixed coordinates,
     // tree labels, folds, sibling order or total notice count enters the assertion.
     await more().click();
-    await page.locator("#stage-more-menu").getByRole("button", { name: "Front", exact: true }).click();
+    await cmd(page.locator("#stage-more-menu"), "view.model_camera.front").click();
     await more().click();
     await painted();
     const front = await preservedState();
@@ -403,13 +404,13 @@ window.addEventListener("pagehide", () => { stopRelay(); stream.close(); project
       await page.setViewportSize(viewport); await painted();
       const layout = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
       assert.ok(layout.document <= layout.viewport + 1 && layout.body <= layout.viewport + 1, `No horizontal overflow: ${JSON.stringify(layout)}`);
-      for (const control of [versions(), more(), page.locator("button[aria-controls='model-tools-more']")]) {
+      for (const control of [versions(), more(), cmd(page, "view.menu.toggle", { arg: "model_tools_more", includeHidden: true })]) {
         await control.click({ trial: true });
         const box = await control.boundingBox();
         assert.ok(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width + 1 && box.y + box.height <= viewport.height + 1);
       }
       await more().click();
-      await page.locator("#stage-more-menu").getByRole("button", { name: "Front", exact: true }).click({ trial: true });
+      await cmd(page.locator("#stage-more-menu"), "view.model_camera.front").click({ trial: true });
       await more().click();
       assert.deepEqual(await preservedState(), front);
       const screenshot = path.join(screenshotDir, `model-${viewport.width}x${viewport.height}.png`);
@@ -425,7 +426,7 @@ window.addEventListener("pagehide", () => { stopRelay(); stream.close(); project
     assert.ok(native?.fileName);
     // A native export remains reachable in the actual Versions inspector. Open
     // its enclosing details without depending on their labels or fold counts.
-    const exportButton = page.locator("#stage-versions-panel button.vcard__export").filter({ has: page.locator(`.vcard__filename`, { hasText: native.fileName }) });
+    const exportButton = cmd(page.locator("#stage-versions-panel"), "view.old_results.open", { includeHidden: true }).filter({ has: page.locator(`.vcard__filename`, { hasText: native.fileName }) });
     const folds = exportButton.locator("xpath=ancestor::details");
     for (let index = 0; index < await folds.count(); index++) {
       const fold = folds.nth(index);
