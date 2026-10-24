@@ -100,7 +100,7 @@ const seedCards = () => [
     evidence: [{ key: "floor", label: "Floor", labelZh: "楼板", text: "V17 is 40 mm thinner", textZh: "V17 薄 40 mm", status: "ok" }],
     options: [answer("v16", "Keep V16", "留 V16", "V17 归档"), answer("v17", "Keep V17", "留 V17", "V16 归档", { recommended: true, undoable: true })],
     recommendation: { optionId: "v17", reason: "Thinner, and every check passes", reasonZh: "更薄，检查都过了" },
-    opens: [{ commandId: "chat.open_conversation", args: { sessionId: "a1" } }, { commandId: "candidate.compare", args: { runIds: ["v16", "v17"] } }] }),
+    opens: [{ commandId: "chat.open_conversation", args: { sessionId: "a1" } }, { commandId: "candidate.compare.decide", args: { runIds: ["v16", "v17"] } }] }),
   queueCard("guess", "B", { channel: "guess", kind: "ask", title: "Which side for the entrance", titleZh: "入口放在哪边",
     options: [answer("south", "South", "南边", "按南边入口改"), answer("east", "East", "东边", "按东边入口改")] }),
   queueCard("notice", "A", { channel: "notice", kind: "info", title: "The section is ready", titleZh: "剖面图出好了" }),
@@ -120,6 +120,8 @@ const route = async (handler) => {
   // The page the tile opens on the Board has no comments yet.
   if (url.pathname.endsWith("/api/document-comments")) return handler.fulfill({ json: { comments: [], kind: "document",
     runId: url.searchParams.get("runId") ?? "run-v17", revisionRef: url.searchParams.get("revisionRef") } });
+  // The comparison a decision card opens reads the project's candidates; this project has none retained (2-5).
+  if (/\/studio\/api\/runtime$/.test(url.pathname)) return handler.fulfill({ json: { projectId: "A", candidates: [] } });
   if (await workspace.handle(handler, url)) return;
   const json = (body, status = 200) => handler.fulfill({ json: body, status });
   const data = () => request.postDataJSON();
@@ -535,15 +537,25 @@ try {
   await decide.getByText("更薄，检查都过了").waitFor();
   await decide.getByText("V17 薄 40 mm").waitFor();
   assert.equal(await decide.getByRole("button", { name: "打开对话" }).getAttribute("aria-disabled"), null, "a registered command it opens is offered");
-  assert.equal(await decide.locator(".attention-card__opens button").count(), 1, "one the command tree does not know yet is left out");
+  assert.equal(await decide.getByRole("button", { name: "比较并决定" }).getAttribute("aria-disabled"), null, "its two results can be compared");
   await shoot(queuePage, "attention-queue-desktop-light");
   // Later keeps a card in the queue, put off, and takes it out of the count.
   await queued("入口放在哪边").getByRole("button", { name: "稍后" }).click();
   await queued("入口放在哪边").getByRole("button", { name: "找回" }).waitFor();
   await queuePage.waitForFunction(() => ![...document.querySelectorAll(".attention-shell__projects .attention-shell__row")]
     .find((row) => row.textContent.includes("Housing"))?.querySelector(".attention-shell__count"));
-  // An answer goes to the Hub, which carries it out; the card moves to Handled, where it can be undone.
-  await decide.locator(".attention-card__answer").first().click();
+  // 比较并决定 (2-5): the card opens its two results side by side with itself under them. Answered there, as on
+  // this page, it closes the comparison and the Attention page is back; the answer goes to the Hub, which carries it out.
+  await decide.getByRole("button", { name: "比较并决定" }).click();
+  const comparing = queuePage.locator('[data-project-surface="compare"]');
+  const under = comparing.locator(".model-compare__decide .attention-card");
+  await under.filter({ hasText: "V16 和 V17 留哪个" }).waitFor();
+  assert.equal(await under.locator(".attention-card__opens").count(), 0, "the card under its comparison does not offer it again");
+  await under.getByText("V17 薄 40 mm").waitFor();
+  await under.locator(".attention-card__answer").first().click();
+  await queuePage.waitForFunction(() => document.querySelector(".menu-tab[aria-pressed=true]")?.textContent === "关注");
+  await comparing.waitFor({ state: "detached" });
+  // The card moves to Handled, where it can be undone.
   await decide.waitFor({ state: "detached" });
   assert.deepEqual(attentionActions.slice(0, 2), [["later", "att_guess", null], ["resolve", "att_decide", "v17"]]);
   await queuePage.locator(".attention-shell__rail-item").filter({ hasText: "已处理" }).click();
