@@ -182,4 +182,3 @@ export function ComparisonDecision({ cardId, project, onDone }: { cardId: string
   }, [pending]);
   return card ? <AttentionCardView card={card} project={project} comparing /> : null;
 }
-
