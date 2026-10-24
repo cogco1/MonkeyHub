@@ -36,7 +36,7 @@ class Clock:
         self.now += timedelta(**delta)
 
 
-def option(option_id: str, label: str, command: str = "design.go_to_step", **args) -> dict:
+def option(option_id: str, label: str, command: str = "design.go_to_step.continue", **args) -> dict:
     return {"id": option_id, "label": label, "consequence": f"{label}，可以撤销",
             "action": {"commandId": command, "args": args}, "undoable": True}
 
@@ -187,7 +187,7 @@ class AttentionStoreTests(unittest.TestCase):
         card = self.store.upsert("thi-hemp", self.project_dir, ab_draft()).id
         self.store.begin(card, "b")
         self.store.settle(card, Resolution(optionId="b", by="person", at=self.clock.now.isoformat(), undo={
-            "action": {"commandId": "design.go_to_step", "args": {"runId": "run-a"}}}))
+            "action": {"commandId": "design.go_to_step.continue", "args": {"runId": "run-a"}}}))
         self.assertEqual(self.store.upsert("thi-hemp", self.project_dir, ab_draft()).id, card, "the same question")
         third = self.store.upsert("thi-hemp", self.project_dir, ab_draft(runs=("run-a", "run-c")))
         self.assertNotEqual(third.id, card)
@@ -273,7 +273,7 @@ class AttentionStoreTests(unittest.TestCase):
                          "a failed answer leaves the card where it was")
 
         self.store.begin(card, "b")
-        undo = {"action": {"commandId": "design.go_to_step", "args": {"runId": "run-a"}},
+        undo = {"action": {"commandId": "design.go_to_step.continue", "args": {"runId": "run-a"}},
                 "precondition": {"currentRunId": "run-b"}}
         done = self.store.settle(card, Resolution(optionId="b", by="person", at=self.clock.now.isoformat(),
                                                   receipt={"runId": "run-b"}, undo=undo))
