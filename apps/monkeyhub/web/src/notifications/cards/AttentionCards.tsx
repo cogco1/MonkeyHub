@@ -6,7 +6,7 @@ import type { MessageKey } from "../../i18n/messages.en";
 import { useT } from "../../i18n/useT";
 import { openCard } from "../openChat";
 import { dismissCard, laterCard, queueSnapshot, reopenCard, resolveCard, subscribeQueue, undoCard, type QueueFailure } from "../queue";
-import { chosenOption, isPending, needsWords, orderedOptions, say } from "./cardText";
+import { answersKey, chosenOption, COMPARE_DECIDE, comparedRuns, isPending, needsWords, orderedOptions, say } from "./cardText";
 import type { AttentionCard, CardActionResult, CommandRef } from "./types";
 import "./cards.css";
 
@@ -32,6 +32,8 @@ interface CardProps {
   fresh?: boolean;
   /** Shown under the comparison it opened (2-5): the way to open that comparison is left out. */
   comparing?: boolean;
+  /** The comparison above it shows other results than the card now weighs: no answer until it is opened again. */
+  stale?: boolean;
 }
 
 /** One card's pending action and the Hub's refusal of the last one, kept with the card. */
@@ -68,7 +70,7 @@ function Opens({ refs, cardId }: { refs: readonly CommandRef[]; cardId: string }
   })}</div>;
 }
 
-function CardFrame({ card, project, fresh = false, compact = false, comparing = false, children }: CardProps & { compact?: boolean; children?: ReactNode }) {
+function CardFrame({ card, project, fresh = false, compact = false, comparing = false, stale = false, children }: CardProps & { compact?: boolean; children?: ReactNode }) {
   const { language } = usePreferences();
   const t = useT();
   const { busy, failure, act } = useCardActions();
@@ -99,7 +101,7 @@ function CardFrame({ card, project, fresh = false, compact = false, comparing = 
     {pending && card.options.length > 0 && <div className="attention-card__answers" role="group" aria-label={t("cards.answers")}>
       {orderedOptions(card).map((option) => <button key={option.id} type="button" data-option={option.id} data-command-view
         className={option.recommended ? "btn btn--primary attention-card__answer" : "btn attention-card__answer"}
-        disabled={busy !== null || (needsWords(option) && !words.trim())}
+        disabled={busy !== null || stale || (needsWords(option) && !words.trim())}
         aria-describedby={`attention-card-${card.id}-${option.id}`}
         onClick={() => act(option.id, async () => {
           const result = await resolveCard(card.id, option.id, needsWords(option) ? words.trim() : undefined);
@@ -166,19 +168,33 @@ export function AttentionCardView(props: CardProps) {
 
 /**
  * 比较并决定 (2-5): the decision card under the comparison it opened, answered there as on the Attention page. Once
- * it is answered (or put off, set aside), the comparison has done its work and closes.
+ * it is answered (or put off, set aside), the comparison has done its work and closes. The comparison shows `runIds`
+ * and the card's answers as they were (`answers`, answersKey); when the card changes (a new result in its Study),
+ * its answers wait while the comparison opens again over what the card weighs now, or closes when it weighs no pair.
  */
-export function ComparisonDecision({ cardId, project, onDone }: { cardId: string; project: string | null; onDone(): void }) {
+export function ComparisonDecision({ cardId, project, runIds, answers, onDone }: {
+  cardId: string; project: string | null; runIds: readonly string[]; answers: string; onDone(): void;
+}) {
   const queue = useSyncExternalStore(subscribeQueue, queueSnapshot);
+  const { run } = useCommands();
   const card = queue.cards.find((item) => item.id === cardId) ?? null;
   const done = useRef(onDone);
   done.current = onDone;
-  const closed = useRef(false), seen = useRef(false);
+  const closed = useRef(false), seen = useRef(false), reopened = useRef<string | null>(null);
   // Answered, put off, or gone from the queue after it was there: the decision is made, so the comparison has done its work.
   const pending = card ? isPending(card) : false;
   if (card && pending) seen.current = true;
   useEffect(() => {
     if (seen.current && !pending && !closed.current) { closed.current = true; done.current(); }
   }, [pending]);
-  return card ? <AttentionCardView card={card} project={project} comparing /> : null;
+  const now = card ? comparedRuns(card) : [];
+  const nowKey = card ? JSON.stringify([now, answersKey(card)]) : null;
+  const stale = Boolean(card && pending && nowKey !== JSON.stringify([runIds, answers]));
+  useEffect(() => {
+    if (!stale || !nowKey || reopened.current === nowKey || closed.current) return;
+    reopened.current = nowKey;
+    if (now.length < 2) { closed.current = true; done.current(); return; }
+    run(COMPARE_DECIDE, "card", { args: { runIds: now, cardId } });
+  }, [stale, nowKey]);
+  return card ? <AttentionCardView card={card} project={project} comparing stale={stale} /> : null;
 }

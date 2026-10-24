@@ -26,6 +26,19 @@ export function chosenOption(card: Pick<AttentionCard, "options" | "resolution">
   return id ? card.options.find((option) => option.id === id) ?? null : null;
 }
 
+/** The command that opens a decision card's results side by side, the card under them (2-5). */
+export const COMPARE_DECIDE = "candidate.compare.decide";
+
+/** The runs a decision card opens side by side now: the first is set against the last. */
+export function comparedRuns(card: Pick<AttentionCard, "opens">): string[] {
+  const runIds = card.opens.find((ref) => ref.commandId === COMPARE_DECIDE)?.args.runIds;
+  return Array.isArray(runIds) ? runIds.filter((value) => typeof value === "string" && value.length > 0) : [];
+}
+
+/** What each answer of a card does: when it changes, an answer read beside the old comparison would do something else. */
+export const answersKey = (card: Pick<AttentionCard, "options">) =>
+  JSON.stringify(card.options.map((option) => [option.id, option.action.commandId, option.action.args]));
+
 /** Cards waiting in a project; null while the queue's counts are not known. */
 export function pendingFor(summary: AttentionSummary | null, projectDir: string): number | null {
   if (!summary) return null;
