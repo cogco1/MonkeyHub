@@ -1306,6 +1306,7 @@ export const chatCopy = {
     previewImage: "放大图片", download: "下载", imageLoading: "正在加载图片…", imageFailed: "图片加载失败，仍可下载文件。", openDocument: "打开文档",
     filesTitle: "本轮文件", fileCount: (count: number) => `${count} 个文件`,
     fileDetails: (count: number) => count ? `技术细节与其他 ${count} 个文件` : "技术细节",
+    moreFiles: (count: number) => `其他 ${count} 个文件`,
     filePage: (page: number) => `第 ${page} 页`, fileReference: (index: number) => `条目 ${index}`,
     // #253：画板交来的图片讨论，以及每张图片在消息中的角色。
     renderContextTitle: "图片讨论", renderContextNext: "随下一条消息发送；之后每次更正也会带上，直到你移除。",

@@ -596,6 +596,19 @@ const railWidth = () => page.evaluate(() => document.querySelector(".chat-rail")
 const settingsSaved = () => page.waitForFunction(() => document.querySelector("#settings-save-state")?.dataset.state === "saved");
 // #328: Settings is paged; each page opens from the list beside it.
 const settingsPage = (name) => page.getByRole("dialog").getByRole("tab", { name, exact: true }).click();
+/** 2-7: technical details, raw lines and the page's address show in developer mode, switched in Hub settings. */
+async function setDeveloperMode(on) {
+  await page.getByRole("button", { name: /^(Hub settings|Hub 设置)$/ }).first().click();
+  const settings = page.locator("dialog.chat-dialog--settings");
+  await settings.locator("#settings-tab-workspace").click();
+  const advanced = settings.locator("details.advanced");
+  const wasOpen = await advanced.evaluate((element) => element.open);
+  if (!wasOpen) await advanced.locator(":scope > summary").click();
+  if (on) await settings.locator("#developer-mode").check(); else await settings.locator("#developer-mode").uncheck();
+  if (!wasOpen) await advanced.locator(":scope > summary").click();
+  await page.keyboard.press("Escape");
+  await settings.waitFor({ state: "hidden" });
+}
 const boxOf = (selector) => page.evaluate((value) => {
   const node = document.querySelector(value);
   return node ? node.getBoundingClientRect().width : 0;
@@ -1296,6 +1309,8 @@ async function suggestionCards() {
   assert.equal(await card.locator('[data-suggestion-action="accept"]').count(), 1, "one recommended execution action per card");
   assert.equal(await card.locator(".chat-suggestion__estimates").count(), 0, "unknown estimates are not shown as figures");
   const details = card.locator(".chat-card__details");
+  assert.equal(await details.count(), 0, "outside developer mode the card says only what it offers");
+  await setDeveloperMode(true);
   assert.equal(await details.count(), 1, "rationale and method are progressively disclosed");
   assert.equal(await details.getAttribute("open"), null);
   assert.equal(await card.getByText("To be assessed").first().isVisible(), false, "unknown effort waits in the folded details");
@@ -1307,6 +1322,7 @@ async function suggestionCards() {
     ["Estimated time · To be assessed", "Estimated cost · To be assessed"], "unknown effort and cost remain unknown");
   for (const text of [...available.suggestion.tools, ...available.suggestion.deliverables]) assert.ok((await card.innerText()).includes(text));
   await details.first().locator("summary").click();
+  await setDeveloperMode(false);
   assert.equal(postWrites().length, before, "reading a recommendation does not execute it");
 
   // Adjust keeps an unfinished draft and its attachments, and never sends for the architect.
@@ -1534,7 +1550,7 @@ async function conversationCards() {
   assert.equal(await files.getByText("revision-2", { exact: true }).isVisible(), false, "raw bindings stay folded");
   assert.equal(await files.getByText("notes.txt", { exact: true }).isVisible(), false);
   const detailsSummary = details.locator(":scope > summary");
-  assert.equal(await detailsSummary.innerText(), "Technical details and 4 more files");
+  assert.equal(await detailsSummary.innerText(), "4 more files");
   await detailsSummary.focus();
   await page.keyboard.press("Enter");
   await files.getByText("notes.txt", { exact: true }).waitFor();
@@ -1544,6 +1560,13 @@ async function conversationCards() {
   assert.deepEqual(await rows.locator(".chat-file-row__actions a").evaluateAll((links) => links.map((link) => link.getAttribute("href"))), [
     `${route(0)}?download=true`, `${route(2)}?download=true`, `${route(3)}?download=true`, `${route(4)}?download=true`,
     `/api/chat/sessions/${session.id}/attachments/cards-facade`, `/api/chat/sessions/${session.id}/attachments/cards-notes`]);
+  for (const binding of ["document-run", sha("a"), "revision-1", "revision-2"]) {
+    assert.equal(await files.getByText(binding, { exact: true }).count(), 0, `${binding} waits for developer mode`);
+  }
+  // Developer mode stays on through the result ids and the CLI's lines below.
+  await setDeveloperMode(true);
+  assert.equal(await detailsSummary.innerText(), "Technical details and 4 more files");
+  if (await details.getAttribute("open") === null) await detailsSummary.click();
   for (const binding of ["document-run", sha("a"), "revision-1", "revision-2"]) await files.getByText(binding, { exact: true }).first().waitFor();
   // A document image previews from its own route; its dialog downloads the same file.
   await files.getByRole("button", { name: "Enlarge image: section.png", exact: true }).click();
@@ -1601,6 +1624,10 @@ async function conversationCards() {
   await technical.getByText("studio_request · GET /api/jobs/job-2 · completed", { exact: true }).waitFor();
   await process.locator(".chat-process__row").click();
   assert.equal(await process.locator(".chat-process__body").count(), 0);
+  await setDeveloperMode(false);
+  await process.locator(".chat-process__row").click();
+  assert.equal(await process.locator(".chat-process__technical").count(), 0, "outside developer mode a turn shows its steps in words only");
+  await process.locator(".chat-process__row").click();
 
   const layout = (locator) => locator.evaluate((node) => ({ card: node.scrollWidth > node.clientWidth + 1,
     page: document.documentElement.scrollWidth > window.innerWidth + 1 }));
@@ -2538,6 +2565,7 @@ try {
     /^Working · \d+:\d{2} · Prepare to read the model state… · 3 steps · 1 failed$/);
   assert.equal(await firstProcess.locator(".chat-process__row").getAttribute("aria-expanded"), "false", "a running turn stays folded");
   assert.equal(await page.getByText("studio_request · POST /api/issue · failed").count(), 0, "no raw request line in the conversation");
+  await setDeveloperMode(true);
   await firstProcess.locator(".chat-process__row").click();
   assert.deepEqual(await firstProcess.locator(".chat-process__steps li > span:last-child").allInnerTexts(),
     ["Prepare to read the model state", "Update project data · failed", "Check progress"]);
@@ -2547,6 +2575,7 @@ try {
   await page.getByText("HubFailure(422): This action is not exposed to the chat.").waitFor();
   await firstProcess.locator(".chat-process__row").click();
   assert.equal(await firstProcess.locator(".chat-process__body").count(), 0, "folding leaves nothing behind");
+  await setDeveloperMode(false);
 
   // The agent's permission choices appear in its activity row and wait for an
   // actual choice. Repeated clicks cannot answer the same request twice.
@@ -2748,13 +2777,19 @@ try {
   assert.equal(await page.getByText(origin, { exact: false }).count(), 0, "no raw tool URL is on screen");
   await page.getByRole("button", { name: /Project A/ }).last().click();
   const connection = page.getByRole("dialog", { name: "Project" });
-  await connection.getByText("Connection details").waitFor();
-  assert.equal(await connection.locator("#tool-url").isVisible(), false, "the address stays folded away");
-  await connection.getByText("Connection details").click();
-  assert.match(await connection.locator("#tool-url").inputValue(), /runtimeId=/);
+  await connection.getByRole("button", { name: "Reload page" }).waitFor();
+  assert.equal(await connection.getByText("Connection details").count(), 0);
+  assert.equal(await connection.locator("#tool-url").count(), 0, "the address is for developer mode");
   await connection.getByRole("button", { name: "Reload page" }).click();
   await connection.getByRole("button", { name: "Close" }).click();
   await waitWorkspace();
+  await setDeveloperMode(true);
+  await page.getByRole("button", { name: /Project A/ }).last().click();
+  assert.equal(await connection.locator("#tool-url").isVisible(), false, "the address stays folded away");
+  await connection.getByText("Connection details").click();
+  assert.match(await connection.locator("#tool-url").inputValue(), /runtimeId=/);
+  await connection.getByRole("button", { name: "Close" }).click();
+  await setDeveloperMode(false);
 
   // A — dragging really moves the boundary: the conversation and the tool page
   // both change width, and the conversation keeps its floor. Beside a workspace the
@@ -3273,7 +3308,6 @@ try {
   const beforeRefreshBytes = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
   await page.getByRole("button", { name: /Project B/ }).last().click();
   const refreshConnection = page.getByRole("dialog", { name: "Project", exact: true });
-  await refreshConnection.getByText("Connection details").click();
   const refreshedListing = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/studio/api/artifacts"));
   await refreshConnection.getByRole("button", { name: "Reload page", exact: true }).click();
   await refreshedListing;
@@ -3417,10 +3451,15 @@ try {
   assert.ok(writes.slice(beforeCrash).every(([, pathname]) => pathname === "/api/runtime/projects/open" || pathname.endsWith("/recover")));
   await page.screenshot({ path: path.join(temporary, "runtime-recovered.png") });
   await page.getByRole("button", { name: /Project B/ }).last().click();
-  // Completed operations are recovery details, disclosed on request (#271).
+  // Completed operations are recovery details (#271): a record, shown in developer mode.
+  assert.equal(await page.getByRole("dialog", { name: "Project", exact: true }).getByText("Recovery details", { exact: true }).count(), 0);
+  await page.getByRole("dialog", { name: "Project", exact: true }).getByRole("button", { name: "Close", exact: true }).click();
+  await setDeveloperMode(true);
+  await page.getByRole("button", { name: /Project B/ }).last().click();
   await page.getByRole("dialog", { name: "Project", exact: true }).getByText("Recovery details", { exact: true }).click();
   await page.getByRole("dialog", { name: "Project", exact: true }).getByText("Committed", { exact: true }).waitFor();
   await page.getByRole("dialog", { name: "Project", exact: true }).getByRole("button", { name: "Close", exact: true }).click();
+  await setDeveloperMode(false);
   const beforeReconnect = writes.length;
   allowRuntimeEvents = false;
   for (const stream of streams) stream.end();
@@ -3466,6 +3505,8 @@ try {
   const summary = await banner.locator("p").first().innerText();
   assert.equal(summary, "The current model is not available through Claude Code. Choose another model.");
   assert.ok(!summary.includes("{"), `no JSON body is used as the message: ${summary}`);
+  assert.equal(await banner.locator("pre").count(), 0, "the technical text is for developer mode");
+  await setDeveloperMode(true);
   assert.equal(await banner.locator("pre").isVisible(), false, "the technical detail stays folded away");
   await banner.getByText("Technical details").click();
   const technical = await banner.locator("pre").innerText();
@@ -3805,12 +3846,14 @@ try {
   await readingTurn.locator(".chat-process__current").filter({ hasText: "Look through files" }).waitFor();
   assert.match(await readingTurn.locator(".chat-process__row").innerText(), /4 steps/);
   assert.equal(await readingTurn.locator(".chat-process__body").count(), 0);
+  await setDeveloperMode(true);
   await readingTurn.locator(".chat-process__row").click();
   const toolDetails = readingTurn.locator(".chat-process__technical");
   assert.equal(await toolDetails.getAttribute("open"), null);
   await toolDetails.locator("summary").click();
   assert.equal(await toolDetails.locator("li").filter({ hasText: "Read project files · in_progress" }).locator("pre").innerText(), "Synthetic tool diagnostics");
   await readingTurn.locator(".chat-process__row").click();
+  await setDeveloperMode(false);
   publicProgress.content += "\nThe opening comparison is ready to review.";
   publicProgress.status = "complete";
   emitRuntime();
@@ -4087,6 +4130,7 @@ try {
   assert.equal(await lastRow.getAttribute("aria-expanded"), "false", "a finished turn starts folded");
   await page.locator(".chat-message--assistant").filter({ hasText: "revision 12" }).waitFor();
   assert.equal(await page.getByText("studio_request · GET /api/board · completed").count(), 0, "raw request lines stay out of the conversation");
+  await setDeveloperMode(true);
   const rowTop = () => lastRow.evaluate((node) => node.getBoundingClientRect().top);
   const beforeOpen = await rowTop();
   await lastRow.click();
@@ -4104,6 +4148,7 @@ try {
   assert.equal(await lastTurn.locator(".chat-process__body").count(), 0, "folding leaves no space behind");
   assert.ok(Math.abs(await rowTop() - beforeFold) < 1 || await longList.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight < 2),
     "folding keeps the row in place unless the list ends above it");
+  await setDeveloperMode(false);
   // A turn in the middle of the conversation opens and folds in place as well.
   const middleRow = page.locator(".chat-process").nth(5).locator(".chat-process__row");
   await middleRow.evaluate((node) => node.scrollIntoView({ block: "center", behavior: "instant" }));
