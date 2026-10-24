@@ -14,7 +14,7 @@ import { createRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, us
 import type { StudioApiError } from "../../api/project-runtime/client";
 import type { DocumentAnnotationRefDto, DocumentVisualInputDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/project-runtime/generated";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
-import { ErrorPanel } from "../../app/ErrorPanel";
+import { ErrorPanel, PlainFailure } from "../../app/ErrorPanel";
 import { designObjectLabel } from "../../app/format";
 import type { EvidenceTab } from "../../app/evidence";
 import { LoadingOverlay } from "../../app/LoadingOverlay";
@@ -1601,7 +1601,7 @@ export function Stage({
           {t("stage.section.drawn", { fileName: sectionDrawing.fileName })}
           {onBoard && <button data-command="drawing.live_section.place_on_board" type="button" data-section-board onClick={() => onBoard(sectionDrawing.page)}>{t("stage.section.toBoard")}</button>}
         </p>}
-        {sectionDrawing?.state === "failed" && <p className="stage-menu__note" role="alert">{sectionDrawing.detail}</p>}
+        {sectionDrawing?.state === "failed" && <p className="stage-menu__note" role="alert"><PlainFailure error={{ code: "CLIENT_ERROR", detail: sectionDrawing.detail }} /></p>}
       </>}
       <span className="stage-menu__sep" aria-hidden="true" />
       {/* One button, home: the reference run's exports when it left any, else the export the

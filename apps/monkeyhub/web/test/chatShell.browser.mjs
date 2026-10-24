@@ -864,7 +864,8 @@ const autosavedModelRestart = async () => {
   // A refused autosave holds it too, and the next accepted save releases it.
   draft.failure = "Fixture working draft is unavailable.";
   await cmd(visibleWorkspace(), "draft.tools.redo").click();
-  await status.filter({ hasText: "Fixture working draft is unavailable." }).waitFor();
+  await status.filter({ hasText: "The project service ran into a problem" }).waitFor();
+  assert.equal(await page.getByText("Fixture working draft is unavailable.").count(), 0, "the service's own words stay off the screen");
   await openSettings();
   await restartBlocked("a refused autosave blocks the update restart");
   await closeSettings();

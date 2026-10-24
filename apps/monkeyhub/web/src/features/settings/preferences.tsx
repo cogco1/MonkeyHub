@@ -1,6 +1,7 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AppearancePreferences } from "../../../../../../packages/web-shared/src/appearance.js";
 import { developerPreferences, type DeveloperPreferences } from "./developer";
+import { rememberFailureWords } from "../../app/failureWords";
 export type { Language, ThemePreference, FontScale } from "../../../../../../packages/web-shared/src/appearance.js";
 
 export interface UserPreferences extends AppearancePreferences {
@@ -160,6 +161,7 @@ export function UserPreferencesProvider({ appearance, children }: {
     setEventStreamVisible: (visible: boolean) => change({ eventStream: visible }),
     setDeveloperMode: (enabled: boolean) => change({ mode: enabled }),
   }), [appearance.language, appearance.theme, appearance.fontScale, developer, change]);
+  useEffect(() => rememberFailureWords(appearance.language, developer.mode), [appearance.language, developer.mode]);
   return <UserPreferencesContext.Provider value={value}>{children}</UserPreferencesContext.Provider>;
 }
 

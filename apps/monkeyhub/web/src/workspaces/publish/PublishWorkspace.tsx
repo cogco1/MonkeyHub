@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useConnection, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
 import { publicationClient } from "../../api/project-runtime/publication";
 import { asStudioApiError, type StudioApiError } from "../../api/project-runtime/client";
-import { ErrorPanel } from "../../app/ErrorPanel";
+import { ErrorPanel, plainFailureText } from "../../app/ErrorPanel";
 import type { PublicationDto, PublicationElementDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { pageSource, documentKey, type PageSource } from "../monkeyboard/boardScene";
 import { usePreferences } from "../../features/settings/preferences";
@@ -42,7 +42,7 @@ function SourceImage({ item, projectId }: { item: PublicationElementDto; project
         const cropped = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("Image preview failed"))));
         if (live) { retainedUrl = URL.createObjectURL(cropped); setUrl(retainedUrl); }
       } finally { image.close(); }
-    })().catch((cause) => { if (live) setError(asStudioApiError(cause).detail); });
+    })().catch((cause) => { if (live) setError(plainFailureText(cause)); });
     return () => { live = false; if (retainedUrl) URL.revokeObjectURL(retainedUrl); };
   }, [studio, projectId, key, retry]);
   return url ? <img src={url} alt="" draggable={false} /> : <span className="publish-image-status">{error ? <AutoRetry failure={error} place={`layout_image:${key}`} data-command="view.notice.retry" data-command-arg="layout_image" onPointerDown={(event) => event.stopPropagation()} retry={() => setRetry((value) => value + 1)} title={error}>↻</AutoRetry> : "…"}</span>;

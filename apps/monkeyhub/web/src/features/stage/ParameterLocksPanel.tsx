@@ -4,6 +4,7 @@ import type { ParameterDto } from "../../api/project-runtime/generated";
 import { useT } from "../../i18n/useT";
 import { InlineDecision } from "../../notifications/cards/InlineDecision";
 import { usePreferences } from "../settings/preferences";
+import { plainFailureText } from "../../app/ErrorPanel";
 import "./ModelEditPanel.css";
 import "./ParameterLocksPanel.css";
 
@@ -33,7 +34,7 @@ export function ParameterLocksPanel({ controls, onClose }: {
     if (!controls.record || recording) return;
     setRecording(true); setRecordError(null);
     try { await controls.record(); }
-    catch (cause) { setRecordError(t("stage.record.failed", { reason: asStudioApiError(cause).detail })); }
+    catch (cause) { setRecordError(t("stage.record.failed", { reason: plainFailureText(cause) })); }
     finally { setRecording(false); }
   };
   const keysFor = (action: "lock" | "unlock") => controls.parameters

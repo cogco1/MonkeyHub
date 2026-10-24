@@ -841,6 +841,51 @@
             "apps/monkeyhub/web/test/modelingOpen.browser.mjs",
             "apps/monkeyhub/web/test/settingsAutosave.browser.mjs"
           ]
+        },
+        {
+          "id": "plain-errors",
+          "status": "active",
+          "branch": "claude/300-b3-plain-errors",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-plain-errors",
+          "base_ref": "e4bf5c2b8512fdd1550ccd375576297f78db91b6",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Every place that printed a service error now shows one plain sentence and a next step; the browser walkthrough fails on raw service text.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/app/App.tsx",
+            "apps/monkeyhub/web/src/app/ErrorPanel.tsx",
+            "apps/monkeyhub/web/src/app/failureWords.ts",
+            "apps/monkeyhub/web/src/features/settings/preferences.tsx",
+            "apps/monkeyhub/web/src/features/skills/SkillPermissions.tsx",
+            "apps/monkeyhub/web/src/features/skills/SkillsPanel.tsx",
+            "apps/monkeyhub/web/src/features/stage/ParameterLocksPanel.tsx",
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/src/main.tsx",
+            "apps/monkeyhub/web/src/notifications/cards/AttentionCards.tsx",
+            "apps/monkeyhub/web/src/notifications/cards/AttentionQueue.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/ModelComparison.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentTracingPanel.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/RecipeTransfer.tsx",
+            "apps/monkeyhub/web/src/workspaces/publish/PublishWorkspace.tsx",
+            "apps/monkeyhub/web/src/workspaces/render/RenderResults.tsx",
+            "apps/monkeyhub/web/src/workspaces/render/RenderWorkspace.tsx",
+            "apps/monkeyhub/web/test/attentionShell.browser.mjs",
+            "apps/monkeyhub/web/test/boardLocale.browser.mjs",
+            "apps/monkeyhub/web/test/candidatePreview.browser.mjs",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/test/documentTracing.browser.mjs",
+            "apps/monkeyhub/web/test/errorPanel.test.ts",
+            "apps/monkeyhub/web/test/plainScreen.mjs",
+            "apps/monkeyhub/web/test/recipeTransfer.browser.mjs",
+            "apps/monkeyhub/web/test/skillPermissions.test.ts",
+            "apps/monkeyhub/web/test/skillRunSetting.test.ts"
+          ],
+          "depends_on": []
         }
       ]
     }

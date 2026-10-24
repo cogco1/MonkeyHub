@@ -171,10 +171,12 @@ test("a choice made while another is being saved is saved after it", async (t) =
 
 for (const refusal of [
   { status: 422, body: { detail: [{ loc: ["body", "skillAgentRuns"], msg: "Input should be 'ask', 'granted' or 'never'" }] },
-    detail: "body.skillAgentRuns: Input should be 'ask', 'granted' or 'never'" },
-  { status: 500, body: { code: "SETTINGS_WRITE_FAILED", detail: "user.json could not be replaced." }, detail: "user.json could not be replaced." },
+    detail: "body.skillAgentRuns: Input should be 'ask', 'granted' or 'never'",
+    plain: { en: "The project service did not accept what this step sent.", "zh-CN": "项目服务没有接受这一步的内容。" } },
+  { status: 500, body: { code: "SETTINGS_WRITE_FAILED", detail: "user.json could not be replaced." }, detail: "user.json could not be replaced.",
+    plain: { en: "This step could not be saved in the project.", "zh-CN": "这一步没能保存到项目里。" } },
 ]) {
-  test(`a refused save (${refusal.status}) is shown in the Hub's words, and the saved choice is back on screen`, async (t) => {
+  test(`a refused save (${refusal.status}) is shown in plain words, and the saved choice is back on screen`, async (t) => {
     const { actions, state, saved, render } = await harness(t, { refusal });
     await actions.load();
     await actions.choose("never");
@@ -185,8 +187,9 @@ for (const refusal of [
     for (const language of ["en", "zh-CN"] as const) {
       const html = render(language);
       assert.equal(checked(html), "granted", `${language}: the saved choice, not the refused one`);
-      assert.ok(html.includes(`role="alert">${language === "en" ? "The choice was not saved." : "这项选择没有保存。"} ${refusal.detail.replaceAll("'", "&#x27;")}</p>`),
-        `${language}: the detail is shown`);
+      assert.ok(html.includes(language === "en" ? "The choice was not saved." : "这项选择没有保存。"), `${language}: what happened`);
+      assert.ok(html.includes(refusal.plain[language]), `${language}: why, in plain words`);
+      assert.ok(!html.includes(refusal.detail.replaceAll("'", "&#x27;")) && !html.includes("user.json"), `${language}: the service's own words stay off the screen`);
     }
   });
 }
@@ -197,6 +200,8 @@ test("unreadable settings say so and offer Retry, with no choice claimed", async
   assert.equal(state().loadError?.code, "SETTINGS_UNREADABLE");
   const html = render("en");
   assert.equal(checked(html), null);
-  assert.ok(html.includes("This setting could not be read. user.json is not valid JSON."));
+  assert.ok(html.includes("This setting could not be read."));
+  assert.ok(html.includes("The project service ran into a problem and did not finish this step."));
+  assert.ok(!html.includes("user.json is not valid JSON"), "the service's own words stay off the screen");
   assert.ok(html.includes(">Retry</button>"));
 });

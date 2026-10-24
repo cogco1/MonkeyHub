@@ -1,6 +1,7 @@
 import { useContext, useEffect, useState } from "react";
 import { asStudioApiError } from "../../api/project-runtime/client";
 import { useT } from "../../i18n/useT";
+import { plainFailureText } from "../../app/ErrorPanel";
 import { InlineDecision } from "../../notifications/cards/InlineDecision";
 import type { DocumentAnnotationsHandle } from "./useDocumentAnnotations";
 import { DocumentTracingContext } from "./DocumentTracingContext";
@@ -64,14 +65,14 @@ export function DocumentTracingPanel({ draft, disabled, onSendingChange, drawn =
       await modeling.generate({ ...ref, annotationIds: selected.map(mark => mark.id) }, pull,
         baseLevel || (modeling.levels.length === 1 ? modeling.levels[0].levelId : ""));
       setSubmitted(true);
-    } catch (cause) { setError(asStudioApiError(cause).detail); }
+    } catch (cause) { setError(plainFailureText(cause)); }
     finally { onSendingChange(false); }
   };
   const recordEdits = async () => {
     if (!modeling.recordEdits || recording) return;
     setRecording(true); setError(null);
     try { await modeling.recordEdits(); setGenerateAfterRecord(true); }
-    catch (cause) { setError(t("stage.record.failed", { reason: asStudioApiError(cause).detail })); }
+    catch (cause) { setError(t("stage.record.failed", { reason: plainFailureText(cause) })); }
     finally { setRecording(false); }
   };
   const continueViewed = async () => {

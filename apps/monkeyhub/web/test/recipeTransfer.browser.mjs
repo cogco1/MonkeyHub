@@ -116,7 +116,8 @@ try {
   await page.evaluate(() => window.fixture.setDeveloperMode(false));
   await cmd(page, "drawing.recipe.import_confirm").click();
   await page.getByText("Imported as a project preference. New drawings can now use it.", { exact: true }).waitFor();
-  await page.getByRole("alert").filter({ hasText: "Saved; refresh unavailable." }).waitFor();
+  await page.getByRole("alert").filter({ hasText: "The project service ran into a problem" }).waitFor();
+  assert.equal(await page.getByText("Saved; refresh unavailable.").count(), 0, "the service's own words stay off the screen");
   assert.equal(await cmd(page, "drawing.recipe.import_confirm").count(), 0, "failed refresh cannot invite a duplicate import");
   assert.equal(writes.length, 1);
   assert.deepEqual({ ...writes[0], rawLanguage: undefined }, { projectId: "second-project", content, confirmed: true, sourceKind: "human", rawLanguage: undefined });
@@ -126,7 +127,8 @@ try {
   await cmd(page, "drawing.recipe.refresh").click();
   await upload();
   await cmd(page, "drawing.recipe.import_confirm").click();
-  await page.getByRole("alert").filter({ hasText: "already holds" }).waitFor();
+  await page.getByRole("alert").filter({ hasText: "conflicts with the project" }).waitFor();
+  assert.equal(await page.getByText("This project already holds a hatch recipe.").count(), 0, "the service's own words stay off the screen");
   assert.equal(writes.length, 2, "conflict is shown without automatic overwrite or retry");
   await page.getByLabel("Choose a recipe file").setInputFiles({ name: "bad.json", mimeType: "application/json", buffer: Buffer.from("not json") });
   await page.getByRole("alert").waitFor();

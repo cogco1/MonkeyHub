@@ -18,6 +18,7 @@ import { viewableArtifacts } from "../../../features/artifacts/artifactSelection
 import { MenuCommand, MenuSeparator, SurfaceMenus } from "../../../features/chrome/SurfaceChrome";
 import { DeveloperOnly } from "../../../features/settings/preferences";
 import { useT } from "../../../i18n/useT";
+import { PlainFailure } from "../../../app/ErrorPanel";
 import { createInteractionSession } from "../interactionSession";
 import { ThreeDmViewport, type CameraState, type ViewportController, type ViewportPick, type ViewportStatus } from "./ThreeDmViewport";
 import {
@@ -265,9 +266,9 @@ export default function ModelComparison({ projectId, candidateRunId, againstRunI
           <div><dt>{t("modelCompare.detail.files")}</dt><dd>{[...pair.base.models, ...pair.candidate.models].map((model) => `${model.runId} · ${model.fileName} · ${model.sha256}`).join("\n")}</dd></div>
         </>}
         {objects.status === "ready" && <div><dt>{t("modelCompare.detail.tolerance")}</dt><dd>{objects.value.tolerance}</dd></div>}
-        {resolution.status === "failed" && <div><dt>{t("modelCompare.detail.error")}</dt><dd>{resolution.error.code}: {resolution.error.detail}</dd></div>}
+        {resolution.status === "failed" && <div><dt>{t("modelCompare.detail.error")}</dt><dd><PlainFailure error={resolution.error} /></dd></div>}
         {resolution.status === "refused" && <div><dt>{t("modelCompare.detail.error")}</dt><dd>{resolution.refusal}</dd></div>}
-        {objects.status === "unavailable" && objects.error && <div><dt>{t("modelCompare.detail.error")}</dt><dd>{objects.error.code}: {objects.error.detail}</dd></div>}
+        {objects.status === "unavailable" && objects.error && <div><dt>{t("modelCompare.detail.error")}</dt><dd><PlainFailure error={objects.error} /></dd></div>}
       </dl>
       <p>{t("modelCompare.detail.binding")}</p>
       {objects.status === "ready" && objects.value.objects.length > 0 && <>

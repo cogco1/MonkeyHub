@@ -9,6 +9,7 @@ import type { StudioClient } from "../../api/project-runtime/client";
 import type { BoardDto, FrameLevelDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { CANVAS_APP_STATE, PROJECT_CANVAS_CLASS, ProjectCanvas, useScenePointer, useWheelZoom } from "../../features/canvas/ProjectCanvas";
 import { DeveloperOnly, usePreferences } from "../../features/settings/preferences";
+import { plainFailureText } from "../../app/ErrorPanel";
 import { renderDocumentVisual } from "../monkeydiagram/documentVisualInput";
 import { createBoardSaveQueue, type BoardSaveState } from "./boardSaveQueue";
 import { BoardFeedbackError, prepareBoardDesignRequest, type BoardDesignRequest } from "./boardFeedback";
@@ -417,7 +418,7 @@ function RenderDialog({ candidates, documents, language, returnFocus, active, th
 type Preview = { dataURL: DataURL; width: number; height: number };
 
 function errorText(error: unknown): string {
-  if (error && typeof error === "object" && "detail" in error) return String(error.detail);
+  if (error && typeof error === "object" && "detail" in error) return plainFailureText(error);
   return error instanceof Error ? error.message : String(error);
 }
 function records(elements: readonly ExcalidrawElement[]): BoardDto["elements"] {

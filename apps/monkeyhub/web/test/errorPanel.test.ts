@@ -133,3 +133,56 @@ test("a refusal says what happened and the next step; the server's words wait fo
   assert.match(shown(render({ status: 0, code: "EDITING_PROJECT_CHANGED", detail: "The saved draft belongs to another project." })),
     /belongs to another project/);
 });
+
+test("a refusal shown in a corner of the screen is one sentence and one next step, never the service's words (plain errors)", async (t) => {
+  const vite = await createServer({
+    root: fileURLToPath(new URL("..", import.meta.url)),
+    configFile: false,
+    logLevel: "silent",
+    server: { middlewareMode: true, watch: null },
+  });
+  t.after(() => vite.close());
+  const { PlainFailure, plainFailure } = await vite.ssrLoadModule("/src/app/ErrorPanel.tsx");
+  const { UserPreferencesProvider, usePreferences } = await vite.ssrLoadModule("/src/features/settings/preferences.tsx");
+  const render = (error: { code: string; detail: string; status?: number }, language = "en", developerMode = false) => {
+    function Corner() {
+      Object.assign(usePreferences(), { developerMode });
+      return createElement(PlainFailure, { error, lead: language === "en" ? "Could not save." : "没能保存。" });
+    }
+    return renderToStaticMarkup(createElement(UserPreferencesProvider, { appearance: { language, theme: "light", fontScale: 1 } }, createElement(Corner)));
+  };
+  const raw = /Value error|Extra inputs|seat '|\/api\/|Traceback|SketchPrismRequestDto|Batch|Tracing|Invariant|REQUEST_INVALID/;
+  // What the service said in the screen recording, and the other shapes its refusals take.
+  const said: Array<[{ code: string; detail: string; status?: number }, RegExp, RegExp]> = [
+    [{ status: 422, code: "REQUEST_INVALID", detail: "SketchPrismRequestDto.profile: Value error, a profile cannot visit the same point twice; Extra inputs are not permitted" },
+      /did not accept what this step sent/, /没有接受这一步的内容/],
+    [{ status: 409, code: "COMPOSITION_REFUSED", detail: "seat 'wall-3' owns components that its parent does not list" },
+      /does not agree with itself/, /前后不一致/],
+    [{ status: 500, code: "INVARIANT_VIOLATED", detail: "Invariant: roof.footprint must lie inside the walls" },
+      /does not agree with itself/, /前后不一致/],
+    [{ status: 504, code: "GATEWAY_TIMEOUT", detail: "GET /api/drawings/elevations timed out after 30s" },
+      /took too long/, /等得太久/],
+    [{ status: 0, code: "REQUEST_TIMEOUT", detail: "POST /api/revisions did not answer within 20 s" },
+      /took too long/, /等得太久/],
+    [{ status: 500, code: "INTERNAL_ERROR", detail: "Traceback (most recent call last): File \"main.py\", line 3" },
+      /ran into a problem/, /项目服务出错/],
+    [{ status: 404, code: "NOT_FOUND", detail: "GET /api/board/marks answered 404" },
+      /no longer in the project/, /已不在项目中/],
+  ];
+  for (const [error, reason, zhReason] of said) {
+    const en = render(error);
+    assert.match(en, reason, `${error.code}: reason`);
+    assert.match(en, /^<span class="plain-failure">Could not save\./, `${error.code}: the lead comes first`);
+    assert.doesNotMatch(en, raw, `${error.code}: the screen carries none of the service's words`);
+    assert.doesNotMatch(en, /<details/, `${error.code}: nothing to fold outside developer mode`);
+    assert.match(render(error, "zh-CN"), zhReason, `${error.code}: Chinese reason`);
+    assert.doesNotMatch(render(error, "zh-CN"), raw, `${error.code}: Chinese screen carries none of them either`);
+    const developer = render(error, "en", true);
+    assert.match(developer, /<details[^>]*\sopen=""><summary>Technical details<\/summary>/, `${error.code}: developer mode opens the details`);
+    assert.ok(developer.includes(error.code), `${error.code}: and names the code there`);
+  }
+  // A failure the Hub cannot name folds the service's words for whoever opens them, closed by default.
+  const unknown = render({ status: 0, code: "TRANSPORT_ERROR", detail: "Cannot read properties of undefined (reading x)" });
+  assert.match(unknown, /<details(?![^>]*\sopen)/);
+  assert.match(plainFailure({ code: "CLIENT_ERROR", detail: "anything" }, "en").reason, /did not finish/);
+});
