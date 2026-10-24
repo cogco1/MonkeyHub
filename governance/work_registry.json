@@ -355,6 +355,28 @@
             "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
             "apps/monkeyhub/web/test/attentionShell.browser.mjs"
           ]
+        },
+        {
+          "id": "auto-record",
+          "status": "active",
+          "branch": "claude/300-b3-auto-record",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-auto-record",
+          "base_ref": "a0053f870",
+          "contributor": "Claude",
+          "reviewer": null,
+          "depends_on": [],
+          "handoff": "4-4: model edits record themselves after 20 s without touching the model, when the model page is left and before a message goes; the Record button becomes 「停手后自动记录 / 已记录 · 撤销」 (batch 3, from claude/300-batch3).",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/app/App.tsx",
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/modelSync.browser.mjs"
+          ]
         }
       ]
     }

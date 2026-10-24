@@ -603,6 +603,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const commands = useCommands();
   const [routed, setRouted] = useState<{ text: string; offer: Offer } | null>(null);
   const sendAsWritten = useRef(false);
+  /** A send that recorded the model's edits first goes on without recording again (4-4). */
+  const recordedForSend = useRef(false);
+  const sendRef = useRef<() => Promise<void>>(async () => undefined);
   const [initial] = useState(readView);
   const [projects, setProjects] = useState<ChatProject[]>([]);
   const [sessions, setSessions] = useState<ChatSummary[]>([]);
@@ -1397,6 +1400,17 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       const offer = meant?.route ? offerFor(commands.tree, meant.route, text, argChoices(), developer) : null;
       if (offer && runnable(offer)) { setRouted({ text, offer }); return; }
     }
+    // 4-4: unrecorded model edits are recorded before the message goes, so the message works on them; it goes once
+    // the recorded design is its context. A record that fails leaves the message to go as it is, its target line saying so.
+    if (recordContext && !recordedForSend.current) {
+      recordedForSend.current = true;
+      setRecordingContext(true);
+      try { await recordContext(); } catch { /* sent as it is */ }
+      finally { setRecordingContext(false); }
+      requestAnimationFrame(() => requestAnimationFrame(() => void sendRef.current()));
+      return;
+    }
+    recordedForSend.current = false;
     sendAsWritten.current = false;
     setRouted(null);
     const target = projectDir, content = draft.trim(), key = draftKey, files = attachments;
@@ -1452,6 +1466,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     } catch (cause) { setError(asFailure(cause)); void refresh(); }
     finally { actionLock.current = false; setBusy(false); setSending(null); }
   };
+  sendRef.current = send;
   // A choice is a new user turn in this conversation, resolved against the retained
   // card by the server. Unsent text, attachments and workspace context stay in the draft.
   const acceptSuggestion = async (message: ChatMessage) => {

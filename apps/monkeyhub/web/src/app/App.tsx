@@ -276,6 +276,9 @@ const FOLLOW_WORDS: Readonly<Record<FollowNotice["state"], MessageKey>> = {
   "moved-on": "stage.follow.undoMoved", unsynced: "stage.follow.undoUnsynced", failed: "stage.follow.undoFailed",
 };
 
+/** 4-4: how long the model rests untouched before its edits are recorded without the architect asking. */
+const AUTO_RECORD_IDLE_MS = 20_000;
+
 export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onBoard, onChatRequest, onDesignContextChange, onRenderReader, cameraRequest = null, onView, onRecorder, onOpenTree, treeMove = null }: {
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;
   /**
@@ -847,6 +850,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   }, [cameraRequest, active, viewerStatus, modelLoading]);
   // Record edits and continue, callable from here on; its body is defined with Sync below.
   const recordEditsRef = useRef<() => Promise<void>>(async () => undefined);
+  /** The last record this tab made, while 撤销 can put back the base it replaced (4-4). */
+  const [recorded, setRecorded] = useState<{ projectId: string; candidateId: string; previous: { runId: string; branchId: string | null } } | null>(null);
   const recordStable = useCallback(() => recordEditsRef.current(), []);
   useEffect(() => {
     onRecorder?.(recordStable);
@@ -3169,9 +3174,11 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         refreshLocalModel();
         return (await reload(model.runId, undefined, undefined, true, nextProjection))?.sourceRunId === model.runId;
       };
+      const replaced = { runId: session.source.sourceRunId, branchId: workingDraft?.current?.runId === session.source.sourceRunId
+        ? workingDraft.current.branchId ?? null : null };
       syncSettling.current.set(session, (async () => {
         await retained;
-        let adopted = false;
+        let adopted = false, saved = false;
         if (quiet) {
           try { adopted = await adopt(); }
           catch (cause) { session.error = asStudioApiError(cause).detail; refreshLocalModel(); }
@@ -3180,7 +3187,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           // Not adopted into the view, the batch still becomes the saved base without
           // changing what is on screen. A base the architect chose meanwhile stands,
           // and the result stays a listed candidate.
-          if (!adopted) await queueWorkingDraftWrite(() => saveSyncedBase(accepted.candidateId, session.source));
+          if (!adopted) saved = await queueWorkingDraftWrite(() => saveSyncedBase(accepted.candidateId, session.source));
         } catch (cause) {
           // The saved base could not take the batch: its recovery keeps its exact
           // source and synced commands, so reopening still shows the edits.
@@ -3190,13 +3197,17 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           return;
         }
         if (!unsynced(session)) await recovered(retainLocalModel(session, true));
+        // 4-4: the status line says it was recorded and offers 撤销 while the record is Current.
+        if ((adopted || saved) && replaced.runId && project) {
+          setRecorded({ projectId: project.projectId, candidateId: accepted.candidateId, previous: { runId: replaced.runId, branchId: replaced.branchId } });
+        }
       })().finally(() => refreshLocalModel()));
     }
     if (changed) {
       setModelSyncBusy([...localModels.current.values()].some(session => session.busy));
       refreshLocalModel();
     }
-  }, [candidateRuns.runs, candidates, draftKey, localModel, loadArtifactIntoViewer, reload, refreshLocalModel, retainLocalModel, refreshWorkingDraft, saveSyncedBase, queueWorkingDraftWrite, autosaveFailed, t]);
+  }, [candidateRuns.runs, candidates, draftKey, localModel, loadArtifactIntoViewer, reload, refreshLocalModel, retainLocalModel, refreshWorkingDraft, saveSyncedBase, queueWorkingDraftWrite, autosaveFailed, t, workingDraft, project]);
 
   /**
    * Record edits and continue (#302): every draft whose edits no candidate holds
@@ -3225,6 +3236,36 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     }
   }, []);
   recordEditsRef.current = recordEdits;
+  // 4-4 改完不用记得点记录: edits are recorded once the architect has stopped for AUTO_RECORD_IDLE_MS, when the model
+  // page is left, and before a message goes (ChatShell asks through the recorder). A failed record stops the timer
+  // until the architect records or edits again, so a refusal is not sent over and over.
+  useEffect(() => {
+    const session = localModel;
+    if (!active || !session || session.busy || session.error || viewOnlyReason !== null || !unsynced(session)) return;
+    const timer = window.setTimeout(() => { if (!localEditingRef.current) void syncRef.current(session); }, AUTO_RECORD_IDLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [active, localModel, draftSnapshot, localModel?.busy, localModel?.error, viewOnlyReason]);
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (wasActive.current && !active && [...localModels.current.values()].some(unsynced)) void recordEdits().catch(() => undefined);
+    wasActive.current = active;
+  }, [active, recordEdits]);
+  // A new edit makes the last record's 撤销 a different act: what it would put back is no longer what is on screen.
+  useEffect(() => { if (draftSnapshot && localModel && unsynced(localModel)) setRecorded(null); }, [draftSnapshot, localModel]);
+  /** 撤销 a record: the Runtime's Undo puts the base it replaced back while the record is still Current. */
+  const undoRecorded = useCallback(async () => {
+    const last = recorded;
+    if (!last) return;
+    setRecorded(null);
+    try {
+      await studio.undoWorkingDesign({ projectId: last.projectId, previous: last.previous, continued: last.candidateId });
+      await refreshWorkingDraft();
+      await reload(last.previous.runId);
+      pushNotice(t("stage.record.undone"));
+    } catch (cause) {
+      pushNotice(t("stage.record.undoFailed", { reason: asStudioApiError(cause).detail }));
+    }
+  }, [recorded, studio, refreshWorkingDraft, reload, pushNotice, t]);
   const hasUnrecordedEdits = [...localModels.current.values()].some(unsynced);
   // #575: a follow's notice speaks until this tab moves on: its base leaves the followed head, or editing starts.
   // It is spent then, even if the base later comes back to that run.
@@ -3830,7 +3871,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
               onInteraction: () => { modelInteractionEpoch.current += 1; },
               sync: { dirty: !!localModel && unsynced(localModel),
                 autosave: autosaveEnabled ? localModel?.recoverySaved === draftSnapshot ? "saved" : "saving" : undefined,
-                busy: localModel?.busy ?? false, error: localModel?.error ?? null, onSync: () => void syncLocalModel() },
+                busy: localModel?.busy ?? false, error: localModel?.error ?? null, onSync: () => void syncLocalModel(),
+                recorded: recorded ? { onUndo: () => void undoRecorded() } : null },
               pushPullTarget, pushPullReason: pickedShape?.drawnShapeReason,
               onApply: (action) => void applyDirectModelAction(action),
               elevation: elevationObject && draftKey ? { object: elevationObject, objects: elevationObjects,

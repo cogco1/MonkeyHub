@@ -719,6 +719,11 @@ export const messagesEn = {
   "stage.sketch.polygonTitle": "Draw connected edges and close a face",
   "stage.sketch.line": "Line",
   // #302: Sync is named by its result, Record; edits always save themselves.
+  "stage.sync.autoPending": "Recorded when you pause",
+  "stage.sync.recorded": "Recorded",
+  "stage.record.undo": "Undo",
+  "stage.record.undone": "The record was undone; the previous version is back",
+  "stage.record.undoFailed": "The record could not be undone: {reason}",
   "stage.sync.label": "Record",
   "stage.sync.dirty": "Unrecorded edits",
   "stage.sync.autosaved": "Unrecorded edits · saved automatically",

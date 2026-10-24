@@ -690,6 +690,11 @@ export const messagesZhCN = {
   "stage.sketch.polygonTitle": "连续画边，闭合成面",
   "stage.sketch.line": "直线",
   // #302：“同步”按结果命名为“记录”；修改始终自动保存。
+  "stage.sync.autoPending": "停手后自动记录",
+  "stage.sync.recorded": "已记录",
+  "stage.record.undo": "撤销",
+  "stage.record.undone": "已撤销这次记录，回到之前的版本",
+  "stage.record.undoFailed": "没能撤销这次记录：{reason}",
   "stage.sync.label": "记录",
   "stage.sync.dirty": "有未记录的修改",
   "stage.sync.autosaved": "有未记录的修改 · 已自动保存",
