@@ -25,6 +25,7 @@ import {
   type CameraStep, type ComparisonPair, type ComparisonPane, type ComparisonPhase, type ComparisonRefusal,
 } from "./comparisonPair";
 import "./modelComparison.css";
+import { AutoRetry } from "../../../app/AutoRetry";
 
 type Resolution =
   | { status: "resolving" }
@@ -224,7 +225,7 @@ export default function ModelComparison({ projectId, candidateRunId, active, nam
       <p>{failure}</p>
       <div className="model-compare__actions">
         <button data-command="candidate.compare.back" type="button" className="btn btn--small btn--primary" onClick={onReturn}>{backLabel}</button>
-        {resolution.status === "failed" && <button data-command="view.notice.retry" data-command-arg="model_compare" type="button" className="btn btn--small" onClick={() => setAttempt((value) => value + 1)}>{t("modelCompare.retry")}</button>}
+        {resolution.status === "failed" && <AutoRetry failure={failure} data-command="view.notice.retry" data-command-arg="model_compare" className="btn btn--small" retry={() => setAttempt((value) => value + 1)}>{t("modelCompare.retry")}</AutoRetry>}
       </div>
     </div>}
     {pair && <div className="model-compare__panes">

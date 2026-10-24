@@ -119,6 +119,8 @@ try {
     currentCase = scenario;
     history.branches[0].headStageRef = headStageRef;
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    // These passes press each retry themselves: quiet retries (F046) are off for them.
+    await context.addInitScript(() => localStorage.setItem("monkeyhub.quietRetry", "off"));
     const request = structuredClone(handoff);
     if (scenario === "wrong-project") request.projectId = "other-project";
     await context.addInitScript((request) => { window.__boardRequest = request; }, request);

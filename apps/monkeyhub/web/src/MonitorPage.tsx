@@ -9,6 +9,7 @@ import {
 import { useDeveloperMode } from "./features/settings/preferences";
 import "./MonitorPage.css";
 import { useRowEndSeparators } from "./surfaceBarRows";
+import { AutoRetry } from "./app/AutoRetry";
 
 type Props = {
   preferences: AppearancePreferences; active: boolean; initialProjectId?: string; openRequest?: number;
@@ -301,7 +302,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
     <main className="monitor-shell">
       {/* The rail and the Help menu name the page; the heading is for screen readers. */}
       <h1 className="sr-only">{t.title}</h1>
-      {error && <div className="error-message" role="alert"><strong>{t.failed}</strong><p>{error}</p><button data-command="view.notice.retry" data-command-arg="usage" className="btn" type="button" onClick={() => void readAll(true)}>{t.retry}</button></div>}
+      {error && <div className="error-message" role="alert"><strong>{t.failed}</strong><p>{error}</p><AutoRetry failure={error} data-command="view.notice.retry" data-command-arg="usage" className="btn" retry={() => void readAll(true)}>{t.retry}</AutoRetry></div>}
       <section className="monitor-stats" aria-label={t.usage} hidden={view !== "calls"}>
         {[
           [t.calls, summary.calls.toLocaleString(), ""],

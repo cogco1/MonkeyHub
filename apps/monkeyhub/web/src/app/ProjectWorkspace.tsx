@@ -22,6 +22,7 @@ import { treeWords } from "../features/designTree/words";
 import { useT } from "../i18n/useT";
 import type { MessageKey } from "../i18n/messages.en";
 import { createComparisonHost, type HostedComparison } from "../workspaces/monkeyarch/viewer/comparisonPair";
+import { AutoRetry } from "./AutoRetry";
 
 const Drawing = lazy(() => import("../workspaces/monkeydiagram/DrawingCanvas"));
 const ModelComparison = lazy(() => import("../workspaces/monkeyarch/viewer/ModelComparison"));
@@ -291,7 +292,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
 
   if (server.status === "failed") return <div className="project-workspace"><div className="refusal" role="alert">
     <ErrorPanel error={server.error} what="GET /api/protocol" />
-    <button data-command="view.notice.retry" data-command-arg="project_runtime" type="button" onClick={() => setAttempt((value) => value + 1)}>Retry</button>
+    <AutoRetry failure={server.error} data-command="view.notice.retry" data-command-arg="project_runtime" retry={() => setAttempt((value) => value + 1)}>Retry</AutoRetry>
   </div></div>;
   if (server.status !== "ready") return <div className="project-workspace"><LoadingOverlay mode="boot" status="Project Runtime" /></div>;
   // What is on screen: the comparison covers the surface it was opened over, which stays mounted.

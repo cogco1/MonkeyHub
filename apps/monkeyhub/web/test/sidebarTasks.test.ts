@@ -81,3 +81,12 @@ test("running work carries its start, and a job how long this project's finished
   assert.equal(drawing!.startedAt, "2026-10-24T10:01:00Z", "a drawing counts from its request");
   assert.equal(drawing!.expectedSeconds, null);
 });
+
+test("a request the Hub had to send again says which attempt it is on", () => {
+  const [task] = sidebarTasks(runtime(project("A", {
+    operations: [operation({ operationId: "d1", status: "executing", kind: "POST /api/drawings/sheets", attempts: 3 } as Partial<OperationRecord> & Pick<OperationRecord, "operationId" | "status">)] })), listed);
+  assert.equal(task!.attempts, 3);
+  const [first] = sidebarTasks(runtime(project("A", {
+    operations: [operation({ operationId: "d2", status: "executing", kind: "POST /api/drawings/sheets", attempts: 1 } as Partial<OperationRecord> & Pick<OperationRecord, "operationId" | "status">)] })), listed);
+  assert.equal(first!.attempts, undefined, "the first send says nothing");
+});
