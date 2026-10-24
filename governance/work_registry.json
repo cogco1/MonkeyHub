@@ -191,40 +191,6 @@
             "apps/monkeyhub/web/test/workingCopy.browser.mjs"
           ],
           "depends_on": []
-        },
-        {
-          "id": "devmode-details",
-          "status": "active",
-          "branch": "claude/300-devmode-details",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-devmode-details",
-          "base_ref": "2037a82b27426977d4e594510f884c92c9f5b2b5",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": "2-7b: the technical details left in the nine surfaces (component card, proposal, question and missing-control cards, model comparison, Board render sources, render source record, Usage diagnostics and raw records, error panel) show only in developer mode (#694); the Usage page's Codex sources box stays. Takes these files over from GH-300/tests, whose T-1b does not touch them.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/src/MonitorPage.tsx",
-            "apps/monkeyhub/web/src/app/ErrorPanel.tsx",
-            "apps/monkeyhub/web/src/features/componentInfo/ComponentInfoCard.tsx",
-            "apps/monkeyhub/web/src/features/conversation/cards/MissingControlCard.tsx",
-            "apps/monkeyhub/web/src/features/conversation/cards/ProposalCard.tsx",
-            "apps/monkeyhub/web/src/features/conversation/cards/QuestionCard.tsx",
-            "apps/monkeyhub/web/src/i18n/messages.en.ts",
-            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-            "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/ModelComparison.tsx",
-            "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/modelComparison.css",
-            "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
-            "apps/monkeyhub/web/src/workspaces/render/RenderResults.tsx",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs",
-            "apps/monkeyhub/web/test/componentInfoCard.test.ts",
-            "apps/monkeyhub/web/test/drawingCanvas.browser.mjs",
-            "apps/monkeyhub/web/test/errorPanel.test.ts",
-            "apps/monkeyhub/web/test/proposalCard.test.ts",
-            "apps/monkeyhub/web/test/publishWorkspace.browser.mjs"
-          ],
-          "depends_on": []
         }
       ]
     }
