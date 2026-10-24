@@ -173,10 +173,12 @@ export function ComparisonDecision({ cardId, project, onDone }: { cardId: string
   const card = queue.cards.find((item) => item.id === cardId) ?? null;
   const done = useRef(onDone);
   done.current = onDone;
-  const closed = useRef(false);
-  const pending = card ? isPending(card) : null;
+  const closed = useRef(false), seen = useRef(false);
+  // Answered, put off, or gone from the queue after it was there: the decision is made, so the comparison has done its work.
+  const pending = card ? isPending(card) : false;
+  if (card && pending) seen.current = true;
   useEffect(() => {
-    if (pending === false && !closed.current) { closed.current = true; done.current(); }
+    if (seen.current && !pending && !closed.current) { closed.current = true; done.current(); }
   }, [pending]);
   return card ? <AttentionCardView card={card} project={project} comparing /> : null;
 }
