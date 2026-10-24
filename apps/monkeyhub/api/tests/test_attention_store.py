@@ -52,7 +52,7 @@ def rule_draft(target: str = "component:beam-3") -> AttentionDraft:
     return AttentionDraft.model_validate({
         "channel": "guess", "kind": "ask", "title": "梁高连着改了三次，要定成规则吗",
         "source": {"ruleId": "same-direction", "targetRef": target}, "dedupeKey": f"rule:same-direction:{target}",
-        "options": [option("yes", "定成规则", "attention.answer_guess")]})
+        "options": [option("yes", "定成规则", "attention.queue.answer_guess")]})
 
 
 class AttentionStoreTests(unittest.TestCase):
