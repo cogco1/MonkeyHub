@@ -7133,7 +7133,8 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "inPlace": true
     },
     {
       "id": "view.layout.select_page",
