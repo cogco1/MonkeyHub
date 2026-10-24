@@ -44,6 +44,9 @@ export interface ShellConversation {
 export interface ShellProject {
   readonly projectDir: string;
   readonly name: string;
+  /** The project's published version and its accepted Stage, as it holds them; none shown until it has a version (0 is a project nothing was published in). */
+  readonly version?: number | null;
+  readonly stage?: string | null;
   readonly current: boolean;
   /** What waits on the architect in this project. */
   readonly needs: number;
@@ -194,7 +197,8 @@ export function AttentionShell(props: AttentionShellProps) {
         <div className="attention-shell__project">
           <button type="button" className="attention-shell__row" aria-current={project.current ? "true" : undefined} title={project.projectDir}
             onClick={() => { props.onSelectProject(project.projectDir); setLeftOpen(false); }}>
-            <Icon name="folder" /><span>{project.name}</span>
+            <Icon name="folder" /><span className="attention-shell__name"><span>{project.name}</span>
+              {project.version ? <small className="attention-shell__version">{t("shell.projectVersion", { version: project.version })}{project.stage ? ` · ${project.stage}` : ""}</small> : null}</span>
             {needs(project) > 0 ? <span className="attention-shell__count" aria-label={t("shell.needs", { count: needs(project) })}>{needs(project)}</span>
               : project.working ? <span className="attention-shell__working" aria-label={t("shell.working")} /> : null}
           </button>
