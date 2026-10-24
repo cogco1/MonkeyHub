@@ -97,8 +97,10 @@ function useClearance(active: boolean): { right: number; bottom: number } {
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(() => measure()) : null;
     const watched = new Set<Element>();
     function measure() {
-      // Read-only anchors in ChatShell; without them the stack keeps to the corner.
-      const rail = document.querySelector(".chat-rail"), composer = document.querySelector(".chat-composer-wrap, .chat-composer");
+      // Read-only anchors in either shell layout: the workbench's rail and composer, or the attention shell's side
+      // (panel and rail) and its bottom block (status line and composer). Without them the stack keeps to the corner.
+      const rail = document.querySelector(".chat-rail, .attention-shell__side");
+      const composer = document.querySelector(".attention-shell__bottom, .chat-composer-wrap, .chat-composer");
       for (const element of [rail, composer]) {
         if (element && !watched.has(element)) { watched.add(element); observer?.observe(element); }
       }

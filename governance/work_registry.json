@@ -133,27 +133,48 @@
           "base_ref": "cc8f54e20546c73a1e1e1763a5001a8495c48675",
           "contributor": "Claude",
           "reviewer": null,
-          "handoff": "Ctrl+K and the Hub's shortcuts read the command tree devctl render-map writes from governance/module_registry.json capabilities (ui.commands); the shell-level capabilities come first, the Runtime-side ones follow on this lane. Draft only during the paper freeze: nothing merges into main until the relay ends and the coordinator says so. archcheck.py passes to GH-300/entry-ci; a later command-tree check is asked for there.",
+          "handoff": "Ctrl+K and the Hub's shortcuts read the command tree devctl render-map writes from governance/module_registry.json capabilities (ui.commands); the shell-level capabilities come first, the Runtime-side ones follow on this lane. Draft only during the paper freeze: nothing merges into main until the relay ends and the coordinator says so. archcheck.py passes to GH-300/entry-ci; a later command-tree check is asked for there. The web files moved to GH-300/shell on claude/300-attention-shell, which stacks on this lane.",
           "modules": [
-            "hub.shell",
             "project_runtime.intent",
             "tools.governance.devctl"
+          ],
+          "write_scope": [
+            "services/project-runtime/src/project_runtime/application/capability.py",
+            "services/project-runtime/tests/test_capabilities.py",
+            "tools/governance/devctl.py"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "shell",
+          "status": "active",
+          "branch": "claude/300-attention-shell",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-attention-shell",
+          "base_ref": "0238ac43ec505e263642abd153fd983f06fbedeb",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "The attention shell (?shell=attention): left column, the Attention, Board and Model tabs, the composer with its conversation drawer, the side panel and the phone drawers, on the state ChatShell already holds; stacked on GH-300/command-tree and merged after it. Draft only during the paper freeze: nothing merges into main until the relay ends and the coordinator says so.",
+          "modules": [
+            "hub.shell"
           ],
           "write_scope": [
             "apps/monkeyhub/web/scripts/check-generated.mjs",
             "apps/monkeyhub/web/scripts/command-tree.mjs",
             "apps/monkeyhub/web/src/ChatShell.tsx",
             "apps/monkeyhub/web/src/HubMenu.tsx",
+            "apps/monkeyhub/web/src/app/AdvancedTools.tsx",
+            "apps/monkeyhub/web/src/app/AttentionShell.tsx",
+            "apps/monkeyhub/web/src/app/attentionShell.css",
             "apps/monkeyhub/web/src/features/commands/",
             "apps/monkeyhub/web/src/i18n/messages.en.ts",
             "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
             "apps/monkeyhub/web/src/main.tsx",
+            "apps/monkeyhub/web/src/notifications/AttentionHost.tsx",
+            "apps/monkeyhub/web/test/attentionShell.browser.mjs",
+            "apps/monkeyhub/web/test/attentionShell.test.ts",
             "apps/monkeyhub/web/test/commandPalette.browser.mjs",
             "apps/monkeyhub/web/test/commandPalette.test.ts",
-            "apps/monkeyhub/web/test/commandTree.test.ts",
-            "services/project-runtime/src/project_runtime/application/capability.py",
-            "services/project-runtime/tests/test_capabilities.py",
-            "tools/governance/devctl.py"
+            "apps/monkeyhub/web/test/commandTree.test.ts"
           ],
           "depends_on": []
         },

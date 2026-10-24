@@ -431,6 +431,28 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
+      "id": "view.tab.attention",
+      "capability": "shell.layout",
+      "label": {
+        "en": "Attention",
+        "zh-CN": "关注"
+      },
+      "terms": [
+        "queue",
+        "decisions",
+        "待处理"
+      ],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": "Alt+1",
+      "entries": [],
+      "args": []
+    },
+    {
       "id": "view.tab.board",
       "capability": "shell.layout",
       "label": {

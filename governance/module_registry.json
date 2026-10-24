@@ -582,6 +582,17 @@
             ]
           },
           {
+            "id": "view.tab.attention",
+            "label": "Attention",
+            "label_zh": "关注",
+            "aliases": [
+              "queue",
+              "decisions",
+              "待处理"
+            ],
+            "shortcut": "Alt+1"
+          },
+          {
             "id": "view.tab.board",
             "label": "Board",
             "label_zh": "画板",
@@ -8101,7 +8112,8 @@
         "the designLoop application setting (legacy | advisory | enforced, default legacy; a saved off reads as legacy) passed to each Project Runtime it starts; legacy keeps the chat's tools, guide and error words as they were; advisory adds GET /api/revisions/context and two lines naming the problem lists; enforced offers POST /api/revisions with the user's message and words bound, the guide that names it and a Claude chat without Bash; the chat never sends confirmed",
         "the design-loop tools (design_read, design_submit, design_ask, design_report_limitation) over studio_request and POST /api/revisions: a repair limit per answered user message (MONKEYHUB_REPAIR_BUDGET, default 3), earlier attempts on the same base superseded, the turn's loop state at the launcher's MONKEYHUB_DESIGN_LOOP_STATE file, the Stop hook that holds a turn open until a change landed, the architect was asked or a limitation was reported (at most three times), the --design-loop connection that lists only those tools, and cli_profile for whoever starts such a turn",
         "The command palette (Ctrl+K), the Hub's own shortcuts and the local use counts (src/features/commands): it reads tree.generated.ts, the view of the module registry's capability commands that devctl render-map writes, and runs a command through the handler the surface performing it registers under its id; no second command list",
-        "The interface styles' component hooks: shared controls, cards, view tabs, the current conversation row, the composer and notices read var(--hook, their own value); only Critique Table (board) sets the hooks, and component rules key on data-ui-family (classic, instrument, board)"
+        "The interface styles' component hooks: shared controls, cards, view tabs, the current conversation row, the composer and notices read var(--hook, their own value); only Critique Table (board) sets the hooks, and component rules key on data-ui-family (classic, instrument, board)",
+        "The attention shell (?shell=attention, app/AttentionShell.tsx): the projects column with what waits on the architect, the Attention, Board and Model tabs over the open surfaces, the conversation drawer above the composer, the side panel with background and advanced tools, and the phone drawers; it places the nodes ChatShell's state builds and holds none of its own"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -8397,7 +8409,9 @@
         "apps/monkeyhub/web/src/features/componentInfo/",
         "apps/monkeyhub/web/src/features/designTree/DesignTreeCleaned.tsx",
         "apps/monkeyhub/api/monkeyhub_api/chat/design_loop.py",
-        "apps/monkeyhub/web/src/features/commands/"
+        "apps/monkeyhub/web/src/features/commands/",
+        "apps/monkeyhub/web/src/app/AttentionShell.tsx",
+        "apps/monkeyhub/web/src/app/AdvancedTools.tsx"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -8463,7 +8477,8 @@
         "apps/monkeyhub/web/test/commandTree.test.ts",
         "apps/monkeyhub/web/test/commandPalette.browser.mjs",
         "apps/monkeyhub/web/test/appearance.test.ts",
-        "apps/monkeyhub/web/test/interfaceStyles.browser.mjs"
+        "apps/monkeyhub/web/test/interfaceStyles.browser.mjs",
+        "apps/monkeyhub/web/test/attentionShell.browser.mjs"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
