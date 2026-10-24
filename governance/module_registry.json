@@ -602,7 +602,13 @@
             ],
             "shortcut": "Alt+2",
             "entries": [
-              "壳92"
+              "壳92",
+              "模4",
+              "模22",
+              "模115",
+              "板1",
+              "文1",
+              "文3"
             ]
           },
           {
@@ -684,7 +690,9 @@
               "版本"
             ],
             "entries": [
-              "壳93"
+              "壳93",
+              "模2",
+              "模95"
             ]
           },
           {
@@ -696,7 +704,9 @@
               "出图"
             ],
             "entries": [
-              "壳94"
+              "壳94",
+              "模114",
+              "文2"
             ]
           },
           {
@@ -983,6 +993,145 @@
         "apps/monkeyhub/api/tests/test_monkeyfab.py",
         "packages/monkeyfab/tests/test_cli.py"
       ]
+    },
+    {
+      "capability_id": "shell.controls",
+      "owner": "hub.shell",
+      "execution_owner": "hub.shell",
+      "host": "hub",
+      "kind": "shell",
+      "status": "PRODUCTION",
+      "purpose": "The controls every page shares: trying again what did not load or save, opening a folded section or a menu, closing a dialog or a notice.",
+      "purpose_zh": "各页共用的控件：没读到或没存上时再试一次，展开收起的段落和菜单，关掉对话框和提示。",
+      "goals": [
+        "try loading again",
+        "show the details",
+        "open the menu",
+        "close the dialog",
+        "再试一次",
+        "展开详情",
+        "打开菜单",
+        "关掉对话框"
+      ],
+      "aliases": [
+        "retry",
+        "disclosure",
+        "menu",
+        "dismiss",
+        "重试",
+        "展开",
+        "菜单",
+        "关闭"
+      ],
+      "requires": [],
+      "entrypoints": [],
+      "works": [
+        "each retry, disclosure, menu and close control the workspaces have today, named by what it acts on"
+      ],
+      "missing": [],
+      "tests": [
+        "apps/monkeyhub/web/test/commandTree.test.ts"
+      ],
+      "ui": {
+        "surface": "hub",
+        "group": "shell",
+        "tier": "basic",
+        "channel": "background",
+        "commands": [
+          {
+            "id": "view.notice.retry",
+            "label": "Try again",
+            "label_zh": "再试一次",
+            "args": [
+              "notice"
+            ],
+            "entries": [
+              "模90",
+              "模112",
+              "模116",
+              "模138",
+              "模149",
+              "板16",
+              "板17",
+              "板84",
+              "排4",
+              "排5",
+              "排7",
+              "排14",
+              "文11",
+              "文12",
+              "文41",
+              "图18",
+              "渲23",
+              "树8",
+              "制3",
+              "量5"
+            ]
+          },
+          {
+            "id": "view.notice.dismiss",
+            "label": "Dismiss the notice",
+            "label_zh": "关掉提示",
+            "entries": [
+              "板18"
+            ]
+          },
+          {
+            "id": "view.disclosure.toggle",
+            "label": "Show or hide the details",
+            "label_zh": "展开或收起",
+            "args": [
+              "section"
+            ],
+            "entries": [
+              "模41",
+              "模94",
+              "模107",
+              "模141",
+              "模143",
+              "模150",
+              "文44",
+              "文88",
+              "图8",
+              "图31",
+              "渲29",
+              "树27",
+              "制9",
+              "制16",
+              "量9",
+              "量10",
+              "量19"
+            ]
+          },
+          {
+            "id": "view.menu.toggle",
+            "label": "Open or close the menu",
+            "label_zh": "打开或收起菜单",
+            "args": [
+              "menu"
+            ],
+            "entries": [
+              "模6",
+              "模9",
+              "模55",
+              "板6",
+              "图2",
+              "图5",
+              "图12"
+            ]
+          },
+          {
+            "id": "view.dialog.close",
+            "label": "Close the dialog",
+            "label_zh": "关掉对话框",
+            "entries": [
+              "板71",
+              "板75",
+              "板82"
+            ]
+          }
+        ]
+      }
     }
   ],
   "modules": [
