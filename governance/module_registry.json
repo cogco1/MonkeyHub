@@ -4090,6 +4090,10 @@
             "id": "chat.composer.send",
             "label": "Send the message",
             "label_zh": "发送消息",
+            "args": [
+              "sessionId",
+              "content"
+            ],
             "entries": [
               "壳80",
               "壳89"

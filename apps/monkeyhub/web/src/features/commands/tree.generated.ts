@@ -5711,7 +5711,10 @@ export const COMMAND_TREE: CommandTree = {
         "壳80",
         "壳89"
       ],
-      "args": []
+      "args": [
+        "sessionId",
+        "content"
+      ]
     },
     {
       "id": "chat.composer.interject",
