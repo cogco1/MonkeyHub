@@ -9111,7 +9111,11 @@
         "verify_draw_source",
         "Retaining",
         "shapeless_facts",
-        "shapeless_source"
+        "shapeless_source",
+        "CameraTask",
+        "CameraResult",
+        "run_camera_task",
+        "index_groups"
       ],
       "depends_on": [
         "archflow.project.ports",
@@ -9120,7 +9124,9 @@
         "archflow.project.repository",
         "archflow.project.version_refs",
         "monkeycad.occt",
-        "monkeydiagram.rendering.svg"
+        "monkeydiagram.rendering.svg",
+        "monkeycad.formats",
+        "monkeydiagram.projection.mesh_views"
       ],
       "invariants": [
         "nothing is written before the source verified, the frame checked and the projection and both renderings succeeded",
@@ -10403,7 +10409,8 @@
         "DrawingPool",
         "drawing_sources",
         "model_index",
-        "warm_model_index"
+        "warm_model_index",
+        "camera_source"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -12027,7 +12034,9 @@
         "monkeydiagram.projection.mesh_views",
         "project_runtime.binding",
         "project_runtime.documents",
-        "project_runtime.shell"
+        "project_runtime.shell",
+        "monkeycad.formats",
+        "monkeydiagram.drawing_runs"
       ],
       "invariants": [
         "the three images come from one depth buffer and line up pixel for pixel",

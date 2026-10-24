@@ -9,7 +9,9 @@ up pixel for pixel, at up to 4096 pixels on the long edge, and each is
 registered as a document beside the model with the camera, size and legend in
 its ``viewRecipe``. A large model takes minutes, so the work is a background
 job in its own P036 run ``camera-pass-<id>``, whose record goes queued,
-running, then succeeded or failed.
+running, then succeeded or failed. Reading, meshing and drawing the model run
+in a drawing worker when the Runtime keeps a pool (``drawing_pool``), so
+they hold up no other request; only retaining the images is done here.
 """
 
 from __future__ import annotations
@@ -19,22 +21,23 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import math
-from time import perf_counter
 from typing import Any, Mapping
 import uuid
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_CAMERA_PASS
 from archflow.project.repository import ProjectRepositoryError
+from monkeycad.formats.three_dm_inspector import ThreeDmInspectionError
+from monkeydiagram.drawing_runs import CameraTask, run_camera_task
 from monkeydiagram.projection.mesh_views import (
-    CAMERA_RENDERER_VERSION, DEPTH_NEAREST, MAX_CAMERA_EDGE_PX, MeshViewError, PerspectiveCamera, camera_passes,
-    triangulate,
+    CAMERA_RENDERER_VERSION, DEPTH_NEAREST, MAX_CAMERA_EDGE_PX, MeshViewError, PerspectiveCamera,
 )
+from monkeydiagram.sources import DrawingElevationError, NativeModelSource
 
 from ..authentication import ActorAttribution
 from ..binding import ProjectBinding
 from ..errors import StudioError
-from . import artifacts, drawings
+from . import artifacts, drawing_pool, drawings
 
 RUN_PREFIX = "camera-pass-"
 SCHEMA = "StudioCameraPass@1"
@@ -186,30 +189,33 @@ def submit_camera_passes(
 
 def _draw(binding, chosen: PerspectiveCamera, width, height, id_by, model_source, source_asset, source_stage_ref,
           queued: dict) -> dict:
-    started = perf_counter()
-    selected, source, receipt, verified = drawings.load_drawing_source(
+    selected, source = drawings.camera_source(
         binding, model_source=model_source, source_asset=None if source_asset is None else dict(source_asset),
         source_stage_ref=source_stage_ref)
-    loaded = perf_counter()
-    unit = verified.length_unit
-    # Mesh at a pixel's footprint where the model's middle stands from the eye.
-    boxes = [row["bbox"] for row in (receipt.get("readback") or {}).values()
-             if isinstance(row, dict) and isinstance(row.get("bbox"), dict)]
-    pixel = chosen.pixel_footprint(height, boxes)
+    groups_from = None
+    if id_by != "object":
+        if id_by not in ID_BY:
+            raise _invalid("Group the ID image by object, layer or material.")
+        groups_from = str(artifacts.artifact_bytes(binding, selected.asset_sha256, run_id=selected.run_id)[0].path)
+    clip = queued.get("clip")
+    # Meshed at a pixel's footprint where the model's middle stands from the eye.
+    task = CameraTask(str(binding.repository.layout.root), source, chosen, width, height, id_by=id_by,
+                      groups_from=groups_from, groups_sha256=selected.asset_sha256,
+                      clip=None if clip is None else (tuple(clip["origin"]), tuple(clip["normal"])),
+                      text=(("Software", "MonkeyHub camera passes"), ("Renderer", CAMERA_RENDERER_VERSION)),
+                      chord_px=CHORD_PX)
+    pool = drawing_pool.drawer()
     try:
-        meshes, skipped = triangulate(verified.entries, drawings.drawn_object_ids(verified), linear_deflection=pixel * CHORD_PX)
-        if not meshes:
-            raise MeshViewError("the model has no surfaces to draw")
-        meshed = perf_counter()
-        groups = None if id_by == "object" else drawings.object_groups(
-            binding, selected, source, [mesh.object_id for mesh in meshes], id_by)
-        text = {"Software": "MonkeyHub camera passes", "Renderer": CAMERA_RENDERER_VERSION}
-        clip = queued.get("clip")
-        drawn = camera_passes(meshes, camera=chosen, width=width, height=height, groups=groups, text=text,
-                              clip=None if clip is None else (clip["origin"], clip["normal"]))
+        result = run_camera_task(task) if pool is None else pool.camera(task)
     except MeshViewError as exc:
         raise StudioError(409, "DRAWING_SOURCE_INVALID", str(exc)) from exc
-    rendered = perf_counter()
+    except DrawingElevationError as exc:
+        if isinstance(source, NativeModelSource):
+            raise StudioError(422, "DRAWING_NATIVE_GEOMETRY_UNSUPPORTED", str(exc)) from exc
+        raise StudioError(409, "DRAWING_SOURCE_INVALID", str(exc)) from exc
+    except ThreeDmInspectionError as exc:
+        raise StudioError(422, "MODEL_INDEX_UNAVAILABLE", exc.message) from exc
+    drawn, unit = result.drawn, result.unit
     depth = {"near": drawn.near, "far": drawn.far, "unit": unit, "measure": "distance along the view axis",
              "encoding": f"16-bit grey: {DEPTH_NEAREST} at near, 1 at far, linear between; 0 where no surface is"}
     legend = list(drawn.legend)
@@ -233,10 +239,8 @@ def _draw(binding, chosen: PerspectiveCamera, width, height, id_by, model_source
         documents[name] = {"runId": document.run_id, "assetSha256": document.asset_sha256,
                            "fileName": document.file_name}
     return {"documents": documents, "legend": legend, "depth": depth, "unit": unit,
-            "objects": len(meshes), "skippedObjects": len(skipped), "seenObjects": len(drawn.seen),
-            "triangles": drawn.triangles, "edgesDrawn": drawn.edges_drawn,
-            "timings": {"loadS": round(loaded - started, 3), "meshS": round(meshed - loaded, 3),
-                        "drawS": round(rendered - meshed, 3)}}
+            "objects": result.objects, "skippedObjects": result.skipped, "seenObjects": len(drawn.seen),
+            "triangles": drawn.triangles, "edgesDrawn": drawn.edges_drawn, "timings": dict(result.timings)}
 
 
 def pass_report(binding: ProjectBinding, pass_id: str) -> dict:

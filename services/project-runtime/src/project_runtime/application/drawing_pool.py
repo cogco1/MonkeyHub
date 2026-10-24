@@ -23,7 +23,9 @@ from collections import OrderedDict
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 
-from monkeydiagram.drawing_runs import DrawResult, DrawTask, run_draw_task, verify_draw_source
+from monkeydiagram.drawing_runs import (
+    CameraResult, CameraTask, DrawResult, DrawTask, run_camera_task, run_draw_task, verify_draw_source,
+)
 from monkeydiagram.sources import VerifiedElevationSource
 
 from ..errors import StudioError
@@ -82,6 +84,11 @@ class DrawingPool:
         result = self._solve(run_draw_task, task)
         self.keep(task.source, result.verified)
         return result
+
+    def camera(self, task: CameraTask) -> CameraResult:
+        """A camera's passes, drawn by a worker: reading and meshing the model never hold up other requests."""
+
+        return self._solve(run_camera_task, task)
 
     def source(self, project_root: str, source) -> VerifiedElevationSource:
         """``source`` verified by a worker, without its shapes, or as one verified it before.
