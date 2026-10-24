@@ -13,6 +13,8 @@ export const messagesZhCN = {
   "document.trace.distance": "已知长度（m）",
   "document.trace.calibrate": "设置比例与方向",
   "document.trace.invalidScale": "请选择非零线段，并输入大于零的已知长度。",
+  "document.trace.fromDrawing": "比例和方向按这张图设定：{scale}，图纸向右为 +X，向上为 +Y。",
+  "document.trace.measureInstead": "改为量一段",
   "document.trace.calibrated": "基准长 {distance} m。O 为原点，线段终点朝 +X，该方向左侧为 +Y。",
   "document.trace.noScale": "尚未设置比例。基准线从原点朝模型 +X 绘制。一条尺寸确定统一比例，不会自动校正透视或草图中的尺寸冲突。",
   "document.trace.shapes": "选择起模线条",

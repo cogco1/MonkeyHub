@@ -15,6 +15,7 @@ import { useDocumentAnnotations, type createDocumentAnnotationsController } from
 import { DocumentTextLayer } from "./DocumentTextLayer";
 import { renderDocumentVisual } from "./documentVisualInput";
 import { DocumentTracingPanel } from "./DocumentTracingPanel";
+import { drawnPlanCalibration } from "./drawnCalibration";
 import { DocumentStudyPanel } from "./DocumentStudyPanel";
 import { useDocumentStudy } from "./useDocumentStudy";
 import { studyEvidenceToGestures, studyEvidenceFromGestures } from "./documentStudy";
@@ -907,7 +908,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
         }))} onCompare={target => { void study.compare(target); }} />
       : <aside className="document-notes" aria-label={t("document.notes")}>
         {file && page && <DocumentTracingPanel key={JSON.stringify([projectId, documentRun, selectedSha, selectedRevision, pageIndex, review?.ref.revisionSha256])} draft={draft}
-          disabled={busy || sending || !active} onSendingChange={setSending} />}
+          disabled={busy || sending || !active} onSendingChange={setSending} drawn={drawnPlanCalibration(document, pageIndex)} />}
         {hasSheetAction && <section className="document-drawing-styles" aria-label={t("document.drawingStyles")}>
           <fieldset disabled={stylesLoading || sheetBusy}>
             <legend>{t("document.drawingStyles")}</legend>
