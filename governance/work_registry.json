@@ -131,6 +131,7 @@
           "write_scope": [
             "apps/monkeyhub/web/scripts/check-generated.mjs",
             "apps/monkeyhub/web/scripts/command-tree.mjs",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
             "apps/monkeyhub/web/src/app/AdvancedTools.tsx",
             "apps/monkeyhub/web/src/app/AttentionShell.tsx",
             "apps/monkeyhub/web/src/app/attentionShell.css",
@@ -312,13 +313,12 @@
           "base_ref": "0dd76ca7b4fbec15185369f18f236228f52995f7",
           "contributor": "Claude",
           "reviewer": null,
-          "handoff": "T-1b on top of GH-300/shell (#695), GH-300/tests (#684) and GH-300/registry-data: the old shell (ChatShell, HubMenu, the settings pages in main.tsx, the chat cards) renders data-command ids, its browser tests reach controls by command id, and the shell's entry rows are registered as capability groups with ui.commands from the 711-entry inventory, reusing the ids GH-300/shell already registered. ChatShell.tsx is edited on both lanes by agreement (attributes here, the send path on GH-300/shell's claude/300-shell-gaps); whichever merges second returns it to GH-300/shell.",
+          "handoff": "T-1b on top of GH-300/shell (#695), GH-300/tests (#684) and GH-300/registry-data: the old shell (ChatShell, HubMenu, the settings pages in main.tsx, the chat cards) renders data-command ids, its browser tests reach controls by command id, and the shell's entry rows are registered as capability groups with ui.commands from the 711-entry inventory, reusing the ids GH-300/shell already registered. T-1b's data-command ids in ChatShell.tsx are done and the file is back with GH-300/shell; it hands the file over again if T-1b needs another change there.",
           "modules": [
             "hub.shell"
           ],
           "write_scope": [
             "apps/monkeyhub/web/src/ChatMessageContent.tsx",
-            "apps/monkeyhub/web/src/ChatShell.tsx",
             "apps/monkeyhub/web/src/ChatSuggestionCard.tsx",
             "apps/monkeyhub/web/src/HubMenu.tsx",
             "apps/monkeyhub/web/src/SoftwareUpdateSettings.tsx",
