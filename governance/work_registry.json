@@ -376,6 +376,7 @@
             "apps/monkeyhub/web/src/app/App.tsx",
             "apps/monkeyhub/web/src/app/AutoRetry.tsx",
             "apps/monkeyhub/web/src/app/ProjectWorkspace.tsx",
+            "apps/monkeyhub/web/src/app/quietRetry.ts",
             "apps/monkeyhub/web/src/app/styles.css",
             "apps/monkeyhub/web/src/features/conversation/cards/CandidateCard.tsx",
             "apps/monkeyhub/web/src/features/conversation/cards/VerdictCard.tsx",
@@ -390,6 +391,13 @@
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
             "apps/monkeyhub/web/src/workspaces/publish/PublishWorkspace.tsx",
             "apps/monkeyhub/web/src/workspaces/render/RenderResults.tsx",
+            "apps/monkeyhub/web/test/boardIntentHandoff.browser.mjs",
+            "apps/monkeyhub/web/test/boardLocale.browser.mjs",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/test/designTree.browser.mjs",
+            "apps/monkeyhub/web/test/modelingOpen.browser.mjs",
+            "apps/monkeyhub/web/test/publishWorkspace.browser.mjs",
+            "apps/monkeyhub/web/test/quietRetry.test.ts",
             "apps/monkeyhub/web/test/sidebarTasks.test.ts"
           ]
         }

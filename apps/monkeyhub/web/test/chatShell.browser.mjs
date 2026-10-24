@@ -83,6 +83,8 @@ const { chromium } = await import((process.env.PLAYWRIGHT_MODULE ? pathToFileURL
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 // 2-3c: the new shell is the default; these passes are the old one's, the way back (attentionShell.browser.mjs has the new).
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+// These passes press each retry themselves: quiet retries (F046) are off for them.
+await page.addInitScript(() => localStorage.setItem("monkeyhub.quietRetry", "off"));
 await page.addInitScript(() => localStorage.setItem("monkeyhub.shell", "workbench"));
 page.setDefaultTimeout(12000);
 // Keep chooser interception installed across keyboard passes. Repeatedly
@@ -895,6 +897,7 @@ async function idleMinute() {
   workspaceFixture.designTrees.set("T", tree);
   workspaceFixture.studioEvents.add("T");
   const idle = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  await idle.addInitScript(() => localStorage.setItem("monkeyhub.quietRetry", "off"));
   await idle.addInitScript(() => localStorage.setItem("monkeyhub.shell", "workbench"));
   idle.setDefaultTimeout(12000);
   idle.on("pageerror", (error) => errors.push(error.message));
@@ -1031,6 +1034,7 @@ async function requestedChangeLands() {
   const continues = () => workspaceFixture.requests.filter((row) => row.projectId === projectId
     && ((row.method === "PUT" && row.name === "/api/working-draft") || (row.method === "POST" && row.name.startsWith("/api/working-design/"))));
   const land = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  await land.addInitScript(() => localStorage.setItem("monkeyhub.quietRetry", "off"));
   await land.addInitScript(() => localStorage.setItem("monkeyhub.shell", "workbench"));
   land.setDefaultTimeout(15000);
   land.on("pageerror", (error) => errors.push(error.message));

@@ -76,6 +76,8 @@ try {
   browser = await chromium.launch({ headless: true, channel: "chrome" });
   for (const initial of ["zh-CN", "en"]) {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    // These passes press each retry themselves: quiet retries (F046) are off for them.
+    await context.addInitScript(() => localStorage.setItem("monkeyhub.quietRetry", "off"));
     await context.addInitScript((language) => {
       localStorage.setItem("archflow-studio.user-preferences", JSON.stringify({ version: 1, language }));
       window.EXCALIDRAW_ASSET_PATH = `${location.origin}/excalidraw/`;
