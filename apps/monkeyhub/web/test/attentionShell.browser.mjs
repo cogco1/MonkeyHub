@@ -432,6 +432,8 @@ try {
   }
   announce("attention/changed");
   const bulk = queuePage.locator(".attention-queue__bulk");
+  await bulk.getByRole("button", { name: "全部按建议（3）" }).waitFor();
+  await shoot(queuePage, "attention-queue-bulk-desktop-light");
   await bulk.getByRole("button", { name: "全部按建议（3）" }).click();
   await bulk.getByText("已按建议处理 3 张").waitFor();
   await queued("V11b 和当前冲突 78 处，归档吗").waitFor({ state: "detached" });
