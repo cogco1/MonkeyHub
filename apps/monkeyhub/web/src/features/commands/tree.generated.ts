@@ -187,8 +187,8 @@ export const COMMAND_TREE: CommandTree = {
       "status": "PRODUCTION",
       "host": "hub",
       "purpose": {
-        "en": "The controls every page shares: trying again what did not load or save, opening a folded section or a menu, closing a dialog or a notice.",
-        "zh-CN": "各页共用的控件：没读到或没存上时再试一次，展开收起的段落和菜单，关掉对话框和提示。"
+        "en": "The controls every page shares: trying again what did not load or save, reading the latest version after a conflict, opening a folded section or a menu, closing a dialog or a notice.",
+        "zh-CN": "各页共用的控件：没读到或没存上时再试一次，有冲突时读取最新版本，展开收起的段落和菜单，关掉对话框和提示。"
       },
       "terms": [
         "try loading again",
@@ -880,13 +880,35 @@ export const COMMAND_TREE: CommandTree = {
         "排7",
         "排14",
         "文11",
-        "文12",
         "文41",
         "图18",
         "渲23",
         "树8",
         "制3",
         "量5"
+      ],
+      "args": [
+        "notice"
+      ]
+    },
+    {
+      "id": "view.notice.read_latest",
+      "capability": "shell.controls",
+      "label": {
+        "en": "Read the latest version",
+        "zh-CN": "读取最新版本"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文12",
+        "模90"
       ],
       "args": [
         "notice"
