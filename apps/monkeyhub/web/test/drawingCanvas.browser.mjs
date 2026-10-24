@@ -119,7 +119,8 @@ const source = () => page.getByRole("combobox", { name: "Version to draw", exact
 // GH-302: appearance saves itself; the only save button left is Retry after a refusal.
 const saveButton = () => cmd(page, "view.notice.retry", { arg: "drawing_save" });
 const pen = label => page.getByLabel(label, { exact: true });
-const objectChoice = () => page.getByRole("combobox", { name: "Projected object", exact: true });
+// Read through the folded group it sits in (ADR-014 B7); a step that chooses from it opens the group first.
+const objectChoice = () => page.getByRole("combobox", { name: "Projected object", exact: true, includeHidden: true });
 // #337: the source's state is a quiet word at the bar's right end while all is well, and a row above the drawing while
 // it asks for a person; `settled` waits until its status has been read.
 const settled = ':not([aria-busy="true"])';
