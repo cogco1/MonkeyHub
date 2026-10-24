@@ -135,6 +135,10 @@ class AttachedModelIndexTests(unittest.TestCase):
         with_state = self.client.get(self.path, params={"runId": self.run, "stateDigest": "0" * 64})
         self.assertEqual(with_state.status_code, 422, with_state.text)
         self.assertEqual(with_state.json()["code"], "MODEL_SOURCE_INVALID")
+        # A Live Rhino snapshot read with its run's own base state, as run.json states it, is read (#300 item 13).
+        base = self.repository.load_run(self.run).base.state_sha256
+        with_base = self.client.get(self.path, params={"runId": self.run, "stateDigest": base})
+        self.assertEqual((with_base.status_code, with_base.json().get("objectCount")), (200, 5), with_base.text)
         design = self.client.get(self.path, params={"runId": REFERENCE_RUN_ID})
         self.assertEqual(design.status_code, 422, design.text)
         self.assertEqual(design.json()["code"], "MODEL_SOURCE_INVALID")

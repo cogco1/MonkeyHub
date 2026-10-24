@@ -1659,7 +1659,8 @@ def read_model_source_index(
 
     A model bound to a design run is named by that run and its exact state. A
     model attached from outside the project has no design state and is named by
-    its own run, ``studio-model-<assetSha256>``, alone. ``bounds`` adds each paged
+    its own run, ``studio-model-<assetSha256>``, alone (or with that run's own
+    base state digest, which names nothing more). ``bounds`` adds each paged
     object's bounds, read for that page only. With ``projections``, the model is
     decoded once per content and every later page is a lookup (``model_index``).
     """
@@ -1668,7 +1669,9 @@ def read_model_source_index(
         raise StudioError(422, "MODEL_INDEX_RANGE_INVALID", "Use a nonnegative offset and at most 200 objects per read.")
     source = None
     if run_id == MODEL_UPLOAD_RUN_PREFIX + asset_sha256:
-        if state_digest is not None:
+        # The run's own base state, as its run.json says it, names nothing else: a caller that read it there is answered.
+        if state_digest is not None and (run_id not in binding.run_ids()
+                                         or state_digest != binding.load_run(run_id).base.state_sha256):
             raise StudioError(422, "MODEL_SOURCE_INVALID",
                               "An attached model has no design state: name it by its own run alone, without stateDigest.")
         artifact = _attached_model(binding, run_id, asset_sha256)
