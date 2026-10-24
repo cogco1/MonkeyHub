@@ -114,15 +114,16 @@ export function CommandPalette({ language, onClose, askAI }: {
         aria-label={t("commands.palette")} placeholder={t("commands.placeholder")} value={query}
         onChange={(event) => setQuery(event.target.value)} onKeyDown={onKey} spellCheck={false} autoComplete="off" />
       <div className="command-palette__list" id="command-palette-list" role="listbox" ref={list} aria-label={t("commands.palette")}>
+        {/* The rows are the command tree itself (data-command-view), not entries on the page: each records its own use. */}
         {rows.map((row) => {
           if (row.kind === "heading") return <div key={row.key} className="command-palette__heading" role="presentation">{row.label}</div>;
           const selected = current?.key === row.key;
-          if (row.kind === "ask") return <div key={row.key} id={optionId(row.key)} data-row={row.key} role="option" aria-selected={selected}
+          if (row.kind === "ask") return <div key={row.key} id={optionId(row.key)} data-row={row.key} data-command-view role="option" aria-selected={selected}
             className="command-palette__row command-palette__row--ask" onMouseMove={() => setActive(choices.indexOf(row))} onClick={() => choose(row)}>
             <span className="command-palette__label">{t("commands.askAI", { text: row.text })}</span>
           </div>;
           const note = stateText(row.state);
-          return <div key={row.key} id={optionId(row.key)} data-row={row.key} role="option" aria-selected={selected}
+          return <div key={row.key} id={optionId(row.key)} data-row={row.key} data-command-view role="option" aria-selected={selected}
             aria-disabled={row.state.kind === "unavailable" || undefined} className="command-palette__row"
             onMouseMove={() => setActive(choices.indexOf(row))} onClick={() => choose(row)}>
             <span className="command-palette__label">{row.command.label[language]}</span>
