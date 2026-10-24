@@ -116,10 +116,12 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
         <p>{comparisonStudyName(pair.left.studyId)} ↔ {comparisonStudyName(pair.right.studyId)}</p>
         <dl><dt>{text("Topology similarity", "拓扑相似度")}</dt><dd>{formatted(pair.topologySimilarity)}</dd>
           <dt>{text("Largest proportion difference", "最大比例差异")}</dt><dd>{formatted(pair.maxProportionDelta)}</dd></dl>
-        <details><summary data-command="view.disclosure.toggle" data-command-arg="study_exact_versions">{text("Exact saved versions & unique relations", "确切保存版本及独有关系")}</summary>
-          <strong>{text("Left saved version", "左侧保存版本")}</strong><small>{pair.left.ledgerRef}</small>
+        {/* The relations only one side has are for everyone; each side's saved record reference is for developer mode. */}
+        <details><summary data-command="view.disclosure.toggle" data-command-arg="study_exact_versions">{developerMode
+          ? text("Exact saved versions & unique relations", "确切保存版本及独有关系") : text("Unique relations", "独有关系")}</summary>
+          <strong>{text("Left saved version", "左侧保存版本")}</strong>{developerMode && <small>{pair.left.ledgerRef}</small>}
           <ul>{(pair.leftOnlyTopology ?? []).map((item, i) => <li key={i}>{comparisonFact(item)}</li>)}</ul>
-          <strong>{text("Right saved version", "右侧保存版本")}</strong><small>{pair.right.ledgerRef}</small>
+          <strong>{text("Right saved version", "右侧保存版本")}</strong>{developerMode && <small>{pair.right.ledgerRef}</small>}
           <ul>{(pair.rightOnlyTopology ?? []).map((item, i) => <li key={i}>{comparisonFact(item)}</li>)}</ul>
         </details></div>)}
       <small>{result.method}</small>
@@ -423,7 +425,8 @@ export function DocumentStudyPanel({ source, sourceName, draft, study, onChange,
         {/* The page and whether the study is saved are for everyone; the file's fingerprint and the saved record's reference are for developer mode. */}
         <dl><dt>{text("Source page", "来源页")}</dt><dd>{source.pageIndex + 1}</dd>
           {developerMode && <><dt>{text("Source fingerprint", "来源指纹")}</dt><dd>{source.assetSha256}</dd></>}
-          <dt>{text("Saved revision", "保存版本")}</dt><dd>{study ? (developerMode ? study.ledgerRef : text("Saved", "已保存")) : text("Not saved", "尚未保存")}</dd></dl>
+          <dt>{text("Saved revision", "保存版本")}</dt><dd>{!study ? text("Not saved", "尚未保存") : developerMode ? study.ledgerRef
+            : dirty ? text("Saved; later corrections are not saved yet", "已保存，之后的校正还没保存") : text("Saved", "已保存")}</dd></dl>
       </details>
     </div>
     <footer className="document-study__footer">
