@@ -26,8 +26,8 @@ nothing is retried, and nothing is reported as an empty success.
 A person follows a job in four fixed steps (#300): generate, check, repair and
 save. The work says how far it has got with ``report_step`` from the worker
 thread it runs on; each change is a ``job.step`` event. A job whose work
-reports nothing has no steps, and a step still running when the work ends
-ends with it, done or failed.
+reports nothing has no steps. When the work ends, a step still running ends
+with it, done or failed, and a step it never reached is skipped.
 """
 
 from __future__ import annotations
@@ -36,6 +36,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+import logging
 import threading
 import time
 from typing import Any, Callable, Iterable, Mapping
@@ -65,6 +66,8 @@ PERSISTENCE = "in-memory (not version history)"
 # candidate.failed, which the web client and the Hub relay read; another
 # kind publishes under its own name (export.queued).
 RUN = "run"
+
+_LOG = logging.getLogger(__name__)
 
 # The steps a person follows a job by, in order, and the state each can be in.
 STEPS = ("generate", "check", "repair", "save")
@@ -113,11 +116,20 @@ _CURRENT: ContextVar[tuple["JobRegistry", str] | None] = ContextVar("studio_job"
 
 
 def report_step(name: str, state: str, text: str | None = None) -> None:
-    """Say how far the job this thread runs has got; outside a job, nothing happens."""
+    """Say how far the job this thread runs has got; outside a job, nothing happens.
+
+    Progress is told, never acted on: a report naming a step or state this
+    registry does not know is dropped and logged, and the work goes on. Only
+    the worker thread knows its job; a thread the work starts itself does not.
+    """
 
     current = _CURRENT.get()
-    if current is not None:
+    if current is None:
+        return
+    try:
         current[0].step(current[1], name, state, text)
+    except ValueError:
+        _LOG.warning("A job's step report was dropped: %r %r is no step and state of %s", name, state, current[1])
 
 
 class JobRegistry:
@@ -323,12 +335,14 @@ class JobRegistry:
         self._publish(job, "job.step", step=JobStep(name, state, text))
         return job
 
-    def _settle_steps(self, job_id: str, state: str) -> None:
-        # A step the work left running ends with the work.
+    def _settle_steps(self, job_id: str, *, failed: bool) -> None:
+        # A step the work left running ends with the work; one it never reached was skipped.
         job = self.get(job_id)
         for row in job.steps:
             if row.state == "running":
-                self.step(job_id, row.name, state, row.text)
+                self.step(job_id, row.name, "failed" if failed else "done", row.text)
+            elif row.state == "pending":
+                self.step(job_id, row.name, "skipped", row.text)
 
     def shutdown(self) -> None:
         """Finish every accepted job before closing the worker pool."""
@@ -400,50 +414,52 @@ class JobRegistry:
 
     def _run(self, job_id: str, work: Callable[[], Any]) -> None:
         started = time.perf_counter()
-        self._publish(
-            self._transition(job_id, status=RUNNING, started_at=_now()),
-            "candidate.running",
-        )
-        current = _CURRENT.set((self, job_id))
+        # Whatever happens below, even an event that cannot be published, the
+        # job gives its lane and its worker back.
         try:
-            work()
-        # Every *failure* is somebody's answer, but an interpreter that is
-        # shutting down is not a failed candidate: SystemExit and
-        # KeyboardInterrupt pass through rather than being recorded as one.
-        except Exception as exc:  # noqa: BLE001 - the reason is the point
-            _CURRENT.reset(current)
-            self._settle_steps(job_id, "failed")
-            # The runner's own sentence goes on the job verbatim; an exception
-            # with no message would otherwise arrive as an empty string nobody
-            # could act on.
+            self._publish(
+                self._transition(job_id, status=RUNNING, started_at=_now()),
+                "candidate.running",
+            )
+            current = _CURRENT.set((self, job_id))
+            try:
+                work()
+            # Every *failure* is somebody's answer, but an interpreter that is
+            # shutting down is not a failed candidate: SystemExit and
+            # KeyboardInterrupt pass through rather than being recorded as one.
+            except Exception as exc:  # noqa: BLE001 - the reason is the point
+                failure: Exception | None = exc
+            else:
+                failure = None
+            finally:
+                _CURRENT.reset(current)
+            self._settle_steps(job_id, failed=failure is not None)
+            if failure is not None:
+                # The runner's own sentence goes on the job verbatim; an exception
+                # with no message would otherwise arrive as an empty string nobody
+                # could act on.
+                self._publish(
+                    self._transition(
+                        job_id,
+                        status=FAILED,
+                        finished_at=_now(),
+                        error=str(failure) or f"{type(failure).__name__} (no message)",
+                        wall_time_s=round(time.perf_counter() - started, 3),
+                    ),
+                    "candidate.failed",
+                )
+                return
             self._publish(
                 self._transition(
                     job_id,
-                    status=FAILED,
+                    status=SUCCEEDED,
                     finished_at=_now(),
-                    error=str(exc) or f"{type(exc).__name__} (no message)",
                     wall_time_s=round(time.perf_counter() - started, 3),
                 ),
-                "candidate.failed",
+                "candidate.succeeded",
             )
+        finally:
             self._release(job_id)
-            return
-        except BaseException:
-            _CURRENT.reset(current)
-            self._release(job_id)
-            raise
-        _CURRENT.reset(current)
-        self._settle_steps(job_id, "done")
-        self._publish(
-            self._transition(
-                job_id,
-                status=SUCCEEDED,
-                finished_at=_now(),
-                wall_time_s=round(time.perf_counter() - started, 3),
-            ),
-            "candidate.succeeded",
-        )
-        self._release(job_id)
 
     def _release(self, job_id: str) -> None:
         with self._lock:

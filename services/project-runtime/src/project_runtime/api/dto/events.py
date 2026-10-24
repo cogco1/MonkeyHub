@@ -92,8 +92,8 @@ class JobStepDto(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    name: str = Field(description="generate | check | repair | save")
-    state: str = Field(description="pending | running | done | skipped | failed")
+    name: Literal["generate", "check", "repair", "save"]
+    state: Literal["pending", "running", "done", "skipped", "failed"]
     text: str | None = None
 
 
@@ -124,11 +124,12 @@ class StudioEventDto(BaseModel):
     waiting_reason: str | None = Field(alias="waitingReason", default=None)
     title: str | None = Field(default=None, description="on a job's events, what a person calls the job, when it says")
     steps: list[JobStepDto] | None = Field(default=None, description=(
-        "on a job's events, its four steps (generate, check, repair, save) once its work reported one; "
-        "empty until then"))
-    step: str | None = Field(default=None, description="on job.step, the step that changed")
-    step_state: str | None = Field(alias="stepState", default=None, description=(
-        "on job.step, that step's state: pending, running, done, skipped or failed"))
+        "on a job's events, its four steps (generate, check, repair, save) once its work reported one, an empty "
+        "list until then; null on an event that is not a job's"))
+    step: Literal["generate", "check", "repair", "save"] | None = Field(
+        default=None, description="on job.step, the step that changed")
+    step_state: Literal["pending", "running", "done", "skipped", "failed"] | None = Field(
+        alias="stepState", default=None, description="on job.step, that step's state")
     step_text: str | None = Field(alias="stepText", default=None, description="on job.step, a sentence a person can read")
     review_ready: bool | None = Field(
         alias="reviewReady",

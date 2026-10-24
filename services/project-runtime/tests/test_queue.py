@@ -390,20 +390,22 @@ class JobKindTests(QueueTestCase):
         def work() -> None:
             report_step("generate", "running", "Building the model")
             report_step("generate", "done")
+            report_step("render", "running")  # told wrong: dropped, and the work goes on
             report_step("check", "running", "Checking 131 conditions")
 
         job = registry.submit(candidate_id="c-steps", proposal_id="p-steps", work=work, title="Remove four braces")
         self.assertTrue(wait_until(lambda: registry.get(job.job_id).status == SUCCEEDED))
         self.assertEqual([(row.name, row.state) for row in registry.get(job.job_id).steps],
-                         [("generate", "done"), ("check", "done"), ("repair", "pending"), ("save", "pending")],
-                         "a step still running when the work ends ends with it")
+                         [("generate", "done"), ("check", "done"), ("repair", "skipped"), ("save", "skipped")],
+                         "a step still running ends with the work, and one it never reached is skipped")
         reported = events.of("job.step")
         self.assertEqual([(event["step"], event["step_state"]) for event in reported],
-                         [("generate", "running"), ("generate", "done"), ("check", "running"), ("check", "done")])
+                         [("generate", "running"), ("generate", "done"), ("check", "running"), ("check", "done"),
+                          ("repair", "skipped"), ("save", "skipped")])
         self.assertEqual((reported[0]["title"], reported[0]["step_text"]), ("Remove four braces", "Building the model"))
         wire = to_dto({**events.of("candidate.succeeded")[0], "seq": 1, "at": "now"}).model_dump(by_alias=True)
         self.assertEqual((wire["lane"], wire["title"], [row["state"] for row in wire["steps"]]),
-                         (PARALLEL, "Remove four braces", ["done", "done", "pending", "pending"]))
+                         (PARALLEL, "Remove four braces", ["done", "done", "skipped", "skipped"]))
 
     def test_a_step_running_when_the_work_fails_fails_with_it(self) -> None:
         events = Recorder()
@@ -416,8 +418,10 @@ class JobKindTests(QueueTestCase):
 
         job = registry.submit(candidate_id="c-fails", proposal_id="p-fails", work=work)
         self.assertTrue(wait_until(lambda: registry.get(job.job_id).status == "failed"))
-        self.assertEqual(registry.get(job.job_id).steps[0].state, "failed")
-        self.assertEqual(events.of("job.step")[-1]["step_state"], "failed")
+        self.assertEqual([row.state for row in registry.get(job.job_id).steps],
+                         ["failed", "skipped", "skipped", "skipped"])
+        self.assertEqual([event["step_state"] for event in events.of("job.step")][1:],
+                         ["failed", "skipped", "skipped", "skipped"])
 
     def test_a_job_whose_work_reports_nothing_has_no_steps(self) -> None:
         events = Recorder()
@@ -433,10 +437,34 @@ class JobKindTests(QueueTestCase):
             registry.step(job.job_id, "check", "almost")
 
     def test_a_queued_job_says_on_the_wire_what_it_waits_for(self) -> None:
-        wire = to_dto({"seq": 1, "at": "now", "type": "candidate.waiting", "lane": EXCLUSIVE,
-                       "waiting_for": "c-export", "waiting_reason": EXCLUSIVE_REASON}).model_dump(by_alias=True)
-        self.assertEqual((wire["lane"], wire["waitingFor"], wire["waitingReason"]), (EXCLUSIVE, "c-export", EXCLUSIVE_REASON))
-        self.assertIsNone(wire["steps"])
+        events = Recorder()
+        registry = JobRegistry(events, max_workers=2)
+        self.addCleanup(registry.shutdown)
+        first = Gate()
+        self.addCleanup(first.release.set)
+        registry.submit(candidate_id="c-export", proposal_id="p-1", work=first, exclusive=True)
+        self.assertTrue(first.started.wait(5))
+        registry.submit(candidate_id="c-export-2", proposal_id="p-2", work=lambda: None, exclusive=True)
+        waiting, = events.of("candidate.waiting")
+        wire = to_dto({**waiting, "seq": 1, "at": "now"}).model_dump(by_alias=True)
+        self.assertEqual((wire["lane"], wire["waitingFor"], wire["waitingReason"], wire["steps"]),
+                         (EXCLUSIVE, "c-export", EXCLUSIVE_REASON, []), "a job's events carry its steps, none yet")
+        other = to_dto({"seq": 2, "at": "now", "type": "validation.computed"}).model_dump(by_alias=True)
+        self.assertIsNone(other["steps"], "an event that is not a job's has no steps")
+
+    def test_a_job_whose_event_cannot_be_published_still_gives_its_lane_back(self) -> None:
+        class Refusing(Recorder):
+            def publish(self, *, event: dict) -> None:
+                if event["type"] == "candidate.succeeded" and event["candidate_id"] == "c-first":
+                    raise RuntimeError("the event sink is gone")
+                super().publish(event=event)
+
+        events = Refusing()
+        registry = JobRegistry(events, max_workers=1)
+        self.addCleanup(registry.shutdown)
+        registry.submit(candidate_id="c-first", proposal_id="p-1", work=lambda: None, exclusive=True)
+        second = registry.submit(candidate_id="c-second", proposal_id="p-2", work=lambda: None, exclusive=True)
+        self.assertTrue(wait_until(lambda: registry.get(second.job_id).status == SUCCEEDED))
 
     def test_a_run_keeps_its_published_event_names_and_another_kind_says_what_it_is(self) -> None:
         # A run is the job's own kind now (#294); its lifecycle events keep the names
