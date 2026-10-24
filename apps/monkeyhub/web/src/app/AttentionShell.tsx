@@ -51,6 +51,17 @@ export interface ShellProject {
   readonly recent: readonly ShellConversation[];
 }
 
+/** What just came out, beside the conclusion: a drawing with its picture and the click that opens it, or a finished job. */
+export interface RecentTile {
+  /** The drawing's id, when the tile is a drawing. */
+  readonly id?: string;
+  readonly label: string;
+  readonly title: string;
+  readonly caption: string;
+  readonly picture?: string;
+  readonly onOpen?: () => void;
+}
+
 export interface AttentionShellProps {
   Icon: ComponentType<{ name: string }>;
   projects: readonly ShellProject[];
@@ -77,7 +88,7 @@ export interface AttentionShellProps {
   /** Agent work running or queued in any project, for the background line and page. */
   background: { running: number; queued: number };
   /** Beside the conclusion: how long the longest running work has left, and the latest finished result. */
-  overview?: { wait: string | null; recent: { title: string; caption: string } | null };
+  overview?: { wait: string | null; recent: RecentTile | null };
   /** True while the conversation is being sent to or answers; the drawer opens for it. */
   conversationActive: boolean;
   notices: ReactNode;
@@ -239,9 +250,16 @@ export function AttentionShell(props: AttentionShellProps) {
               <b>{props.background.running ? t("shell.overview.running", { count: props.background.running }) : t("shell.overview.queued", { count: props.background.queued })}</b>
               <small>{props.overview?.wait ?? (props.background.running && props.background.queued ? t("shell.overview.queued", { count: props.background.queued }) : "")}</small>
             </button>}
-            {props.overview?.recent && <div className="attention-overview__tile">
-              <span>{t("shell.overview.recent")}</span><b>{props.overview.recent.title}</b><small>{props.overview.recent.caption}</small>
-            </div>}
+            {props.overview?.recent && (() => {
+              const recent = props.overview.recent;
+              const body = <>
+                {recent.picture && <img className="attention-overview__picture" src={recent.picture} alt="" loading="lazy" />}
+                <span>{recent.label}</span><b title={recent.title}>{recent.title}</b><small>{recent.caption}</small>
+              </>;
+              return recent.onOpen ? <button type="button" className="attention-overview__tile attention-overview__tile--picture" data-command="view.recent_drawing.open" data-command-arg={recent.id}
+                aria-label={`${recent.label}：${recent.title}`} onClick={recent.onOpen}>{body}</button>
+                : <div className="attention-overview__tile">{body}</div>;
+            })()}
           </div>
           {queue.available && <AttentionQueue projectName={projectName} />}
         </section>

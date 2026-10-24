@@ -312,6 +312,28 @@
             "tools/release/package_monkeyapps.py"
           ],
           "depends_on": []
+        },
+        {
+          "id": "recent-drawings",
+          "status": "active",
+          "branch": "claude/300-b3-recent-drawings",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-recent-drawings",
+          "base_ref": "f38c34880",
+          "contributor": "Claude",
+          "reviewer": null,
+          "depends_on": [],
+          "handoff": "The Attention page's tile beside the conclusion shows the newest drawing with its first page; one click opens it on the Board, switching project first when needed (batch 3, from claude/300-batch3).",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/app/AttentionShell.tsx",
+            "apps/monkeyhub/web/src/app/attentionShell.css",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/attentionShell.browser.mjs"
+          ]
         }
       ]
     }

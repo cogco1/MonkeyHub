@@ -1327,6 +1327,8 @@ export const messagesZhCN = {
   "shell.overview.running": "{count} 个在跑",
   "shell.overview.queued": "{count} 个在等",
   "shell.overview.recent": "最近完成",
+  "shell.overview.recentDrawing": "最近出的图",
+  "shell.overview.daysAgo": "{count} 天前",
   "shell.overview.justNow": "刚刚",
   "shell.overview.minutesAgo": "{count} 分钟前",
   "shell.overview.hoursAgo": "{count} 小时前",
