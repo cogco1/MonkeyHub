@@ -59,6 +59,26 @@ class SubmitTests(unittest.TestCase):
         state = json.loads(self.state.read_text(encoding="utf-8"))
         self.assertEqual((state["messageId"], state["submits"][0]["outcome"]), ("m-1", "landed"))
 
+    def test_a_body_said_another_way_is_sent_as_its_route_takes_it(self) -> None:
+        self.answers = [{"outcome": "landed", "code": "LANDED", "candidateId": "c-1"}]
+        answer = self.submit(proposal={"script": "pass", "parameters": {"door_width": 1.4, "sill": {"value": 0.9,
+                                                                                                      "unit": "m"}}},
+                             keep=["entity:lintel", "obligation:k3", "decision:d-1"])
+        body = self.sent[0]["body"]
+        self.assertEqual(body["proposal"]["parameters"], [{"key": "door_width", "value": 1.4},
+                                                          {"key": "sill", "value": 0.9, "unit": "m"}])
+        self.assertEqual(body["keep"], ["entity:lintel"], "the design's own conditions and decisions need no keep")
+        self.assertEqual(len(answer["notes"]), 2)
+
+    def test_a_refused_body_comes_back_with_its_kinds_fields_and_an_example(self) -> None:
+        self.answers = [{"outcome": "problems", "code": "PROPOSAL_REFUSED", "problems": [
+            {"source": "proposal", "kind": "PROPOSAL_INVALID", "detail": "head: Field required"}]}]
+        answer = self.submit(kind="hosted-opening", proposal={"host": "w", "kind": "window", "height": 1.2})
+        self.assertEqual(answer["expected"]["kind"], "hosted-opening")
+        self.assertIn("head", answer["expected"]["fields"])
+        self.assertEqual(set(answer["expected"]["example"]), {"host", "kind", "along", "width", "sill", "head"})
+        self.assertNotIn("notes", answer)
+
     def test_a_corrected_change_replaces_the_attempts_on_the_same_base(self) -> None:
         self.answers = [{"outcome": "problems", "code": "CHECKS_FAILED", "candidateId": "c-1"},
                         {"outcome": "landed", "code": "LANDED", "candidateId": "c-2"}]

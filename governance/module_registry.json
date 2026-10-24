@@ -5398,6 +5398,7 @@
         "archflow.semantics.facets",
         "archflow.semantics.registry",
         "archflow.state.decision_operator",
+        "archflow.state.dependencies",
         "archflow.state.design_portfolio",
         "archflow.state.operational_state",
         "archflow.state.stage_workflow",

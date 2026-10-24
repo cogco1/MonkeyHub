@@ -55,16 +55,86 @@ GUIDE = chr(10).join([
     "Revise the design through one call. design_read first: working (runId, stateDigest), keep, rejected,",
     "conditions (checkable or not, and how each stands now), outside, lastChange and the model by geometry id.",
     "design_submit {sourceRunId, stateDigest, kind, proposal, summary, keep?, land?} with the working",
-    "design's runId and stateDigest. kind and proposal are a proposal route and its body: construction",
-    "{script, parameters?} (GET the vocabulary with design_read part=vocabulary), facets {targets},",
-    "hosted-opening {host, kind, along, width, ...}, elevation {action: 'set-datum', levelId, value} or",
-    "proposal {semanticEdit}. It answers one outcome: landed (done), problems (nothing moved; correct the change",
-    "and submit again), needs_question (nothing built; call design_ask with that question), refused (read again).",
-    "A condition no check can verify is the architect's to confirm, never yours; a kept target or a rejected option",
-    "is never changed from here. outside lists each change made outside MonkeyHub, newest file first, none in the",
+    "design's runId and stateDigest. kind and proposal are a proposal route and its body, for example:",
+    '- construction {script, parameters?}: parameters is a list of {key, value} (unit, expr optional). For parameters',
+    '  alone the script is "pass": {"script": "pass", "parameters": [{"key": "door_width", "value": 1.4}]}. A parameter',
+    "  missing from the model's declaredParameters is derived: it changes through those it comes from, or with a new",
+    "  expr (null fixes it at the value). A script edits shapes by the model's geometry ids and parts (get(id)); a part in",
+    "  notScriptEditable changes through its madeFrom parameters; an opening through the parameters it lists; a script",
+    "  that only prints changes nothing (read with design_read part=model). design_read part=vocabulary is the language.",
+    '- hosted-opening {host, kind, along, width, sill, head} adds a door or window: {"host": "wall-south", "kind":',
+    '  "window", "along": 2.0, "width": 1.2, "sill": 0.9, "head": 2.1} (metres from the host\'s base; sill 0 for a door).',
+    '- facets {targets: [{id, set?, remove?}]}: {"targets": [{"id": "wall-south", "set": {"material.name": "brick"}}]}.',
+    '- elevation {"action": "set-datum", "levelId": "level-2", "value": 3.3} moves or adds a level.',
+    '- proposal {"semanticEdit": {"summary": "door 1.4 m wide", "parameters": [{"key": "door_width", "value": 1.4}]}}',
+    "  edits record rows (entities, parameters, relations) whole.",
+    "keep is only for further entity:<id> or parameter:<key> refs the architect's message asks to keep; the design's",
+    "keep decisions and conditions apply to every change without it. A refused body comes back with expected: its kind's",
+    "fields and an example. It answers one outcome: landed (done), problems (nothing moved; correct the change and",
+    "submit again), needs_question (nothing built; call design_ask with that question), refused (read again).",
+    "A condition no check can verify is the architect's to confirm, never yours; a rejected option, or a kept target",
+    "no checked condition states, is never changed from here. A keep a checked condition states is that condition:",
+    "submit the change, and MonkeyHub checks it on the built model and says what it measured. outside lists each change made outside MonkeyHub, newest file first, none in the",
     "design: name each with its amount and ask the architect whether to adopt it; a change that reaches one asks first.",
     "After {budget} changes with problems, ask or report a limitation instead of submitting again.",
 ])
+
+
+# Each kind's body, as a refused one is answered: its fields and the smallest example.
+SHAPES = {
+    "construction": {"fields": 'script (a construction script; "pass" when parameters alone change), parameters?: '
+                               "[{key, value, unit?, expr?}]",
+                     "example": {"script": "pass", "parameters": [{"key": "door_width", "value": 1.4}]}},
+    "hosted-opening": {"fields": "host (a geometry id whose capabilities include hosted-opening), kind (door or window), "
+                                 "along, width, sill, head (metres from the host's base; sill 0 for a door)",
+                       "example": {"host": "wall-south", "kind": "window", "along": 2.0, "width": 1.2, "sill": 0.9,
+                                   "head": 2.1}},
+    "facets": {"fields": "targets: [{id, part?, set?: {facet key: value}, remove?: [facet key]}]",
+               "example": {"targets": [{"id": "wall-south", "set": {"material.name": "brick"}}]}},
+    "elevation": {"fields": 'action "set-datum", levelId, value (the level\'s elevation in metres)',
+                  "example": {"action": "set-datum", "levelId": "level-2", "value": 3.3}},
+    "proposal": {"fields": "semanticEdit: {summary, entities?, parameters?, relations?, removeEntityIds?, "
+                           "removeParameterKeys?, removeRelationIds?}: record rows, whole; at least one edit",
+                 "example": {"semanticEdit": {"summary": "door 1.4 m wide",
+                                              "parameters": [{"key": "door_width", "value": 1.4}]}}},
+}
+# The design's own decisions and conditions apply to every change; keep adds only parts.
+_NOT_KEPT = ("obligation:", "decision:")
+
+
+def _as_rows(parameters: Any) -> Any:
+    """Parameters given as key: value (or key: {value, ...}) as the list of rows the proposal routes take."""
+
+    if not isinstance(parameters, Mapping):
+        return parameters
+    return [{"key": key, **value} if isinstance(value, Mapping) else {"key": key, "value": value}
+            for key, value in parameters.items()]
+
+
+def _normalized(body: dict) -> list[str]:
+    """Correct, in place, what a body says another way than its route takes; the notes say what was changed."""
+
+    notes = []
+    proposal = body.get("proposal")
+    if isinstance(proposal, Mapping):
+        proposal = dict(proposal)
+        if isinstance(proposal.get("parameters"), Mapping):
+            proposal["parameters"] = _as_rows(proposal["parameters"])
+            notes.append("parameters came as key: value and were sent as a list of {key, value}")
+        edit = proposal.get("semanticEdit")
+        if isinstance(edit, Mapping) and isinstance(edit.get("parameters"), Mapping):
+            proposal["semanticEdit"] = {**edit, "parameters": _as_rows(edit["parameters"])}
+            notes.append("semanticEdit.parameters came as key: value and were sent as a list of {key, value}")
+        body["proposal"] = proposal
+    if isinstance(body.get("keep"), list):
+        aside = [ref for ref in body["keep"] if isinstance(ref, str) and ref.startswith(_NOT_KEPT)]
+        if aside:
+            body["keep"] = [ref for ref in body["keep"] if ref not in aside]
+            if not body["keep"]:
+                del body["keep"]
+            notes.append(f"keep takes entity: and parameter: refs; {', '.join(aside)} apply to every change "
+                         "without it and were left out")
+    return notes
 
 
 def repair_budget() -> int:
@@ -203,6 +273,7 @@ def call(hub: str, chat_id: str, name: str, arguments: Mapping[str, Any]) -> dic
                          "design_report_limitation. Nothing was submitted.")
     body = {key: arguments[key] for key in ("sourceRunId", "stateDigest", "kind", "proposal", "summary", "keep", "land")
             if key in arguments}
+    notes = _normalized(body)
     # Earlier attempts of this message on the same base are the ones this result replaces.
     attempts = [row["candidateId"] for row in failed if row.get("candidateId") and row["base"] == arguments["stateDigest"]]
     if attempts:
@@ -218,6 +289,10 @@ def call(hub: str, chat_id: str, name: str, arguments: Mapping[str, Any]) -> dic
     left = repair_budget() - sum(1 for row in held["submits"] if row["outcome"] == "problems")
     if answer.get("outcome") == "problems":
         answer = {**answer, "repairsLeft": max(0, left)}
+    if answer.get("code") == "PROPOSAL_REFUSED" and arguments.get("kind") in SHAPES:
+        answer = {**answer, "expected": {"kind": arguments["kind"], **SHAPES[arguments["kind"]]}}
+    if notes:
+        answer = {**answer, "notes": notes}
     return answer
 
 

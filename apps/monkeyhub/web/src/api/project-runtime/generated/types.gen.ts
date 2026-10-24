@@ -2262,13 +2262,25 @@ export type ConstructionEntityDto = {
     /**
      * Openings
      *
-     * the doors and windows it hosts, when it is one part
+     * the doors and windows its parts host
      */
     openings: Array<ConstructionOpeningDto>;
     /**
      * where the along of a door or window on it is measured, when its capabilities include hosted-opening and its shape can take one; null otherwise
      */
     alongLine: ConstructionLineDto | null;
+    /**
+     * Madefrom
+     *
+     * the declared parameters its parts are made from, through any derived ones
+     */
+    madeFrom?: Array<string>;
+    /**
+     * Notscripteditable
+     *
+     * its parts a script cannot edit: change them through madeFrom
+     */
+    notScriptEditable?: Array<string>;
 };
 
 /**
@@ -2376,6 +2388,12 @@ export type ConstructionModelDto = {
      */
     parameters: Array<ConstructionParameterValueDto>;
     /**
+     * Declaredparameters
+     *
+     * the parameters a change sets; every other one is derived from these, and a value alone does not change it
+     */
+    declaredParameters?: Array<string>;
+    /**
      * Entities
      */
     entities: Array<ConstructionEntityDto>;
@@ -2423,6 +2441,20 @@ export type ConstructionOpeningDto = {
      * metres from the host's base up to its top; null when stated another way
      */
     head: number | null;
+    /**
+     * Parameters
+     *
+     * the parameter each of along, width, sill and head is read from, when one states it: change the opening through it
+     */
+    parameters?: {
+        [key: string]: string;
+    };
+    /**
+     * Part
+     *
+     * the part that hosts it, when the geometry id has several; a door or window is added only to a geometry id of one part
+     */
+    part?: string | null;
 };
 
 /**
