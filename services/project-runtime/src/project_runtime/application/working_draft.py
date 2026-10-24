@@ -297,39 +297,64 @@ class ContinueMove:
     message_id: str | None
 
 
-def continue_moves(binding: ProjectBinding, *, limit: int = 50, indexed: bool = False) -> tuple[ContinueMove, ...]:
-    """The Working Head's moves onto runs, newest first: what the history page lists and goes back along.
+def continue_moves(binding: ProjectBinding, *, limit: int = 50) -> tuple[tuple[ContinueMove, ...], tuple[str, ...]]:
+    """The moves that brought the Working Head where it stands, newest first, and what could not be read.
 
-    Each Continue leaves its event beside the run it moved onto, so every
-    run's review area is read; with ``indexed`` (a route's read, #599) a run
-    the project index says keeps no audit event is not read. A run whose
-    events cannot be read is passed by: the moves listed are the ones
-    retained readably.
+    Each Continue leaves its event beside the run it moved onto, naming the run
+    the head stood on before. The walk starts at the working position's run,
+    takes the newest move onto it, and goes back along each move's previous
+    run, taking there the newest move made before the one it came from; it
+    reads about ``limit`` runs, however many the project keeps. It stops where
+    a run keeps no earlier move: the project's first head, or a return to the
+    default (a Continue onto no run), which leaves no event. A run whose events
+    cannot be read ends the walk, and the warnings say where.
     """
 
-    rows = indexed_runs(binding) if indexed else None
+    value, _ = binding.repository.read_working_draft()
+    run_id, before = value["current"], None
     moves: list[ContinueMove] = []
-    for run_id in binding.run_ids():
-        if rows is not None and not rows.holds(run_id, AUDIT_EVENT, "reviews"):
+    warnings: list[str] = []
+    while run_id is not None and len(moves) < limit:
+        try:
+            onto = _moves_onto(binding, run_id)
+        except _UNREADABLE as exc:
+            warnings.append(f"The moves before {run_id} could not be read: {_detail(exc)}")
+            break
+        earlier = [move for move in onto if before is None or move.at < before]
+        if not earlier:
+            break
+        move = max(earlier, key=lambda row: row.at)
+        moves.append(move.move)
+        run_id, before = move.move.previous_run_id, move.at
+    return tuple(moves), tuple(warnings)
+
+
+@dataclass(frozen=True, slots=True)
+class _Timed:
+    at: datetime
+    move: ContinueMove
+
+
+def _moves_onto(binding: ProjectBinding, run_id: str) -> list[_Timed]:
+    """The Continue events beside one run that moved the head onto it; one without a readable time is passed by."""
+
+    refs = binding.repository.list_json(
+        run=binding.load_run(run_id), record_kind=AUDIT_EVENT,
+        destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=run_id))
+    moves = []
+    for event in map(binding.repository.load_json, refs):
+        if event.get("action") != DESIGN_CONTINUED or event.get("targetRunId") != run_id:
             continue
         try:
-            refs = binding.repository.list_json(
-                run=binding.load_run(run_id), record_kind=AUDIT_EVENT,
-                destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=run_id))
-            events = [binding.repository.load_json(ref) for ref in refs]
-        except _UNREADABLE:
+            at = datetime.fromisoformat(event["occurredAt"])
+        except (KeyError, TypeError, ValueError):
             continue
-        for event in events:
-            if event.get("action") != DESIGN_CONTINUED or event.get("targetRunId") != run_id:
-                continue
-            message = event.get("messageSource") or {}
-            moves.append(ContinueMove(
-                occurred_at=str(event.get("occurredAt")), run_id=run_id,
-                previous_run_id=event.get("previousHeadRunId"), actor_id=str(event.get("actorId")),
-                origin=str(event.get("origin")), message_session_id=message.get("sessionId"),
-                message_id=message.get("messageId")))
-    moves.sort(key=lambda move: (move.occurred_at, move.run_id), reverse=True)
-    return tuple(moves[:limit])
+        message = event.get("messageSource") or {}
+        moves.append(_Timed(at, ContinueMove(
+            occurred_at=event["occurredAt"], run_id=run_id, previous_run_id=event.get("previousHeadRunId"),
+            actor_id=str(event.get("actorId")), origin=str(event.get("origin")),
+            message_session_id=message.get("sessionId"), message_id=message.get("messageId"))))
+    return moves
 
 
 @retained_sources

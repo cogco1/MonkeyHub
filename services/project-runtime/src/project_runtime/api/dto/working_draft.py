@@ -52,11 +52,14 @@ class ContinueMoveDto(BaseModel):
 
 class ContinueMovesDto(BaseModel):
     projectId: str
-    moves: list[ContinueMoveDto]
+    moves: list[ContinueMoveDto] = Field(description=(
+        "The moves that brought the Working Head where it stands, newest first, back to the project's first head or "
+        "a return to the default (a Continue onto no run leaves no event)."))
+    warnings: list[str] = Field(default_factory=list, description="Where the walk back could not read further.")
 
 
-def continue_moves_dto(project_id: str, moves) -> ContinueMovesDto:
-    return ContinueMovesDto(projectId=project_id, moves=[ContinueMoveDto(
+def continue_moves_dto(project_id: str, moves, warnings=()) -> ContinueMovesDto:
+    return ContinueMovesDto(projectId=project_id, warnings=list(warnings), moves=[ContinueMoveDto(
         occurredAt=move.occurred_at, runId=move.run_id, previousRunId=move.previous_run_id, actorId=move.actor_id,
         origin=move.origin, messageSessionId=move.message_session_id, messageId=move.message_id) for move in moves])
 

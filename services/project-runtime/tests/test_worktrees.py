@@ -18,6 +18,7 @@ from project_runtime.jobs import Job
 from project_runtime.application.projection import project_state
 from project_runtime import status
 from project_runtime.main import create_app
+from project_runtime.errors import StudioError
 from project_runtime.settings import StudioSettings
 from project_runtime.status import worktree_graph
 from project_runtime.application import working_draft
@@ -290,6 +291,13 @@ class HeadLineTests(AdmissionFixture):
             "projectId": PROJECT_ID, "subjectKind": "candidate", "subjectRef": other, "action": "archive"})
         self.assertEqual(refused.json()["code"], "CANDIDATE_NOT_FOUND")
         self.assertEqual(self.results(self.graph())[other]["review"], "unreviewed")
+
+        # One broken review record never turns an archived Candidate back into one nobody reviewed.
+        with mock.patch.object(status, "review_judgements", side_effect=StudioError(
+                409, "CANDIDATE_REVIEW_CONFLICT", "A candidate review has competing or incomplete revisions.")):
+            graph = self.graph()
+        self.assertEqual({line["review"] for line in self.results(graph).values()}, {"unknown"})
+        self.assertTrue(any("Candidate reviews could not be read" in warning for warning in graph["warnings"]))
 
     def line_with_two_drafts(self) -> tuple[str, str, str, str, tuple[str, str]]:
         """A → B → C → D: two drafts were built on B before C, also built on B, was continued."""

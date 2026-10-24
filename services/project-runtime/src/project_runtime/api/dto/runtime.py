@@ -94,10 +94,11 @@ class WorktreeLineDto(BaseModel):
         "facts count), a result the architect turned down, an attempt a closed loop replaced, or none yet. "
         "Running work is always none.")
     study_id: str | None = Field(alias="studyId", description="The Study that verdict grouped the run into, if any.")
-    review: Literal["unreviewed", "rejected", "archived"] = Field(default="unreviewed", description=(
+    review: Literal["unreviewed", "rejected", "archived", "unknown"] = Field(default="unreviewed", description=(
         "The architect's retained review of this run as a Candidate (POST /api/candidate-reviews): archived and "
-        "rejected results are put away, and restoring an archived one returns it to what it was before. Running "
-        "work is always unreviewed."))
+        "rejected results are put away, and restoring an archived one returns it to what it was before. Only an "
+        "admitted Candidate can be reviewed; running work and a run nobody admitted are unreviewed. unknown on every "
+        "finished line while the reviews cannot be read (the graph's warnings say why)."))
     superseded_by: str | None = Field(alias="supersededBy", description=
         "For a superseded draft: the step of the head's line that replaced it, the one made from where the draft started. "
         "Null for every other line.")

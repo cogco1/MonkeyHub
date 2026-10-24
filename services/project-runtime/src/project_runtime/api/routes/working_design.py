@@ -15,7 +15,8 @@ router = APIRouter(tags=["working-design"])
 
 @router.get("/working-design/moves", response_model=ContinueMovesDto)
 def read_working_design_moves(request: Request, limit: int = Query(50, ge=1, le=500)) -> ContinueMovesDto:
-    """Each move of the Working Head onto a run, newest first, as its design.continued event retained it."""
+    """The moves that brought the Working Head where it stands, newest first, as their design.continued events retained them."""
 
     binding = bound_project(request.app.state)
-    return continue_moves_dto(binding.project_id, continue_moves(binding, limit=limit, indexed=True))
+    moves, warnings = continue_moves(binding, limit=limit)
+    return continue_moves_dto(binding.project_id, moves, warnings)

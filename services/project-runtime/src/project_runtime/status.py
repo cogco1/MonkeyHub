@@ -250,7 +250,8 @@ class WorktreeLine:
     # admitted | rejected | superseded | none, from retained admission facts (#294)
     admission: str = "none"
     study_id: str | None = None
-    # unreviewed | rejected | archived: the architect's retained candidate review (#300)
+    # unreviewed | rejected | archived: the architect's retained candidate review (#300);
+    # unknown while the reviews cannot be read
     review: str = "unreviewed"
     # For a superseded draft: the step of the head's line that replaced it (#575).
     superseded_by: str | None = None
@@ -721,21 +722,27 @@ def _admissions(binding: ProjectBinding, warnings: list[str],
     return index
 
 
-def _reviews(binding: ProjectBinding, warnings: list[str]) -> dict[str, str]:
-    """Each Candidate's retained review disposition, read once for the whole graph."""
+def _reviews(binding: ProjectBinding, warnings: list[str]) -> dict[str, str] | None:
+    """Each Candidate's retained review disposition, read once for the whole graph; None when they cannot be read."""
 
     try:
         judgements = review_judgements(binding)
     except (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError) as exc:
         warnings.append(f"Candidate reviews could not be read: {getattr(exc, 'detail', exc)}")
-        return {}
+        return None
     return {ref: judgement.disposition for (kind, ref), judgement in judgements.items() if kind == "candidate"}
 
 
-def _with_reviews(lines: list[WorktreeLine], reviews: Mapping[str, str]) -> list[WorktreeLine]:
-    """Each finished line's review: a result the architect archived or rejected says so."""
+def _with_reviews(lines: list[WorktreeLine], reviews: Mapping[str, str] | None) -> list[WorktreeLine]:
+    """Each finished line's review: a result the architect archived or rejected says so.
 
-    return [replace(line, review=reviews[line.run_id]) if line.kind != "running" and line.run_id in reviews else line
+    Reviews that cannot be read leave every finished line's review unknown,
+    never unreviewed: an archived result is not offered again because one
+    review record is broken.
+    """
+
+    return [replace(line, review="unknown" if reviews is None else reviews[line.run_id])
+            if line.kind != "running" and (reviews is None or line.run_id in reviews) else line
             for line in lines]
 
 
