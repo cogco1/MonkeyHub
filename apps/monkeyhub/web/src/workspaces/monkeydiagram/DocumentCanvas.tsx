@@ -24,6 +24,8 @@ import "./DocumentCanvas.css";
 type DrawingTool = "freehand" | "line" | "arrow" | "circle" | "polyline";
 type VectorEditTool = "select";
 type DocumentTool = DrawingTool | VectorEditTool | "eraser" | "pan" | "text";
+/** The right column's pages (ADR-014 B6): the page note for the AI, tracing to 3D, the drawing sheet. */
+type DocumentPanel = "notes" | "trace" | "sheet";
 
 function usesNativeTextEditing(event: ReactKeyboardEvent): boolean {
   return event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229
