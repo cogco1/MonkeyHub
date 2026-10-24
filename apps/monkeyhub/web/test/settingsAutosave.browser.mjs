@@ -4,6 +4,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { cmd, commandLabel } from "./commandLocator.mjs";
 
 // GH-302: Hub settings save themselves. The real built Hub UI against a
 // synthetic local Hub; no provider, project or runtime is involved.
@@ -95,6 +96,8 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     signedIn: true, models: ["fixture-model-a"], modelCatalog: "ready", modelDetail: "Listed by the fixture CLI." }]);
   if (url.pathname === "/api/chat/workspace") return json({ workspaceDir: "D:\\fixture", configured: true, projects: [] });
   if (url.pathname === "/api/chat/projects" || url.pathname === "/api/chat/sessions") return json([]);
+  // A Hub that does not serve the attention queue yet (1-4), as main's does.
+  if (url.pathname.startsWith("/api/attention")) return json({ code: "NOT_FOUND", detail: "This Hub does not serve the attention queue yet." }, 404);
   unexpected.push(`${method} ${url.pathname}`); return json({ detail: "Not part of this fixture" }, 404);
 });
 
@@ -105,14 +108,25 @@ const until = async (read, label) => {
   const deadline = Date.now() + 8000;
   while (!await read()) { if (Date.now() > deadline) assert.fail(label); await page.waitForTimeout(25); }
 };
-const openSettings = async (name = "Hub settings") => { await page.getByRole("button", { name, exact: true }).click(); await dialog.waitFor(); };
+const openSettings = async (name = "Hub settings") => {
+  const opener = cmd(page, "view.settings.open");
+  assert.equal(await commandLabel(opener), name);
+  await opener.click(); await dialog.waitFor();
+};
 // #328: Settings is paged; each page opens from the list beside it.
-const openPage = (name) => dialog.getByRole("tab", { name, exact: true }).click();
+const PAGES = { Display: "display", Conversations: "chat", "AI Render": "render", Workspace: "workspace", "Software update": "update",
+  显示: "display", 对话: "chat", "AI 渲染": "render", 工作区: "workspace", 软件更新: "update" };
+const settingsTab = (name) => cmd(dialog, "view.settings.page", { arg: PAGES[name] });
+const openPage = async (name) => {
+  const tab = settingsTab(name);
+  assert.equal(await commandLabel(tab), name);
+  await tab.click();
+};
 const passed = [];
 async function step(name, action) { await action(); passed.push(name); console.log(`PASS ${name}`); }
 try {
   await page.goto(origin);
-  await page.getByRole("button", { name: "Hub settings", exact: true }).waitFor();
+  await cmd(page, "view.settings.open").waitFor();
   await openSettings();
   await status.filter({ hasText: /^Saved$/ }).waitFor();
 
@@ -132,25 +146,25 @@ try {
   });
 
   await step("Settings opens on Display, its pages follow the list, and a style card saves at once", async () => {
-    assert.equal(await dialog.getByRole("tab", { name: "Display", exact: true }).getAttribute("aria-selected"), "true");
+    assert.equal(await settingsTab("Display").getAttribute("aria-selected"), "true");
     assert.deepEqual(await dialog.getByRole("tab").allInnerTexts(), ["Display", "Conversations", "AI Render", "Workspace", "Software update"]);
     const before = userWrites.length;
-    await dialog.getByRole("radio", { name: /^Title block/ }).check();
+    await cmd(dialog, "preference.appearance.style_titleblock").check();
     await until(() => userWrites.length === before + 1, "choosing a style writes the preferences document");
     assert.equal(userWrites.at(-1).uiStyle, "titleblock");
     assert.equal(await page.locator("html").getAttribute("data-ui-style"), "titleblock");
     await status.filter({ hasText: /^Saved$/ }).waitFor();
     await dialog.screenshot({ path: path.join(screenshots, "settings-display-titleblock-en.png") });
     // Arrows, Home and End move along the list and open each page.
-    await dialog.getByRole("tab", { name: "Display", exact: true }).focus();
+    await settingsTab("Display").focus();
     await page.keyboard.press("ArrowDown");
-    assert.equal(await dialog.getByRole("tab", { name: "Conversations", exact: true }).getAttribute("aria-selected"), "true");
+    assert.equal(await settingsTab("Conversations").getAttribute("aria-selected"), "true");
     await page.locator("#default-chat-provider").waitFor();
     await page.keyboard.press("End");
     await dialog.getByRole("heading", { name: "Software update", exact: true }).waitFor();
     await page.keyboard.press("Home");
     await page.locator("#theme").waitFor();
-    await dialog.getByRole("radio", { name: /^Classic/ }).check();
+    await cmd(dialog, "preference.appearance.style_classic").check();
     await until(() => userWrites.at(-1)?.uiStyle === "classic", "Classic is saved back");
     await status.filter({ hasText: /^Saved$/ }).waitFor();
   });
@@ -165,9 +179,9 @@ try {
     await page.locator("#gemini-key-state").filter({ hasText: "Saved in this computer's Windows Credential Manager, for this account only." }).waitFor();
     assert.equal(await field.inputValue(), "", "the field empties once the key is saved");
     assert.deepEqual(keyWrites, [["gemini", "AIzaSyFixture-settings-key-01"]]);
-    await dialog.getByRole("button", { name: "Check", exact: true }).click();
+    await cmd(dialog, "preference.render_provider.check").click();
     await dialog.getByText("Google accepted this key.", { exact: true }).waitFor();
-    await dialog.getByRole("button", { name: "Get a key ↗", exact: true }).click();
+    await cmd(dialog, "preference.secret.get_link", { arg: "gemini" }).click();
     await until(() => linkOpens.includes("gemini-keys"), "the key page opens through the Hub, never in this window");
     assert.equal(await dialog.getByRole("button", { name: /^Save/ }).count(), 0, "a key saves itself too");
     await dialog.screenshot({ path: path.join(screenshots, "settings-render-key-en.png") });
@@ -179,10 +193,14 @@ try {
     await dialog.getByRole("alert").filter({ hasText: "The Coding Plan endpoint is a full http(s) address" }).waitFor();
     await page.locator("#coding-plan-url").fill("https://open.bigmodel.cn/api/anthropic");
     await status.filter({ hasText: /^Saved$/ }).waitFor();
-    await dialog.getByRole("button", { name: "Sign in again", exact: true }).click();
+    const codexSignIn = cmd(dialog, "preference.chat_provider.sign_in", { arg: "codex" });
+    assert.equal(await commandLabel(codexSignIn), "Sign in again");
+    await codexSignIn.click();
     await until(() => signIns.includes("codex"), "Codex sign-in opens from Settings");
     await dialog.getByText("The sign-in window is open. Come back here when it is done.", { exact: true }).waitFor();
-    assert.equal(await dialog.getByRole("button", { name: "Sign in", exact: true }).isDisabled(), true, "a CLI that is not installed cannot be signed in");
+    const claudeSignIn = cmd(dialog, "preference.chat_provider.sign_in", { arg: "claude" });
+    assert.equal(await commandLabel(claudeSignIn), "Sign in");
+    assert.equal(await claudeSignIn.isDisabled(), true, "a CLI that is not installed cannot be signed in");
     await dialog.screenshot({ path: path.join(screenshots, "settings-conversations-keys-en.png") });
     for (const text of [JSON.stringify(userWrites), JSON.stringify(Object.keys(keys).map(keyStatus))]) {
       assert.equal(text.includes("AIzaSyFixture-settings-key-01"), false, "no preference or status carries a key");
@@ -220,7 +238,9 @@ try {
     await page.locator("#workspace-dir").fill("D:\\fixture\\new-projects");
     await status.filter({ hasText: /^Saved$/ }).waitFor();
     assert.equal(launchWrites.at(-1).workspaceDir, "D:\\fixture\\new-projects");
-    await dialog.getByText("More launch options", { exact: true }).click();
+    const launchOptions = cmd(dialog, "view.disclosure.toggle", { arg: "launch_options" });
+    assert.equal(await commandLabel(launchOptions), "More launch options");
+    await launchOptions.click();
     await page.locator("#studio-port").fill("80");
     await dialog.getByRole("alert").filter({ hasText: "The project runtime port must be a whole number from 1024 to 65535." }).waitFor();
     await page.locator("#studio-port").fill("18788");
@@ -306,7 +326,7 @@ try {
     await openPage("AI Render");
     await page.locator("#render-model").fill("gemini-3.1-flash-image-preview");
     const typedAt = Date.now();
-    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await cmd(dialog, "view.dialog.close").click();
     await until(() => userWrites.length === before + 1, "closing Settings flushes the pending edit");
     assert.ok(userReads.at(-1) - typedAt < 450, `the save starts on close, not after the pause (${userReads.at(-1) - typedAt} ms)`);
     assert.equal(userSettings.renderModel, "gemini-3.1-flash-image-preview");
@@ -315,7 +335,7 @@ try {
   await step("the software update switch keeps its own save beside autosave", async () => {
     await openSettings();
     await openPage("Software update");
-    const autoSwitch = page.getByRole("switch");
+    const autoSwitch = cmd(page, "hub.update_auto");
     await autoSwitch.click();
     await page.getByText("Automatic updates: Off · Unsigned prerelease channel", { exact: true }).waitFor();
     await openPage("Display");

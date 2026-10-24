@@ -1,0 +1,41 @@
+/* The attention cards (1-4): tokens and the interface styles' card hooks only, each with its own default. A decision
+   reads in the decide colours a style gives (Critique Table fills it); news stays plain. */
+.attention-card{min-width:0;padding:var(--card-pad,16px 18px);border:1px solid var(--card-border,var(--line));border-radius:var(--card-radius,var(--radius-lg,10px));
+  background:var(--card-bg,var(--panel));color:var(--ink);font-size:var(--text-ui);line-height:1.6;overflow-wrap:anywhere}
+.attention-card[data-channel=decide]{background:var(--decide-bg,var(--card-bg,var(--panel)));border-color:var(--decide-border,var(--card-border,var(--line)))}
+.attention-card+.attention-card{margin-top:12px}
+.attention-card__eyebrow{display:flex;gap:8px;margin:0;color:var(--muted);font-size:var(--text-caption)}
+.attention-card__project::before{content:"·";margin-right:8px}
+.attention-card__title{margin:2px 0 0;font-size:var(--card-title-size,var(--text-ui));font-weight:var(--card-title-weight,600);line-height:var(--card-title-line,1.5)}
+.attention-card__summary{margin:4px 0 0;color:var(--muted)}
+.attention-card__media{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0;padding:0;list-style:none}
+.attention-card__media li{padding:6px 10px;border:1px dashed var(--line);border-radius:var(--radius-sm);color:var(--muted);font-size:var(--text-caption)}
+.attention-card__evidence{display:grid;gap:4px;margin:10px 0 0}
+.attention-card__evidence div{display:grid;grid-template-columns:minmax(6em,auto) minmax(0,1fr);gap:8px}
+.attention-card__evidence dt{color:var(--muted)}
+.attention-card__evidence dd{margin:0}
+.attention-card__evidence [data-status=warn] dd{color:var(--held)}
+.attention-card__answers{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.attention-card__answer{display:flex;flex-direction:column;align-items:flex-start;gap:2px;height:auto;min-height:44px;padding:8px 14px;text-align:left;white-space:normal}
+.attention-card__answer small{color:inherit;opacity:.8;font-size:var(--text-caption);font-weight:400}
+.attention-card__recommended{margin-left:8px;font-size:var(--text-caption);font-weight:600}
+.attention-card__reason,.attention-card__status{margin:8px 0 0;color:var(--muted);font-size:var(--text-caption)}
+.attention-card__failure{margin:8px 0 0;color:var(--violated);font-size:var(--text-caption)}
+.attention-card__foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;margin-top:12px}
+.attention-card__opens,.attention-card__queue{display:flex;flex-wrap:wrap;gap:4px 16px}
+.attention-card__queue{margin-left:auto}
+.attention-card .menu-command[aria-disabled=true]{color:var(--faint);cursor:default}
+.attention-queue__empty{margin:0;color:var(--muted)}
+/* A decision a page asks in place (InlineDecision): a row of the page, tighter than a queue card. Compact puts the title
+   and the answers on one line, wrapping where it is narrow. */
+.attention-card--inline{padding:8px 12px}
+.attention-card--inline .attention-card__answers{margin-top:8px}
+.attention-card--inline .attention-card__answer{min-height:32px;padding:4px 12px}
+.attention-card--compact{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:4px 8px}
+.attention-card--compact .attention-card__head,.attention-card--compact .attention-card__answers{display:contents}
+.attention-card--compact .attention-card__title{flex:1 1 12em;margin:0}
+.attention-card--compact .attention-card__summary,.attention-card--compact .attention-card__status,.attention-card--compact .attention-card__failure{margin:0}
+.attention-card--compact .attention-card__answer{flex:0 1 auto}
+@media(max-width:720px){.attention-card__answer{flex:1 1 100%}.attention-card .menu-command,.attention-card--inline .attention-card__answer{min-height:44px}}
+.attention-card__words{display:grid;gap:4px;margin-top:12px;color:var(--muted);font-size:var(--text-caption)}
+.attention-card__words textarea{min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--control-radius,var(--radius-sm));background:var(--ground);color:var(--ink);font:inherit;font-size:var(--text-ui);resize:vertical}

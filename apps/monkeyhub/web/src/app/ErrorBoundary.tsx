@@ -78,7 +78,7 @@ class ErrorBoundaryImpl extends Component<
           }
           what={this.props.label}
         />
-        <button
+        <button data-command="view.notice.retry" data-command-arg="page"
           type="button"
           className="button button--small"
           onClick={() => window.location.reload()}

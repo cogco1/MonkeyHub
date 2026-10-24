@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
+import { cmd } from "./commandLocator.mjs";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
 const cacheDir = await mkdtemp(path.join(tmpdir(), "signed-normal-"));
@@ -114,7 +115,7 @@ try {
   const pickAndArm = async point => {
     const p = await page.evaluate(point=>window.projectPoint(point), point);
     await page.mouse.click(...p); await page.waitForFunction(()=>window.selection === "source");
-    await page.locator('button[data-model-tool="pushPull"]').click();
+    await cmd(page,"draft.tools.push_pull").click();
     await page.locator(".stage-pushpull").waitFor();
   };
   const reset = async () => { await page.evaluate(()=>window.reset()); await page.waitForFunction(()=>window.selection === null && window.snapshot().index === 0); };
@@ -184,7 +185,7 @@ try {
   await page.evaluate(()=>window.selectWithoutFace());
   await page.waitForFunction(()=>window.selection === "source");
   await page.evaluate(()=>window.arm("pushPull"));
-  assert.equal(await page.locator('.model-edit-panel button[type="submit"]').isDisabled(),true);
+  assert.equal(await cmd(page.locator('.model-edit-panel'),"draft.tools.apply",{includeHidden:true}).isDisabled(),true);
   assert.equal(await count(),0,"missing face cannot fall back to an unqualified push/pull");
   assert.deepEqual(projectCalls,[]); assert.deepEqual(errors,[]);
   if (process.env.EVIDENCE_DIR) {

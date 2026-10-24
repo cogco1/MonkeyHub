@@ -138,7 +138,7 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
   return <aside ref={aside} tabIndex={-1} className="design-tree-inspector" aria-label={title} data-node={node.id} data-kind={node.kind}>
     <div className="design-tree-inspector__head">
       <div className="design-tree-inspector__identity"><strong>{title}</strong><span>{role}</span></div>
-      <button type="button" className="design-tree-inspector__close" aria-label={t("designTree.action.close")} onClick={onClose}>×</button>
+      <button data-command="view.design_tree.close_details" type="button" className="design-tree-inspector__close" aria-label={t("designTree.action.close")} onClick={onClose}>×</button>
     </div>
     <div className="design-tree-inspector__body">
       {(node.kind === "stage" || node.kind === "candidate" || node.kind === "current") && <ProjectionThumbnail source={source} />}
@@ -153,17 +153,17 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
           {disposition ? ` · ${disposition}` : ""}
           {review.reason ? ` — ${review.reason}` : ""}</p>}
         <div className="design-tree-inspector__actions">
-          <button type="button" className="btn btn--small btn--primary" disabled={!node.runId} onClick={() => onView(node)}>{t("designTree.action.view")}</button>
-          <button type="button" className="btn btn--small" data-action="continue" disabled={busy || !data.canContinue || isAnchor}
+          <button data-command="candidate.compare.view" type="button" className="btn btn--small btn--primary" disabled={!node.runId} onClick={() => onView(node)}>{t("designTree.action.view")}</button>
+          <button data-command="design.go_to_step.continue" type="button" className="btn btn--small" data-action="continue" disabled={busy || !data.canContinue || isAnchor}
             onClick={() => void data.continueFrom(node.id)}>{continuing ? t("designTree.action.continuing") : t("designTree.action.continue")}</button>
-          {node.kind === "candidate" && onCompare && <button type="button" className="btn btn--small" data-action="compare" disabled={!node.runId}
+          {node.kind === "candidate" && onCompare && <button data-command="candidate.compare.with_original" type="button" className="btn btn--small" data-action="compare" disabled={!node.runId}
             onClick={() => onCompare(node)}>{t("designTree.action.compare")}</button>}
         </div>
         {data.canReview && (node.kind === "candidate" || node.kind === "stage") && <div className="design-tree-inspector__actions">
-          <button type="button" className="btn btn--small" disabled={busy} onClick={() => void data.review(node.id, "endorse")}>{t("designTree.action.endorse")}</button>
+          <button data-command="candidate.review.endorse" type="button" className="btn btn--small" disabled={busy} onClick={() => void data.review(node.id, "endorse")}>{t("designTree.action.endorse")}</button>
           {node.kind === "candidate" && <>
-            {!processed && <button type="button" className="btn btn--small" disabled={busy} onClick={() => void data.review(node.id, "reject")}>{t("designTree.action.reject")}</button>}
-            <button type="button" className="btn btn--small" disabled={busy} onClick={() => void data.review(node.id, review?.disposition === "archived" ? "restore" : "archive")}>
+            {!processed && <button data-command="candidate.review.reject" type="button" className="btn btn--small" disabled={busy} onClick={() => void data.review(node.id, "reject")}>{t("designTree.action.reject")}</button>}
+            <button data-command="candidate.review.archive" type="button" className="btn btn--small" disabled={busy} onClick={() => void data.review(node.id, review?.disposition === "archived" ? "restore" : "archive")}>
               {t(review?.disposition === "archived" ? "designTree.action.restore" : "designTree.action.archive")}</button>
           </>}
           {reviewing && <span>{t("designTree.action.savingReview")}</span>}
@@ -176,7 +176,7 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
       {node.kind === "drafts" && <>
         {words.cleaned(node) && <p className="design-tree-inspector__summary">{words.cleaned(node)}</p>}
         {node.drafts!.runs.length > 0 && onShowDrafts && <div className="design-tree-inspector__actions">
-          <button type="button" className="btn btn--small" data-action="show-drafts" onClick={onShowDrafts}>
+          <button data-command="candidate.restore.show_drafts" type="button" className="btn btn--small" data-action="show-drafts" onClick={onShowDrafts}>
             {t("designTree.drafts.show", { count: node.drafts!.runs.length })}</button>
         </div>}
         <CleanedDrafts drafts={node.drafts!.cleaned} words={words} busy={busy} canRestore={data.canRestore}
@@ -185,29 +185,29 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
         {node.drafts!.cleaned.length > 0 && <p className="design-tree-inspector__note">{t("designTree.cleaned.note", { days: node.drafts!.retentionDays })}</p>}
       </>}
       {node.kind === "current" && <div className="design-tree-inspector__accept">
-        <button type="button" className="btn btn--small btn--primary" data-action="accept" disabled={!accept.allowed || busy}
+        <button data-command="stage.accept.current" type="button" className="btn btn--small btn--primary" data-action="accept" disabled={!accept.allowed || busy}
           onClick={() => { setConfirmClosedFor(null); onConfirmAccept(true); }}>
           {accept.allowed && accept.nextLabel ? t("designTree.action.accept", { stage: accept.nextLabel }) : t("designTree.action.acceptNext")}</button>
         {acceptBlocked && <p className="design-tree-inspector__note">{acceptBlocked}</p>}
         {showConfirm && <div className="design-tree-inspector__confirm" role="group" aria-label={t("designTree.action.acceptNext")}>
           <p>{t("designTree.action.confirm", { stage: accept.nextLabel ?? "" })}</p>
           <div className="design-tree-inspector__actions">
-            <button type="button" className="btn btn--small btn--primary" data-action="accept-confirm" disabled={busy}
+            <button data-command="stage.accept.confirm" type="button" className="btn btn--small btn--primary" data-action="accept-confirm" disabled={busy}
               onClick={() => void data.acceptCurrent().then((done) => { if (done) onConfirmAccept(false); })}>
               {data.busy?.kind === "accept" ? t("designTree.action.accepting") : t("designTree.action.accept", { stage: accept.nextLabel ?? "" })}</button>
-            <button type="button" className="btn btn--small" onClick={() => { setConfirmClosedFor(node.id); onConfirmAccept(false); }}>{t("designTree.action.cancel")}</button>
+            <button data-command="stage.accept.cancel" type="button" className="btn btn--small" onClick={() => { setConfirmClosedFor(node.id); onConfirmAccept(false); }}>{t("designTree.action.cancel")}</button>
           </div>
         </div>}
       </div>}
       {node.kind === "pending" && <p className="design-tree-inspector__note">{t("designTree.pendingNote")}</p>}
       {refusal && <p className="design-tree-inspector__refusal" role="alert">{refusal}</p>}
       {recordable && <div className="design-tree-inspector__actions">
-        <button type="button" className="btn btn--small btn--primary" data-action="record" disabled={recording || busy}
+        <button data-command="draft.record.continue" type="button" className="btn btn--small btn--primary" data-action="record" disabled={recording || busy}
           onClick={() => void recordAndContinue(node.id)}>{t(recording ? "stage.record.busy" : "stage.record.continue")}</button>
       </div>}
       {failure && <p className="design-tree-inspector__refusal" role="alert">{t("stage.record.failed", { reason: failure.detail })}</p>}
       {developerMode && <details className="design-tree-inspector__details">
-        <summary>{t("designTree.details")}</summary>
+        <summary data-command="view.disclosure.toggle" data-command-arg="technical_details">{t("designTree.details")}</summary>
         <dl>{technical(node).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
       </details>}
     </div>

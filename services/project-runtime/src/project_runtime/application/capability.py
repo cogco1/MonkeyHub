@@ -96,16 +96,29 @@ def registry_path(start: Path | None = None) -> Path | None:
     return None
 
 
+# The same table also holds what the Hub itself performs (``host: "hub"``): opening a
+# project, settings, updates, and the interface-only arrangements of the window
+# (``kind: "shell"``). Those are found through the Hub and the command palette; an agent
+# working in a project reaches only this Runtime's routes, so this index leaves them out.
+RUNTIME_HOST = "runtime"
+
+
+def hosted_here(entry: Mapping[str, Any]) -> bool:
+    """Whether this Runtime performs the capability: an entry names no host, or this one."""
+
+    return entry.get("host", RUNTIME_HOST) == RUNTIME_HOST
+
+
 @lru_cache(maxsize=1)
 def _read(path: str, stamp: tuple[int, int]) -> tuple[dict[str, Any], ...]:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if data.get("schema") != REGISTRY_SCHEMA:
         return ()
-    return tuple(data.get("capabilities", ()))
+    return tuple(entry for entry in data.get("capabilities", ()) if hosted_here(entry))
 
 
 def capability_index() -> tuple[dict[str, Any], ...]:
-    """Every registered capability entry, read from the registry beside us."""
+    """Every registered capability this Runtime performs, read from the registry beside us."""
 
     path = registry_path()
     if path is None:

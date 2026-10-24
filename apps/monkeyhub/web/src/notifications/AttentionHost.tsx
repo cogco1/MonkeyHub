@@ -1,14 +1,16 @@
 /**
  * The Hub's notices (#300, UX review FN-2), mounted once per window by main.tsx.
  *
- * At most three, bottom-right, clear of the rail and the composer. A waiting
- * permission stays until it is opened, dismissed or answered; the others fade
- * after about eight seconds on screen. One polite live region reads them out.
+ * At most three, bottom-right, clear of what the shells and workspaces register
+ * (regions.ts). A waiting permission, or a card that asks something of the
+ * person, stays until it is opened, dismissed or answered; the others fade after
+ * about eight seconds on screen. One polite live region reads them out.
  */
 
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type FocusEvent } from "react";
 import type { Language } from "../../../../../packages/web-shared/src/appearance.js";
-import { attentionCopy, clearance, GAP, noticeText, type AttentionEvent, type AttentionWords, type Box } from "./attention";
+import { attentionCopy, clearance, GAP, lasts as waits, noticeText, type AttentionEvent, type AttentionWords, type EdgeBox } from "./attention";
+import { noticeRegions, subscribeRegions } from "./regions";
 import { useAttention } from "./useAttention";
 import "./attention.css";
 
@@ -45,7 +47,7 @@ function Notice({ notice, words, visible, onOpen, onDismiss }: {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  const lasts = notice.kind === "permission";
+  const lasts = waits(notice);
   useEffect(() => {
     if (lasts || !visible || hovered || focused || leaving) return;
     const timer = window.setTimeout(() => setLeaving(true), FADE_MS);
@@ -63,7 +65,7 @@ function Notice({ notice, words, visible, onOpen, onDismiss }: {
   };
   // Each button keeps its short visible name and is described by the sentence it acts on.
   const sentence = useId();
-  return <div className="attention-toast" data-kind={notice.kind} data-leaving={leaving || undefined}
+  return <div className="attention-toast" data-kind={notice.kind} data-channel={notice.card?.channel} data-leaving={leaving || undefined}
     onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setFocused(true)} onBlur={blur}
     onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); onDismiss(notice); } }}>
     <span className="attention-toast__mark" aria-hidden="true" />
@@ -79,16 +81,11 @@ function Notice({ notice, words, visible, onOpen, onDismiss }: {
   </div>;
 }
 
-const box = (element: Element | null): Box | null => {
-  if (!element) return null;
-  const { left, top, right, bottom } = element.getBoundingClientRect();
-  return { left, top, right, bottom };
-};
-
 /**
- * Where the stack sits while it shows anything: measured from the Hub shell's
- * rail and composer when this window has them, and again whenever either
- * changes size (the composer grows while typing) or the window does.
+ * Where the stack sits while it shows anything: measured from the regions the
+ * shells and workspaces registered, again whenever one comes or goes or changes
+ * size (the composer grows while typing, a side panel opens), and whenever the
+ * window does. Without any the stack keeps to the corner.
  */
 function useClearance(active: boolean): { right: number; bottom: number } {
   const [place, setPlace] = useState({ right: GAP, bottom: GAP });
@@ -97,18 +94,24 @@ function useClearance(active: boolean): { right: number; bottom: number } {
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(() => measure()) : null;
     const watched = new Set<Element>();
     function measure() {
-      // Read-only anchors in ChatShell; without them the stack keeps to the corner.
-      const rail = document.querySelector(".chat-rail"), composer = document.querySelector(".chat-composer-wrap, .chat-composer");
-      for (const element of [rail, composer]) {
-        if (element && !watched.has(element)) { watched.add(element); observer?.observe(element); }
+      const boxes: EdgeBox[] = [];
+      const registered = noticeRegions();
+      for (const element of [...watched]) {
+        if (!registered.some((region) => region.element === element)) { watched.delete(element); observer?.unobserve(element); }
+      }
+      for (const { element, edge } of registered) {
+        if (!watched.has(element)) { watched.add(element); observer?.observe(element); }
+        const { left, top, right, bottom } = element.getBoundingClientRect();
+        boxes.push({ left, top, right, bottom, edge });
       }
       const root = document.documentElement;
-      const next = clearance({ width: root.clientWidth, height: root.clientHeight }, box(rail), box(composer));
+      const next = clearance({ width: root.clientWidth, height: root.clientHeight }, boxes);
       setPlace((current) => current.right === next.right && current.bottom === next.bottom ? current : next);
     }
     measure();
+    const stop = subscribeRegions(measure);
     window.addEventListener("resize", measure);
-    return () => { observer?.disconnect(); window.removeEventListener("resize", measure); };
+    return () => { stop(); observer?.disconnect(); window.removeEventListener("resize", measure); };
   }, [active]);
   return place;
 }

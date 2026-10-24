@@ -206,7 +206,7 @@ function ReplacementDialog({ target, language, returnFocus, onCancel, onSubmit, 
       <label htmlFor="monkeyboard-replacement-page">{text.page}</label>
       <input id="monkeyboard-replacement-page" type="number" min={1} step={1} required value={page} disabled={sending} onChange={(event) => setPage(event.target.valueAsNumber)} />
       {error && <p className="monkeyboard-feedback-error" role="alert">{error}</p>}
-      <div className="monkeyboard-feedback-actions"><button type="button" onClick={onCancel} disabled={sending}>{text.cancel}</button><button className="monkeyboard-primary" type="submit" disabled={sending || !file}>{sending ? text.sending : text.submit}</button></div>
+      <div className="monkeyboard-feedback-actions"><button type="button" data-command="view.dialog.close" onClick={onCancel} disabled={sending}>{text.cancel}</button><button className="monkeyboard-primary" type="submit" data-command="document.replace_page.submit" disabled={sending || !file}>{sending ? text.sending : text.submit}</button></div>
     </form>
   </dialog>;
 }
@@ -267,8 +267,8 @@ function FeedbackDialog({ selection, language, returnFocus, onCancel, onSubmit, 
       <textarea id="monkeyboard-feedback-comment" value={comment} onChange={(event) => setComment(event.target.value)} placeholder={text.placeholder} autoFocus required rows={4} disabled={sending} />
       {!selection.document.modelSource && <p className="monkeyboard-feedback-error" role="alert">{text.modelRequired}</p>}
       {error && <p className="monkeyboard-feedback-error" role="alert">{text.failed} {error}</p>}
-      <button type="button" disabled={sending} onClick={() => { onCancel(); onOpenDocument(selection.source); }}>{copy[language].open}</button>
-      <div className="monkeyboard-feedback-actions"><button type="button" onClick={onCancel} disabled={sending}>{text.cancel}</button><button className="monkeyboard-primary" type="submit" disabled={sending || !comment.trim() || !selection.document.modelSource}>{sending ? text.sending : text.send}</button></div>
+      <button type="button" data-command="view.open_document.page" disabled={sending} onClick={() => { onCancel(); onOpenDocument(selection.source); }}>{copy[language].open}</button>
+      <div className="monkeyboard-feedback-actions"><button type="button" data-command="view.dialog.close" onClick={onCancel} disabled={sending}>{text.cancel}</button><button className="monkeyboard-primary" type="submit" data-command="markup.hand_to_ai.send" disabled={sending || !comment.trim() || !selection.document.modelSource}>{sending ? text.sending : text.send}</button></div>
     </form>
   </dialog>;
 }
@@ -407,8 +407,8 @@ function RenderDialog({ candidates, documents, language, returnFocus, active, th
       </details>
       {!source && <p className="monkeyboard-render-hint" role="status">{text.chooseSource}</p>}
       {error && <p className="monkeyboard-feedback-error" role="alert">{error}</p>}
-      <div className="monkeyboard-feedback-actions"><button type="button" onClick={onCancel} disabled={sending}>{text.cancel}</button>
-        <button className="monkeyboard-primary" type="submit" disabled={sending || !source || !content.trim()}>{sending ? text.sending : text.send}</button></div>
+      <div className="monkeyboard-feedback-actions"><button type="button" data-command="view.dialog.close" onClick={onCancel} disabled={sending}>{text.cancel}</button>
+        <button className="monkeyboard-primary" type="submit" data-command="markup.hand_to_ai.continue_in_chat" disabled={sending || !source || !content.trim()}>{sending ? text.sending : text.send}</button></div>
     </form>
   </dialog>;
 }
@@ -519,7 +519,7 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPubl
   return <section className="monkeyboard monkeyboard-loading" aria-live="polite">
     <strong>MonkeyBoard</strong>
     <p>{error === null ? text.loading : text.loadFailed}</p>
-    {error !== null && <><p className="monkeyboard-error-detail">{errorText(error)}</p><button onClick={() => setAttempt((value) => value + 1)}>{text.retry}</button></>}
+    {error !== null && <><p className="monkeyboard-error-detail">{errorText(error)}</p><button data-command="view.notice.retry" data-command-arg="board_open" onClick={() => setAttempt((value) => value + 1)}>{text.retry}</button></>}
   </section>;
 }
 
@@ -1422,26 +1422,26 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     <SurfaceMenus label="MonkeyBoard" active={active && !critMode}
       end={<span className={`monkeyboard-save-state${saveState.error ? " is-error" : ""}`} role="status">{saveState.error ? text.dirty : saveState.saving ? text.saving : saveState.dirty ? text.dirty : text.saved}</span>}>
       <input className="surface-title monkeyboard-title" aria-label={text.title} value={title} maxLength={200} onChange={(event) => { const value = event.target.value; setTitle(value); titleRef.current = value; capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []); }} onBlur={() => { const value = titleRef.current.trim() || "MonkeyBoard"; titleRef.current = value; setTitle(value); capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []); }} />
-      <MenuCommand aria-expanded={sourcesOpen} aria-controls="monkeyboard-project-documents" onClick={() => setSourcesOpen((open) => !open)}>{text.sources}</MenuCommand>
-      <MenuCommand disabled={!ready || busy || saveState.conflict} onClick={() => input.current?.click()}>{text.upload}</MenuCommand>
-      <MenuCommand disabled={!ready || busy || saveState.conflict} title={t("componentInfo.board.importTitle")}
+      <MenuCommand data-command="board.add_document_page.toggle_list" aria-expanded={sourcesOpen} aria-controls="monkeyboard-project-documents" onClick={() => setSourcesOpen((open) => !open)}>{text.sources}</MenuCommand>
+      <MenuCommand data-command="document.upload" disabled={!ready || busy || saveState.conflict} onClick={() => input.current?.click()}>{text.upload}</MenuCommand>
+      <MenuCommand data-command="board.manage.import_component_info" disabled={!ready || busy || saveState.conflict} title={t("componentInfo.board.importTitle")}
         onClick={() => infoInput.current?.click()}>{t("componentInfo.board.import")}</MenuCommand>
       <details ref={actions} className="monkeyboard-actions" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) closeActions(); }} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeActions(); actions.current?.querySelector("summary")?.focus(); } }}>
-        <summary className="menu-command">{boardText.more}</summary>
+        <summary className="menu-command" data-command="view.menu.toggle" data-command-arg="board_more">{boardText.more}</summary>
         <div className="monkeyboard-actions-panel" role="group" aria-label={boardText.more}>
-          <button disabled={!ready} onClick={() => canvas.current?.scrollToContent(undefined, { fitToContent: true, animate: false })}>{text.fit}</button>
-          <button disabled={!ready || busy || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>
-          <button disabled={!ready || busy || saveState.conflict} onClick={() => { void newSketchFrame(); }}>{sketchCopy[language].newFrame}</button>
-          <button disabled={!ready} onClick={enterCrit}>{text.crit}</button>
-          <button type="button" disabled={!ready || busy || saveState.conflict || !hasAnnotations} onClick={clearAnnotations} title={text.clearAnnotationsHint}>{text.clearAnnotations}</button>
-          {onPublish && <button disabled={!ready || busy || exporting || saveState.conflict} onClick={() => void sendToPublish()}>{language === "zh-CN" ? "放入汇报" : "Add to Publish"}</button>}
+          <button data-command="view.canvas.fit" disabled={!ready} onClick={() => canvas.current?.scrollToContent(undefined, { fitToContent: true, animate: false })}>{text.fit}</button>
+          <button data-command="markup.hand_to_ai.open" disabled={!ready || busy || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>
+          <button data-command="sketch.to_model.new_frame" disabled={!ready || busy || saveState.conflict} onClick={() => { void newSketchFrame(); }}>{sketchCopy[language].newFrame}</button>
+          <button data-command="markup.hand_to_ai.enter_crit" disabled={!ready} onClick={enterCrit}>{text.crit}</button>
+          <button type="button" data-command="markup.clear" disabled={!ready || busy || saveState.conflict || !hasAnnotations} onClick={clearAnnotations} title={text.clearAnnotationsHint}>{text.clearAnnotations}</button>
+          {onPublish && <button data-command="board.manage.add_to_publish" disabled={!ready || busy || exporting || saveState.conflict} onClick={() => void sendToPublish()}>{language === "zh-CN" ? "放入汇报" : "Add to Publish"}</button>}
           <div className="monkeyboard-export" aria-label={text.export}>
             <span>{text.exportClean}</span>
             <select aria-label={text.export} value={exportFormat} disabled={!ready || exporting} onChange={(event) => setExportFormat(event.target.value as typeof exportFormat)}>
               <option value="merged-pdf">{text.exportMerged}</option><option value="page-pdfs">{text.exportPages}</option><option value="png">{text.exportPng}</option><option value="jpeg">{text.exportJpeg}</option>
             </select>
             <label><input type="checkbox" checked={exportZip} disabled={!ready || exporting} onChange={(event) => setExportZip(event.target.checked)} /> {text.exportZip}</label>
-            <button disabled={!ready || exporting} onClick={() => { void exportBoard(); }}>{exporting ? text.exporting : text.export}</button>
+            <button data-command="board.export.run" disabled={!ready || exporting} onClick={() => { void exportBoard(); }}>{exporting ? text.exporting : text.export}</button>
           </div>
         </div>
       </details>
@@ -1449,25 +1449,25 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     <input ref={input} type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" multiple hidden onChange={(event) => { void upload([...event.target.files ?? []]); event.target.value = ""; }} />
     <input ref={infoInput} type="file" accept="application/json,.json" hidden data-component-info-import
       onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void importComponentInfo(file); }} />
-    {saveState.error !== null && <div className="monkeyboard-alert" role="alert"><span>{saveState.conflict ? text.conflict : `${text.saveError} ${errorText(saveState.error)}`}</span>{!saveState.conflict && <button onClick={() => { void queue.retry().catch(() => {}); }}>{text.retry}</button>}</div>}
-    {(previewFailed || sourceError) && <div className="monkeyboard-alert" role="alert"><span>{previewFailed ? text.previewError : `${text.sourceError} ${sourceError}`}</span><button onClick={retryVisuals} disabled={busy}>{text.refresh}</button></div>}
-    {notice && <div className="monkeyboard-alert" role="alert"><span>{notice}</span><button onClick={() => setNotice("")} aria-label={text.dismiss}>×</button></div>}
-    {update && <div className="monkeyboard-alert monkeyboard-update" role="status"><span>{updateNoticeText(update, t)}</span><span className="monkeyboard-update-actions"><button onClick={focusUpdate}>{replacementText.view}</button><button onClick={() => setUpdate(null)} aria-label={text.dismiss}>×</button></span></div>}
+    {saveState.error !== null && <div className="monkeyboard-alert" role="alert"><span>{saveState.conflict ? text.conflict : `${text.saveError} ${errorText(saveState.error)}`}</span>{!saveState.conflict && <button data-command="view.notice.retry" data-command-arg="board_save" onClick={() => { void queue.retry().catch(() => {}); }}>{text.retry}</button>}</div>}
+    {(previewFailed || sourceError) && <div className="monkeyboard-alert" role="alert"><span>{previewFailed ? text.previewError : `${text.sourceError} ${sourceError}`}</span><button data-command="view.notice.retry" data-command-arg="board_previews" onClick={retryVisuals} disabled={busy}>{text.refresh}</button></div>}
+    {notice && <div className="monkeyboard-alert" role="alert"><span>{notice}</span><button data-command="view.notice.dismiss" onClick={() => setNotice("")} aria-label={text.dismiss}>×</button></div>}
+    {update && <div className="monkeyboard-alert monkeyboard-update" role="status"><span>{updateNoticeText(update, t)}</span><span className="monkeyboard-update-actions"><button data-command="view.attention.open" onClick={focusUpdate}>{replacementText.view}</button><button data-command="view.attention.dismiss" onClick={() => setUpdate(null)} aria-label={text.dismiss}>×</button></span></div>}
     {!critMode && sketchSelection && <div className="monkeyboard-sketch" role="group" aria-label={sketchCopy[language].panel}>
       <strong>{(sketchSelection.frame as { name?: string | null }).name ?? sketchCopy[language].panel}</strong>
       <label>{sketchCopy[language].level}<select value={sketchSelection.data.levelId} disabled={!ready || busy || sketchSending || saveState.conflict} onChange={(event) => updateSketchFrame(sketchSelection.frame, { ...sketchSelection.data, levelId: event.target.value })}>{[...new Set([...(sketchLevels ?? []).map((level) => level.levelId), sketchSelection.data.levelId])].map((levelId) => <option key={levelId} value={levelId}>{levelId}</option>)}</select></label>
       <label>{sketchCopy[language].storeyHeight}<input type="number" min={0.1} step={0.1} value={sketchHeight} disabled={!ready || busy || sketchSending || saveState.conflict} onChange={(event) => setSketchHeight(event.target.value)} onBlur={() => { const value = Number(sketchHeight); if (sketchHeight.trim() !== "" && Number.isFinite(value) && value > 0) updateSketchFrame(sketchSelection.frame, { ...sketchSelection.data, storeyHeight: value }); else setSketchHeight(String(sketchSelection.data.storeyHeight)); }} /></label>
       <label>{sketchCopy[language].metres}<input type="number" min={0} step={0.01} value={sketchMetres} disabled={!ready || busy || sketchSending || saveState.conflict || sketchSelection.line === null} onChange={(event) => setSketchMetres(event.target.value)} /></label>
-      <button type="button" disabled={!ready || busy || sketchSending || saveState.conflict || sketchSelection.line === null || !(Number(sketchMetres) > 0)} onClick={calibrateSketch}>{sketchCopy[language].calibrate}</button>
+      <button type="button" data-command="sketch.to_model.calibrate" disabled={!ready || busy || sketchSending || saveState.conflict || sketchSelection.line === null || !(Number(sketchMetres) > 0)} onClick={calibrateSketch}>{sketchCopy[language].calibrate}</button>
       <p className="monkeyboard-sketch-scale">{sketchSelection.data.metresPerUnit === null ? sketchCopy[language].uncalibrated
         : sketchCopy[language].calibrated.replace("{units}", String(Math.round(1 / sketchSelection.data.metresPerUnit)))
           .replace("{w}", (sketchSelection.frame.width * sketchSelection.data.metresPerUnit).toFixed(1))
           .replace("{h}", (sketchSelection.frame.height * sketchSelection.data.metresPerUnit).toFixed(1))}{sketchLevels?.length === 0 ? ` · ${sketchCopy[language].noLevels}` : ""}</p>
-      <button type="button" className="monkeyboard-primary" disabled={!ready || busy || sketchSending || saveState.conflict || sketchSelection.data.metresPerUnit === null} onClick={() => { void sendSketch(); }}>{sketchSending ? sketchCopy[language].sending : sketchCopy[language].send}</button>
+      <button type="button" className="monkeyboard-primary" data-command="sketch.to_model.send" disabled={!ready || busy || sketchSending || saveState.conflict || sketchSelection.data.metresPerUnit === null} onClick={() => { void sendSketch(); }}>{sketchSending ? sketchCopy[language].sending : sketchCopy[language].send}</button>
     </div>}
     <div className="monkeyboard-body">
       <aside id="monkeyboard-project-documents" className="monkeyboard-sources" aria-label={text.sources} hidden={!sourcesOpen}>
-        <div className="monkeyboard-source-heading"><h2>{text.sources} · {documents.length}</h2><button aria-label={boardText.hideSources} onClick={() => { setSourcesOpen(false); root.current?.closest(".monkeyboard")?.querySelector<HTMLButtonElement>("[aria-controls=monkeyboard-project-documents]")?.focus(); }}>×</button></div>
+        <div className="monkeyboard-source-heading"><h2>{text.sources} · {documents.length}</h2><button data-command="board.add_document_page.close_list" aria-label={boardText.hideSources} onClick={() => { setSourcesOpen(false); root.current?.closest(".monkeyboard")?.querySelector<HTMLButtonElement>("[aria-controls=monkeyboard-project-documents]")?.focus(); }}>×</button></div>
         <p className="monkeyboard-auto"><span aria-hidden="true" />{text.auto}</p>
         {documents.length === 0 && <p className="monkeyboard-empty">{text.empty}</p>}
         <div className="monkeyboard-source-list">{documents.map((document) => {
@@ -1477,10 +1477,10 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
             <div className="monkeyboard-source-type">{document.mimeType === "application/pdf" ? "PDF" : document.mimeType === "image/png" ? "PNG" : "JPEG"}<span>{document.pageCount} {text.pages}</span></div>
             <h3 title={document.fileName}>{document.fileName}</h3>
             <p className="monkeyboard-received">{seen.current.has(key) ? text.received : text.pending}{document.generatedAt ? ` · ${new Date(document.generatedAt).toLocaleString(language, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}</p>
-            <div className="monkeyboard-page-row"><select aria-label={`${document.fileName} ${text.page}`} value={page} onChange={(event) => setPages((value) => ({ ...value, [key]: Number(event.target.value) }))}>{document.pages.map((item) => <option value={item.pageIndex} key={item.pageIndex}>{text.page} {item.pageIndex + 1} / {document.pageCount}</option>)}</select><button disabled={!ready || busy || saveState.conflict} onClick={() => { void serial(() => addPage(document, page)); }}>{text.add}</button></div>
-            <button className="monkeyboard-source-link" type="button" disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(pageSource(document, page))}>{text.open}</button>
-            <button className="monkeyboard-source-update" disabled={!ready || busy || saveState.conflict} onClick={() => openReplacement(document, page)}>{replacementText.action}</button>
-            <button className="monkeyboard-source-work-copy" disabled={!ready || busy || saveState.conflict} onClick={() => { void requestWorkCopy(document); }}>{replacementText.workCopy}</button>
+            <div className="monkeyboard-page-row"><select aria-label={`${document.fileName} ${text.page}`} value={page} onChange={(event) => setPages((value) => ({ ...value, [key]: Number(event.target.value) }))}>{document.pages.map((item) => <option value={item.pageIndex} key={item.pageIndex}>{text.page} {item.pageIndex + 1} / {document.pageCount}</option>)}</select><button data-command="board.add_document_page.add" disabled={!ready || busy || saveState.conflict} onClick={() => { void serial(() => addPage(document, page)); }}>{text.add}</button></div>
+            <button className="monkeyboard-source-link" type="button" data-command="view.open_document.page" disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(pageSource(document, page))}>{text.open}</button>
+            <button className="monkeyboard-source-update" data-command="document.replace_page.open" disabled={!ready || busy || saveState.conflict} onClick={() => openReplacement(document, page)}>{replacementText.action}</button>
+            <button className="monkeyboard-source-work-copy" data-command="board.add_document_page.work_copy" disabled={!ready || busy || saveState.conflict} onClick={() => { void requestWorkCopy(document); }}>{replacementText.workCopy}</button>
           </article>;
         })}</div>
       </aside>
@@ -1508,7 +1508,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
             scheduleUpdateFocus();
           }}>
           <MainMenu><MainMenu.Item onSelect={() => input.current?.click()}>{text.upload}</MainMenu.Item><MainMenu.DefaultItems.ClearCanvas /></MainMenu>
-          <WelcomeScreen><WelcomeScreen.Center><WelcomeScreen.Center.Heading>{boardText.welcome}</WelcomeScreen.Center.Heading><div className="monkeyboard-welcome-body"><p>{boardText.gestures}</p><span className="monkeyboard-welcome-example">{boardText.example}</span><p>{boardText.designHint}</p></div><WelcomeScreen.Center.Menu><button type="button" className="monkeyboard-welcome-upload" onClick={() => input.current?.click()}>{text.upload}</button></WelcomeScreen.Center.Menu></WelcomeScreen.Center></WelcomeScreen>
+          <WelcomeScreen><WelcomeScreen.Center><WelcomeScreen.Center.Heading>{boardText.welcome}</WelcomeScreen.Center.Heading><div className="monkeyboard-welcome-body"><p>{boardText.gestures}</p><span className="monkeyboard-welcome-example">{boardText.example}</span><p>{boardText.designHint}</p></div><WelcomeScreen.Center.Menu><button type="button" className="monkeyboard-welcome-upload" data-command="document.upload" onClick={() => input.current?.click()}>{text.upload}</button></WelcomeScreen.Center.Menu></WelcomeScreen.Center></WelcomeScreen>
         </ProjectCanvas>
         {!ready && <div className="monkeyboard-initializing" role="status">{text.loading}</div>}
         {busy && <div className="monkeyboard-busy" role="status">{text.busy}</div>}
@@ -1523,20 +1523,20 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
               title={contextReason ?? undefined}>{selectionCopy[language][contextState]}</span>}
           </div>}
           <div className="monkeyboard-context-actions">
-            {source && selected && onOpenDocument && <button disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(selected)}>{text.openPage}</button>}
-            {source && <button disabled={!ready || busy || saveState.conflict} onClick={openSelectedReplacement}>{replacementText.action}</button>}
+            {source && selected && onOpenDocument && <button data-command="view.open_document.page" disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(selected)}>{text.openPage}</button>}
+            {source && <button data-command="document.replace_page.open" disabled={!ready || busy || saveState.conflict} onClick={openSelectedReplacement}>{replacementText.action}</button>}
             {/* #253: a plain registered image needs no model; nothing is saved or sent from here. */}
-            {onRenderChatRequest && renderPages.length > 0 && <button type="button" className="monkeyboard-render-open" disabled={!ready} onClick={openRender}>{renderCopy[language].action}</button>}
+            {onRenderChatRequest && renderPages.length > 0 && <button type="button" className="monkeyboard-render-open" data-command="markup.hand_to_ai.discuss" disabled={!ready} onClick={openRender}>{renderCopy[language].action}</button>}
             {context && (context.reason === "modelRequired" && context.source
-              ? <button type="button" className="monkeyboard-context-next" disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(context.source!)}>{boardText.linkModel}</button>
-              : <button className="monkeyboard-primary monkeyboard-context-next" disabled={!!context.reason || !ready || busy || saveState.conflict || feedbackWaiting} aria-describedby={context.reason ? "monkeyboard-context-hint" : undefined} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>)}
+              ? <button type="button" className="monkeyboard-context-next" data-command="view.open_document.link_model" disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(context.source!)}>{boardText.linkModel}</button>
+              : <button className="monkeyboard-primary monkeyboard-context-next" data-command="markup.hand_to_ai.open" disabled={!!context.reason || !ready || busy || saveState.conflict || feedbackWaiting} aria-describedby={context.reason ? "monkeyboard-context-hint" : undefined} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>)}
           </div>
           {context?.reason && <p id="monkeyboard-context-hint" role="status">{context.reason === "modelRequired" ? feedbackCopy[language].modelRequired : boardText[context.reason]}</p>}
         </div>}
         {critMode && <div className="monkeyboard-crit-actions" role="group" aria-label={text.crit}>
-          <button type="button" className="monkeyboard-primary" disabled={!ready || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : text.critSubmit}</button>
-          <button type="button" disabled={!ready || busy || saveState.conflict || !hasAnnotations} onClick={clearAnnotations} title={text.clearAnnotationsHint}>{text.clearAnnotations}</button>
-          <button type="button" onClick={exitCrit}>{text.critExit}</button>
+          <button type="button" className="monkeyboard-primary" data-command="markup.hand_to_ai.open" disabled={!ready || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : text.critSubmit}</button>
+          <button type="button" data-command="markup.clear" disabled={!ready || busy || saveState.conflict || !hasAnnotations} onClick={clearAnnotations} title={text.clearAnnotationsHint}>{text.clearAnnotations}</button>
+          <button type="button" data-command="markup.hand_to_ai.exit_crit" onClick={exitCrit}>{text.critExit}</button>
         </div>}
       </div>
     </div>

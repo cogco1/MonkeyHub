@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { cmd, commandLabel } from "./commandLocator.mjs";
 
 // GH-300: the Hub's attention layer. The real built Hub UI against a synthetic
 // local Hub; no provider, project or runtime is involved. Time is Playwright's
@@ -112,6 +113,8 @@ await context.route((url) => url.pathname.startsWith("/api/"), async (route) => 
   if (url.pathname === "/api/updates/status") return json(updateStatus());
   // Fabrication's own reads are not this test's subject.
   if (url.pathname.startsWith("/api/fab/")) return json({ code: "FAB_UNAVAILABLE", detail: "Not part of this fixture." }, 503);
+  // A Hub that does not serve the attention queue yet (1-4), as main's does.
+  if (url.pathname.startsWith("/api/attention")) return json({ code: "NOT_FOUND", detail: "This Hub does not serve the attention queue yet." }, 404);
   unexpected.push(`${method} ${url.pathname}`);
   return json({ detail: "Not part of this fixture" }, 404);
 });
@@ -227,7 +230,9 @@ try {
   await step("on a narrow window the stack rises above the composer", async () => {
     await page.setViewportSize({ width: 420, height: 860 });
     // The project list overlays the conversation at this width; it is closed while writing.
-    await page.getByRole("button", { name: "收起项目栏" }).first().click();
+    const collapse = cmd(page, "view.left_column.toggle").first();
+    assert.equal(await commandLabel(collapse), "收起项目栏");
+    await collapse.click();
     await page.waitForTimeout(300);
     const stack = await box(page.locator(".attention-toasts")), composer = await box(page.locator(".chat-composer-wrap"));
     const rail = await box(page.locator(".chat-rail"));
@@ -235,7 +240,9 @@ try {
     assert.ok(stack.right <= rail.left, "and left of the rail");
     await page.screenshot({ path: path.join(screenshots, "attention-narrow-zh.png") });
     await page.setViewportSize({ width: 1440, height: 960 });
-    await page.getByRole("button", { name: "展开项目栏" }).first().click();
+    const expand = cmd(page, "view.left_column.toggle").first();
+    assert.equal(await commandLabel(expand), "展开项目栏");
+    await expand.click();
   });
 
   await step("查看 asks the page to open the chat, without a reload", async () => {
