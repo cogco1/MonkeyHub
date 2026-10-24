@@ -60,7 +60,8 @@ from ..binding import retained_sources
 from ..binding import ProjectBinding
 from ..monitoring import StudioMonitor
 from .projection import StateProjection, project_state, require_readable
-from .projections import DOCUMENT_PAGE, ELEVATION, SECTION_PERSPECTIVE, SHEET, ProjectionQueue, on_demand_spec
+from .projections import (DOCUMENT_PAGE, ELEVATION, MODEL_PARTS, SECTION_PERSPECTIVE, SHEET, ProjectionQueue,
+                          on_demand_spec)
 from . import drawing_pool
 from ..errors import StudioError
 
@@ -306,6 +307,10 @@ def drawing_pipeline(kind: str) -> dict[str, Any]:
     counts: an edit that changes no byte only costs one more drawing.
     """
 
+    if kind == MODEL_PARTS:
+        return {"kind": kind, "code": _source_files("monkeycad.formats.three_dm_inspector",
+                                                    "project_runtime.application.model_parts"),
+                "libraries": {"rhino3dm": _library_version("rhino3dm")}}
     if kind in (ELEVATION, SECTION_PERSPECTIVE):
         from monkeycad.backends.occt.kernel import backend_identity
 

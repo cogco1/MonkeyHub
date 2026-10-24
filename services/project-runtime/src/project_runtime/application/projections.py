@@ -120,12 +120,14 @@ SECTION_PERSPECTIVE = "drawing-section-perspective"
 SHEET = "drawing-sheet"
 #: One page of a retained document as a bounded PNG: what Board, Publish and export previews show.
 DOCUMENT_PAGE = "document-page"
+#: What each object of a model from outside the project is (``model_parts``), read once per file and namer.
+MODEL_PARTS = "model-parts"
 #: The kinds drawn in the request that needs them (``ProjectionQueue.on_demand``), never by the worker.
-ON_DEMAND = frozenset({ELEVATION, SECTION_PERSPECTIVE, SHEET, DOCUMENT_PAGE})
+ON_DEMAND = frozenset({ELEVATION, SECTION_PERSPECTIVE, SHEET, DOCUMENT_PAGE, MODEL_PARTS})
 #: The role of an on-demand row's manifest among its files: the key, the other files and their facts.
 MANIFEST = "manifest"
 #: The file suffix each role of an on-demand projection's files is kept under.
-FILE_SUFFIXES = {"png": ".png", "svg": ".svg", "pdf": ".pdf", "dxf": ".dxf", MANIFEST: ".json"}
+FILE_SUFFIXES = {"png": ".png", "svg": ".svg", "pdf": ".pdf", "dxf": ".dxf", "json": ".json", MANIFEST: ".json"}
 #: The recipe the design tree draws at: about twice its 80 x 56 px close cards.
 TREE_RECIPE = {"size": 256}
 PNG_MEDIA_TYPE = "image/png"

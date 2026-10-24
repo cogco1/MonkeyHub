@@ -12,7 +12,7 @@
           "base_ref": "098cca621b4620d2ea39e0985a0255141d841c0e",
           "contributor": "Claude",
           "reviewer": null,
-          "handoff": "第三批第 8 条「圈一下说一句就改」第 1 步 (03 3-2): POST /api/markup/resolve reads marks on a drawing, a view sheet or a camera pass's ID image, and strokes on the model, into the components and elements they lie on.",
+          "handoff": "第三批第 8 条「圈一下说一句就改」第 1 步 (03 3-2): POST /api/markup/resolve reads marks on a drawing, a view sheet or a camera pass's ID image, and strokes on the model, into the components and elements they lie on. Item 22 C+A rides on branch claude/300-b3-snapshot-parts in this lane: a Live Rhino snapshot's objects read as building parts, kept per file, named by a mark on its drawings.",
           "modules": [
             "project_runtime.intent",
             "project_runtime.documents",
@@ -31,7 +31,13 @@
             "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
             "governance/module_registry.json",
             "docs/architecture/system-map.md",
-            "docs/protocols/project-runtime-api.md"
+            "docs/protocols/project-runtime-api.md",
+            "services/project-runtime/src/project_runtime/application/model_parts.py",
+            "services/project-runtime/src/project_runtime/application/projections.py",
+            "services/project-runtime/src/project_runtime/api/routes/artifacts.py",
+            "services/project-runtime/src/project_runtime/api/routes/live_rhino.py",
+            "services/project-runtime/tests/test_model_parts.py",
+            "services/project-runtime/tests/fixtures/snapshot-parts.3dm"
           ],
           "depends_on": []
         }

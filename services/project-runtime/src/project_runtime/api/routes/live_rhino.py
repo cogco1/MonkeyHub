@@ -84,6 +84,9 @@ def snapshot_live_rhino_document(request: Request, payload: LiveRhinoSnapshotReq
         file_name=payload.file_name, drawable_only=payload.drawable_only, layer_prefixes=payload.layer_prefixes,
         event_sink=request.app.state.events, monitor=request.app.state.monitor,
     )
+    from .artifacts import read_parts_soon
+
+    read_parts_soon(request, answer["artifact"].sha256)
     answer["artifact"] = artifact_dto(answer["artifact"]).model_dump(by_alias=True)
     return answer
 

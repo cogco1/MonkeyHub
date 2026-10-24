@@ -266,7 +266,8 @@ class PageMarks:
 
 
 def read_page_marks(binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int,
-                    gestures: Sequence[DocumentGesture], *, revision_ref: str | None = None) -> PageMarks:
+                    gestures: Sequence[DocumentGesture], *, revision_ref: str | None = None,
+                    parts: Callable[[str], Mapping] | None = None) -> PageMarks:
     """Each mark on one registered page read into the components and elements it lies on (#300 3-2).
 
     The page is read as it was drawn, never drawn again: a view drawing (plan,
@@ -275,8 +276,10 @@ def read_page_marks(binding: ProjectBinding, run_id: str, asset_sha256: str, pag
     its object-ID image, which its line and depth images match pixel for pixel.
     The record state the drawing was made from answers for each object
     (``subjects_of``), so a drawing of a model from outside the project reads
-    UNBOUND. Another page names no object: every mark on it reads NOTHING. A
-    view drawing is read by the revision the documents list names it by
+    UNBOUND, unless ``parts`` reads that model (``model_parts``): a mark then
+    names the part each object was read as, a floor or the cabinets. Another
+    page names no object: every mark on it reads NOTHING. A view drawing is
+    read by the revision the documents list names it by
     (DRAWING_REVISION_REQUIRED).
     """
 
@@ -296,14 +299,14 @@ def read_page_marks(binding: ProjectBinding, run_id: str, asset_sha256: str, pag
                                                  place=tuple(row["placeMm"])) for row in recipe["views"]))
     elif recipe.get("kind") == PASS_KIND and (found := _id_image(binding, document, data)) is not None:
         id_document, png = found
-        identify, state_digest = _drawn_state(binding, id_document)
+        identify, state_digest = _drawn_state(binding, id_document, parts)
         return PageMarks(ID_IMAGE_PAGE, state_digest, read_id_image(
             gestures, png, (id_document.view_recipe or {}).get("legend") or (),
             _object_components(binding, id_document), identify))
     else:
         shown = document.pages[page_index]
         return PageMarks(PLAIN_PAGE, None, read_marks(gestures, (), (shown.width, shown.height), _nobody))
-    identify, state_digest = _drawn_state(binding, document)
+    identify, state_digest = _drawn_state(binding, document, parts)
     return PageMarks(source, state_digest, read_marks(gestures, ink, page, identify))
 
 
@@ -321,14 +324,39 @@ def _drawing_marks(binding: ProjectBinding, revision_ref: str):
         raise StudioError(409, "DOCUMENT_UNAVAILABLE", "The retained drawing revision cannot be read.") from exc
 
 
-def _drawn_state(binding: ProjectBinding, document) -> tuple[Identify, str | None]:
-    """Who answers for a drawn object: the record state the drawing was made from; none for a model from outside."""
+#: The run a model from outside the project is registered in, ``studio-model-<its sha256>``.
+_ATTACHED_MODEL_RUN = "studio-model-"
+
+
+def _drawn_state(binding: ProjectBinding, document, parts=None) -> tuple[Identify, str | None]:
+    """Who answers for a drawn object: the record state the drawing was made from; for a model from outside, its
+    parts when ``parts`` reads them, else no one."""
 
     if document.model_source is None and document.source_stage_ref is None:
+        if parts is not None and document.run_id.startswith(_ATTACHED_MODEL_RUN):
+            return snapshot_subjects(parts(document.run_id[len(_ATTACHED_MODEL_RUN):])), None
         return _nobody, None
     projection = project_state(binding, None if document.model_source is None else document.model_source.run_id,
                                source_stage_ref=document.source_stage_ref)
     return subjects_of(projection), projection.state_digest
+
+
+def snapshot_subjects(reading: Mapping) -> Identify:
+    """A model from outside the project answers for an object by the part it was read as (``model_parts``).
+
+    An object is found by its id, a block member by its own GUID; a colour of
+    an ID image grouped by layer by that layer's part. One read as other
+    answers for nothing.
+    """
+
+    objects, layers = reading.get("objects") or {}, reading.get("layers") or {}
+
+    def identify(object_id: str, component: str | None) -> Subject | None:
+        row = objects.get(object_id) or objects.get(object_id.split("/")[-1])
+        part = row["part"] if row is not None else layers.get(object_id)
+        return None if part in (None, "other") else Subject(part)
+
+    return identify
 
 
 def _id_image(binding: ProjectBinding, document, data: bytes):
@@ -456,5 +484,6 @@ __all__ = [
     "read_model_marks",
     "read_marks",
     "read_page_marks",
+    "snapshot_subjects",
     "subjects_of",
 ]

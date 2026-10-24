@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import re
+import threading
 from urllib.parse import quote
 from uuid import UUID
 
@@ -104,9 +105,26 @@ def create_model_asset(request: Request, payload: ModelAssetRequestDto) -> Proje
     binding = bound_project(request.app.state)
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The model asset names another project.")
-    return artifact_dto(register_model_asset(binding, payload.run_id, payload.state_digest, payload.file_name,
-                                           payload.content_base64, event_sink=request.app.state.events,
-                                           monitor=request.app.state.monitor))
+    registered = register_model_asset(binding, payload.run_id, payload.state_digest, payload.file_name,
+                                      payload.content_base64, event_sink=request.app.state.events,
+                                      monitor=request.app.state.monitor)
+    if registered.representation == "external":
+        read_parts_soon(request, registered.sha256)
+    return artifact_dto(registered)
+
+
+def read_parts_soon(request: Request, asset_sha256: str) -> None:
+    """Read a just attached model's parts in the background (#300 item 22): its first circled mark waits for none."""
+
+    from .markup import attached_parts
+
+    def read() -> None:
+        try:
+            attached_parts(request, asset_sha256)
+        except Exception:  # noqa: BLE001 - the first mark reads it then, and says what is wrong
+            pass
+
+    threading.Thread(target=read, name="model-parts", daemon=True).start()
 
 
 @router.post("/documents/{asset_sha256}/model-source", response_model=SourceDocumentDto, response_model_by_alias=True)
