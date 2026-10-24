@@ -192,6 +192,7 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
         reach = tuple(dict.fromkeys((*direct, *(impact.get("propagated") or ()))))
         conflicts = tuple(impact.get("conflicts") or ()) if proposal.get("status") == "conflict" else ()
         changing = _changing(base, direct, reach)
+        records = (base,)
         seconds["propose"] = round(clock() - started, 3)
     else:
         source = ports.source_of(request.candidate_id)
@@ -202,6 +203,7 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
         reach = tuple(dict.fromkeys((*direct, *base.closure(tuple(sorted(direct))))))
         conflicts = tuple(ref for ref in protected if ref in _with_wholes(base, reach))
         changing = _changing(base, direct, reach)
+        records = (base, ports.record(request.candidate_id))
 
     if conflicts:
         kept = [d for d in decisions if d.disposition == KEEP and d.target_ref in conflicts]
@@ -210,9 +212,9 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
                     "Ask the architect before changing it; nothing was admitted.", proposal_id=proposal_id,
                     candidate_id=request.candidate_id, question_refs=conflicts)
     touched = _with_wholes(base, changing)
-    rejected = [d for d in decisions if d.disposition in REJECTING and d.target_ref in touched]
+    rejected = _revived(records, direct, decisions)
     if rejected:
-        return done(NEEDS_QUESTION, "REJECTED_OPTION", "The change touches what the architect rejected: "
+        return done(NEEDS_QUESTION, "REJECTED_OPTION", "The change edits what the architect rejected: "
                     + "; ".join(f"{d.target_ref}: \"{d.words}\"" for d in rejected) + ". Ask before going back to it; "
                     "nothing was admitted.", proposal_id=proposal_id, candidate_id=request.candidate_id,
                     question_refs=tuple(d.target_ref for d in rejected))
@@ -263,21 +265,20 @@ def revise(request: RevisionRequest, ports: RevisionPorts, *, clock: Callable[[]
                         problems=(Problem("proposal", "NO_CHANGE", "the built design record is the working design's"),))
         built_reach = tuple(dict.fromkeys((*built_direct, *base.closure(tuple(sorted(built_direct))))))
         built_changing = _changing(base, built_direct, built_reach)
+        # What the build edited, read on the built record too: a part it added under a rejected target is there only.
+        rejected = _revived((base, ports.record(candidate_id)), built_direct, decisions)
+        if rejected:
+            return done(NEEDS_QUESTION, "REJECTED_OPTION", "The built change edits what the architect rejected, "
+                        "beyond what its proposal said: " + "; ".join(f"{d.target_ref}: \"{d.words}\"" for d in rejected)
+                        + ". It was not admitted; ask before going back to it.", proposal_id=proposal_id,
+                        candidate_id=candidate_id, question_refs=tuple(d.target_ref for d in rejected))
         if set(built_reach) - set(reach):
             late = _with_wholes(base, built_reach)
-            late_changed = _with_wholes(base, built_changing)
             kept = tuple(ref for ref in protected if ref in late and ref not in touched)
             if kept:
                 return done(NEEDS_QUESTION, "KEEP_CONFLICT", "The built change reaches what the architect asked to keep, "
                             "beyond what its proposal said: " + ", ".join(kept) + ". It was not admitted; ask the "
                             "architect.", proposal_id=proposal_id, candidate_id=candidate_id, question_refs=kept)
-            rejected = [d for d in decisions if d.disposition in REJECTING and d.target_ref in late_changed
-                        and d.target_ref not in touched]
-            if rejected:
-                return done(NEEDS_QUESTION, "REJECTED_OPTION", "The built change touches what the architect rejected, "
-                            "beyond what its proposal said: " + "; ".join(f"{d.target_ref}: \"{d.words}\"" for d in rejected)
-                            + ". It was not admitted; ask before going back to it.", proposal_id=proposal_id,
-                            candidate_id=candidate_id, question_refs=tuple(d.target_ref for d in rejected))
             known = {o.obligation_id for o in scope}
             scope = (*scope, *(o for o in _with_kept(_in_scope(base, built_changing),
                                                      _kept_in_reach(base, built_reach, decisions, checked))
@@ -486,6 +487,24 @@ def _changing(record: StateRecord, direct: Sequence[str], reach: Sequence[str]) 
     every = set(downstream_closures(edges, seeds)[0])
     changed = set(downstream_closures(edges, seeds, effects=(DependencyEffect.INVALIDATES,))[0])
     return tuple(ref for ref in reach if ref in changed or ref not in every)
+
+
+def _revived(records: Sequence[StateRecord], direct: Sequence[str], decisions: Sequence[Decision]) -> list[Decision]:
+    """The rejected options a change revives: it edits the rejected target itself (its row, the row of a part of it,
+    or a part it adds under it or removes), the row of a whole that holds it, or the parameter the decision names.
+    A target the change only carries along through parameter bindings, its own row unchanged, is not edited: a
+    larger rotunda rebuilds the ring of its oculus, and does not glaze it."""
+
+    edited = set(direct)
+    reached = set().union(*(_with_wholes(record, direct) for record in records))
+    revived = []
+    for decision in decisions:
+        if decision.disposition not in REJECTING:
+            continue
+        wholes = set().union(*(_with_wholes(record, (decision.target_ref,)) for record in records)) - {decision.target_ref}
+        if decision.target_ref in reached or edited & wholes:
+            revived.append(decision)
+    return revived
 
 
 def _with_wholes(record: StateRecord, refs: Sequence[str]) -> set[str]:

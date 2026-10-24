@@ -307,10 +307,30 @@ class RevisionOrderTests(unittest.TestCase):
         apart = FakePorts(decisions=(Decision("d3", "avoid", "entity:slab", "楼板别动"),))
         self.assertEqual(_revise(apart).outcome, LANDED, "a sibling part is not touched")
 
-    def test_a_parameter_that_drives_a_rejected_part_touches_it(self) -> None:
+    def test_a_parameter_that_carries_a_rejected_part_along_does_not_revive_it(self) -> None:
+        # The stair follows its rise, and its own row stays as it is: nothing makes it a spiral.
         ports = FakePorts(decisions=(Decision("d4", "reject", "entity:stair", "不要螺旋楼梯"),),
                           direct=("parameter:rise",), propagated=("entity:stair",))
+        self.assertEqual(_revise(ports).outcome, LANDED)
+        named = FakePorts(decisions=(Decision("d5", "reject", "parameter:rise", "踏步别再加高"),),
+                          direct=("parameter:rise",), propagated=("entity:stair",))
+        self.assertEqual(_revise(named).code, "REJECTED_OPTION", "an option rejected for the parameter itself")
+
+    def test_editing_a_whole_reaches_the_option_rejected_for_its_part(self) -> None:
+        # Facets on the house could be the glass the architect rejected for its stair.
+        ports = FakePorts(decisions=(Decision("d6", "reject", "entity:stair", "楼梯别用玻璃"),), direct=("entity:house",))
         self.assertEqual(_revise(ports).code, "REJECTED_OPTION")
+
+    def test_a_part_the_build_adds_under_a_rejected_target_revives_it(self) -> None:
+        base = _record()
+        pane = Entity("pane", "Element@1", {"component_id": "house", "producer": "prism", "references": {},
+                                            "params": {"height": 0.01}}, parent_id="stair")
+        ports = FakePorts(base=base, built=replace(base, entities=(*base.entities, pane)), direct=("entity:pane",),
+                          decisions=(Decision("d7", "reject", "entity:stair", "楼梯别装玻璃"),))
+        outcome = _revise(ports)
+        self.assertEqual((outcome.outcome, outcome.code), (NEEDS_QUESTION, "REJECTED_OPTION"))
+        self.assertIn("beyond what its proposal said", outcome.detail, "the pane is in the built record only")
+        self.assertNotIn("admit", ports.calls)
 
     def test_a_part_a_support_only_asks_to_check_again_is_not_changed_by_the_change(self) -> None:
         def prism(entity_id, height):
@@ -333,7 +353,7 @@ class RevisionOrderTests(unittest.TestCase):
         apart = FakePorts(base=record, decisions=(Decision("d1", "reject", "entity:slab", "不要厚楼板"),), **reach)
         self.assertEqual(_revise(apart).outcome, LANDED, "the slab does not change: no rejected option, no question")
         bound = FakePorts(base=record, decisions=(Decision("d2", "reject", "entity:stair", "不要螺旋楼梯"),), **reach)
-        self.assertEqual(_revise(bound).code, "REJECTED_OPTION", "the stair the parameter binds does change")
+        self.assertEqual(_revise(bound).outcome, LANDED, "the stair the parameter binds follows it, its own row unchanged")
 
     def test_a_condition_in_reach_that_no_check_can_verify_asks_before_building(self) -> None:
         said = _obligation("k3", None, "entity:stair", statement="楼梯要舒服")
