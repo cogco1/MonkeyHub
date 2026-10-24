@@ -5317,7 +5317,8 @@
         "edit_log",
         "edits_between",
         "by_target",
-        "EditStep"
+        "EditStep",
+        "GET /api/edit-log"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -5503,7 +5504,9 @@
         "tools/benchmarks/benchmark_visual_observation.py",
         "tools/project/export_drawing_recipe.py",
         "services/project-runtime/src/project_runtime/application/revision_transaction.py",
-        "services/project-runtime/src/project_runtime/application/edit_log.py"
+        "services/project-runtime/src/project_runtime/application/edit_log.py",
+        "services/project-runtime/src/project_runtime/api/routes/edit_log.py",
+        "services/project-runtime/src/project_runtime/api/dto/edit_log.py"
       ]
     },
     {

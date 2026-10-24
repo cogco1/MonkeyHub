@@ -127,6 +127,9 @@
           "write_scope": [
             "apps/monkeyhub/api/monkeyhub_api/attention/rules.py",
             "apps/monkeyhub/api/tests/test_attention_rules.py",
+            "services/project-runtime/src/project_runtime/api/dto/edit_log.py",
+            "services/project-runtime/src/project_runtime/api/routes/__init__.py",
+            "services/project-runtime/src/project_runtime/api/routes/edit_log.py",
             "services/project-runtime/src/project_runtime/application/edit_log.py",
             "services/project-runtime/src/project_runtime/application/skill_access.py"
           ],

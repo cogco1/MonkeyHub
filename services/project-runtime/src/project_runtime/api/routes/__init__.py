@@ -14,6 +14,7 @@ from . import (
     decisions,
     domains,
     drawings,
+    edit_log,
     episodes,
     events,
     health,
@@ -66,5 +67,6 @@ router.include_router(validation.router)
 router.include_router(events.router)
 router.include_router(synchronization.router)
 router.include_router(working_draft.router)
+router.include_router(edit_log.router)
 
 __all__ = ["router"]
