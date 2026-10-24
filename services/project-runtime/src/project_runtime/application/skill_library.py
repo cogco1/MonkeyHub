@@ -1,18 +1,27 @@
-"""Skill packages a project can take in: the ones shipped with MonkeyHub and the user's own.
+"""The skills installed on this machine: the ones shipped with MonkeyHub and the user's own (S-1).
 
 A package is a folder holding ``skill.json`` (name, description, entry,
 manifest, access), ``SKILL.md`` (the body; a frontmatter block is dropped) and
 its other UTF-8 text files, which become the skill's files. Two places hold
-packages: ``apps/monkeyhub/skills/``, shipped with each release, and
-the user's ``%LOCALAPPDATA%\\MonkeyHub\\skill-packages`` (``MONKEYHUB_SKILL_PACKAGES``
-names another folder). Neither is a project. Importing a package registers it
-as a version of the bound project's skill of that name; a package that says
-what the current version says adds nothing. Importing grants nothing: a person
-still allows a version before it runs.
+packages: ``apps/monkeyhub/skills/``, shipped with each release, and the
+user's ``%LOCALAPPDATA%\\MonkeyHub\\skill-packages`` (``MONKEYHUB_SKILL_PACKAGES``
+names another folder). Neither is a project, and every project can use what
+they hold: nothing is imported first. A name found in both places is the
+user's, as a person's own skill is in Claude. A package that cannot be read is
+listed with why, and runs nothing.
+
+Reading them needs no project (``installed``): the Hub lists them for its
+chats without starting a Project Runtime, which is why the Hub may read this
+module (architecture_policy, the Runtime's declared read API). A Runtime finds
+the one a run names, and the project retains that version's exact content the
+first time it runs there (``retain``), so the run record names code the
+project still holds.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -25,7 +34,8 @@ from ..errors import StudioError
 from . import skills
 
 BUNDLED = Path(__file__).resolve().parents[5] / "apps" / "monkeyhub" / "skills"
-SOURCES = ("bundled", "user")
+# The order a name is looked up in: a person's own skill comes before the shipped one of that name.
+SOURCES = ("user", "bundled")
 FOLDER = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
 
@@ -40,7 +50,59 @@ def user_root() -> Path:
 
 
 def roots() -> dict[str, Path]:
-    return {"bundled": BUNDLED, "user": user_root()}
+    return {"user": user_root(), "bundled": BUNDLED}
+
+
+@dataclass(frozen=True, slots=True)
+class InstalledSkill:
+    """One package as found: where, and its checked content or why it has none."""
+
+    name: str
+    source: str
+    folder: Path
+    package: Mapping[str, Any] | None
+    content: Mapping[str, Any] | None
+    error: Mapping[str, str] | None
+
+    @property
+    def skill_id(self) -> str:
+        return skills.skill_id_for(self.name)
+
+    @property
+    def code_sha256(self) -> str | None:
+        """What the package says, as one hash; a package of instructions only is hashed as its body."""
+
+        if self.content is None:
+            return None
+        return self.content.get("codeSha256") or skills.code_sha256(str(self.content["body"]), None, {})
+
+    @property
+    def access(self) -> Mapping[str, Any] | None:
+        return None if self.content is None else self.content.get("access")
+
+
+@dataclass(frozen=True, slots=True)
+class Installed:
+    """Every package in the skill folders, in lookup order."""
+
+    roots: Mapping[str, Path]
+    packages: tuple[InstalledSkill, ...]
+
+    def find(self, name: str) -> InstalledSkill | None:
+        """The package a name means: the user's when both places hold one, even when the user's cannot be read."""
+
+        return next((row for row in self.packages if row.name == name), None)
+
+    def current(self) -> tuple[InstalledSkill, ...]:
+        """One package per name, the one ``find`` answers."""
+
+        seen: set[str] = set()
+        rows = []
+        for row in self.packages:
+            if row.name not in seen:
+                seen.add(row.name)
+                rows.append(row)
+        return tuple(rows)
 
 
 def _invalid(folder: Path, detail: str) -> StudioError:
@@ -76,50 +138,63 @@ def read_package(folder: Path) -> dict[str, Any]:
             "entry": spec.get("entry"), "manifest": spec.get("manifest"), "access": spec.get("access")}
 
 
-def _folder(source: str, name: str) -> Path:
-    if source not in SOURCES:
-        raise StudioError(422, "SKILL_PACKAGE_INVALID", f"source is one of {', '.join(SOURCES)}.")
-    if not FOLDER.fullmatch(name):
-        raise StudioError(422, "SKILL_PACKAGE_INVALID", "name is a package folder such as site-palette.")
-    folder = roots()[source] / name
-    if not (folder / "skill.json").is_file():
-        raise StudioError(404, "SKILL_PACKAGE_NOT_FOUND", f"No {source} package is named {name} ({folder}).")
-    return folder
+def _read(source: str, folder: Path) -> InstalledSkill:
+    try:
+        package = read_package(folder)
+        skill_id, content = skills.skill_content(**package)
+    except StudioError as error:
+        return InstalledSkill(folder.name, source, folder, None, None, {"code": error.code, "detail": error.detail})
+    name = skill_id.removeprefix(skills.SKILL_ID_PREFIX)
+    if name != folder.name:
+        return InstalledSkill(folder.name, source, folder, None, None, {
+            "code": "SKILL_PACKAGE_INVALID", "detail": f"{folder.name}: skill.json names it {name}; the folder is its name."})
+    return InstalledSkill(name, source, folder, package, content, None)
+
+
+def installed() -> Installed:
+    """Every package in the skill folders, read now; no project is involved."""
+
+    found = roots()
+    rows = []
+    for source in SOURCES:
+        root = found[source]
+        folders = sorted(path for path in root.iterdir() if FOLDER.fullmatch(path.name)
+                         and (path / "skill.json").is_file()) if root.is_dir() else []
+        rows += [_read(source, folder) for folder in folders]
+    return Installed(found, tuple(rows))
 
 
 def library(binding: ProjectBinding) -> dict[str, Any]:
     """Every package in both places, with what the bound project holds of each."""
 
     rows = []
-    for source, root in roots().items():
-        folders = sorted(path for path in root.iterdir() if (path / "skill.json").is_file()) if root.is_dir() else []
-        for folder in folders:
-            row: dict[str, Any] = {"source": source, "name": folder.name, "path": str(folder)}
-            try:
-                package = read_package(folder)
-                skill_id, content = skills.skill_content(**package)
-            except StudioError as error:
-                rows.append({**row, "error": {"code": error.code, "detail": error.detail}})
-                continue
-            current = skills.latest_version(binding, skill_id)
-            rows.append({**row, "skillId": skill_id, "skillName": content["name"],
-                         "description": content["description"], "entry": content.get("entry"),
-                         "access": content.get("access"), "codeSha256": content.get("codeSha256"),
-                         "files": sorted(content.get("files") or ()),
-                         "projectVersion": None if current is None else current.version,
-                         "upToDate": current is not None and skills.same_content(current, content)})
+    shadowed = set()
+    for row in installed().packages:
+        line: dict[str, Any] = {"source": row.source, "name": row.name, "path": str(row.folder),
+                                "shadowed": row.name in shadowed}
+        shadowed.add(row.name)
+        if row.content is None:
+            rows.append({**line, "error": dict(row.error or {})})
+            continue
+        current = skills.latest_version(binding, row.skill_id)
+        rows.append({**line, "skillId": row.skill_id, "skillName": row.name,
+                     "description": row.content["description"], "entry": row.content.get("entry"),
+                     "access": row.access, "codeSha256": row.code_sha256,
+                     "files": sorted(row.content.get("files") or ()),
+                     "projectVersion": None if current is None else current.version,
+                     "upToDate": current is not None and skills.same_content(current, row.content)})
     return {"projectId": binding.project_id, "sources": {key: str(path) for key, path in roots().items()},
             "packages": rows}
 
 
-def import_package(binding: ProjectBinding, source: str, name: str, *,
-                   attribution: ActorAttribution) -> tuple[skills.SkillVersion, bool]:
-    """Register a package as the project's skill: a new version, or the current one when nothing changed."""
+def retain(binding: ProjectBinding, skill: InstalledSkill, *, attribution: ActorAttribution) -> skills.SkillVersion:
+    """The project's version of exactly this package: the current one when it says the same, else a new one."""
 
-    package = read_package(_folder(source, name))
-    skill_id, content = skills.skill_content(**package)
-    current = skills.latest_version(binding, skill_id)
-    if current is not None and skills.same_content(current, content):
-        return current, False
-    return skills.add_skill(binding, **package, supersedes_version=None if current is None else current.version,
-                            attribution=attribution), True
+    if skill.package is None or skill.content is None:
+        error = skill.error or {}
+        raise StudioError(422, error.get("code", "SKILL_PACKAGE_INVALID"), error.get("detail", f"{skill.name} cannot be read."))
+    current = skills.latest_version(binding, skill.skill_id)
+    if current is not None and skills.same_content(current, skill.content):
+        return current
+    return skills.add_skill(binding, **skill.package, supersedes_version=None if current is None else current.version,
+                            attribution=attribution)

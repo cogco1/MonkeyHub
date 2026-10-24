@@ -5578,7 +5578,7 @@
       "owner_path": "services/project-runtime/src/project_runtime/application/memory.py",
       "purpose": "Remember how this project works - where its retained content is and where to look first for a topic - as its own revisioned records, apart from what the project settled.",
       "owns": [
-        "project memory items (StudioMemoryRecord@1) in the one fixed explicit studio-memory P036 run: key, kind (locator | source_policy | recipe, whose value names a library skill as skill:<name>@<version> that the Hub pins from the configured library; preference, habit and standard reserved), scope (project; organization, team and user reserved for the library project), appliesWhen (domains, topics, keys, optional Stage), a kind-specific value, authority (explicit; observed and inferred reserved), provenance (the user's raw words, messageSource, sourceKind, evidence refs), version and status",
+        "project memory items (StudioMemoryRecord@1) in the one fixed explicit studio-memory P036 run: key, kind (locator | source_policy | recipe, whose value names a skill as skill:<name>@<code>, the first 12 hex digits of its codeSha256 that the Hub fills in from the installed skill (S-1), or a library version, skill:<name>@<version>, from before S-1; preference, habit and standard reserved), scope (project; organization, team and user reserved for the library project), appliesWhen (domains, topics, keys, optional Stage), a kind-specific value, authority (explicit; observed and inferred reserved), provenance (the user's raw words, messageSource, sourceKind, evidence refs), version and status",
         "the locator: the user's label for one piece of retained project content (a registered document page at its exact revision, an artifact by sha256, a board revision element), refusing an absolute machine path or a URL with its reason, and re-verifying the target through P036 on every read",
         "the source policy: a research topic in the user's words, its normalized keys (materials, regulations, products, precedents), ordered prefer and avoid sources and a note",
         "memory retrieval: scope, then appliesWhen, then deterministic lexical matching (NFKC, casefold, CJK bigrams; no embeddings); memory_for, the one read ContextPack.memory is compiled from, and locate, the where-is read",
@@ -5736,19 +5736,19 @@
     {
       "module_id": "project_runtime.skills",
       "owner_path": "services/project-runtime/src/project_runtime/application/skills.py",
-      "purpose": "Retain reusable agent procedures (skills) as immutable versions in a project, read by the Hub from the library project. CREATE: no owner held reusable procedures; a scoped decision is a judgement compiled into later turns and a recipe is typed paper-space values, and neither carries a procedure (#252).",
+      "purpose": "Retain reusable agent procedures (skills) as immutable versions in a project, the versions the project's runs used (S-1: skills are installed in folders, not imported). CREATE: no owner held reusable procedures; a scoped decision is a judgement compiled into later turns and a recipe is typed paper-space values, and neither carries a procedure (#252).",
       "status": "canonical",
       "owns": [
         "The StudioSkill@1 record: id skill:<kebab-name>, version, name, description, SKILL.md body without frontmatter (at most 64 KiB) and an optional declared manifest of inputs, outputs and permissions",
         "The fixed studio-skills run, created only by the first added skill, and the per-skill version chain 1..n with each version naming the ref it supersedes",
         "POST /api/skills, GET /api/skills (the index, no bodies) and GET /api/skills/{skill_id} with ?version=",
         "optional script files and an entry per version, and its codeSha256 over body, entry and files",
-        "a person's approval of one version's exact code hash (StudioSkillApproval@1 in studio-skills) and the refusals SKILL_NOT_APPROVED, SKILL_CODE_CHANGED and SKILL_NOT_RUNNABLE"
+        "a project's approvals of one version's exact code from before S-1 (StudioSkillApproval@1 and their revocations), retained and listed by GET /api/skills/approvals for the Hub to carry over; they allow no run",
+        "What a person allows skills to do (S-1, skill_access): an access in the form a person allows it (network, programs by name, ssh hosts, write folders, packages by distribution; reading is not asked), the items that allow anything and are never allowed for every skill, and reading MonkeyHubSkillGrants@1 at the path MONKEYHUB_SKILL_GRANTS names to say what a run of one skill still needs or which one-run grant covers it"
       ],
       "does_not_own": [
-        "Loading skills into an agent: hub.shell materializes the library's current versions into a plugin directory in its cache and the agent's native mechanism loads it",
-        "Any permission or grant: a skill is a procedure, and its manifest's permissions are declared and never enforced",
-        "Which project is the library: the Hub's ApplicationSettingsDto libraryDir",
+        "Loading skills into an agent: hub.shell materializes the installed skills into a plugin directory in its cache and the agent's native mechanism loads it",
+        "Writing a grant: hub.shell keeps skill-grants.json and writes it only when a person answers a card or changes Settings",
         "Recipes and scoped decisions: project_runtime.intent"
       ],
       "public_api": [
@@ -5757,24 +5757,33 @@
         "GET /api/skills/library",
         "GET /api/skills/{skill_id}",
         "POST /api/skills",
-        "POST /api/skills/approvals/{approval_id}/revoke",
-        "POST /api/skills/import",
-        "POST /api/skills/{skill_id}/approvals",
         "add_skill",
         "approvals",
-        "approve_skill",
         "code_sha256",
         "grant_rows",
         "latest_version",
         "list_skills",
         "read_skill",
-        "require_approved",
-        "require_granted",
         "revocations",
-        "revoke_approval",
         "same_content",
         "skill_content",
-        "skill_versions"
+        "skill_versions",
+        "access_added",
+        "access_within",
+        "asked",
+        "broad",
+        "needed",
+        "once_grant",
+        "read_grants",
+        "parse_grants",
+        "lasting",
+        "merged",
+        "describe_added",
+        "describe_added_zh",
+        "SkillGrantsDto",
+        "SkillGrantDto",
+        "SkillAccessDto",
+        "SkillRefDto"
       ],
       "depends_on": [
         "project_runtime.binding",
@@ -5786,11 +5795,14 @@
       "files": [
         "services/project-runtime/src/project_runtime/application/skills.py",
         "services/project-runtime/src/project_runtime/api/routes/skills.py",
-        "services/project-runtime/src/project_runtime/api/dto/skills.py"
+        "services/project-runtime/src/project_runtime/api/dto/skills.py",
+        "services/project-runtime/src/project_runtime/application/skill_access.py",
+        "services/project-runtime/src/project_runtime/api/dto/skill_grants.py"
       ],
       "tests": [
         "services/project-runtime/tests/test_skills.py",
-        "apps/monkeyhub/api/tests/test_skill_library.py"
+        "apps/monkeyhub/api/tests/test_skill_library.py",
+        "services/project-runtime/tests/test_skill_access.py"
       ],
       "inputs": [
         "An explicit skill version: name, description, body, optional manifest and, for a successor, the version it supersedes"
@@ -5802,19 +5814,20 @@
         "A retained version is never rewritten; a superseded version stays readable by its number",
         "Adding an existing name without superseding, or superseding a version that is not the latest, refuses",
         "Competing or missing versions refuse on read rather than being resolved by picking a file",
-        "No skill operation accepts a Stage, moves HEAD or grants a permission"
+        "No skill operation accepts a Stage, moves HEAD or allows anything a run does"
       ]
     },
     {
       "module_id": "project_runtime.skill_runs",
       "owner_path": "services/project-runtime/src/project_runtime/application/skill_runs.py",
-      "purpose": "Run one granted skill version as a background job in the person's own environment, held to its grant by an audit hook, and retain the run: version, code hash, grant, inputs and outputs, programs started, hosts reached, writes outside its folders, and what it needed beyond the grant.",
+      "purpose": "Run one installed skill, as far as a person allowed what it declares, as a background job in the person's own environment, held to its declaration by an audit hook, and retain the run: version, code hash, grant, inputs and outputs, programs started, hosts reached, writes outside its folders, and what it needed beyond the grant.",
       "owns": [
         "the run contract: python -B -X utf8 <bootstrap> <entry> --inputs <dir> --params <file> --outputs <dir>, without isolation, in the user's environment",
-        "the audit-hook bootstrap that checks programs, ssh, network and writes against the grant and records them",
+        "the audit-hook bootstrap that checks programs, ssh, network and writes against what the skill declares and records them",
         "one P036 run skill-run-<id> per execution with StudioSkillRun@1 records from queued to succeeded or failed",
         "each skill's own package folder installed with an external pip for the runtime's Python",
-        "registering PDF/PNG/JPEG outputs as documents, 3dm outputs as model assets with an undrawable report, small text in the record and other files as P036 objects"
+        "registering PDF/PNG/JPEG outputs as documents, 3dm outputs as model assets with an undrawable report, small text in the record and other files as P036 objects",
+        "before a run starts, what the skill declares read against the grants the Hub keeps (MONKEYHUB_SKILL_GRANTS) and a one-run grant bound to the project, skill and code, refused with SKILL_ACCESS_NEEDED naming what still needs allowing; the run record keeps the folder it came from and each grant it went ahead on"
       ],
       "does_not_own": [
         "approving a version - project_runtime.skills",
@@ -5838,7 +5851,10 @@
         "run_report",
         "list_skill_runs",
         "output_bytes",
-        "used_once_grants"
+        "used_once_grants",
+        "allowed",
+        "GET /api/skills/{skill_id}/needs",
+        "run_needs"
       ],
       "depends_on": [
         "archflow.project.ports",
@@ -5919,10 +5935,12 @@
     {
       "module_id": "project_runtime.skill_library",
       "owner_path": "services/project-runtime/src/project_runtime/application/skill_library.py",
-      "purpose": "Read the skill packages shipped with MonkeyHub (apps/monkeyhub/skills, at the same path in the release) and the user's own (%LOCALAPPDATA%\\MonkeyHub\\skill-packages), and register one into the bound project as a version of its skill.",
+      "purpose": "Read the skill packages shipped with MonkeyHub (apps/monkeyhub/skills, at the same path in the release) and the user's own (%LOCALAPPDATA%\\MonkeyHub\\skill-packages): the skills installed on this machine, which every project can use without importing them (S-1)",
       "owns": [
         "the package folder: skill.json, SKILL.md without frontmatter, and its other UTF-8 text files",
-        "the two package places and the MONKEYHUB_SKILL_PACKAGES override",
+        "the two package places and the MONKEYHUB_SKILL_PACKAGES override; a name found in both is the user's",
+        "the skills installed on this machine (installed), read without a project, which the Hub reads to list them for its chats (architecture_policy: the Runtime's declared read API)",
+        "the project retaining the exact version a run uses the first time it runs there (retain); no import step",
         "listing every package with the version the project holds and whether it matches"
       ],
       "does_not_own": [
@@ -5937,8 +5955,11 @@
         "a StudioSkill@1 version when the package changed"
       ],
       "public_api": [
+        "installed",
+        "Installed",
+        "InstalledSkill",
+        "retain",
         "library",
-        "import_package",
         "read_package",
         "roots",
         "user_root"
@@ -7523,14 +7544,16 @@
         "The project Design Tree (状态树) surface and its Stage chip: a planar growth tree of Stages, admitted Candidates and Studies (the #294 design-history contract), the Working Head and running work, Current's line drawn as one chain of steps whose earlier ones fold behind one control and the drafts it superseded folded where it moved on, those the project cleaned into its trash with them, each restorable from the drafts card's inspector (#575); View is read-only, Continue (to an option, a Stage, a step or a draft) uses the working-draft route and Accept as next Stage the existing accept route, on Current only",
         "The shared project canvas host (features/canvas): Excalidraw mount defaults, the local font path, theme mapping, wheel zoom and scene-point click hit testing, used by MonkeyBoard and the Design Tree",
         "Hub-local integration diagnostic snapshot and explicit bounded rescan; qualification and bridge execution stay with the existing adapter owner.",
-        "The configured skill library (#252): reading the library project's current skills through its Runtime and materializing them into a Claude plugin directory under <runtime root>/cache/skill-plugins/<index digest>/, passed with --plugin-dir; nothing is written into any project, and no library means an unchanged command",
+        "The skills installed on this machine (S-1, #252): read from the skill folders without a project or a Project Runtime (skill_plugins.installed_library) and materialized into a Claude plugin directory under <runtime root>/cache/skill-plugins/<index digest>/, passed with --plugin-dir to every Claude chat; a recipe pins a skill as skill:<name>@<code>; nothing is written into any project",
         "Binding a chat message's selected images (ChatPostRequest.renderContext, #253) to exact registered PNG/JPEG pages of the conversation's own project before anything is kept or a CLI starts, keeping them on the user message with the roles the user chose and handing roles and exact pages to the native turn, whose Agent reads each page through the registered-page export and reaches the existing project_runtime.render routes through the operation admission",
         "Render provider/model/timeout preferences remain in UserSettingsDto; explicit launch environment supplies the secret only to the configured Runtime adapter, with no project or HTTP key field",
         "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement (monkeyhub_api/settings); the resolved values reach a Project Runtime only through its launch environment",
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
         "Component information in Modeling (#549): topic-agnostic MonkeyHubComponentInfo@1 datasets (docs/protocols/component-info.md), each kept on its own Board card under customData.componentInfo, checked and imported or replaced by dataset id on the Board through its save queue, read while Modeling shows a model once per Board revision, and shown in one closable card for a picked component only when the pick and the dataset's appliesTo (project, run, state digest) match the exact version on screen; datasets for another version are listed, never shown, and a click makes no request and writes nothing",
         "the designLoop application setting (legacy | advisory | enforced, default legacy; a saved off reads as legacy) passed to each Project Runtime it starts; legacy keeps the chat's tools, guide and error words as they were; advisory adds GET /api/revisions/context and two lines naming the problem lists; enforced offers POST /api/revisions with the user's message and words bound, the guide that names it and a Claude chat without Bash; the chat never sends confirmed",
-        "the design-loop tools (design_read, design_submit, design_ask, design_report_limitation) over studio_request and POST /api/revisions: a repair limit per answered user message (MONKEYHUB_REPAIR_BUDGET, default 3), earlier attempts on the same base superseded, the turn's loop state at the launcher's MONKEYHUB_DESIGN_LOOP_STATE file, the Stop hook that holds a turn open until a change landed, the architect was asked or a limitation was reported (at most three times), the --design-loop connection that lists only those tools, and cli_profile for whoever starts such a turn"
+        "the design-loop tools (design_read, design_submit, design_ask, design_report_limitation) over studio_request and POST /api/revisions: a repair limit per answered user message (MONKEYHUB_REPAIR_BUDGET, default 3), earlier attempts on the same base superseded, the turn's loop state at the launcher's MONKEYHUB_DESIGN_LOOP_STATE file, the Stop hook that holds a turn open until a change landed, the architect was asked or a limitation was reported (at most three times), the --design-loop connection that lists only those tools, and cli_profile for whoever starts such a turn",
+        "What a person allowed skills to do on this machine (S-1): <runtime root>/config/skill-grants.json (MonkeyHubSkillGrants@1) beside applications.json, outside every project and never synced with a team; one grant per answer, for every skill, one skill by name and source, or one run bound to its project and code; withdrawn grants kept with when; a project's version grants from before S-1 carried over once as grants for that skill only; written only through monkeyhub_api/settings",
+        "An Agent's skill run (S-1): the project's approvals from before carried over, what the run still needs read from its Runtime (GET /api/skills/{id}/needs), and only that put to the person in the chat as one question (always allow, only this time, no); the Hub writes the grant from the answer, the Agent never names one"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -7652,7 +7675,16 @@
         "design_loop.call",
         "design_loop.cli_profile",
         "design_loop.stop_decision",
-        "mcp_server --design-loop"
+        "mcp_server --design-loop",
+        "skill_grants.allow",
+        "skill_grants.revoke",
+        "skill_grants.migrate",
+        "skill_grants.read",
+        "skill_grants.grants_path",
+        "GET /api/settings/skill-grants",
+        "POST /api/settings/skill-grants/{grant_id}/revoke",
+        "POST /api/settings/skill-grants/carry",
+        "skill_plugins.installed_library"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -7666,7 +7698,7 @@
         "CLI tools resolve the chat's project-specific Studio and verify process and project identity; retained design changes use existing Studio/P036 APIs, and stopping one project never interrupts another",
         "No new provider gateway or credential store; native CLI configuration owns authentication and provider routing",
         "Chat attachment bytes stay under runtime/chats/<session>/attachments, outside the project; transcripts retain metadata only. Native images use provider image blocks or CLI image inputs; the existing MCP connection reads only the bound chat's attachments, with bounded text or binary chunks and single-page PDF text. Attachment delivery itself does not widen sandbox or filesystem permissions, and later turns do not resend earlier attachment bytes",
-        "The bound project folder is read-only to the agent's file tools (ADR-012): a Claude-compatible turn carries one --disallowedTools rule, Edit(//<drive letter>/<path>/**) with pattern characters escaped, which the CLI applies to Write and Edit, while scratch and a source checkout stay writable; Codex is given no writable root in the project. Bash is not confined, nor is Codex started in the project by an installed Hub (its sandbox writes the folder it starts in); what they write there is a change from elsewhere, not design state With the Hub's runtime root, the same rules also cover the account's Hub settings folder, the runtime root's folders (a chat's records and attachments, never its scratch), the skill folders, Claude Code's own configuration and an installed Hub's files.",
+        "The bound project folder is read-only to the agent's file tools (ADR-012): a Claude-compatible turn carries one --disallowedTools rule, Edit(//<drive letter>/<path>/**) with pattern characters escaped, which the CLI applies to Write and Edit, while scratch and a source checkout stay writable; Codex is given no writable root in the project. Bash is not confined, nor is Codex started in the project by an installed Hub (its sandbox writes the folder it starts in); what they write there is a change from elsewhere, not design state With the Hub's runtime root (S-1), the same rules also cover the account's Hub settings folder, the runtime root's folders (a chat's records and attachments, never its scratch), the skill folders, Claude Code's own configuration and an installed Hub's files.",
         "A request is sent once. Waiting for its result only reads: a wait that runs out, a read that fails and a job that failed all answer with the identifiers and the reads that find them, and none of them sends the request again",
         "What is reported is what was read: a run whose candidate or comparison could not be read is never presented as a read-back candidate, and relation counts travel as the run stated them",
         "Runtime records and the admission journal are observations, not another project repository; completed candidate and Stage outcomes require existing retained proof, and a prepared unreachable Stage never proves a commit",
@@ -7715,6 +7747,7 @@
         "apps/monkeyhub/api/monkeyhub_api/settings/store.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/credentials.py",
+        "apps/monkeyhub/api/monkeyhub_api/settings/skill_grants.py",
         "apps/monkeyhub/api/monkeyhub_api/project_archive.py",
         "apps/monkeyhub/api/monkeyhub_api/projects.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime/__init__.py",
@@ -7886,6 +7919,7 @@
         "apps/monkeyhub/web/test/workspaceWidth.test.ts",
         "apps/monkeyhub/api/tests/test_design_loop_setting.py",
         "apps/monkeyhub/api/tests/test_design_loop.py",
+        "apps/monkeyhub/api/tests/test_skill_grants.py",
         "apps/monkeyhub/api/tests/test_agent_write_paths.py"
       ],
       "depends_on": [

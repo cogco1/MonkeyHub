@@ -12,10 +12,11 @@ from urllib.parse import urlencode
 from uuid import uuid5, NAMESPACE_URL
 
 from archflow.project.manifest import ProjectManifest
+from project_runtime.api.dto.skill_grants import GRANTS_ENV
 
 from ..models import AppId, AppStatus, HubError, HubFailure
 from .. import fabrication
-from ..settings import credentials
+from ..settings import credentials, skill_grants
 from ..settings.models import ApplicationSettingsDto
 from ..settings.store import read_application_settings, read_user_settings, save_application_settings
 from .workers import WorkerLaunch, WorkerSnapshot, WorkerSupervisor, project_key
@@ -219,6 +220,8 @@ class Applications:
             "ARCHFLOW_STUDIO_DESIGN_LOOP": settings.design_loop,
             "ARCHFLOW_STUDIO_INTENT_PROVIDER": preferences.intent_provider or "deterministic",
             "MONKEYMONITOR_DATA_DIR": str(diagnostics),
+            # What a person allowed skills to do on this machine (S-1): the Runtime reads it, the Hub writes it.
+            GRANTS_ENV: str(skill_grants.grants_path(self.runtime_root)),
         })
         if settings.reference_run:
             environ["ARCHFLOW_STUDIO_REFERENCE_RUN"] = settings.reference_run

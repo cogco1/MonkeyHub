@@ -2377,7 +2377,10 @@ an elevation the same values are given flat and again under `frame`. The documen
 own folder (`monkeyhub-skill-*` in the system temp folder: copies of the inputs, the package and the outputs) is
 removed when the run ends, after its outputs are registered in the project; the run's record is written from what
 was registered, so nothing a run produced lives only there. A failed run registers no outputs: its record keeps the
-exit code, the ends of stdout and stderr, and what it needed.
+exit code, the ends of stdout and stderr, and what it needed. Inside its own folder a run writes only under
+`--outputs` or beside its own code, and no write climbs out of `--outputs` with `..`, whatever it was granted: a
+refused write fails the run as `SKILL_OUTPUT_INVALID` (the run's control files, inputs and audit log stay as they
+were), even when the skill caught the refusal.
 
 What a run is never given. Its environment is the user's own less the runtime's settings (every
 `ARCHFLOW_STUDIO_*`, `MONKEYHUB_*` and `MONKEYMONITOR_*` variable, among them the render key the Hub hands the runtime

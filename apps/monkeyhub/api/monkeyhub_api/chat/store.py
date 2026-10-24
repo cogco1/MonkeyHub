@@ -186,6 +186,8 @@ class ChatStore:
         # A skill's question stays readable after the person answers it, so the
         # chat tool that asked can read the answer on a later call.
         self._skill_questions: dict[tuple[str, str], Future] = {}
+        # What each skill question would allow (S-1), kept by the Hub until the person answers it.
+        self._skill_asks: dict[tuple[str, str], Mapping] = {}
         self.timeout_s = timeout_s
         self._lock = threading.RLock()
         self._sessions: dict[str, _SavedChat] = {}
@@ -1286,10 +1288,10 @@ class ChatStore:
         return command, environment
 
     def _library(self) -> skill_plugins.Library | None:
-        return skill_plugins.configured_library(self.runtime_root, self.hub_url)
+        return skill_plugins.installed_library()
 
     def _turn_library(self) -> Callable[[], skill_plugins.Library | None]:
-        """The configured library, read at most once for one turn: its recipes and its plugin share it."""
+        """The installed skills, read at most once for one turn: its recipes and its plugin share them."""
 
         held: list = []
 
@@ -1320,7 +1322,7 @@ class ChatStore:
         except HubFailure as failure:
             for row in recipes:
                 row["skill"] = {"load": None, "pinned": (row["memory"].get("value") or {}).get("skill"),
-                                "libraryVersion": None, "note": f"{failure.error.detail} Tell the user."}
+                                "current": None, "note": f"{failure.error.detail} Tell the user."}
             return
         for row in recipes:
             row["skill"] = skill_plugins.pinned_status(current, str((row["memory"].get("value") or {}).get("skill")),
@@ -1352,9 +1354,18 @@ class ChatStore:
             self._save(session)
         return future
 
-    def request_skill_permission(self, session_id: str, title: str) -> str:
-        """Put a skill's run and its access to the person in the running chat, as a question with three buttons."""
+    def request_skill_permission(self, session_id: str, title: str, ask: Mapping | None = None) -> str:
+        """Put what a skill run needs to the person in the running chat, as a question with three buttons.
 
+        ``ask`` is what the answer would allow (S-1): ``access``, the ``skill``
+        it is for, the ``projectId`` and ``codeSha256`` of this run, and the
+        ``broad`` part of the access, which is allowed only for that skill.
+        The Hub keeps it, and writes the grant itself when the person answers.
+        """
+
+        broad = bool(ask and ask.get("broad"))
+        always = ("总是允许这个 skill / Always allow for this skill" if broad
+                  else "总是允许 / Always allow")
         future = Future()
         with self._lock:
             session = self._session(session_id)
@@ -1362,10 +1373,9 @@ class ChatStore:
             if self._closing or running is None or running.stop.is_set():
                 raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is not running, so no one can be asked.")
             permission = ChatPermission(id=str(uuid4()), title=title, options=[
-                ChatPermissionOption(optionId="allow_once", name="允许这一次 / Allow once", kind="allow_once"),
-                ChatPermissionOption(optionId="allow_always", name="这个版本一直允许 / Always allow this version",
-                                     kind="allow_always"),
-                ChatPermissionOption(optionId="reject", name="拒绝 / Deny", kind="reject_once"),
+                ChatPermissionOption(optionId="allow_always", name=always, kind="allow_always"),
+                ChatPermissionOption(optionId="allow_once", name="只这一次 / Only this time", kind="allow_once"),
+                ChatPermissionOption(optionId="reject", name="不 / No", kind="reject_once"),
             ])
             session.messages.append(ChatMessage(
                 id=f"{self._answering(session)}:permission:{permission.id}", role="tool", content=permission.title,
@@ -1374,6 +1384,8 @@ class ChatStore:
             session.updatedAt = _now()
             self._permissions[(session_id, permission.id)] = future
             self._skill_questions[(session_id, permission.id)] = future
+            if ask is not None:
+                self._skill_asks[(session_id, permission.id)] = dict(ask)
             if running.trace:
                 running.trace.permission(permission.id)
             self._save(session)
@@ -1384,6 +1396,8 @@ class ChatStore:
 
         status is "answered" (optionId says which button), "waiting", or
         "withdrawn" when the turn ended or was stopped before anyone answered.
+        When the person allowed it, the Hub has kept the grant (S-1):
+        ``grantId`` names it, the one a run for "only this time" names.
         """
 
         with self._lock:
@@ -1394,11 +1408,28 @@ class ChatStore:
         try:
             option = future.result(timeout=wait)
         except FutureTimeout:
-            return {"permissionId": permission_id, "status": "waiting", "optionId": None}
+            return {"permissionId": permission_id, "status": "waiting", "optionId": None, "grantId": None}
         with self._lock:
             self._skill_questions.pop((session_id, permission_id), None)
+            ask = self._skill_asks.pop((session_id, permission_id), None)
+        grant_id = None
+        if ask is not None and option in ("allow_once", "allow_always"):
+            grant_id = self._allow_skill(ask, once=option == "allow_once", ref=permission_id)
         return {"permissionId": permission_id, "status": "withdrawn" if option is None else "answered",
-                "optionId": option}
+                "optionId": option, "grantId": grant_id}
+
+    def _allow_skill(self, ask: Mapping, *, once: bool, ref: str) -> str:
+        """Keep the grant the person's answer gave: for this one run, this skill, or every skill."""
+
+        from project_runtime.api.dto.skill_grants import SkillRefDto
+        from ..settings import skill_grants
+
+        skill = SkillRefDto.model_validate(ask["skill"])
+        row = skill_grants.allow(
+            self.runtime_root, ask["access"], method="card", ref=ref,
+            skill=skill if once or ask.get("broad") else None,
+            once={"projectId": str(ask["projectId"]), "codeSha256": str(ask["codeSha256"])} if once else None)
+        return row.grant_id
 
     def resolve_permission(self, session_id: str, permission_id: str, request: ChatPermissionRequest) -> ChatDetail:
         with self._lock:

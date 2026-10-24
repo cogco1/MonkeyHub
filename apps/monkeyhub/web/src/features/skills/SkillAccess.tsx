@@ -1,10 +1,10 @@
 /**
- * What a skill version may use, in plain words: one line per kind of access,
- * "None" for what it does not declare, "Any" for `"*"`. The review dialog, the
- * grants page and the last run's note all say it the same way.
+ * What a skill may use, in plain words: one line per kind of access, "None"
+ * for what it does not declare, "Any" for `"*"`. The Skills list and the page
+ * of what the AI may do say it the same way.
  */
 
-import type { SkillAccess, SkillRunNeed } from "../../api/project-runtime/skills";
+import type { SkillAccess } from "../../api/project-runtime/skills";
 import type { MessageKey } from "../../i18n/messages.en";
 import type { TFunction } from "../../i18n/useT";
 
@@ -19,8 +19,6 @@ const LABELS: Record<AccessItem, MessageKey> = {
   write: "skills.access.write",
   packages: "skills.access.packages",
 };
-
-const isItem = (value: string): value is AccessItem => (ACCESS_ITEMS as readonly string[]).includes(value);
 
 function listValue(values: readonly string[] | undefined, t: TFunction): { value: string; declared: boolean } {
   const items = (values ?? []).filter((item) => typeof item === "string" && item.trim() !== "");
@@ -39,19 +37,16 @@ export function accessLines(access: SkillAccess | null, t: TFunction): { item: A
   });
 }
 
-/** `undefined` is a runtime that does not report access, and is said so rather than read as "None". */
-export function AccessList({ access, t }: { access: SkillAccess | null | undefined; t: TFunction }) {
+/**
+ * `undefined` is a runtime that does not report access, and is said so rather than read as "None".
+ * `declaredOnly` lists only what is there, as a grant names what it allows.
+ */
+export function AccessList({ access, t, declaredOnly = false }: {
+  access: SkillAccess | null | undefined; t: TFunction; declaredOnly?: boolean;
+}) {
   if (access === undefined) return <p className="chat-muted">{t("skills.access.unreported")}</p>;
   return <ul className="skills__access">
-    {accessLines(access, t).map((line) => <li key={line.item} data-declared={line.declared}>{line.text}</li>)}
+    {accessLines(access, t).filter((line) => !declaredOnly || line.declared)
+      .map((line) => <li key={line.item} data-declared={line.declared}>{line.text}</li>)}
   </ul>;
-}
-
-/** The one-line note naming what a run tried and was not granted. */
-export function neededText(needs: readonly SkillRunNeed[], t: TFunction): string {
-  const parts = needs.map((need) => {
-    const label = isItem(need.category) ? t(LABELS[need.category]) : need.category;
-    return need.detail ? t("skills.access.line", { label, value: need.detail }) : label;
-  });
-  return t("skills.needed", { needs: parts.length ? parts.join(t("skills.needed.join")) : t("skills.needed.unnamed") });
 }

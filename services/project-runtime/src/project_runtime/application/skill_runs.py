@@ -1,18 +1,24 @@
-"""Run one granted skill version on project inputs and retain what it did.
+"""Run one installed skill on project inputs and retain what it did.
 
-A runnable skill version carries script files, names an ``entry`` and declares
-the ``access`` it needs. It runs only under a grant a person gave on the Hub
-page (``skills.require_granted``), in the person's own environment: the
+A runnable skill carries script files, names an ``entry`` and declares the
+``access`` it needs. A run names the skill; the skill folders say which package
+that is (``skill_library``), and the project retains that version's exact
+content before it runs. What it declares must be allowed first: a person allows
+kinds of access once, for every skill or for one, in the Hub
+(``skill_access``, read from the grants file the launch environment names), or
+for this one run. The run goes on in the person's own environment: the
 runtime's Python without isolation, the user's environment variables, any
-program, the network and the disk, as far as the grant reaches. An audit hook
-installed before the entry runs holds the script to the grant: starting a
-program, connecting out, ssh and writing outside the run's own folders are
-checked against it, refused when not granted, and every one is recorded.
+program, the network and the disk, as far as the declaration reaches. An audit
+hook installed before the entry runs holds the script to what it declared:
+starting a program, connecting out, ssh and writing outside the run's own
+folders are checked against it, refused when not declared, and every one is
+recorded.
 
 Runs are background jobs. Each gets its own P036 run ``skill-run-<id>`` whose
 StudioSkillRun@1 records move from queued to running to succeeded or failed.
-The record names the skill version, its code hash, the grant used (who gave
-it, when, for what), every input and output digest, the programs it started,
+The record names the skill version, the folder it came from, its code hash,
+the grants it went ahead on (each as it was when the run started: what it
+allowed, for which skills, how and when it was given), every input and output digest, the programs it started,
 the hosts it reached, where it wrote outside its folders, and what it tried
 that was not granted. PDF, PNG and JPEG outputs are registered as project
 documents, 3dm outputs as model assets with an ``undrawable`` report, small
@@ -56,8 +62,8 @@ from archflow.project.repository import ProjectRepositoryError
 
 from ..authentication import ActorAttribution
 from ..binding import ProjectBinding, retained_sources
-from ..errors import StudioError
-from . import artifacts, skills
+from ..errors import SkillAccessNeeded, StudioError
+from . import artifacts, skill_access, skill_library, skills
 
 RUN_PREFIX = "skill-run-"
 RUN_SCHEMA = "StudioSkillRun@1"
@@ -142,10 +148,17 @@ def list_skill_runs(binding: ProjectBinding, skill_id: str | None = None) -> tup
 
 
 def used_once_grants(binding: ProjectBinding) -> set[str]:
-    """Once grants a run has taken: each allows exactly one run, whatever became of it."""
+    """One-run grants a run of this project has taken: each allows exactly one run, whatever became of it."""
 
-    return {str(row["grant"]["approvalId"]) for row in list_skill_runs(binding)
-            if (row.get("grant") or {}).get("scope") == "once" and row["grant"].get("approvalId")}
+    used = set()
+    for row in list_skill_runs(binding):
+        grant = row.get("grant") or {}
+        if grant.get("onceGrantId"):
+            used.add(str(grant["onceGrantId"]))
+        elif grant.get("scope") == "once" and grant.get("approvalId"):
+            # A run from before S-1, on a project's own once approval.
+            used.add(str(grant["approvalId"]))
+    return used
 
 
 # ---- inputs, outputs ----------------------------------------------------------
@@ -346,8 +359,8 @@ def _pip_python(runner: Runner) -> list[str]:
             candidates.append([found, "-3"] if name == "py" else [found])
     for command in candidates:
         try:
-            probe = runner([*command, "-m", "pip", "--version"], capture_output=True, text=True, timeout=60,
-                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            probe = runner([*command, "-m", "pip", "--version"], stdin=subprocess.DEVNULL, capture_output=True,
+                           text=True, timeout=60, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except (OSError, subprocess.TimeoutExpired):
             continue
         if probe.returncode == 0:
@@ -412,8 +425,9 @@ def _ensure_packages(row: skills.SkillVersion, runner: Runner) -> dict | None:
                    f"{sys.version_info.major}.{sys.version_info.minor}", "--implementation", "cp",
                    "--only-binary=:all:", *(["--platform", "win_amd64"] if os.name == "nt" else []), *requirements]
         try:
-            done = runner(command, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                          timeout=INSTALL_TIMEOUT_S, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            done = runner(command, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=INSTALL_TIMEOUT_S,
+                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except subprocess.TimeoutExpired as exc:
             raise StudioError(504, "SKILL_PACKAGES_TIMEOUT", "Installing the skill's packages took too long.") from exc
         if done.returncode != 0:
@@ -428,9 +442,55 @@ def _ensure_packages(row: skills.SkillVersion, runner: Runner) -> dict | None:
 # ---- running -------------------------------------------------------------------
 
 
-def _granted_record(grant: Mapping[str, Any]) -> dict:
-    return {key: grant.get(key) for key in ("approvalId", "scope", "codeSha256", "access", "approvedAt", "approvedBy",
-                                            "method")}
+def _grants_file() -> Path | None:
+    value = os.environ.get(skill_access.GRANTS_ENV)
+    return Path(value) if value else None
+
+
+def _snapshot(grant: skill_access.Grant) -> dict:
+    """A grant as the run record keeps it: the grants file is this machine's, the record goes with the project."""
+
+    return {"grantId": grant.grant_id, "access": dict(grant.access), "method": grant.method, "grantedAt": grant.granted_at,
+            "skill": None if grant.skill is None else {"name": grant.skill.name, "source": grant.skill.source},
+            "once": grant.once is not None}
+
+
+def allowed(binding: ProjectBinding, skill: skill_library.InstalledSkill, *, grant_id: str | None,
+            now: datetime | None = None) -> dict:
+    """What a run of ``skill`` goes ahead on, or SkillAccessNeeded naming what a person still has to allow.
+
+    The grants are the Hub's, at the path the launch environment names; a
+    Runtime started without one has none and runs only skills that need
+    nothing. ``grant_id`` names a one-run grant a person gave for exactly this
+    project, skill and code. The record keeps each grant that allows part of
+    what the skill declares, as it was then.
+    """
+
+    ref = skill_access.SkillRef(skill.name, skill.source)
+    try:
+        grants = skill_access.read_grants(_grants_file())
+    except skill_access.GrantsUnreadable as failure:
+        raise StudioError(409, "SKILL_GRANTS_UNREADABLE", f"{failure} Nothing is taken as allowed.") from failure
+    declared, resolve = skill.access, os.path.realpath
+    asked = skill_access.access_added(declared, None, resolve=resolve)
+    used = [grant for grant in grants if grant.active and grant.once is None and grant.applies_to(ref)
+            and skill_access.access_added(declared, skill_access.lasting([grant], ref), resolve=resolve) != asked]
+    record = {"source": skill.source, "codeSha256": skill.code_sha256, "access": declared,
+              "grants": [_snapshot(grant) for grant in used], "onceGrantId": None}
+    needs = skill_access.needed(declared, grants, ref, resolve=resolve)
+    if not needs:
+        return record
+    if grant_id is not None:
+        once = skill_access.once_grant(grants, grant_id, ref, project_id=binding.project_id,
+                                       code_sha256=str(skill.code_sha256), needs=needs,
+                                       now=now or datetime.now(timezone.utc), used=used_once_grants(binding),
+                                       resolve=resolve)
+        if once is not None:
+            return record | {"grants": [*record["grants"], _snapshot(once)], "onceGrantId": once.grant_id}
+    raise SkillAccessNeeded(
+        f"{skill.name} needs a person to allow: {skill_access.describe_added(needs)}. Nothing ran.",
+        needs=needs, broad=skill_access.broad(needs), skill={"name": skill.name, "source": skill.source},
+        project_id=binding.project_id, code_sha256=str(skill.code_sha256))
 
 
 def _observed(log: Path) -> tuple[dict, list]:
@@ -449,16 +509,62 @@ def _observed(log: Path) -> tuple[dict, list]:
     return {"processes": processes, "network": network, "writes": writes}, denied
 
 
+def _installed(skill_id: str) -> skill_library.InstalledSkill:
+    """The runnable package a skill id means, or the refusal that says why there is none."""
+
+    name = skill_id.removeprefix(skills.SKILL_ID_PREFIX)
+    skill = skill_library.installed().find(name) if skill_id.startswith(skills.SKILL_ID_PREFIX) else None
+    if skill is None:
+        raise StudioError(404, "SKILL_NOT_INSTALLED",
+                          f"No skill folder holds {skill_id}. A skill is installed by putting its folder in the skill folder.")
+    if skill.content is None:
+        error = skill.error or {}
+        raise StudioError(422, error.get("code", "SKILL_PACKAGE_INVALID"), error.get("detail", f"{name} cannot be read."))
+    if skill.content.get("entry") is None:
+        raise StudioError(422, "SKILL_NOT_RUNNABLE", f"{skill_id} carries no entry script.")
+    return skill
+
+
+def run_needs(binding: ProjectBinding, skill_id: str) -> dict:
+    """What a run of the installed skill would need a person to allow now, without running or retaining anything.
+
+    The Hub asks this before an Agent's run, to put what is missing to the
+    person as one question; ``needs`` is empty when it may go ahead.
+    """
+
+    skill = _installed(skill_id)
+    try:
+        allowed(binding, skill, grant_id=None)
+        needs: Mapping[str, Any] = {}
+    except SkillAccessNeeded as refusal:
+        needs = refusal.needs
+    return {"projectId": binding.project_id, "skillId": skill.skill_id,
+            "skill": {"name": skill.name, "source": skill.source}, "codeSha256": skill.code_sha256,
+            "access": skill.access, "needs": dict(needs), "broad": skill_access.broad(needs) if needs else {}}
+
+
 def submit_skill_run(binding: ProjectBinding, jobs, skill_id: str, *, version: int | None,
                      inputs: Mapping[str, Mapping[str, Any]], parameters: Mapping[str, Any],
                      attribution: ActorAttribution, agent: bool = False, grant_id: str | None = None,
                      python: str | None = None, runner: Runner | None = None,
-                     timeout_s: float = RUN_TIMEOUT_S) -> dict:
-    """Check the grant now, retain the queued run, and run it as a background job."""
+                     timeout_s: float = RUN_TIMEOUT_S, now: datetime | None = None) -> dict:
+    """Find the installed skill, check what it needs is allowed, retain its version, and run it as a background job.
+
+    ``version``, when given, is the project's version the caller read: a
+    package that says something else now refuses with SKILL_CHANGED rather
+    than running code the caller did not read.
+    """
 
     run_command = subprocess.run if runner is None else runner
-    row, grant = skills.require_granted(binding, skill_id, version, used_once=used_once_grants(binding),
-                                        allow_once=not agent, grant_id=grant_id)
+    skill = _installed(skill_id)
+    current = skills.latest_version(binding, skill.skill_id)
+    if version is not None and (current is None or current.version != version
+                                or not skills.same_content(current, skill.content)):
+        raise StudioError(409, "SKILL_CHANGED",
+                          f"{skill_id} in the {skill.source} skill folder is not version {version} of this project any more. "
+                          "Read it again before running it.")
+    grant = allowed(binding, skill, grant_id=grant_id, now=now)
+    row = skill_library.retain(binding, skill, attribution=attribution)
     parameters_text = json.dumps(dict(parameters), ensure_ascii=False, sort_keys=True)
     if len(parameters_text.encode("utf-8")) > MAX_PARAMETERS_BYTES:
         raise _invalid(f"Parameters are at most {MAX_PARAMETERS_BYTES // 1024} KiB of JSON.")
@@ -470,7 +576,7 @@ def submit_skill_run(binding: ProjectBinding, jobs, skill_id: str, *, version: i
     queued = {
         "schema": RUN_SCHEMA, "projectId": binding.project_id, "runId": run_id, "status": "queued",
         "skillId": row.skill_id, "version": row.version, "skillVersionRef": row.ref, "codeSha256": row.code_sha256,
-        "entry": row.entry, "access": row.access, "grant": _granted_record(grant), "parameters": json.loads(parameters_text),
+        "entry": row.entry, "access": row.access, "grant": grant, "parameters": json.loads(parameters_text),
         "requestedBy": {"actorId": attribution.actor_id, "authenticated": attribution.authenticated,
                         "origin": attribution.origin, "agent": agent},
         "submittedAt": _now(), "updatedAt": _now(), "statusPath": f"/api/skills/runs/{run_id}",
@@ -528,6 +634,7 @@ def _run_once(binding: ProjectBinding, run, row: skills.SkillVersion, current: d
         access_path.write_text(json.dumps({
             "access": row.access or {}, "roots": [str(root), tempfile.gettempdir(),
                                                   *([environment["path"]] if environment else [])],
+            "run": str(root), "outputs": str(outputs_dir), "skill": str(skill_dir),
         }, ensure_ascii=False), encoding="utf-8")
         bootstrap.write_text(BOOTSTRAP_SOURCE, encoding="utf-8")
         env = skill_environment(os.environ, ssh=bool((row.access or {}).get("ssh")))
@@ -543,8 +650,11 @@ def _run_once(binding: ProjectBinding, run, row: skills.SkillVersion, current: d
                    "--inputs", str(inputs_dir), "--params", str(params_path), "--outputs", str(outputs_dir)]
         clock = time.monotonic()
         try:
-            finished = runner(command, cwd=str(skill_dir), capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", timeout=timeout_s, env=env,
+            # Not the Studio's own stdin (gap 29): the Hub holds that pipe with a
+            # read pending, and on Windows a child that inherits it never gets
+            # past its own Python start.
+            finished = runner(command, cwd=str(skill_dir), stdin=subprocess.DEVNULL, capture_output=True,
+                              text=True, encoding="utf-8", errors="replace", timeout=timeout_s, env=env,
                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except subprocess.TimeoutExpired as exc:
             raise StudioError(504, "SKILL_RUN_TIMEOUT",
@@ -554,6 +664,16 @@ def _run_once(binding: ProjectBinding, run, row: skills.SkillVersion, current: d
         details = {"inputs": input_rows, "environment": environment, "observed": observed, "needed": denied,
                    "exitCode": finished.returncode, "durationSeconds": duration,
                    "stdoutTail": _tail(finished.stdout), "stderrTail": _tail(finished.stderr)}
+        strayed = [item for item in denied if item.get("category") == "outputs"]
+        if strayed:
+            # However it exited: a write it was refused may have been an output.
+            failure = StudioError(422, "SKILL_OUTPUT_INVALID",
+                                  f"{row.skill_id} version {row.version} wrote outside its outputs folder: "
+                                  + "; ".join(str(item.get("detail")) for item in strayed[:3])
+                                  + ". A skill writes its results under --outputs by plain file names; a name "
+                                  "taken from the parameters needs its path separators and '..' removed first.")
+            failure.run_details = details
+            raise failure
         if finished.returncode != 0:
             if any(item.get("category") == "credentials" for item in denied):
                 failure = StudioError(403, "SKILL_CREDENTIALS_REFUSED",
@@ -564,7 +684,7 @@ def _run_once(binding: ProjectBinding, run, row: skills.SkillVersion, current: d
                 failure = StudioError(403, "SKILL_PERMISSION_NEEDED",
                                       f"{row.skill_id} version {row.version} tried what it was not granted: "
                                       + "; ".join(f"{item.get('category')} {item.get('detail')}" for item in denied[:5])
-                                      + ". Declare it in the skill's access and allow that version on the Hub page.")
+                                      + ". Declare it in the skill's access, and a person allows it in the Hub.")
             else:
                 failure = StudioError(422, "SKILL_RUN_FAILED",
                                       f"{row.skill_id} version {row.version} exited with {finished.returncode}: "
@@ -591,6 +711,12 @@ _log = open(os.environ["MONKEYHUB_SKILL_AUDIT"], "a", encoding="utf-8")
 _programs = {name.lower().removesuffix(".exe") for name in _access.get("programs") or []}
 _ssh = set(_access.get("ssh") or [])
 _writes = [os.path.normcase(os.path.realpath(path)) for path in _access.get("write") or [] if path != "*"]
+# The run's own folder holds its control files, the inputs and this audit log.
+# Inside it a skill writes only its outputs, or beside its own code; and no
+# write climbs out of the outputs folder with "..". No grant changes this.
+_run = os.path.normcase(os.path.realpath(_settings["run"])) if _settings.get("run") else None
+_outputs = [os.path.normcase(os.path.realpath(_settings["outputs"]))] if _settings.get("outputs") else []
+_kept = _outputs + ([os.path.normcase(os.path.realpath(_settings["skill"]))] if _settings.get("skill") else [])
 _SSH = {"ssh", "scp", "sftp", "rsync"}
 _inside = False
 
@@ -638,9 +764,13 @@ def _program(executable, argv):
 
 def _write(path):
     try:
-        real = os.path.realpath(os.fsdecode(os.fspath(path)))
+        given = os.fsdecode(os.fspath(path))
+        real = os.path.realpath(given)
     except (TypeError, ValueError):
         return
+    climbs = ".." in given.replace("\\", "/").split("/")
+    if _run and ((_under(real, [_run]) and not _under(real, _kept)) or (climbs and not _under(real, _outputs))):
+        _deny("outputs", real)
     if _under(real, _roots):
         return
     _emit("write", path=real)

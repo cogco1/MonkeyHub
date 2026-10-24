@@ -10633,7 +10633,7 @@ export type RecipeSuggestionDto = {
  * Which library skill a task follows, by one exact version; the steps stay in the skill.
  *
  * A chat names the skill as the agent sees it and the Hub fills the exact
- * version from the configured library.
+ * code from the installed skill (S-1).
  */
 export type RecipeValueDto = {
     /**
@@ -10645,7 +10645,7 @@ export type RecipeValueDto = {
     /**
      * Skill
      *
-     * skill:<name>@<version>, one exact version of a library skill
+     * skill:<name>@<code>, the first 12 hex digits of the installed skill's code; skill:<name>@<version> from before S-1 is still read
      */
     skill: string;
     /**
@@ -12452,7 +12452,7 @@ export type SketchPrismRequestDto = {
 /**
  * SkillAccessDto
  *
- * What a runnable version needs beyond its own folders: what a person grants before it runs.
+ * What a runnable version needs beyond its own folders: what a person allows in the Hub before it runs.
  */
 export type SkillAccessDto = {
     /**
@@ -12543,38 +12543,6 @@ export type SkillApprovalDto = {
 };
 
 /**
- * SkillApprovalRequestDto
- *
- * A person approves the exact code they were shown.
- */
-export type SkillApprovalRequestDto = {
-    /**
-     * Projectid
-     */
-    projectId: string;
-    /**
-     * Version
-     */
-    version: number;
-    /**
-     * Codesha256
-     */
-    codeSha256: string;
-    /**
-     * Method
-     *
-     * where the person approved it
-     */
-    method?: string;
-    /**
-     * Scope
-     *
-     * once: one run; version: this exact code until revoked
-     */
-    scope?: 'once' | 'version';
-};
-
-/**
  * SkillAttributionDto
  */
 export type SkillAttributionDto = {
@@ -12647,11 +12615,9 @@ export type SkillDto = {
      */
     codeSha256: string;
     /**
-     * Approved
-     */
-    approved: boolean;
-    /**
      * Approvals
+     *
+     * this version's approvals from before S-1, kept as records
      */
     approvals: Array<SkillApprovalDto>;
     /**
@@ -12660,28 +12626,6 @@ export type SkillDto = {
     access?: {
         [key: string]: unknown;
     } | null;
-};
-
-/**
- * SkillImportRequestDto
- *
- * Register a package from MonkeyHub's own skills/ or the user's skill-packages folder.
- */
-export type SkillImportRequestDto = {
-    /**
-     * Projectid
-     */
-    projectId: string;
-    /**
-     * Source
-     */
-    source: 'bundled' | 'user';
-    /**
-     * Name
-     *
-     * the package folder, e.g. site-palette
-     */
-    name: string;
 };
 
 /**
@@ -12728,10 +12672,6 @@ export type SkillIndexRowDto = {
      * Runnable
      */
     runnable: boolean;
-    /**
-     * Approved
-     */
-    approved: boolean;
     /**
      * Access
      */
@@ -12833,29 +12773,19 @@ export type SkillRequestDto = {
     /**
      * Entry
      *
-     * the file to run; makes the version runnable once approved
+     * the file to run; makes the version runnable
      */
     entry?: string | null;
     /**
-     * what the version needs; part of what is granted
+     * what the version needs; part of its codeSha256
      */
     access?: SkillAccessDto | null;
 };
 
 /**
- * SkillRevokeRequestDto
- */
-export type SkillRevokeRequestDto = {
-    /**
-     * Projectid
-     */
-    projectId: string;
-};
-
-/**
  * SkillRunRequestDto
  *
- * Run one approved version: its inputs are registered documents, its parameters one JSON object.
+ * Run the installed skill: its inputs are registered documents, its parameters one JSON object.
  */
 export type SkillRunRequestDto = {
     /**
@@ -12865,7 +12795,7 @@ export type SkillRunRequestDto = {
     /**
      * Version
      *
-     * the latest version when omitted
+     * the project's version the caller read; refused when the folder now differs
      */
     version?: number | null;
     /**
@@ -12883,13 +12813,13 @@ export type SkillRunRequestDto = {
     /**
      * Agentrun
      *
-     * set by the Hub for a chat's run: only an always-allowed version runs
+     * set by the Hub for a chat's run
      */
     agentRun?: boolean;
     /**
      * Grantid
      *
-     * set by the Hub: the once grant a person gave in the chat for this run
+     * set by the Hub: the one-run grant a person gave for this run
      */
     grantId?: string | null;
 };
@@ -21601,45 +21531,6 @@ export type ReadSkillLibraryApiSkillsLibraryGetResponses = {
 
 export type ReadSkillLibraryApiSkillsLibraryGetResponse = ReadSkillLibraryApiSkillsLibraryGetResponses[keyof ReadSkillLibraryApiSkillsLibraryGetResponses];
 
-export type ImportSkillApiSkillsImportPostData = {
-    body: SkillImportRequestDto;
-    headers?: {
-        /**
-         * X-Monkey-Operation
-         */
-        'x-monkey-operation'?: string | null;
-        /**
-         * X-Monkey-Parent
-         */
-        'x-monkey-parent'?: string | null;
-    };
-    path?: never;
-    query?: never;
-    url: '/api/skills/import';
-};
-
-export type ImportSkillApiSkillsImportPostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type ImportSkillApiSkillsImportPostError = ImportSkillApiSkillsImportPostErrors[keyof ImportSkillApiSkillsImportPostErrors];
-
-export type ImportSkillApiSkillsImportPostResponses = {
-    /**
-     * Response Import Skill Api Skills Import Post
-     *
-     * Successful Response
-     */
-    200: {
-        [key: string]: unknown;
-    };
-};
-
-export type ImportSkillApiSkillsImportPostResponse = ImportSkillApiSkillsImportPostResponses[keyof ImportSkillApiSkillsImportPostResponses];
-
 export type ReadSkillGrantsApiSkillsApprovalsGetData = {
     body?: never;
     headers?: {
@@ -21678,50 +21569,6 @@ export type ReadSkillGrantsApiSkillsApprovalsGetResponses = {
 };
 
 export type ReadSkillGrantsApiSkillsApprovalsGetResponse = ReadSkillGrantsApiSkillsApprovalsGetResponses[keyof ReadSkillGrantsApiSkillsApprovalsGetResponses];
-
-export type RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostData = {
-    body: SkillRevokeRequestDto;
-    headers?: {
-        /**
-         * X-Monkey-Operation
-         */
-        'x-monkey-operation'?: string | null;
-        /**
-         * X-Monkey-Parent
-         */
-        'x-monkey-parent'?: string | null;
-    };
-    path: {
-        /**
-         * Approval Id
-         */
-        approval_id: string;
-    };
-    query?: never;
-    url: '/api/skills/approvals/{approval_id}/revoke';
-};
-
-export type RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostError = RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostErrors[keyof RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostErrors];
-
-export type RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostResponses = {
-    /**
-     * Response Revoke Skill Grant Api Skills Approvals  Approval Id  Revoke Post
-     *
-     * Successful Response
-     */
-    200: {
-        [key: string]: unknown;
-    };
-};
-
-export type RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostResponse = RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostResponses[keyof RevokeSkillGrantApiSkillsApprovalsApprovalIdRevokePostResponses];
 
 export type ReadSkillRunApiSkillsRunsRunIdGetData = {
     body?: never;
@@ -21924,46 +21771,6 @@ export type ReadSkillApiSkillsSkillIdGetResponses = {
 
 export type ReadSkillApiSkillsSkillIdGetResponse = ReadSkillApiSkillsSkillIdGetResponses[keyof ReadSkillApiSkillsSkillIdGetResponses];
 
-export type ApproveSkillApiSkillsSkillIdApprovalsPostData = {
-    body: SkillApprovalRequestDto;
-    headers?: {
-        /**
-         * X-Monkey-Operation
-         */
-        'x-monkey-operation'?: string | null;
-        /**
-         * X-Monkey-Parent
-         */
-        'x-monkey-parent'?: string | null;
-    };
-    path: {
-        /**
-         * Skill Id
-         */
-        skill_id: string;
-    };
-    query?: never;
-    url: '/api/skills/{skill_id}/approvals';
-};
-
-export type ApproveSkillApiSkillsSkillIdApprovalsPostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type ApproveSkillApiSkillsSkillIdApprovalsPostError = ApproveSkillApiSkillsSkillIdApprovalsPostErrors[keyof ApproveSkillApiSkillsSkillIdApprovalsPostErrors];
-
-export type ApproveSkillApiSkillsSkillIdApprovalsPostResponses = {
-    /**
-     * Successful Response
-     */
-    201: SkillApprovalDto;
-};
-
-export type ApproveSkillApiSkillsSkillIdApprovalsPostResponse = ApproveSkillApiSkillsSkillIdApprovalsPostResponses[keyof ApproveSkillApiSkillsSkillIdApprovalsPostResponses];
-
 export type RunSkillApiSkillsSkillIdRunPostData = {
     body: SkillRunRequestDto;
     headers?: {
@@ -22007,6 +21814,50 @@ export type RunSkillApiSkillsSkillIdRunPostResponses = {
 };
 
 export type RunSkillApiSkillsSkillIdRunPostResponse = RunSkillApiSkillsSkillIdRunPostResponses[keyof RunSkillApiSkillsSkillIdRunPostResponses];
+
+export type ReadSkillNeedsApiSkillsSkillIdNeedsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: never;
+    url: '/api/skills/{skill_id}/needs';
+};
+
+export type ReadSkillNeedsApiSkillsSkillIdNeedsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillNeedsApiSkillsSkillIdNeedsGetError = ReadSkillNeedsApiSkillsSkillIdNeedsGetErrors[keyof ReadSkillNeedsApiSkillsSkillIdNeedsGetErrors];
+
+export type ReadSkillNeedsApiSkillsSkillIdNeedsGetResponses = {
+    /**
+     * Response Read Skill Needs Api Skills  Skill Id  Needs Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadSkillNeedsApiSkillsSkillIdNeedsGetResponse = ReadSkillNeedsApiSkillsSkillIdNeedsGetResponses[keyof ReadSkillNeedsApiSkillsSkillIdNeedsGetResponses];
 
 export type ReadSkillRunsApiSkillsSkillIdRunsGetData = {
     body?: never;

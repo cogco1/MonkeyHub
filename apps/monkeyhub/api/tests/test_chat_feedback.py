@@ -4,6 +4,8 @@ Transport is in-process here; the opt-in feedback loop separately uses a real
 provider and the same product tool. No mocked response is provider acceptance.
 """
 from copy import deepcopy
+import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -214,40 +216,35 @@ class ChatFeedbackTests(unittest.TestCase):
                        "action": "revoke"})
         self.assertEqual(theirs.exception.error.code, "CHAT_FEEDBACK_UNAVAILABLE")
 
-    def test_chat_saves_a_recipe_pinned_to_the_librarys_current_skill_version(self):
-        """#252 3c: a recipe names a library skill; the Hub fills the exact version from the library's index."""
+    def test_chat_saves_a_recipe_pinned_to_the_installed_skills_current_code(self):
+        """#252 3c, S-1: a recipe names an installed skill; the Hub fills its code from the skill folders."""
+
+        from project_runtime.application import skill_library
 
         words = self.user("以后出平面图前都按事务所的填充标准检查一下。")
         recipe = {"projectId": self.session["projectId"], "kind": "recipe",
                   "value": {"task": "出平面图前检查填充", "skill": "monkeyhub-library:hatch-review"},
                   "appliesWhen": {"domains": ["drawing"]}}
+        user, bundled = Path(self.project).parent / "user skills", Path(self.project).parent / "bundled skills"
+        bundled.mkdir()
+        patch.object(skill_library, "BUNDLED", bundled).start()
+        patch.dict(os.environ, {"MONKEYHUB_SKILL_PACKAGES": str(user)}).start()
 
-        # No library set: refused with the reason, and nothing reaches the Runtime.
+        def install(name: str, body: str) -> str:
+            folder = user / name
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / "skill.json").write_text(json.dumps({"name": name, "description": f"{name}."}), encoding="utf-8")
+            (folder / "SKILL.md").write_text(body, encoding="utf-8")
+            return str(skill_library.installed().find(name).code_sha256)[:12]
+
+        # Nothing installed: refused with the reason, and nothing reaches the Runtime.
         with self.assertRaises(HubFailure) as unset:
             self.tool("/api/memory", deepcopy(recipe))
         self.assertEqual(unset.exception.error.code, "CHAT_RECIPE_NO_LIBRARY")
-        self.assertIn("No skill library is set", unset.exception.error.detail)
+        self.assertIn("No skill is installed", unset.exception.error.detail)
 
-        library_dir = Path(self.project).parent / "skill-library"
-        FilesystemProjectRepository.initialize(library_dir, project_id="skill-library",
-                                               initial_state={"project_id": "skill-library", "version": 0})
-        self.library = TestClient(create_app(StudioSettings(project_dir=library_dir, cad_export="off")))
-        self.addCleanup(self.library.close)
-        self.library_dir, self.library_base, self.library_reads = str(library_dir), "http://127.0.0.1:8702", []
-        bound = []
-
-        def bound_studio(hub, chat_id, *args, project_id=None, project_dir=None, **kwargs):
-            bound.append(project_id)
-            if project_id == "skill-library":
-                return self.library_base, {}
-            return self.base, deepcopy(self.session)
-        patch.object(preparation, "_bound_studio", side_effect=bound_studio).start()
-        prepared = []
-        patch.object(preparation, "_prepare_studio", side_effect=lambda hub, session, budget: prepared.append(session)).start()
-
-        # A library without that skill: refused, naming what it holds.
-        self.library.post("/api/skills", json={"projectId": "skill-library", "name": "section-sheet",
-                                               "description": "Lay out a section sheet.", "body": "A1.\n"})
+        # Installed without that skill: refused, naming what is installed.
+        install("section-sheet", "A1.\n")
         with self.assertRaises(HubFailure) as unknown:
             self.tool("/api/memory", deepcopy(recipe))
         self.assertEqual(unknown.exception.error.code, "CHAT_RECIPE_SKILL_UNKNOWN")
@@ -255,29 +252,22 @@ class ChatFeedbackTests(unittest.TestCase):
         self.assertIn("section-sheet", unknown.exception.error.detail)
         self.assertEqual(self.writes, [])
 
-        # The library holds hatch-review v1: the stored value is skill:hatch-review@1.
-        self.library.post("/api/skills", json={"projectId": "skill-library", "name": "hatch-review",
-                                               "description": "Review a plan's hatching.", "body": "ZX7.\n"})
+        # hatch-review installed: the stored value names its code.
+        code = install("hatch-review", "ZX7.\n")
         saved = self.tool("/api/memory", deepcopy(recipe))
-        self.assertEqual(saved["value"], {"task": "出平面图前检查填充", "skill": "skill:hatch-review@1", "note": None})
+        self.assertEqual(saved["value"], {"task": "出平面图前检查填充", "skill": f"skill:hatch-review@{code}", "note": None})
         self.assertEqual((saved["kind"], saved["appliesWhen"]["domains"]), ("recipe", ["drawing"]))
         self.assertEqual(saved["provenance"]["rawLanguage"], words["content"])
         self.assertEqual(saved["provenance"]["messageSource"],
                          {"sessionId": self.session["id"], "messageId": words["id"]})
-        # Read through the library's own Runtime, index only; the chat project's Studio never read it.
-        self.assertEqual(prepared[-1]["projectId"], "skill-library")
-        self.assertEqual(set(self.library_reads), {"/api/skills"})
-        self.assertNotIn("/api/skills", [path for path, *_ in self.writes])
-        # A named version that is not the current one is refused; a bare or ref name is pinned alike.
-        self.library.post("/api/skills", json={"projectId": "skill-library", "name": "hatch-review",
-                                               "description": "Review a plan's hatching.", "body": "ZX8.\n",
-                                               "supersedesVersion": 1})
+        # A named code that is not the current one is refused; a bare or ref name is pinned alike.
+        changed = install("hatch-review", "ZX8.\n")
         with self.assertRaises(HubFailure) as old:
-            self.tool("/api/memory", {**deepcopy(recipe), "value": {"task": "出立面图", "skill": "hatch-review@1"}})
+            self.tool("/api/memory", {**deepcopy(recipe), "value": {"task": "出立面图", "skill": f"hatch-review@{code}"}})
         self.assertEqual(old.exception.error.code, "CHAT_RECIPE_SKILL_VERSION")
         other = self.tool("/api/memory", {**deepcopy(recipe), "value": {"task": "出立面图",
                                                                          "skill": "skill:hatch-review"}})
-        self.assertEqual(other["value"]["skill"], "skill:hatch-review@2")
+        self.assertEqual(other["value"]["skill"], f"skill:hatch-review@{changed}")
         with self.assertRaises(HubFailure) as spelled:
             self.tool("/api/memory", {**deepcopy(recipe), "value": {"task": "出立面图", "skill": "../escape"}})
         self.assertEqual(spelled.exception.error.code, "CHAT_RECIPE_SKILL_INVALID")
