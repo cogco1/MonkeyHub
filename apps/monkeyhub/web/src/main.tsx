@@ -1,5 +1,5 @@
 import { useT } from "./i18n/useT";
-import { UserPreferencesProvider, usePreferences } from "./features/settings/preferences";
+import { DeveloperOnly, UserPreferencesProvider, useDeveloperMode, usePreferences } from "./features/settings/preferences";
 import { StrictMode, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { appearanceFromSearch, applyAppearance, DEFAULT_APPEARANCE, resolveAppearance, type AppearancePreferences, type Language } from "../../../../packages/web-shared/src/appearance.js";
@@ -123,6 +123,7 @@ async function responseData<T>(request: Promise<unknown>): Promise<T> {
   return result.data;
 }
 function ErrorMessage({ issue, language }: { issue: Issue | null; language: Language }) {
+  const developer = useDeveloperMode();
   const [translated, setTranslated] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false; setTranslated(null);
@@ -130,7 +131,7 @@ function ErrorMessage({ issue, language }: { issue: Issue | null; language: Lang
     return () => { cancelled = true; };
   }, [issue?.detail, language]);
   if (!issue) return null;
-  return <div className="error-message" role="alert"><p>{language === "zh-CN" ? knownErrors[issue.code] ?? translated ?? issue.detail : issue.detail}</p><details><summary>{copy[language].details}</summary><code>{issue.code}</code><p>{translated ?? issue.detail}</p></details></div>;
+  return <div className="error-message" role="alert"><p>{language === "zh-CN" ? knownErrors[issue.code] ?? translated ?? issue.detail : issue.detail}</p>{developer && <details><summary>{copy[language].details}</summary><code>{issue.code}</code><p>{translated ?? issue.detail}</p></details>}</div>;
 }
 
 // Settings save themselves: a choice at once, typed text after this pause.
@@ -242,7 +243,7 @@ function WorkspaceDiagnosticsSettings() {
   const t = useT();
   const { developerMode, setDeveloperMode, eventStreamVisible, setEventStreamVisible } = usePreferences();
   return <div>
-    <label><input type="checkbox" checked={developerMode} onChange={(event) => setDeveloperMode(event.target.checked)} /> {t("settings.fields.developerMode")}</label>
+    <label><input id="developer-mode" type="checkbox" checked={developerMode} onChange={(event) => setDeveloperMode(event.target.checked)} /> {t("settings.fields.developerMode")}</label>
     <p className="help">{t("settings.developerMode.help")}</p>
     {developerMode && <label><input type="checkbox" checked={eventStreamVisible} onChange={(event) => setEventStreamVisible(event.target.checked)} /> {t("settings.fields.eventStreamVisible")}</label>}
   </div>;
@@ -582,12 +583,15 @@ function App() {
       <p className="help" id="library-dir-status">{t("libraryStatus")}</p>
       <details className="advanced"><summary>{t("advanced")}</summary>
         <WorkspaceDiagnosticsSettings />
-        <div className="chat-service-settings">{(apps ?? []).filter((app) => app.appId === "monkeyarch").map((app) => <div key={app.appId}><span>Project Runtime · {t(app.state)}</span><button className="btn" disabled={!connected || busyServices.has(app.serviceId) || app.state === "starting" || app.state === "stopping"} onClick={() => void act(app)}>{t(app.state === "running" ? "stop" : "start")}</button><ErrorMessage issue={actionIssues[app.appId] ?? app.error ?? null} language={preferences.language} /></div>)}</div>
-        <div className="settings-row"><label htmlFor="reference-run">{t("reference")}</label><input id="reference-run" value={launchDraft.referenceRun ?? ""} onChange={(event) => changeLaunch({ referenceRun: event.target.value || null })} /></div>
-        <div className="settings-row"><label htmlFor="cad-export">{t("cad")}</label><select id="cad-export" value={launchDraft.cadExport} onChange={(event) => changeLaunch({ cadExport: event.target.value as ApplicationSettingsDto["cadExport"] }, 0)}><option value="occt">{t("occt")}</option><option value="rhino">{t("rhino")}</option><option value="off">{t("off")}</option></select></div>
-        <div className="settings-row"><label htmlFor="studio-port">{t("studioPort")}</label><input id="studio-port" type="number" min="1024" max="65535" value={launchDraft.studioPort}
-          aria-invalid={launchInvalid?.field === "studio-port" ? true : undefined} onChange={(event) => changeLaunch({ studioPort: Number(event.target.value) })} /></div>
-        <p className="help">{t("launchHelp")}</p>
+        {/* The Hub starts and stops the project service with the project and keeps its default port: developer mode only. */}
+        <DeveloperOnly>
+          <div className="chat-service-settings">{(apps ?? []).filter((app) => app.appId === "monkeyarch").map((app) => <div key={app.appId}><span>Project Runtime · {t(app.state)}</span><button className="btn" disabled={!connected || busyServices.has(app.serviceId) || app.state === "starting" || app.state === "stopping"} onClick={() => void act(app)}>{t(app.state === "running" ? "stop" : "start")}</button><ErrorMessage issue={actionIssues[app.appId] ?? app.error ?? null} language={preferences.language} /></div>)}</div>
+          <div className="settings-row"><label htmlFor="reference-run">{t("reference")}</label><input id="reference-run" value={launchDraft.referenceRun ?? ""} onChange={(event) => changeLaunch({ referenceRun: event.target.value || null })} /></div>
+          <div className="settings-row"><label htmlFor="cad-export">{t("cad")}</label><select id="cad-export" value={launchDraft.cadExport} onChange={(event) => changeLaunch({ cadExport: event.target.value as ApplicationSettingsDto["cadExport"] }, 0)}><option value="occt">{t("occt")}</option><option value="rhino">{t("rhino")}</option><option value="off">{t("off")}</option></select></div>
+          <div className="settings-row"><label htmlFor="studio-port">{t("studioPort")}</label><input id="studio-port" type="number" min="1024" max="65535" value={launchDraft.studioPort}
+            aria-invalid={launchInvalid?.field === "studio-port" ? true : undefined} onChange={(event) => changeLaunch({ studioPort: Number(event.target.value) })} /></div>
+          <p className="help">{t("launchHelp")}</p>
+        </DeveloperOnly>
       </details>
       <ErrorMessage issue={libraryIssue ? null : launchIssue ?? launchInvalid} language={preferences.language} />
     </> }],

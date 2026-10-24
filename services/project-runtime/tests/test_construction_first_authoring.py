@@ -280,7 +280,8 @@ class ConstructionFirstAuthoringTestCase(HostedOpeningTestCase):
         self.assertEqual({identifier: (row["cuts"], row["cutBy"], row["hidden"]) for identifier, row in rows.items()},
                          {"mass": (["block"], [], False), "block": ([], ["mass"], True)})
         self.assertEqual(rows["mass"]["openings"], [{"id": "opening-1", "kind": "door", "along": ALONG,
-                                                     "width": WIDTH, "sill": SILL, "head": HEAD}])
+                                                     "width": WIDTH, "sill": SILL, "head": HEAD, "parameters": {},
+                                                     "part": None}])
         self.assertEqual(rows["mass"]["bounds"], [[0, 0, 0], [4, 3, 0.3]])
         return run, volumes["obj-mass-body"]  # type: ignore[return-value]
 

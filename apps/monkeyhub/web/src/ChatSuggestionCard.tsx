@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import type { ChatDetail, ChatMessage, HubError } from "./api/generated";
 import { ChatCard } from "./ChatCard";
+import { DeveloperOnly, useDeveloperMode } from "./features/settings/preferences";
 import "./ChatSuggestionCard.css";
 
 const words = {
@@ -43,6 +44,7 @@ type Props = {
 export function ChatSuggestionCard({ message, chat, language, busy, sending, error, onAccept, onAdjust }: Props) {
   const statusId = useId();
   const [dismissed, setDismissed] = useState(false);
+  const developer = useDeveloperMode();
   const card = message.suggestion;
   if (!card) return null;
   const t = words[language];
@@ -61,14 +63,14 @@ export function ChatSuggestionCard({ message, chat, language, busy, sending, err
   return <ChatCard className="chat-suggestion" aria-busy={sending} data-suggestion-id={message.id}
     title={card.title} status={`${t.heading} · ${card.capability === "available" ? t.available : t.development}`}
     summary={card.outcome}
-    details={{ label: t.details, children: <>
+    details={developer ? { label: t.details, children: <>
       <p>{card.rationale}</p>
       {Boolean(card.tools?.length) && <p><strong>{t.tools}</strong><br />{card.tools!.join(" · ")}</p>}
       {estimates.filter(({ value }) => !value).map(({ label }) => <p key={label}><strong>{label}</strong> · {t.unknown}</p>)}
       {card.timeEstimate?.basis && <p><strong>{t.timeBasis}</strong><br />{card.timeEstimate.basis}</p>}
       {card.costEstimate?.basis && <p><strong>{t.costBasis}</strong><br />{card.costEstimate.basis}</p>}
       <p><strong>{t.request}</strong><br /><span className="chat-suggestion__request">{card.prompt}</span></p>
-    </> }}
+    </> } : undefined}
     actions={!dismissed && <>
       <button type="button" className="btn btn--primary" data-suggestion-action="accept" disabled={Boolean(reason)} aria-describedby={reason ? statusId : undefined} onClick={onAccept}>
         {sending ? t.sending : card.capability === "available" ? t.accept : t.assess}
@@ -78,7 +80,7 @@ export function ChatSuggestionCard({ message, chat, language, busy, sending, err
     </>}
     footer={(reason || error) && <>
       {reason && <p className="chat-suggestion__status" id={statusId} role="status">{reason}</p>}
-      {error && <div className="chat-suggestion__error" role="alert"><p>{t.failed}</p><details><summary>{t.errorDetails}</summary><p>{error.detail}</p></details></div>}
+      {error && <div className="chat-suggestion__error" role="alert"><p>{t.failed}</p><DeveloperOnly><details><summary>{t.errorDetails}</summary><p>{error.detail}</p></details></DeveloperOnly></div>}
     </>}>
     {Boolean(card.deliverables?.length) && <ul className="chat-suggestion__deliverables">{card.deliverables!.map((item, index) => <li key={index}>{item}</li>)}</ul>}
     {estimates.some(({ value }) => value) && <dl className="chat-suggestion__estimates">{estimates.filter(({ value }) => value).map(({ label, value }) =>
