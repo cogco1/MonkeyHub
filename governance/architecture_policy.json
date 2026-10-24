@@ -1742,7 +1742,7 @@
     "baseline": {
       "apps/monkeyhub/web/src/ChatShell.tsx": 3,
       "apps/monkeyhub/web/src/HubMenu.tsx": 1,
-      "apps/monkeyhub/web/src/app/AttentionShell.tsx": 12,
+      "apps/monkeyhub/web/src/app/AttentionShell.tsx": 11,
       "apps/monkeyhub/web/src/features/skills/SkillPermissions.tsx": 1,
       "apps/monkeyhub/web/src/features/skills/SkillsPanel.tsx": 1,
       "apps/monkeyhub/web/src/i18n/BilingualText.tsx": 1,
