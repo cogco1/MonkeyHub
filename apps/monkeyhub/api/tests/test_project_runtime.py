@@ -1154,8 +1154,11 @@ for _ in range(5):
             before = self.project_bytes(self.project)
             state_digest = self.fixture.runner_state_digest(self.repository, self.fixture.REFERENCE_RUN_ID)
             with patch.object(manager, "_read_retained", wraps=manager._read_retained) as scans:
-                # Let the opening wake and ready transition finish, then cover
-                # several normal status ticks with a healthy, idle real worker.
+                # Let the opening wake, the worker's ready transition and the
+                # attention queue's settle after it finish, then cover several
+                # normal status ticks with a healthy, idle real worker. The
+                # projection may be ready from a cold read before the worker is.
+                self.wait_runtime(client, runtime_id, lambda row: row["workers"][0]["state"] == "ready")
                 time.sleep(1.2)
                 idle_scans = scans.call_count
                 runtime = manager.get(runtime_id)
