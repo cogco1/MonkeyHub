@@ -119,6 +119,32 @@ class SkillLibraryTest(unittest.TestCase):
         self.assertIsNone(skills.latest_version(binding, "skill:rule-study"), "nothing was retained")
         self.assertEqual(self.client.get("/api/skills/skill:missing/needs").json()["code"], "SKILL_NOT_INSTALLED")
 
+    def test_a_package_that_would_only_fail_when_it_runs_is_caught_when_it_is_installed(self):
+        # A script that does not compile, and a script SKILL.md sends the reader to that the package never carried.
+        write_package(self.user / "typo-skill", script="def run(:\n    pass\n")
+        write_package(self.user / "lost-script")
+        (self.user / "lost-script" / "SKILL.md").write_text(
+            "Run it, then check it with scripts/check.py and params/default.json.\n"
+            "A per-style file such as params/<style>.json names no one file, and neither does scripts/*.py.\n",
+            encoding="utf-8")
+        write_package(self.user / "fine-skill")
+        rows = self.library()
+        syntax = rows[("user", "typo-skill")]["error"]
+        self.assertEqual((syntax["kind"], syntax["file"], syntax["line"]), ("entry_syntax", "scripts/run.py", 1))
+        self.assertIn("scripts/run.py does not compile", syntax["detail"])
+        lost = rows[("user", "lost-script")]["error"]
+        self.assertEqual((lost["kind"], lost["file"]), ("missing_file", "scripts/check.py"))
+        self.assertNotIn("error", rows[("user", "fine-skill")], "a placeholder or a file that is there is no problem")
+        # None of them is handed to a chat, and a run says why instead of starting.
+        found = skill_library.installed()
+        self.assertEqual([row.name for row in found.current() if row.content is not None], ["fine-skill"])
+        for name, code in (("typo-skill", "SKILL_PACKAGE_INVALID"), ("lost-script", "SKILL_PACKAGE_INVALID")):
+            response = self.client.post(f"/api/skills/skill:{name}/run", json={"projectId": PROJECT_ID})
+            self.assertEqual((response.status_code, response.json()["code"]), (422, code))
+        # Fixing the folder is enough: nothing is cached.
+        write_package(self.user / "typo-skill")
+        self.assertIsNotNone(skill_library.installed().find("typo-skill").content)
+
     def test_an_invalid_package_is_listed_with_why_and_runs_nothing(self):
         write_package(self.user / "bad-name")
         (self.user / "bad-name" / "skill.json").write_text(json.dumps({"name": "Bad Name", "description": "x"}),

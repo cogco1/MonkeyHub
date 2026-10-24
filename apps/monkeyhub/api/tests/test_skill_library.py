@@ -218,6 +218,36 @@ class SkillLibraryTest(unittest.TestCase):
         self.assertTrue(all(row.method == "card" for row in rows.values()))
         self.assertLessEqual(datetime.fromisoformat(rows[once].granted_at), datetime.now(timezone.utc))
 
+    def test_a_skill_that_cannot_be_used_is_not_given_to_a_chat_and_the_page_says_why(self):
+        self.install(HATCH)
+        broken = self.user / "typo-skill"
+        (broken / "scripts").mkdir(parents=True)
+        (broken / "skill.json").write_text(json.dumps({"name": "typo-skill", "description": "x", "entry": "scripts/run.py"}),
+                                           encoding="utf-8")
+        (broken / "SKILL.md").write_text("Run it.\n", encoding="utf-8")
+        (broken / "scripts" / "run.py").write_text("def run(:\n    pass\n", encoding="utf-8")
+        lost = self.user / "lost-script"
+        lost.mkdir()
+        (lost / "skill.json").write_text(json.dumps({"name": "lost-script", "description": "x"}), encoding="utf-8")
+        (lost / "SKILL.md").write_text("Then check it with scripts/check.py.\n", encoding="utf-8")
+        # Only the sound skill reaches a chat.
+        self.assertEqual([row["name"] for row in skill_plugins.installed_library().skills], ["hatch-review"])
+        app = create_app(HubSettings(runtime_root=self.runtime))
+        with TestClient(app, base_url="http://127.0.0.1:8790") as client:
+            answer = client.get("/api/settings/skill-problems")
+            self.assertEqual(answer.status_code, 200, answer.text)
+            rows = {row["name"]: row for row in answer.json()}
+            self.assertEqual(set(rows), {"typo-skill", "lost-script"})
+            self.assertEqual((rows["typo-skill"]["kind"], rows["typo-skill"]["file"], rows["typo-skill"]["line"],
+                              rows["typo-skill"]["source"]), ("entry_syntax", "scripts/run.py", 1, "user"))
+            self.assertEqual((rows["lost-script"]["kind"], rows["lost-script"]["file"]), ("missing_file", "scripts/check.py"))
+            self.assertTrue(rows["lost-script"]["folder"].endswith("lost-script"))
+            # Mending the folder is enough: the page reads the folders again each time.
+            (lost / "scripts").mkdir()
+            (lost / "scripts" / "check.py").write_text("print(1)\n", encoding="utf-8")
+            self.assertEqual([row["name"] for row in client.get("/api/settings/skill-problems").json()], ["typo-skill"])
+        self.assertEqual(sorted(row["name"] for row in skill_plugins.installed_library().skills), ["hatch-review", "lost-script"])
+
     def test_the_settings_page_lists_and_withdraws_grants_without_a_project(self):
         app = create_app(HubSettings(runtime_root=self.runtime))
         with TestClient(app, base_url="http://127.0.0.1:8790") as client:

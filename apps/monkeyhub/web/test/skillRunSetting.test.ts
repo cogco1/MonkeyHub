@@ -64,7 +64,7 @@ async function harness(t: TestContext, fixture: Fixture = {}) {
   let state: RunState = setting.initialRunSettingState;
   const actions = setting.runSettingActions(setting.createHubSettingsApi(HUB), (update) => { state = update(state); });
   const grants: GrantsState = {
-    loading: false, loadError: null, revoking: null, revokeError: null,
+    loading: false, loadError: null, revoking: null, revokeError: null, problems: null,
     grants: [{ grantId: "g-1", access: { programs: ["blender"] }, method: "card", grantedAt: "2026-10-19T09:30:00Z" }],
   };
   const unused = grantsActions({} as never, () => {});

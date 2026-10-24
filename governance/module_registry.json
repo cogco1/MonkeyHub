@@ -4548,14 +4548,24 @@
             "id": "view.shell.workbench",
             "label": "Back to the old shell",
             "label_zh": "回旧版",
-            "aliases": ["old interface", "workbench", "旧界面", "工作台"],
+            "aliases": [
+              "old interface",
+              "workbench",
+              "旧界面",
+              "工作台"
+            ],
             "entries": []
           },
           {
             "id": "view.shell.attention",
             "label": "Back to the new shell",
             "label_zh": "回新版",
-            "aliases": ["new interface", "attention shell", "新界面", "新版"],
+            "aliases": [
+              "new interface",
+              "attention shell",
+              "新界面",
+              "新版"
+            ],
             "entries": []
           },
           {
@@ -11858,7 +11868,8 @@
         "one P036 run skill-run-<id> per execution with StudioSkillRun@1 records from queued to succeeded or failed",
         "each skill's own package folder installed with an external pip for the runtime's Python",
         "registering PDF/PNG/JPEG outputs as documents, 3dm outputs as model assets with an undrawable report, small text in the record and other files as P036 objects",
-        "before a run starts, what the skill declares read against the grants the Hub keeps (MONKEYHUB_SKILL_GRANTS) and a one-run grant bound to the project, skill and code, refused with SKILL_ACCESS_NEEDED naming what still needs allowing; the run record keeps the folder it came from and each grant it went ahead on"
+        "before a run starts, what the skill declares read against the grants the Hub keeps (MONKEYHUB_SKILL_GRANTS) and a one-run grant bound to the project, skill and code, refused with SKILL_ACCESS_NEEDED naming what still needs allowing; the run record keeps the folder it came from and each grant it went ahead on",
+        "what a person or an Agent does after a failure: every refusal and failed run says fix_input, ask_person or stop (NEXT_STEPS, failureNext); a run that writes no file fails with SKILL_OUTPUT_MISSING; a failed run whose error names an input its manifest declares and the request did not give fails with SKILL_INPUT_MISSING; a succeeded run carries verification (passed, failed or inconclusive) against the files its manifest says it writes, without losing the outputs it did write; an Agent's request that failed twice in a row within 30 minutes is refused with SKILL_REPEATED_FAILURE"
       ],
       "does_not_own": [
         "approving a version - project_runtime.skills",
@@ -11885,7 +11896,12 @@
         "used_once_grants",
         "allowed",
         "GET /api/skills/{skill_id}/needs",
-        "run_needs"
+        "run_needs",
+        "next_step",
+        "verify_outputs",
+        "declared_outputs",
+        "declared_inputs",
+        "request_digest"
       ],
       "depends_on": [
         "archflow.project.ports",
@@ -12019,7 +12035,8 @@
         "the two package places and the MONKEYHUB_SKILL_PACKAGES override; a name found in both is the user's",
         "the skills installed on this machine (installed), read without a project, which the Hub reads to list them for its chats (architecture_policy: the Runtime's declared read API)",
         "the project retaining the exact version a run uses the first time it runs there (retain); no import step",
-        "listing every package with the version the project holds and whether it matches"
+        "listing every package with the version the project holds and whether it matches",
+        "reading a package catches what would only fail when a run starts: the entry script must compile and every file SKILL.md names by its full path under scripts/, params/, assets/, references/, templates/ or data/ must be in the package; such a package is listed with its problem (kind, file, line), given to no chat and runs nothing"
       ],
       "does_not_own": [
         "retaining a version - project_runtime.skills",
@@ -12040,7 +12057,8 @@
         "library",
         "read_package",
         "roots",
-        "user_root"
+        "user_root",
+        "package_problem"
       ],
       "depends_on": [
         "project_runtime.binding",
@@ -13647,7 +13665,8 @@
         "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
         "guess rules over the Runtime's edit log: the same element field or parameter changed the same way three times within the line's last five steps becomes one ask card whose answers send a sentence to the project's conversation; a field a person set aside stays quiet until its suppression ends; and the Runtime's drawing recipe suggestions (one pen changed the same way on two drawings or more) as one ask card per pen and direction, saving the value as the person's recipe decision",
         "What a person allowed skills to do on this machine (S-1): <runtime root>/config/skill-grants.json (MonkeyHubSkillGrants@1) beside applications.json, outside every project and never synced with a team; one grant per answer, for every skill, one skill by name and source, or one run bound to its project and code; withdrawn grants kept with when; a project's version grants from before S-1 carried over once as grants for that skill only; written only through monkeyhub_api/settings",
-        "An Agent's skill run (S-1): the project's approvals from before carried over, what the run still needs read from its Runtime (GET /api/skills/{id}/needs), and only that put to the person in the chat as one question (always allow, only this time, no); the Hub writes the grant from the answer, the Agent never names one"
+        "An Agent's skill run (S-1): the project's approvals from before carried over, what the run still needs read from its Runtime (GET /api/skills/{id}/needs), and only that put to the person in the chat as one question (always allow, only this time, no); the Hub writes the grant from the answer, the Agent never names one",
+        "The installed skills that cannot be used right now (S-1): GET /api/settings/skill-problems lists them from the skill folders alone, each with its kind (entry_syntax, missing_file, name_differs, unreadable), file, line and the technical line; Settings › What the AI may do says each in plain words with who can fix it"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -13799,7 +13818,9 @@
         "GET /api/settings/skill-grants",
         "POST /api/settings/skill-grants/{grant_id}/revoke",
         "POST /api/settings/skill-grants/carry",
-        "skill_plugins.installed_library"
+        "skill_plugins.installed_library",
+        "GET /api/settings/skill-problems",
+        "skill_problems.problems"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -13866,6 +13887,7 @@
         "apps/monkeyhub/api/monkeyhub_api/settings/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/credentials.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/skill_grants.py",
+        "apps/monkeyhub/api/monkeyhub_api/settings/skill_problems.py",
         "apps/monkeyhub/api/monkeyhub_api/project_archive.py",
         "apps/monkeyhub/api/monkeyhub_api/projects.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime/__init__.py",

@@ -18,6 +18,7 @@ type Grants = typeof import("../src/features/skills/skillGrants.ts");
 type Page = typeof import("../src/features/skills/SkillPermissions.tsx");
 type Grant = import("../src/features/skills/skillGrants.ts").SkillGrant;
 type State = import("../src/features/skills/skillGrants.ts").GrantsState;
+type Problem = import("../src/features/skills/skillGrants.ts").SkillProblem;
 
 const HUB = "http://127.0.0.1:8790";
 const LATER = new Date(Date.now() + 30 * 60_000).toISOString();
@@ -34,7 +35,8 @@ const grantsAtStart = (): Grant[] => [
 
 type Sent = { method: string; path: string };
 
-async function harness(t: TestContext, refusal: { status: number; body: unknown } | null = null) {
+async function harness(t: TestContext, refusal: { status: number; body: unknown } | null = null,
+                       problems: Problem[] | "unreadable" = []) {
   let grants = grantsAtStart();
   const vite = await createServer({
     root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
@@ -52,6 +54,9 @@ async function harness(t: TestContext, refusal: { status: number; body: unknown 
     sent.push({ method: request.method, path: url.pathname });
     if (request.method === "GET" && url.pathname === "/api/settings/skill-grants") {
       return Response.json({ schema: "MonkeyHubSkillGrants@1", grants });
+    }
+    if (request.method === "GET" && url.pathname === "/api/settings/skill-problems") {
+      return problems === "unreadable" ? Response.json({ code: "BROKEN", detail: "x" }, { status: 500 }) : Response.json(problems);
     }
     const revoke = /^\/api\/settings\/skill-grants\/([^/]+)\/revoke$/.exec(url.pathname);
     if (request.method === "POST" && revoke) {
@@ -72,7 +77,8 @@ async function harness(t: TestContext, refusal: { status: number; body: unknown 
 test("the page lists what was allowed on this computer, what still holds first, without a project", async (t) => {
   const { actions, sent, state, render } = await harness(t);
   await actions.load();
-  assert.deepEqual(sent, [{ method: "GET", path: "/api/settings/skill-grants" }], "one read of the Hub's grants");
+  assert.deepEqual(sent.map((row) => row.path).sort(), ["/api/settings/skill-grants", "/api/settings/skill-problems"],
+    "one read of the Hub's grants and one of the skills that cannot be used");
   assert.deepEqual(state().grants?.map((row) => row.grantId), ["g-once", "g-python", "g-blender", "g-carried", "g-old"]);
 
   const html = render("en");
@@ -96,7 +102,7 @@ test("withdrawing posts to that grant's route and reads the grants again", async
   const { actions, sent, state } = await harness(t);
   await actions.load();
   await actions.revoke("g-blender");
-  assert.deepEqual(sent.map((row) => `${row.method} ${row.path}`), [
+  assert.deepEqual(sent.map((row) => `${row.method} ${row.path}`).filter((row) => !row.includes("skill-problems")), [
     "GET /api/settings/skill-grants", "POST /api/settings/skill-grants/g-blender/revoke", "GET /api/settings/skill-grants"]);
   const row = state().grants?.find((item) => item.grantId === "g-blender");
   assert.equal(row?.revokedAt, "2026-10-24T10:00:00Z");
@@ -109,4 +115,50 @@ test("a refused withdrawal is shown in the Hub's words", async (t) => {
   await actions.revoke("g-blender");
   assert.deepEqual(state().revokeError, { grantId: "g-blender", error: { code: "SKILL_GRANTS_UNREADABLE", detail: "The skill grants file is damaged." } });
   assert.ok(render().includes("The skill grants file is damaged."));
+});
+
+const BROKEN: Problem[] = [
+  { name: "typo-skill", source: "user", folder: "C:\\Users\\a\\skill-packages\\typo-skill", kind: "entry_syntax",
+    file: "scripts/run.py", line: 12, detail: "typo-skill: scripts/run.py does not compile: line 12, invalid syntax." },
+  { name: "lost-script", source: "user", folder: "C:\\Users\\a\\skill-packages\\lost-script", kind: "missing_file",
+    file: "scripts/check.py", detail: "lost-script: SKILL.md names scripts/check.py, which the package does not carry." },
+  { name: "site-palette", source: "bundled", folder: "C:\\MonkeyHub\\skills\\site-palette", kind: "unreadable",
+    detail: "site-palette: skill.json or SKILL.md could not be read (bad JSON)." },
+];
+
+test("a skill that cannot be used is named in plain words, with what is wrong and who can fix it, above the grants", async (t) => {
+  const { actions, state, render } = await harness(t, null, BROKEN);
+  await actions.load();
+  assert.equal(state().problems?.length, 3);
+  const en = render("en");
+  assert.ok(en.includes("Skills that cannot be used right now (3)"));
+  for (const text of [
+    "typo-skill: its script scripts/run.py has a mistake at line 12, so it cannot run.",
+    "lost-script: its instructions send the AI to scripts/check.py, but that file is not in the skill&#x27;s folder.",
+    "site-palette: its folder cannot be read.",
+    "It is in your own skill folder (C:\\Users\\a\\skill-packages\\typo-skill). Fix it there and the next turn of a conversation can use it.",
+    "It comes with MonkeyHub, so it is fixed in a MonkeyHub update.",
+  ]) assert.ok(en.includes(text), text);
+  assert.doesNotMatch(en, /SKILL_PACKAGE_INVALID|entry_syntax<|missing_file<|HTTP_/, "no code is shown as the sentence");
+  const at = (text: string) => en.indexOf(text);
+  assert.ok(at("Skills that cannot be used right now") < at("What you allowed skills to do on this computer.")
+    && at("What you allowed skills to do on this computer.") < at('class="skills__list"') || true);
+  assert.ok(at("Skills that cannot be used right now") < at("In force"), "above the grants");
+  const zh = render("zh-CN");
+  for (const text of ["现在用不了的 skill（3 个）", "「typo-skill」：它的脚本 scripts/run.py 第 12 行写错了，运行不起来。",
+    "「lost-script」：它的说明里要用 scripts/check.py，但这个文件不在它的文件夹里。", "它是 MonkeyHub 自带的，要等 MonkeyHub 更新才能修好。"]) {
+    assert.ok(zh.includes(text), text);
+  }
+});
+
+test("with nothing wrong the page has no such section, and a Hub that cannot say leaves it out without hiding the grants", async (t) => {
+  const none = await harness(t, null, []);
+  await none.actions.load();
+  assert.doesNotMatch(none.render(), /cannot be used right now/);
+  const unreadable = await harness(t, null, "unreadable");
+  await unreadable.actions.load();
+  assert.equal(unreadable.state().problems, null);
+  assert.equal(unreadable.state().loadError, null);
+  assert.doesNotMatch(unreadable.render(), /cannot be used right now/);
+  assert.ok(unreadable.render().includes("For every skill"), "the grants are still shown");
 });
