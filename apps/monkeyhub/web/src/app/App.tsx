@@ -3654,19 +3654,19 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           {developerMode && sourceRunId !== null && <p className="mono">{sourceRunId}</p>}
           {error && <ErrorPanel error={error} what={error === documentIntentError ? "MonkeyBoard" : undefined} />}
           {baseNotice && <p className="refusal__lead" role="alert">{baseNotice}</p>}
-          <button type="button" className="btn" disabled={changingBase}
+          <button data-command="view.notice.retry" data-command-arg="model_open" type="button" className="btn" disabled={changingBase}
             onClick={() => { if (missingChosenModel) void loadArtifacts(); else void reload(); }}>
             {t("stage.base.retry")}
           </button>
-          <button type="button" className="btn" disabled={changingBase}
+          <button data-command="design.go_to_step.default_base" type="button" className="btn" disabled={changingBase}
             onClick={() => void changeBaseFromRow(null)}>
             {t("stage.base.default")}
           </button>
-          {binding && documentView.mounted && <button type="button" className="btn"
+          {binding && documentView.mounted && <button data-command="view.drawings" type="button" className="btn"
             onClick={() => setDocumentView((current) => ({ ...current, open: true }))}>
             {t("workspace.monkeydiagram")}
           </button>}
-          {returnToBoard && <button type="button" className="btn" onClick={returnToBoard}>
+          {returnToBoard && <button data-command="view.tab.board" type="button" className="btn" onClick={returnToBoard}>
             {t("workspace.monkeyboard")}
           </button>}
         </div>
@@ -4044,7 +4044,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           <span key={followNotice.id} role="status" data-follow-notice={followNotice.state} title={followNotice.reason ?? t(FOLLOW_WORDS[followNotice.state])}
             style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{t(FOLLOW_WORDS[followNotice.state])}</span>
           {followNotice.undo && (followNotice.state === "moved" || followNotice.state === "undoing") &&
-            <MenuCommand data-action="follow-undo" disabled={followNotice.state === "undoing"} title={t("stage.follow.undoTitle")}
+            <MenuCommand data-command="design.undo_last" data-action="follow-undo" disabled={followNotice.state === "undoing"} title={t("stage.follow.undoTitle")}
               onClick={undoFollowed}>{t(followNotice.state === "undoing" ? "stage.follow.undoing" : "stage.follow.undo")}</MenuCommand>}
         </> : null} />
     </>

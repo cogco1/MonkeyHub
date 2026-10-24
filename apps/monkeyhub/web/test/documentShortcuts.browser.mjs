@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { cmd, waitForCommandLabel } from "./commandLocator.mjs";
 
 // The full App, an explicitly named disposable project, and a unique uploaded
 // source. No housing project, existing source, model, or intent is writable.
@@ -69,7 +70,7 @@ await context.route(/\/api\//, async (route) => {
   await route.continue();
 });
 const marks = () => page.locator(".document-workspace [data-saved-ink] [data-stroke-id]").evaluateAll((paths) => paths.map((path) => path.dataset.strokeId));
-const tool = (name) => page.locator(".document-tools").getByRole("button", { name, exact: true });
+const tool = (id) => cmd(page.locator(".document-tools"), id);
 const viewport = page.locator(".document-viewport");
 async function until(read, expected, label) {
   const deadline = Date.now() + 12_000;
@@ -126,7 +127,7 @@ try {
   assetSha = source.assetSha256;
   await page.waitForFunction((sha) => document.querySelector(".document-header > select")?.value === sha, assetSha);
   await page.locator('.document-viewport[data-ready="true"]').waitFor();
-  await tool("Pen").click();
+  await tool("view.markup_tools.freehand").click();
   await until(marks, [], "unique source starts with no annotations");
   // Retain the native event and read its final state after keyboard.press.
   // A queued microtask can run between native listeners, before React handles
@@ -152,8 +153,8 @@ try {
   const initial = await marks();
   for (const [name, focus] of [
     ["viewport", viewport],
-    ["toolbar Pen button", tool("Pen")],
-    ["document header Open button", page.locator(".document-header > button").first()],
+    ["toolbar Pen button", tool("view.markup_tools.freehand")],
+    ["document header Open button", cmd(page.locator(".document-header"), "view.open_document.file")],
   ]) {
     await step(`Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y work from ${name}`, async () => {
       await pressUndo(focus, "Control+z", initial.slice(0, 2));
@@ -163,10 +164,10 @@ try {
     });
   }
   await step("toolbar buttons and shortcuts share the same history", async () => {
-    await tool("Undo").click(); await until(marks, initial.slice(0, 2), "button undo");
-    await pressUndo(page.locator(".document-header > button").first(), "Control+y", initial);
-    await pressUndo(tool("Pen"), "Control+z", initial.slice(0, 2));
-    await tool("Redo").click(); await until(marks, initial, "button redo restores identical IDs");
+    await tool("view.markup_tools.undo").click(); await until(marks, initial.slice(0, 2), "button undo");
+    await pressUndo(cmd(page.locator(".document-header"), "view.open_document.file"), "Control+y", initial);
+    await pressUndo(tool("view.markup_tools.freehand"), "Control+z", initial.slice(0, 2));
+    await tool("view.markup_tools.redo").click(); await until(marks, initial, "button redo restores identical IDs");
   });
   await step("native input and contenteditable retain text undo/redo", async () => {
     // The current workspace has a textarea; temporary native controls exercise
@@ -187,7 +188,7 @@ try {
     await nativeTextUndo(textarea, () => textarea.inputValue());
   });
   await step("native isComposing and legacy keyCode 229 cannot consume annotation history", async () => {
-    for (const focus of [viewport, tool("Pen"), page.locator(".document-header > button").first()]) {
+    for (const focus of [viewport, tool("view.markup_tools.freehand"), cmd(page.locator(".document-header"), "view.open_document.file")]) {
       for (const flags of [{ isComposing: true }, { keyCode: 229, which: 229 }]) {
         await focus.focus();
         const before = await marks();
@@ -208,7 +209,7 @@ try {
     assert.equal(await page.locator(".document-workspace").isVisible(), false);
     await page.keyboard.press("Control+z");
     assert.deepEqual(await marks(), before, "the active 3D focus cannot undo hidden document ink");
-    for (const hidden of [viewport, page.locator(".document-tools").getByRole("button", { name: "Pen", exact: true, includeHidden: true }), page.locator(".document-header > button").first()]) {
+    for (const hidden of [viewport, cmd(page.locator(".document-tools"), "view.markup_tools.freehand", { includeHidden: true }), cmd(page.locator(".document-header"), "view.open_document.file", { includeHidden: true })]) {
       const prevented = await hidden.evaluate((node) => {
         const event = new KeyboardEvent("keydown", { key: "z", code: "KeyZ", ctrlKey: true, bubbles: true, cancelable: true });
         node.dispatchEvent(event); return event.defaultPrevented;
@@ -231,8 +232,8 @@ try {
   await step("submission pending locks document history from viewport, toolbar and header", async () => {
     await page.locator("#document-comment").fill(`Shortcut pending-state check ${nonce}`);
     expectHeldIntent = true;
-    await page.locator(".document-notes").getByRole("button", { name: "Submit page note", exact: true }).click();
-    await page.locator(".document-notes").getByRole("button", { name: "Submitting…", exact: true }).waitFor();
+    await cmd(page.locator(".document-notes"), "markup.hand_to_ai.submit_page_note").click();
+    await waitForCommandLabel(cmd(page.locator(".document-notes"), "markup.hand_to_ai.submit_page_note"), "Submitting…");
     let intentTimer;
     const captured = await Promise.race([heldIntentSeen, new Promise((_, reject) => { intentTimer = setTimeout(() => reject(new Error("frontend did not reach the held intent request")), 12_000); })])
       .finally(() => clearTimeout(intentTimer));
@@ -241,7 +242,7 @@ try {
     const before = await marks();
     const putsBefore = writes.filter((write) => write.method === "PUT").length;
     // Pan remains enabled while editing tools are disabled during submission.
-    for (const focus of [viewport, tool("Pan"), page.locator(".document-header > button").first()]) {
+    for (const focus of [viewport, tool("view.markup_tools.pan"), cmd(page.locator(".document-header"), "view.open_document.file")]) {
       for (const chord of ["Control+z", "Control+Shift+z", "Control+y"]) {
         await focus.focus();
         await page.keyboard.press(chord);

@@ -9,6 +9,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { cmd } from "./commandLocator.mjs";
 import { crc32, deflateSync } from "node:zlib";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
@@ -133,7 +134,7 @@ try {
 
   // A new page joins the anchor's row: its top and height, its own aspect, past the anchor's frame by the usual gap.
   await page.locator("button[aria-controls=monkeyboard-project-documents]").click();
-  await page.locator(".monkeyboard-page-row").filter({ has: page.locator("select[aria-label^='Section.png']") }).getByRole("button", { name: "Add page" }).click();
+  await cmd(page.locator(".monkeyboard-page-row").filter({ has: page.locator("select[aria-label^='Section.png']") }), "board.add_document_page.add").click();
   await page.waitForFunction(() => window.__boardApi.getSceneElements().filter((element) => element.type === "image").length === 2);
   const added = await page.evaluate(() => window.__boardApi.getSceneElements().find((element) => element.type === "image" && element.id !== "page-a"));
   assert.equal(added.y, anchor.y, "the new page takes the anchor's top edge");
