@@ -332,7 +332,8 @@
             "services/project-runtime/src/project_runtime/application/projections.py",
             "services/project-runtime/src/project_runtime/application/drawings.py",
             "services/project-runtime/src/project_runtime/api/routes/artifacts.py",
-            "services/project-runtime/tests/test_model_source_index.py"
+            "services/project-runtime/tests/test_model_source_index.py",
+            "docs/protocols/project-runtime-api.md"
           ],
           "depends_on": []
         },
