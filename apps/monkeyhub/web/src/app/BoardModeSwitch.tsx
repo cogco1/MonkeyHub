@@ -21,7 +21,7 @@ export function BoardModeSwitch({ mode, onChange }: { mode: BoardMode; onChange(
     (event.currentTarget.parentElement?.querySelector(`[data-mode="${next}"]`) as HTMLButtonElement | null)?.focus();
   };
   return <div className="board-mode-switch" role="radiogroup" aria-label={t("workspace.boardMode")}>
-    {modes.map((value) => <button key={value} type="button" role="radio" data-mode={value} aria-checked={mode === value}
+    {modes.map((value) => <button data-command={value === "board" ? "view.tab.board" : "view.tab.layout"} key={value} type="button" role="radio" data-mode={value} aria-checked={mode === value}
       tabIndex={mode === value ? 0 : -1} onKeyDown={step} onClick={() => { if (value !== mode) onChange(value); }}>
       {t(value === "board" ? "workspace.boardMode.board" : "workspace.boardMode.layout")}
     </button>)}

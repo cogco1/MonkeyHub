@@ -273,7 +273,7 @@ function RenderContextCard({ context, documents, words, running, onRemove }: {
     .map((page) => `${page.runId}:${page.assetSha256}:${page.revisionRef ?? ""}:${page.pageIndex}`)));
   return <ChatCard className="chat-render-context" title={words.renderContextTitle}
     status={<span className="chat-render-context__status">{running ? words.renderContextAfterReply : words.renderContextNext}</span>}
-    actions={<button type="button" className="chat-activity__open" onClick={onRemove}>{words.renderContextRemove}</button>}
+    actions={<button data-command="chat.composer.remove_images" type="button" className="chat-activity__open" onClick={onRemove}>{words.renderContextRemove}</button>}
     details={{ label: words.renderContextDetails, children: <dl className="chat-file-sources">{rows.map(({ role, page }) => <div key={`${role}:${page.runId}:${page.assetSha256}:${page.revisionRef ?? ""}:${page.pageIndex}`}>
       <dt>{role} · {documents ? findSource(documents, renderPage(page))?.fileName ?? words.renderContextUnavailable : page.runId}</dt>
       <dd><code>{page.runId}</code><br /><code>{page.assetSha256}</code><br /><code>{page.revisionRef ?? "null"}</code> · <code>{page.pageIndex}</code></dd>
@@ -434,11 +434,11 @@ function Failure({ failure, language, labels, connection, onClose, onChangeModel
       <p>{shown.summary}</p>
       {/* Offered only when the failure itself named the model, and it moves to
           the picker this conversation already has. Nothing is switched here. */}
-      {shown.modelRejected && onChangeModel && <button type="button" className="chat-error__action" onClick={onChangeModel}>{labels.changeModel}</button>}
+      {shown.modelRejected && onChangeModel && <button data-command="preference.chat_model.change" type="button" className="chat-error__action" onClick={onChangeModel}>{labels.changeModel}</button>}
       {/* A new failure starts folded rather than inheriting the last one. */}
       <details className="chat-error__details" key={shown.technical}><summary>{labels.errorDetails}</summary><pre lang="en" translate="no">{shown.technical}</pre></details>
     </div>
-    {onClose && <button className="chat-icon" aria-label={labels.close} onClick={onClose}><Icon name="close" /></button>}
+    {onClose && <button data-command="view.notice.dismiss" className="chat-icon" aria-label={labels.close} onClick={onClose}><Icon name="close" /></button>}
   </div>;
 }
 
@@ -471,10 +471,10 @@ function ComposerMenu({ label, disabled, disabledReason, items }: { label: strin
     else if (event.key === "Tab") setOpen(false);
   };
   return <div className="chat-composer-menu">
-    <button ref={button} type="button" className="chat-icon chat-attach" aria-label={label} aria-description={disabledReason} title={disabledReason ?? label} aria-haspopup="menu" aria-expanded={open}
+    <button data-command="chat.composer.menu" ref={button} type="button" className="chat-icon chat-attach" aria-label={label} aria-description={disabledReason} title={disabledReason ?? label} aria-haspopup="menu" aria-expanded={open}
       aria-controls={open ? "chat-composer-menu" : undefined} disabled={disabled} onClick={() => setOpen(!open)}><Icon name="plus" /></button>
     {open && <div ref={menu} id="chat-composer-menu" className="chat-composer-menu__list" role="menu" aria-label={label} onKeyDown={keys}>
-      {items.map((item) => <button key={item.key} type="button" tabIndex={-1} className="chat-composer-menu__item"
+      {items.map((item) => <button data-command={`chat.composer.${item.key}`} key={item.key} type="button" tabIndex={-1} className="chat-composer-menu__item"
         role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"} aria-checked={item.checked} aria-disabled={item.disabled || undefined}
         aria-label={item.label} aria-description={item.detail}
         onClick={() => { if (item.disabled) return; setOpen(false); button.current?.focus(); item.onSelect(); }}>
@@ -517,7 +517,7 @@ function ProcessRow({ turn, running, open, t, onToggle }: {
   const current = running ? currentStep(turn) : null;
   const body = `chat-process-${turn.key}`;
   return <div className="chat-process" data-turn={turn.key} data-running={running}>
-    <button type="button" className="chat-process__row" aria-expanded={open} aria-controls={open ? body : undefined} onClick={(event) => onToggle(event.currentTarget)}>
+    <button data-command="view.conversation.steps" type="button" className="chat-process__row" aria-expanded={open} aria-controls={open ? body : undefined} onClick={(event) => onToggle(event.currentTarget)}>
       {running && <span className="chat-thread__dot" data-status="running" />}
       <span className="chat-process__summary">{running ? <>
         {t.processWorking}
@@ -566,7 +566,7 @@ function SurfaceSkeleton({ surface, name, step, startedAt = null, words, onCance
       <p role="status">{step}</p>
       {slow && <div className="chat-skeleton__slow">
         <span aria-hidden="true">{words.waited(words.elapsed(seconds))}</span>
-        {onCancel && <button type="button" className="chat-activity__open" onClick={onCancel}>{words.cancel}</button>}
+        {onCancel && <button data-command="view.tab.cancel" type="button" className="chat-activity__open" onClick={onCancel}>{words.cancel}</button>}
       </div>}
     </div>
   </div>;
@@ -2056,7 +2056,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             const title = task.chat?.title ?? action ?? t.workTools;
             // Where and whether it runs come before what it is doing: a narrow sidebar cuts the end.
             const caption = [task.projectName, task.state === "running" ? t.taskRunning : t.taskQueued, task.chat ? action : null].filter(Boolean).join(" · ");
-            return <li key={task.key}><button type="button" className="chat-task" data-state={task.state} title={`${title}\n${caption}`} onClick={() => openTask(task)}>
+            return <li key={task.key}><button data-command="view.background.open_task" data-command-arg={task.key} type="button" className="chat-task" data-state={task.state} title={`${title}\n${caption}`} onClick={() => openTask(task)}>
               <span className="chat-thread__dot" data-status={task.state === "running" ? "running" : "idle"} />
               <span className="chat-task__text"><span className="chat-task__title">{title}</span><small>{caption}</small></span>
             </button></li>;
@@ -2069,7 +2069,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           {workCopyRefusal && <><p>{t.workCopyRefused}</p><small>{workCopyRefusal.detail}</small></>}
           {folderChanged && <p>{t.projectChangedOutside}</p>}
         </div>
-        {crashed && <button type="button" className="chat-activity__open" disabled={recovering || busy || Boolean(toolBusy)} onClick={() => void recoverWorker()}><Icon name="refresh" />{recovering ? t.recovering : t.recoverWorker}</button>}
+        {crashed && <button data-command="view.notice.retry" data-command-arg="project_service" type="button" className="chat-activity__open" disabled={recovering || busy || Boolean(toolBusy)} onClick={() => void recoverWorker()}><Icon name="refresh" />{recovering ? t.recovering : t.recoverWorker}</button>}
       </div>}
       {unfinishedOperation && (() => {
         // #285: which operation did not finish, when, and the chat that asked for it. A failed or
@@ -2084,11 +2084,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <div><p>{operation.status === "needs_recovery" ? t.operationRecovery : operation.status === "stale" ? t.operationStale : t.operationFailed}</p>
             {detail && <small>{detail}</small>}</div>
           <div className="chat-runtime__actions">
-            {source && source.id !== chatId && <button type="button" className="chat-activity__open" title={source.title}
+            {source && source.id !== chatId && <button data-command="chat.open_conversation" data-command-arg={source.id} type="button" className="chat-activity__open" title={source.title}
               aria-label={`${w.operationOpenChat}: ${source.title}`} onClick={() => selectChat(source)}><Icon name="chat" />{w.operationOpenChat}</button>}
             {/* GH-58: one that needs recovery the Hub cannot give it says so, and can be dismissed like a failure. */}
             {unrecoverable(operation) && <span className="chat-runtime__note" id="chat-operation-unrecoverable">{s.operationUnrecoverable}</span>}
-            {dismissible(operation) && <button type="button" className="chat-activity__open" disabled={dismissing !== null}
+            {dismissible(operation) && <button data-command="view.notice.dismiss" type="button" className="chat-activity__open" disabled={dismissing !== null}
               aria-describedby={unrecoverable(operation) ? "chat-operation-unrecoverable" : undefined}
               aria-busy={dismissing === operation.operationId} onClick={() => void dismissOperation(operation)}>{w.operationDismiss}</button>}
           </div>
@@ -2098,7 +2098,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const conversationLog = <>
       <div className="chat-messages" ref={messages} role="log" aria-live="polite" aria-relevant="additions text" onScroll={readPosition}
         onWheel={() => { jumping.current = false; }} onTouchStart={() => { jumping.current = false; }}>
-        {!shownMessages?.length ? <div className="chat-welcome"><div className="chat-welcome__mark"><Icon name="chat" /></div><h2>{project ? t.empty : t.noProject}</h2><p>{t.emptyHint}</p>{!project && <div className="chat-welcome__actions"><button className="btn btn--primary" onClick={() => { setDialogError(null); newDialog.current?.showModal(); }}>{t.newProject}</button><button className="btn" onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}>{t.addExisting}</button></div>}</div>
+        {!shownMessages?.length ? <div className="chat-welcome"><div className="chat-welcome__mark"><Icon name="chat" /></div><h2>{project ? t.empty : t.noProject}</h2><p>{t.emptyHint}</p>{!project && <div className="chat-welcome__actions"><button data-command="project.create.new" className="btn btn--primary" onClick={() => { setDialogError(null); newDialog.current?.showModal(); }}>{t.newProject}</button><button data-command="project.create.add_existing" className="btn" onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}>{t.addExisting}</button></div>}</div>
           : <div className="chat-message-list">{turns.map((turn, index) => <Fragment key={turn.key}>
             {turn.user && messageEntry(turn.user)}
             {turn.steps.length > 0 && <ProcessRow turn={turn} running={running && index === turns.length - 1} open={expandedTurns.has(turn.key)} t={t}
@@ -2112,9 +2112,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
               : <div className="chat-activity chat-activity--permission" key={message.id} data-status={message.status}>
                 <div className="chat-permission" role="group" aria-label={message.permission!.title} aria-busy={permissionBusy === message.permission!.id}>
                   <p>{message.permission!.title}</p>
-                  <div className="chat-permission__actions">{message.permission!.options.map((option) => <button key={option.optionId} type="button" className="chat-activity__open" disabled={permissionBusy !== null}
+                  <div className="chat-permission__actions">{message.permission!.options.map((option) => <button data-command="chat.permission.choose" data-command-arg={option.optionId} key={option.optionId} type="button" className="chat-activity__open" disabled={permissionBusy !== null}
                     onClick={() => void choosePermission(message.permission!.id, option.optionId)}>{option.name}</button>)}
-                    <button type="button" className="chat-activity__open" disabled={permissionBusy !== null} onClick={() => void choosePermission(message.permission!.id, null)}>{t.cancel}</button>
+                    <button data-command="chat.permission.cancel" type="button" className="chat-activity__open" disabled={permissionBusy !== null} onClick={() => void choosePermission(message.permission!.id, null)}>{t.cancel}</button>
                   </div>
                 </div>
               </div>)}
@@ -2123,14 +2123,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
               const options = resultCandidates(turn);
               // #284: View changes compares one exact option; with several, the architect names which.
               const compareDisabled = !project || project.projectId !== chat?.projectId || busy || Boolean(toolBusy);
-              const compareButton = (option: string, label: string, name?: string) => <button type="button" className="chat-activity__open"
+              const compareButton = (option: string, label: string, name?: string) => <button data-command="candidate.compare.option" data-command-arg={option} type="button" className="chat-activity__open"
                 data-compare={option} aria-label={name} aria-description={t.studyCompareHint} title={t.studyCompareHint} disabled={compareDisabled}
                 onClick={(event) => void compareResult(option, event.currentTarget)}>{label}</button>;
               // Every option of the request stays grouped; none is promoted to "latest".
               return <ChatCard className="chat-study" data-candidates={options.join(" ")} data-options={options.length > 1 ? "several" : undefined}
                 title={t.resultModels} status={<span className="chat-study__text">{t.studyReady(options.length)}</span>}
                 actions={<>
-                  <button type="button" className="chat-activity__open" disabled={!project || Boolean(toolBusy)}
+                  <button data-command="view.design_tree.open" type="button" className="chat-activity__open" disabled={!project || Boolean(toolBusy)}
                     onClick={() => void openTool("tree", { focus: options.join(",") })}>{t.studyView}</button>
                   {options.length === 1 ? compareButton(options[0]!, t.studyCompare)
                     : <ChatCardDetails className="chat-study__compare" summary={t.studyCompare}>
@@ -2151,7 +2151,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   </>;
   const composerArea = <>
       <div className="chat-composer-wrap" ref={composerWrapRef}>
-        {latest.away && Boolean(shownMessages?.length) && <button type="button" className="chat-jump" onClick={jumpToLatest}
+        {latest.away && Boolean(shownMessages?.length) && <button data-command="view.conversation.jump_latest" type="button" className="chat-jump" onClick={jumpToLatest}
           aria-label={latest.unseen ? t.jumpLatestNew(latest.unseen) : t.jumpLatest} title={latest.unseen ? t.jumpLatestNew(latest.unseen) : t.jumpLatest}>
           <Icon name="down" />{latest.unseen > 0 && <span className="chat-jump__count" aria-hidden="true">{latest.unseen > 99 ? "99+" : latest.unseen}</span>}
         </button>}
@@ -2164,7 +2164,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           }} />}
         {archived ? <div className="chat-archived-notice">
           <p>{t.archivedNotice}</p>
-          <button className="chat-activity__open" disabled={archiveBusy !== null} onClick={() => void setArchived(chat!, false)}><Icon name="restore" /><span>{t.restoreChat}</span></button>
+          <button data-command="chat.archive.restore" className="chat-activity__open" disabled={archiveBusy !== null} onClick={() => void setArchived(chat!, false)}><Icon name="restore" /><span>{t.restoreChat}</span></button>
         </div> : external ? <p className="chat-external-notice" role="status"><strong>{t.externalChat}</strong><span>{t.externalNotice}</span></p> : <form className="chat-composer" data-dragging={draggingFiles} onSubmit={(event) => void send(event)}
           data-context={designContext ? "ready" : workspaceContext?.projectId === project?.projectId ? workspaceContext?.unavailableReason ?? "none" : "none"}
           onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = !project || busy ? "none" : "copy"; setDraggingFiles(Boolean(project) && !busy); } }}
@@ -2180,14 +2180,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             </p>}
             {contextMode === "project" && <span className="chat-topic" title={designContext ? t.contextProjectHint : contextUnavailable}>
               <span>{w.newTopic}</span>
-              <button type="button" className="chat-topic__remove" aria-label={w.newTopicRemove} title={w.newTopicRemove}
+              <button data-command="chat.composer.remove_topic" type="button" className="chat-topic__remove" aria-label={w.newTopicRemove} title={w.newTopicRemove}
                 onClick={() => { setContextModes((value) => ({ ...value, [draftKey]: "continue" })); input.current?.focus(); }}><Icon name="close" /></button>
             </span>}
           </div>
           {/* The refusal a New topic can meet stays in view, with the one click that clears it (#302). */}
           {contextMode === "project" && !designContext && <div className="chat-topic-refusal">
             <p className="chat-muted" role="status">{contextUnavailable}</p>
-            {recordContext && <button type="button" className="chat-activity__open chat-record"
+            {recordContext && <button data-command="draft.record.continue" type="button" className="chat-activity__open chat-record"
               disabled={recordingContext || busy} onClick={() => void recordForContext()}>{recordingContext ? t.recordBusy : t.recordContinue}</button>}
           </div>}
           {/* #253: the images the next message discusses, as a Board handed them over. */}
@@ -2198,7 +2198,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             : <RenderContextCard context={renderDraft} documents={null} words={t} running={running} onRemove={removeRender} />)}
           {Boolean(attachments.length) && <ul className="chat-attachments chat-attachments--draft" aria-label={t.attachments}>{attachments.map((file, index) => <li key={`${index}:${file.name}`}>
             <Icon name="file" /><span className="chat-attachment__details"><span className="chat-attachment__name" title={file.name}>{file.name}</span><span className="chat-attachment__size">{fileSize(file.size)}</span></span>
-            <button type="button" className="chat-icon" aria-label={`${t.removeAttachment}: ${file.name}`} disabled={busy} onClick={() => {
+            <button data-command="chat.composer.remove_attachment" data-command-arg={file.name} type="button" className="chat-icon" aria-label={`${t.removeAttachment}: ${file.name}`} disabled={busy} onClick={() => {
               setDraftAttachments((value) => ({ ...value, [draftKey]: value[draftKey]!.filter((_, position) => position !== index) }));
               input.current?.focus();
             }}><Icon name="close" /></button>
@@ -2215,7 +2215,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           ]} /><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
             <span className="chat-connection__name">{providers.find((item) => item.id === connection.provider)?.label ?? connection.provider}</span>
             <label className="sr-only" htmlFor="chat-model">{t.modelLabel}</label>
-            <select id="chat-model" className="chat-connection__model" value={customModel !== null ? "__custom__" : chosenModel ?? ""} disabled={running || modelBusy || busy}
+            <select data-command="preference.chat_model.choose" id="chat-model" className="chat-connection__model" value={customModel !== null ? "__custom__" : chosenModel ?? ""} disabled={running || modelBusy || busy}
               aria-description={running ? t.modelRunning : modelBusy ? t.modelSaving : busy ? t.actionPending : undefined}
               onChange={(event) => { const value = event.target.value; if (value === "__custom__") setCustomModel(chosenModel ?? ""); else void chooseModel(value || null); }}>
               <option value="">{t.modelCliDefault}</option>
@@ -2225,14 +2225,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             {availableProvider?.modelCatalog === "checking" && <span className="chat-connection__note">{t.modelChecking}</span>}
             {modelBusy && <span className="chat-connection__note" role="status">{t.modelSaving}</span>}
           </div>
-          {running ? <><button className="chat-icon chat-stop" type="button" aria-label={t.stop} title={t.stop} onClick={() => void stop()}><Icon name="stop" /></button>
-            <button className="chat-send" type="submit" aria-label={t.interject} aria-description={sendDisabledReason} aria-keyshortcuts="Enter" title={sendDisabledReason ?? t.interject} disabled={!draft.trim() || Boolean(renderDraft)}><Icon name="send" /></button></> : <button className="chat-send" type="submit" aria-label={t.send} aria-description={sendDisabledReason} aria-keyshortcuts="Enter" title={sendDisabledReason ?? t.send} disabled={busy || !project || (!draft.trim() && !attachments.length) || (!chatId && !availableProvider?.available)}><Icon name="send" /></button>}</div>
+          {running ? <><button data-command="chat.composer.stop" className="chat-icon chat-stop" type="button" aria-label={t.stop} title={t.stop} onClick={() => void stop()}><Icon name="stop" /></button>
+            <button data-command="chat.composer.interject" className="chat-send" type="submit" aria-label={t.interject} aria-description={sendDisabledReason} aria-keyshortcuts="Enter" title={sendDisabledReason ?? t.interject} disabled={!draft.trim() || Boolean(renderDraft)}><Icon name="send" /></button></> : <button data-command="chat.composer.send" className="chat-send" type="submit" aria-label={t.send} aria-description={sendDisabledReason} aria-keyshortcuts="Enter" title={sendDisabledReason ?? t.send} disabled={busy || !project || (!draft.trim() && !attachments.length) || (!chatId && !availableProvider?.available)}><Icon name="send" /></button>}</div>
         </form>}
         {!archived && customModel !== null && <form className="chat-custom-model" onSubmit={(event) => { event.preventDefault(); const value = customModel.trim(); if (value) void chooseModel(value); else setCustomModel(null); }}>
           <label htmlFor="chat-custom-model">{t.modelCustomLabel}</label>
           <input id="chat-custom-model" autoFocus value={customModel} onChange={(event) => setCustomModel(event.target.value)} />
-          <button type="submit" className="btn">{t.modelApply}</button>
-          <button type="button" className="btn" onClick={() => setCustomModel(null)}>{t.cancel}</button>
+          <button data-command="preference.chat_model.custom_apply" type="submit" className="btn">{t.modelApply}</button>
+          <button data-command="preference.chat_model.custom_cancel" type="button" className="btn" onClick={() => setCustomModel(null)}>{t.cancel}</button>
         </form>}
         {/* PP-1: a tool being opened says so on its own skeleton, not here. */}
         <p className="chat-composer-note" role="status">{sending === "posting" ? w.sending : busy ? t.working : !availableProvider?.available && !chatId ? availableProvider?.detail ?? (loading ? "" : t.noProvider) : ""}</p>
@@ -2275,7 +2275,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   </>;
   const dialogs = <>
     <dialog ref={newDialog} className="chat-dialog"><form onSubmit={(event) => void createProject(event)}>
-      <div className="chat-dialog__heading"><h2>{t.newProjectHeading}</h2><button type="button" className="chat-icon" aria-label={t.close} onClick={() => newDialog.current?.close()}><Icon name="close" /></button></div>
+      <div className="chat-dialog__heading"><h2>{t.newProjectHeading}</h2><button data-command="view.dialog.close" type="button" className="chat-icon" aria-label={t.close} onClick={() => newDialog.current?.close()}><Icon name="close" /></button></div>
       <label>{t.workspaceLabel}<input id="new-project-workspace" readOnly value={workspace?.workspaceDir ?? ""} /></label>
       <p className="chat-muted">{t.workspaceChange}</p>
       <label>{t.projectName}<input id="new-project-name" autoFocus value={projectName} placeholder={t.projectNamePlaceholder} required
@@ -2283,12 +2283,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       <p className="chat-muted">{t.projectNameHelp}</p>
       {projectName.trim() && workspace && <p className="chat-muted chat-new-project__path">{t.createHere}: {[workspace.workspaceDir, projectName.trim()].join("\\")}</p>}
       {dialogError && <Failure failure={dialogError} language={preferences.language} labels={t} />}
-      <div className="chat-dialog__actions"><button type="button" className="btn" onClick={() => newDialog.current?.close()}>{t.cancel}</button>
-        <button type="submit" className="btn btn--primary" disabled={busy || !projectName.trim()}>{busy ? t.creating : t.create}</button></div>
+      <div className="chat-dialog__actions"><button data-command="view.dialog.close" type="button" className="btn" onClick={() => newDialog.current?.close()}>{t.cancel}</button>
+        <button data-command="project.create.new_confirm" type="submit" className="btn btn--primary" disabled={busy || !projectName.trim()}>{busy ? t.creating : t.create}</button></div>
     </form></dialog>
-    <dialog ref={addDialog} className="chat-dialog"><form onSubmit={(event) => void addProject(event)}><div className="chat-dialog__heading"><h2>{t.addExisting}</h2><button type="button" className="chat-icon" aria-label={t.close} onClick={() => addDialog.current?.close()}><Icon name="close" /></button></div><p className="chat-muted">{t.folderHelp}</p><label>{t.folder}<input autoFocus value={folder} placeholder={t.folderPlaceholder} required onChange={(event) => setFolder(event.target.value)} /></label>{dialogError && <Failure failure={dialogError} language={preferences.language} labels={t} />}<div className="chat-dialog__actions"><button type="button" className="btn" onClick={() => addDialog.current?.close()}>{t.cancel}</button><button type="submit" className="btn btn--primary" disabled={busy || !folder.trim()}>{busy ? t.loading : t.add}</button></div></form></dialog>
+    <dialog ref={addDialog} className="chat-dialog"><form onSubmit={(event) => void addProject(event)}><div className="chat-dialog__heading"><h2>{t.addExisting}</h2><button data-command="view.dialog.close" type="button" className="chat-icon" aria-label={t.close} onClick={() => addDialog.current?.close()}><Icon name="close" /></button></div><p className="chat-muted">{t.folderHelp}</p><label>{t.folder}<input autoFocus value={folder} placeholder={t.folderPlaceholder} required onChange={(event) => setFolder(event.target.value)} /></label>{dialogError && <Failure failure={dialogError} language={preferences.language} labels={t} />}<div className="chat-dialog__actions"><button data-command="view.dialog.close" type="button" className="btn" onClick={() => addDialog.current?.close()}>{t.cancel}</button><button data-command="project.create.add_existing_confirm" type="submit" className="btn btn--primary" disabled={busy || !folder.trim()}>{busy ? t.loading : t.add}</button></div></form></dialog>
     <dialog ref={archiveDialog} className="chat-dialog chat-dialog--archive"><form onSubmit={(event) => void exportArchive(event)}>
-      <div className="chat-dialog__heading"><h2>{t.archiveHeading}</h2><button type="button" className="chat-icon" aria-label={t.close} onClick={() => archiveDialog.current?.close()}><Icon name="close" /></button></div>
+      <div className="chat-dialog__heading"><h2>{t.archiveHeading}</h2><button data-command="view.dialog.close" type="button" className="chat-icon" aria-label={t.close} onClick={() => archiveDialog.current?.close()}><Icon name="close" /></button></div>
       <p className="chat-muted">{t.archiveHelp}</p>
       {project && <p className="chat-archive-project">{project.name} · {project.version === null || project.version === undefined ? t.versionUnknown : t.versionNumber(project.version)}</p>}
       <label>{t.archivePath}<input autoFocus value={archivePath} placeholder={t.archivePathPlaceholder} required
@@ -2296,29 +2296,29 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       <p className="chat-muted">{t.archivePathHelp}</p>
       {archiveSummary && <><p>{t.archiveExported}</p>{archiveSummaryList(archiveSummary)}</>}
       {dialogError && <Failure failure={dialogError} language={preferences.language} labels={t} />}
-      <div className="chat-dialog__actions"><button type="button" className="btn" onClick={() => archiveDialog.current?.close()}>{t.close}</button>
-        <button type="submit" className="btn btn--primary" disabled={!project || busy || !archivePath.trim()}>{busy ? t.archiveExporting : t.archiveExport}</button></div>
+      <div className="chat-dialog__actions"><button data-command="view.dialog.close" type="button" className="btn" onClick={() => archiveDialog.current?.close()}>{t.close}</button>
+        <button data-command="project.archive.export_confirm" type="submit" className="btn btn--primary" disabled={!project || busy || !archivePath.trim()}>{busy ? t.archiveExporting : t.archiveExport}</button></div>
     </form></dialog>
     <dialog ref={restoreDialog} className="chat-dialog chat-dialog--archive"><form onSubmit={(event) => void restoreArchive(event)}>
-      <div className="chat-dialog__heading"><h2>{t.restoreHeading}</h2><button type="button" className="chat-icon" aria-label={t.close} onClick={() => restoreDialog.current?.close()}><Icon name="close" /></button></div>
+      <div className="chat-dialog__heading"><h2>{t.restoreHeading}</h2><button data-command="view.dialog.close" type="button" className="chat-icon" aria-label={t.close} onClick={() => restoreDialog.current?.close()}><Icon name="close" /></button></div>
       <p className="chat-muted">{t.restoreHelp}</p>
       <label>{t.archivePath}<input autoFocus value={restorePath} placeholder={t.archivePathPlaceholder} required
         onChange={(event) => { setRestorePath(event.target.value); setDialogError(null); }} /></label>
       <label>{t.restoreTarget}<input value={restoreTarget} onChange={(event) => { setRestoreTarget(event.target.value); setDialogError(null); }} /></label>
       <p className="chat-muted">{t.restoreTargetHelp}</p>
       {restoreResult && <><p>{t.restored}</p>{archiveSummaryList(restoreResult.summary, restoreResult.summary.projectDir)}
-        <button type="button" className="chat-activity__open" onClick={() => { restoreDialog.current?.close(); selectProject(restoreResult.project); }}><Icon name="folder" /><span>{t.restoredOpen}</span></button></>}
+        <button data-command="project.archive.open_restored" type="button" className="chat-activity__open" onClick={() => { restoreDialog.current?.close(); selectProject(restoreResult.project); }}><Icon name="folder" /><span>{t.restoredOpen}</span></button></>}
       {dialogError && <Failure failure={dialogError} language={preferences.language} labels={t} />}
-      <div className="chat-dialog__actions"><button type="button" className="btn" onClick={() => restoreDialog.current?.close()}>{t.close}</button>
-        <button type="submit" className="btn btn--primary" disabled={busy || !restorePath.trim()}>{busy ? t.restoring : t.restoreRun}</button></div>
+      <div className="chat-dialog__actions"><button data-command="view.dialog.close" type="button" className="btn" onClick={() => restoreDialog.current?.close()}>{t.close}</button>
+        <button data-command="project.archive.restore_confirm" type="submit" className="btn btn--primary" disabled={busy || !restorePath.trim()}>{busy ? t.restoring : t.restoreRun}</button></div>
     </form></dialog>
     <dialog ref={settingsDialog} className="chat-dialog chat-dialog--settings" aria-labelledby="settings-heading" closedby={updateRestarting ? "none" : "closerequest"}
       onClose={() => setSettingsOpen(false)} onCancel={(event) => { if (updateRestarting) event.preventDefault(); }}>
-      <button className="chat-icon settings-close" aria-label={t.close} disabled={updateRestarting} onClick={() => settingsDialog.current?.close()}><Icon name="close" /></button>
+      <button data-command="view.dialog.close" className="chat-icon settings-close" aria-label={t.close} disabled={updateRestarting} onClick={() => settingsDialog.current?.close()}><Icon name="close" /></button>
       <nav className="settings-nav" inert={updateRestarting}>
         <h2 id="settings-heading">{t.settingsHeading}</h2>
         <div className="settings-tabs" role="tablist" aria-orientation="vertical" aria-labelledby="settings-heading" onKeyDown={moveSettingsTab}>
-          {settingsTabs.map((tab) => <button key={tab.id} type="button" role="tab" id={`settings-tab-${tab.id}`} className="settings-tab" aria-controls={`settings-page-${tab.id}`}
+          {settingsTabs.map((tab) => <button data-command="view.settings.page" data-command-arg={tab.id} key={tab.id} type="button" role="tab" id={`settings-tab-${tab.id}`} className="settings-tab" aria-controls={`settings-page-${tab.id}`}
             aria-selected={tab.id === shownSettingsPage} tabIndex={tab.id === shownSettingsPage ? 0 : -1} onClick={() => showSettingsPage(tab.id)}><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
         </div>
         <div className="settings-nav__status">{settings.status}</div>
@@ -2383,19 +2383,19 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         {/* #283: the pin keeps this list open when a workspace opens on the right. */}
         <div className="chat-sidebar__head">
           <button className="chat-new" data-command="chat.new_conversation" onClick={startChat}><Icon name="plus" /><span>{t.newChat}</span></button>
-          <button type="button" className="chat-icon chat-pin" aria-pressed={sidebarPinned === true} aria-label={t.pinSidebar}
+          <button data-command="view.left_column.pin" type="button" className="chat-icon chat-pin" aria-pressed={sidebarPinned === true} aria-label={t.pinSidebar}
             aria-description={sidebarPinned ? t.pinSidebarOn : t.pinSidebarOff} title={sidebarPinned ? t.pinSidebarOn : t.pinSidebarOff} onClick={togglePin}><Icon name="pin" /></button>
         </div>
         <button className="chat-new chat-new--project" data-command="project.create.new" onClick={openNewProject}><Icon name="folder" /><span>{t.newProject}</span></button>
         {/* #300: Agent work running or waiting in any open project, one entry away. */}
-        <button className="chat-new chat-tasks-toggle" aria-expanded={tasksOpen} aria-controls="chat-tasks" onClick={() => setTasksOpen(!tasksOpen)}>
+        <button data-command="view.background.toggle" className="chat-new chat-tasks-toggle" aria-expanded={tasksOpen} aria-controls="chat-tasks" onClick={() => setTasksOpen(!tasksOpen)}>
           <Icon name="tasks" /><span>{t.tasks}</span>
           {tasks.length > 0 && <><span className="chat-count" aria-hidden="true">{tasks.length}</span><span className="sr-only">{t.tasksActive(tasks.length)}</span></>}
         </button>
         {tasksOpen && <ul className="chat-tasks" id="chat-tasks" aria-label={t.tasks}>
           {taskItems}
         </ul>}
-        <div className="chat-project-label"><span>{archivedView ? t.archivedChats : t.projects}</span><button className="chat-icon" aria-label={t.addExisting} title={t.addExisting} onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}><Icon name="plus" /></button></div>
+        <div className="chat-project-label"><span>{archivedView ? t.archivedChats : t.projects}</span><button data-command="project.create.add_existing" className="chat-icon" aria-label={t.addExisting} title={t.addExisting} onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}><Icon name="plus" /></button></div>
         {!projects.length && <p className="chat-muted chat-project-empty">{loading ? t.loading : t.emptyProjects}</p>}
         {archivedView && !visibleSessions.length && <p className="chat-muted chat-project-empty">{t.archiveEmpty}</p>}
         {projects.filter((item) => !archivedView || visibleSessions.some((session) => session.projectDir === item.projectDir)).map((item) => {
@@ -2405,7 +2405,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           const working = busyProjects.get(item.projectDir);
           return <section className="chat-project" key={item.projectDir} data-selected={item.projectDir === projectDir} data-attention={waiting ? "permission" : undefined}>
           <div className="chat-project__head">
-            <button className="chat-project__name" title={item.projectDir} onClick={() => selectProject(item)}
+            <button data-command="project.open" data-command-arg={item.name} className="chat-project__name" title={item.projectDir} onClick={() => selectProject(item)}
               aria-description={[working ? t.projectBusy(working) : null, waiting ? s.needsYouProject(waiting) : null].filter(Boolean).join(" · ") || undefined}><Icon name="folder" /><span>{item.name}</span></button>
             {/* A turn waiting on the architect is not running for them: its mark stands in for Running. */}
             {waiting > 0 && <span className="chat-project__badge" data-kind="needs" aria-hidden="true">{s.needsYou}</span>}
@@ -2421,13 +2421,13 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           {threads.map((session) => {
             const needsYou = session.attention === "permission";
             return <div key={session.id} className="chat-thread-row" data-attention={needsYou ? "permission" : undefined}>
-            <button className="chat-thread" aria-current={session.id === chatId ? "page" : undefined} onClick={() => selectChat(session)} title={session.title}
+            <button data-command="chat.open_conversation" data-command-arg={session.id} className="chat-thread" aria-current={session.id === chatId ? "page" : undefined} onClick={() => selectChat(session)} title={session.title}
               aria-description={needsYou ? s.needsYouThread : undefined}>
               <span className="chat-thread__dot" data-status={session.status} /><span className="chat-thread__title">{session.title}{session.sourceSessionId && <small className="chat-external-badge">{t.externalChat}</small>}</span>
               {/* FN-2: text and colour, not colour alone; the row's description says it to a screen reader. */}
               {needsYou && <span className="chat-needs" aria-hidden="true">{s.needsYou}</span>}
             </button>
-            <button className="chat-icon chat-thread-action" aria-label={`${session.archived ? t.restore : t.archive}: ${session.title}`}
+            <button data-command="chat.archive.toggle" data-command-arg={session.id} className="chat-icon chat-thread-action" aria-label={`${session.archived ? t.restore : t.archive}: ${session.title}`}
               title={session.status === "running" ? t.archiveRunning : session.archived ? t.restore : t.archive}
               aria-description={session.status === "running" ? t.archiveRunning : busy || modelBusy || archiveBusy !== null ? t.actionPending : undefined}
               disabled={session.status === "running" || busy || modelBusy || archiveBusy !== null}
@@ -2439,20 +2439,20 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       </div>
       <div className="chat-sidebar__footer">
         {/* #300: the last seven days of model usage, as MonkeyMonitor recorded it. */}
-        <button className="chat-settings chat-usage" aria-label={t.usageName(usageFigure?.full ?? null)} title={t.usageTitle} onClick={() => void openTool("monkeymonitor", { projectId: "" })}>
+        <button data-command="view.usage.open" className="chat-settings chat-usage" aria-label={t.usageName(usageFigure?.full ?? null)} title={t.usageTitle} onClick={() => void openTool("monkeymonitor", { projectId: "" })}>
           <Icon name="chart" /><span>{t.monitor}</span>{usageFigure && <small className="chat-usage__figure" aria-hidden="true">{t.usageWeek(usageFigure.short)}</small>}
         </button>
-        {updateReady && <button className="chat-settings chat-update" aria-label={t.updateReady} title={t.updateReadyHint} onClick={openSoftwareUpdate}><Icon name="update" /><span>{t.updateReady}</span></button>}
-        <button className="chat-settings chat-archive-toggle" aria-label={archivedView ? t.activeChats : t.archivedChats} title={archivedView ? t.activeChats : t.archivedChats} aria-pressed={archivedView} onClick={() => setArchivedView(!archivedView)}><Icon name="archive" /><span>{archivedView ? t.activeChats : t.archivedChats}</span></button>
-        <button className="chat-settings" aria-label={t.settings} title={t.settings} onClick={openSettings}><Icon name="settings" /><span>{t.settings}</span></button>
+        {updateReady && <button data-command="hub.update_check" className="chat-settings chat-update" aria-label={t.updateReady} title={t.updateReadyHint} onClick={openSoftwareUpdate}><Icon name="update" /><span>{t.updateReady}</span></button>}
+        <button data-command="chat.archive.view" className="chat-settings chat-archive-toggle" aria-label={archivedView ? t.activeChats : t.archivedChats} title={archivedView ? t.activeChats : t.archivedChats} aria-pressed={archivedView} onClick={() => setArchivedView(!archivedView)}><Icon name="archive" /><span>{archivedView ? t.activeChats : t.archivedChats}</span></button>
+        <button data-command="view.settings.open" className="chat-settings" aria-label={t.settings} title={t.settings} onClick={openSettings}><Icon name="settings" /><span>{t.settings}</span></button>
       </div>
     </aside>
     {/* #283: in Focus the conversation keeps its place and layout out of sight, and the strip beside it stands in for it. */}
     <main className="chat-main" ref={mainRef} inert={focused} aria-hidden={focused || undefined}>
-      <header className="chat-header"><button className="chat-icon mobile-project-toggle" aria-label={sidebar ? t.collapse : t.expand} onClick={toggleSidebar}><Icon name="sidebar" /></button><div className="chat-header__text"><span className="chat-header__project">{project?.name ?? "MonkeyHub"}</span><h1>{chat?.id === chatId ? chat.title : t.newChat}{external && <small className="chat-external-badge">{t.externalChat}</small>}</h1></div>
+      <header className="chat-header"><button data-command="view.left_column.toggle" className="chat-icon mobile-project-toggle" aria-label={sidebar ? t.collapse : t.expand} onClick={toggleSidebar}><Icon name="sidebar" /></button><div className="chat-header__text"><span className="chat-header__project">{project?.name ?? "MonkeyHub"}</span><h1>{chat?.id === chatId ? chat.title : t.newChat}{external && <small className="chat-external-badge">{t.externalChat}</small>}</h1></div>
         {/* NA-2: below 900 px this header stays above an open panel. It carries the Stage chip whenever no
             project surface, whose bar has the chip, is on screen, so exactly one chip shows. */}
-        {headerChip && <button type="button" className="chat-header__chip" aria-description={t.openInTree} title={t.openInTree}
+        {headerChip && <button data-command="view.design_tree.open" type="button" className="chat-header__chip" aria-description={t.openInTree} title={t.openInTree}
           onClick={() => void openTool("tree")}><Icon name="tree" /><span>{headerChip}</span></button>}
         {workspaceShown && <button type="button" ref={focusToggle} className="chat-focus" aria-description={t.focusHint} title={t.focusHint}
           onClick={toggleFocus}><Icon name="focus" /><span>{t.focus}</span></button>}</header>
@@ -2513,7 +2513,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       </div>)}
       <div className="chat-rail__spacer" />
       {projectInfo && <div id="chat-project-info" className="chat-project-card" role="dialog" aria-label={t.projectInfo}>
-        <div className="chat-project-card__head"><h2>{t.projectInfo}</h2><button ref={projectInfoClose} className="chat-icon" aria-label={t.close} aria-keyshortcuts="Escape" onClick={closeProjectInfo}><Icon name="close" /></button></div>
+        <div className="chat-project-card__head"><h2>{t.projectInfo}</h2><button data-command="view.dialog.close" ref={projectInfoClose} className="chat-icon" aria-label={t.close} aria-keyshortcuts="Escape" onClick={closeProjectInfo}><Icon name="close" /></button></div>
         {project ? <dl>
           <dt>{t.projects}</dt><dd>{project.name}</dd>
           <dt>{t.path}</dt><dd className="chat-project-card__path" title={project.projectDir}>{project.projectDir}</dd>
@@ -2535,20 +2535,20 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         {/* The local address of the page on the right is a connection detail:
             available when it is asked for, not on screen all the time. */}
         {Boolean(projectRuntime?.operations?.length) && <details className="chat-project-card__connection" open={Boolean(unfinishedOperation) || undefined}>
-          <summary>{t.recoveryDetails}</summary>
+          <summary data-command="view.disclosure.toggle" data-command-arg="recovery_details">{t.recoveryDetails}</summary>
           <p className="chat-muted">{t.runtimeOperations}</p>
           {projectRuntime!.operations!.map((operation) => <div className="chat-project-card__operation" key={operation.operationId}>
             <span>{operation.kind} · {operation.status}</span><small>{operation.committed ? t.operationCommitted : t.operationPending}</small>
-            {operation.candidateId && <button type="button" className="chat-activity__open" disabled={Boolean(toolBusy)} onClick={() => void openTool("monkeyarch", { candidate: operation.candidateId! })}>{t.openCandidate}</button>}
+            {operation.candidateId && <button data-command="view.tab.modeling" type="button" className="chat-activity__open" disabled={Boolean(toolBusy)} onClick={() => void openTool("monkeyarch", { candidate: operation.candidateId! })}>{t.openCandidate}</button>}
           </div>)}
         </details>}
         <details className="chat-project-card__connection">
-          <summary>{t.connectionDetails}</summary>
+          <summary data-command="view.disclosure.toggle" data-command-arg="connection_details">{t.connectionDetails}</summary>
           {selectedTab ? <>
             <label className="sr-only" htmlFor="tool-url">{t.toolUrl}</label>
             <input id="tool-url" className="chat-project-card__url" readOnly value={selectedTab.url} onFocus={(event) => event.currentTarget.select()} />
             <div className="chat-project-card__connection-actions">
-              <button type="button" className="chat-activity__open" onClick={() => setTabs((items) => items.map((item) => item === selectedTab ? { ...item, revision: item.revision + 1 } : item))}><Icon name="refresh" /><span>{t.refresh}</span></button>
+              <button data-command="view.notice.retry" data-command-arg="tool_page" type="button" className="chat-activity__open" onClick={() => setTabs((items) => items.map((item) => item === selectedTab ? { ...item, revision: item.revision + 1 } : item))}><Icon name="refresh" /><span>{t.refresh}</span></button>
               <span className="chat-muted">{t[tools.find((tool) => tool.id === activeTool)!.label]}</span>
             </div>
           </> : <p className="chat-muted">{t.connectionNone}</p>}
@@ -2556,9 +2556,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         {/* A whole project moved as one file: written from what is retained,
             and read back into a folder of its own. Neither touches this view. */}
         <div className="chat-project-card__archive">
-          <button type="button" className="chat-activity__open" disabled={!project || busy}
+          <button data-command="project.archive.export" type="button" className="chat-activity__open" disabled={!project || busy}
             onClick={() => { setDialogError(null); setArchiveSummary(null); setRestoreResult(null); archiveDialog.current?.showModal(); }}><Icon name="archive" /><span>{t.archiveProject}</span></button>
-          <button type="button" className="chat-activity__open" disabled={busy}
+          <button data-command="project.archive.restore" type="button" className="chat-activity__open" disabled={busy}
             onClick={() => { setDialogError(null); setArchiveSummary(null); setRestoreResult(null); setRestoreTarget(workspace?.workspaceDir ?? ""); restoreDialog.current?.showModal(); }}><Icon name="restore" /><span>{t.restoreProject}</span></button>
         </div>
       </div>}
@@ -2566,11 +2566,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           settings at the bottom left are the Hub's, for every conversation. */}
       <div className="chat-rail__group chat-rail__group--project" role="group" aria-label={t.railProject}>
         <span className="chat-rail__caption">{t.railProject}</span>
-        <button ref={projectInfoButton} className="chat-rail__action" aria-label={project ? `${t.railProject}: ${project.name}` : t.railProject}
+        <button data-command="view.project_info.toggle" ref={projectInfoButton} className="chat-rail__action" aria-label={project ? `${t.railProject}: ${project.name}` : t.railProject}
           aria-expanded={projectInfo} aria-haspopup="dialog" aria-controls={projectInfo ? "chat-project-info" : undefined} onClick={() => setProjectInfo(!projectInfo)}>
           <Icon name="settings" /><span>{project?.name ?? t.projectInfo}</span></button>
       </div>
-      <button className="chat-rail__action chat-rail__action--view" aria-pressed={panel} aria-label={panel ? t.hideTools : t.showTools} onClick={() => setPanel(!panel)}>
+      <button data-command="view.side_panel" className="chat-rail__action chat-rail__action--view" aria-pressed={panel} aria-label={panel ? t.hideTools : t.showTools} onClick={() => setPanel(!panel)}>
         <Icon name="panel" /><span aria-hidden="true">{panel ? t.hideTools : t.showTools}</span></button>
     </nav>
     {dialogs}

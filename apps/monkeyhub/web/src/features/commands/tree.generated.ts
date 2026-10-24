@@ -645,6 +645,33 @@ export const COMMAND_TREE: CommandTree = {
       ]
     },
     {
+      "id": "attention.queue",
+      "owner": "hub.shell",
+      "kind": "manage",
+      "status": "PARTIAL",
+      "host": "hub",
+      "purpose": {
+        "en": "Work through the attention queue: put a card off for later, dismiss it, bring it back, undo what it did, or take every recommendation at once and undo that.",
+        "zh-CN": "处理关注队列：把一张卡放到稍后、忽略、找回、撤销它做过的事，或者一次全部按建议，再撤销这一次。"
+      },
+      "terms": [
+        "put a card off for later",
+        "dismiss a card",
+        "bring a card back",
+        "undo a card",
+        "take every recommendation",
+        "稍后再看",
+        "忽略这张卡",
+        "找回卡片",
+        "撤销",
+        "全部按建议",
+        "attention queue",
+        "cards",
+        "关注队列",
+        "关注卡片"
+      ]
+    },
+    {
       "id": "chat.conversation",
       "owner": "hub.shell",
       "kind": "manage",
@@ -4297,7 +4324,8 @@ export const COMMAND_TREE: CommandTree = {
         "模91",
         "文10",
         "文34",
-        "树16"
+        "树16",
+        "栏7"
       ],
       "args": [
         "runId",
@@ -4362,7 +4390,9 @@ export const COMMAND_TREE: CommandTree = {
       "place": null,
       "when": [],
       "shortcut": null,
-      "entries": [],
+      "entries": [
+        "栏6"
+      ],
       "args": []
     },
     {
@@ -4518,7 +4548,8 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [
-        "模21"
+        "模21",
+        "栏8"
       ],
       "args": []
     },
@@ -4562,7 +4593,9 @@ export const COMMAND_TREE: CommandTree = {
         "模27",
         "模87",
         "文35",
-        "树26"
+        "树26",
+        "壳76",
+        "栏9"
       ],
       "args": []
     },
@@ -4581,7 +4614,9 @@ export const COMMAND_TREE: CommandTree = {
       "place": null,
       "when": [],
       "shortcut": null,
-      "entries": [],
+      "entries": [
+        "栏5"
+      ],
       "args": []
     },
     {
@@ -5040,6 +5075,28 @@ export const COMMAND_TREE: CommandTree = {
       ]
     },
     {
+      "id": "candidate.compare.option",
+      "capability": "candidate.compare",
+      "label": {
+        "en": "Compare an option",
+        "zh-CN": "查看某个方案的改动"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳55"
+      ],
+      "args": [
+        "optionId"
+      ]
+    },
+    {
       "id": "candidate.compare.decide",
       "capability": "candidate.compare",
       "label": {
@@ -5478,6 +5535,144 @@ export const COMMAND_TREE: CommandTree = {
       ]
     },
     {
+      "id": "attention.queue.later",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Later",
+        "zh-CN": "稍后"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "cardId"
+      ]
+    },
+    {
+      "id": "attention.queue.dismiss",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Dismiss the card",
+        "zh-CN": "忽略这张卡"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "cardId"
+      ]
+    },
+    {
+      "id": "attention.queue.reopen",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Bring the card back",
+        "zh-CN": "找回这张卡"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "cardId"
+      ]
+    },
+    {
+      "id": "attention.queue.undo",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Undo the card",
+        "zh-CN": "撤销这张卡"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "cardId"
+      ]
+    },
+    {
+      "id": "attention.queue.bulk_recommended",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Take every recommendation",
+        "zh-CN": "全部按建议"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "attention.queue.bulk_undo",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Undo taking every recommendation",
+        "zh-CN": "撤销全部按建议"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "attention.queue.answer_permission",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Answer a permission request",
+        "zh-CN": "答复授权请求"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "sessionId",
+        "permissionId",
+        "optionId"
+      ]
+    },
+    {
       "id": "chat.new_conversation",
       "capability": "chat.conversation",
       "label": {
@@ -5516,11 +5711,365 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [
-        "壳33"
+        "壳33",
+        "壳48"
       ],
       "args": [
         "sessionId"
       ]
+    },
+    {
+      "id": "chat.composer.send",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Send the message",
+        "zh-CN": "发送消息"
+      },
+      "terms": [
+        "send"
+      ],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": "composer",
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳80",
+        "壳89"
+      ],
+      "args": [
+        "sessionId",
+        "content"
+      ]
+    },
+    {
+      "id": "chat.composer.interject",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Interject while it works",
+        "zh-CN": "插话"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳89"
+      ],
+      "args": []
+    },
+    {
+      "id": "chat.composer.stop",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Stop the turn",
+        "zh-CN": "停止这一轮"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳88"
+      ],
+      "args": []
+    },
+    {
+      "id": "chat.composer.menu",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Attachments and new topic",
+        "zh-CN": "附件与新话题"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": "composer",
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳81"
+      ],
+      "args": []
+    },
+    {
+      "id": "chat.composer.attach",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Add attachments",
+        "zh-CN": "添加附件"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳74",
+        "壳82"
+      ],
+      "args": []
+    },
+    {
+      "id": "chat.composer.topic",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "New topic",
+        "zh-CN": "新话题"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳83"
+      ],
+      "args": []
+    },
+    {
+      "id": "chat.composer.remove_topic",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Remove the new topic",
+        "zh-CN": "移除新话题"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳75"
+      ],
+      "args": []
+    },
+    {
+      "id": "chat.composer.remove_images",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Remove the images under discussion",
+        "zh-CN": "移除讨论的图片"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳77"
+      ],
+      "args": []
+    },
+    {
+      "id": "chat.composer.remove_attachment",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Remove an attachment",
+        "zh-CN": "移除附件"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳79"
+      ],
+      "args": [
+        "file"
+      ]
+    },
+    {
+      "id": "chat.permission.choose",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Answer the agent's request",
+        "zh-CN": "回答授权请求"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳53"
+      ],
+      "args": [
+        "optionId"
+      ]
+    },
+    {
+      "id": "chat.permission.cancel",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Cancel the agent's request",
+        "zh-CN": "取消授权请求"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳53"
+      ],
+      "args": []
+    },
+    {
+      "id": "chat.archive.toggle",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Archive or restore a conversation",
+        "zh-CN": "归档或恢复对话"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳34"
+      ],
+      "args": [
+        "sessionId"
+      ]
+    },
+    {
+      "id": "chat.archive.view",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Show archived conversations",
+        "zh-CN": "查看已归档对话"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳37"
+      ],
+      "args": []
+    },
+    {
+      "id": "chat.archive.restore",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Restore this conversation",
+        "zh-CN": "恢复此对话"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳71"
+      ],
+      "args": []
+    },
+    {
+      "id": "chat.suggestion.accept",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Take the suggestion",
+        "zh-CN": "按建议做"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳57"
+      ],
+      "args": []
+    },
+    {
+      "id": "chat.suggestion.adjust",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Adjust the suggestion",
+        "zh-CN": "调整想法"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳58"
+      ],
+      "args": []
+    },
+    {
+      "id": "chat.suggestion.dismiss",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Skip the suggestion",
+        "zh-CN": "暂时跳过建议"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳59"
+      ],
+      "args": []
     },
     {
       "id": "project.create.new",
@@ -5539,7 +6088,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳6",
-        "壳28"
+        "壳28",
+        "壳39"
       ],
       "args": []
     },
@@ -5563,7 +6113,8 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳7",
-        "壳31"
+        "壳31",
+        "壳40"
       ],
       "args": []
     },
@@ -5609,6 +6160,133 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳11",
         "壳108"
+      ],
+      "args": []
+    },
+    {
+      "id": "project.open",
+      "capability": "project.manage",
+      "label": {
+        "en": "Open a project",
+        "zh-CN": "打开项目"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳32"
+      ],
+      "args": [
+        "project"
+      ]
+    },
+    {
+      "id": "project.create.new_confirm",
+      "capability": "project.manage",
+      "label": {
+        "en": "Create the project",
+        "zh-CN": "创建项目"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗4",
+        "窗6"
+      ],
+      "args": []
+    },
+    {
+      "id": "project.create.add_existing_confirm",
+      "capability": "project.manage",
+      "label": {
+        "en": "Add the project",
+        "zh-CN": "添加项目"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗8",
+        "窗10"
+      ],
+      "args": []
+    },
+    {
+      "id": "project.archive.export_confirm",
+      "capability": "project.manage",
+      "label": {
+        "en": "Export the archive",
+        "zh-CN": "导出归档"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗12",
+        "窗14"
+      ],
+      "args": []
+    },
+    {
+      "id": "project.archive.restore_confirm",
+      "capability": "project.manage",
+      "label": {
+        "en": "Restore the archive",
+        "zh-CN": "恢复归档"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗16",
+        "窗17",
+        "窗20"
+      ],
+      "args": []
+    },
+    {
+      "id": "project.archive.open_restored",
+      "capability": "project.manage",
+      "label": {
+        "en": "Open the restored project",
+        "zh-CN": "打开恢复的项目"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗18"
       ],
       "args": []
     },
@@ -5670,7 +6348,6 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳3",
         "壳20",
-        "壳27",
         "壳41"
       ],
       "args": []
@@ -5743,7 +6420,8 @@ export const COMMAND_TREE: CommandTree = {
         "模115",
         "板1",
         "文1",
-        "文3"
+        "文3",
+        "栏3"
       ],
       "args": []
     },
@@ -5767,7 +6445,108 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": "Alt+3",
       "entries": [
-        "壳91"
+        "壳91",
+        "壳102"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.left_column.pin",
+      "capability": "shell.layout",
+      "label": {
+        "en": "Keep the project column open",
+        "zh-CN": "钉住项目栏"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳27"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.conversation.steps",
+      "capability": "shell.layout",
+      "label": {
+        "en": "Show a turn's steps",
+        "zh-CN": "展开这一轮的步骤"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳51"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.conversation.jump_latest",
+      "capability": "shell.layout",
+      "label": {
+        "en": "Jump to the latest message",
+        "zh-CN": "跳到最新消息"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳67"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.tab.cancel",
+      "capability": "shell.layout",
+      "label": {
+        "en": "Stop opening the workspace",
+        "zh-CN": "取消打开工作面"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳90"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.tab.layout",
+      "capability": "shell.layout",
+      "label": {
+        "en": "Layout",
+        "zh-CN": "排版"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "栏3"
       ],
       "args": []
     },
@@ -5813,7 +6592,9 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "壳93",
         "模2",
-        "模95"
+        "模95",
+        "壳42",
+        "壳54"
       ],
       "args": []
     },
@@ -7189,7 +7970,154 @@ export const COMMAND_TREE: CommandTree = {
       "place": null,
       "when": [],
       "shortcut": null,
-      "entries": [],
+      "entries": [
+        "栏4"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.background.toggle",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Show running tasks",
+        "zh-CN": "展开任务列表"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳29"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.background.open_task",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Open a task",
+        "zh-CN": "打开任务"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳30"
+      ],
+      "args": [
+        "taskId"
+      ]
+    },
+    {
+      "id": "view.project_info.toggle",
+      "capability": "shell.pages",
+      "label": {
+        "en": "This project",
+        "zh-CN": "此项目信息"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳98"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.settings.page",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Settings page",
+        "zh-CN": "设置页"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗47"
+      ],
+      "args": [
+        "page"
+      ]
+    },
+    {
+      "id": "view.open_file.image",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Enlarge the image",
+        "zh-CN": "放大图片"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳62"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.open_file.document",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Open the document",
+        "zh-CN": "打开文档"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳63"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.open_file.download",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Download the file",
+        "zh-CN": "下载文件"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳64",
+        "窗2"
+      ],
       "args": []
     },
     {
@@ -7274,7 +8202,8 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [
-        "壳23"
+        "壳23",
+        "窗51"
       ],
       "args": []
     },
@@ -7294,7 +8223,8 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [
-        "壳23"
+        "壳23",
+        "窗51"
       ],
       "args": []
     },
@@ -7314,7 +8244,8 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [
-        "壳23"
+        "壳23",
+        "窗51"
       ],
       "args": []
     },
@@ -7334,7 +8265,8 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [
-        "壳23"
+        "壳23",
+        "窗51"
       ],
       "args": []
     },
@@ -7399,6 +8331,478 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
+      "id": "preference.appearance.language",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Language",
+        "zh-CN": "语言"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗48"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.appearance.theme",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Theme",
+        "zh-CN": "主题"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗49"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.appearance.size",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Text size",
+        "zh-CN": "字号"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗50"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.chat_model.change",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Change the model",
+        "zh-CN": "更换模型"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳68"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.chat_model.choose",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Model for this conversation",
+        "zh-CN": "这个对话的模型"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": "composer",
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳84"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.chat_model.custom_apply",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Use a custom model id",
+        "zh-CN": "使用自定义模型 ID"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳85",
+        "壳86"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.chat_model.custom_cancel",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Cancel the custom model id",
+        "zh-CN": "取消自定义模型 ID"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳87"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.chat_model.default_cli",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Default CLI",
+        "zh-CN": "默认 CLI"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗52"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.chat_model.default_model",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Default model",
+        "zh-CN": "默认模型"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗53"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.chat_model.default_custom",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Custom default model id",
+        "zh-CN": "自定义默认模型 ID"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗54"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.chat_provider.sign_in",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Sign in to a CLI",
+        "zh-CN": "登录 CLI"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗55"
+      ],
+      "args": [
+        "provider"
+      ]
+    },
+    {
+      "id": "preference.chat_provider.plan_provider",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Coding Plan provider",
+        "zh-CN": "Coding Plan 服务商"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗56"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.chat_provider.plan_url",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Coding Plan endpoint",
+        "zh-CN": "Coding Plan 端点地址"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗57"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.secret.key",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Saved key or token",
+        "zh-CN": "保存的密钥或令牌"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗58",
+        "窗65"
+      ],
+      "args": [
+        "credential"
+      ]
+    },
+    {
+      "id": "preference.secret.clear",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Clear a saved key",
+        "zh-CN": "清除保存的密钥"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗59",
+        "窗66"
+      ],
+      "args": [
+        "credential"
+      ]
+    },
+    {
+      "id": "preference.secret.get_link",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Get a key or token",
+        "zh-CN": "获取密钥或令牌"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗60",
+        "窗68"
+      ],
+      "args": [
+        "credential"
+      ]
+    },
+    {
+      "id": "preference.render_provider.provider",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Image provider",
+        "zh-CN": "图像供应商"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗62"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.render_provider.model",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Image model",
+        "zh-CN": "图像模型"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗63"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.render_provider.timeout",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Render request timeout",
+        "zh-CN": "渲染请求超时"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗64"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.render_provider.check",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Check the render key",
+        "zh-CN": "检查渲染密钥"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗67"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.workspace.projects_folder",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Folder for new projects",
+        "zh-CN": "新项目所在文件夹"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗69"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.workspace.library_project",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Skill library project",
+        "zh-CN": "技能库项目"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗70"
+      ],
+      "args": []
+    },
+    {
+      "id": "preference.developer_mode",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Developer mode",
+        "zh-CN": "开发者模式"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗72"
+      ],
+      "args": []
+    },
+    {
       "id": "hub.update_check",
       "capability": "hub.update",
       "label": {
@@ -7414,7 +8818,88 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [
-        "壳25"
+        "壳25",
+        "壳36"
+      ],
+      "args": []
+    },
+    {
+      "id": "hub.update_apply",
+      "capability": "hub.update",
+      "label": {
+        "en": "Restart to update",
+        "zh-CN": "重启更新"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗83"
+      ],
+      "args": []
+    },
+    {
+      "id": "hub.update_check_now",
+      "capability": "hub.update",
+      "label": {
+        "en": "Check for updates now",
+        "zh-CN": "立即检查更新"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗84"
+      ],
+      "args": []
+    },
+    {
+      "id": "hub.update_patch",
+      "capability": "hub.update",
+      "label": {
+        "en": "Choose a patch ZIP",
+        "zh-CN": "选择补丁 ZIP"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗86"
+      ],
+      "args": []
+    },
+    {
+      "id": "hub.update_auto",
+      "capability": "hub.update",
+      "label": {
+        "en": "Automatic updates",
+        "zh-CN": "自动更新"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "窗87"
       ],
       "args": []
     },
@@ -7613,7 +9098,12 @@ export const COMMAND_TREE: CommandTree = {
         "渲23",
         "树8",
         "制3",
-        "量5"
+        "量5",
+        "壳47",
+        "壳105",
+        "窗61",
+        "窗85",
+        "栏1"
       ],
       "args": [
         "notice"
@@ -7658,7 +9148,9 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [
-        "板18"
+        "板18",
+        "壳49",
+        "壳70"
       ],
       "args": []
     },
@@ -7694,7 +9186,10 @@ export const COMMAND_TREE: CommandTree = {
         "制16",
         "量9",
         "量10",
-        "量19"
+        "量19",
+        "壳101",
+        "壳103",
+        "窗71"
       ],
       "args": [
         "section"
@@ -7746,7 +9241,18 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "板71",
         "板75",
-        "板82"
+        "板82",
+        "壳100",
+        "窗1",
+        "窗3",
+        "窗5",
+        "窗7",
+        "窗9",
+        "窗11",
+        "窗13",
+        "窗15",
+        "窗19",
+        "窗46"
       ],
       "args": []
     }

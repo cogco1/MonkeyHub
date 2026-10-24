@@ -124,14 +124,14 @@
             "apps/monkeyhub/web/scripts/check-generated.mjs",
             "apps/monkeyhub/web/scripts/command-tree.mjs",
             "apps/monkeyhub/web/src/ChatShell.tsx",
-            "apps/monkeyhub/web/src/HubMenu.tsx",
             "apps/monkeyhub/web/src/app/AdvancedTools.tsx",
             "apps/monkeyhub/web/src/app/AttentionShell.tsx",
+            "apps/monkeyhub/web/src/app/ProjectWorkspace.tsx",
             "apps/monkeyhub/web/src/app/attentionShell.css",
+            "apps/monkeyhub/web/src/features/chrome/SurfaceChrome.tsx",
             "apps/monkeyhub/web/src/features/commands/",
             "apps/monkeyhub/web/src/i18n/messages.en.ts",
             "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-            "apps/monkeyhub/web/src/main.tsx",
             "apps/monkeyhub/web/src/notifications/AttentionHost.tsx",
             "apps/monkeyhub/web/src/notifications/attention.css",
             "apps/monkeyhub/web/src/notifications/attention.ts",
@@ -144,18 +144,16 @@
             "apps/monkeyhub/web/src/notifications/queue.ts",
             "apps/monkeyhub/web/src/notifications/regions.ts",
             "apps/monkeyhub/web/src/notifications/useAttention.ts",
+            "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
             "apps/monkeyhub/web/test/attention.test.ts",
             "apps/monkeyhub/web/test/attentionCards.test.ts",
             "apps/monkeyhub/web/test/attentionShell.browser.mjs",
             "apps/monkeyhub/web/test/attentionShell.test.ts",
             "apps/monkeyhub/web/test/canvasChrome.browser.mjs",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "apps/monkeyhub/web/test/commandPalette.browser.mjs",
             "apps/monkeyhub/web/test/commandPalette.test.ts",
             "apps/monkeyhub/web/test/commandTree.test.ts",
-            "apps/monkeyhub/web/test/designTree.browser.mjs",
-            "apps/monkeyhub/web/test/notifications.browser.mjs",
-            "apps/monkeyhub/web/test/settingsAutosave.browser.mjs"
+            "apps/monkeyhub/web/test/designTree.browser.mjs"
           ],
           "depends_on": []
         },
@@ -167,7 +165,7 @@
           "base_ref": "cc8f54e20546c73a1e1e1763a5001a8495c48675",
           "contributor": "Claude",
           "reviewer": null,
-          "handoff": "T-1a then T-1b: Hub components render data-command ids from the command tree (format agreed with GH-300/command-tree) and browser tests reach controls by command id instead of label or position, each test file's result unchanged. T-1b (ChatShell, HubMenu, settings dialog, notifications) waits for GH-300/command-tree's shell ids. Not merged before the paper relay ends.",
+          "handoff": "T-1a then T-1b: Hub components render data-command ids from the command tree (format agreed with GH-300/command-tree) and browser tests reach controls by command id instead of label or position, each test file's result unchanged. T-1b (ChatShell, HubMenu, settings dialog, notifications) waits for GH-300/command-tree's shell ids. Not merged before the paper relay ends. Stage.tsx, SurfaceChrome.tsx and Board.tsx carry their command ids and go to GH-300/shell (2-3b).",
           "modules": [
             "hub.shell"
           ],
@@ -250,28 +248,6 @@
           "depends_on": []
         },
         {
-          "id": "decision-rows",
-          "status": "active",
-          "branch": "claude/300-decision-rows",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-decision-rows",
-          "base_ref": "b03420ddd87b4b48d586b943f27b6f108df2f490",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": "Three-channel convergence 6-2 (ADR-014 B4): the embedded pages' 13 'continue from here' and 'record changes and continue' rows become one in-page decision card that looks like the attention queue's DecisionCard and appears only when needed. Stacked on GH-300/shell (#695) with GH-300/tests (#684) merged; the seven page files are handed over from GH-300/tests, whose work on them (T-1a) is done. Continued by the test-migration session from 2026-10-24 (the coordinator's decision), which opens its PR and stacks 6-1's document and Modeling pages on it. On this branch Stage.tsx is this lane's alone for its decision rows; GH-300/shell holds it on #695 and #697, and whichever merges second reconciles. DocumentCanvas.tsx and DocumentTracingPanel.tsx go to GH-300/entry-document (6-1c) on claude/300-entry-document; Stage.tsx and ParameterLocksPanel.tsx go to 6-1's Modeling page later.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/src/features/designTree/DesignTreeBar.tsx",
-            "apps/monkeyhub/web/src/features/designTree/DesignTreeDetails.tsx",
-            "apps/monkeyhub/web/src/features/stage/ParameterLocksPanel.tsx",
-            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
-            "apps/monkeyhub/web/src/notifications/cards/InlineDecision.tsx",
-            "apps/monkeyhub/web/test/inlineDecision.test.ts"
-          ],
-          "depends_on": []
-        },
-        {
           "id": "entry-rules",
           "status": "active",
           "branch": "claude/300-entry-rules",
@@ -306,9 +282,57 @@
             "hub.shell"
           ],
           "write_scope": [
-            "apps/monkeyhub/web/test/commandTreeCoverage.test.ts",
+            "apps/monkeyhub/web/test/commandTreeCoverage.test.ts"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "shell-tests",
+          "status": "active",
+          "branch": "claude/300-shell-tests",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-shell-tests",
+          "base_ref": "0dd76ca7b4fbec15185369f18f236228f52995f7",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "T-1b on top of GH-300/shell (#695), GH-300/tests (#684) and GH-300/registry-data: the old shell (ChatShell, HubMenu, the settings pages in main.tsx, the chat cards) renders data-command ids, its browser tests reach controls by command id, and the shell's entry rows are registered as capability groups with ui.commands from the 711-entry inventory, reusing the ids GH-300/shell already registered. T-1b's data-command ids in ChatShell.tsx are done and the file is back with GH-300/shell; it hands the file over again if T-1b needs another change there.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatMessageContent.tsx",
+            "apps/monkeyhub/web/src/ChatSuggestionCard.tsx",
+            "apps/monkeyhub/web/src/HubMenu.tsx",
+            "apps/monkeyhub/web/src/SoftwareUpdateSettings.tsx",
+            "apps/monkeyhub/web/src/app/BoardModeSwitch.tsx",
+            "apps/monkeyhub/web/src/main.tsx",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/test/eventStream.browser.mjs",
+            "apps/monkeyhub/web/test/notifications.browser.mjs",
+            "apps/monkeyhub/web/test/settingsAutosave.browser.mjs",
             "docs/audits/hub-entries.md",
             "tools/tests/test_hub_entries_coverage.py"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "decision-rows",
+          "status": "active",
+          "branch": "claude/300-decision-rows",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-decision-rows",
+          "base_ref": "b03420ddd87b4b48d586b943f27b6f108df2f490",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Three-channel convergence 6-2 (ADR-014 B4): the embedded pages' 13 'continue from here' and 'record changes and continue' rows become one in-page decision card that looks like the attention queue's DecisionCard and appears only when needed. Stacked on GH-300/shell (#695) with GH-300/tests (#684) merged; the seven page files are handed over from GH-300/tests, whose work on them (T-1a) is done. Continued by the test-migration session from 2026-10-24 (the coordinator's decision), which opens its PR and stacks 6-1's document and Modeling pages on it. On this branch Stage.tsx is this lane's alone for its decision rows; GH-300/shell holds it on #695 and #697, and whichever merges second reconciles. DocumentCanvas.tsx and DocumentTracingPanel.tsx go to GH-300/entry-document (6-1c) on claude/300-entry-document; Stage.tsx and ParameterLocksPanel.tsx go to 6-1's Modeling page later.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/features/designTree/DesignTreeBar.tsx",
+            "apps/monkeyhub/web/src/features/designTree/DesignTreeDetails.tsx",
+            "apps/monkeyhub/web/src/features/stage/ParameterLocksPanel.tsx",
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/src/notifications/cards/InlineDecision.tsx",
+            "apps/monkeyhub/web/test/inlineDecision.test.ts"
           ],
           "depends_on": []
         },
