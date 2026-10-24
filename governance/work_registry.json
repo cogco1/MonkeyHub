@@ -281,8 +281,7 @@
             "apps/monkeyhub/web/test/versionNotifications.browser.mjs",
             "apps/monkeyhub/web/test/versionsLocale.browser.mjs",
             "apps/monkeyhub/web/test/viewportSelection.browser.mjs",
-            "apps/monkeyhub/web/test/workModelExport.browser.mjs",
-            "apps/monkeyhub/web/test/workingCopy.browser.mjs"
+            "apps/monkeyhub/web/test/workModelExport.browser.mjs"
           ],
           "depends_on": []
         },
@@ -368,10 +367,17 @@
           ],
           "write_scope": [
             "apps/monkeyhub/web/src/api/project-runtime/client.ts",
+            "apps/monkeyhub/web/src/app/workingHead.ts",
             "apps/monkeyhub/web/src/features/designHistory/",
+            "apps/monkeyhub/web/src/features/designTree/continueUndo.ts",
+            "apps/monkeyhub/web/src/features/designTree/fixture.ts",
+            "apps/monkeyhub/web/src/features/designTree/useDesignTree.ts",
             "apps/monkeyhub/web/test/designTree.browser.mjs",
+            "apps/monkeyhub/web/test/designTree.test.ts",
             "apps/monkeyhub/web/test/historyPage.browser.mjs",
             "apps/monkeyhub/web/test/historyRows.test.ts",
+            "apps/monkeyhub/web/test/workingCopy.browser.mjs",
+            "apps/monkeyhub/web/test/workingHead.test.ts",
             "services/project-runtime/src/project_runtime/api/dto/working_draft.py",
             "services/project-runtime/src/project_runtime/api/routes/working_design.py",
             "services/project-runtime/src/project_runtime/application/working_draft.py"

@@ -3,7 +3,7 @@ import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 
-import type { WorkingDraftDto, WorkingDraftSelectionDto } from "../src/api/project-runtime/generated";
+import type { WorkingDraftDto } from "../src/api/project-runtime/generated";
 
 type WorkingHead = typeof import("../src/app/workingHead.ts");
 type Errors = typeof import("../src/api/project-runtime/error.ts");
@@ -28,15 +28,17 @@ const head: HeadRef = { runId: "cand-3", stateDigest: "d3", lineage: ["cand-3", 
 const project = "riverside-library";
 
 /**
- * One project's working position as the runtime keeps it: Current, compare-and-swapped on its revision.
- * `move` is another writer (the Agent's Continue, another window); `autosave` moves only the revision.
+ * One project's working position as the runtime keeps it: Current, compare-and-swapped on its revision, and the
+ * Runtime's Undo over it. `move` is another writer (the Agent's Continue, another window); `autosave` moves only the
+ * revision. `calls` keeps every Undo asked for, `writes` only those the runtime wrote.
  */
 function runtimePosition(api: Api, current: { runId: string; branchId: string | null } | null) {
   let revision = 1;
   let entry = current && { ...current, updatedAt: "2026-10-01T00:00:00Z" };
   let localDraft: WorkingDraftDto["localDraft"] = null;
   let raceOnce = false;
-  const writes: WorkingDraftSelectionDto[] = [];
+  type UndoBody = { projectId: string; previous: { runId: string; branchId: string | null }; continued: string };
+  const writes: UndoBody[] = [], calls: UndoBody[] = [];
   const read = (): WorkingDraftDto => ({ projectId: project, revisionSha256: `rev-${revision}`, current: entry, localDraft });
   const move = (runId: string, branchId: string | null = null) => {
     entry = { runId, branchId, updatedAt: "2026-10-01T00:01:00Z" };
@@ -44,6 +46,7 @@ function runtimePosition(api: Api, current: { runId: string; branchId: string | 
   };
   return {
     writes,
+    calls,
     get head() { return entry?.runId ?? null; },
     move,
     autosave() { revision += 1; },
@@ -53,13 +56,22 @@ function runtimePosition(api: Api, current: { runId: string; branchId: string | 
       localDraft = { source: { projectId: project, stateDigest: "d", sourceRunId: entry?.runId ?? null }, commands: [], updatedAt: "2026-10-01T00:02:00Z" };
     },
     async workingDraft() { return read(); },
-    async selectWorkingDraft(body: WorkingDraftSelectionDto) {
-      writes.push(body);
-      if (raceOnce) { raceOnce = false; revision += 1; }
-      if (body.baseRevisionSha256 !== `rev-${revision}`) {
+    /** POST /api/working-design/undo, as the Runtime answers it. */
+    async undoWorkingDesign(body: UndoBody) {
+      calls.push(body);
+      const current = entry?.runId ?? null;
+      if (current === body.previous.runId) return read();
+      if (current !== body.continued) {
+        throw new api.StudioApiError({ status: 409, code: "DESIGN_TREE_UNDO_MOVED", detail: "The working design moved on since that switch." });
+      }
+      if (localDraft) throw new api.StudioApiError({ status: 409, code: "DESIGN_TREE_UNSYNCED_EDITS", detail: "Unrecorded Modeling edits." });
+      // An autosave between the Runtime's read and its write loses the compare-and-swap.
+      if (raceOnce) {
+        raceOnce = false; revision += 1;
         throw new api.StudioApiError({ status: 409, code: "WORKING_DRAFT_STALE", detail: "The working position changed." });
       }
-      if (body.runId) move(body.runId, body.branchId ?? null);
+      move(body.previous.runId, body.previous.branchId);
+      writes.push(body);
       return read();
     },
   };
@@ -101,7 +113,7 @@ test("the viewer follows only when it was showing the base", async (t) => {
   assert.equal(viewerFollows("history-run", "cand-2"), false, "an explicitly opened history view is kept");
 });
 
-test("#575 撤销 on a followed head is the Design Tree's Undo: it moves the head back onto the base and its line", async (t) => {
+test("#575 撤销 on a followed head is the Runtime's Undo: it moves the head back onto the base and its line", async (t) => {
   const api = await harness(t);
   // This tab edits from cand-2 on main, as the position it read names it; the Agent then continues to cand-3.
   const runtime = runtimePosition(api, { runId: "cand-2", branchId: "main" });
@@ -109,14 +121,14 @@ test("#575 撤销 on a followed head is the Design Tree's Undo: it moves the hea
   runtime.move("cand-3");
   const undo = api.followUndo(read, "cand-2", "cand-3");
   assert.deepEqual(undo, { runId: "cand-2", branchId: "main", continued: "cand-3" });
-  // An autosave between this tab's read and its write is read again, not overwritten.
+  // An Undo that lost a race with an autosave is asked again, not given up.
   runtime.autosave();
   runtime.raceNextWrite();
   assert.equal(await api.undoFollow(runtime, project, undo!), "undone");
   assert.equal(runtime.head, "cand-2", "the head is back on the base the follow came from");
-  assert.deepEqual(runtime.writes.at(-1), { projectId: project, runId: "cand-2", baseRevisionSha256: "rev-4", branchId: "main" },
-    "the same Continue write as the Design Tree's, against the position as read now");
-  assert.equal(runtime.writes.length, 2);
+  assert.deepEqual(runtime.writes, [{ projectId: project, previous: { runId: "cand-2", branchId: "main" }, continued: "cand-3" }],
+    "the same Undo as the Design Tree's: the base's entry, while Current stands on the followed run");
+  assert.equal(runtime.calls.length, 2, "the race was asked again once");
 });
 
 test("#575 no 撤销 when nothing names the previous position, and none once Current moved on", async (t) => {

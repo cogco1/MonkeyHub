@@ -1,7 +1,7 @@
 /** The Design Tree (#284) in the real ProjectWorkspace and the real Hub rail, on Excalidraw.
  * The Project Runtime is a stub serving the typed fixture (features/designTree/fixture.ts)
  * in the #294 design-history contract until codex/294-admission-record lands; it answers
- * Continue (PUT /api/working-draft) and Accept (POST /api/candidates/{id}/accept) with the
+ * Continue (POST /api/working-design/switch, its Undo /undo) and Accept (POST /api/candidates/{id}/accept) with the
  * existing routes' rules. Arch and Board are replaced by stubs so the tree is what runs.
  * DESIGN_TREE_SCREENSHOTS=<dir> writes review screenshots; --serve keeps the page open.
  */
@@ -171,6 +171,9 @@ async function runtime(request, response, url, body) {
     // What Modeling's Record edits and continue does to the working draft here: its edits become recorded.
     if (method === "POST" && name === "/api/fixture/record") { recorded += 1; fixture.state.localDraft = null; return json({}); }
     if (method === "PUT" && name === "/api/working-draft") { writes.push({ method, name, body }); return json(fixture.selectWorkingDraft(body)); }
+    // 2-6: Continue and its Undo are the Runtime's Switch and Undo; a refused one wrote nothing, so it is not a write here.
+    if (method === "POST" && name === "/api/working-design/switch") { const answer = fixture.switchWorkingDesign(body); writes.push({ method, name, body }); return json(answer); }
+    if (method === "POST" && name === "/api/working-design/undo") { const answer = fixture.undoWorkingDesign(body); writes.push({ method, name, body }); return json(answer); }
     if (method === "POST" && name === "/api/candidate-reviews") {
       writes.push({ method, name, body });
       const key = `${body.subjectKind}:${body.subjectRef}`, previous = reviews.get(key);
@@ -765,7 +768,7 @@ try {
   await tab.waitForFunction(() => window.__arch.initialRunId === "run-s2-layout");
   assert.equal(await tab.locator(".stage-chip__viewing").count(), 0);
 
-  // Continue moves the Working Head through PUT /api/working-draft, and the trunk re-roots. Unrecorded
+  // Continue moves the Working Head through the Runtime's Switch, and the trunk re-roots. Unrecorded
   // Modeling edits refuse it first, beside one click that records them and continues (#302).
   await chip.click();
   card = await clickNode("candidate:run-massing-d");
@@ -789,7 +792,7 @@ try {
   await card.locator('[role="alert"]').waitFor({ state: "detached" });
   assert.equal(await card.getByText(/Current is now|Model edits in Modeling/).count(), 0, "the inspector repeats neither the refusal nor the toast");
   assert.equal(recorded, 1, "Record edits and continue records the edits once, then continues");
-  assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/working-design/switch",
     body: { projectId: PROJECT, runId: "run-massing-d", baseRevisionSha256: "rev-0001", branchId: null } });
   assert.equal(fixture.state.head, "run-massing-d");
   await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 3);
@@ -800,13 +803,13 @@ try {
   await shoot(tab, "06c-continue-toast");
   if (shots) await inChinese("06d-continue-toast-zh");
 
-  // Undo continues back to the exact previous Current: the same PUT, onto the source recorded before the Continue.
+  // Undo continues back to the exact previous Current: the Runtime's Undo, with the entry the Switch replaced.
   const rev = (value) => `rev-${String(value).padStart(4, "0")}`;
   let revision = fixture.state.revision;
   await cmd(toast, "design.undo_last").click();
   await toast.filter({ hasText: "Undone · Current is back where it was" }).waitFor();
-  assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
-    body: { projectId: PROJECT, runId: "run-s2-layout", baseRevisionSha256: rev(revision), branchId: "main" } });
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/working-design/undo",
+    body: { projectId: PROJECT, previous: { runId: "run-s2-layout", branchId: "main" }, continued: "run-massing-d" } });
   assert.equal(fixture.state.head, "run-s2-layout", "Undo put the previous Current back");
   assert.equal(await toast.getByRole("button").count(), 0, "an Undo offers no second Undo");
   await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 6);
@@ -886,7 +889,7 @@ try {
   await cmd(tab.locator(".design-tree-bar__refusal"), "draft.record.continue").click();
   await toast.filter({ hasText: "Current is now “B · Twin towers on a podium”" }).waitFor();
   assert.equal(recorded, recordedBefore + 1, "the chip records the edits once, then continues");
-  assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/working-design/switch",
     body: { projectId: PROJECT, runId: "run-massing-b", baseRevisionSha256: rev(revision), branchId: null } });
   await viewingState.waitFor({ state: "detached" });
   assert.equal(await tab.locator(".design-tree-bar__refusal").count(), 0, "B is Current now: nothing else is viewed");
@@ -895,7 +898,8 @@ try {
   revision = fixture.state.revision;
   await cmd(toast, "design.undo_last").click();
   await toast.filter({ hasText: "Undone" }).waitFor();
-  assert.deepEqual(writes.at(-1).body, { projectId: PROJECT, runId: "run-entrance-a", baseRevisionSha256: rev(revision), branchId: "main" });
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/working-design/undo",
+    body: { projectId: PROJECT, previous: { runId: "run-entrance-a", branchId: "main" }, continued: "run-massing-b" } });
   assert.equal(fixture.state.head, "run-entrance-a");
   await tab.waitForFunction(() => /^S3 — Current/.test((document.querySelector(".stage-chip")?.textContent ?? "").replace(/\s+/g, " ").trim()));
   await chip.click();
@@ -1303,7 +1307,7 @@ try {
   assert.equal(await cmd(lineCard, "design.go_to_step.continue").isEnabled(), true, "a draft is kept and can be returned to");
   await cmd(lineBar, "view.design_tree.toggle_drafts").click();
   await lineCard.waitFor({ state: "detached" });
-  // Returning to V2 is the existing Continue (PUT /api/working-draft), and its Undo puts Current back.
+  // Returning to V2 is the existing Continue (the Runtime's Switch), and its Undo puts Current back.
   lineCard = await clickCanvasNode(linePage, lineSurface, "step:run-v2");
   assert.match(await lineCard.innerText(), /Step · on the current line/);
   assert.match(await lineCard.innerText(), /Grew from\s*V1 - timber frame and hemp walls/);
@@ -1313,7 +1317,7 @@ try {
   await cmd(lineCard, "design.go_to_step.continue").click();
   const lineToast = linePage.locator(".design-tree-toast");
   await lineToast.filter({ hasText: "Current is now “V2 - pitched roof, open gable ends”" }).waitFor();
-  assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/working-design/switch",
     body: { projectId: PROJECT, runId: "run-v2", baseRevisionSha256: rev(lineRevision), branchId: null } });
   await trunkPoints(4);
   checkTree(await scene(linePage), ["origin", "step:run-site-massing", "step:run-v1", "current"], {});
@@ -1322,7 +1326,8 @@ try {
   await shoot(linePage, "16-returned-to-v2");
   await cmd(lineToast, "design.undo_last").click();
   await lineToast.filter({ hasText: "Undone" }).waitFor();
-  assert.deepEqual(writes.at(-1).body, { projectId: PROJECT, runId: "run-v3-materials", baseRevisionSha256: rev(lineRevision + 1), branchId: null });
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/working-design/undo",
+    body: { projectId: PROJECT, previous: { runId: "run-v3-materials", branchId: null }, continued: "run-v2" } });
   await trunkPoints(6);
   // Folded again from the menu; in the list the fold is a row that Enter opens.
   await cmd(lineBar, "view.design_tree.toggle_steps").click();
@@ -1437,7 +1442,7 @@ try {
   const landedRevision = fixture.state.revision;
   await cmd(landedCard, "design.go_to_step.continue").click();
   await landedToast.filter({ hasText: "当前已改为「给 238 个构件定材质」" }).waitFor();
-  assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/working-design/switch",
     body: { projectId: PROJECT, runId: "run-materials", baseRevisionSha256: rev(landedRevision), branchId: null } });
   await landedTrunk(5);
   landedView = await scene(landedPage);

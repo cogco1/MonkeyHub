@@ -89,7 +89,7 @@ try {
   assert.equal(await rows.nth(2).locator(".design-history__badge--stage").count(), 1, "a Stage step is marked");
   assert.equal(await cmd(rows.nth(0), "design.go_to_step.continue", { includeHidden: true }).count(), 0, "the current step offers no way back to itself");
   assert.equal(await rows.nth(2).locator("button").filter({ hasText: /withdraw|撤回/i }).count(), 0, "a Stage row offers no withdraw before 6-5");
-  assert.deepEqual(await commandProblems(page), [], "every control names its command");
+  assert.deepEqual(await commandProblems(page.locator(".design-history")), [], "every control names its command");
 
   // Going back to a step is Switch from the position as read, and its Undo puts the replaced Current back.
   await cmd(page, "design.go_to_step.continue", { arg: "b" }).click();

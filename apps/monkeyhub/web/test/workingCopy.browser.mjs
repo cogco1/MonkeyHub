@@ -43,7 +43,9 @@ async function until(read, accepts, message, timeout = 30000) {
 }
 async function step(name, action) { phase = name; await action(); passed.push(name); console.log(`PASS ${name}`); }
 const annotationWrites = () => requests.filter((row) => row.path === "/api/model-annotations" && row.method === "PUT" && row.response);
-const positionWrites = () => requests.filter((row) => row.path === "/api/working-draft" && row.method === "PUT" && row.response);
+// The working position moves through PUT /api/working-draft, or the Design Tree's Continue through the Runtime's Switch (2-6).
+const positionWrites = () => requests.filter((row) => ((row.path === "/api/working-draft" && row.method === "PUT")
+  || (row.path === "/api/working-design/switch" && row.method === "POST")) && row.response);
 async function ready(source, readStart = 0) {
   await until(state, (value) => value?.status === "ready" && value.annotationsReady && value.loadingSha === null && sourceKey(value.loadedModelSource ?? {}) === sourceKey(source),
     `Exact ${source.runId}/${source.assetSha256} model did not load`, 60000);
@@ -284,7 +286,7 @@ try {
   });
   await step("only explicit Continue persists B as the runtime working position", async () => {
     const before = await getJson("/api/working-draft");
-    allowedMutation = { method: "PUT", path: "/api/working-draft", revision: before.revisionSha256 };
+    allowedMutation = { method: "POST", path: "/api/working-design/switch", revision: before.revisionSha256 };
     await cmd(page.locator(".stage-chip__viewing"), "design.go_to_step.continue").click();
     await until(() => positionWrites().length, (count) => count === 1, "Continue must persist exactly one working position");
     await until(() => getJson("/api/working-draft"), (value) => value.current?.runId === B.runId, "Continue did not retain B");
