@@ -1006,9 +1006,9 @@ async function idleMinute() {
 /**
  * #575: a change the person asked for lands on their working design. The Agent's Continue moves the
  * project's working position, and the runtime's index says so in one event; Modeling follows it, shows
- * its model and says so at the project bar's right end with Undo. Undo is the Design Tree's own Undo
- * write: the same Continue back onto the base the follow came from, against the revision read now. A
- * move back says so and offers nothing more, and a base no position entry named offers no Undo. A
+ * its model and says so at the project bar's right end with Undo. Undo is the Design Tree's own Undo:
+ * the Runtime's Undo puts back the base the follow came from, while Current still stands where the
+ * follow found it. A move back says so and offers nothing more, and a base no position entry named offers no Undo. A
  * Continue from the Design Tree confirms itself in the tree's toast with Undo, and Modeling follows it
  * without a second notice: one write, one Undo.
  */
@@ -1022,7 +1022,9 @@ async function requestedChangeLands() {
   const entry = (runId) => ({ runId, sourceStageRef: null, branchId: "main", updatedAt: "2026-10-01T00:00:00Z", label: null });
   const draft = { revisionSha256: "1".repeat(64), current: entry("home-L"), localDraft: null, writes: [], hold: null, failure: null };
   workspaceFixture.workingDrafts.set(projectId, draft);
-  const continues = () => workspaceFixture.requests.filter((row) => row.projectId === projectId && row.method === "PUT" && row.name === "/api/working-draft");
+  // The person's moves of the working position: Continue (PUT /api/working-draft, or the Runtime's Switch) and Undo (2-6).
+  const continues = () => workspaceFixture.requests.filter((row) => row.projectId === projectId
+    && ((row.method === "PUT" && row.name === "/api/working-draft") || (row.method === "POST" && row.name.startsWith("/api/working-design/"))));
   const land = await browser.newPage({ viewport: { width: 1440, height: 960 } });
   land.setDefaultTimeout(15000);
   land.on("pageerror", (error) => errors.push(error.message));
@@ -1061,11 +1063,12 @@ async function requestedChangeLands() {
     assert.deepEqual(continues(), [], "following writes nothing");
     await land.screenshot({ path: path.join(temporary, "follow-undo.png") });
 
-    // Undo: one Continue back onto the base and its line, against the position's revision as read now.
+    // Undo: the Runtime's Undo puts the base and its line back, while Current still stands where the follow found it.
     await undo.click();
     await notice.filter({ hasText: "Back to the previous model" }).waitFor();
     const [back] = continues();
-    assert.deepEqual(back.body, { projectId, runId: "home-L", baseRevisionSha256: "2".repeat(64), branchId: "main" });
+    assert.deepEqual([back.name, back.body], ["/api/working-design/undo",
+      { projectId, previous: { runId: "home-L", branchId: "main" }, continued: "land-change" }]);
     assert.equal(continues().length, 1);
     assert.equal(draft.current.runId, "home-L", "the head is back where it was");
     assert.equal(await undo.count(), 0, "a move back offers no undo of its own");
