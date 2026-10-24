@@ -18,7 +18,10 @@ from tools.dev import source_roots  # noqa: E402 - this checkout's tools, found 
 source_roots.put_first(ROOT)
 
 from monkeyhub_api.attention.models import Suppression
-from monkeyhub_api.attention.rules import PREFIX, SAME_DIRECTION, guesses, refresh_guesses
+from monkeyhub_api.attention.rules import (
+    DRAWING_RECIPE, PREFIX, RECIPE_PREFIX, SAME_DIRECTION, guesses, recipe_guesses, refresh_guesses,
+    refresh_recipe_guesses,
+)
 from monkeyhub_api.attention.store import AttentionStore
 
 NOW = datetime(2026, 10, 23, 9, 0, tzinfo=timezone.utc)
@@ -132,6 +135,47 @@ class RefreshTests(unittest.TestCase):
         self.assertEqual(self.refresh([step("run-6", edit(0.15, 0.1)), *thinner_three_times()]), [])
         self.assertEqual(self.store.get(card_id).state, "dismissed")
         self.assertEqual(guesses(thinner_three_times(), self.store.suppressions("C:/projects/demo-project"), NOW), [])
+
+
+def offer(field: str = "cutLineMm", direction: str = "decrease", value: float = 0.25,
+          drawings=("plan-a", "plan-b")) -> dict:
+    """One of GET /api/drawings/corrections' suggestions."""
+
+    return {"suggestionId": "s" * 64, "field": field, "direction": direction, "value": value,
+            "drawingIds": list(drawings), "evidence": [],
+            "page": {"runId": "plan-b-run", "assetSha256": "a" * 64, "revisionRef": "studio://rev", "pageIndex": 0}}
+
+
+class RecipeTests(unittest.TestCase):
+    def test_a_correction_repeated_on_two_drawings_asks_to_keep_it_for_the_project(self) -> None:
+        [card] = recipe_guesses([offer()], [], NOW)
+        self.assertEqual((card.channel, card.kind, card.dedupeKey), ("guess", "ask", RECIPE_PREFIX + "cutLineMm:decrease"))
+        self.assertEqual((card.source.ruleId, card.source.targetRef), (DRAWING_RECIPE, "cutLineMm:decrease"))
+        self.assertEqual(card.title, "You made the cut line thinner on 2 drawings: keep 0.25 mm for the project?")
+        self.assertEqual(card.titleZh, "2 张图都把剖切线调细了，要把 0.25 mm 定成项目的出图规则吗？")
+        [save] = card.options
+        self.assertEqual((save.action.commandId, save.labelZh), ("drawing.save_recipe", "定成 0.25 mm"))
+        self.assertEqual(save.action.args, {"field": "cutLineMm", "value": 0.25, "runId": "plan-b-run",
+                                            "assetSha256": "a" * 64, "revisionRef": "studio://rev", "pageIndex": 0})
+        self.assertIsNone(card.recommendation)
+        [hatch] = recipe_guesses([offer("hatchSpacingMm", "increase", 3.0)], [], NOW)
+        self.assertIn("调疏", hatch.titleZh)
+
+    def test_a_quiet_pen_and_an_unknown_one_ask_nothing(self) -> None:
+        quiet = Suppression(ruleId=DRAWING_RECIPE, targetRef="cutLineMm:decrease",
+                            until=(NOW + timedelta(days=7)).isoformat())
+        self.assertEqual(recipe_guesses([offer()], [quiet], NOW), [])
+        self.assertEqual(len(recipe_guesses([offer(direction="increase")], [quiet], NOW)), 1, "the other direction")
+        self.assertEqual(recipe_guesses([offer(field="dimensionTextMm")], [], NOW), [])
+
+    def test_a_further_drawing_updates_the_card_and_a_decided_pen_retires_it(self) -> None:
+        store = AttentionStore(None, clock=lambda: NOW)
+        refresh = lambda offers: refresh_recipe_guesses(store, "demo-project", "C:/projects/demo-project", offers, NOW)  # noqa: E731
+        [card_id] = refresh([offer()])
+        self.assertEqual(refresh([offer(drawings=("plan-a", "plan-b", "plan-c"))]), [card_id])
+        self.assertIn("3 drawings", store.get(card_id).title)
+        refresh([])
+        self.assertEqual(store.get(card_id).state, "superseded", "the recipe now decides it")
 
 
 if __name__ == "__main__":

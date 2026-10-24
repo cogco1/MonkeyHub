@@ -16,10 +16,18 @@ project's attention conversation); the change itself is the agent's to make
 there, under the usual checks. No answer is recommended: a repeated direction
 is a reason to ask, not grounds to prefer one answer.
 
-A person who sets a card aside quiets this rule for that field
-(``AttentionStore.dismiss`` writes the suppression, seven days by default);
-``guesses`` leaves quiet fields out, and ``refresh_guesses`` retires the cards
-whose streak has gone.
+The second rule, ``drawing.recipe``, reads the Runtime's recipe suggestions
+(``GET /api/drawings/corrections``: a pen or the hatch spacing a person changed
+the same way on two drawings or more, which no recipe yet decides) and asks
+whether the project should keep that value. One card per pen and direction,
+so a further drawing joining the evidence updates the card rather than adding
+one; saving it is the person's recipe decision citing the page the suggestion
+names (``drawing.save_recipe``).
+
+A person who sets a card aside quiets its rule for that field, or that pen and
+direction (``AttentionStore.dismiss`` writes the suppression, seven days by
+default); the rules leave quiet targets out, and each refresh retires the
+cards its facts no longer ask for.
 """
 
 from collections.abc import Iterable, Mapping, Sequence
@@ -28,6 +36,8 @@ from datetime import datetime
 from .models import AttentionDraft, AttentionOption, AttentionSource, CommandRef, EvidenceRow, Suppression
 
 SAME_DIRECTION = "edit.same_direction"
+DRAWING_RECIPE = "drawing.recipe"
+RECIPE_PREFIX = f"rule:{DRAWING_RECIPE}:"
 #: How many of the latest steps the rule looks at, and how many same-way changes make a streak.
 WINDOW = 5
 REPEATS = 3
@@ -69,6 +79,68 @@ def guesses(steps: Sequence[Mapping], suppressions: Iterable[Suppression], now: 
             continue
         cards.append(_card(target, moves, labels or {}))
     return sorted(cards, key=lambda card: card.dedupeKey)
+
+
+#: A recipe pen's name, and how its smaller and larger values read, in English and Chinese.
+RECIPE_WORDS = {
+    "cutLineMm": ("cut line", "剖切线", ("thinner", "调细"), ("heavier", "调粗")),
+    "visibleLineMm": ("visible line", "看线", ("thinner", "调细"), ("heavier", "调粗")),
+    "hatchSpacingMm": ("hatch spacing", "填充间距", ("denser", "调密"), ("sparser", "调疏")),
+}
+
+
+def recipe_guesses(suggestions: Sequence[Mapping], suppressions: Iterable[Suppression],
+                   now: datetime) -> list[AttentionDraft]:
+    """One card per recipe suggestion the Runtime offers, its pen and direction not quieted.
+
+    ``suggestions`` are ``GET /api/drawings/corrections``'s, each ``{field,
+    direction, value, drawingIds, page}``.
+    """
+
+    quiet = {(row.ruleId, row.targetRef) for row in suppressions if datetime.fromisoformat(row.until) > now}
+    cards = []
+    for offer in suggestions:
+        if offer.get("field") not in RECIPE_WORDS or offer.get("direction") not in ("increase", "decrease"):
+            continue
+        target = f"{offer['field']}:{offer['direction']}"
+        if (DRAWING_RECIPE, target) not in quiet:
+            cards.append(_recipe_card(target, offer))
+    return sorted(cards, key=lambda card: card.dedupeKey)
+
+
+def refresh_recipe_guesses(store, project_id: str, project_dir: str, suggestions: Sequence[Mapping],
+                           now: datetime) -> list[str]:
+    """Write the recipe cards for a project and retire those no suggestion asks for any more; the changed ids."""
+
+    drafts = recipe_guesses(suggestions, store.suppressions(project_dir), now)
+    return store.reconcile(project_id, project_dir, RECIPE_PREFIX, drafts)
+
+
+def _recipe_card(target: str, offer: Mapping) -> AttentionDraft:
+    name, name_zh, smaller, larger = RECIPE_WORDS[offer["field"]]
+    way, way_zh = smaller if offer["direction"] == "decrease" else larger
+    drawings = list(offer.get("drawingIds") or ())
+    value, page = float(offer["value"]), offer.get("page") or {}
+    shown = f"{_number(value)} mm"
+    return AttentionDraft(
+        channel="guess", kind="ask",
+        title=f"You made the {name} {way} on {len(drawings)} drawings: keep {shown} for the project?",
+        titleZh=f"{len(drawings)} 张图都把{name_zh}{way_zh}了，要把 {shown} 定成项目的出图规则吗？",
+        summary=f"The {name} was made {way} the same way on {', '.join(drawings)}; no recipe decides it yet.",
+        summaryZh=f"{'、'.join(drawings)} 上的{name_zh}都这样{way_zh}了，项目的出图规则还没定这一项。",
+        source=AttentionSource(ruleId=DRAWING_RECIPE, targetRef=target, runIds=[page["runId"]] if page.get("runId") else []),
+        dedupeKey=RECIPE_PREFIX + target,
+        evidence=[EvidenceRow(key="change", label="Drawings", labelZh="图纸", text=", ".join(drawings) or "—",
+                              textZh="、".join(drawings) or "—", status="ok", refs=drawings)],
+        options=[AttentionOption(
+            id="save", label=f"Keep {shown}", labelZh=f"定成 {shown}",
+            consequence=f"New drawings of this project draw the {name} at {shown}",
+            consequenceZh=f"这个项目以后出的图，{name_zh}都用 {shown}",
+            action=CommandRef(commandId="drawing.save_recipe", args={
+                "field": offer["field"], "value": value, "runId": page.get("runId"),
+                "assetSha256": page.get("assetSha256"), "revisionRef": page.get("revisionRef"),
+                "pageIndex": page.get("pageIndex", 0)}))],
+    )
 
 
 def refresh_guesses(store, project_id: str, project_dir: str, steps: Sequence[Mapping], now: datetime, *,
@@ -142,4 +214,17 @@ def _card(target: str, moves: list, labels: Mapping[str, str]) -> AttentionDraft
     )
 
 
-__all__ = ["FIELD_WORDS", "PREFIX", "REPEATS", "SAME_DIRECTION", "WINDOW", "guesses", "refresh_guesses"]
+__all__ = [
+    "DRAWING_RECIPE",
+    "FIELD_WORDS",
+    "PREFIX",
+    "RECIPE_PREFIX",
+    "RECIPE_WORDS",
+    "REPEATS",
+    "SAME_DIRECTION",
+    "WINDOW",
+    "guesses",
+    "recipe_guesses",
+    "refresh_guesses",
+    "refresh_recipe_guesses",
+]
