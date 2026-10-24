@@ -1,9 +1,10 @@
 /**
  * The attention layer's clock (#300): turns what changed into notices and, while the window is hidden, into
- * OS notifications and a count in the window title. Where the Hub serves the attention queue (1-4), the news
- * is a card that comes to need the person, read whenever the Hub's event stream says the queue changed
- * (queue.ts); where it does not yet, the chat list is read and its changes are the news. Rules live in
- * attention.ts; this file owns time, the page and the browser.
+ * OS notifications and a count in the window title. The chat list is read and its changes are news. Where the
+ * Hub serves the attention queue (1-4), a card that comes to need the person is news too, read whenever the
+ * Hub's event stream says the queue changed (queue.ts); a waiting permission is then one of those cards, so
+ * the conversations only say when a turn finished or failed. Rules live in attention.ts; this file owns time,
+ * the page and the browser.
  */
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -12,7 +13,7 @@ import { createClient } from "../api/generated/client";
 import type { Language } from "../../../../../packages/web-shared/src/appearance.js";
 import {
   addNotice, attentionCopy, cardNews, noticeText, pendingCards, remember, settle, settleCards, snapshotOf, titled, transitions,
-  type AttentionEvent, type Snapshot,
+  withoutChatPermissions, type AttentionEvent, type Snapshot,
 } from "./attention";
 import { openCard, openChat } from "./openChat";
 import { queueSnapshot, shownHere, subscribeQueue } from "./queue";
@@ -67,6 +68,8 @@ export function useAttention(language: Language): Attention {
   const asked = useRef(false);
   const queue = useSyncExternalStore(subscribeQueue, queueSnapshot);
   const fromQueue = queue.available === true;
+  const fromQueueRef = useRef(fromQueue);
+  fromQueueRef.current = fromQueue;
 
   const dismiss = useCallback((notice: AttentionEvent) => {
     setNotices((stack) => stack.some((item) => item.key === notice.key) ? stack.filter((item) => item.key !== notice.key) : stack);
@@ -115,14 +118,13 @@ export function useAttention(language: Language): Attention {
   useEffect(() => {
     if (!fromQueue) { cardBaseline.current = null; return; }
     // A card the person's own action brought up here is in front of them already.
-    raise(cardNews(cardBaseline.current, queue.cards, shownHere), (stack) => settleCards(stack, queue.cards));
+    raise(cardNews(cardBaseline.current, queue.cards, shownHere), (stack) => settleCards(withoutChatPermissions(stack), queue.cards));
     cardBaseline.current = pendingCards(queue.cards);
     for (const id of [...shownHere]) if (cardBaseline.current.has(id)) shownHere.delete(id);
   }, [fromQueue, queue, raise]);
 
-  // The conversations, where it does not.
+  // The conversations, read with or without the queue.
   useEffect(() => {
-    if (fromQueue) return;
     let stopped = false, reading = false, again = false, timer: number | undefined, dueAt = 0, busy = false;
     let baseline: Snapshot | null = null;
     /** The next reading, `ms` from now. */
@@ -140,9 +142,10 @@ export function useAttention(language: Language): Attention {
         const sessions = await readSessions();
         if (stopped) return;
         busy = sessions.some((session) => session.status === "running" || session.attention === "permission");
-        const raised = transitions(baseline, sessions, shown() ? openChatId() : null);
+        const queued = fromQueueRef.current;
+        const raised = transitions(baseline, sessions, shown() ? openChatId() : null).filter((event) => !queued || event.kind !== "permission");
         baseline = snapshotOf(sessions);
-        raise(raised, (stack) => settle(stack, sessions));
+        raise(raised, (stack) => queued ? withoutChatPermissions(settle(stack, sessions)) : settle(stack, sessions));
       } catch {
         // The Hub did not answer this time; the next reading asks again.
       } finally {
@@ -167,7 +170,7 @@ export function useAttention(language: Language): Attention {
       window.removeEventListener("pointerdown", onInput, true);
       window.removeEventListener("keydown", onInput, true);
     };
-  }, [fromQueue, raise]);
+  }, [raise]);
 
   // Back on screen: the count is seen, the OS copies are no longer needed, and the conversation shown speaks for itself.
   useEffect(() => {

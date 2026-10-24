@@ -132,6 +132,16 @@ export function settle(stack: readonly AttentionEvent[], sessions: readonly Chat
   return kept.length === stack.length ? stack : kept;
 }
 
+/**
+ * Where the Hub serves the queue a waiting permission is a card: the conversations' own permission notices go,
+ * and only what the cards do not say (a turn finished, a turn failed) still comes from the conversations.
+ * The same array comes back when nothing changed.
+ */
+export function withoutChatPermissions(stack: readonly AttentionEvent[]): readonly AttentionEvent[] {
+  const kept = stack.filter((item) => item.card || item.kind !== "permission");
+  return kept.length === stack.length ? stack : kept;
+}
+
 /** The stack after a reading of the queue: a card answered, put off or set aside takes its notice with it. */
 export function settleCards(stack: readonly AttentionEvent[], cards: readonly AttentionCard[]): readonly AttentionEvent[] {
   const waiting = new Set(cards.filter(isPending).map((card) => card.id));

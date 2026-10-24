@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { usePreferences } from "../settings/preferences";
 import { CommandPalette } from "./CommandPalette";
@@ -39,6 +39,8 @@ export type CommandState =
 interface CommandsValue {
   register(action: string, handler: CommandHandler): () => void;
   run(id: string, source: UseSource, input?: CommandInput): boolean;
+  /** Counts a use of a command carried out elsewhere (a card's answer, by the Hub); only a command the tree has. */
+  note(id: string, source: UseSource): void;
   /** `onScreen` is the set of commands whose standing entry is shown, read once by the caller; without it the page is read. */
   stateOf(command: Command, onScreen?: ReadonlySet<string>): CommandState;
   openPalette(): void;
@@ -159,7 +161,11 @@ export function CommandProvider({ children, tree = COMMAND_TREE }: { children: R
       const entry = (event.target as Element | null)?.closest?.("[data-command]");
       const id = entry?.getAttribute("data-command");
       if (!entry || !id || !byId.has(id) || inactive(entry)) return;
-      setUsage(recordUse(storage(), id, "button"));
+      // This listener runs before React handles the click. An urgent update here would re-render before then,
+      // and a controlled checkbox in that render takes back the change the click just made, so onChange never
+      // fires. The use is stored now; the page sees it after the click is handled.
+      const next = recordUse(storage(), id, "button");
+      startTransition(() => setUsage(next));
     };
     window.addEventListener("click", onClick, true);
     return () => window.removeEventListener("click", onClick, true);
@@ -184,8 +190,9 @@ export function CommandProvider({ children, tree = COMMAND_TREE }: { children: R
     return () => window.removeEventListener("keydown", onKey, true);
   }, [byShortcut, run, stateOf]);
 
-  const value = useMemo<CommandsValue>(() => ({ register, run, stateOf, openPalette: () => setOpen(true), tree, usage }),
-    [register, run, stateOf, tree, usage]);
+  const note = useCallback((id: string, source: UseSource) => { if (byId.has(id)) setUsage(recordUse(storage(), id, source)); }, [byId]);
+  const value = useMemo<CommandsValue>(() => ({ register, run, note, stateOf, openPalette: () => setOpen(true), tree, usage }),
+    [register, run, note, stateOf, tree, usage]);
   return <CommandsContext.Provider value={value}>
     {children}
     {open && <CommandPalette language={language} onClose={() => setOpen(false)}

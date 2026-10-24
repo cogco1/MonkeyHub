@@ -1338,6 +1338,7 @@ export const messagesZhCN = {
   "cards.reopen": "找回",
   "cards.evidence": "依据",
   "cards.words": "要发出的话",
+  "cards.unread": "没读到这一页；队列一有变化会再读。",
 } satisfies MessageCatalog;
 
 export const hubCopy = {
