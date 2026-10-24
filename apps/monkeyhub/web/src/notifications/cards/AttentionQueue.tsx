@@ -7,6 +7,9 @@ import { AttentionCardView } from "./AttentionCards";
 import { isPending, queueOrder } from "./cardText";
 import type { AttentionCard, BulkResult, CardState } from "./types";
 
+/** How long a card that just arrived stays marked: the ring's own animation (cards.css). */
+const FRESH_MS = 2400;
+
 /** This window's copy of the attention queue, read once for every reader on the page. */
 export function useAttentionQueue(): QueueSnapshot {
   return useSyncExternalStore(subscribeQueue, queueSnapshot);
@@ -16,10 +19,21 @@ export function useAttentionQueue(): QueueSnapshot {
 export function AttentionQueue({ projectName }: { projectName(projectDir: string): string | null }) {
   const queue = useAttentionQueue();
   const cards = queueOrder(queue.cards);
-  // A card that arrives while the list is on screen is marked for a moment instead of raising a notice.
+  // A card that arrives while the list is on screen is marked for a moment instead of raising a notice. The mark
+  // follows readings of the queue only, so the shell redrawing for other reasons does not take it away early.
   const listed = useRef<Set<string> | null>(null);
-  const fresh = listed.current ? new Set(cards.filter((card) => !listed.current!.has(card.id)).map((card) => card.id)) : new Set<string>();
-  useEffect(() => { listed.current = new Set([...(listed.current ?? []), ...cards.map((card) => card.id)]); });
+  const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    const ids = queue.cards.map((card) => card.id);
+    const arrived = listed.current ? ids.filter((id) => !listed.current!.has(id)) : [];
+    listed.current = new Set([...(listed.current ?? []), ...ids]);
+    if (arrived.length) setFresh(new Set(arrived));
+  }, [queue.cards]);
+  useEffect(() => {
+    if (!fresh.size) return;
+    const timer = window.setTimeout(() => setFresh(new Set()), FRESH_MS);
+    return () => window.clearTimeout(timer);
+  }, [fresh]);
   // An empty queue is said by the page's heading.
   if (!cards.length) return <AllAsRecommended cards={cards} />;
   return <div className="attention-queue">
