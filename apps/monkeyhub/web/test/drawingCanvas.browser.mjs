@@ -704,8 +704,9 @@ try {
     assert.equal(await source().inputValue(), "stage-A");
   });
   await step("the bar's menus close on Escape and on a click outside them", async () => {
-    // Reuse drawing recipes, which reads the project's decisions when it opens, is covered by its own suite.
-    for (const name of ["another", "more"]) {
+    // The bar's own menu is Source (ADR-014 B7); Reuse drawing recipes, which reads the project's decisions when it
+    // opens, is covered by its own suite.
+    for (const name of ["another"]) {
       const word = menu(name);
       if (!await word.evaluate(node => node.open)) await cmd(word, "view.menu.toggle", { arg: `drawing_${name}` }).click();
       await page.locator(".drawing-preview__viewport").click({ position: { x: 4, y: 4 } });
