@@ -1640,7 +1640,9 @@
       "ModelToolButton"
     ],
     "view_rows": [
-      "apps/monkeyhub/web/src/features/commands/"
+      "apps/monkeyhub/web/src/app/AdvancedTools.tsx",
+      "apps/monkeyhub/web/src/features/commands/",
+      "apps/monkeyhub/web/src/notifications/cards/"
     ],
     "budgets": {
       "project_bar": 4,
@@ -1658,16 +1660,13 @@
       "composer": 3
     },
     "baseline": {
-      "apps/monkeyhub/web/src/ChatMessageContent.tsx": 3,
-      "apps/monkeyhub/web/src/ChatShell.tsx": 56,
-      "apps/monkeyhub/web/src/ChatSuggestionCard.tsx": 3,
+      "apps/monkeyhub/web/src/ChatShell.tsx": 3,
       "apps/monkeyhub/web/src/HubMenu.tsx": 1,
-      "apps/monkeyhub/web/src/SoftwareUpdateSettings.tsx": 4,
-      "apps/monkeyhub/web/src/app/BoardModeSwitch.tsx": 1,
-      "apps/monkeyhub/web/src/app/ProjectWorkspace.tsx": 1,
+      "apps/monkeyhub/web/src/app/AttentionShell.tsx": 12,
+      "apps/monkeyhub/web/src/features/skills/SkillPermissions.tsx": 3,
+      "apps/monkeyhub/web/src/features/skills/SkillsPanel.tsx": 6,
       "apps/monkeyhub/web/src/i18n/BilingualText.tsx": 1,
-      "apps/monkeyhub/web/src/main.tsx": 6,
-      "apps/monkeyhub/web/src/notifications/AttentionHost.tsx": 2
+      "apps/monkeyhub/web/src/main.tsx": 1
     }
   }
 }
