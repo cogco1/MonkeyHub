@@ -15,7 +15,7 @@ const server = createServer((request, response) => {
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const url = `http://127.0.0.1:${server.address().port}/`;
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
-const browser = await chromium.launch();
+const browser = await chromium.launch({ headless: true, channel: "chrome" });
 const passed = [];
 
 async function check(name, contextOptions, expectFade) {
