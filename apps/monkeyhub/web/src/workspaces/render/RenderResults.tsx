@@ -86,7 +86,7 @@ export default function RenderResults({ active, jobs, documents, selectedId, onS
   /** Modeling shows a retained model this view can be captured on, and nothing else is being saved. */
   recaptureReady?: boolean;
 }) {
-  const { language } = usePreferences(), zh = language === "zh-CN";
+  const { language, developerMode } = usePreferences(), zh = language === "zh-CN";
   const t = useT();
   const [attempt, setAttempt] = useState(0), [zoom, setZoom] = useState(1), [fit, setFit] = useState(0);
   const [view, setView] = useState<"result" | "source" | "compare">("result");
@@ -147,8 +147,8 @@ export default function RenderResults({ active, jobs, documents, selectedId, onS
               {image && <><dt>{zh ? "文件" : "File"}</dt><dd>{image.fileName}</dd></>}
               <dt>{zh ? "创建时间" : "Created"}</dt><dd><time dateTime={job.createdAt}>{new Date(job.createdAt).toLocaleString(language)}</time></dd>
               {source && <><dt>{zh ? "底图" : "Source image"}</dt><dd>{source.fileName}</dd></>}
-              {/* #271: the person sees current or earlier; exact ids stay in the details below. */}
-              <dt>{zh ? "模型" : "Model"}</dt><dd>{modelSource ? <span title={`${modelSource.runId} · ${modelSource.stateDigest}`}>
+              {/* #271: the person sees current or earlier; exact ids stay in developer mode's details below. */}
+              <dt>{zh ? "模型" : "Model"}</dt><dd>{modelSource ? <span title={developerMode ? `${modelSource.runId} · ${modelSource.stateDigest}` : undefined}>
                 {job.sourceState === "current" ? (zh ? "项目当前模型" : "Current project model") : (zh ? "较早的模型" : "An earlier model")}</span>
                 : (zh ? "未关联模型" : "No model association")}</dd>
               {projection && <><dt>{zh ? "来源视图" : "Source view"}</dt><dd>{projection}</dd></>}
@@ -158,12 +158,12 @@ export default function RenderResults({ active, jobs, documents, selectedId, onS
             {saved && onShowInModeling && <button data-command="view.render.show_in_modeling" type="button" onClick={() => onShowInModeling(saved.camera)}>{t("render.savedView.show")}</button>}
             {saved && onRecapture && <button data-command="view.render.recapture" type="button" disabled={!recaptureReady} onClick={() => onRecapture(job, saved)}>{t("render.savedView.recapture")}</button>}
             <span className="render-cost">{zh ? "费用：" : "Cost: "}{job.costUsd == null ? (zh ? "未知" : "Unknown") : `USD ${job.costUsd.toFixed(4)}`}</span>
-            <details><summary data-command="view.disclosure.toggle" data-command-arg="render_details">{zh ? "来源与生成记录" : "Source & generation details"}</summary>
+            {developerMode && <details><summary data-command="view.disclosure.toggle" data-command-arg="render_details">{zh ? "来源与生成记录" : "Source & generation details"}</summary>
               <pre>{JSON.stringify({ source: job.request?.source ?? null, references: job.request?.references ?? [], modelSource: modelSource ?? null,
                 sourceStageRef: source?.sourceStageRef ?? image?.sourceStageRef ?? null, sourceView: sourceView ?? null,
                 sourceState: job.sourceState, sourceStateReason: job.sourceStateReason, requestId: job.requestId, jobId: job.jobId,
                 providerId: job.providerId, model: job.model, output: job.request?.output ?? image?.viewRecipe, providerRequestId: job.providerRequestId }, null, 2)}</pre>
-            </details>
+            </details>}
           </footer>}
         </div>
       </div>}

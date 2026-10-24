@@ -6,6 +6,7 @@ import {
   aggregateTokens, formatCount, formatDuration, isModelCall, uncachedInput, projectIds, summarizeUsage, quoteDraftReducer, serialMonitorRead,
   type MonitorEvent, type MonitorTrace,
 } from "./monitorData";
+import { useDeveloperMode } from "./features/settings/preferences";
 import "./MonitorPage.css";
 import { useRowEndSeparators } from "./surfaceBarRows";
 
@@ -91,6 +92,8 @@ function dateText(value: string | null | undefined): string {
 
 export function MonitorPage({ preferences, active, initialProjectId = "", openRequest = 0, projects: hubProjects = [] }: Props) {
   const t = words[preferences.language];
+  // Record formats, raw records, timing diagnostics and read notices are for developer mode.
+  const developer = useDeveloperMode();
   const [base, setBase] = useState<string | null>(null);
   const [events, setEvents] = useState<MonitorEvent[]>([]);
   const [traces, setTraces] = useState<MonitorTrace[]>([]);
@@ -308,7 +311,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
       </section>
 
       <section className="monitor-section" hidden={view !== "timeline"}>
-        <div className="monitor-section__head"><div><p className="monitor-eyebrow">TurnTrace@1</p><h2>{t.tasks}</h2></div>{filteredTraces.length > 0 && <label>{t.task}<select value={selectedTrace?.trace_id ?? ""} onChange={(event) => setTraceId(event.target.value)}>{filteredTraces.map((trace) => <option key={trace.trace_id} value={trace.trace_id}>{dateText(trace.started_at)} · {trace.status ?? "unknown"}</option>)}</select></label>}</div>
+        <div className="monitor-section__head"><div>{developer && <p className="monitor-eyebrow">TurnTrace@1</p>}<h2>{t.tasks}</h2></div>{filteredTraces.length > 0 && <label>{t.task}<select value={selectedTrace?.trace_id ?? ""} onChange={(event) => setTraceId(event.target.value)}>{filteredTraces.map((trace) => <option key={trace.trace_id} value={trace.trace_id}>{dateText(trace.started_at)} · {trace.status ?? "unknown"}</option>)}</select></label>}</div>
         {!selectedTrace ? <p className="monitor-empty">{t.noTasks}</p> : <>
           <div className="monitor-trace-summary">
             <span><small>{t.status}</small><strong>{text(selectedTrace.status)}</strong></span>
@@ -317,7 +320,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
             <span><small>{t.firstCandidate}</small><strong>{formatDuration(selectedTrace.summary?.first_candidate_ms)}</strong></span>
             <span><small>{t.modelRounds}</small><strong>{formatCount(numeric(selectedTrace.summary?.model_rounds))}</strong></span>
             <span><small>{t.toolRounds}</small><strong>{formatCount(numeric(selectedTrace.summary?.tool_rounds))}</strong></span>
-            <a className="btn" href={base ? `${base}/api/traces/export?trace_id=${encodeURIComponent(selectedTrace.trace_id)}` : undefined} target="_blank" rel="noreferrer">{t.download}</a>
+            {developer && <a className="btn" href={base ? `${base}/api/traces/export?trace_id=${encodeURIComponent(selectedTrace.trace_id)}` : undefined} target="_blank" rel="noreferrer">{t.download}</a>}
           </div>
           <div className="monitor-timeline" style={{ "--timeline-ms": timeline } as CSSProperties}>
             {spans.map((span, index) => {
@@ -328,17 +331,17 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
               return <details className="monitor-span" key={span.span_id ?? span.event_id ?? index}>
                 <summary data-command="view.usage.span"><span className="monitor-span__label" title={status}>{span.label ?? span.phase ?? "stage"}{span.status === "incomplete" ? ` · ${status}` : ""}</span><span className="monitor-span__lane">{span.lane ?? "—"}</span><span className="monitor-span__track"><i data-lane={span.lane ?? "unknown"} data-blocking={span.blocking === true} style={{ left: `${left}%`, width: `${width}%` }} /></span><span>{formatDuration(span.duration_ms)}</span></summary>
                 <dl><dt>{t.status}</dt><dd>{status}</dd><dt>{t.source}</dt><dd>{text(span.source)}</dd><dt>{t.provider}</dt><dd>{[span.provider, span.model].filter(Boolean).join(" · ") || "—"}</dd><dt>{t.blocking}</dt><dd>{span.blocking == null ? "—" : span.blocking ? t.yes : t.no}</dd></dl>
-                {span.details && Object.keys(span.details).length > 0 && <pre>{JSON.stringify(span.details, null, 2)}</pre>}
+                {developer && span.details && Object.keys(span.details).length > 0 && <pre>{JSON.stringify(span.details, null, 2)}</pre>}
               </details>;
             })}
           </div>
-          {(selectedDiagnostics.length > 0 || selectedWarnings.length > 0) && <details className="monitor-diagnostics"><summary data-command="view.disclosure.toggle" data-command-arg="usage_diagnostics">{t.diagnostics} · {selectedDiagnostics.length + selectedWarnings.length}</summary>{selectedDiagnostics.map((item, index) => <div key={index}><strong>{text(item.label ?? item.code)}</strong><p>{text(item.note)}</p></div>)}{selectedWarnings.map((warning) => <p key={warning}>{warning}</p>)}</details>}
-          <details className="monitor-raw"><summary data-command="view.disclosure.toggle" data-command-arg="usage_raw">{t.raw}</summary><pre>{JSON.stringify(selectedTrace, null, 2)}</pre></details>
+          {developer && (selectedDiagnostics.length > 0 || selectedWarnings.length > 0) && <details className="monitor-diagnostics"><summary data-command="view.disclosure.toggle" data-command-arg="usage_diagnostics">{t.diagnostics} · {selectedDiagnostics.length + selectedWarnings.length}</summary>{selectedDiagnostics.map((item, index) => <div key={index}><strong>{text(item.label ?? item.code)}</strong><p>{text(item.note)}</p></div>)}{selectedWarnings.map((warning) => <p key={warning}>{warning}</p>)}</details>}
+          {developer && <details className="monitor-raw"><summary data-command="view.disclosure.toggle" data-command-arg="usage_raw">{t.raw}</summary><pre>{JSON.stringify(selectedTrace, null, 2)}</pre></details>}
         </>}
       </section>
 
       <section className="monitor-section" hidden={view !== "calls"}>
-        <div className="monitor-section__head"><div><p className="monitor-eyebrow">UsageLog</p><h2>{t.usage}</h2></div><label className="monitor-operation-toggle"><input type="checkbox" checked={includeOperations} onChange={(event) => setIncludeOperations(event.target.checked)} />{t.includeOperations}</label></div>
+        <div className="monitor-section__head"><div>{developer && <p className="monitor-eyebrow">UsageLog</p>}<h2>{t.usage}</h2></div><label className="monitor-operation-toggle"><input type="checkbox" checked={includeOperations} onChange={(event) => setIncludeOperations(event.target.checked)} />{t.includeOperations}</label></div>
         <p className="monitor-help" aria-live="polite">{t.recordRange(visibleEvents.length, detailEvents.length)}</p>
         {!detailEvents.length ? <p className="monitor-empty">{t.noUsage}</p> : <><div className="monitor-table-wrap"><table className="monitor-table"><thead><tr><th>{t.time}</th><th>{t.source}</th><th>{t.provider}</th><th>{t.phase}</th><th>{t.cached}</th><th>{t.uncached}</th><th>{t.output}</th><th>{t.duration}</th></tr></thead><tbody>{visibleEvents.map((event) => {
           const modelCall = isModelCall(event);
@@ -359,7 +362,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
         </section>
       </div>
 
-      {warnings.length > 0 && <details className="monitor-global-warnings"><summary data-command="view.disclosure.toggle" data-command-arg="usage_warnings">{t.warnings} · {warnings.length}</summary>{warnings.map((warning) => <p key={warning}>{warning}</p>)}</details>}
+      {developer && warnings.length > 0 && <details className="monitor-global-warnings"><summary data-command="view.disclosure.toggle" data-command-arg="usage_warnings">{t.warnings} · {warnings.length}</summary>{warnings.map((warning) => <p key={warning}>{warning}</p>)}</details>}
     </main>
     {/* L5: where the records come from, when they were read, and how the scope counts them. */}
     <StatusLine className="monitor-status" end={<span title={t.usageScope}>{t.usageScope}</span>}>

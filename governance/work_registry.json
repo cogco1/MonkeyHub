@@ -169,7 +169,6 @@
             "apps/monkeyhub/web/test/documentStudy.browser.mjs",
             "apps/monkeyhub/web/test/documentTextLayer.browser.mjs",
             "apps/monkeyhub/web/test/documentTracing.browser.mjs",
-            "apps/monkeyhub/web/test/drawingCanvas.browser.mjs",
             "apps/monkeyhub/web/test/drawingStyles.browser.mjs",
             "apps/monkeyhub/web/test/elevation.browser.mjs",
             "apps/monkeyhub/web/test/errorBoundary.browser.mjs",
@@ -179,7 +178,6 @@
             "apps/monkeyhub/web/test/modelSync.browser.mjs",
             "apps/monkeyhub/web/test/modelingOpen.browser.mjs",
             "apps/monkeyhub/web/test/presentationStyle.browser.mjs",
-            "apps/monkeyhub/web/test/publishWorkspace.browser.mjs",
             "apps/monkeyhub/web/test/pushPull.browser.mjs",
             "apps/monkeyhub/web/test/recipeTransfer.browser.mjs",
             "apps/monkeyhub/web/test/renderWorkspace.browser.mjs",
@@ -214,12 +212,15 @@
             "apps/monkeyhub/web/src/features/conversation/cards/ProposalCard.tsx",
             "apps/monkeyhub/web/src/features/conversation/cards/QuestionCard.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/ModelComparison.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/modelComparison.css",
             "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
             "apps/monkeyhub/web/src/workspaces/render/RenderResults.tsx",
             "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/test/componentInfoCard.test.ts",
+            "apps/monkeyhub/web/test/drawingCanvas.browser.mjs",
             "apps/monkeyhub/web/test/errorPanel.test.ts",
             "apps/monkeyhub/web/test/proposalCard.test.ts",
-            "apps/monkeyhub/web/test/technicalDetails.test.ts"
+            "apps/monkeyhub/web/test/publishWorkspace.browser.mjs"
           ],
           "depends_on": []
         }

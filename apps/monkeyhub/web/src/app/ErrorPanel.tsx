@@ -161,8 +161,8 @@ const FAILURES: Record<FailureKind, Record<Language, FailureCopy>> = {
     en: { reason: "The project service ran into a problem and did not finish this step.", next: "Try again in a moment. If it keeps failing, restart MonkeyHub." },
   },
   unknown: {
-    "zh-CN": { reason: "这一步没有完成。", next: "再试一次；如果仍然失败，打开下面的技术详情查看原因。" },
-    en: { reason: "This step did not finish.", next: "Try again. If it fails again, open Technical details below to see why." },
+    "zh-CN": { reason: "这一步没有完成。", next: "再试一次；如果仍然失败，在设置里打开开发者模式查看原因。" },
+    en: { reason: "This step did not finish.", next: "Try again. If it fails again, turn on developer mode in Settings to see why." },
   },
 };
 
@@ -256,8 +256,8 @@ export function ErrorPanel({
           ))}
         </ul>
       )}
-      {/* A new refusal starts folded rather than inheriting the last one's state. */}
-      <details key={`${error.code}:${error.detail}`} className="card__details error-panel__details" open={developerMode}>
+      {/* The code, status and the service's own words are for developer mode, where they start open. */}
+      {developerMode && <details key={`${error.code}:${error.detail}`} className="card__details error-panel__details" open>
         <summary>{t("common.technicalDetails")}</summary>
         <p className="error-panel__head">
           <span className="error-panel__code">{error.code}</span>
@@ -267,7 +267,7 @@ export function ErrorPanel({
           {what && <span className="error-panel__what">{what}</span>}
         </p>
         <p className="error-panel__detail" lang="en" translate="no">{error.detail}</p>
-      </details>
+      </details>}
     </div>
   );
 }

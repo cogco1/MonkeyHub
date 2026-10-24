@@ -12,6 +12,7 @@ import type { AgentReadingDto, ProposalDto } from "../../../api/project-runtime/
 import type { EvidenceTab } from "../../../app/evidence";
 import { BilingualText } from "../../../i18n/BilingualText";
 import { useT } from "../../../i18n/useT";
+import { DeveloperOnly } from "../../settings/preferences";
 import { Verbatim } from "./Verbatim";
 
 /** A release is sent this long after the last move, so a drag is one request. */
@@ -129,7 +130,8 @@ export function ProposalCard({
           )}
         </dl>
       </div>}
-      <details className="card__row card__details">
+      {/* The ids, the reader's own words and the raw edits are for developer mode; the card above says what changes. */}
+      <DeveloperOnly><details className="card__row card__details">
         <summary data-command="view.disclosure.toggle" data-command-arg="technical_details">{t("common.technicalDetails")}</summary>
         <p className="card__title">
           <span className="mono">{subject}</span>
@@ -210,7 +212,7 @@ export function ProposalCard({
             <pre>{JSON.stringify(change.edits, null, 2)}</pre>
           </>
         )}
-      </details>
+      </details></DeveloperOnly>
       {proposal.status === "conflict" && (
         <div className="card__row">
           <p className="card__conflict">

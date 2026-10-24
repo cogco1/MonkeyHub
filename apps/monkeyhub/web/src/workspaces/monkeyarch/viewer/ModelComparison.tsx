@@ -16,6 +16,7 @@ import { useStudio } from "../../../api/project-runtime/ProjectRuntimeContext";
 import type { MessageKey } from "../../../i18n/messages.en";
 import { viewableArtifacts } from "../../../features/artifacts/artifactSelection";
 import { MenuCommand, MenuSeparator, SurfaceMenus } from "../../../features/chrome/SurfaceChrome";
+import { DeveloperOnly } from "../../../features/settings/preferences";
 import { useT } from "../../../i18n/useT";
 import { createInteractionSession } from "../interactionSession";
 import { ThreeDmViewport, type CameraState, type ViewportController, type ViewportPick, type ViewportStatus } from "./ThreeDmViewport";
@@ -244,10 +245,11 @@ export default function ModelComparison({ projectId, candidateRunId, active, nam
       })}
     </div>}
     {pair && outlineOn && outlineNote && <p className="model-compare__note">{outlineNote}</p>}
-    <details className="model-compare__details">
+    {pair && <p className="model-compare__summary">{counts !== null ? t("modelCompare.summary", { counts })
+      : objects.status === "pending" ? t("modelCompare.summaryPending") : t("modelCompare.summaryUnavailable")}</p>}
+    {/* Runs, states, files and the object table are for developer mode; the count of changes is above. */}
+    <DeveloperOnly><details className="model-compare__details">
       <summary data-command="view.disclosure.toggle" data-command-arg="technical_details">{t("modelCompare.details")}</summary>
-      {pair && <p className="model-compare__summary">{counts !== null ? t("modelCompare.summary", { counts })
-        : objects.status === "pending" ? t("modelCompare.summaryPending") : t("modelCompare.summaryUnavailable")}</p>}
       <dl>
         <div><dt>{t("modelCompare.detail.candidateRun")}</dt><dd>{candidateRunId}</dd></div>
         {pair && <>
@@ -275,7 +277,7 @@ export default function ModelComparison({ projectId, candidateRunId, active, nam
           </table>
         </div>
       </>}
-    </details>
+    </details></DeveloperOnly>
   </section>;
 }
 
