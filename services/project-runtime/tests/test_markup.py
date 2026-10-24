@@ -21,9 +21,10 @@ from monkeydiagram.rendering.marks import (
 )
 from monkeydiagram.rendering.svg import drawing_svg, svg_object_marks
 
-from project_runtime.application.gestures import DocumentGesture
+from project_runtime.application.gestures import DocumentGesture, Gesture, GestureHit
 from project_runtime.application.markup import (
-    BORDERLINE_HIT, NOTHING, PARTIAL, UNBOUND, Subject, read_id_image, read_marks, subjects_of,
+    BORDERLINE_HIT, MODEL_ZONE, NOTHING, PARTIAL, UNBOUND, Subject, hit_subjects_of, read_id_image, read_marks,
+    read_model_marks, subjects_of,
 )
 
 PAGE = (200.0, 100.0)
@@ -267,6 +268,51 @@ class IdImageTests(unittest.TestCase):
     def test_an_arrow_on_the_image_points_at_the_colour_under_its_tip(self) -> None:
         [reading] = self.read(DocumentGesture("arrow", "arrow", ((0.2, 0.1), (0.5, 0.5)), "#e03131", 0.004))
         self.assertEqual(subjects(reading), {"frame"})
+
+
+class ModelStrokeTests(unittest.TestCase):
+    """Strokes on tracing paper over the 3D view: each sample's ray hit, answered as a click is answered."""
+
+    def setUp(self) -> None:
+        components = [SimpleNamespace(entity_id="floor"), SimpleNamespace(entity_id="wall-east")]
+        self.projection = SimpleNamespace(
+            state_digest="d" * 64, project_id="demo-project",
+            record=SimpleNamespace(entities_of=lambda kind: components if kind == "Component@1" else []),
+            elements=tuple(SimpleNamespace(component_id="floor", element_id=name)
+                           for name in ("finish", "joist-1", "joist-2")))
+        self.identify = hit_subjects_of(self.projection)
+
+    @staticmethod
+    def hit(element: str, component: str = "floor") -> GestureHit:
+        return GestureHit(f"obj-{element}", {"archflow:component": component,
+                                             "archflow:object_ref": f"cad-object:obj-{element}"}, (0.0, 0.0, 0.0))
+
+    def test_a_stroke_mostly_on_one_element_names_it(self) -> None:
+        unbound = GestureHit("lamp", {}, (0.0, 0.0, 0.0))
+        circle = Gesture("circle", (*[self.hit("joist-2")] * 7, *[self.hit("finish")] * 2, unbound))
+        [reading] = read_model_marks([("ring", circle)], self.identify)
+        self.assertEqual((reading.mark_id, reading.zone, reading.reason), ("ring", MODEL_ZONE, None))
+        joist, finish = reading.hits
+        self.assertEqual((joist.element_id, joist.share, joist.target, joist.object_ids), ("joist-2", 0.7, True,
+                                                                                           ("obj-joist-2",)))
+        self.assertEqual((finish.element_id, finish.share, finish.target), ("finish", 0.2, False))
+        self.assertEqual((joist.coverage, joist.central), (0.0, False), "a stroke has no page area to measure")
+
+    def test_an_even_split_unbound_ink_and_no_hits_each_say_why(self) -> None:
+        split = Gesture("circle", (*[self.hit("joist-1")] * 5, *[self.hit("joist-2")] * 5))
+        unbound = Gesture("arrow", (GestureHit("lamp", {}, (0.0, 0.0, 0.0)),
+                                    self.hit("roof-3", component="roof")))
+        empty = Gesture("freehand", ())
+        readings = read_model_marks([("split", split), ("lamp", unbound), ("air", empty)], self.identify)
+        self.assertEqual([(reading.mark_id, reading.reason) for reading in readings],
+                         [("split", PARTIAL), ("lamp", UNBOUND), ("air", NOTHING)])
+        self.assertEqual({hit.element_id for hit in readings[0].hits}, {"joist-1", "joist-2"})
+
+    def test_a_hit_answers_through_its_component_and_that_components_own_elements(self) -> None:
+        self.assertEqual(self.identify(self.hit("joist-2")), Subject("floor", "joist-2"))
+        self.assertEqual(self.identify(self.hit("door", component="wall-east")), Subject("wall-east", None))
+        self.assertIsNone(self.identify(self.hit("roof-3", component="roof")), "a component the record does not declare")
+        self.assertIsNone(self.identify(GestureHit("lamp", {}, (0.0, 0.0, 0.0))), "an object without identity")
 
 
 if __name__ == "__main__":

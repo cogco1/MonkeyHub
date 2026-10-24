@@ -5329,7 +5329,9 @@
         "read_marks",
         "read_id_image",
         "subjects_of",
-        "MarkReading"
+        "MarkReading",
+        "read_model_marks",
+        "hit_subjects_of"
       ],
       "depends_on": [
         "archflow.contracts.canonical",

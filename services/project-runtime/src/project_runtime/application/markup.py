@@ -43,8 +43,8 @@ from monkeydiagram.rendering.marks import (
     FREEHAND, OUTLINE, POINT_ZONE, STROKE, TIP, MarkInk, ObjectInk, id_image_under_marks, ink_under_mark,
 )
 
-from .gestures import ARROW, CIRCLE, POLYLINE, TEXT, DocumentGesture
-from .pick import element_of_object
+from .gestures import ARROW, CIRCLE, POLYLINE, TEXT, DocumentGesture, Gesture, GestureHit
+from .pick import MODEL_VISIBLE_CATALOG_MISSING, RESOLVED, PickRequest, element_of_object, resolve_pick
 from .projection import StateProjection
 
 #: Coverage at or above which a subject counts as circled whole, wherever in the mark it lies.
@@ -62,6 +62,9 @@ STROKE_REACH = 3.0
 MIN_REACH = 0.01
 #: An arrow's tip reaches twice as far as a stroke: it points near a thing, not onto its line.
 POINT_REACH = 2.0
+
+#: The zone of a stroke drawn on the model, read by the objects its samples fell on.
+MODEL_ZONE = "model"
 
 NOTHING = "nothing"
 UNBOUND = "unbound"
@@ -140,6 +143,62 @@ def subjects_of(projection: StateProjection) -> Identify:
         return Subject(component, element_of_object(projection, object_id, component))
 
     return identify
+
+
+#: A stroke sample's hit to the record's subject, or None when the record does not vouch for it.
+IdentifyHit = Callable[[GestureHit], "Subject | None"]
+
+
+def hit_subjects_of(projection: StateProjection) -> IdentifyHit:
+    """The record's answer for one object a model stroke fell on, by the rule a click is answered by (``pick``).
+
+    A hit answers when its component resolves, with its element when one row
+    produced it (a visible object whose element the catalogue lacks answers
+    for its component); an unbound or unknown object answers for nothing.
+    """
+
+    def identify(hit: GestureHit) -> Subject | None:
+        answer = resolve_pick(projection, PickRequest(state_digest=projection.state_digest,
+                                                      user_strings=hit.user_strings, object_name=hit.object_name))
+        if answer.status not in (RESOLVED, MODEL_VISIBLE_CATALOG_MISSING) or answer.component_id is None:
+            return None
+        return Subject(answer.component_id, answer.element_id)
+
+    return identify
+
+
+def read_model_marks(marks: Sequence[tuple[str, Gesture]], identify: IdentifyHit) -> tuple[MarkReading, ...]:
+    """Each stroke drawn on the model (tracing paper over the 3D view) read by the objects its samples fell on.
+
+    The viewer already casts every sample's ray (``Gesture.hits``); a stroke
+    has no area on a page, so a subject is scored by its ``share`` of the
+    samples alone (``coverage`` stays 0 and nothing is central) and the one
+    holding DOMINANT of them is the target, as an arrow's is. Samples on
+    objects the record does not vouch for count in the whole.
+    """
+
+    readings = []
+    for mark_id, gesture in marks:
+        if gesture.kind == TEXT:
+            continue
+        hits = [identify(hit) for hit in gesture.hits]
+        if not hits:
+            readings.append(MarkReading(mark_id, gesture.kind, MODEL_ZONE, (), NOTHING))
+            continue
+        counted: dict[Subject, list[str]] = {}
+        for hit, subject in zip(gesture.hits, hits):
+            if subject is not None:
+                counted.setdefault(subject, []).append(hit.object_name or "")
+        if not counted:
+            readings.append(MarkReading(mark_id, gesture.kind, MODEL_ZONE, (), UNBOUND))
+            continue
+        scored = sorted(((subject, round(len(names) / len(hits), 4), names) for subject, names in counted.items()),
+                        key=lambda row: (-row[1], row[0].component_id, row[0].element_id or ""))
+        top = scored[0][0] if scored[0][1] >= DOMINANT else None
+        found = tuple(MarkHit(subject.component_id, subject.element_id, tuple(sorted({name for name in names if name})),
+                              0.0, share, subject == top) for subject, share, names in scored)
+        readings.append(MarkReading(mark_id, gesture.kind, MODEL_ZONE, found, None if top is not None else PARTIAL))
+    return tuple(readings)
 
 
 def read_marks(gestures: Sequence[DocumentGesture], ink: Sequence[ObjectInk], page_size: tuple[float, float],
@@ -262,13 +321,16 @@ __all__ = [
     "CORE_AREA",
     "DOMINANT",
     "ENCLOSED",
+    "MODEL_ZONE",
     "MarkHit",
     "MarkReading",
     "NOTHING",
     "PARTIAL",
     "Subject",
     "UNBOUND",
+    "hit_subjects_of",
     "read_id_image",
+    "read_model_marks",
     "read_marks",
     "subjects_of",
 ]
