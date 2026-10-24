@@ -119,6 +119,8 @@ const operationTime = (value: string | null | undefined, language: string) => {
   return date && !Number.isNaN(date.getTime()) ? date.toLocaleString(language, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
 };
 const VIEW_KEY = "monkeyhub.chat-view.v1";
+/** A conversation's title that says nothing about the work, so it is not offered back as a sentence to say. */
+const GENERIC_TITLE = /^(新对话|关注|关注对话|new (chat|conversation)|attention)/i;
 /** SS-9: unsent composer text by conversation (`new:<project>` before one exists), with when it last changed. */
 const DRAFTS_KEY = "monkeyhub.chat-drafts.v1", DRAFT_LIMIT = 50;
 /**
@@ -159,6 +161,8 @@ const composerWords = {
     sendTo: (name: string) => `发到：${name}`, sendToAttention: "关注对话", sendToNew: "新对话",
     routeSays: (label: string) => `这句话可以直接做：「${label}」`, routeRun: "直接做", routeSend: "还是发给 AI",
     providerSwitched: (from: string, to: string) => `要用 ${from} 得先装，现在用的是 ${to}`,
+    suggestLabel: "试试这几句", suggestHint: "说一句话，会放进三类之一：需要你决定、等你批注、猜你可能想要",
+    suggestCompare: (a: number, b: number) => `V${a} 和 V${b} 哪个好`, suggestWhere: "现在做到哪了", suggestPrepare: "帮我准备下次评图",
     routeWhich: (name: string) => name === "project" ? "哪个项目？" : name === "sessionId" ? "哪个对话？" : `还差：${name}`,
     operationOpenChat: "打开对话", operationDismiss: "知道了",
     operationMore: (count: number) => `另有 ${count} 个`,
@@ -173,6 +177,8 @@ const composerWords = {
     sendTo: (name: string) => `To: ${name}`, sendToAttention: "the attention conversation", sendToNew: "a new conversation",
     routeSays: (label: string) => `This can be done directly: ${label}`, routeRun: "Do it", routeSend: "Send to the AI instead",
     providerSwitched: (from: string, to: string) => `${from} has to be installed first; using ${to} for now`,
+    suggestLabel: "Try one of these", suggestHint: "Say one thing; it lands in one of three kinds: needs your decision, waits for your marks, a guess at what you want",
+    suggestCompare: (a: number, b: number) => `Which is better, V${a} or V${b}`, suggestWhere: "Where are we now", suggestPrepare: "Help me prepare for the next review",
     routeWhich: (name: string) => name === "project" ? "Which project?" : name === "sessionId" ? "Which conversation?" : `Still needed: ${name}`,
     operationOpenChat: "Open chat", operationDismiss: "Dismiss",
     operationMore: (count: number) => `${count} more`,
@@ -2060,6 +2066,21 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // Ctrl+K's "Ask the AI": the words go out the way the composer sends them, unless a draft is
   // already there; then they join it and wait for the person to send.
   const pendingAsk = useRef<string | null>(null);
+  // 18: what to offer to say, from what this project has: its last two versions to weigh, what was asked in its
+  // conversations before, and two sentences that suit any project.
+  const suggestedLines = (() => {
+    if (!project) return [] as string[];
+    const out: string[] = [];
+    const version = project.version ?? null;
+    if (version !== null && version >= 2) out.push(w.suggestCompare(version - 1, version));
+    for (const session of sessions) {
+      const title = session.title?.trim();
+      if (session.projectDir === project.projectDir && !session.archived && title && title.length >= 4 && !GENERIC_TITLE.test(title) && !out.includes(title)) out.push(title);
+      if (out.length >= 3) break;
+    }
+    for (const line of [w.suggestWhere, w.suggestPrepare]) if (out.length < 4 && !out.includes(line)) out.push(line);
+    return out;
+  })();
   const askAgent = (text: string) => {
     if (!text.trim()) return;
     if (draft.trim()) { setDrafts((value) => ({ ...value, [draftKey]: `${draft.trimEnd()}\n${text}` })); toComposer(); return; }
@@ -2436,6 +2457,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           {running ? <><button data-command="chat.composer.stop" className="chat-icon chat-stop" type="button" aria-label={t.stop} title={t.stop} onClick={() => void stop()}><Icon name="stop" /></button>
             <button data-command="chat.composer.interject" className="chat-send" type="submit" aria-label={t.interject} aria-description={sendDisabledReason} aria-keyshortcuts="Enter" title={sendDisabledReason ?? t.interject} disabled={!draft.trim() || Boolean(renderDraft)}><Icon name="send" /></button></> : <button data-command="chat.composer.send" className="chat-send" type="submit" aria-label={t.send} aria-description={sendDisabledReason} aria-keyshortcuts="Enter" title={sendDisabledReason ?? t.send} disabled={busy || !project || (!draft.trim() && !attachments.length) || (!chatId && !availableProvider?.available)}><Icon name="send" /></button>}</div>
         </form>}
+        {/* 18: a few sentences to say, made from this project's own state; one click says it. */}
+        {attentionLayout && project && !archived && !running && !draft.trim() && !attachments.length && <div className="chat-suggest" role="group" aria-label={w.suggestLabel}>
+          <p className="chat-suggest__hint">{w.suggestHint}</p>
+          <div className="chat-suggest__chips">{suggestedLines.map((line) => <button key={line} type="button" className="chat-suggest__chip" data-command="chat.composer.send"
+            disabled={busy || (!chatId && !availableProvider?.available)} onClick={() => askAgent(line)}>{line}</button>)}</div>
+        </div>}
         {!archived && customModel !== null && <form className="chat-custom-model" onSubmit={(event) => { event.preventDefault(); const value = customModel.trim(); if (value) void chooseModel(value); else setCustomModel(null); }}>
           <label htmlFor="chat-custom-model">{t.modelCustomLabel}</label>
           <input id="chat-custom-model" autoFocus value={customModel} onChange={(event) => setCustomModel(event.target.value)} />
