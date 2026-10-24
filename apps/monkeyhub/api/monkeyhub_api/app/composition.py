@@ -28,6 +28,10 @@ from monkeycad.integration_packs import IntegrationPackManager
 from project_runtime.errors import StudioError
 
 from .. import project_archive
+from ..attention.actions import action_router
+from ..attention.hub import AttentionHub, hub_router
+from ..attention.routes import attention_router
+from ..attention.store import AttentionStore
 from ..chat.routes import projects_router, providers_router, sessions_router
 from ..chat.store import ChatStore
 from ..computer_tools import ComputerService
@@ -101,6 +105,9 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
 
     updates = DesktopUpdates(source_root, settings.runtime_root / "updates",
                              managed=settings.managed_instance_id is not None, busy=update_busy)
+    # What waits for the architect across projects (#300), kept beside the operation journal.
+    attention = AttentionHub(AttentionStore(settings.runtime_root / "attention"), runtimes, chats, updates,
+                             hub_dir=str(settings.runtime_root))
 
     @asynccontextmanager
     async def lifespan(app):
@@ -117,7 +124,9 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         # in the background, so no project can hold up the Hub's start.
         threading.Thread(target=applications.restore_studios, args=(runtimes.open,), name="restore-studios",
                          daemon=True).start()
+        attention.start()
         yield
+        await asyncio.to_thread(attention.stop)
         await asyncio.to_thread(updates.shutdown)
         await asyncio.to_thread(chats.shutdown)
         await asyncio.to_thread(applications.shutdown)
@@ -130,6 +139,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     app.state.chats = chats
     app.state.runtimes = runtimes
     app.state.updates = updates
+    app.state.attention = attention
     app.state.integrations = IntegrationPackManager()
     # Desktop automation costs two PowerShell hosts, so it is composed on first
     # use rather than started with the Hub, and there is only ever one.
@@ -297,6 +307,9 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         return computer().record(body)
 
     app.include_router(runtime_router(runtimes))
+    app.include_router(attention_router(attention.store))
+    app.include_router(action_router(attention.executor))
+    app.include_router(hub_router(attention))
     app.include_router(preferences_router, prefix="/api")
     if settings.hub_web_dir is not None:
         if not (settings.hub_web_dir / "index.html").is_file():
