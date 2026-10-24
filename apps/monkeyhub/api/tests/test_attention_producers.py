@@ -151,7 +151,7 @@ class ConversationProducerTests(unittest.TestCase):
     def test_a_design_loop_question_is_answered_on_the_card(self):
         card, = producers.questions([producers.AskedQuestion("c1", "u1", "西门廊要保留原来的柱距吗", "柱距和新楼梯冲突")])
         self.assertEqual(card.dedupeKey, "dlq:c1:u1")
-        self.assertEqual(card.options[0].action.commandId, "chat.send_message")
+        self.assertEqual(card.options[0].action.commandId, "chat.composer.send")
         self.assertNotIn("content", card.options[0].action.args)
 
 
