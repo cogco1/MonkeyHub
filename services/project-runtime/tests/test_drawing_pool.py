@@ -92,6 +92,16 @@ class DrawingPoolTests(CandidateTestCase):
             self.assertGreater(retained.receipt["projection"]["visible_polylines"], 0)
         self.assertEqual(self.repository.read_head(), self.head)
 
+    def test_a_section_perspective_is_solved_by_a_worker(self) -> None:
+        body = {"projectId": PROJECT_ID, "modelSource": self.model,
+                "section": {"line": [[-5, 0.5], [5, 0.5]], "keep": "right"}, "scaleDenominator": 100}
+        with patch.object(drawing_runs, "project_section_perspective",
+                          wraps=drawing_runs.project_section_perspective) as here:
+            drawn = self.client.post("/api/drawings/section-perspectives", json=body)
+        self.assertEqual(drawn.status_code, 201, drawn.text)
+        self.assertEqual(here.call_count, 0, "the Runtime's own process solves nothing")
+        self.assertEqual(self.retained(drawn.json()).receipt["view"]["kind"], "section-perspective")
+
     def test_a_cut_plan_is_solved_by_a_worker_and_a_repeat_reads_the_registered_one(self) -> None:
         body = {"projectId": PROJECT_ID, "sourceStageRef": self.stage["stageRef"], "drawingId": "ground-plan",
                 "cutHeight": 1.0, "bottom": 0, "scaleDenominator": 50, "dimensions": []}

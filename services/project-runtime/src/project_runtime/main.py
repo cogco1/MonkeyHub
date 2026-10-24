@@ -753,7 +753,7 @@ def _serve(args: argparse.Namespace, settings: StudioSettings) -> None:
     from .application import drawing_pool
 
     # The serving process solves its drawings in worker processes (#300); a test's app does not.
-    drawing_pool.start()
+    drawing_pool.start(warm=True)
     try:
         _serve_app(args, settings)
     finally:

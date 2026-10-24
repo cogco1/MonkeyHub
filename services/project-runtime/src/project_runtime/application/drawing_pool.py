@@ -53,6 +53,11 @@ def _initialize_worker() -> None:
     initialize_drawing_runtime()
 
 
+def _ready() -> bool:
+    # Importing this module in a worker loads the drawing code and OCCT, as its first drawing would.
+    return True
+
+
 class DrawingPool:
     """Worker processes solving ``DrawTask``s; callable as the ``drawer`` the ``freeze_*`` functions take."""
 
@@ -84,6 +89,11 @@ class DrawingPool:
                 return found
         except TypeError:  # a source that cannot be a key is verified again each time
             return None
+
+    def warm(self) -> None:
+        """Start one worker now, so the first drawing does not wait for it; the others start when drawings overlap."""
+
+        self._running().submit(_ready)
 
     def close(self) -> None:
         with self._lock:
@@ -120,13 +130,15 @@ class DrawingPool:
 _pool: DrawingPool | None = None
 
 
-def start(workers: int | None = None) -> DrawingPool | None:
-    """Start this process's drawing workers; none when the size is 0. Workers start at the first drawing."""
+def start(workers: int | None = None, *, warm: bool = False) -> DrawingPool | None:
+    """Start this process's drawing pool; none when the size is 0. ``warm`` starts its first worker now."""
 
     global _pool
     size = pool_size() if workers is None else workers
     if size > 0 and _pool is None:
         _pool = DrawingPool(size)
+        if warm:
+            _pool.warm()
     return _pool
 
 
