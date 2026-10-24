@@ -21,7 +21,7 @@ from urllib.request import urlopen
 from fastapi.testclient import TestClient
 
 from project_runtime.binding import ProjectBinding
-from project_runtime.main import _source_revision, _watch_managed_stdin, create_app, main
+from project_runtime.main import _owner_lines, _source_revision, _watch_managed_stdin, create_app, main
 from project_runtime.protocol import SERVER_VERSION
 from project_runtime.settings import REMOTE_MODE, StudioSettings
 
@@ -237,6 +237,18 @@ print(sorted(name for name in ("jsonschema", "reportlab") if name in sys.modules
                 _watch_managed_stdin(server, app.state.jobs, io.StringIO(owner_input))
                 self.assertTrue(server.should_exit)
                 self.assertFalse(app.state.jobs.accepting)
+
+    def test_the_owner_pipe_is_read_line_by_line_and_its_close_ends_the_lines(self) -> None:
+        # A real pipe, as the Hub's: on Windows it is polled, so no read is left waiting on it.
+        read, write = os.pipe()
+        stream = os.fdopen(read, "r", encoding="utf-8")
+        self.addCleanup(stream.close)
+        os.write(write, "ignored\nst".encode())
+        lines = _owner_lines(stream, interval=0.01)
+        self.assertEqual(next(lines), "ignored\n")
+        os.write(write, b"op\nlast")
+        os.close(write)
+        self.assertEqual(list(lines), ["stop\n", "last"])
 
     def test_packaged_source_identity_precedes_git_and_refuses_invalid_stamps(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
