@@ -2,10 +2,10 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 
 import type { MessageKey } from "../../i18n/messages.en";
 import { useT } from "../../i18n/useT";
-import { cardsIn, queueSnapshot, subscribeQueue, type QueueSnapshot } from "../queue";
+import { bulkRecommended, cardsIn, queueSnapshot, subscribeQueue, undoBulk, type QueueFailure, type QueueSnapshot } from "../queue";
 import { AttentionCardView } from "./AttentionCards";
-import { queueOrder } from "./cardText";
-import type { AttentionCard, CardState } from "./types";
+import { isPending, queueOrder } from "./cardText";
+import type { AttentionCard, BulkResult, CardState } from "./types";
 
 /** This window's copy of the attention queue, read once for every reader on the page. */
 export function useAttentionQueue(): QueueSnapshot {
@@ -17,9 +17,34 @@ export function AttentionQueue({ projectName }: { projectName(projectDir: string
   const queue = useAttentionQueue();
   const cards = queueOrder(queue.cards);
   // An empty queue is said by the page's heading.
-  if (!cards.length) return null;
-  return <div className="attention-queue">{cards.map((card) =>
-    <AttentionCardView key={card.id} card={card} project={projectName(card.projectDir)} />)}</div>;
+  if (!cards.length) return <AllAsRecommended cards={cards} />;
+  return <div className="attention-queue">
+    <AllAsRecommended cards={cards} />
+    {cards.map((card) => <AttentionCardView key={card.id} card={card} project={projectName(card.projectDir)} />)}
+  </div>;
+}
+
+/** Two or more decisions with a recommendation can be answered at once, and taken back as one. */
+function AllAsRecommended({ cards }: { cards: readonly AttentionCard[] }) {
+  const t = useT();
+  const [done, setDone] = useState<BulkResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<QueueFailure | null>(null);
+  const recommended = cards.filter((card) => isPending(card) && card.channel === "decide" && card.recommendation);
+  if (!done && recommended.length < 2) return null;
+  const act = (action: () => Promise<BulkResult>, after: (result: BulkResult) => BulkResult | null) => {
+    setBusy(true); setFailure(null);
+    void action().then((result) => setDone(after(result)), (cause: QueueFailure) => setFailure(cause)).finally(() => setBusy(false));
+  };
+  return <div className="attention-queue__bulk" role="group" aria-label={t("cards.bulkGroup")}>
+    {done ? <>
+      <span role="status">{t("cards.bulkDone", { count: done.items.length })}{done.skipped.length > 0 && t("cards.bulkSkipped", { count: done.skipped.length })}</span>
+      <button type="button" className="menu-command" data-command="attention.queue.bulk_undo" disabled={busy}
+        onClick={() => act(() => undoBulk(done.bulkId), () => null)}>{t("cards.undo")}</button>
+    </> : <button type="button" className="btn" data-command="attention.queue.bulk_recommended" disabled={busy}
+      onClick={() => act(() => bulkRecommended(recommended.map((card) => card.id)), (result) => result)}>{t("cards.bulk", { count: recommended.length })}</button>}
+    {failure && <p className="attention-card__failure" role="alert">{failure.detail}</p>}
+  </div>;
 }
 
 /** Cards the queue no longer holds, newest first: handled ones with their undo, set-aside ones to bring back. */

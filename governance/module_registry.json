@@ -1069,6 +1069,12 @@
             ]
           },
           {
+            "id": "view.notice.open",
+            "label": "Show what a notice is about",
+            "label_zh": "查看提示说的事",
+            "entries": []
+          },
+          {
             "id": "view.notice.dismiss",
             "label": "Dismiss the notice",
             "label_zh": "关掉提示",

@@ -1338,6 +1338,10 @@ export const messagesZhCN = {
   "cards.reopen": "找回",
   "cards.evidence": "依据",
   "cards.words": "要发出的话",
+  "cards.bulkGroup": "全部按建议",
+  "cards.bulk": "全部按建议（{count}）",
+  "cards.bulkDone": "已按建议处理 {count} 张",
+  "cards.bulkSkipped": "，{count} 张没动",
 } satisfies MessageCatalog;
 
 export const hubCopy = {

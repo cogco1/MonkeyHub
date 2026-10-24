@@ -7,7 +7,7 @@
  * unavailable, and the notices keep reading the conversations as before.
  */
 
-import type { AttentionCard, AttentionSummary, CardActionResult, CardState } from "./cards/types";
+import type { AttentionCard, AttentionSummary, BulkResult, CardActionResult, CardState } from "./cards/types";
 
 /** What the Hub publishes on its event stream after any change to the queue. */
 export const ATTENTION_CHANGED = "attention/changed";
@@ -107,3 +107,24 @@ export const undoCard = (id: string) =>
 export const laterCard = (id: string) => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/later`));
 export const dismissCard = (id: string) => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/dismiss`));
 export const reopenCard = (id: string) => acted(post<AttentionCard>(`/api/attention/${encodeURIComponent(id)}/reopen`), (item) => [item.id]);
+
+/** "All as recommended" over the cards the person has in view, taken back as one. */
+export const bulkRecommended = (ids: readonly string[]) => acted(post<BulkResult>("/api/attention/bulk", { ids, mode: "recommended" }));
+export const undoBulk = (bulkId: string) =>
+  acted(post<BulkResult>(`/api/attention/bulk/${encodeURIComponent(bulkId)}/undo`), (result) => result.items.map((item) => item.id));
+
+let conversationServed = true;
+/**
+ * The project's attention conversation (1-2), where the new shell's input goes while no conversation is open:
+ * the Hub opens it on first need. null where this Hub does not have it yet, which is then asked no more.
+ */
+export async function attentionConversation(projectDir: string): Promise<string | null> {
+  if (!conversationServed) return null;
+  try {
+    return (await post<{ sessionId: string }>("/api/attention/conversation", { projectDir })).sessionId;
+  } catch (cause) {
+    if ((cause as { unserved?: boolean }).unserved) conversationServed = false;
+    else throw cause;
+    return null;
+  }
+}

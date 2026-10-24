@@ -1375,6 +1375,10 @@ export const messagesEn = {
   "cards.reopen": "Bring back",
   "cards.evidence": "Evidence",
   "cards.words": "What to send",
+  "cards.bulkGroup": "All as recommended",
+  "cards.bulk": "All as recommended ({count})",
+  "cards.bulkDone": "{count} handled as recommended",
+  "cards.bulkSkipped": ", {count} left as they were",
 } as const;
 
 export type MessageKey = keyof typeof messagesEn;

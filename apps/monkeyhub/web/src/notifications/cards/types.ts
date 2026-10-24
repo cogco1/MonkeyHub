@@ -103,6 +103,13 @@ export interface AttentionSummary {
   working: number;
 }
 
+/** "All as recommended" over the cards in view, and taking it back: what it handled, and what it left with the reason. */
+export interface BulkResult {
+  bulkId: string;
+  items: AttentionCard[];
+  skipped: { id: string; code: string; detail: string }[];
+}
+
 /** What answering, or taking an answer back, returns: the card, and a new one when the action asked instead of guessing. */
 export interface CardActionResult {
   item: AttentionCard;

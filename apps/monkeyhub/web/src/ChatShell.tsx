@@ -28,6 +28,7 @@ import { editFocused, HubMenuBar, type HubMenu, type HubMenuItem } from "./HubMe
 import { ASK_AI_ACTION, openSurfaceAction, useCommandActions, type CommandHandler } from "./features/commands/CommandProvider";
 import { AttentionShell, RECENT_CONVERSATIONS, type CenterView, type ShellProject } from "./app/AttentionShell";
 import { useT } from "./i18n/useT";
+import { attentionConversation } from "./notifications/queue";
 import { useNoticeRegion } from "./notifications/regions";
 import "./ChatShell.css";
 
@@ -1355,7 +1356,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     }
     actionLock.current = true; setBusy(true); setSending("connecting"); setError(null);
     try {
-      let current = chat?.id === chatId ? chat : chatId ? await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(chatId)}`) : null;
+      // 2-3a: in the attention shell, with no conversation open, the project's attention conversation takes the message.
+      const routed = attentionLayout && !attentionDrawerOpen.current ? await attentionConversation(target) : null;
+      const reading = routed ?? chatId;
+      let current = chat?.id === reading ? chat : reading ? await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(reading)}`) : null;
       if (!current) {
         const body: ChatCreateRequest = { projectDir: target, provider: defaults.provider, model: draftModel };
         current = await request<ChatDetail>("/api/chat/sessions", body);
@@ -1948,6 +1952,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const tc = useT();
   // 2-3a: the attention shell, opened with ?shell=attention until it becomes the default (2-3c).
   const [attentionLayout] = useState(() => new URLSearchParams(window.location.search).get("shell") === "attention");
+  /** Whether the attention shell shows a conversation now; while it does not, a message goes to the attention conversation. */
+  const attentionDrawerOpen = useRef(false);
   const startChat = () => { setArchivedView(false); setChatId(null); setChat(null); setError(null); toComposer(); };
   const openNewProject = () => { setDialogError(null); newDialog.current?.showModal(); };
   const openAddProject = () => { setDialogError(null); addDialog.current?.showModal(); };
@@ -2369,7 +2375,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       background={{ running: tasks.filter((task) => task.state === "running").length, queued: tasks.filter((task) => task.state !== "running").length }}
       conversationActive={running || sending !== null}
       notices={statusNotices} conversation={conversationLog} composer={composerArea} surfaces={workspacePages(panel)}
-      taskItems={taskItems} dialogs={dialogs} />;
+      taskItems={taskItems} dialogs={dialogs} onDrawer={(open) => { attentionDrawerOpen.current = open; }} />;
   }
   return <div className="chat-shell" data-sidebar={sidebar} data-panel={panel} data-focus={focused} style={{ "--chat-width": `${chatWidth}px` } as CSSProperties}>
     {/* #337 L0: the Hub's text menu row, as desktop apps have it: back, forward, the sidebar, then words. */}

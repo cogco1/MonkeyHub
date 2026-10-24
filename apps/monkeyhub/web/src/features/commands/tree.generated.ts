@@ -915,6 +915,24 @@ export const COMMAND_TREE: CommandTree = {
       ]
     },
     {
+      "id": "view.notice.open",
+      "capability": "shell.controls",
+      "label": {
+        "en": "Show what a notice is about",
+        "zh-CN": "查看提示说的事"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
       "id": "view.notice.dismiss",
       "capability": "shell.controls",
       "label": {

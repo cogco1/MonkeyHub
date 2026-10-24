@@ -79,6 +79,8 @@ export interface AttentionShellProps {
   surfaces: ReactNode;
   taskItems: ReactNode;
   dialogs: ReactNode;
+  /** Whether the conversation drawer is open: while it is closed the composer writes to the project's attention conversation. */
+  onDrawer?(open: boolean): void;
 }
 
 function Glyph({ path }: { path: string }) {
@@ -100,6 +102,9 @@ export function AttentionShell(props: AttentionShellProps) {
     if (props.conversationActive && !active.current) setDrawer(true);
     active.current = props.conversationActive;
   }, [props.conversationActive]);
+  const onDrawer = useRef(props.onDrawer);
+  onDrawer.current = props.onDrawer;
+  useEffect(() => { onDrawer.current?.(drawer); }, [drawer]);
   const open = (page: SidePage) => setSide((current) => (current === page ? null : page));
   const pageLabel = (page: SidePage) => t(`shell.side.${page}` as MessageKey);
   useCommandActions({ "view.tab.attention": { run: () => props.onView("attention") } });
