@@ -5,6 +5,646 @@ import type { CommandTree } from "./tree";
 export const COMMAND_TREE: CommandTree = {
   "capabilities": [
     {
+      "id": "candidate.modify_existing",
+      "owner": "project_runtime.intent",
+      "kind": "authoring",
+      "status": "PARTIAL",
+      "host": "runtime",
+      "purpose": {
+        "en": "Change one number that already exists on a built element of the selected candidate, naming what the change must not disturb, and run the result as a new candidate on the same exact source.",
+        "zh-CN": "在选定候选的已建构件上修改一个已有数值，显式声明不得改动的对象，并以同一精确来源运行出新候选。"
+      },
+      "terms": [
+        "modify an existing element",
+        "change a height",
+        "change an existing number",
+        "make the main volume taller",
+        "keep the rest unchanged",
+        "修改已有构件",
+        "改高度",
+        "把主体改高",
+        "修改已有数值",
+        "其余保持不变",
+        "adjust the height",
+        "change a dimension of something already modelled",
+        "resize an existing volume",
+        "keep another object unchanged",
+        "调整高度",
+        "改成",
+        "体块高度",
+        "保持不动"
+      ]
+    },
+    {
+      "id": "frame.set_level",
+      "owner": "project_runtime.intent",
+      "kind": "authoring",
+      "status": "PARTIAL",
+      "host": "runtime",
+      "purpose": {
+        "en": "Add a project level or move one to a new elevation, with whatever stands on it following through the record's own dependency edges, and run the result as a new candidate on the same exact source.",
+        "zh-CN": "新增一个楼层，或把楼层移到新标高；站在这层上的构件按记录里的依赖一起移动，结果在同一精确来源上生成新候选。"
+      },
+      "terms": [
+        "raise a floor",
+        "lower a floor",
+        "move a level",
+        "add a level",
+        "set a level elevation",
+        "抬高楼层",
+        "降低楼层",
+        "改楼层标高",
+        "新增楼层",
+        "move a storey",
+        "抬高二层",
+        "楼层标高"
+      ]
+    },
+    {
+      "id": "board.organize",
+      "owner": "project_runtime.board",
+      "kind": "manage",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Bring project pages and images onto the Board, keep the project documents list at hand, get an editable copy of a document, import component information cards and pass a selection on to Layout.",
+        "zh-CN": "把项目图页和图片放上画板，打开项目资料列表，获取资料的可编辑副本，导入构件资料卡，把选中的图纸放入汇报。"
+      },
+      "terms": [
+        "add a drawing page to the board",
+        "show project documents",
+        "send a render to the board",
+        "add to publish",
+        "把图纸放上画板",
+        "项目资料",
+        "导入构件资料",
+        "获取可编辑副本",
+        "put on the board",
+        "pin up",
+        "上墙",
+        "贴到画板"
+      ]
+    },
+    {
+      "id": "board.export",
+      "owner": "project_runtime.board",
+      "kind": "output",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Export the drawing pages placed on the Board as clean originals without marks: one merged PDF, one PDF per page, PNG or JPEG, optionally zipped for transfer.",
+        "zh-CN": "把画板上的图纸页按原图导出（不带批注）：合并成一个 PDF、每页一个 PDF、PNG 或 JPEG，也可打包成 ZIP 传给别人。"
+      },
+      "terms": [
+        "export the board",
+        "export board pages as pdf",
+        "download the board drawings",
+        "zip for transfer",
+        "导出画板",
+        "导出图纸 PDF",
+        "打包 ZIP",
+        "整理导出",
+        "print pack",
+        "board pdf",
+        "打印包",
+        "导出图纸"
+      ]
+    },
+    {
+      "id": "sketch.to_model",
+      "owner": "project_runtime.intent",
+      "kind": "authoring",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Draw closed shapes in a Board sketch frame or trace lines on a document page, set the scale from one known length, and turn them into a 3D candidate on a level.",
+        "zh-CN": "在画板草图框里画闭合图形，或在资料图页上描线，用一段已知长度设定比例，再生成某一层上的 3D 候选。"
+      },
+      "terms": [
+        "sketch to 3d",
+        "turn a sketch into a model",
+        "trace a plan into 3d",
+        "set the sketch scale",
+        "草图起模",
+        "描图生成 3D",
+        "设定比例",
+        "新建草图框",
+        "massing from a sketch",
+        "extrude a sketch",
+        "起模",
+        "拉体块"
+      ]
+    },
+    {
+      "id": "render.run",
+      "owner": "project_runtime.render",
+      "kind": "output",
+      "status": "PARTIAL",
+      "host": "runtime",
+      "purpose": {
+        "en": "Generate an AI render from a project image or the current Modeling view, with ordered reference images, a written visual direction, a size and an aspect ratio.",
+        "zh-CN": "用项目图片或当前建模视角作底图，加上排好顺序的参考图、写下的视觉方向、尺寸和比例，生成 AI 渲染图。"
+      },
+      "terms": [
+        "render this view",
+        "make an ai render",
+        "use the current view as the source",
+        "add reference images",
+        "生成渲染",
+        "AI 渲染",
+        "用当前视角渲染",
+        "添加参考图",
+        "visualization",
+        "rendering",
+        "效果图",
+        "出效果"
+      ]
+    },
+    {
+      "id": "publication.layout",
+      "owner": "project_runtime.publication",
+      "kind": "output",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Export the Layout's pages as an editable PowerPoint file or a PDF, named after the publication title.",
+        "zh-CN": "把排版的页面导出成可编辑的 PPTX 或 PDF，文件名用排版标题。"
+      },
+      "terms": [
+        "export the layout as pptx",
+        "export the layout as pdf",
+        "make a presentation file",
+        "download the slides",
+        "导出 PPT",
+        "导出 PDF",
+        "导出汇报",
+        "排版导出",
+        "powerpoint",
+        "slides",
+        "幻灯片",
+        "汇报文件"
+      ]
+    },
+    {
+      "id": "document.sources",
+      "owner": "project_runtime.documents",
+      "kind": "manage",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Upload a PDF or image into the project, replace one of its pages in place, and link a document to the model it draws.",
+        "zh-CN": "把 PDF 或图片上传进项目，原位替换其中一页，并把文档关联到它所画的模型。"
+      },
+      "terms": [
+        "upload a PDF",
+        "add an image to the project",
+        "replace a page",
+        "link a model to a drawing",
+        "上传 PDF",
+        "上传图片",
+        "更新此页原图",
+        "关联模型",
+        "import drawing",
+        "swap the page",
+        "导入资料",
+        "换图"
+      ]
+    },
+    {
+      "id": "markup.draw",
+      "owner": "hub.shell",
+      "kind": "authoring",
+      "status": "PRODUCTION",
+      "host": "hub",
+      "purpose": {
+        "en": "Draw marks on the model's tracing paper or on a document page with pen, line, outline, arrow, circle and text, erase and undo them, and set their colour and width.",
+        "zh-CN": "在模型描图纸或文档页上用画笔、直线、轮廓、箭头、圈选和文字画批注，擦除、撤销，并设颜色和粗细。"
+      },
+      "terms": [
+        "draw on the drawing",
+        "annotate the model",
+        "mark up a page",
+        "erase a mark",
+        "批注",
+        "描图纸",
+        "在图上画圈",
+        "撤销批注",
+        "redline",
+        "sketch over",
+        "圈画",
+        "标注"
+      ]
+    },
+    {
+      "id": "markup.review",
+      "owner": "project_runtime.intent",
+      "kind": "authoring",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Hand marks and a note to the AI: send design feedback from the Board, discuss an image or render, run a crit, send the tracing paper review, submit a page note, or clear the marks.",
+        "zh-CN": "把批注和意见交给 AI：从画板发送设计反馈、讨论图片或渲染、进行 Crit、发送描图纸审阅意见、提交本页意见，或清除批注。"
+      },
+      "terms": [
+        "send feedback to the AI",
+        "discuss this drawing",
+        "submit a page note",
+        "crit mode",
+        "发送设计反馈",
+        "讨论图片",
+        "提交本页意见",
+        "清除批注",
+        "hand off marks",
+        "ask for a change",
+        "交给 AI",
+        "评图"
+      ]
+    },
+    {
+      "id": "drawing.orthographic",
+      "owner": "monkeydiagram.drawing_runs",
+      "kind": "output",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Make a cut plan or vertical section from the model, set cut height, depth, scale and pens, hide objects and remove dimensions; the drawing saves itself as you edit.",
+        "zh-CN": "从模型生成剖切平面或竖向剖面，设剖切高度、深度、比例和线型，隐藏对象、移除尺寸；修改时图纸自动保存。"
+      },
+      "terms": [
+        "make a floor plan",
+        "generate a cut plan",
+        "cut a section",
+        "hide an object in the drawing",
+        "生成平面图",
+        "剖切平面",
+        "剖面图",
+        "隐藏对象",
+        "plan drawing",
+        "section cut",
+        "出平面",
+        "出剖面"
+      ]
+    },
+    {
+      "id": "drawing.section_perspective",
+      "owner": "monkeydiagram.drawing_runs",
+      "kind": "output",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Cut the model across X or Y and draw a section perspective, choosing position, viewing direction, eye height and field of view.",
+        "zh-CN": "沿 X 或 Y 剖切模型并生成剖透视，可选剖切位置、看向、视高和视角。"
+      },
+      "terms": [
+        "section perspective",
+        "perspective section",
+        "cut the model and look in",
+        "剖透视",
+        "生成剖透视",
+        "剖切透视图",
+        "sectional perspective",
+        "剖视透视"
+      ]
+    },
+    {
+      "id": "drawing.recipe",
+      "owner": "project_runtime.intent",
+      "kind": "manage",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Keep a drawing's pens as a project recipe: export and import recipes between projects, accept or ignore a suggested recipe, and choose whether a drawing follows the current model or a fixed version.",
+        "zh-CN": "把图纸的线型保存为项目表达设定：在项目之间导出、导入配方，接受或忽略建议的设定，并决定图纸跟随当前模型还是固定版本。"
+      },
+      "terms": [
+        "export drawing recipe",
+        "import drawing recipe",
+        "reuse drawing settings",
+        "follow the current model",
+        "导出配方",
+        "导入配方",
+        "复用图面配方",
+        "基于此版本重建",
+        "drawing preferences",
+        "pen settings",
+        "图纸偏好",
+        "表达设定"
+      ]
+    },
+    {
+      "id": "drawing.dress",
+      "owner": "monkeydiagram.drawing_runs",
+      "kind": "output",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Add people and trees to a cut plan, place and size them, mirror them, and delete them.",
+        "zh-CN": "在剖切平面上添加人物和树木，调整位置和尺寸，水平翻转或删除。"
+      },
+      "terms": [
+        "add a person to the plan",
+        "add trees",
+        "entourage",
+        "mirror a symbol",
+        "添加人物",
+        "添加树木",
+        "配景",
+        "删除配景",
+        "scale figures",
+        "plan symbols",
+        "人树配景"
+      ]
+    },
+    {
+      "id": "drawing.export",
+      "owner": "monkeydiagram.drawing_runs",
+      "kind": "output",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Download the saved drawing as an SVG file.",
+        "zh-CN": "把已保存的图纸下载为 SVG 文件。"
+      },
+      "terms": [
+        "download SVG",
+        "export the drawing",
+        "save the plan as a file",
+        "下载 SVG",
+        "导出图纸",
+        "图纸另存",
+        "vector export",
+        "导出矢量图"
+      ]
+    },
+    {
+      "id": "drawing.sheet",
+      "owner": "monkeydiagram.documentation.styles",
+      "kind": "output",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Generate a drawing sheet from the document page in a chosen style and scale.",
+        "zh-CN": "在文档页按所选图纸风格和比例生成一张图纸。"
+      },
+      "terms": [
+        "generate a drawing sheet",
+        "make a presentation sheet",
+        "drawing style",
+        "生成图纸",
+        "图纸风格",
+        "图纸比例",
+        "sheet layout",
+        "出图版式"
+      ]
+    },
+    {
+      "id": "study.run",
+      "owner": "project_runtime.study",
+      "kind": "authoring",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Study a precedent page: trace evidence, record sources, competing explanations and gaps, test counterfactual changes, compare studies, and draw a composition pattern and design prior from them.",
+        "zh-CN": "研究一页先例图：描证据轮廓，记录历史依据、竞争解释和缺口，检验反事实改动，比较研究，并归纳构成模式和设计先验。"
+      },
+      "terms": [
+        "study this page",
+        "research a precedent",
+        "add a counterfactual",
+        "compare studies",
+        "研究此图页",
+        "先例研究",
+        "反事实",
+        "设计先验",
+        "precedent analysis",
+        "case study",
+        "案例分析",
+        "研究模式"
+      ]
+    },
+    {
+      "id": "shell.canvas",
+      "owner": "hub.shell",
+      "kind": "shell",
+      "status": "PRODUCTION",
+      "host": "hub",
+      "purpose": {
+        "en": "Zoom, fit and turn pages on the Board, a drawing or a document page.",
+        "zh-CN": "在画板、图纸或文档页上缩放、适合窗口和翻页。"
+      },
+      "terms": [
+        "zoom in",
+        "zoom out",
+        "fit to window",
+        "next page",
+        "放大",
+        "缩小",
+        "适合窗口",
+        "下一页",
+        "see all",
+        "page through",
+        "查看全部",
+        "翻页"
+      ]
+    },
+    {
+      "id": "draft.direct_edit",
+      "owner": "project_runtime.binding",
+      "kind": "authoring",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Draw and edit the model by hand: sketch lines, rectangles, circles, outlines, arcs and freehand shapes, push or pull faces, move, rotate, scale and copy objects, measure, and undo or redo each edit.",
+        "zh-CN": "直接动手画和改模型：画直线、矩形、圆、闭合轮廓、圆弧和自由曲线，推拉面，移动、旋转、缩放和复制对象，测量，逐步撤销或重做。"
+      },
+      "terms": [
+        "draw a rectangle",
+        "push pull a face",
+        "move an object",
+        "measure a distance",
+        "画矩形",
+        "推拉一个面",
+        "移动构件",
+        "测量距离",
+        "sketch",
+        "extrude",
+        "直接建模",
+        "画线"
+      ]
+    },
+    {
+      "id": "model.view",
+      "owner": "hub.shell",
+      "kind": "shell",
+      "status": "PARTIAL",
+      "host": "hub",
+      "purpose": {
+        "en": "Look at the model from a standard or fitted view, change how it is painted, show its materials legend, bring back the reference model, or clear the canvas.",
+        "zh-CN": "用标准视角或适合窗口看模型，切换显示方式和材料图例，调回参考模型，或清空视口。"
+      },
+      "terms": [
+        "top view",
+        "fit the model to the window",
+        "show materials",
+        "show the reference model",
+        "顶视图",
+        "适合窗口",
+        "显示材料",
+        "回到参考模型",
+        "camera",
+        "zoom to selection",
+        "视角",
+        "聚焦选中"
+      ]
+    },
+    {
+      "id": "model.capture",
+      "owner": "project_runtime.documents",
+      "kind": "output",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Save the current 3D view as a PNG in the project, kept with the run it shows.",
+        "zh-CN": "把当前三维视图存成 PNG，和它显示的那次运行一起留在项目里。"
+      },
+      "terms": [
+        "take a screenshot",
+        "save the view as an image",
+        "capture the model view",
+        "截图",
+        "保存视图图片",
+        "导出当前视角",
+        "snapshot",
+        "screen grab",
+        "快照"
+      ]
+    },
+    {
+      "id": "model.exchange",
+      "owner": "project_runtime.documents",
+      "kind": "output",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Export the model on screen as an editable Rhino 3dm and save it, or open a local .3dm or .skp file into the project.",
+        "zh-CN": "把屏幕上的模型导出成可编辑的 Rhino 3dm 并保存，或把本机的 .3dm、.skp 文件打开进项目。"
+      },
+      "terms": [
+        "export to Rhino",
+        "save the 3dm",
+        "open a 3dm file",
+        "import a SketchUp model",
+        "导出 3dm",
+        "保存可编辑模型",
+        "打开本地模型",
+        "导入 skp",
+        "download the model",
+        "import model",
+        "导入模型",
+        "拖入模型"
+      ]
+    },
+    {
+      "id": "design.history",
+      "owner": "project_runtime.binding",
+      "kind": "manage",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Choose which version the next edit starts from, record edits, save milestones, branch from a Stage, combine candidates, and accept a result as the next Stage.",
+        "zh-CN": "选下一次修改从哪个版本开始，记录修改，保存重点版本，从某个 Stage 分支，合并候选，把结果接受为下一个 Stage。"
+      },
+      "terms": [
+        "continue from this version",
+        "go back to an earlier version",
+        "save a milestone",
+        "accept as next stage",
+        "从这里继续",
+        "回到之前的版本",
+        "保存重点版本",
+        "接受为下一 Stage",
+        "versions",
+        "history",
+        "版本",
+        "分支"
+      ]
+    },
+    {
+      "id": "candidate.review",
+      "owner": "project_runtime.intent",
+      "kind": "manage",
+      "status": "PARTIAL",
+      "host": "runtime",
+      "purpose": {
+        "en": "Endorse, reject or archive a candidate in the design tree, preview its model, and bring back drafts that were cleaned away.",
+        "zh-CN": "在状态树里认可、拒绝或归档一个候选，预览它的模型，把被清理的草稿恢复回来。"
+      },
+      "terms": [
+        "endorse this direction",
+        "reject a candidate",
+        "archive an option",
+        "restore a draft",
+        "认可方向",
+        "拒绝候选",
+        "归档方案",
+        "恢复草稿",
+        "review",
+        "set aside",
+        "审阅",
+        "搁置"
+      ]
+    },
+    {
+      "id": "candidate.compare",
+      "owner": "project_runtime.candidate",
+      "kind": "manage",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Compare a candidate with the model it came from: side by side with linked views and the original outline, as a before/after cross-fade, or object by object.",
+        "zh-CN": "把候选和它的原方案对比：并排看并联动视角、叠原方案轮廓，用修改前后渐变，或逐个对象比较。"
+      },
+      "terms": [
+        "compare with the original",
+        "before and after",
+        "side by side comparison",
+        "what changed",
+        "与原方案比较",
+        "修改前后对比",
+        "并排对比",
+        "改了哪些构件",
+        "diff",
+        "cross-fade",
+        "对比",
+        "差异"
+      ]
+    },
+    {
+      "id": "component.catalog",
+      "owner": "project_runtime.binding",
+      "kind": "manage",
+      "status": "PRODUCTION",
+      "host": "runtime",
+      "purpose": {
+        "en": "Find a component in the model's tree, see its editable parameters and information card, lock or unlock parameters, and answer which component a request meant.",
+        "zh-CN": "在模型构件树里找构件，查看可编辑参数和构件信息卡，锁定或解锁参数，并回答一句请求指的是哪个构件。"
+      },
+      "terms": [
+        "find a component",
+        "show component info",
+        "lock a parameter",
+        "which parameters can I edit",
+        "查找构件",
+        "构件信息",
+        "锁定参数",
+        "可编辑参数",
+        "component tree",
+        "element id",
+        "构件树",
+        "参数锁"
+      ]
+    },
+    {
       "id": "chat.conversation",
       "owner": "hub.shell",
       "kind": "manage",
@@ -182,6 +822,4557 @@ export const COMMAND_TREE: CommandTree = {
     }
   ],
   "commands": [
+    {
+      "id": "candidate.modify_existing.choose_component",
+      "capability": "candidate.modify_existing",
+      "label": {
+        "en": "Choose a component",
+        "zh-CN": "选择构件"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模118"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.modify_existing.propose",
+      "capability": "candidate.modify_existing",
+      "label": {
+        "en": "Propose change",
+        "zh-CN": "提出改动"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模127",
+        "模128"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.modify_existing.apply",
+      "capability": "candidate.modify_existing",
+      "label": {
+        "en": "Apply proposal",
+        "zh-CN": "应用提案"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模129"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.modify_existing.adjust",
+      "capability": "candidate.modify_existing",
+      "label": {
+        "en": "Adjust proposal",
+        "zh-CN": "调整提案"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模130"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.modify_existing.refine",
+      "capability": "candidate.modify_existing",
+      "label": {
+        "en": "Refine value",
+        "zh-CN": "微调数值"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模131"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.modify_existing.refine_less",
+      "capability": "candidate.modify_existing",
+      "label": {
+        "en": "One percent less",
+        "zh-CN": "减少百分之一"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模131"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.modify_existing.refine_more",
+      "capability": "candidate.modify_existing",
+      "label": {
+        "en": "One percent more",
+        "zh-CN": "增加百分之一"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模131"
+      ],
+      "args": []
+    },
+    {
+      "id": "frame.set_level.apply",
+      "capability": "frame.set_level",
+      "label": {
+        "en": "Apply elevation",
+        "zh-CN": "应用标高"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模38",
+        "模39",
+        "模40"
+      ],
+      "args": [
+        "field"
+      ]
+    },
+    {
+      "id": "frame.set_level.datum",
+      "capability": "frame.set_level",
+      "label": {
+        "en": "Create or update datum",
+        "zh-CN": "创建或更新基准"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模42",
+        "模43",
+        "模44"
+      ],
+      "args": []
+    },
+    {
+      "id": "board.add_document_page.toggle_list",
+      "capability": "board.organize",
+      "label": {
+        "en": "Project documents",
+        "zh-CN": "项目资料"
+      },
+      "terms": [
+        "sources",
+        "资料列表"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板3"
+      ],
+      "args": []
+    },
+    {
+      "id": "board.add_document_page.close_list",
+      "capability": "board.organize",
+      "label": {
+        "en": "Hide project documents",
+        "zh-CN": "收起项目资料"
+      },
+      "terms": [],
+      "surface": "board",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板26"
+      ],
+      "args": []
+    },
+    {
+      "id": "board.add_document_page.add",
+      "capability": "board.organize",
+      "label": {
+        "en": "Add page to board",
+        "zh-CN": "把此页加到画板"
+      },
+      "terms": [
+        "place page",
+        "放图纸"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板27",
+        "板28"
+      ],
+      "args": []
+    },
+    {
+      "id": "board.add_document_page.work_copy",
+      "capability": "board.organize",
+      "label": {
+        "en": "Get editable copy",
+        "zh-CN": "获取可编辑副本"
+      },
+      "terms": [
+        "work copy",
+        "工作副本"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板31"
+      ],
+      "args": []
+    },
+    {
+      "id": "board.manage.add_to_publish",
+      "capability": "board.organize",
+      "label": {
+        "en": "Add to Publish",
+        "zh-CN": "放入汇报"
+      },
+      "terms": [
+        "send to layout",
+        "送到排版"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板12"
+      ],
+      "args": []
+    },
+    {
+      "id": "board.manage.import_component_info",
+      "capability": "board.organize",
+      "label": {
+        "en": "Import component info",
+        "zh-CN": "导入构件资料"
+      },
+      "terms": [
+        "component cards",
+        "构件资料卡"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板5"
+      ],
+      "args": []
+    },
+    {
+      "id": "board.place_image",
+      "capability": "board.organize",
+      "label": {
+        "en": "Send to Board",
+        "zh-CN": "送到画板"
+      },
+      "terms": [
+        "put render on board",
+        "渲染图上墙"
+      ],
+      "surface": "render",
+      "group": "board",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲22"
+      ],
+      "args": []
+    },
+    {
+      "id": "board.export.run",
+      "capability": "board.export",
+      "label": {
+        "en": "Export board pages",
+        "zh-CN": "导出画板图纸"
+      },
+      "terms": [
+        "export pdf",
+        "导出 PDF"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板13",
+        "板14",
+        "板15"
+      ],
+      "args": []
+    },
+    {
+      "id": "sketch.to_model.new_frame",
+      "capability": "sketch.to_model",
+      "label": {
+        "en": "New sketch frame",
+        "zh-CN": "新建草图框"
+      },
+      "terms": [
+        "sketch frame",
+        "草图框"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板9"
+      ],
+      "args": []
+    },
+    {
+      "id": "sketch.to_model.calibrate",
+      "capability": "sketch.to_model",
+      "label": {
+        "en": "Set scale",
+        "zh-CN": "设定比例"
+      },
+      "terms": [
+        "set scale and direction",
+        "标定比例"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板23",
+        "板24",
+        "文28",
+        "文29",
+        "文30"
+      ],
+      "args": []
+    },
+    {
+      "id": "sketch.to_model.send",
+      "capability": "sketch.to_model",
+      "label": {
+        "en": "Send to 3D",
+        "zh-CN": "起模到 3D"
+      },
+      "terms": [
+        "generate 3D candidate",
+        "生成 3D 候选"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板21",
+        "板22",
+        "板25",
+        "文31",
+        "文32",
+        "文33",
+        "文36"
+      ],
+      "args": []
+    },
+    {
+      "id": "render.run.adjust_view",
+      "capability": "render.run",
+      "label": {
+        "en": "Adjust view in Modeling",
+        "zh-CN": "去建模调视角"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "render",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲3"
+      ],
+      "args": []
+    },
+    {
+      "id": "render.run.capture_view",
+      "capability": "render.run",
+      "label": {
+        "en": "Use current view",
+        "zh-CN": "用当前视角作底图"
+      },
+      "terms": [
+        "capture view",
+        "截取视角"
+      ],
+      "surface": "render",
+      "group": "render",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲4"
+      ],
+      "args": []
+    },
+    {
+      "id": "render.run.generate",
+      "capability": "render.run",
+      "label": {
+        "en": "Generate render",
+        "zh-CN": "生成渲染图"
+      },
+      "terms": [
+        "render",
+        "渲染"
+      ],
+      "surface": "render",
+      "group": "render",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲5",
+        "渲6",
+        "渲7",
+        "渲8",
+        "渲9",
+        "渲13",
+        "渲14",
+        "渲15",
+        "渲16"
+      ],
+      "args": []
+    },
+    {
+      "id": "render.run.mode_ai",
+      "capability": "render.run",
+      "label": {
+        "en": "AI mode",
+        "zh-CN": "AI 模式"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "render",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲1"
+      ],
+      "args": []
+    },
+    {
+      "id": "render.run.mode_physical",
+      "capability": "render.run",
+      "label": {
+        "en": "Physical mode",
+        "zh-CN": "物理渲染模式"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "render",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲1"
+      ],
+      "args": []
+    },
+    {
+      "id": "render.run.reference_down",
+      "capability": "render.run",
+      "label": {
+        "en": "Move reference down",
+        "zh-CN": "下移参考图"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "render",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲11"
+      ],
+      "args": [
+        "index"
+      ]
+    },
+    {
+      "id": "render.run.reference_remove",
+      "capability": "render.run",
+      "label": {
+        "en": "Remove reference",
+        "zh-CN": "移除参考图"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "render",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲12"
+      ],
+      "args": [
+        "index"
+      ]
+    },
+    {
+      "id": "render.run.reference_up",
+      "capability": "render.run",
+      "label": {
+        "en": "Move reference up",
+        "zh-CN": "上移参考图"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "render",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲10"
+      ],
+      "args": [
+        "index"
+      ]
+    },
+    {
+      "id": "render.run.refresh",
+      "capability": "render.run",
+      "label": {
+        "en": "Refresh status",
+        "zh-CN": "刷新渲染状态"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "render",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲2"
+      ],
+      "args": []
+    },
+    {
+      "id": "publication.export.pptx",
+      "capability": "publication.layout",
+      "label": {
+        "en": "Export PPTX",
+        "zh-CN": "导出 PPTX"
+      },
+      "terms": [
+        "powerpoint",
+        "幻灯片"
+      ],
+      "surface": "layout",
+      "group": "layout",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "排1",
+        "排2"
+      ],
+      "args": []
+    },
+    {
+      "id": "publication.export.pdf",
+      "capability": "publication.layout",
+      "label": {
+        "en": "Export PDF",
+        "zh-CN": "导出 PDF"
+      },
+      "terms": [],
+      "surface": "layout",
+      "group": "layout",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "排3"
+      ],
+      "args": []
+    },
+    {
+      "id": "document.upload",
+      "capability": "document.sources",
+      "label": {
+        "en": "Upload PDF / image",
+        "zh-CN": "上传 PDF / 图片"
+      },
+      "terms": [
+        "import a drawing"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板4",
+        "板59"
+      ],
+      "args": []
+    },
+    {
+      "id": "document.replace_page.open",
+      "capability": "document.sources",
+      "label": {
+        "en": "Update this page",
+        "zh-CN": "更新此页原图"
+      },
+      "terms": [],
+      "surface": "board",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板30",
+        "板62"
+      ],
+      "args": []
+    },
+    {
+      "id": "document.replace_page.submit",
+      "capability": "document.sources",
+      "label": {
+        "en": "Update in place",
+        "zh-CN": "原位更新"
+      },
+      "terms": [],
+      "surface": "board",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板73",
+        "板74",
+        "板76"
+      ],
+      "args": []
+    },
+    {
+      "id": "document.model_source.link",
+      "capability": "document.sources",
+      "label": {
+        "en": "Link selected model",
+        "zh-CN": "关联所选模型"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "board",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文8",
+        "文9"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.tracing_paper",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Tracing paper",
+        "zh-CN": "描图纸"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模59"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.select",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Edit line",
+        "zh-CN": "编辑线条"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文14"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.freehand",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Pen",
+        "zh-CN": "画笔"
+      },
+      "terms": [
+        "freehand"
+      ],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模67",
+        "文14"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.line",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Line",
+        "zh-CN": "直线"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模67",
+        "文14"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.polyline",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Outline",
+        "zh-CN": "轮廓"
+      },
+      "terms": [
+        "polyline"
+      ],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文14"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.arrow",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Arrow",
+        "zh-CN": "箭头"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模67",
+        "文14"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.circle",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Circle",
+        "zh-CN": "圈选"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模67",
+        "文14"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.arc",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Arc",
+        "zh-CN": "圆弧"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模67"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.ruler",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Ruler",
+        "zh-CN": "标尺"
+      },
+      "terms": [
+        "dimension mark"
+      ],
+      "surface": "modeling",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模67",
+        "模71"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.keep",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Keep",
+        "zh-CN": "保留"
+      },
+      "terms": [
+        "must not change"
+      ],
+      "surface": "modeling",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模67"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.remove",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Remove",
+        "zh-CN": "移除"
+      },
+      "terms": [
+        "should go"
+      ],
+      "surface": "modeling",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模67"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.text",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Text",
+        "zh-CN": "文字"
+      },
+      "terms": [
+        "text size"
+      ],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文14",
+        "文20"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.pan",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Pan",
+        "zh-CN": "平移"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文14"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.eraser",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Eraser",
+        "zh-CN": "橡皮擦"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模62",
+        "文14"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.close_outline",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Close outline",
+        "zh-CN": "闭合轮廓"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文15"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.delete_path",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Delete selected path",
+        "zh-CN": "删除所选线条"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文16"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.undo",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Undo mark",
+        "zh-CN": "撤销批注"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模64",
+        "文17"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.redo",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Redo mark",
+        "zh-CN": "重做批注"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模65",
+        "文18"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.cancel",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Cancel tool",
+        "zh-CN": "取消工具"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模66"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.colour",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Annotation colour",
+        "zh-CN": "批注颜色"
+      },
+      "terms": [
+        "ink colour"
+      ],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模68",
+        "文19"
+      ],
+      "args": [
+        "color"
+      ]
+    },
+    {
+      "id": "view.markup_tools.line_width",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Line width",
+        "zh-CN": "线宽"
+      },
+      "terms": [
+        "ink width"
+      ],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模69",
+        "文21"
+      ],
+      "args": [
+        "lineWidth"
+      ]
+    },
+    {
+      "id": "view.markup_tools.text_edit",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Edit text",
+        "zh-CN": "编辑文字"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文26"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.text_done",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Finish text",
+        "zh-CN": "完成文字"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文25"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.text_cancel",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Cancel text",
+        "zh-CN": "取消文字"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文24"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.text_delete",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Delete text",
+        "zh-CN": "删除文字"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文27"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.markup_tools.return_to_edit",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Return to editing",
+        "zh-CN": "返回当前批注"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文13"
+      ],
+      "args": []
+    },
+    {
+      "id": "markup.hand_to_ai.open",
+      "capability": "markup.review",
+      "label": {
+        "en": "Send design feedback",
+        "zh-CN": "发送设计反馈"
+      },
+      "terms": [],
+      "surface": "board",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板8",
+        "板65",
+        "板66"
+      ],
+      "args": []
+    },
+    {
+      "id": "markup.hand_to_ai.send",
+      "capability": "markup.review",
+      "label": {
+        "en": "Send to design",
+        "zh-CN": "发送到设计"
+      },
+      "terms": [],
+      "surface": "board",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板69",
+        "板72"
+      ],
+      "args": []
+    },
+    {
+      "id": "markup.hand_to_ai.discuss",
+      "capability": "markup.review",
+      "label": {
+        "en": "Discuss image / render",
+        "zh-CN": "讨论图片 / 渲染"
+      },
+      "terms": [],
+      "surface": "board",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板63"
+      ],
+      "args": []
+    },
+    {
+      "id": "markup.hand_to_ai.continue_in_chat",
+      "capability": "markup.review",
+      "label": {
+        "en": "Continue in chat",
+        "zh-CN": "在对话中继续"
+      },
+      "terms": [],
+      "surface": "board",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板77",
+        "板78",
+        "板79",
+        "板80",
+        "板83"
+      ],
+      "args": []
+    },
+    {
+      "id": "markup.hand_to_ai.enter_crit",
+      "capability": "markup.review",
+      "label": {
+        "en": "Crit mode",
+        "zh-CN": "Crit 模式"
+      },
+      "terms": [],
+      "surface": "board",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板10"
+      ],
+      "args": []
+    },
+    {
+      "id": "markup.hand_to_ai.exit_crit",
+      "capability": "markup.review",
+      "label": {
+        "en": "Exit crit mode",
+        "zh-CN": "退出 Crit 模式"
+      },
+      "terms": [],
+      "surface": "board",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板68"
+      ],
+      "args": []
+    },
+    {
+      "id": "markup.hand_to_ai.send_review",
+      "capability": "markup.review",
+      "label": {
+        "en": "Send review to Board",
+        "zh-CN": "将审阅意见发送到画板"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模70"
+      ],
+      "args": []
+    },
+    {
+      "id": "markup.hand_to_ai.submit_page_note",
+      "capability": "markup.review",
+      "label": {
+        "en": "Submit page note",
+        "zh-CN": "提交本页意见"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文42",
+        "文43",
+        "文45",
+        "文46",
+        "文47"
+      ],
+      "args": []
+    },
+    {
+      "id": "markup.clear",
+      "capability": "markup.review",
+      "label": {
+        "en": "Clear annotations",
+        "zh-CN": "清除批注"
+      },
+      "terms": [],
+      "surface": "board",
+      "group": "board",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模63",
+        "板11",
+        "板67"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.plan.generate",
+      "capability": "drawing.orthographic",
+      "label": {
+        "en": "Generate cut plan",
+        "zh-CN": "生成剖切平面"
+      },
+      "terms": [
+        "floor plan"
+      ],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图1",
+        "图3",
+        "图25",
+        "图26",
+        "图27",
+        "图28",
+        "图29",
+        "图30",
+        "图32",
+        "图33",
+        "图34",
+        "图42",
+        "图43",
+        "图44",
+        "图45",
+        "图48",
+        "图57"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.plan.import_model",
+      "capability": "drawing.orthographic",
+      "label": {
+        "en": "Import 3DM or SKP",
+        "zh-CN": "导入 3DM 或 SKP"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图4"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.plan.open_latest",
+      "capability": "drawing.orthographic",
+      "label": {
+        "en": "Open current revision",
+        "zh-CN": "打开当前版本"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图15"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.plan.refresh",
+      "capability": "drawing.orthographic",
+      "label": {
+        "en": "Refresh sources",
+        "zh-CN": "刷新来源"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图14"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.plan.save_recipe",
+      "capability": "drawing.orthographic",
+      "label": {
+        "en": "Save as project recipe",
+        "zh-CN": "存为项目表达设定"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图35"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.plan.hide_object",
+      "capability": "drawing.orthographic",
+      "label": {
+        "en": "Hide this object",
+        "zh-CN": "隐藏此对象"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图24",
+        "图36",
+        "图37"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.plan.show_object",
+      "capability": "drawing.orthographic",
+      "label": {
+        "en": "Show again",
+        "zh-CN": "重新显示"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图38"
+      ],
+      "args": [
+        "objectId"
+      ]
+    },
+    {
+      "id": "drawing.plan.remove_dimension",
+      "capability": "drawing.orthographic",
+      "label": {
+        "en": "Remove dimension",
+        "zh-CN": "移除尺寸"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图49"
+      ],
+      "args": [
+        "dimensionId"
+      ]
+    },
+    {
+      "id": "drawing.section_perspective.toggle",
+      "capability": "drawing.section_perspective",
+      "label": {
+        "en": "Section perspective",
+        "zh-CN": "剖透视"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图50"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.section_perspective.generate",
+      "capability": "drawing.section_perspective",
+      "label": {
+        "en": "Generate section perspective",
+        "zh-CN": "生成剖透视"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图51",
+        "图52",
+        "图53",
+        "图54",
+        "图55",
+        "图56"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.recipe.refresh",
+      "capability": "drawing.recipe",
+      "label": {
+        "en": "Refresh saved recipes",
+        "zh-CN": "刷新已存配方"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图6"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.recipe.export",
+      "capability": "drawing.recipe",
+      "label": {
+        "en": "Export recipe",
+        "zh-CN": "导出配方"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图7"
+      ],
+      "args": [
+        "decisionId"
+      ]
+    },
+    {
+      "id": "drawing.recipe.import_confirm",
+      "capability": "drawing.recipe",
+      "label": {
+        "en": "Import as project preference",
+        "zh-CN": "导入为项目偏好"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图9",
+        "图10"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.recipe.import_cancel",
+      "capability": "drawing.recipe",
+      "label": {
+        "en": "Cancel import",
+        "zh-CN": "取消导入"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图11"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.recipe.follow_live",
+      "capability": "drawing.recipe",
+      "label": {
+        "en": "Follow current model",
+        "zh-CN": "改为跟随当前模型"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图16"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.recipe.rebuild",
+      "capability": "drawing.recipe",
+      "label": {
+        "en": "Rebuild on this version",
+        "zh-CN": "基于此版本重建"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图17"
+      ],
+      "args": []
+    },
+    {
+      "id": "attention.answer_guess.save",
+      "capability": "drawing.recipe",
+      "label": {
+        "en": "Save suggestion",
+        "zh-CN": "保存建议"
+      },
+      "terms": [
+        "save as project recipe"
+      ],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图19"
+      ],
+      "args": []
+    },
+    {
+      "id": "attention.answer_guess.ignore",
+      "capability": "drawing.recipe",
+      "label": {
+        "en": "Ignore suggestion",
+        "zh-CN": "忽略建议"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图20"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.entourage.add_person",
+      "capability": "drawing.dress",
+      "label": {
+        "en": "Add person",
+        "zh-CN": "添加人物"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图39"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.entourage.add_tree",
+      "capability": "drawing.dress",
+      "label": {
+        "en": "Add tree",
+        "zh-CN": "添加树木"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图40"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.entourage.flip",
+      "capability": "drawing.dress",
+      "label": {
+        "en": "Mirror horizontally",
+        "zh-CN": "水平翻转"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图41",
+        "图46"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.entourage.remove",
+      "capability": "drawing.dress",
+      "label": {
+        "en": "Delete entourage",
+        "zh-CN": "删除配景"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图47"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.export.svg",
+      "capability": "drawing.export",
+      "label": {
+        "en": "Download SVG",
+        "zh-CN": "下载 SVG"
+      },
+      "terms": [],
+      "surface": "drawings",
+      "group": "drawings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "图13"
+      ],
+      "args": []
+    },
+    {
+      "id": "drawing.sheet.generate",
+      "capability": "drawing.sheet",
+      "label": {
+        "en": "Generate drawing",
+        "zh-CN": "生成图纸"
+      },
+      "terms": [
+        "make a sheet"
+      ],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文38",
+        "文39",
+        "文40"
+      ],
+      "args": []
+    },
+    {
+      "id": "study.run.step",
+      "capability": "study.run",
+      "label": {
+        "en": "Go to study step",
+        "zh-CN": "转到研究步骤"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文50"
+      ],
+      "args": [
+        "step"
+      ]
+    },
+    {
+      "id": "study.run.next_step",
+      "capability": "study.run",
+      "label": {
+        "en": "Continue to next step",
+        "zh-CN": "继续下一步"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文87"
+      ],
+      "args": []
+    },
+    {
+      "id": "study.run.use_trace",
+      "capability": "study.run",
+      "label": {
+        "en": "Use selected trace",
+        "zh-CN": "使用选中的闭合轮廓"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "study.run.propose_traces",
+      "capability": "study.run",
+      "label": {
+        "en": "Propose traces with model",
+        "zh-CN": "模型提议轮廓"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文51"
+      ],
+      "args": []
+    },
+    {
+      "id": "study.run.locate_evidence",
+      "capability": "study.run",
+      "label": {
+        "en": "Locate on page",
+        "zh-CN": "在图上定位"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文52"
+      ],
+      "args": [
+        "evidenceId"
+      ]
+    },
+    {
+      "id": "study.run.add_source",
+      "capability": "study.run",
+      "label": {
+        "en": "Add historical source",
+        "zh-CN": "添加历史依据"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文56"
+      ],
+      "args": []
+    },
+    {
+      "id": "study.run.propose_explanations",
+      "capability": "study.run",
+      "label": {
+        "en": "Propose testable explanations",
+        "zh-CN": "提出可检验解释"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文58"
+      ],
+      "args": []
+    },
+    {
+      "id": "study.run.add_hypothesis",
+      "capability": "study.run",
+      "label": {
+        "en": "Add competing explanation",
+        "zh-CN": "添加竞争解释"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文62"
+      ],
+      "args": []
+    },
+    {
+      "id": "study.run.add_gap",
+      "capability": "study.run",
+      "label": {
+        "en": "Add evidence gap",
+        "zh-CN": "添加证据缺口"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文64"
+      ],
+      "args": []
+    },
+    {
+      "id": "study.run.add_counterfactual",
+      "capability": "study.run",
+      "label": {
+        "en": "Add counterfactual change",
+        "zh-CN": "添加反事实改动"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文72"
+      ],
+      "args": []
+    },
+    {
+      "id": "study.run.remove_counterfactual",
+      "capability": "study.run",
+      "label": {
+        "en": "Remove counterfactual",
+        "zh-CN": "移除反事实改动"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文65"
+      ],
+      "args": [
+        "counterfactualId"
+      ]
+    },
+    {
+      "id": "study.run.compare_revisions",
+      "capability": "study.run",
+      "label": {
+        "en": "Compare saved revisions",
+        "zh-CN": "比较已保存版本"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文73",
+        "文74"
+      ],
+      "args": []
+    },
+    {
+      "id": "study.run.remove_comparison",
+      "capability": "study.run",
+      "label": {
+        "en": "Remove archived comparison",
+        "zh-CN": "移除归档比较"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文75"
+      ],
+      "args": [
+        "comparisonIndex"
+      ]
+    },
+    {
+      "id": "study.run.create_pattern",
+      "capability": "study.run",
+      "label": {
+        "en": "Create composition pattern",
+        "zh-CN": "创建构成模式"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文76"
+      ],
+      "args": []
+    },
+    {
+      "id": "study.run.create_prior",
+      "capability": "study.run",
+      "label": {
+        "en": "Create design prior",
+        "zh-CN": "创建设计先验"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文78"
+      ],
+      "args": []
+    },
+    {
+      "id": "study.run.change_conditions",
+      "capability": "study.run",
+      "label": {
+        "en": "Change applicability conditions",
+        "zh-CN": "改变适用条件"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文80"
+      ],
+      "args": []
+    },
+    {
+      "id": "study.run.save",
+      "capability": "study.run",
+      "label": {
+        "en": "Save study and run",
+        "zh-CN": "保存研究并运行"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文53",
+        "文54",
+        "文55",
+        "文57",
+        "文59",
+        "文60",
+        "文61",
+        "文63",
+        "文66",
+        "文67",
+        "文68",
+        "文69",
+        "文70",
+        "文71",
+        "文77",
+        "文79",
+        "文81",
+        "文83"
+      ],
+      "args": []
+    },
+    {
+      "id": "study.run.reopen",
+      "capability": "study.run",
+      "label": {
+        "en": "Reopen saved study",
+        "zh-CN": "重新读取研究"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "background",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文82"
+      ],
+      "args": []
+    },
+    {
+      "id": "study.run.discard",
+      "capability": "study.run",
+      "label": {
+        "en": "Discard unsaved draft",
+        "zh-CN": "放弃未存草稿"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "background",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文84"
+      ],
+      "args": []
+    },
+    {
+      "id": "study.run.discard_confirm",
+      "capability": "study.run",
+      "label": {
+        "en": "Discard and reopen",
+        "zh-CN": "放弃草稿并重开"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "background",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文85"
+      ],
+      "args": []
+    },
+    {
+      "id": "study.run.keep_editing",
+      "capability": "study.run",
+      "label": {
+        "en": "Keep editing",
+        "zh-CN": "继续编辑"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "background",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文86"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.canvas.zoom_in",
+      "capability": "shell.canvas",
+      "label": {
+        "en": "Zoom in",
+        "zh-CN": "放大"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文22",
+        "图23"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.canvas.zoom_out",
+      "capability": "shell.canvas",
+      "label": {
+        "en": "Zoom out",
+        "zh-CN": "缩小"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文22",
+        "图21"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.canvas.fit",
+      "capability": "shell.canvas",
+      "label": {
+        "en": "Fit page",
+        "zh-CN": "适合窗口"
+      },
+      "terms": [
+        "fit board",
+        "查看全部"
+      ],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板7",
+        "文23",
+        "图22"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.canvas.previous_page",
+      "capability": "shell.canvas",
+      "label": {
+        "en": "Previous page",
+        "zh-CN": "上一页"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文6"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.canvas.next_page",
+      "capability": "shell.canvas",
+      "label": {
+        "en": "Next page",
+        "zh-CN": "下一页"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "document",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文6"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.select",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Select",
+        "zh-CN": "选择"
+      },
+      "terms": [
+        "pick an object",
+        "点选"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模33",
+        "模47"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.line",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Line",
+        "zh-CN": "直线"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模48",
+        "模60",
+        "模72"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.rectangle",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Rectangle",
+        "zh-CN": "矩形"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模49"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.circle",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Circle",
+        "zh-CN": "圆"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模50"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.polygon",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Closed outline",
+        "zh-CN": "闭合轮廓工具"
+      },
+      "terms": [
+        "polygon",
+        "多边形"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模56"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.arc",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "2-point arc",
+        "zh-CN": "两点圆弧"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模57"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.freehand",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Freehand",
+        "zh-CN": "自由曲线"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模58"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.push_pull",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Push/Pull",
+        "zh-CN": "推拉"
+      },
+      "terms": [
+        "extrude",
+        "拉伸"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模51"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.move",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Move",
+        "zh-CN": "移动"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模52"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.rotate",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Rotate",
+        "zh-CN": "旋转"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "draft.tools.scale",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Scale",
+        "zh-CN": "缩放"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "draft.tools.copy",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Copy",
+        "zh-CN": "复制"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "draft.tools.measure",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Measure",
+        "zh-CN": "测量"
+      },
+      "terms": [
+        "tape measure",
+        "量距离"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "draft.tools.undo",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Undo model",
+        "zh-CN": "撤销模型"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模53"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.redo",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Redo model",
+        "zh-CN": "重做模型"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模54"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.apply",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Apply edit",
+        "zh-CN": "应用修改"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模76",
+        "模77",
+        "模78",
+        "模79",
+        "模80",
+        "模81"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.close",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Close tool",
+        "zh-CN": "关闭工具"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模82"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.help",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Tool help",
+        "zh-CN": "工具说明"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模83"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.lock_x",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Lock U",
+        "zh-CN": "锁 U 轴"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模73"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.lock_y",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Lock V",
+        "zh-CN": "锁 V 轴"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模73"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.close_outline",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Close outline",
+        "zh-CN": "闭合当前轮廓"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模74"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.tools.make_face",
+      "capability": "draft.direct_edit",
+      "label": {
+        "en": "Make face only",
+        "zh-CN": "只生成面"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模75"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.model_camera.top",
+      "capability": "model.view",
+      "label": {
+        "en": "Top view",
+        "zh-CN": "顶部视图"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模10"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.model_camera.front",
+      "capability": "model.view",
+      "label": {
+        "en": "Front view",
+        "zh-CN": "正面视图"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模10",
+        "模36"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.model_camera.right",
+      "capability": "model.view",
+      "label": {
+        "en": "Right view",
+        "zh-CN": "右侧视图"
+      },
+      "terms": [
+        "side view",
+        "侧面"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模10",
+        "模36"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.model_camera.iso",
+      "capability": "model.view",
+      "label": {
+        "en": "Isometric view",
+        "zh-CN": "轴测视图"
+      },
+      "terms": [
+        "axonometric"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模10",
+        "模36"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.model_camera.perspective",
+      "capability": "model.view",
+      "label": {
+        "en": "Perspective view",
+        "zh-CN": "透视视图"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模10"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.model_camera.fit",
+      "capability": "model.view",
+      "label": {
+        "en": "Fit model",
+        "zh-CN": "适合窗口"
+      },
+      "terms": [
+        "zoom extents"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "view.model_camera.fit_selected",
+      "capability": "model.view",
+      "label": {
+        "en": "Fit selected",
+        "zh-CN": "聚焦选中"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模11"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.model_display.materials",
+      "capability": "model.view",
+      "label": {
+        "en": "Materials legend",
+        "zh-CN": "材料图例"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模12",
+        "模37"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.model_display.clear",
+      "capability": "model.view",
+      "label": {
+        "en": "Clear viewport",
+        "zh-CN": "清空视口"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模19"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.reference_model.show",
+      "capability": "model.view",
+      "label": {
+        "en": "Show reference model",
+        "zh-CN": "显示参考模型"
+      },
+      "terms": [
+        "home model",
+        "回到初始模型"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模16",
+        "模28"
+      ],
+      "args": []
+    },
+    {
+      "id": "model.capture",
+      "capability": "model.capture",
+      "label": {
+        "en": "Screenshot",
+        "zh-CN": "截图"
+      },
+      "terms": [
+        "save view as PNG",
+        "快照"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模18"
+      ],
+      "args": []
+    },
+    {
+      "id": "model.export_3dm.editable",
+      "capability": "model.exchange",
+      "label": {
+        "en": "Export editable 3dm",
+        "zh-CN": "导出可编辑 3dm"
+      },
+      "terms": [
+        "export to Rhino"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模7"
+      ],
+      "args": []
+    },
+    {
+      "id": "model.export_3dm.save",
+      "capability": "model.exchange",
+      "label": {
+        "en": "Save editable 3dm",
+        "zh-CN": "保存可编辑 3dm"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模8",
+        "模100"
+      ],
+      "args": []
+    },
+    {
+      "id": "model.import_asset.open_file",
+      "capability": "model.exchange",
+      "label": {
+        "en": "Open model file",
+        "zh-CN": "打开模型文件"
+      },
+      "terms": [
+        "open .3dm",
+        "open .skp",
+        "拖放打开"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模17",
+        "模31",
+        "模34",
+        "模35"
+      ],
+      "args": []
+    },
+    {
+      "id": "design.go_to_step.versions",
+      "capability": "design.history",
+      "label": {
+        "en": "Versions",
+        "zh-CN": "版本"
+      },
+      "terms": [
+        "choose version",
+        "选择版本"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模1",
+        "模29"
+      ],
+      "args": []
+    },
+    {
+      "id": "design.go_to_step.close_versions",
+      "capability": "design.history",
+      "label": {
+        "en": "Close versions",
+        "zh-CN": "收起版本"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模89"
+      ],
+      "args": []
+    },
+    {
+      "id": "design.go_to_step.continue",
+      "capability": "design.history",
+      "label": {
+        "en": "Continue from here",
+        "zh-CN": "从这里继续"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模24",
+        "模26",
+        "模91",
+        "文10",
+        "文34",
+        "树16"
+      ],
+      "args": []
+    },
+    {
+      "id": "design.go_to_step.view_only",
+      "capability": "design.history",
+      "label": {
+        "en": "View only",
+        "zh-CN": "只查看"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模23"
+      ],
+      "args": []
+    },
+    {
+      "id": "design.go_to_step.default_base",
+      "capability": "design.history",
+      "label": {
+        "en": "Default editing base",
+        "zh-CN": "返回默认修改起点"
+      },
+      "terms": [
+        "return to default editing base"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模3",
+        "模113"
+      ],
+      "args": []
+    },
+    {
+      "id": "design.go_to_step.back_to_current",
+      "capability": "design.history",
+      "label": {
+        "en": "Back to Current",
+        "zh-CN": "回到当前"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "design.go_to_step.save_milestone",
+      "capability": "design.history",
+      "label": {
+        "en": "Save milestone",
+        "zh-CN": "保存重点版本"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模93"
+      ],
+      "args": []
+    },
+    {
+      "id": "design.go_to_step.stage",
+      "capability": "design.history",
+      "label": {
+        "en": "Show Stage",
+        "zh-CN": "查看 Stage"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "stageRef"
+      ]
+    },
+    {
+      "id": "design.go_to_step.fork",
+      "capability": "design.history",
+      "label": {
+        "en": "New branch from here",
+        "zh-CN": "从这里新建分支"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "design.go_to_step.create_branch",
+      "capability": "design.history",
+      "label": {
+        "en": "Create branch",
+        "zh-CN": "创建分支"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "design.go_to_step.cancel_fork",
+      "capability": "design.history",
+      "label": {
+        "en": "Cancel branch",
+        "zh-CN": "取消新建分支"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "design.go_to_step.candidate",
+      "capability": "design.history",
+      "label": {
+        "en": "Show exploration option",
+        "zh-CN": "查看探索方案"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "optionId"
+      ]
+    },
+    {
+      "id": "design.go_to_step.combine",
+      "capability": "design.history",
+      "label": {
+        "en": "Combine candidates",
+        "zh-CN": "合并候选"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "design.undo_last",
+      "capability": "design.history",
+      "label": {
+        "en": "Undo follow",
+        "zh-CN": "撤销跟随"
+      },
+      "terms": [
+        "back to the previous model",
+        "回到之前的模型"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模21"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.record.save",
+      "capability": "design.history",
+      "label": {
+        "en": "Record",
+        "zh-CN": "记录"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模61"
+      ],
+      "args": []
+    },
+    {
+      "id": "draft.record.continue",
+      "capability": "design.history",
+      "label": {
+        "en": "Record edits and continue",
+        "zh-CN": "记录修改并继续"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模25",
+        "模27",
+        "模87",
+        "文35",
+        "树26"
+      ],
+      "args": []
+    },
+    {
+      "id": "attention.decide.show_ready",
+      "capability": "design.history",
+      "label": {
+        "en": "Options ready",
+        "zh-CN": "方案就绪"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "stage.accept.next",
+      "capability": "design.history",
+      "label": {
+        "en": "Accept as next Stage",
+        "zh-CN": "接受为下一 Stage"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模92"
+      ],
+      "args": []
+    },
+    {
+      "id": "stage.accept.initial",
+      "capability": "design.history",
+      "label": {
+        "en": "Accept as S0",
+        "zh-CN": "接受为 S0"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模96"
+      ],
+      "args": []
+    },
+    {
+      "id": "stage.accept.current",
+      "capability": "design.history",
+      "label": {
+        "en": "Accept as Stage",
+        "zh-CN": "接受为 Stage"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树10",
+        "树23"
+      ],
+      "args": []
+    },
+    {
+      "id": "stage.accept.confirm",
+      "capability": "design.history",
+      "label": {
+        "en": "Confirm acceptance",
+        "zh-CN": "确认接受"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "modeling",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树24"
+      ],
+      "args": []
+    },
+    {
+      "id": "stage.accept.cancel",
+      "capability": "design.history",
+      "label": {
+        "en": "Cancel acceptance",
+        "zh-CN": "取消接受"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "modeling",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树25"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.review.endorse",
+      "capability": "candidate.review",
+      "label": {
+        "en": "Endorse direction",
+        "zh-CN": "认可方向"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "design_tree",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树18"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.review.reject",
+      "capability": "candidate.review",
+      "label": {
+        "en": "Reject candidate",
+        "zh-CN": "拒绝候选"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "design_tree",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树19"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.review.archive",
+      "capability": "candidate.review",
+      "label": {
+        "en": "Archive candidate",
+        "zh-CN": "归档候选"
+      },
+      "terms": [
+        "undo archive",
+        "取消归档"
+      ],
+      "surface": "design_tree",
+      "group": "design_tree",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树20"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.restore.show_drafts",
+      "capability": "candidate.review",
+      "label": {
+        "en": "Show superseded drafts",
+        "zh-CN": "显示已被取代的草稿"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "design_tree",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树21"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.restore.draft",
+      "capability": "candidate.review",
+      "label": {
+        "en": "Restore draft",
+        "zh-CN": "恢复草稿"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "design_tree",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树22"
+      ],
+      "args": []
+    },
+    {
+      "id": "attention.decide.preview",
+      "capability": "candidate.review",
+      "label": {
+        "en": "Preview candidate",
+        "zh-CN": "预览候选"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "design_tree",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模137"
+      ],
+      "args": [
+        "artifactId"
+      ]
+    },
+    {
+      "id": "candidate.compare.open",
+      "capability": "candidate.compare",
+      "label": {
+        "en": "Compare before/after",
+        "zh-CN": "修改前后对比"
+      },
+      "terms": [
+        "cross-fade",
+        "渐变对比"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模45",
+        "模102"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.compare.done",
+      "capability": "candidate.compare",
+      "label": {
+        "en": "Done comparing",
+        "zh-CN": "结束对比"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模46"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.compare.in_model",
+      "capability": "candidate.compare",
+      "label": {
+        "en": "Compare in the model",
+        "zh-CN": "在模型中对比"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模142"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.compare.view",
+      "capability": "candidate.compare",
+      "label": {
+        "en": "View in Modeling",
+        "zh-CN": "在建模中查看"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树15"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.compare.with_original",
+      "capability": "candidate.compare",
+      "label": {
+        "en": "Compare with original",
+        "zh-CN": "与原方案比较"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树17"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.compare.back",
+      "capability": "candidate.compare",
+      "label": {
+        "en": "Back from comparison",
+        "zh-CN": "退出对比"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模145"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.compare.linked",
+      "capability": "candidate.compare",
+      "label": {
+        "en": "Linked views",
+        "zh-CN": "联动视角"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模146"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.compare.outline",
+      "capability": "candidate.compare",
+      "label": {
+        "en": "Original outline",
+        "zh-CN": "原方案轮廓"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模147"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.compare.fit",
+      "capability": "candidate.compare",
+      "label": {
+        "en": "Fit both",
+        "zh-CN": "两侧重新对齐"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模148"
+      ],
+      "args": []
+    },
+    {
+      "id": "candidate.compare.mark_object",
+      "capability": "candidate.compare",
+      "label": {
+        "en": "Mark object",
+        "zh-CN": "标记对象"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模151",
+        "模152"
+      ],
+      "args": [
+        "objectName"
+      ]
+    },
+    {
+      "id": "component.inspect.open",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Component info",
+        "zh-CN": "构件信息"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模5"
+      ],
+      "args": []
+    },
+    {
+      "id": "component.inspect.close",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Close component info",
+        "zh-CN": "关闭构件信息"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模104"
+      ],
+      "args": []
+    },
+    {
+      "id": "component.inspect.copy",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Copy component info",
+        "zh-CN": "复制构件信息"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模103"
+      ],
+      "args": []
+    },
+    {
+      "id": "component.inspect.copy_link",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Copy link",
+        "zh-CN": "复制链接"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模106"
+      ],
+      "args": []
+    },
+    {
+      "id": "component.inspect.toggle_notes",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Show notes",
+        "zh-CN": "展开说明"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模105"
+      ],
+      "args": []
+    },
+    {
+      "id": "component.lock_params.open",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Parameter locks",
+        "zh-CN": "参数锁"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模20"
+      ],
+      "args": []
+    },
+    {
+      "id": "component.lock_params.close",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Close parameter locks",
+        "zh-CN": "关闭参数锁"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模88"
+      ],
+      "args": []
+    },
+    {
+      "id": "component.lock_params.lock",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Lock selected",
+        "zh-CN": "锁定所选"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模84",
+        "模85"
+      ],
+      "args": []
+    },
+    {
+      "id": "component.lock_params.unlock",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Unlock selected",
+        "zh-CN": "解锁所选"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模86"
+      ],
+      "args": []
+    },
+    {
+      "id": "component.find.pick",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Pick component",
+        "zh-CN": "选中构件"
+      },
+      "terms": [
+        "type a component id",
+        "输入构件 ID"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模119",
+        "模121"
+      ],
+      "args": [
+        "nodeId"
+      ]
+    },
+    {
+      "id": "component.find.pick_element",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Pick element",
+        "zh-CN": "选中元素"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "elementId"
+      ]
+    },
+    {
+      "id": "component.find.fold",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Fold component",
+        "zh-CN": "折叠构件"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模120"
+      ],
+      "args": [
+        "nodeId"
+      ]
+    },
+    {
+      "id": "component.find.view_parameters",
+      "capability": "component.catalog",
+      "label": {
+        "en": "View editable parameters",
+        "zh-CN": "查看可编辑参数"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模122"
+      ],
+      "args": []
+    },
+    {
+      "id": "component.find.toggle_controls",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Show controls",
+        "zh-CN": "展开控制"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模123"
+      ],
+      "args": []
+    },
+    {
+      "id": "component.find.set_value",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Set value",
+        "zh-CN": "设为…"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模124"
+      ],
+      "args": [
+        "key"
+      ]
+    },
+    {
+      "id": "component.find.declare_control",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Declare a control",
+        "zh-CN": "补充一个控制"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模125"
+      ],
+      "args": []
+    },
+    {
+      "id": "component.find.remove_mark",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Remove mark",
+        "zh-CN": "移除标记"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模126"
+      ],
+      "args": [
+        "index"
+      ]
+    },
+    {
+      "id": "component.resolve_pick.choose",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Choose component",
+        "zh-CN": "选这个构件"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模133",
+        "模135"
+      ],
+      "args": [
+        "ref"
+      ]
+    },
+    {
+      "id": "component.resolve_pick.expand",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Show all options",
+        "zh-CN": "查看全部候选"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模134"
+      ],
+      "args": []
+    },
+    {
+      "id": "component.resolve_pick.reply",
+      "capability": "component.catalog",
+      "label": {
+        "en": "Use this wording",
+        "zh-CN": "用这个句式"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模136"
+      ],
+      "args": [
+        "form"
+      ]
+    },
     {
       "id": "chat.new_conversation",
       "capability": "chat.conversation",
@@ -564,6 +5755,1288 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
+      "id": "view.render.compare",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Compare with source",
+        "zh-CN": "与底图对比"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲17"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.render.download",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Download image",
+        "zh-CN": "下载渲染图"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲21"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.render.fit",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Fit",
+        "zh-CN": "适应窗口"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲19"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.render.recapture",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Re-capture on current model",
+        "zh-CN": "在当前模型上重新截取"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲28"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.render.result",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Show result",
+        "zh-CN": "查看结果"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲17"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.render.reuse_inputs",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Use these inputs",
+        "zh-CN": "载入这次输入"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲25"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.render.select_job",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Open generation",
+        "zh-CN": "打开生成记录"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲24"
+      ],
+      "args": [
+        "jobId"
+      ]
+    },
+    {
+      "id": "view.render.show_in_modeling",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Show in Modeling",
+        "zh-CN": "在建模中查看此视角"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲27"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.render.source",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Show source",
+        "zh-CN": "查看底图"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲17"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.render.use_updated_source",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Use updated source",
+        "zh-CN": "使用更新来源"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲26"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.render.zoom_in",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Zoom in",
+        "zh-CN": "放大"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲20"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.render.zoom_out",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Zoom out",
+        "zh-CN": "缩小"
+      },
+      "terms": [],
+      "surface": "render",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "渲18"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.layout.add_page",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Add page",
+        "zh-CN": "添加页"
+      },
+      "terms": [],
+      "surface": "layout",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "排8"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.layout.add_text",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Add text",
+        "zh-CN": "添加文字"
+      },
+      "terms": [],
+      "surface": "layout",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "排15",
+        "排19",
+        "排20"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.layout.apply_layout",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Apply image layout",
+        "zh-CN": "应用图文布局"
+      },
+      "terms": [],
+      "surface": "layout",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "排18"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.layout.center",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Center horizontally",
+        "zh-CN": "水平居中"
+      },
+      "terms": [],
+      "surface": "layout",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "排12",
+        "排13",
+        "排21",
+        "排22"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.layout.delete_object",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Delete object",
+        "zh-CN": "删除对象"
+      },
+      "terms": [],
+      "surface": "layout",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "排27"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.layout.delete_page",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Delete page",
+        "zh-CN": "删除此页"
+      },
+      "terms": [],
+      "surface": "layout",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "排11"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.layout.move_page_up",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Move page up",
+        "zh-CN": "上移一页"
+      },
+      "terms": [],
+      "surface": "layout",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "排10"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.layout.place_image",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Place on page",
+        "zh-CN": "放入此页"
+      },
+      "terms": [],
+      "surface": "layout",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "排16",
+        "排17"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.layout.select_page",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Select page",
+        "zh-CN": "选择页面"
+      },
+      "terms": [],
+      "surface": "layout",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "排9"
+      ],
+      "args": [
+        "pageId"
+      ]
+    },
+    {
+      "id": "view.layout.update_source",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Update image source",
+        "zh-CN": "更新此图来源"
+      },
+      "terms": [],
+      "surface": "layout",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "排23",
+        "排24",
+        "排25",
+        "排26"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.design_tree.close_details",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Close details",
+        "zh-CN": "关闭详情"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树14"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.design_tree.fit",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Fit tree",
+        "zh-CN": "查看全部"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树6",
+        "树11"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.design_tree.leave",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Leave design tree",
+        "zh-CN": "离开状态树"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树1"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.design_tree.select_row",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Select row",
+        "zh-CN": "选中一行"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树9",
+        "树13"
+      ],
+      "args": [
+        "rowId"
+      ]
+    },
+    {
+      "id": "view.design_tree.toggle_drafts",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Show superseded drafts",
+        "zh-CN": "显示被取代的草稿"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树5"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.design_tree.toggle_steps",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Unfold earlier steps",
+        "zh-CN": "展开之前的步骤"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树4",
+        "树12"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.design_tree.canvas",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Canvas view",
+        "zh-CN": "画布视图"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树2"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.design_tree.list",
+      "capability": "shell.pages",
+      "label": {
+        "en": "List view",
+        "zh-CN": "列表视图"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树2"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.usage.apply_sources",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Apply sources",
+        "zh-CN": "应用来源"
+      },
+      "terms": [],
+      "surface": "usage",
+      "group": "shell",
+      "channel": "background",
+      "tier": "developer",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "量13",
+        "量14"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.usage.calculate",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Calculate cost",
+        "zh-CN": "计算费用"
+      },
+      "terms": [
+        "cost estimate",
+        "费用估算"
+      ],
+      "surface": "usage",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "量15",
+        "量16",
+        "量17"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.usage.refresh",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Refresh usage",
+        "zh-CN": "刷新用量"
+      },
+      "terms": [],
+      "surface": "usage",
+      "group": "shell",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "量4"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.usage.reset_totals",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Use current totals",
+        "zh-CN": "恢复当前汇总"
+      },
+      "terms": [],
+      "surface": "usage",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "量18"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.usage.show_more",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Show 20 more",
+        "zh-CN": "再显示 20 条"
+      },
+      "terms": [],
+      "surface": "usage",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "量12"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.usage.span",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Stage details",
+        "zh-CN": "阶段详情"
+      },
+      "terms": [],
+      "surface": "usage",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "量8"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.usage.calls",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Calls",
+        "zh-CN": "调用"
+      },
+      "terms": [],
+      "surface": "usage",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "量1",
+        "量11"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.usage.timeline",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Timeline",
+        "zh-CN": "时间线"
+      },
+      "terms": [],
+      "surface": "usage",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "量1",
+        "量6"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.usage.scope_project",
+      "capability": "shell.pages",
+      "label": {
+        "en": "This project",
+        "zh-CN": "本项目"
+      },
+      "terms": [],
+      "surface": "usage",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "量2",
+        "量3"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.usage.scope_all",
+      "capability": "shell.pages",
+      "label": {
+        "en": "All projects",
+        "zh-CN": "全部项目"
+      },
+      "terms": [],
+      "surface": "usage",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "量2"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.old_results.open",
+      "capability": "shell.pages",
+      "label": {
+        "en": "View past result",
+        "zh-CN": "查看历史结果"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模99"
+      ],
+      "args": [
+        "resultId"
+      ]
+    },
+    {
+      "id": "view.old_results.save_file",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Save file",
+        "zh-CN": "保存文件"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "shell",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模101"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.old_results.show_run",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Show all exports",
+        "zh-CN": "显示全部导出"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模98"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.old_results.toggle",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Past runs",
+        "zh-CN": "已有模型与历史运行"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模97"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.handled.submitted_notes",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Submitted notes",
+        "zh-CN": "已提交意见"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文48"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.handled.toggle",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Show processed",
+        "zh-CN": "查看已处理项"
+      },
+      "terms": [],
+      "surface": "design_tree",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "树3"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.handled.view_page",
+      "capability": "shell.pages",
+      "label": {
+        "en": "View submitted page",
+        "zh-CN": "查看提交时的页"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文49"
+      ],
+      "args": [
+        "pageKey"
+      ]
+    },
+    {
+      "id": "view.open_document.file",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Open PDF or image",
+        "zh-CN": "打开 PDF 或图片"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文4",
+        "文5"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.open_document.link_model",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Link model",
+        "zh-CN": "关联模型"
+      },
+      "terms": [],
+      "surface": "board",
+      "group": "shell",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板64"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.open_document.page",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Open in MonkeyDiagram",
+        "zh-CN": "在 MonkeyDiagram 中打开"
+      },
+      "terms": [
+        "edit this page",
+        "编辑此页"
+      ],
+      "surface": "board",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板29",
+        "板60",
+        "板61",
+        "板70"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.study.toggle",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Study this page",
+        "zh-CN": "研究此图页"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "shell",
+      "channel": "side",
+      "tier": "advanced",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文7"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.background.open",
+      "capability": "shell.pages",
+      "label": {
+        "en": "View model and progress",
+        "zh-CN": "查看模型与进度"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "文37"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.attention.dismiss",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Dismiss update",
+        "zh-CN": "关闭更新提示"
+      },
+      "terms": [],
+      "surface": "board",
+      "group": "shell",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板20"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.attention.open",
+      "capability": "shell.pages",
+      "label": {
+        "en": "View update",
+        "zh-CN": "查看更新"
+      },
+      "terms": [],
+      "surface": "board",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "板19"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.evidence.close",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Close evidence",
+        "zh-CN": "关闭依据抽屉"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "shell",
+      "channel": "background",
+      "tier": "developer",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模110"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.evidence.open",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Open evidence",
+        "zh-CN": "打开依据抽屉"
+      },
+      "terms": [
+        "why",
+        "查看原因"
+      ],
+      "surface": "modeling",
+      "group": "shell",
+      "channel": "background",
+      "tier": "developer",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模108",
+        "模132"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.evidence.open_receipts",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Read receipts",
+        "zh-CN": "查看回执"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "shell",
+      "channel": "background",
+      "tier": "developer",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模139"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.evidence.pin",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Pin evidence",
+        "zh-CN": "固定依据抽屉"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "shell",
+      "channel": "background",
+      "tier": "developer",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模109"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.evidence.tab",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Evidence tab",
+        "zh-CN": "依据分页"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "shell",
+      "channel": "background",
+      "tier": "developer",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模111"
+      ],
+      "args": [
+        "tabId"
+      ]
+    },
+    {
+      "id": "view.model_chat.close",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Close chat",
+        "zh-CN": "关闭对话"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模117"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.chat_drawer.open",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Back to conversation",
+        "zh-CN": "回到对话"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "shell",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模30"
+      ],
+      "args": []
+    },
+    {
+      "id": "view.design_history.toggle",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Toggle design tree",
+        "zh-CN": "切换状态树"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
       "id": "preference.appearance.theme_system",
       "capability": "preference.settings",
       "label": {
@@ -809,6 +7282,144 @@ export const COMMAND_TREE: CommandTree = {
       "shortcut": null,
       "entries": [
         "壳96"
+      ],
+      "args": []
+    },
+    {
+      "id": "fab.prepare_parts.tab",
+      "capability": "fab.print",
+      "label": {
+        "en": "Prepare parts",
+        "zh-CN": "准备分件"
+      },
+      "terms": [],
+      "surface": "fabrication",
+      "group": "fabrication",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "制1"
+      ],
+      "args": []
+    },
+    {
+      "id": "fab.send_to_printer.tab",
+      "capability": "fab.print",
+      "label": {
+        "en": "Upload job",
+        "zh-CN": "发送切片"
+      },
+      "terms": [],
+      "surface": "fabrication",
+      "group": "fabrication",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "制1"
+      ],
+      "args": []
+    },
+    {
+      "id": "fab.prepare_parts.create",
+      "capability": "fab.print",
+      "label": {
+        "en": "Create parts",
+        "zh-CN": "生成分件"
+      },
+      "terms": [
+        "split model",
+        "拆件"
+      ],
+      "surface": "fabrication",
+      "group": "fabrication",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "制4",
+        "制5",
+        "制6",
+        "制7",
+        "制8",
+        "制10",
+        "制11",
+        "制12"
+      ],
+      "args": []
+    },
+    {
+      "id": "fab.prepare_parts.display_settings",
+      "capability": "fab.print",
+      "label": {
+        "en": "Display settings",
+        "zh-CN": "显示设置"
+      },
+      "terms": [],
+      "surface": "fabrication",
+      "group": "fabrication",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "制2"
+      ],
+      "args": []
+    },
+    {
+      "id": "fab.send_to_printer.check",
+      "capability": "fab.print",
+      "label": {
+        "en": "Check file",
+        "zh-CN": "检查文件"
+      },
+      "terms": [],
+      "surface": "fabrication",
+      "group": "fabrication",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "制19"
+      ],
+      "args": []
+    },
+    {
+      "id": "fab.send_to_printer.send",
+      "capability": "fab.print",
+      "label": {
+        "en": "Send to printer",
+        "zh-CN": "发送到打印机"
+      },
+      "terms": [
+        "upload file",
+        "发送文件"
+      ],
+      "surface": "fabrication",
+      "group": "fabrication",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "制13",
+        "制14",
+        "制15",
+        "制17",
+        "制18",
+        "制20"
       ],
       "args": []
     }
