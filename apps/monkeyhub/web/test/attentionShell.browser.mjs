@@ -81,6 +81,8 @@ const server = createServer(async (request, response) => {
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 origin = `http://127.0.0.1:${server.address().port}`;
 const unexpected = [];
+// A pass swaps the connections the Hub lists (17): Codex not installed, Claude Code signed in.
+let providerRows = null;
 // A 4x3 grey picture, standing in for a drawing's first page.
 const DRAWING_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAE0lEQVR4nGM8ceIEAwwwwVnoHABXVAJetxGYDgAAAABJRU5ErkJggg==", "base64");
 // The theme each pass loads with, as the saved preferences say it.
@@ -153,7 +155,7 @@ const route = async (handler) => {
   }
   if (url.pathname === "/api/chat/workspace") return json({ workspaceDir: "D:\\fixture", configured: true, projects: listed.map((row) => row.projectId) });
   if (url.pathname === "/api/chat/projects") return json(listed);
-  if (url.pathname === "/api/chat/providers") return json([{ id: "codex", label: "Codex CLI", available: true, detail: "Fixture", installed: true, signedIn: true,
+  if (url.pathname === "/api/chat/providers") return json(providerRows ?? [{ id: "codex", label: "Codex CLI", available: true, detail: "Fixture", installed: true, signedIn: true,
     models: ["fixture-model"], modelCatalog: "ready", modelDetail: "Fixture" }]);
   if (url.pathname === "/api/chat/sessions" && method === "GET") return json(listed !== projects ? []
     : sessions.filter((row) => Boolean(row.archived) === (url.searchParams.get("archived") === "true")).map(summary));
@@ -729,6 +731,23 @@ try {
     }
   }
   projectA.retained = null;
+
+  // 17: without Codex the composer starts on the signed-in Claude Code and says so in a sentence, not in the CLI's English.
+  providerRows = [
+    { id: "codex", label: "Codex", available: false, detail: "Codex CLI is not installed.", installed: false, signedIn: null, models: [], modelCatalog: "unavailable", modelDetail: "Install this CLI to read the models it offers." },
+    { id: "claude", label: "Claude Code", available: true, detail: "Uses the installed Claude CLI and its saved login or configuration.", installed: true, signedIn: true, models: [], modelCatalog: "unavailable", modelDetail: "" },
+  ];
+  const words = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const wordsPage = await words.newPage(); wordsPage.setDefaultTimeout(15_000);
+  wordsPage.on("pageerror", (error) => errors.push(error.message));
+  await wordsPage.route((url) => url.pathname.startsWith("/api/"), route);
+  await open(wordsPage);
+  await wordsPage.locator("#chat-input").focus();
+  await wordsPage.locator(".chat-composer-note").filter({ hasText: "要用 Codex 得先装，现在用的是 Claude Code" }).waitFor();
+  assert.equal(await wordsPage.getByText("is not installed").count(), 0, "no English from the CLI");
+  await wordsPage.locator(".chat-connection__name").filter({ hasText: "Claude Code" }).waitFor();
+  providerRows = null;
+  await words.close();
 
   // Phone: the projects column and the side panel open over the center.
   for (const colour of ["light", "dark"]) {

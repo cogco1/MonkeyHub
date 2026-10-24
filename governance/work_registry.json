@@ -640,6 +640,26 @@
             "apps/monkeyhub/web/src/app/attentionShell.css",
             "apps/monkeyhub/web/test/attentionShell.browser.mjs"
           ]
+        },
+        {
+          "id": "composer-words",
+          "status": "active",
+          "branch": "claude/300-b3-composer-words",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-b3-composer-words",
+          "base_ref": "d64d6bb8b",
+          "contributor": "Claude",
+          "reviewer": null,
+          "depends_on": [
+            "front-minimal"
+          ],
+          "handoff": "17: without Codex installed a new conversation starts on the signed-in Claude Code and the composer says so in a sentence; the CLI's English is not shown. Stacked on front-minimal (ChatShell.tsx, attentionShell test).",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/test/attentionShell.browser.mjs"
+          ]
         }
       ]
     }
