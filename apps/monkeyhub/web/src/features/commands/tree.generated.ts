@@ -901,7 +901,7 @@ export const COMMAND_TREE: CommandTree = {
       "terms": [],
       "surface": "hub",
       "group": "shell",
-      "channel": "background",
+      "channel": "front",
       "tier": "basic",
       "place": null,
       "when": [],

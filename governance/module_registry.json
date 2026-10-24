@@ -1066,7 +1066,8 @@
             "entries": [
               "文12",
               "模90"
-            ]
+            ],
+            "channel": "front"
           },
           {
             "id": "view.notice.dismiss",
