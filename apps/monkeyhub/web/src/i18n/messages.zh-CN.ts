@@ -1309,6 +1309,9 @@ export const messagesZhCN = {
   "shell.conversation": "对话",
   "shell.side": "侧栏",
   "shell.closeSide": "收起侧栏",
+  "shell.toAttention": "回新版",
+  "shell.alreadyWorkbench": "已经是旧版",
+  "shell.alreadyAttention": "已经是新版",
   "shell.side.background": "后台",
   "shell.side.history": "修改历史",
   "shell.side.handled": "已处理",
@@ -1354,6 +1357,7 @@ export const messagesZhCN = {
 } satisfies MessageCatalog;
 
 export const hubCopy = {
+    shellChoice: "界面", shellChoiceHint: "新版把要你处理的事放在「关注」页；旧版是原来的工作台，到 12 月初停用。只记在这台电脑上。", shellNew: "新版", shellOld: "旧版",
     softwareUpdate: "软件更新", updateCurrent: "当前版本", updateTarget: "已准备版本", updateChangedBytes: "变更文件体积",
     updateUnsupported: "补丁更新需要使用已安装的 MonkeyHub 桌面客户端。",
     updateTrustLocal: "本地开发补丁包含可执行代码，请选择来源可信的 ZIP 包（最大 256 MiB）。",

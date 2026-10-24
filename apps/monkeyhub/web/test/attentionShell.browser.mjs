@@ -414,6 +414,32 @@ try {
   for (const [id] of sent) sessions.find((row) => row.id === id)?.messages.pop();
 
   await context.close();
+
+  // 2-3c: the Hub opens in the new shell; 回旧版 goes back to the workbench at once and for next time, and the
+  // workbench's 回新版 comes back.
+  const chosen = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const hub = await chosen.newPage(); hub.setDefaultTimeout(15_000);
+  hub.on("pageerror", (error) => errors.push(error.message));
+  await hub.route((url) => url.pathname.startsWith("/api/"), route);
+  await hub.goto(`${origin}/`);
+  await hub.locator(".attention-shell").waitFor();
+  await hub.locator(".attention-shell__search").click();
+  await hub.locator("dialog.command-palette[open] input").fill("回旧版");
+  await hub.keyboard.press("Enter");
+  await hub.locator(".chat-shell").waitFor();
+  assert.equal(await hub.evaluate(() => localStorage.getItem("monkeyhub.shell")), "workbench");
+  await hub.reload();
+  await hub.locator(".chat-shell").waitFor();
+  await shoot(hub, "workbench-back-to-new-desktop-light");
+  await hub.locator('.chat-menubar [data-command="view.shell.attention"]').click();
+  await hub.locator(".attention-shell").waitFor();
+  await hub.reload();
+  await hub.locator(".attention-shell").waitFor();
+  // A link that names a shell shows it without changing the choice.
+  await hub.goto(`${origin}/?shell=workbench`);
+  await hub.locator(".chat-shell").waitFor();
+  assert.equal(await hub.evaluate(() => localStorage.getItem("monkeyhub.shell")), "attention");
+  await chosen.close();
   preferredTheme = "dark";
   const dark = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const darkPage = await dark.newPage(); darkPage.setDefaultTimeout(15_000);

@@ -4830,6 +4830,44 @@
     "config"
    ]
   },
+  "view.shell.attention": {
+   "zh": [
+    "回到新版界面",
+    "换成新的界面",
+    "打开新版"
+   ],
+   "en": [
+    "go back to the new interface",
+    "switch to the new shell"
+   ],
+   "aliases_zh": [
+    "新版界面",
+    "关注页界面"
+   ],
+   "aliases_en": [
+    "new shell",
+    "new layout"
+   ]
+  },
+  "view.shell.workbench": {
+   "zh": [
+    "回到旧版界面",
+    "换回原来的工作台",
+    "用回以前的样子"
+   ],
+   "en": [
+    "go back to the old interface",
+    "switch to the old workbench"
+   ],
+   "aliases_zh": [
+    "旧版",
+    "老界面"
+   ],
+   "aliases_en": [
+    "old shell",
+    "classic layout"
+   ]
+  },
   "view.side_panel": {
    "zh": [
     "把工具面板收起来",
