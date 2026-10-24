@@ -48,6 +48,7 @@ class FakeRuntimes:
         self.forwarded: list[tuple] = []
         self.acknowledged: list[str] = []
         self.sources: list[str | None] = []
+        self.waits: list[bool] = []
 
     def open(self, project_id, project_dir):
         return self.runtime
@@ -60,9 +61,10 @@ class FakeRuntimes:
     def acknowledge(self, runtime, operation_id):
         self.acknowledged.append(operation_id)
 
-    def forward(self, runtime, path, method, body, headers, *, source=None):
+    def forward(self, runtime, path, method, body, headers, *, source=None, wait=True):
         self.forwarded.append((method, path, json.loads(body) if body else None, dict(headers)))
         self.sources.append(source)
+        self.waits.append(wait)
         if path == "/api/worktrees":
             if self.graph is None:
                 raise HubFailure(503, "WORKER_UNAVAILABLE", "The project's Studio is not ready.")
@@ -160,6 +162,7 @@ class AttentionHubTests(unittest.TestCase):
         self.hub.refresh(self.runtimes.runtime.runtime_id)
         keys = sorted(item.dedupeKey for item in self.store.items())
         self.assertEqual(keys, ["op:o1:failed", "perm:c1:p1", "result:study:s1"])
+        self.assertEqual(self.runtimes.waits, [False], "the queue's thread never waits for a starting Studio")
 
         # A Studio that stopped says nothing about results: their cards stay as they were.
         self.runtimes.graph = None
