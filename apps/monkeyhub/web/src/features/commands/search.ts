@@ -22,6 +22,9 @@ export interface RankedCommand {
   readonly recent: boolean;
 }
 
+/** How much of a sentence a command has to match for Ctrl K to offer it ahead of asking the AI. */
+const PALETTE_COVERAGE = 0.5;
+
 /** How many recently used commands lead an empty palette. */
 export const RECENT_SHOWN = 5;
 
@@ -92,8 +95,10 @@ export function rankCommands(
   const lastUse = (row: { command: Command }) => recency.get(row.command.id) ?? recent.length;
   if (!ranked.length && parts.length !== 2) {
     // Nothing has every part: a sentence ("把墙往外推一点", "make the roof flatter") is looked up in the search
-    // index instead. Two parts are two keywords the person combined, and stay strict.
-    return searchCommands(indexOf(tree, commands), query).map((hit) => ({ command: hit.command, score: hit.score, recent: recency.has(hit.command.id) }));
+    // index instead, and a command it is mostly about is offered; the rest go to the AI from the last row. Two parts
+    // are two keywords the person combined, and stay strict.
+    return searchCommands(indexOf(tree, commands), query).filter((hit) => hit.verbatim || hit.coverage >= PALETTE_COVERAGE)
+      .map((hit) => ({ command: hit.command, score: hit.score, recent: recency.has(hit.command.id) }));
   }
   return ranked.sort((a, b) => b.score - a.score || lastUse(a) - lastUse(b) || a.order - b.order)
     .map(({ command, score, recent: wasRecent }) => ({ command, score, recent: wasRecent }));

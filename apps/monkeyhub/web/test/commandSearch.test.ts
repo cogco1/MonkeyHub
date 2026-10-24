@@ -27,6 +27,7 @@ test("Chinese is read in character pairs and English in words, the common ones l
 test("Ctrl K looks a sentence up when no command has every word of it, and keeps two keywords strict", () => {
   assert.equal(rankCommands(COMMAND_TREE, "帮我截一张图", "zh-CN")[0]?.command.id, "model.capture");
   assert.deepEqual(rankCommands(COMMAND_TREE, "导出 楼梯栏杆扶手", "zh-CN"), [], "two parts stay strict");
+  assert.deepEqual(rankCommands(COMMAND_TREE, "how to draw stairs", "en"), [], "a word of it is not what it is about");
 });
 
 test("a search over the whole tree is a lookup", () => {
