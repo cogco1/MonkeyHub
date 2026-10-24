@@ -1263,8 +1263,10 @@ class ChatTests(unittest.TestCase):
         """ADR-012: the agent's design changes go studio_request -> Hub -> runtime, never into the folder.
 
         One Edit path rule denies every built-in tool that writes a file in the
-        bound project, Write included. Reading it stays as it was, scratch and
-        a source checkout stay writable, and nothing else in the command moves.
+        bound project, Write included, and the same rules follow for the Hub's
+        own configuration and records (test_agent_write_paths). Reading stays as
+        it was, scratch and a source checkout stay writable, and nothing else in
+        the command moves.
         """
         for source in (None, providers._source_checkout()):
             with self.subTest(source=source), patch.object(providers, "_source_checkout", return_value=source):
@@ -1280,18 +1282,22 @@ class ChatTests(unittest.TestCase):
                         if os.name == "nt" else f"Edit(/{project}/**)")
                 self.assertEqual(command.count("--disallowedTools"), 1)
                 at = command.index("--disallowedTools")
-                self.assertEqual(command[at + 1], rule)
-                self.assertTrue(command[at + 2].startswith("--"), "the project's rule is the only one denied")
-                # Scratch is the agent's own place to write: outside the project, and still added.
+                end = next(index for index in range(at + 1, len(command)) if command[index].startswith("--"))
+                denied = command[at + 1:end]
+                self.assertEqual(denied[0], rule, "the project's rule comes first")
+                self.assertEqual(tuple(denied), providers._claude_denied(project, self.runtime),
+                                 "then the Hub's own places, as the chat's runtime root names them")
+                # Scratch is the agent's own place to write: outside the project, still added, and no rule reaches it.
                 scratch = str(self.runtime / "chats" / session.id / "scratch")
                 self.assertFalse(Path(scratch).resolve().is_relative_to(Path(project).resolve()))
+                self.assertFalse([item for item in denied if "scratch" in item or item.endswith("/chats/**)")])
                 added = [command[index + 1] for index, value in enumerate(command) if value == "--add-dir"]
                 self.assertEqual(added, ([project] if source is not None else []) + [scratch])
                 approved = command[command.index("--allowedTools") + 1].split(",")
                 for name in ("Read", "Write", "Edit", "Bash"):
                     self.assertIn(name, approved, name)
                 # Nothing else moves: the same tools, directories, mode and session.
-                self.assertEqual(command[:at] + command[at + 2:], undenied)
+                self.assertEqual(command[:at] + command[end:], undenied)
 
     def test_with_the_design_loop_enforced_claude_has_no_shell_and_nothing_else_moves(self):
         """#185: a shell could reach the Runtime's port and act as a person; enforced takes it away, legacy does not."""
@@ -1306,8 +1312,9 @@ class ChatTests(unittest.TestCase):
         with self.store._lock:
             enforced, _ = self.store._command(saved)
         at = legacy.index("--disallowedTools")
-        self.assertEqual(enforced[at + 1:at + 4], [legacy[at + 1], "Bash", "PowerShell"])
-        self.assertEqual(enforced[:at + 2] + enforced[at + 4:], legacy, "the shells are the only thing taken away")
+        end = next(index for index in range(at + 1, len(legacy)) if legacy[index].startswith("--"))
+        self.assertEqual(enforced[at + 1:end + 2], [*legacy[at + 1:end], "Bash", "PowerShell"])
+        self.assertEqual(enforced[:end] + enforced[end + 2:], legacy, "the shells are the only thing taken away")
 
     def test_codex_is_not_given_the_project_as_a_writable_root(self):
         """ADR-012 for Codex: the Hub names no writable place in the project.

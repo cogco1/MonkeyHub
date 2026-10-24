@@ -93,6 +93,31 @@
         "tools/tests/test_state_file_command.py"
       ],
       "depends_on": []
+    },
+    {
+      "id": "GH-300",
+      "lanes": [
+        {
+          "id": "agent-write-paths",
+          "status": "active",
+          "branch": "claude/300-agent-write-paths",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-300-agent-write-paths",
+          "base_ref": "01e64a88cbdc866a378fddda5c393e56e75e1d71",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Limit where the chat agent may write: the Edit rules a Claude chat already has for its bound project, also for the Hub's own configuration and records, the skill folders, Claude Code's configuration and an installed Hub's files. Stacked on #669; merged right after it. chat/store.py and test_chat.py wait for GH-185's release.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat/providers.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
+            "apps/monkeyhub/api/tests/test_agent_write_paths.py",
+            "apps/monkeyhub/api/tests/test_chat.py"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
