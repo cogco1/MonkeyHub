@@ -181,6 +181,8 @@ try {
     await page.locator("#gemini-key-state").filter({ hasText: "Saved in this computer's Windows Credential Manager, for this account only." }).waitFor();
     assert.equal(await field.inputValue(), "", "the field empties once the key is saved");
     assert.deepEqual(keyWrites, [["gemini", "AIzaSyFixture-settings-key-01"]]);
+    await dialog.getByText("Google accepted this key.", { exact: true }).waitFor();
+    assert.equal(await page.locator("#render-model").getAttribute("placeholder"), "gemini-3.1-flash-image (default)", "the model needs no typing");
     await cmd(dialog, "preference.render_provider.check").click();
     await dialog.getByText("Google accepted this key.", { exact: true }).waitFor();
     await cmd(dialog, "preference.secret.get_link", { arg: "gemini" }).click();

@@ -1465,7 +1465,7 @@ export const hubCopy = {
     launchHelp: "项目与端口修改在下次启动时生效；运行中的工作区需要先停止。", appearance: "显示设置", language: "语言", theme: "主题",
     system: "跟随系统", dark: "深色", light: "浅色", size: "字号", compact: "紧凑", normal: "标准", large: "较大", saveAppearance: "保存显示设置",
     appearanceHelp: "从 Hub 进入工作区时继承当前显示偏好；已打开的工作区不会自动切换。", working: "处理中…",
-    renderSettings: "AI 渲染", renderProvider: "图像供应商", renderOff: "关闭", renderModel: "图像模型（Gemini 必填）", renderTimeout: "请求超时秒数（1–300）", runtimeDefault: "使用 Runtime 默认值",
+    renderSettings: "AI 渲染", renderProvider: "图像供应商", renderOff: "关闭", renderModel: "图像模型", renderModelDefault: "gemini-3.1-flash-image（默认）", renderTimeout: "请求超时秒数（1–300）", runtimeDefault: "使用 Runtime 默认值",
     renderSettingsHelp: "Gemini 需要明确填写受支持的图像模型；留空时渲染保持不可用。供应商、模型和超时设置在重新打开项目 Runtime 后生效。密钥通过启动 MonkeyHub 时的 MONKEYHUB_RENDER_API_KEY 环境变量提供；新增或修改该变量后，需在新环境中重启 Hub。这里不输入或显示密钥。",
     chatDefaults: "新对话默认连接", chatProvider: "默认 CLI", chatModel: "默认模型", cliDefault: "CLI 默认模型", cliUnset: "未设置（使用 Codex CLI）", chatDefaultsHelp: "用于新建对话；已有对话继续使用原连接、模型与会话。",
     recheck: "重新检测", checking: "正在检测…", notInstalled: "未安装", signedIn: "已登录", signedOut: "未登录", signInUnknown: "登录状态未知",

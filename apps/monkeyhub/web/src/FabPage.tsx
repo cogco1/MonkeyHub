@@ -3,6 +3,7 @@ import type { AppearancePreferences } from "../../../../packages/web-shared/src/
 import { MenuCommand, MenuSeparator, MenuTabs, StatusLine, SurfaceBar } from "./features/chrome/SurfaceChrome";
 import type { createClient } from "./api/generated/client";
 import { useRowEndSeparators } from "./surfaceBarRows";
+import { rememberedPrinterHost, rememberPrinterHost } from "./fabPrinter";
 import {
   getFabProfilesApiFabProfilesGet, prepareFabApiFabPreparePost, sendFabApiFabSendPost,
   type FabProfile, type FabPrepareResult, type FabSendResult,
@@ -66,7 +67,7 @@ export function FabPage({ preferences, client, readResult }: Props) {
   const [xy, setXy] = useState("5");
   const [z, setZ] = useState("5");
   const [job, setJob] = useState("");
-  const [host, setHost] = useState("");
+  const [host, setHost] = useState(rememberedPrinterHost);
   const [access, setAccess] = useState("");
   const [remote, setRemote] = useState("");
   const [timeout, setTimeoutSeconds] = useState("30");
@@ -123,6 +124,7 @@ export function FabPage({ preferences, client, readResult }: Props) {
         source: cleanPath(job), host: host.trim(), accessCode: code,
         remoteName: remote.trim() || null, timeout: Number(timeout), dryRun,
       } })));
+      rememberPrinterHost(host);
     } catch (cause) { setSendError(detailOf(cause)); }
     finally { busyRef.current = false; setBusy(null); setView("send"); }
   };
