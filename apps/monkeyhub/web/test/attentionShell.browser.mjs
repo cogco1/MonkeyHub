@@ -117,6 +117,9 @@ const route = async (handler) => {
   if (url.pathname === "/api/runtime/events") return handler.continue();
   // A drawing's first page, as the project service serves it beside the snapshot's recent drawings.
   if (url.pathname.endsWith("/api/drawings/d-section/thumbnail.png")) return handler.fulfill({ status: 200, contentType: "image/png", body: DRAWING_PNG });
+  // The page the tile opens on the Board has no comments yet.
+  if (url.pathname.endsWith("/api/document-comments")) return handler.fulfill({ json: { comments: [], kind: "document",
+    runId: url.searchParams.get("runId") ?? "run-v17", revisionRef: url.searchParams.get("revisionRef") } });
   if (await workspace.handle(handler, url)) return;
   const json = (body, status = 200) => handler.fulfill({ json: body, status });
   const data = () => request.postDataJSON();
