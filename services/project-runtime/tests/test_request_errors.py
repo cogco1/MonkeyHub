@@ -29,7 +29,7 @@ class RequestErrorTests(unittest.TestCase):
         self.addCleanup(self.client.close)
 
     def test_a_sketch_that_repeats_a_point_is_told_so_and_nothing_else(self) -> None:
-        body = {"stateDigest": "a" * 64, "componentId": "tri", "elementId": "tri-1", "profile": [[0, 0], [3, 0], [2, 2], [0, 0]],
+        body = {"stateDigest": "a" * 64, "componentId": "tri", "elementId": "tri-1", "profile": [[0, 0], [3, 0], [3, 0], [2, 2]],
                 "height": 0, "baseLevel": "L1"}
         answer = self.client.post("/api/proposals/sketch", json=body)
         self.assertEqual((answer.status_code, answer.json()["code"]), (422, "REQUEST_INVALID"))

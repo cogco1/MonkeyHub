@@ -1095,12 +1095,11 @@ class CandidateComponentRemovalTests(CandidateTestCase):
         self.assertEqual(self.repository.read_head(), self.before_head)
         self.assertEqual({path: path.read_bytes() for path in original}, original)
 
-    def test_a_semantic_edit_removing_only_the_last_panel_still_fails_strict_coverage(self) -> None:
+    def test_a_semantic_edit_removing_only_the_last_panel_takes_its_component_too(self) -> None:
+        # 录屏 bug 1: a component left holding nothing made every later recording fail; the edit now takes it too.
         source_id, state = self.source()
         _, job = self.remove(source_id, state, ["finish-a-panel"])
-        self.assertEqual(job["status"], "failed", job)
-        self.assertIn("no element and no declination", job["error"])
-        self.assertIn("finish-a", job["error"])
+        self.assertEqual(job["status"], "succeeded", job)
 
     def test_deleting_the_last_panel_in_the_view_takes_its_component_with_it(self) -> None:
         # The view's Delete names an element; a component left without one is no object at all, so
