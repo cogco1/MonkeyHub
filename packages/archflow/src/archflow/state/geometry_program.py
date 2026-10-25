@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import re
+import threading
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
@@ -33,6 +34,26 @@ ASSET_URI_PATTERN = r"^(?![Ff][Ii][Ll][Ee]://)[A-Za-z][A-Za-z0-9+.-]*://"
 
 _URI_SCHEME = re.compile(ASSET_URI_PATTERN)
 _MAX_ITEMS = 16_384
+
+# A housing program renders to megabytes of canonical JSON, and one candidate
+# asks its digest several times (GH-300/srv S20). These values are frozen, so
+# the digest of the very same object is kept; the entry holds the object, so
+# its id is not reused while the entry stands.
+_DIGESTS: dict[int, tuple[object, str]] = {}
+_DIGESTS_LOCK = threading.Lock()
+_DIGESTS_KEPT = 6
+
+
+def _memo_digest(owner: object, render) -> str:
+    hit = _DIGESTS.get(id(owner))
+    if hit is not None and hit[0] is owner:
+        return hit[1]
+    digest = canonical_digest(render())
+    with _DIGESTS_LOCK:
+        _DIGESTS[id(owner)] = (owner, digest)
+        while len(_DIGESTS) > _DIGESTS_KEPT:
+            del _DIGESTS[next(iter(_DIGESTS))]
+    return digest
 
 
 class GeometryProgramError(ValueError):
@@ -1326,7 +1347,7 @@ class GeometryProgramProposal:
 
     @property
     def proposal_digest(self) -> str:
-        return canonical_digest(self.to_dict())
+        return _memo_digest(self, self.to_dict)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1868,7 +1889,7 @@ class CompiledGeometryProgram:
 
     @property
     def program_digest(self) -> str:
-        return canonical_digest(self.to_dict())
+        return _memo_digest(self, self.to_dict)
 
     def object_digest(self, object_id: str) -> str:
         require_identifier(object_id, "object_id")

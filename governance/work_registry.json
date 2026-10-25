@@ -1412,6 +1412,33 @@
             "governance/work_registry.json"
           ],
           "depends_on": []
+        },
+        {
+          "id": "srv-record-speed",
+          "status": "active",
+          "branch": "claude/srv-record-speed",
+          "worktree": "C:/Users/Public/renou/dev/wt/claude-srv-record-speed",
+          "base_ref": "bc25532d",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "S20 (server, 10-25): a Record on housing-13-units (2,665 objects, a 50 MB STEP) settled 44-53 s after the click, 37-45 s of it the Studio's candidate. The reuse source of a Record is the STEP the last one wrote: the Studio no longer reads it again (5-10 s) when it holds the shapes that STEP was written from and read back as, and those shapes keep their check and their preview mesh. A compiled program's digest is computed once per object. The run listing reads directory entries instead of a stat per run. The project card reads the Worktree Graph when an operation starts and when it settles, one read at a time, not at every step while it runs.",
+          "modules": [
+            "monkeycad.occt",
+            "archflow.state.geometry_program",
+            "archflow.project.repository",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "packages/monkeycad/src/monkeycad/backends/occt/export.py",
+            "packages/monkeycad/src/monkeycad/backends/occt/build.py",
+            "packages/archflow/src/archflow/state/geometry_program.py",
+            "packages/archflow/src/archflow/project/repository.py",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/sidebarTasks.ts",
+            "tests/integration/test_occt_execution.py",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
         }
       ]
     }

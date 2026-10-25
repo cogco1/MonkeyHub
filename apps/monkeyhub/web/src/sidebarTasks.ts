@@ -39,7 +39,7 @@ function expectedSeconds(jobs: readonly { status: string; lane: string; wallTime
   return times.length % 2 ? times[middle]! : (times[middle - 1]! + times[middle]!) / 2;
 }
 
-const ACTIVE_OPERATIONS = new Set(["queued", "planning", "validated", "executing", "committing"]);
+export const ACTIVE_OPERATIONS = new Set(["queued", "planning", "validated", "executing", "committing"]);
 const ACTIVE_JOBS = new Set(["queued", "running"]);
 
 const projectName = (runtime: ProjectRuntimeDto, projects: readonly ChatProject[]) =>

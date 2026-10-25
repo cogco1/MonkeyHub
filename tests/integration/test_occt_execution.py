@@ -1451,6 +1451,60 @@ class SolidBoxRoundTripTests(unittest.TestCase):
             self.assertEqual([p.name for p in workspace.iterdir()], ["body@occt.step"])
 
 
+class ReuseSourceReadTests(unittest.TestCase):
+    """The STEP this process just wrote and cold-read is not read again as the next export's reuse source (S20)."""
+
+    def setUp(self) -> None:
+        occt_export._STEP_SOURCES.clear()
+
+    def test_the_next_export_reuses_the_shapes_its_source_was_read_back_as(self) -> None:
+        program = _compile(_window_record())
+        binding = _persisted_binding(program, "stage-occt-reuse-read")
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            first, _ = _execute(program, binding, workspace, "first")
+            self.assertIs(first.status, CadExecutionStatus.SUCCEEDED, first.failures)
+            source = dict(prior_program=program, prior_step=workspace / first.exact_artifact["relative_path"],
+                          prior_step_sha256=first.exact_artifact["sha256"])
+            with patch.object(occt_export, "read_step", wraps=occt_export.read_step) as reads:
+                reused, _ = _execute(program, binding, workspace, "reused", **source)
+            self.assertIs(reused.status, CadExecutionStatus.SUCCEEDED, reused.failures)
+            self.assertEqual(reused.reused_object_ids, first.physical_object_ids)
+            # Its one read is the cold read of the STEP it writes itself.
+            self.assertEqual([call.args[0].name for call in reads.call_args_list], [reused.exact_artifact["relative_path"]])
+            # Those shapes carry the mesh the same deflection gave them: the preview is the same mesh.
+            self.assertEqual(reused.preview_artifact["mesh_counts"], first.preview_artifact["mesh_counts"])
+            self.assertEqual(reused.readback, first.readback)
+            # A preview of another deflection does not take them; their STEP is read from the file.
+            with patch.object(occt_export, "read_step", wraps=occt_export.read_step) as reads:
+                finer, _ = _execute(program, binding, workspace, "finer", readback_tolerance=0.001, **source)
+            self.assertIs(finer.status, CadExecutionStatus.SUCCEEDED, finer.failures)
+            self.assertEqual([call.args[0].name for call in reads.call_args_list],
+                             [first.exact_artifact["relative_path"], finer.exact_artifact["relative_path"]])
+
+            # Bytes this process did not read back are read from the file, as before.
+            occt_export._STEP_SOURCES.clear()
+            with patch.object(occt_export, "read_step", wraps=occt_export.read_step) as reads:
+                again, _ = _execute(program, binding, workspace, "again", **source)
+            self.assertEqual(again.reused_object_ids, first.physical_object_ids)
+            self.assertEqual([call.args[0].name for call in reads.call_args_list],
+                             [first.exact_artifact["relative_path"], again.exact_artifact["relative_path"]])
+
+    def test_a_step_that_failed_its_readback_is_not_remembered(self) -> None:
+        program = _compile(_window_record())
+
+        def swapped_write(path, objects, **options):
+            # The pane is written in the frame's place: right names, wrong geometry.
+            shapes = {item.object_id: item.shape for item in objects}
+            write_step(path, [replace(item, shape=shapes[PANE_ID]) if item.object_id == FRAME_ID else item
+                              for item in objects], **options)
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(occt_export, "write_step", side_effect=swapped_write):
+            receipt, _ = _execute(program, _persisted_binding(program, "stage-occt-reuse-wrong"), Path(tmp).resolve(), "wrong")
+        self.assertIs(receipt.status, CadExecutionStatus.FAILED)
+        self.assertIsNone(occt_export._remembered_step_source(receipt.exact_artifact["sha256"], "meter", 0.003 / 4.0))
+
+
 # ---------------------------------------------------------------- capability boundary
 
 
