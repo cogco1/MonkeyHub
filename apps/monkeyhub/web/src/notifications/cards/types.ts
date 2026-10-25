@@ -36,6 +36,10 @@ export interface CardSource {
 export interface CardMedia {
   kind: "model_view" | "board_frame" | "crop";
   runId?: string | null;
+  /** The run's exact model, drawn from the project's thumbnails. */
+  modelSource?: { runId: string; stateDigest: string; assetSha256: string } | null;
+  /** The answer this picture is: choosing it answers the card. */
+  optionId?: string | null;
   view?: string | null;
   frameId?: string | null;
   caption?: string | null;

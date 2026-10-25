@@ -1421,6 +1421,7 @@ export const messagesZhCN = {
   "cards.changes.touches": "涉及 {count} 个构件",
   "cards.changes.keeps": "保持 {count} 个不动",
   "cards.changes.extra": "原话里没有，我加的",
+  "cards.pictures": "两个结果并排",
   "cards.evidence": "依据",
   "cards.words": "要发出的话",
   "cards.bulkGroup": "全部按建议",

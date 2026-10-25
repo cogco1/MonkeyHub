@@ -34,7 +34,7 @@ import { editFocused, HubMenuBar, type HubMenu, type HubMenuItem } from "./HubMe
 import { ASK_AI_ACTION, openSurfaceAction, useCommandActions, useCommands, type CommandHandler } from "./features/commands/CommandProvider";
 import { askMeaning, offerFor, type ArgChoice, type ArgChoices, type Offer } from "./features/commands/meaning";
 import { indexOf, routeSentence, searchable } from "./features/commands/search";
-import { ComparisonDecision } from "./notifications/cards/AttentionCards";
+import { CardRuntimes, ComparisonDecision } from "./notifications/cards/AttentionCards";
 import { answersKey } from "./notifications/cards/cardText";
 import { chooseShell, useShellLayout } from "./app/shellLayout";
 import { AttentionShell, RECENT_CONVERSATIONS, type CenterView, type ShellProject } from "./app/AttentionShell";
@@ -2692,7 +2692,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           id: session.id, title: session.title, status: session.status ?? "idle", current: session.id === chatId, needsYou: session.attention === "permission",
           archived: Boolean(session.archived), archiveBlocked: archiveBlocked(session) })) };
     });
-    return <AttentionShell Icon={Icon} projects={shellProjects}
+    // A decision card's pictures are read through its project's runtime, while that project is open.
+    const runtimeOf = (id: string, dir: string) => runtime?.projects.find((item) => item.projectDir === dir && item.projectId === id)?.runtimeId ?? null;
+    return <CardRuntimes.Provider value={runtimeOf}><AttentionShell Icon={Icon} projects={shellProjects}
       attentionCount={waiting.length}
       view={view} toolLabel={view === "tool" && activeTool ? t[labelOf(activeTool)] : null} surfaceBlocked={project ? null : t.projectRequired}
       onView={(next) => { if (next === "attention") setPanel(false); else void openTool(next === "board" ? "monkeyboard" : "monkeyarch"); }}
@@ -2716,7 +2718,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       taskItems={taskItems} dialogs={dialogs}
       historyPage={projectRuntime && projectDir ? <ProjectRuntimeProvider key={`history:${projectRuntime.runtimeId}`} runtimeId={projectRuntime.runtimeId}
         baseUrl={`${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`}><HistoryPage projectDir={projectDir} active /></ProjectRuntimeProvider> : null}
-      onAttentionConversation={() => { setChatId(null); setChat(null); setFreshChat(false); }} />;
+      onAttentionConversation={() => { setChatId(null); setChat(null); setFreshChat(false); }} /></CardRuntimes.Provider>;
   }
   return <div className="chat-shell" data-sidebar={sidebar} data-panel={panel} data-focus={focused} style={{ "--chat-width": `${chatWidth}px` } as CSSProperties}>
     {/* #337 L0: the Hub's text menu row, as desktop apps have it: back, forward, the sidebar, then words. */}

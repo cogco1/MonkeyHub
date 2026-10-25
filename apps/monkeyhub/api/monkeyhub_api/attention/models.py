@@ -91,11 +91,25 @@ class AttentionSource(_Record):
     targetRef: str | None = None
 
 
+class ModelSourceRef(_Record):
+    """One exact model of a run, as the Studio names it (its ``ModelSourceDto``): what a thumbnail is drawn from."""
+
+    runId: str = Field(min_length=1)
+    stateDigest: str = Field(min_length=1)
+    assetSha256: str = Field(min_length=1)
+
+
 class AttentionMedia(_Record):
-    """A picture a card shows: a model view of a run, a Board frame, or a crop of marks."""
+    """A picture a card shows: a model view of a run, a Board frame, or a crop of marks.
+
+    A model view with a ``modelSource`` is drawn from the project's thumbnails; one with an ``optionId`` is that
+    answer, so choosing the picture answers the card.
+    """
 
     kind: Literal["model_view", "board_frame", "crop"]
     runId: str | None = None
+    modelSource: ModelSourceRef | None = None
+    optionId: str | None = None
     view: str | None = None
     frameId: str | None = None
     markIds: list[str] = Field(default_factory=list)
@@ -239,6 +253,8 @@ class AttentionDraft(_Record):
             raise ValueError("The recommendation names an option this card does not have.")
         if flagged != expected:
             raise ValueError("Only the option the recommendation names is marked recommended.")
+        if any(item.optionId is not None and item.optionId not in ids for item in self.media):
+            raise ValueError("A picture answers with an option this card does not have.")
         return self
 
 

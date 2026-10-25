@@ -1458,6 +1458,7 @@ export const messagesEn = {
   "cards.changes.touches": "touches {count} components",
   "cards.changes.keeps": "keeps {count} as they are",
   "cards.changes.extra": "not in your words; added",
+  "cards.pictures": "The results side by side",
   "cards.evidence": "Evidence",
   "cards.words": "What to send",
   "cards.bulkGroup": "All as recommended",

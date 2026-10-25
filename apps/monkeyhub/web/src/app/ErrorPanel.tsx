@@ -56,7 +56,7 @@ export function BilingualProse({ source }: { source: string }) {
 }
 
 type FailureKind =
-  | "network" | "version" | "crash" | "stale" | "project" | "base" | "pending" | "rejected"
+  | "network" | "version" | "crash" | "stale" | "project" | "base" | "unrecorded" | "pending" | "rejected"
   | "invariant" | "timeout" | "sectionMisses" | "sectionEye" | "section"
   | "drawingFont" | "drawingEmpty" | "drawingSource" | "drawing"
   | "unsupported" | "write" | "record" | "notEditable"
@@ -101,6 +101,10 @@ const FAILURES: Record<FailureKind, Record<Language, FailureCopy>> = {
   base: {
     "zh-CN": { reason: "这个模型版本现在无法打开。", next: "重试，或返回默认修改起点。" },
     en: { reason: "This model version cannot be opened right now.", next: "Retry, or return to the default editing base." },
+  },
+  unrecorded: {
+    "zh-CN": { reason: "模型页上还有没记录的修改。", next: "先在模型页点「记录」或撤掉这些修改，再来选。" },
+    en: { reason: "The model has edits that are not recorded yet.", next: "Record or undo them on the model page, then choose again." },
   },
   pending: {
     "zh-CN": { reason: "这个结果还在生成。", next: "等它完成后再试。" },
@@ -222,6 +226,7 @@ function failureKind(error: FailureLike): FailureKind {
   if (code.startsWith("DRAWING_")) return "drawing";
   if (code.endsWith("PROJECT_MISMATCH") || code === "EDITING_PROJECT_CHANGED") return "project";
   if (code === "EDITING_BASE_UNAVAILABLE" || code === "WORKING_DRAFT_SOURCE_CHANGED") return "base";
+  if (code === "DESIGN_TREE_UNSYNCED_EDITS") return "unrecorded";
   if (code.includes("STALE") || code.endsWith("_CHANGED") || code.endsWith("_MOVED")) return "stale";
   // The client also files its own local preconditions under UNSUPPORTED_REQUEST,
   // with no status; only the server's answer means the change itself.
