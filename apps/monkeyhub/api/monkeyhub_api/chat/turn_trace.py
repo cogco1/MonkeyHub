@@ -14,6 +14,8 @@ from monkeymonitor.store import UsageLog
 from monkeymonitor.usage import TokenUsage, UsageEvent
 from archflow.contracts.canonical import canonical_digest
 
+from . import tool_output
+
 log = logging.getLogger(__name__)
 
 # The two raw reads that answer the Agent with one image of their own.
@@ -34,7 +36,7 @@ def _answer(result):
         result = "".join(row["text"] for row in result["content"]
                          if isinstance(row, dict) and isinstance(row.get("text"), str))
     try:
-        value = json.loads(result) if isinstance(result, str) else None
+        value = json.loads(tool_output.unwrap(result)) if isinstance(result, str) else None
     except ValueError:
         return None
     return value if isinstance(value, dict) else None

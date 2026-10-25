@@ -1187,7 +1187,7 @@ class ChatStore:
 
     def _tool_connection(self, session: _SavedChat) -> dict:
         return {"command": sys.executable, "args": [str(Path(mcp_server.__file__).resolve()), "--mcp",
-                "--hub-url", self.hub_url, "--chat-id", session.id]}
+                "--hub-url", self.hub_url, "--chat-id", session.id, "--scratch", str(self._scratch_path(session.id))]}
 
     def _codex_mcp(self, session: _SavedChat, command, environment) -> dict:
         """Keep the same project-only MCP configuration for both native transports."""

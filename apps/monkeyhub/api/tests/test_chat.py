@@ -31,7 +31,7 @@ from monkeyhub_api import projects
 from monkeyhub_api.runtime.workers import project_key
 from monkeyhub_api.chat import (
     activity, guides, judgments, mcp_server, preparation, providers, skill_plugins, store as chat, studio_tool,
-    tool_calls, transport, turn_context, visual_review,
+    tool_calls, tool_output, transport, turn_context, visual_review,
 )
 from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import (
@@ -4119,7 +4119,9 @@ class ChatTests(unittest.TestCase):
             return results
         for result in results:
             self.assertEqual({row["type"] for row in result["content"]}, {"text"}, "findings, never images")
-        return [(result.get("isError", False), json.loads(result["content"][0]["text"])) for result in results]
+        # A finding reaches the Agent framed as data (S29); a refusal as it is.
+        return [(result.get("isError", False), json.loads(tool_output.unwrap(result["content"][0]["text"])))
+                for result in results]
 
     NOTHING_SEEN = {"observations": [], "unresolved_questions": [], "suggested_checks": []}
 

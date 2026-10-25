@@ -11,7 +11,7 @@ import json
 from typing import Mapping
 from urllib.parse import parse_qs, urlsplit
 
-from . import providers, studio_tool
+from . import providers, studio_tool, tool_output
 
 from ..models import ChatMessage
 
@@ -29,15 +29,15 @@ _BOUND_TOOLS = ("studio_schema", "studio_request", "fab_request")
 
 
 def _tool_text(value) -> str:
-    """The MCP text content of one result or error, without its envelope."""
+    """The MCP text content of one result or error, without its envelope or the data frame around it."""
     if isinstance(value, str):
-        return value
+        return tool_output.unwrap(value)
     if isinstance(value, dict):
         rows = value.get("content")
         if isinstance(rows, list):
             parts = [row["text"] for row in rows if isinstance(row, dict) and isinstance(row.get("text"), str)]
             if any(parts):
-                return "\n".join(part for part in parts if part)
+                return tool_output.unwrap("\n".join(part for part in parts if part))
     if value in (None, {}, []):
         return ""
     return json.dumps(value, ensure_ascii=False)

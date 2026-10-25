@@ -37,9 +37,15 @@ if __package__ in {None, ""}:
 
 from .. import projects
 from ..app import locator
-from . import design_loop, guides, providers, studio_tool, tool_calls, transport
+from . import design_loop, guides, providers, studio_tool, tool_calls, tool_output, transport
 
 from ..models import ChatPresentationBindRequest, ChatPresentationRequest, HubFailure
+
+
+# The Hub's own bookkeeping answers, which carry nothing from the project or a
+# skill: they reach the Agent as they are. Every other answer is framed as data
+# and cut when long (tool_output).
+_HUB_OWN = frozenset({"chat_present", "presentation_bind", "project_create"})
 
 
 def _bound_source(hub: str, name: str, arguments: object, external: ChatPresentationBindRequest | None,
@@ -73,8 +79,10 @@ def _hub_at(hub_url: str | None, runtime_root: str | None):
 
 
 def _mcp(hub_at, chat_id: str | None, external: ChatPresentationBindRequest | None = None,
-         source: dict | None = None, *, design_loop_only: bool = False) -> None:
+         source: dict | None = None, *, design_loop_only: bool = False, keep_in: Path | None = None) -> None:
     """``design_loop_only`` lists only the design-loop tools (#185): a headless turn that revises the design.
+
+    ``keep_in`` is the chat's scratch folder, where a long answer is kept whole for the Agent to read in parts.
 
     Started that way for an external host, the connection binds itself at the first call and publishes the
     request in ``MONKEYHUB_DESIGN_REQUEST_FILE`` as the user's message, the words every change answers.
@@ -307,8 +315,10 @@ def _mcp(hub_at, chat_id: str | None, external: ChatPresentationBindRequest | No
                             {"type": "text", "text": providers._redact(json.dumps(metadata, ensure_ascii=False))},
                             {"type": "image", "mimeType": value["mimeType"], "data": value["data"]},
                         ]}
-                    else:
+                    elif name in _HUB_OWN:
                         result = {"content": [{"type": "text", "text": providers._redact(json.dumps(value, ensure_ascii=False))}]}
+                    else:
+                        result = {"content": [{"type": "text", "text": tool_output.wrap(value, keep_in, name, providers._redact)}]}
                 except HubFailure as exc:
                     # Keep the Runtime's refusal class across the MCP boundary.
                     # A stale base is not an input typo and must never be blindly retried.
@@ -339,16 +349,22 @@ if __name__ == "__main__":
     parser.add_argument("--title", default="External conversation")
     parser.add_argument("--design-loop", action="store_true",
                         help="List only the design-loop tools: a headless turn that revises the design (#185).")
+    parser.add_argument("--scratch", help="The chat's scratch folder, where a long answer is kept whole; "
+                                          "default the system's temporary folder")
     args = parser.parse_args()
+    keep_in = Path(args.scratch) if args.scratch else None
     if args.source_session_id and args.project_dir:
         external = ChatPresentationBindRequest(projectDir=args.project_dir, sourceSessionId=args.source_session_id,
                                                provider=args.provider, chatId=args.chat_id, title=args.title)
-        _mcp(_hub_at(args.hub_url, args.runtime_root), args.chat_id, external, design_loop_only=args.design_loop)
+        _mcp(_hub_at(args.hub_url, args.runtime_root), args.chat_id, external, design_loop_only=args.design_loop,
+             keep_in=keep_in)
     elif args.source_session_id:
         _mcp(_hub_at(args.hub_url, args.runtime_root), args.chat_id, None, {"sourceSessionId": args.source_session_id,
-                                                               "provider": args.provider, "chatId": args.chat_id, "title": args.title})
+                                                               "provider": args.provider, "chatId": args.chat_id, "title": args.title},
+             keep_in=keep_in)
     elif args.chat_id and not args.source_session_id and not args.project_dir:
-        _mcp(_hub_at(args.hub_url, args.runtime_root), projects._identifier(args.chat_id), design_loop_only=args.design_loop)
+        _mcp(_hub_at(args.hub_url, args.runtime_root), projects._identifier(args.chat_id), design_loop_only=args.design_loop,
+             keep_in=keep_in)
     else:
         parser.error("Use --chat-id for a Hub-owned conversation, or --source-session-id (with --project-dir, or without "
                      "one to make or name a project) for external presentation.")
