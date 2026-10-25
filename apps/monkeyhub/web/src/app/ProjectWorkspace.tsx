@@ -296,13 +296,14 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   // until then the Board stands alone, and 放入汇报 is still how a layout begins.
   const developer = useDeveloperMode();
   const [layoutUsed, setLayoutUsed] = useState(false);
+  // Read once the Board is first shown, and again only when the project is refreshed: switching surfaces asks nothing.
+  const layoutRead = useRef<number | null>(null);
   useEffect(() => {
-    if (layoutUsed || developer || !active || server.status !== "ready" || workspace !== "board") return;
-    let live = true;
+    if (layoutUsed || developer || !active || server.status !== "ready" || workspace !== "board" || layoutRead.current === refreshKey) return;
+    layoutRead.current = refreshKey;
     void publicationClient(connection).read().then((saved) => {
-      if (live && saved.pages.some((page) => page.elements.length > 0)) setLayoutUsed(true);
+      if (saved.pages.some((page) => page.elements.length > 0)) setLayoutUsed(true);
     }, () => { /* an unreadable layout keeps the switch away; Layout is still reachable from 放入汇报 and Ctrl K */ });
-    return () => { live = false; };
   }, [layoutUsed, developer, active, server.status, workspace, refreshKey, connection]);
   useEffect(() => { if (workspace === "publish") setLayoutUsed(true); }, [workspace]);
   const handToAi = useMemo(() => onHandToAi ? (request: HandToAiRequest) => {
