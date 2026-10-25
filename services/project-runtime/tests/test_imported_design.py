@@ -154,6 +154,23 @@ class ImportedDesignTests(unittest.TestCase):
         self.assertAlmostEqual(box["max"][0] - box["min"][0], after["max"][1] - after["min"][1], places=5)
         dressed = turned
 
+        # A note on the component, and one object of it in a material of its own: both read back as declared.
+        noted = self.run_proposal(self.client.post("/api/proposals/facets", json={
+            "stateDigest": self.state(dressed), "sourceRunId": dressed, "targets": [
+                {"id": component, "set": {"description.note": "保留，评图前别动"}},
+                {"id": component, "part": pick["elementId"], "set": {"material.name": "黑钢", "material.color": "#202020"}}]}))
+        worn = {name: row["strings"].get("archflow:material") for name, row in self.composed(noted).items()
+                if row["strings"].get("archflow:component") == component}
+        self.assertEqual(worn.pop(name), "黑钢")
+        self.assertLessEqual(set(worn.values()), {"橡木"}, "the component's other objects keep its material")
+        dressed = noted
+
+        # The agent's script has nothing to build an imported object from, and is told what to send instead.
+        scripted = self.client.post("/api/proposals/construction", json={
+            "stateDigest": self.state(dressed), "sourceRunId": dressed, "script": f'delete(get("{pick["elementId"]}"))'})
+        self.assertEqual(scripted.status_code, 422, scripted.text)
+        self.assertIn("removeEntityIds", scripted.text)
+
         refused = self.client.post("/api/proposals/transform", json={
             "stateDigest": self.state(dressed), "sourceRunId": dressed, "elementId": pick["elementId"],
             "kind": "scale", "scale": [2, 2, 2]})

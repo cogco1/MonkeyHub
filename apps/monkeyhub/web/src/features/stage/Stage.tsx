@@ -1606,22 +1606,22 @@ export function Stage({
   const infoSubject = useMemo<ComponentInfoSubject | null>(() => {
     if (!infoOpen || documentOpen) return null;
     if (picked === null) return infoPending ? { kind: "pending" } : { kind: "unresolved", label: null };
-    if (picked.componentId === null) return { kind: "unresolved", label: designObjectLabel(picked.elementId) };
+    if (picked.componentId === null) return { kind: "unresolved", label: designObjectLabel(picked.elementId, zh) };
     return { kind: "card", card: buildComponentCard({
       componentId: picked.componentId, elementId: picked.elementId,
-      modelLabel: designObjectLabel(picked.componentId) ?? picked.componentId,
+      modelLabel: designObjectLabel(picked.componentId, zh) ?? picked.componentId,
       shown: shownModel, pickMatchesShown: pickMatchesShown(picked, shownModel), board: componentBoard,
       lineage: shownLineage ?? null, lineagePending: shownLineage === undefined, changes: changesSince,
     }, statusWord) };
-  }, [infoOpen, documentOpen, picked, infoPending, shownModel, componentBoard, statusWord, shownLineage, changesSince]);
+  }, [infoOpen, documentOpen, picked, infoPending, shownModel, componentBoard, statusWord, shownLineage, changesSince, zh]);
   const pickedStatus = picked && (
     <span className="picked" title={developerMode ? t("stage.picked.title", {
       status: picked.status, sourceState: picked.sourceState,
-    }) : designObjectLabel(picked.elementId ?? picked.componentId) ?? undefined}>
+    }) : designObjectLabel(picked.elementId ?? picked.componentId, zh) ?? undefined}>
       <span className="label">{t("stage.picked.label")}</span>
       <span className="picked__name">{developerMode
         ? picked.elementId ?? picked.componentId ?? t("stage.picked.none")
-        : designObjectLabel(picked.elementId ?? picked.componentId) ?? t("stage.picked.unresolved")}</span>
+        : designObjectLabel(picked.elementId ?? picked.componentId, zh) ?? t("stage.picked.unresolved")}</span>
       {developerMode && picked.status !== "resolved" && <span className="picked__meta">{picked.status}</span>}
       {importedModel && picked.componentId === null && picked.elementId === null && <>
         <span className="picked__meta">{t("stage.picked.imported")}</span>
