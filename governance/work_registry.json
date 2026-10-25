@@ -1286,6 +1286,32 @@
             "governance/work_registry.json"
           ],
           "depends_on": []
+        },
+        {
+          "id": "srv-record-reliable",
+          "status": "active",
+          "branch": "claude/srv-record-reliable",
+          "worktree": "C:/Users/Public/renou/dev/wt/claude-srv-record-reliable",
+          "base_ref": "c88350be",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "S19 (server, 10-25): a record whose result is written always ends completed. The Hub tells the supervisor its Studio is busy when it sends work, so a Studio building housing is not called unavailable after 5 s; a Studio that is unavailable while its process runs loses nothing at once; a run row read on an earlier page while it ran is not a miss; a run nothing works on does not stay executing (several reads, or 20 minutes with no read seeing it worked on), and one called lost is read again for 15 minutes. A run begun during a long read no longer throws the read away. A restored draft shows Record, Discard draft and one sentence.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
+            "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
+            "apps/monkeyhub/api/tests/test_runtime_operations.py",
+            "apps/monkeyhub/web/src/app/App.tsx",
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/src/features/commands/tree.generated.ts",
+            "governance/module_registry.json",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
         }
       ]
     }

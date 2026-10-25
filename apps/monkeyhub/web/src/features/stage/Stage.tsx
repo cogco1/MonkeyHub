@@ -454,7 +454,9 @@ export function Stage({
    */
   model?: {
     onInteraction?(): void;
-    sync?: { dirty: boolean; busy: boolean; error: string | null; autosave?: "saved" | "saving"; onSync(): void };
+    sync?: { dirty: boolean; busy: boolean; error: string | null; autosave?: "saved" | "saving"; onSync(): void;
+      /** The edits waiting are a draft restored from an earlier session: Record or discard it (S19). */
+      restored?: boolean; onDiscard?(): void };
     onDelete(): void;
     canDelete: boolean;
     deleting: boolean;
@@ -2359,8 +2361,10 @@ export function Stage({
               className={`model-tools__group model-tools__sync${recordNamed ? "" : " model-tools__sync--status-only"}${recordAbove ? " model-tools__sync--above" : ""}`}>
               {recordNamed && <ModelToolButton data-command="draft.record.save" icon="sync" label={t("stage.sync.label")} showLabel
                 disabled={model.sync.busy} onClick={model.sync.onSync} />}
+              {recordNamed && model.sync.restored && model.sync.onDiscard && <ModelToolButton data-command="draft.record.discard" icon="close"
+                label={t("stage.sync.discard")} showLabel onClick={model.sync.onDiscard} />}
               <span className="model-tools__sync-status" role={model.sync.error ? "alert" : "status"}>
-                {model.sync.error ?? (model.sync.busy ? t("stage.sync.busy") : model.sync.autosave
+                {model.sync.error ?? (model.sync.busy ? t("stage.sync.busy") : model.sync.restored ? t("stage.sync.restored") : model.sync.autosave
                   ? t(model.sync.autosave === "saved" ? "stage.sync.autosaved" : "stage.sync.autosaving") : t("stage.sync.dirty"))}
                 {model.sync.error && <FailureActions reason={model.sync.error} undo />}
               </span>

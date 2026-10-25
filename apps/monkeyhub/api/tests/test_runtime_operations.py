@@ -34,9 +34,9 @@ from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 from project_runtime.api.dto.runtime import runtime_dto
 from monkeyhub_api.models import HubFailure
-from monkeyhub_api.runtime.manager import ProjectRuntime, ProjectRuntimeManager
+from monkeyhub_api.runtime.manager import ProjectRuntime, ProjectRuntimeManager, _still_there
 from monkeyhub_api.attention import producers
-from monkeyhub_api.runtime.operations import LOST_AFTER_MISSES, OperationManager
+from monkeyhub_api.runtime.operations import EXECUTING_LIMIT_S, LOST_AFTER_MISSES, RECHECK_LOST_S, OperationManager
 from monkeyhub_api.runtime.workers import earlier_project_keys, project_key
 from monkeyhub_api.runtime.worker_http import HttpResult
 
@@ -1079,6 +1079,87 @@ class LostResultTests(unittest.TestCase):
         self.assertRegex(card.summaryZh, r"[一-鿿]")
         self.assertNotIn("worker", card.summaryZh)
         self.assertIn("worker", card.summary, "the English record keeps the runner's own sentence")
+
+
+class RecordReliabilityTests(unittest.TestCase):
+    """S19: a record whose result is written completes; a slow Studio loses nothing; executing always ends."""
+
+    started = LostResultTests.started
+    status = staticmethod(LostResultTests.status)
+
+    def test_a_written_result_completes_whatever_page_the_job_was_read_on(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        candidate_id = admission.record.candidateId
+        # The run's row was read on an early page, while it ran; the jobs, on the last page, after it finished.
+        early = {"jobs": [{"candidateId": candidate_id, "jobId": "job-1", "status": "succeeded"}],
+                 "candidates": [{"candidateId": candidate_id, "status": "running"}]}
+        for _ in range(LOST_AFTER_MISSES + 2):
+            manager.reconcile(early, worker_alive=True)
+            self.assertEqual(self.status(manager, admission), "executing")
+        written = {**early, "candidates": [{"candidateId": candidate_id, "status": "completed", "receiptRef": "project://p/r"}]}
+        manager.reconcile(written, worker_alive=True)
+        self.assertEqual(self.status(manager, admission), "completed")
+        self.assertEqual(producers.operations(manager.records()), [])
+
+    def test_a_result_written_after_the_run_was_called_lost_completes_it(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        manager.reconcile({"candidates": []}, worker_alive=False)
+        self.assertEqual(self.status(manager, admission), "needs_recovery")
+        self.assertTrue(manager.awaiting_result(), "a run called lost just now is still looked for")
+        manager.reconcile({"candidates": [{"candidateId": admission.record.candidateId, "status": "completed",
+                                           "receiptRef": "project://p/r"}]}, worker_alive=True)
+        self.assertEqual(self.status(manager, admission), "completed")
+        self.assertFalse(manager.awaiting_result())
+
+    def test_a_studio_slow_to_answer_does_not_lose_the_run_it_builds(self):
+        process = dict(instance_id="w", desired_state="running", process_id=7)
+        self.assertTrue(_still_there(SimpleNamespace(state="unavailable", **process)),
+                        "a Studio that stopped answering while its process runs is still there")
+        self.assertTrue(_still_there(SimpleNamespace(state="busy", **process)))
+        self.assertFalse(_still_there(SimpleNamespace(state="unavailable", instance_id="w", desired_state="stopped", process_id=7)))
+        self.assertFalse(_still_there(SimpleNamespace(state="crashed", instance_id="w", desired_state="running", process_id=None)))
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        # Its process is there and only does not answer: no read in a row of these calls the run lost at once.
+        manager.reconcile({"candidates": [{"candidateId": admission.record.candidateId, "status": "needs_recovery"}]},
+                          worker_alive=False, worker_unanswered=True)
+        self.assertEqual(self.status(manager, admission), "executing")
+
+    def test_a_run_nothing_works_on_does_not_stay_executing(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        # No job (the Studio that ran it started again) and a row that reads neither working nor done.
+        stuck = {"jobs": [], "candidates": [{"candidateId": admission.record.candidateId, "status": "needs_recovery",
+                                             "receiptRef": "project://p/r", "error": "unreadable"}]}
+        for _ in range(LOST_AFTER_MISSES):
+            manager.reconcile(stuck, worker_alive=True)
+        record = next(row for row in manager.records() if row.operationId == admission.record.operationId)
+        self.assertEqual(record.status, "needs_recovery")
+        self.assertTrue(record.recoverable, "its receipt is there, so reading can still resolve it")
+
+    def test_executing_ends_when_no_read_sees_the_run_worked_on(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        now = admission.working_at
+        with patch("monkeyhub_api.runtime.operations.time.monotonic", return_value=now + EXECUTING_LIMIT_S - 1):
+            self.assertFalse(manager.expire())
+        with patch("monkeyhub_api.runtime.operations.time.monotonic", return_value=now + EXECUTING_LIMIT_S):
+            self.assertTrue(manager.expire())
+            self.assertTrue(manager.awaiting_result())
+        self.assertEqual(self.status(manager, admission), "needs_recovery")
+        with patch("monkeyhub_api.runtime.operations.time.monotonic", return_value=now + EXECUTING_LIMIT_S + RECHECK_LOST_S):
+            self.assertFalse(manager.awaiting_result(), "looked for a while, not forever")
+
+    def test_a_run_seen_running_is_not_expired(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        running = {"jobs": [{"candidateId": admission.record.candidateId, "jobId": "job-1", "status": "running"}], "candidates": []}
+        with patch("monkeyhub_api.runtime.operations.time.monotonic", return_value=admission.working_at + EXECUTING_LIMIT_S):
+            manager.reconcile(running, worker_alive=True)
+            self.assertFalse(manager.expire())
+        self.assertEqual(self.status(manager, admission), "executing")
 
 
 class JournalSpellingTests(unittest.TestCase):

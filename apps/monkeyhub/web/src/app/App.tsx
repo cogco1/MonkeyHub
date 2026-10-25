@@ -102,6 +102,8 @@ interface LocalModelSession {
   /** The automatic-save failure `error` shows, so a later successful save clears only that. */
   autosaveError?: string;
   recoverySaved?: DraftSnapshot;
+  /** Edits restored from an earlier session's draft, not made since: they can be recorded or discarded (S19). */
+  restored?: boolean;
 }
 
 /** Local geometry not yet incorporated in a completed candidate. */
@@ -943,7 +945,9 @@ export default function App({ server, expectedProjectId, projectStep = null, ini
           candidateId: attempt.accepted.candidateId, jobId: attempt.accepted.jobId, status: attempt.accepted.status });
       }
       local.recoverySaved = currentDraft(local.history);
-      local.error = retained?.pending ? t("stage.sync.recovered") : null;
+      // Its own line says what it is and what to do with it (stage.sync.restored).
+      local.restored = true;
+      local.error = null;
       localModels.current.set(draftKey, local);
       refreshLocalModel();
     } catch (cause) {
@@ -3083,6 +3087,17 @@ export default function App({ server, expectedProjectId, projectStep = null, ini
     ]) });
   }, [append, baseUndoTarget, canUndoModel, refuseViewedEdit, showRunAsBase, localModel, refreshLocalModel]);
 
+  /** Put away a restored draft (S19): the model goes back to its recorded base and the saved draft is cleared. */
+  const discardRestoredDraft = useCallback(() => {
+    const session = localModel;
+    if (!draftKey || !session?.restored || session.busy || refuseViewedEdit()) return;
+    // The restored session goes; a new one starts from the recorded base, as if nothing had been drawn.
+    localModels.current.delete(draftKey);
+    const base = ensureLocalModel();
+    refreshLocalModel(); setPicked(null); setSelection(null);
+    void retainLocalModel(base, true).catch((cause) => autosaveFailed(base, cause));
+  }, [draftKey, localModel, refuseViewedEdit, ensureLocalModel, refreshLocalModel, retainLocalModel, autosaveFailed]);
+
   const redoModel = useCallback(async () => {
     if (!canRedoModel || refuseViewedEdit()) return;
     if (localModel) {
@@ -3147,7 +3162,7 @@ export default function App({ server, expectedProjectId, projectStep = null, ini
     session.pending ??= { snapshot, attempt: createModelDraftSyncAttempt(),
       interactionEpoch: modelInteractionEpoch.current, viewRequest: modelLoadRequest.current };
     const pending = session.pending;
-    session.busy = true; session.error = null;
+    session.busy = true; session.error = null; session.restored = false;
     setModelSyncBusy(true); refreshLocalModel();
     if (pending.attempt.accepted) {
       candidateRuns.refresh(pending.attempt.accepted.candidateId);
@@ -3878,7 +3893,8 @@ export default function App({ server, expectedProjectId, projectStep = null, ini
               onInteraction: () => { modelInteractionEpoch.current += 1; },
               sync: { dirty: !!localModel && unsynced(localModel),
                 autosave: autosaveEnabled ? localModel?.recoverySaved === draftSnapshot ? "saved" : "saving" : undefined,
-                busy: localModel?.busy ?? false, error: localModel?.error ?? null, onSync: () => void syncLocalModel() },
+                busy: localModel?.busy ?? false, error: localModel?.error ?? null, onSync: () => void syncLocalModel(),
+                restored: Boolean(localModel?.restored && unsynced(localModel) && !localModel.busy), onDiscard: discardRestoredDraft },
               pushPullTarget, pushPullReason: pickedShape?.drawnShapeReason,
               onApply: (action) => void applyDirectModelAction(action),
               elevation: elevationObject && draftKey ? { object: elevationObject, objects: elevationObjects,
