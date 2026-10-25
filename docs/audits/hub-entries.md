@@ -312,7 +312,7 @@ created: 2026-10-21
 | Modeling | 58 | 工具条…溢出菜单 | 自由曲线 / Freehand | 动作 | 徒手画轮廓 | 条件：…展开 | 2026-09-13 87c9f2de | 低 | 否 | `features/stage/Stage.tsx:2076` | 描图纸也有徒手笔，叫 Pen/画笔 | draft.direct_edit | draft.tools.freehand |
 | Modeling | 59 | 工具条…溢出菜单 | 描图纸 / Tracing paper | 导航 | 打开/收起描图纸（批注）工具行 | 条件：…展开 | 2026-09-08 80309de7 | 中 | 否 | `features/stage/Stage.tsx:2081` |  | markup.draw | view.markup_tools.tracing_paper |
 | Modeling | 60 | 工具条…溢出菜单 | 绘制工作面 / Drawing plane | 设置项 | 下一笔画在哪个平面：XY / XZ / YZ / Face | 条件：…展开 | 2026-09-12 cb729dda | 中 | 部分 | `features/stage/Stage.tsx:2086` | 下拉 4 选项；中文“工作面”与 Hub 把右侧区域叫“工作面”撞词；Face 选项文案写死；非 XY 时状态行显示当前平面 | draft.direct_edit | draft.tools.line |
-| Modeling | 61 | 工具条右侧(或上方一行) | 记录 / Record | 动作 | 把本地未记录修改记录进项目 | 条件：有未记录修改或正在记录 | 2026-09-13 87c9f2de | 高 | 部分 | `features/stage/Stage.tsx:2103` | 旁边状态字“有未记录的修改 / 已自动保存”；与 3 处“记录修改并继续”同义 | design.history | draft.record.save |
+| Modeling | 61 | 工具条右侧(或上方一行) | 记录 / Record | 动作 | 把本地未记录修改记录进项目 | 条件：有未记录修改或正在记录 | 2026-09-13 87c9f2de | 高 | 部分 | `features/stage/Stage.tsx:2103` | 旁边状态字“有未记录的修改 / 已自动保存”；与 3 处“记录修改并继续”同义 | design.history | draft.record.save、draft.record.discard |
 | Modeling | 62 | 描图纸工具行 | 橡皮擦 / Eraser | 动作 | 擦除批注笔画 | 条件：描图纸打开 | 2026-09-13 039c4c65 | 中 | 否 | `features/stage/Stage.tsx:2112` | 文案借用 document.tool.eraser | markup.draw | view.markup_tools.eraser |
 | Modeling | 63 | 描图纸工具行 | 清空批注 / Clear annotations | 动作 | 一步清空全部批注（可撤销） | 条件：描图纸打开；无批注时禁用 | 2026-10-01 780ea434 | 低 | 是 | `features/stage/Stage.tsx:2115` |  | markup.review | markup.clear |
 | Modeling | 64 | 描图纸工具行 | 撤销批注 / Undo mark | 动作 | 撤销一笔批注 | 条件：描图纸打开 | 2026-09-08 80309de7 | 中 | 否 | `features/stage/Stage.tsx:2117` | 拿着批注工具时 Ctrl+Z 也走这里 | markup.draw | view.markup_tools.undo |
