@@ -750,6 +750,9 @@ SCRATCH_SOURCE = "scratch"
 # A script written in a chat is small: its code is kept in its run's record.
 MAX_SCRATCH_BYTES = 256 * 1024
 SCRATCH_ENTRY = "main.py"
+# A script written in a chat answers a question while the person waits; one that runs longer is stopped (S23: the
+# first script a chat wrote searched whole folders and ran on until the Hub stopped).
+SCRATCH_TIMEOUT_S = 15 * 60.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -830,7 +833,7 @@ def submit_scratch_run(binding: ProjectBinding, jobs, skill: ScratchSkill, *,
                        inputs: Mapping[str, Mapping[str, Any]], parameters: Mapping[str, Any],
                        attribution: ActorAttribution, agent: bool = False, grant_id: str | None = None,
                        python: str | None = None, runner: Runner | None = None,
-                       timeout_s: float = RUN_TIMEOUT_S, now: datetime | None = None) -> dict:
+                       timeout_s: float = SCRATCH_TIMEOUT_S, now: datetime | None = None) -> dict:
     """Run a chat's script as a background job, its code, access and tier kept in the run's own record."""
 
     content = skill.content
