@@ -7,13 +7,15 @@ admits it; a chat answer goes to the ``ChatStore``; an update to the Hub's
 updater. It follows the Hub's event stream and, a moment after a project's
 events settle, reconciles every producer's cards for that project from what the
 Hub has: the operation journal, the project's conversations and, while its
-Studio is running, its Worktree Graph. A design-loop turn that asks the
+Studio is running, its Worktree Graph and, for the results its cards weigh,
+each run's retained model, objects and checks. A design-loop turn that asks the
 architect a question says so itself (``POST /api/attention/questions``): its
 tools run in the conversation's own tool server, not in the Hub. A change to
 the queue is published on the same stream as ``attention/changed`` under the
 project's runtime id, so every page reads the queue again.
 """
 
+from collections import OrderedDict
 from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime, timezone
 import json
@@ -22,7 +24,7 @@ import secrets
 import threading
 import time
 from typing import Annotated, Any
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
@@ -49,6 +51,58 @@ RECENT_CHATS = 12
 CHANGED = "attention/changed"
 # How often the Hub's own cards (a prepared update) are read again.
 HUB_EVERY_S = 60.0
+# The runs and pairs whose facts are kept: a run's retained records never change, so each is read once.
+FACTS_KEPT = 256
+# Metres in each length unit a model export names.
+UNIT_METRES = {"meter": 1.0, "millimeter": .001, "centimeter": .01, "inch": .0254, "foot": .3048}
+
+
+def run_facts(candidate: Mapping[str, Any]) -> producers.RunFacts:
+    """A run's facts from its Studio readout (``GET /api/candidates/{id}``): its one complete model, its objects,
+    their extent, its relation checks."""
+
+    run, state = candidate.get("candidateId"), candidate.get("stateDigest")
+    models = [row for row in candidate.get("artifacts") or () if (row.get("modelSource") or {}).get("runId") == run
+              and (state is None or row["modelSource"].get("stateDigest") == state)
+              and str(row.get("fileName") or "").lower().endswith(".3dm")]
+    models = list({row["modelSource"]["assetSha256"]: row for row in models}.values())
+    composed = [row for row in models if row.get("representation") == "composed"]
+    model = (composed if len(composed) == 1 else models if len(models) == 1 else [None])[0]
+    objects = candidate.get("objects")
+    height = footprint = None
+    boxes = [row for row in objects or () if row.get("bbox")]
+    units = {UNIT_METRES.get(row.get("lengthUnit") or "") for row in boxes}
+    # Only boxes in one known unit, Z up, measure the model.
+    if boxes and len(units) == 1 and None not in units and all(row.get("upAxis") in (None, "Z-up") for row in boxes):
+        scale, = units
+        low = [min(row["bbox"]["min"][axis] for row in boxes) for axis in range(3)]
+        high = [max(row["bbox"]["max"][axis] for row in boxes) for axis in range(3)]
+        height = (high[2] - low[2]) * scale
+        footprint = (high[0] - low[0]) * (high[1] - low[1]) * scale * scale
+    checks = candidate.get("relationChecks") or None
+    return producers.RunFacts(
+        model=None if model is None else model["modelSource"], objects=None if objects is None else len(objects),
+        height=height, footprint=footprint,
+        checks=None if checks is None else (int(checks.get("held", 0)), int(checks.get("violated", 0)),
+                                            int(checks.get("unchecked", 0))))
+
+
+def pair_facts(compared: Mapping[str, Any]) -> producers.PairFacts:
+    """A pair's comparison (``GET /api/candidates/{B}/compare?against=A``) as a card counts it.
+
+    Changed is an object whose inspected box moved or changed size. One whose box stayed and only its geometry
+    digest differs is counted as unchanged: re-exporting the same imported shapes changes their digests (S28: 446
+    such of housing's 2663 after one triangle was added), and the card would name changes nobody made.
+    """
+
+    tolerance = float(compared.get("tolerance") or 0.0)
+    moved = lambda row: any(abs(a - b) > tolerance for side in ("min", "max")
+                            for a, b in zip(row["before"][side], row["after"][side]))
+    changed = [row for row in compared.get("objects") or () if row.get("status") == "changed"]
+    shifted = sum(1 for row in changed if not row.get("before") or not row.get("after") or moved(row))
+    return producers.PairFacts(changed=shifted, added=int(compared.get("added") or 0),
+                               removed=int(compared.get("removed") or 0),
+                               unchanged=int(compared.get("unchanged") or 0) + len(changed) - shifted)
 
 
 class AttentionHub:
@@ -71,6 +125,9 @@ class AttentionHub:
         store.subscribe(self._changed)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        # What result cards show, by (project, run) and (project, B, A); read on the attention thread only.
+        self._facts: OrderedDict[tuple, producers.RunFacts] = OrderedDict()
+        self._pairs: OrderedDict[tuple, producers.PairFacts] = OrderedDict()
 
     # The executor's ports ------------------------------------------------------
 
@@ -166,8 +223,10 @@ class AttentionHub:
             # A result a person answered for on a card is not asked about again on its own.
             handled = {run for card in self.store.items(project_dir, states=["done", "dismissed"])
                        if card.dedupeKey.startswith(producers.RESULTS) for run in card.source.runIds}
+            now = self._clock()
+            facts, pairs = self._result_facts(runtime, producers.result_pairs(graph, now=now, handled=handled))
             self.store.reconcile(project_id, project_dir, producers.RESULTS,
-                                 producers.results(graph, now=self._clock(), handled=handled))
+                                 producers.results(graph, now=now, handled=handled, facts=facts, pairs=pairs))
 
     def refresh_hub(self) -> None:
         """The Hub's own cards: a prepared update, queued for every project's architect alike."""
@@ -301,14 +360,56 @@ class AttentionHub:
                 continue  # Archived or removed between the list and the read.
         return sessions
 
-    def _graph(self, runtime) -> dict | None:
-        # Only a running Studio is asked, at once: a closed or starting project keeps the cards it had until its
-        # next event, and this thread keeps hearing events meanwhile.
+    def _result_facts(self, runtime, wanted: list[tuple[str, str]]):
+        """Each run's facts and each pair's comparison the result cards show, from the Studio's retained records.
+
+        A read the Studio cannot answer now leaves that picture or row out until the project's next event.
+        """
+
+        facts: dict[str, producers.RunFacts] = {}
+        pairs: dict[tuple[str, str], producers.PairFacts] = {}
+        for run in dict.fromkeys(run for pair in wanted for run in pair):
+            key = (runtime.project_id, run)
+            if key not in self._facts:
+                candidate = self._read(runtime, f"/api/candidates/{quote(run, safe='')}")
+                if candidate is None or candidate.get("candidateId") != run:
+                    continue
+                facts[run] = run_facts(candidate)
+                # Only a finished run's records are final.
+                if candidate.get("status") == "succeeded":
+                    self._keep(self._facts, key, facts[run])
+                continue
+            facts[run] = self._facts[key]
+            self._facts.move_to_end(key)
+        for after, before in wanted:
+            key = (runtime.project_id, after, before)
+            if key not in self._pairs:
+                compared = self._read(runtime, f"/api/candidates/{quote(after, safe='')}/compare?"
+                                               f"{urlencode({'against': before})}")
+                if compared is None or compared.get("candidateId") != after or compared.get("against") != before:
+                    continue
+                self._keep(self._pairs, key, pair_facts(compared))
+            pairs[(after, before)] = self._pairs[key]
+            self._pairs.move_to_end(key)
+        return facts, pairs
+
+    @staticmethod
+    def _keep(kept: OrderedDict, key: tuple, value) -> None:
+        kept[key] = value
+        while len(kept) > FACTS_KEPT:
+            kept.popitem(last=False)
+
+    def _read(self, runtime, path: str) -> dict | None:
         try:
-            result = self.runtimes.forward(runtime, "/api/worktrees", "GET", b"", {}, wait=False)
+            result = self.runtimes.forward(runtime, path, "GET", b"", {}, wait=False)
         except HubFailure:
             return None
         return result.json() if result.status < 400 else None
+
+    def _graph(self, runtime) -> dict | None:
+        # Only a running Studio is asked, at once: a closed or starting project keeps the cards it had until its
+        # next event, and this thread keeps hearing events meanwhile.
+        return self._read(runtime, "/api/worktrees")
 
     # Events --------------------------------------------------------------------
 

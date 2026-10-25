@@ -1077,6 +1077,40 @@
           "depends_on": []
         },
         {
+          "id": "srv-decision-thumbs",
+          "status": "active",
+          "branch": "claude/srv-decision-thumbs",
+          "worktree": "C:\\Users\\Public\\renou\\dev\\wt\\claude-srv-decision-thumbs",
+          "base_ref": "614ae47c",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "S28 (server, 10-25, to-do 12): a decision card shows A, the current design, beside B, the new result, as the Design Tree's thumbnails of their exact models (choosing a picture answers the card), and three rows from the Studio's retained records: objects added and removed, height and footprint, relation checks.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/attention/hub.py",
+            "apps/monkeyhub/api/monkeyhub_api/attention/models.py",
+            "apps/monkeyhub/api/monkeyhub_api/attention/producers.py",
+            "apps/monkeyhub/api/tests/test_attention_hub.py",
+            "apps/monkeyhub/api/tests/test_attention_producers.py",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/app/ErrorPanel.tsx",
+            "apps/monkeyhub/web/test/errorPanel.test.ts",
+            "apps/monkeyhub/web/src/api/generated/index.ts",
+            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/src/notifications/cards/AttentionCards.tsx",
+            "apps/monkeyhub/web/src/notifications/cards/cardText.ts",
+            "apps/monkeyhub/web/src/notifications/cards/cards.css",
+            "apps/monkeyhub/web/src/notifications/cards/types.ts",
+            "apps/monkeyhub/web/test/attentionCards.test.ts",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
+        },
+        {
           "id": "srv-quick-draw-stale",
           "status": "active",
           "branch": "claude/srv-quick-draw-stale",

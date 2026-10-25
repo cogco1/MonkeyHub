@@ -331,6 +331,9 @@ export type AttentionItem = {
  * AttentionMedia
  *
  * A picture a card shows: a model view of a run, a Board frame, or a crop of marks.
+ *
+ * A model view with a ``modelSource`` is drawn from the project's thumbnails; one with an ``optionId`` is that
+ * answer, so choosing the picture answers the card.
  */
 export type AttentionMedia = {
     /**
@@ -341,6 +344,11 @@ export type AttentionMedia = {
      * Runid
      */
     runId?: string | null;
+    modelSource?: ModelSourceRef | null;
+    /**
+     * Optionid
+     */
+    optionId?: string | null;
     /**
      * View
      */
@@ -2297,6 +2305,26 @@ export type MeaningHitDto = {
  * ModelSourceDto
  */
 export type ModelSourceDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+};
+
+/**
+ * ModelSourceRef
+ *
+ * One exact model of a run, as the Studio names it (its ``ModelSourceDto``): what a thumbnail is drawn from.
+ */
+export type ModelSourceRef = {
     /**
      * Runid
      */

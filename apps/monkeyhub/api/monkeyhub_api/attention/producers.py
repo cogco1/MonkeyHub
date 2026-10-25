@@ -9,7 +9,7 @@ is written in English and Chinese, as the command tree's labels are.
 """
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 import hashlib
 import re
@@ -18,7 +18,8 @@ from typing import Any
 from ..models import ChatDetail
 from ..runtime.models import OperationRecord, RepairRecord
 from ..updates.models import UpdateStatus
-from .models import AttentionDraft, AttentionMedia, AttentionOption, AttentionSource, CommandRef
+from .models import (AttentionDraft, AttentionMedia, AttentionOption, AttentionSource, CommandRef, EvidenceRow,
+                     ModelSourceRef)
 
 # Commands that only open something, named as the command tree names them.
 OPEN_CONVERSATION = "chat.open_conversation"
@@ -72,23 +73,50 @@ def _archive(runs: list[str], label: Words) -> AttentionOption:
 # Results ----------------------------------------------------------------------
 
 
-def results(graph: Mapping[str, Any], *, now: datetime, handled: Iterable[str] = ()) -> list[AttentionDraft]:
-    """Retained results nobody has decided on, from a project's Worktree Graph (GET /api/worktrees).
+@dataclass(frozen=True)
+class RunFacts:
+    """What the Studio retained about one run, for a decision card's picture and its rows.
 
-    Only an admitted Candidate has a Study and can be archived (a run nobody
-    admitted is not in the candidate pool). Two or more Candidates of one Study
-    are one A/B card. Any other result on its own asks whether to switch to it,
-    or to combine it when the combine rule accepts it with the head, and a
-    Candidate also offers to archive it. Candidates untouched for a week are one
-    card offering to archive them; a run nobody admitted that old asks nothing
-    and is left to the project's cleaning. A rejected, superseded or archived
-    result asks nothing, nor does one a person already answered for on a card
-    (``handled``: the results an answered card listed), unless it is compared
-    with a new one.
+    ``model`` is the run's exact model (a ``ModelSourceDto``); ``objects`` the
+    exported objects its inspection records name; ``height`` and ``footprint``
+    the extent of their boxes together, in metres and square metres; ``checks``
+    its relation checks as held, violated, unchecked. Anything the records do
+    not give is None and its row says nothing.
     """
 
-    handled = frozenset(handled)
+    model: Mapping[str, str] | None = None
+    objects: int | None = None
+    height: float | None = None
+    footprint: float | None = None
+    checks: tuple[int, int, int] | None = None
+
+
+@dataclass(frozen=True)
+class PairFacts:
+    """The Studio's object comparison of a result (B) against another run (A): counts by what happened, changed
+    meaning moved or resized (``hub.pair_facts``)."""
+
+    changed: int
+    added: int
+    removed: int
+    unchanged: int
+
+
+def result_pairs(graph: Mapping[str, Any], *, now: datetime, handled: Iterable[str] = ()) -> list[tuple[str, str]]:
+    """The (B, A) runs whose facts the result cards show: each lone result against the current design, and the
+    two results of a Study shown side by side. What the Hub reads before ``results``."""
+
+    compared, singles, _ = _open_results(graph, now, frozenset(handled))
     head = (graph.get("head") or {}).get("runId")
+    pairs = [(line["runId"], head) for line in singles if head and head != line["runId"]]
+    for lines in compared.values():
+        shown = _shown(lines)
+        if len(shown) == 2:
+            pairs.append((shown[1]["runId"], shown[0]["runId"]))
+    return pairs
+
+
+def _open_results(graph: Mapping[str, Any], now: datetime, handled: frozenset[str]):
     open_lines = [line for line in graph.get("lines", ())
                   if line.get("kind") == "result" and line.get("runId") and line.get("status") == "ready"
                   and line.get("admission") in {"admitted", "none"} and line.get("relation") != "superseded"
@@ -103,9 +131,111 @@ def results(graph: Mapping[str, Any], *, now: datetime, handled: Iterable[str] =
             studies.setdefault(line["studyId"], []).append(line)
     compared = {study: lines for study, lines in studies.items()
                 if len(lines) >= 2 and not {line["runId"] for line in lines} <= handled}
-    drafts = [_compare(study, lines) for study, lines in compared.items()]
     grouped = {line["runId"] for lines in compared.values() for line in lines}
-    drafts += [_single(line, head) for line in fresh if line["runId"] not in grouped | handled]
+    singles = [line for line in fresh if line["runId"] not in grouped | handled]
+    return compared, singles, stale
+
+
+def _shown(lines: list[dict]) -> list[dict]:
+    # The newest ones side by side, oldest first.
+    return sorted(sorted(lines, key=lambda line: line.get("updatedAt") or "", reverse=True)[:len(LETTERS)],
+                  key=lambda line: line.get("updatedAt") or "")
+
+
+def _number(value: float) -> str:
+    text = f"{value:.0f}" if abs(value) >= 1000 else f"{value:.2f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def _from_to(before: float, after: float) -> str:
+    return _number(after) if _number(before) == _number(after) else f"{_number(before)} → {_number(after)}"
+
+
+def evidence(a: RunFacts | None, b: RunFacts | None, pair: PairFacts | None) -> list[EvidenceRow]:
+    """The three rows a decision card weighs B against A by: how many objects, how big, what the checks say.
+
+    A row whose facts the records do not give on both sides is left out.
+    """
+
+    rows = []
+    if a and b and a.objects is not None and b.objects is not None:
+        counts = f"{a.objects} → {b.objects}" if a.objects != b.objects else f"{a.objects}"
+        if pair and (pair.changed or pair.added or pair.removed):
+            parts = [(pair.changed, "changed", "改了"), (pair.added, "added", "加了"), (pair.removed, "removed", "去掉")]
+            en = ", ".join(f"{count} {word}" for count, word, _ in parts if count)
+            zh = "、".join(f"{word} {count} 个" for count, _, word in parts if count)
+            text, text_zh = f"{counts} objects: {en}", f"{counts} 个构件，{zh}"
+        elif pair:
+            text, text_zh = f"{counts} objects, none changed", f"{counts} 个构件，没有改动"
+        else:
+            text, text_zh = f"{counts} objects", f"{counts} 个构件"
+        rows.append(EvidenceRow(key="quantity", label="Quantity", labelZh="数量", text=text, textZh=text_zh,
+                                status="ok"))
+    if a and b and a.height is not None and b.height is not None and a.footprint is not None and b.footprint is not None:
+        height, area = _from_to(a.height, b.height), _from_to(a.footprint, b.footprint)
+        same = _number(a.height) == _number(b.height) and _number(a.footprint) == _number(b.footprint)
+        tail = (" — the same", "，两版一样") if same else ("", "")
+        rows.append(EvidenceRow(key="geometry", label="Geometry", labelZh="几何",
+                                text=f"Height {height} m, footprint {area} m²{tail[0]}",
+                                textZh=f"总高 {height} m，占地 {area} m²{tail[1]}", status="ok"))
+    if a and b and a.checks is not None and b.checks is not None:
+        (held_a, violated_a, unchecked_a), (held_b, violated_b, unchecked_b) = a.checks, b.checks
+        if not any(a.checks) and not any(b.checks):
+            text, text_zh, status = "Neither declares relations to check", "两版都没有要检查的关系", "unknown"
+        elif a.checks == b.checks:
+            text = f"Both: {held_b} relation checks hold, {violated_b} violated"
+            text_zh = f"两版都是 {held_b} 项关系检查成立、{violated_b} 项违反"
+            if unchecked_b:
+                text, text_zh = f"{text}, {unchecked_b} unchecked", f"{text_zh}、{unchecked_b} 项没查"
+            status = "warn" if violated_b else "ok"
+        else:
+            text = f"Holds {held_a} → {held_b}, violated {violated_a} → {violated_b}"
+            text_zh = f"成立 {held_a} → {held_b} 项，违反 {violated_a} → {violated_b} 项"
+            if unchecked_a or unchecked_b:
+                text, text_zh = f"{text}, unchecked {unchecked_a} → {unchecked_b}", f"{text_zh}，没查 {unchecked_a} → {unchecked_b} 项"
+            status = "warn" if violated_b > violated_a else "ok"
+        rows.append(EvidenceRow(key="checks", label="Checks", labelZh="检查", text=text, textZh=text_zh, status=status))
+    return rows
+
+
+def _picture(run: str, facts: RunFacts | None, option: str | None, caption: Words) -> AttentionMedia:
+    model = (ModelSourceRef(**{key: facts.model.get(key) for key in ("runId", "stateDigest", "assetSha256")})
+             if facts and facts.model else None)
+    return AttentionMedia(kind="model_view", runId=run, modelSource=model, optionId=option,
+                          caption=_clip(caption[0], 160), captionZh=_clip(caption[1], 160))
+
+
+def results(graph: Mapping[str, Any], *, now: datetime, handled: Iterable[str] = (),
+            facts: Mapping[str, RunFacts] | None = None,
+            pairs: Mapping[tuple[str, str], PairFacts] | None = None) -> list[AttentionDraft]:
+    """Retained results nobody has decided on, from a project's Worktree Graph (GET /api/worktrees).
+
+    Only an admitted Candidate has a Study and can be archived (a run nobody
+    admitted is not in the candidate pool). Two or more Candidates of one Study
+    are one A/B card. Any other result on its own asks whether to switch to it,
+    or to combine it when the combine rule accepts it with the head, and a
+    Candidate also offers to archive it. Candidates untouched for a week are one
+    card offering to archive them; a run nobody admitted that old asks nothing
+    and is left to the project's cleaning. A rejected, superseded or archived
+    result asks nothing, nor does one a person already answered for on a card
+    (``handled``: the results an answered card listed), unless it is compared
+    with a new one.
+
+    With what the Hub read for ``result_pairs`` (``facts`` by run, ``pairs``
+    by (B, A)), a lone result is shown as B beside A, the current design, and
+    two results of a Study as A and B: each picture is its run's exact model and
+    answers the card for it, and the rows weigh B against A.
+    """
+
+    compared, singles, stale = _open_results(graph, now, frozenset(handled))
+    head = dict(graph.get("head") or {})
+    facts = dict(facts or {})
+    if head.get("runId") and head.get("modelSource") and not (facts.get(head["runId"]) or RunFacts()).model:
+        # The current design's model is the graph's own word for it.
+        facts[head["runId"]] = replace(facts.get(head["runId"]) or RunFacts(), model=head["modelSource"])
+    pairs = pairs or {}
+    drafts = [_compare(study, lines, facts, pairs) for study, lines in compared.items()]
+    drafts += [_single(line, head, facts, pairs) for line in singles]
     if stale:
         runs = sorted(line["runId"] for line in stale)
         drafts.append(_card(
@@ -117,11 +247,11 @@ def results(graph: Mapping[str, Any], *, now: datetime, handled: Iterable[str] =
     return drafts
 
 
-def _compare(study: str, lines: list[dict]) -> AttentionDraft:
+def _compare(study: str, lines: list[dict], facts: Mapping[str, RunFacts],
+             pairs: Mapping[tuple[str, str], PairFacts]) -> AttentionDraft:
     every = [line["runId"] for line in lines]
     # The newest ones side by side; "neither" archives every one of them.
-    shown = sorted(sorted(lines, key=lambda line: line.get("updatedAt") or "", reverse=True)[:len(LETTERS)],
-                   key=lambda line: line.get("updatedAt") or "")
+    shown = _shown(lines)
     runs = [line["runId"] for line in shown]
     newest = len(shown) < len(lines)
     names = "; ".join(f"{letter}: {line.get('label') or line.get('detail') or line['runId']}"
@@ -133,7 +263,11 @@ def _compare(study: str, lines: list[dict]) -> AttentionDraft:
         (names, names.replace("; ", "；").replace(": ", "：")),
         channel="decide", kind="ab", source=AttentionSource(studyId=study, runIds=every),
         dedupeKey=f"{RESULTS}study:{study}",
-        media=[AttentionMedia(kind="model_view", runId=run) for run in runs],
+        media=[_picture(line["runId"], facts.get(line["runId"]), letter.lower(),
+                        (f"{letter} · {line.get('label') or 'Result'}", f"{letter} · {line.get('label') or '结果'}"))
+               for letter, line in zip(LETTERS, shown)],
+        # Two side by side are weighed row by row, B against A.
+        evidence=evidence(facts.get(runs[0]), facts.get(runs[1]), pairs.get((runs[1], runs[0]))) if len(runs) == 2 else [],
         options=[*(_option(letter.lower(), (f"Adopt {letter}", f"采用 {letter}"),
                            (f"The current design becomes {letter}; the one before stays in the history",
                             f"当前方案换成 {letter}，原来那一版留在修改历史里"),
@@ -143,8 +277,23 @@ def _compare(study: str, lines: list[dict]) -> AttentionDraft:
         opens=[CommandRef(commandId=COMPARE, args={"runIds": runs})])
 
 
-def _single(line: dict, head: str | None) -> AttentionDraft:
+# The Studio's sentences about a result line (status.py), in the words a Chinese reader reads.
+_DETAIL_ZH = {"This result already continues the current head.": "它是接着当前方案改出来的。"}
+
+
+def _step_name(label: str | None) -> str | None:
+    """A step as the history names it: "V16" of "V16 - floor junction with …"; another label clipped."""
+
+    if not label:
+        return None
+    short = re.match(r"^\s*(V\d+)(?![\w.])", label)
+    return short.group(1) if short else _clip(label, 24)
+
+
+def _single(line: dict, current: Mapping[str, Any], facts: Mapping[str, RunFacts],
+            pairs: Mapping[tuple[str, str], PairFacts]) -> AttentionDraft:
     run = line["runId"]
+    head = current.get("runId")
     label = line.get("label")
     combine = line.get("reconcile") == "can-combine" and head is not None and head != run
     summary = {"can-combine": ("It does not clash with the current design; the two can be combined.",
@@ -153,7 +302,8 @@ def _single(line: dict, head: str | None) -> AttentionDraft:
                             "它和当前方案改到了同一处，只能二选一。")}.get(line.get("reconcile"))
     detail = line.get("detail")
     if detail:
-        summary = (f"{summary[0]} {detail}", f"{summary[1]}{detail}") if summary else (detail, detail)
+        zh = _DETAIL_ZH.get(detail, detail)
+        summary = (f"{summary[0]} {detail}", f"{summary[1]}{zh}") if summary else (detail, zh)
     options = [_option("combine", ("Combine with current", "并入当前"),
                        ("A new result made from both; the two stay as they are", "和当前方案合成一个新结果，原来的都留着"),
                        "design.go_to_step.combine", runIds=[head, run])] if combine else []
@@ -164,11 +314,20 @@ def _single(line: dict, head: str | None) -> AttentionDraft:
                 _keep()]
     if line.get("admission") == "admitted":
         options.append(_archive([run], ("Archive", "归档")))
+    # A, the current design, beside B, this result: choosing a picture keeps the one or switches to the other.
+    named = _step_name(current.get("label"))
+    after = _picture(run, facts.get(run), "switch", (f"B · {label}" if label else "B · New result",
+                                                     f"B · 新结果「{label}」" if label else "B · 新结果"))
+    media, rows = [after], []
+    if head and head != run:
+        media = [_picture(head, facts.get(head), "keep", (f"A · Current design ({named})" if named else "A · Current design",
+                                                          f"A · 当前方案（{named}）" if named else "A · 当前方案")), after]
+        rows = evidence(facts.get(head), facts.get(run), pairs.get((run, head)))
     return _card(
         (f"New result “{label}”: switch to it?" if label else "A new result: switch to it?",
          f"新结果「{label}」，要换上吗" if label else "有一个新结果，要换上吗"),
         summary, channel="decide", kind="choice", source=AttentionSource(runIds=[run]),
-        dedupeKey=f"{RESULTS}run:{run}", media=[AttentionMedia(kind="model_view", runId=run)], options=options,
+        dedupeKey=f"{RESULTS}run:{run}", media=media, evidence=rows, options=options,
         opens=[CommandRef(commandId=COMPARE, args={"runIds": [head, run]})] if head and head != run else [])
 
 

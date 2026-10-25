@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
+import { ProjectRuntimeProvider } from "../../api/project-runtime/ProjectRuntimeContext";
+import { ProjectionThumbnail } from "../../features/artifacts/ModelThumbnail";
 import { useCommands } from "../../features/commands/CommandProvider";
 import { usePreferences } from "../../features/settings/preferences";
 import type { MessageKey } from "../../i18n/messages.en";
@@ -7,8 +9,8 @@ import { useT } from "../../i18n/useT";
 import { PlainFailure } from "../../app/ErrorPanel";
 import { openCard } from "../openChat";
 import { dismissCard, laterCard, queueSnapshot, reopenCard, resolveCard, subscribeQueue, undoCard, type QueueFailure } from "../queue";
-import { answersKey, chosenOption, COMPARE_DECIDE, comparedRuns, isPending, needsWords, orderedOptions, say } from "./cardText";
-import type { AttentionCard, CardActionResult, ChangeItem, CommandRef } from "./types";
+import { answersKey, cardPictures, chosenOption, COMPARE_DECIDE, comparedRuns, isPending, needsWords, orderedOptions, say } from "./cardText";
+import type { AttentionCard, CardActionResult, CardOption, ChangeItem, CommandRef } from "./types";
 import "./cards.css";
 
 /**
@@ -24,6 +26,36 @@ import "./cards.css";
 
 /** The most the Hub takes with an answer as the architect's own words (AttentionResolveRequest.note). */
 const NOTE_MAX = 400;
+
+/**
+ * The Hub runtime a card's project runs in, as the shell knows its open projects: a decision's pictures are read
+ * through it. Null (and outside the shell) leaves only their names.
+ */
+export const CardRuntimes = createContext<(projectId: string, projectDir: string) => string | null>(() => null);
+
+/**
+ * A decision's results side by side, each its exact model in the Design Tree's thumbnail (the same axonometric view
+ * for every model), named under it: A, the current design, beside B, the new result. A picture that is an answer
+ * answers the card when chosen, as its button does.
+ */
+function Pictures({ card, runtimeId, choose }: {
+  card: AttentionCard; runtimeId: string; choose: ((option: CardOption) => void) | null;
+}) {
+  const { language } = usePreferences();
+  const t = useT();
+  return <ProjectRuntimeProvider runtimeId={runtimeId} baseUrl={`${window.location.origin}/api/runtime/projects/${runtimeId}/studio`}>
+    <div className="attention-card__pictures" role="group" aria-label={t("cards.pictures")}>{cardPictures(card).map(({ media: item, option }, index) => {
+      const body = <>
+        <ProjectionThumbnail source={item.modelSource} />
+        {item.caption && <span className="attention-card__picture-name">{say(item.caption, item.captionZh, language)}</span>}
+      </>;
+      return option && choose
+        ? <button key={index} type="button" className="attention-card__picture" data-option={option.id} data-command-view
+          title={say(option.label, option.labelZh, language)} onClick={() => choose(option)}>{body}</button>
+        : <figure key={index} className="attention-card__picture">{body}</figure>;
+    })}</div>
+  </ProjectRuntimeProvider>;
+}
 
 interface CardProps {
   card: AttentionCard;
@@ -86,6 +118,16 @@ function CardFrame({ card, project, fresh = false, compact = false, comparing = 
   const chosen = chosenOption(card);
   const pending = isPending(card);
   const reason = card.recommendation ? say(card.recommendation.reason, card.recommendation.reasonZh, language) : null;
+  const runtimeId = useContext(CardRuntimes)(card.projectId, card.projectDir);
+  // Pictures where the project's thumbnails can be read; beside a comparison, which shows the models, their names.
+  const pictures = new Set(cardPictures(card).map((row) => row.media));
+  const pictured = !compact && !comparing && runtimeId !== null && pictures.size > 0;
+  const answerable = (option: CardOption) => pending && busy === null && !stale && !(needsWords(option) && !words.trim()) && !blocked?.(option.id);
+  const answer = (option: CardOption) => act(option.id, async () => {
+    const result = await resolveCard(card.id, option.id, needsWords(option) ? words.trim() : undefined, items && option.id === "run" ? items : undefined);
+    note(option.action.commandId, "card");
+    return result;
+  });
   return <article className="attention-card" id={`attention-card-${card.id}`} tabIndex={-1} data-card={card.id} data-fresh={fresh || undefined} data-channel={card.channel}
     data-kind={card.kind} data-state={card.state} aria-labelledby={`attention-card-${card.id}-title`}>
     <header className="attention-card__head">
@@ -96,7 +138,8 @@ function CardFrame({ card, project, fresh = false, compact = false, comparing = 
       <h3 className="attention-card__title" id={`attention-card-${card.id}-title`}>{say(card.title, card.titleZh, language)}</h3>
       {card.summary && <p className="attention-card__summary">{say(card.summary, card.summaryZh, language)}</p>}
     </header>
-    {!compact && card.media.some((item) => item.caption) && <ul className="attention-card__media">{card.media.filter((item) => item.caption).map((item, index) =>
+    {pictured && <Pictures card={card} runtimeId={runtimeId} choose={pending && !stale ? (option) => { if (answerable(option)) answer(option); } : null} />}
+    {!compact && card.media.some((item) => item.caption && !(pictured && pictures.has(item))) && <ul className="attention-card__media">{card.media.filter((item) => item.caption && !(pictured && pictures.has(item))).map((item, index) =>
       <li key={index} data-media={item.kind}>{say(item.caption!, item.captionZh, language)}</li>)}</ul>}
     {!compact && card.evidence.length > 0 && <dl className="attention-card__evidence" aria-label={t("cards.evidence")}>{card.evidence.map((row) =>
       <div key={row.key} data-status={row.status}><dt>{say(row.label, row.labelZh, language)}</dt><dd>{say(row.text, row.textZh, language)}</dd></div>)}</dl>}
@@ -108,13 +151,9 @@ function CardFrame({ card, project, fresh = false, compact = false, comparing = 
     {pending && card.options.length > 0 && <div className="attention-card__answers" role="group" aria-label={t("cards.answers")}>
       {orderedOptions(card).map((option) => <button key={option.id} type="button" data-option={option.id} data-command-view
         className={option.recommended ? "btn btn--primary attention-card__answer" : "btn attention-card__answer"}
-        disabled={busy !== null || stale || (needsWords(option) && !words.trim()) || Boolean(blocked?.(option.id))} title={blocked?.(option.id) ?? undefined}
+        disabled={!answerable(option)} title={blocked?.(option.id) ?? undefined}
         aria-describedby={`attention-card-${card.id}-${option.id}`}
-        onClick={() => act(option.id, async () => {
-          const result = await resolveCard(card.id, option.id, needsWords(option) ? words.trim() : undefined, items && option.id === "run" ? items : undefined);
-          note(option.action.commandId, "card");
-          return result;
-        })}>
+        onClick={() => answer(option)}>
         <span>{say(option.label, option.labelZh, language)}{option.recommended && <small className="attention-card__recommended">{t("cards.recommended")}</small>}</span>
         <small id={`attention-card-${card.id}-${option.id}`}>{say(option.consequence, option.consequenceZh, language)}</small>
       </button>)}

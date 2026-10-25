@@ -19,7 +19,8 @@ source_roots.put_first(ROOT)
 
 from project_runtime.events import StudioEvents
 
-from monkeyhub_api.attention.hub import AttentionHub
+from monkeyhub_api.attention import producers
+from monkeyhub_api.attention.hub import AttentionHub, pair_facts
 from monkeyhub_api.attention.store import AttentionStore, runtime_id
 from monkeyhub_api.models import ChatDetail, HubFailure
 from monkeyhub_api.runtime.models import OperationRecord
@@ -49,6 +50,8 @@ class FakeRuntimes:
         self.acknowledged: list[str] = []
         self.sources: list[str | None] = []
         self.waits: list[bool] = []
+        # The Studio's readouts of runs and their comparisons, by path.
+        self.reads: dict[str, dict] = {}
 
     def open(self, project_id, project_dir):
         return self.runtime
@@ -74,6 +77,8 @@ class FakeRuntimes:
         if path == "/api/working-draft" and method == "PUT":
             self.current = {"runId": json.loads(body)["runId"], "branchId": None}
             return answer(200, {"projectId": "thi-hemp"})
+        if path in self.reads and method == "GET":
+            return answer(200, self.reads[path])
         return answer(409, {"code": "CANDIDATE_REVIEW_INVALID", "detail": "Choose an exact Candidate."})
 
 
@@ -162,7 +167,7 @@ class AttentionHubTests(unittest.TestCase):
         self.hub.refresh(self.runtimes.runtime.runtime_id)
         keys = sorted(item.dedupeKey for item in self.store.items())
         self.assertEqual(keys, ["op:o1:failed", "perm:c1:p1", "result:study:s1"])
-        self.assertEqual(self.runtimes.waits, [False], "the queue's thread never waits for a starting Studio")
+        self.assertEqual(set(self.runtimes.waits), {False}, "the queue's thread never waits for a starting Studio")
 
         # A Studio that stopped says nothing about results: their cards stay as they were.
         self.runtimes.graph = None
@@ -170,6 +175,45 @@ class AttentionHubTests(unittest.TestCase):
         self.hub.refresh(self.runtimes.runtime.runtime_id)
         self.assertEqual(sorted(item.dedupeKey for item in self.store.items()), ["op:o1:failed", "result:study:s1"])
         self.hub.refresh("not-open")  # a project that is not open is left alone
+
+    def test_a_result_card_shows_both_models_and_rows_read_once_from_the_studio(self):
+        def readout(run, objects, held):
+            box = lambda top: {"min": [0, 0, 0], "max": [20000, 10000, top]}
+            return {"candidateId": run, "status": "succeeded", "stateDigest": f"s-{run}",
+                    "relationChecks": {"held": held, "violated": 0, "unchecked": 0},
+                    "artifacts": [{"fileName": "seat.3dm", "representation": "seat",
+                                   "modelSource": {"runId": run, "stateDigest": f"s-{run}", "assetSha256": f"seat-{run}"}},
+                                  {"fileName": "model.3dm", "representation": "composed",
+                                   "modelSource": {"runId": run, "stateDigest": f"s-{run}", "assetSha256": f"m-{run}"}},
+                                  {"fileName": "old.3dm", "representation": "composed",
+                                   "modelSource": {"runId": run, "stateDigest": "an-older-state", "assetSha256": "old"}}],
+                    "objects": [{"name": f"o{n}", "bbox": box(3000 if n else 9600), "lengthUnit": "millimeter",
+                                 "upAxis": "Z-up"} for n in range(objects)]}
+        self.runtimes.reads = {
+            "/api/candidates/run-v16": readout("run-v16", 5, 12), "/api/candidates/run-b": readout("run-b", 4, 12),
+            "/api/candidates/run-b/compare?against=run-v16": {"candidateId": "run-b", "against": "run-v16", "changed": 0,
+                                                              "added": 0, "removed": 1, "unchanged": 4}}
+        line = {**result_line("run-b"), "admission": "none", "studyId": None, "label": "去掉一根柱"}
+        self.runtimes.graph = {"head": {"runId": "run-v16", "label": "V16"}, "lines": [line]}
+        self.hub.refresh(self.runtimes.runtime.runtime_id)
+        card, = [item for item in self.store.items() if item.dedupeKey == "result:run:run-b"]
+        self.assertEqual([(row.optionId, row.modelSource.assetSha256) for row in card.media],
+                         [("keep", "m-run-v16"), ("switch", "m-run-b")], "each run's one complete model at its own state")
+        self.assertEqual([row.textZh for row in card.evidence], [
+            "5 → 4 个构件，去掉 1 个", "总高 9.6 m，占地 200 m²，两版一样", "两版都是 12 项关系检查成立、0 项违反"])
+        reads = len(self.runtimes.forwarded)
+        self.hub.refresh(self.runtimes.runtime.runtime_id)
+        self.assertEqual([row[1] for row in self.runtimes.forwarded[reads:]], ["/api/worktrees"],
+                         "a run's records never change: they are read once")
+
+    def test_a_card_counts_as_changed_only_what_moved_or_resized(self):
+        box = lambda top: {"min": [0.0, 0.0, 0.0], "max": [1.0, 1.0, top]}
+        compared = {"tolerance": 1e-4, "added": 1, "removed": 0, "unchanged": 10, "changed": 3, "objects": [
+            {"name": "beam", "status": "changed", "before": box(3.0), "after": box(3.0)},       # re-exported, same shape
+            {"name": "deck", "status": "changed", "before": box(3.0), "after": box(3.00005)},   # within the tolerance
+            {"name": "wall", "status": "changed", "before": box(3.0), "after": box(3.5)},
+            {"name": "mass", "status": "added", "before": None, "after": box(6.0)}]}
+        self.assertEqual(pair_facts(compared), producers.PairFacts(changed=1, added=1, removed=0, unchanged=12))
 
     def test_answers_run_through_the_hub(self):
         self.runtimes.graph = {"head": {"runId": "run-v16"}, "lines": [result_line("run-a"), result_line("run-b")]}

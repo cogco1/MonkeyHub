@@ -15,6 +15,13 @@
 .attention-card__summary{margin:4px 0 0;color:var(--muted)}
 .attention-card__media{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0;padding:0;list-style:none}
 .attention-card__media li{padding:6px 10px;border:1px dashed var(--line);border-radius:var(--radius-sm);color:var(--muted);font-size:var(--text-caption)}
+.attention-card__pictures{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,300px));gap:10px;margin:12px 0 0}
+.attention-card__picture{display:flex;flex-direction:column;align-items:stretch;gap:6px;margin:0;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left}
+button.attention-card__picture{cursor:pointer}
+.attention-card__picture .model-thumbnail{flex:none;width:100%;height:auto;aspect-ratio:4/3;border:1px solid var(--line);border-radius:var(--radius-sm);background:#fff}
+.attention-card__picture .model-thumbnail svg{width:40px;height:40px;color:var(--muted)}
+button.attention-card__picture:hover .model-thumbnail,button.attention-card__picture:focus-visible .model-thumbnail{outline:2px solid var(--accent);outline-offset:1px}
+.attention-card__picture-name{font-size:var(--text-caption);font-weight:600}
 .attention-card__evidence{display:grid;gap:4px;margin:10px 0 0}
 .attention-card__evidence div{display:grid;grid-template-columns:minmax(6em,auto) minmax(0,1fr);gap:8px}
 .attention-card__evidence dt{color:var(--muted)}
