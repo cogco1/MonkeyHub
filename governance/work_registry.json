@@ -1521,6 +1521,32 @@
             "governance/work_registry.json"
           ],
           "depends_on": []
+        },
+        {
+          "id": "srv-tool-output-cap",
+          "status": "active",
+          "branch": "claude/srv-tool-output-cap",
+          "worktree": "C:/Users/Public/renou/dev/wt/claude-srv-tool-output-cap",
+          "base_ref": "f495398f",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "S29 (server, 10-25): every answer a chat tool gives the Agent is framed as data, not instructions (chat_present and binding replies excepted), and one over 24 KB keeps its first 4 KB and last 1 KB with a line naming the chat's scratch/tool-output file that holds it whole as indented JSON, for Read offset/limit or Grep. Before, Claude Code refused answers of 94-870 KB (model readback, candidate, document list) and the Agent spent 6-12 calls digging them out. The Hub's activity rows and candidate cards unwrap the frame and read a cut answer back whole.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat/activity.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/mcp_server.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/tool_output.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/turn_trace.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/monkeyhub/api/tests/test_tool_output.py",
+            "governance/architecture_policy.json",
+            "governance/module_registry.json",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
         }
       ]
     }

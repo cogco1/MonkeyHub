@@ -1188,6 +1188,17 @@
       "reason": "The Stop hook keeps its own count of how often it held the turn open, beside the loop state the launcher named (<state>.stop.json); nothing else is written and no project is read."
     },
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/tool_output.py",
+      "function": "_kept_line",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "turn_scratch",
+      "owner": "hub.shell",
+      "reason": "Keeps one tool answer too long to hand the Agent whole, as indented JSON, in the chat's scratch/tool-output folder (or the system's temporary folder for an external host) for the Agent to read in parts; never a project, and the scratch is cleared with the chat (S29)."
+    },
+    {
       "path": "services/project-runtime/src/project_runtime/application/state_files.py",
       "function": "seal_model",
       "operations": [
