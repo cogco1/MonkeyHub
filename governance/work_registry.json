@@ -1048,6 +1048,27 @@
           "depends_on": []
         },
         {
+          "id": "srv-model-title",
+          "status": "active",
+          "branch": "claude/srv-model-title",
+          "worktree": "C:\\Users\\Public\\renou\\dev\\wt\\claude-srv-model-title",
+          "base_ref": "64147e9d",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "S15 (server, 10-25): the Modeling bar's model title names the working design's step as the left column does under the project (the Hub's project step); another model by its option, the person's own file or the words it was asked in; nothing at all rather than a file name the Studio wrote (\"studio-candidate-modeler@….preview.3dm\" after Record).",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/app/ProjectWorkspace.tsx",
+            "apps/monkeyhub/web/src/app/App.tsx",
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
+        },
+        {
           "id": "b3-change-list",
           "status": "active",
           "branch": "claude/300-b3-change-list",

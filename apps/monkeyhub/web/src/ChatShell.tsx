@@ -2546,6 +2546,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             <ErrorBoundary label={t.tools}><Suspense fallback={<SurfaceSkeleton surface={item.id} name={t[labelOf(item.id)]} step={s.stepPage} />}>
               <ProjectWorkspace workspace={item.id === "monkeyboard" ? "board" : item.id === "publish" ? "publish" : item.id === "drawing" ? "drawing" : item.id === "monkeyrender" ? "render" : item.id === "tree" ? "tree" : "arch"} active={visible}
                 expectedProjectId={item.projectId} candidateRunId={item.candidate} candidateFollowsHead={item.followHead} treeFocus={item.focus ?? null}
+                projectStep={projects.find((project) => project.projectDir === item.projectDir)?.step ?? null}
                 refreshKey={item.revision} onChatRequest={focusConversation} onRenderChatRequest={workspaceRenderCallback(item)} onHandToAi={workspaceHandOffCallback(item)}
                 documentRequest={item.projectDir ? documentRequests[item.projectDir] : undefined}
                 comparisonRequest={comparison?.runtimeId === item.runtimeId ? comparison.request : null}
