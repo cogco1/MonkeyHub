@@ -754,7 +754,8 @@ const waitCandidate = async (runId) => {
   await visibleWorkspace().locator(".stage__versions-toggle").click();
   await visibleWorkspace().locator('.vcard__export[aria-pressed="true"]').filter({ hasText: `${runId}.3dm` }).waitFor();
   if (/^cand-[AB]-/.test(runId)) {
-    assert.equal((await visibleWorkspace().locator(".editing-base__name").innerText()).trim(), `home-${runId.split("-")[1]}.3dm`,
+    // S15: the base is a file the Studio wrote, so the row names no file; it still shows the base, not the candidate.
+    assert.equal((await visibleWorkspace().locator(".editing-base__name").innerText()).trim(), "Selected version",
       "automatic candidate viewing preserves the exact editing base");
     assert.equal(await visibleWorkspace().locator('.editing-base').getAttribute("data-source-match"), "different");
   }

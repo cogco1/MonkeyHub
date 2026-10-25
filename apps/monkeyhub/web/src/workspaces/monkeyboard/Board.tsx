@@ -510,7 +510,7 @@ async function sceneFiles(board: BoardDto, documents: SourceDocumentDto[], previ
 
 export interface BoardPageRequest { source: PageSource; requestId: string }
 
-export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPublish, onRenderChatRequest, restoreView = null, active = true, refreshKey = 0, expectedProjectId, pageRequest = null }: {
+export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPublish, onRenderChatRequest, restoreView = null, active = true, refreshKey = 0, expectedProjectId, pageRequest = null, workingDraft = false }: {
   onSubmit: (request: BoardDesignRequest) => void;
   /** Hand one calibrated sketch frame to the App, which runs it as a sketch proposal. */
   onSketch: (request: BoardSketchRequest) => void;
@@ -530,6 +530,8 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPubl
   expectedProjectId?: string;
   /** Explicitly place or focus exactly this page; ordinary discovery stays quiet. */
   pageRequest?: BoardPageRequest | null;
+  /** The project's runtime keeps a working draft, so the board may open on its current step. */
+  workingDraft?: boolean;
 }) {
   const studio = useStudio();
   const { language } = usePreferences();
@@ -543,7 +545,7 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPubl
     setError(null);
     const preview = createPreviewLoader(studio);
     // The design's current step only says where the board opens; a project without one opens on all of it.
-    const working = typeof studio.workingDraft === "function" ? studio.workingDraft().catch(() => null) : Promise.resolve(null);
+    const working = workingDraft ? studio.workingDraft().catch(() => null) : Promise.resolve(null);
     void Promise.all([studio.board(), studio.documents(), working]).then(async ([board, list, draft]) => {
       if (expectedProjectId !== undefined && board.projectId !== expectedProjectId) throw new Error("The board belongs to another project.");
       if (list.projectId !== board.projectId) throw new Error("The document list belongs to another project.");
@@ -552,7 +554,7 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPubl
       if (alive) setLoaded({ board, documents: list.documents, ...visual, preview, currentRunId });
     }).catch((cause) => { if (alive) setError(cause); });
     return () => { alive = false; };
-  }, [attempt, expectedProjectId]);
+  }, [attempt, expectedProjectId, workingDraft]);
   if (loaded) return <BoardCanvas {...loaded} onSubmit={onSubmit} onSketch={onSketch} onOpenDocument={onOpenDocument} onPublish={onPublish} onRenderChatRequest={onRenderChatRequest} restoreView={restoreView} active={active} refreshKey={refreshKey} pageRequest={pageRequest} />;
   return <section className="monkeyboard monkeyboard-loading" aria-live="polite">
     <strong>MonkeyBoard</strong>

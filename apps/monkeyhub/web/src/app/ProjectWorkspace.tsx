@@ -380,7 +380,8 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
       {(boardVisited || workspace === "board") && <div data-project-surface="board" hidden={shown !== "board" || pageOpen} inert={!active || shown !== "board" || pageOpen}
         style={{ height: "100%", minHeight: 0, display: shown === "board" && !pageOpen ? "block" : "none" }}>
         <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}>
-          <Board onPublish={(revision, ids) => { setPublishRequest({ revision, ids, requestId: crypto.randomUUID() }); onWorkspaceChange("publish"); }} expectedProjectId={boundProjectId.current} refreshKey={refreshKey + attempt + boardRefresh} active={active && shown === "board" && !pageOpen} onSubmit={submitFeedback} onSketch={submitSketch} onOpenDocument={setVisit} onRenderChatRequest={renderChat} pageRequest={boardPage} />
+          <Board onPublish={(revision, ids) => { setPublishRequest({ revision, ids, requestId: crypto.randomUUID() }); onWorkspaceChange("publish"); }} expectedProjectId={boundProjectId.current} refreshKey={refreshKey + attempt + boardRefresh} active={active && shown === "board" && !pageOpen} onSubmit={submitFeedback} onSketch={submitSketch} onOpenDocument={setVisit} onRenderChatRequest={renderChat} pageRequest={boardPage}
+            workingDraft={server.status === "ready" && server.value.capabilities.includes("working-draft")} />
         </Suspense>
       </div>}
       {(treeVisited || workspace === "tree") && <div data-project-surface="tree" hidden={shown !== "tree"} inert={!active || shown !== "tree"}
