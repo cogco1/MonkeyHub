@@ -13,9 +13,10 @@ import { pageSource, type PageSource } from "../../workspaces/monkeyboard/boardS
 import { createRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent } from "react";
 
 import type { StudioApiError } from "../../api/project-runtime/client";
-import type { DocumentAnnotationRefDto, DocumentVisualInputDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/project-runtime/generated";
+import type { DocumentAnnotationRefDto, DocumentVisualInputDto, GestureDto, ModelSourceDto, ProjectArtifactDto, SourceDocumentDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/project-runtime/generated";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
 import { ErrorPanel, PlainFailure } from "../../app/ErrorPanel";
+import { asStudioApiError } from "../../api/project-runtime/error";
 import { designObjectLabel } from "../../app/format";
 import type { EvidenceTab } from "../../app/evidence";
 import { FailureActions } from "../../app/FailureActions";
@@ -40,6 +41,9 @@ import {
 /** The live section's directions and the coordinate each cuts (G5). */
 type SectionAxis = "z" | "x" | "y";
 const SECTION_AXES: Record<SectionAxis, 0 | 1 | 2> = { x: 0, y: 1, z: 2 };
+type QuickDrawingKind = "plan" | "section" | "elevations";
+// +Y is north: the front view looks north from the south side (the drawing route's view frames).
+const QUICK_ELEVATIONS = [["front", "stage.quick.south"], ["back", "stage.quick.north"], ["left", "stage.quick.west"], ["right", "stage.quick.east"]] as const;
 import { Annotate, GESTURE_TOOLS, type AnnotationStyle, type GestureTool } from "../../workspaces/monkeyarch/Annotate";
 import { VersionsStrip, type VersionGroup, type DesignHistoryControls } from "./VersionsStrip";
 import { DocumentCanvas, type DocumentViewContext } from "../../workspaces/monkeydiagram/DocumentCanvas";
@@ -259,6 +263,7 @@ export function Stage({
   documentModelSources,
   editingModelSource,
   viewedModelSource,
+  viewedAsset = null,
   onContinueModelSource,
   onDocumentSubmit,
   documentVisualInputAvailable,
@@ -354,6 +359,8 @@ export function Stage({
   documentModelSources: readonly { label: string; modelSource: ModelSourceDto }[];
   editingModelSource: ModelSourceDto | null;
   viewedModelSource: ModelSourceDto | null;
+  /** A model brought in as a file, drawn by its own asset when it has no retained model source (S15). */
+  viewedAsset?: { runId: string; assetSha256: string } | null;
   onContinueModelSource(source: ModelSourceDto): Promise<void>;
   onDocumentSubmit(utterance: string, refs: readonly DocumentAnnotationRefDto[], modelSource: ModelSourceDto, visuals: DocumentVisualInputDto[]): Promise<void>;
   documentVisualInputAvailable: boolean;
@@ -566,6 +573,42 @@ export function Stage({
       setSectionDrawing({ state: "drawn", page: pageSource(drawn, drawn.pages[0]?.pageIndex ?? 0), fileName: drawn.fileName });
     } catch (error) {
       setSectionDrawing({ state: "failed", detail: error instanceof Error ? error.message : String(error) });
+    }
+  };
+  // S15: plans, sections and elevations in one click from the model on screen, at default places, with no
+  // drawing settings first: a plan 1.2 m above the model's bottom (the drawing route's default), a section
+  // through the middle of the model along its long side, and the four elevations.
+  const [quickDrawing, setQuickDrawing] = useState<{ kind: QuickDrawingKind; state: "busy" } | { kind: QuickDrawingKind; state: "drawn"; pages: { page: PageSource; label: string }[] }
+    | { kind: QuickDrawingKind; state: "failed"; error: unknown } | null>(null);
+  useEffect(() => { setQuickDrawing(null); }, [viewedModelSource?.runId, viewedModelSource?.assetSha256, viewedAsset?.assetSha256]);
+  const quickSource = documentProjectId === null ? null : viewedModelSource ? { projectId: documentProjectId, modelSource: viewedModelSource }
+    : viewedAsset ? { projectId: documentProjectId, sourceAsset: viewedAsset } : null;
+  const quickDraw = async (kind: QuickDrawingKind) => {
+    if (!quickSource || quickDrawing?.state === "busy") return;
+    setQuickDrawing({ kind, state: "busy" });
+    try {
+      const pages: { page: PageSource; label: string }[] = [];
+      const keep = (drawn: SourceDocumentDto, label: string) => pages.push({ page: pageSource(drawn, drawn.pages[0]?.pageIndex ?? 0), label });
+      if (kind === "plan") keep(await studio.drawingPlan({ ...quickSource, sourceKind: "human", board: "on-request" }), t("stage.quick.planLabel"));
+      else if (kind === "section") {
+        const bounds = viewportRef.current?.bounds();
+        if (!bounds) throw new Error(t("stage.section.drawUnavailable"));
+        // Along the long side: the plane holds the long axis, its normal the short one.
+        const across = bounds.max[0] - bounds.min[0] >= bounds.max[1] - bounds.min[1] ? 1 : 0;
+        // Two decimals of the model's unit, as the drawing's panel shows its numbers.
+        const middle = (axis: 0 | 1 | 2) => Math.round((bounds.min[axis] + bounds.max[axis]) * 50) / 100;
+        const origin: Vec3 = [middle(0), middle(1), middle(2)];
+        const normal: Vec3 = [0, 0, 0];
+        normal[across] = -1;
+        keep(await studio.drawingPlan({ ...quickSource, sourceKind: "human", board: "on-request", section: { origin, normal } }), t("stage.quick.sectionLabel"));
+      } else {
+        // All four at once: the Runtime's drawing workers solve them side by side.
+        const drawn = await Promise.all(QUICK_ELEVATIONS.map(([view]) => studio.elevation({ ...quickSource, view, hiddenLines: true })));
+        drawn.forEach((document, index) => keep(document, t(QUICK_ELEVATIONS[index][1])));
+      }
+      setQuickDrawing({ kind, state: "drawn", pages });
+    } catch (error) {
+      setQuickDrawing({ kind, state: "failed", error });
     }
   };
   const chooseSection = (axis: SectionAxis | "off") => {
@@ -1633,6 +1676,10 @@ export function Stage({
       run: () => { void drawSection(); },
       available: () => section !== null && viewedModelSource ? true : t("stage.section.drawUnavailable"),
     },
+    ...Object.fromEntries((["plan", "section", "elevations"] as const).map((kind) => [`drawing.quick.${kind}`, {
+      run: () => { void quickDraw(kind); },
+      available: () => !quickSource ? t("stage.quick.unavailable") : quickDrawing?.state === "busy" ? t("stage.section.drawing") : true,
+    }])),
   } : {});
   // An export Ctrl K asked for comes down as a file: the attention shell has no Export menu to save it from.
   const exportedSha = workModel?.exported?.sha256 ?? null;
@@ -1757,9 +1804,21 @@ export function Stage({
         {!onReturnToBoard && picked && onOpenBoard && <MenuCommand data-command="view.tab.board" onClick={onOpenBoard}>{t("workspace.monkeyboard")}</MenuCommand>}
         {!documentOpen && picked?.componentId && !infoOpen && <MenuCommand data-command="component.inspect.open" aria-controls="stage-component-info" onClick={openInfo}>
           {t("componentInfo.title")}</MenuCommand>}
+        {!documentOpen && (["plan", "section", "elevations"] as const).map((kind) =>
+          <MenuCommand key={kind} data-command={`drawing.quick.${kind}`} disabled={!quickSource || quickDrawing?.state === "busy"}
+            title={quickSource ? t(`stage.quick.${kind}Title`) : t("stage.quick.unavailable")} onClick={() => void quickDraw(kind)}>
+            {quickDrawing?.kind === kind && quickDrawing.state === "busy" ? t("stage.section.drawing") : t(`stage.quick.${kind}`)}</MenuCommand>)}
         {!documentOpen && exportMenu}
         {!documentOpen && moreMenu}
       </SurfaceMenus>
+      {quickDrawing && quickDrawing.state !== "busy" && <div className="stage-quick-drawings" role="status" data-quick-drawing={quickDrawing.state}>
+        {quickDrawing.state === "drawn" ? <>
+          <span>{t("stage.quick.drawn", { names: quickDrawing.pages.map((row) => row.label).join("、") })}</span>
+          {onBoard && <button type="button" data-command="drawing.live_section.place_on_board"
+            onClick={() => { for (const row of quickDrawing.pages) onBoard(row.page); }}>{t("stage.section.toBoard")}</button>}
+        </> : <PlainFailure error={asStudioApiError(quickDrawing.error)} />}
+        <button type="button" className="stage-quick-drawings__close" aria-label={t("stage.quick.close")} onClick={() => setQuickDrawing(null)}>×</button>
+      </div>}
       {onReturnToBoard && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
         <button data-command="view.tab.board" type="button" onClick={onReturnToBoard}>{t("workspace.returnToBoard")}</button>
       </div>}

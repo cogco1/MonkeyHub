@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { defaultPlanForm, drawingDocumentKey, isVerticalSection, keptOnChosenVersion, latestRevisions, liveAction, planFormFromDocument,
+import { currentStepDrawing, defaultPlanForm, drawingDocumentKey, isVerticalSection, keptOnChosenVersion, latestRevisions, liveAction, planFormFromDocument,
   planRequestFields } from "../src/workspaces/monkeydiagram/drawingPlan.ts";
 import type { SourceDocumentDto } from "../src/api/project-runtime/generated";
 
@@ -46,8 +46,10 @@ test("an open vertical section asks only for what changed, never a cut height, b
 test("the initial cut is expressed in the exact source length unit", () => {
   assert.equal(defaultPlanForm("meter").cutHeight, 1.2);
   assert.equal(defaultPlanForm("millimeter").cutHeight, 1200);
-  assert.equal(defaultPlanForm("foot").cutHeight * .3048, 1.2);
-  assert.equal(defaultPlanForm("inch").cutHeight * .0254, 1.2);
+  // Two decimals of the unit, as the panel shows its numbers (S15); a known floor moves the cut and the bottom with it.
+  assert.equal(defaultPlanForm("foot").cutHeight, 3.94);
+  assert.equal(defaultPlanForm("inch").cutHeight, 47.24);
+  assert.deepEqual([defaultPlanForm("foot", -0.5).cutHeight, defaultPlanForm("foot", -0.5).bottom], [3.44, -0.5]);
 });
 
 test("the newest revision of each drawing opens by default and older revisions stay history", () => {
@@ -83,4 +85,20 @@ test("only a drawing made from a chosen version is kept off the Working Head", (
   assert.equal(keptOnChosenVersion({ viewRecipe: { kind: "cut-plan" } }), false, "retained drawings without a choice follow");
   assert.equal(keptOnChosenVersion({ viewRecipe: { kind: "cut-plan", follow: "live" } }), false);
   assert.equal(keptOnChosenVersion({ viewRecipe: { kind: "cut-plan", follow: "frozen" } }), true);
+});
+
+test("the drawing page opens on the current step's newest drawing, or on a new one, never an older version's", () => {
+  const drawing = (drawingId: string, runId: string, generatedAt: string, asset = false) => ({
+    runId: "drawings", assetSha256: drawingId.padEnd(64, "0"), revisionRef: `rev-${drawingId}-${generatedAt}`, drawingId, generatedAt,
+    modelSource: asset ? null : { runId, stateDigest: "d".repeat(64), assetSha256: "e".repeat(64) },
+    viewRecipe: asset ? { kind: "cut-plan", sourceAsset: { runId, assetSha256: "f".repeat(64) } } : { kind: "cut-plan" },
+  }) as unknown as SourceDocumentDto;
+  const old = drawing("old-secpersp-east", "v12", "2026-10-20T00:00:00Z");
+  const plan = drawing("floor-plan-1", "v16", "2026-10-21T00:00:00Z");
+  const newer = drawing("section-1", "v16", "2026-10-22T00:00:00Z");
+  const newest = drawing("elsewhere", "v15", "2026-10-23T00:00:00Z");
+  assert.equal(currentStepDrawing([old, plan, newer, newest], "v16"), newer);
+  assert.equal(currentStepDrawing([old, newest], "v16"), null, "no drawing of this step: a new one, not the newest of another");
+  assert.equal(currentStepDrawing([drawing("imported", "studio-model-x", "2026-10-24T00:00:00Z", true)], "studio-model-x")?.drawingId, "imported");
+  assert.equal(currentStepDrawing([plan], null), null);
 });

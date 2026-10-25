@@ -1048,6 +1048,47 @@
           "depends_on": []
         },
         {
+          "id": "srv-one-click-drawings",
+          "status": "active",
+          "branch": "claude/srv-one-click-drawings",
+          "worktree": "C:\\Users\\Public\\renou\\dev\\wt\\claude-srv-one-click-drawings",
+          "base_ref": "e572fe64",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "S15 (server, 10-25): plans, sections and elevations in one click from the Modeling bar or Ctrl K (出平面 / 出剖面 / 出立面), from the model on screen or the file it was brought in as: a plan 1.2 m above the model's bottom, a section along the long side through the middle, the four elevations at once. The drawing page opens on the current step's newest drawing, cuts a new section through the middle of the model, shows its defaults rounded and its status in a Chinese sentence; a sheet too large for its PNG preview is previewed at a lower resolution instead of refused.",
+          "modules": [
+            "hub.shell",
+            "monkeydiagram.drawing_runs",
+            "project_runtime.documents"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat/guides.py",
+            "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/app/App.tsx",
+            "apps/monkeyhub/web/src/app/styles.css",
+            "apps/monkeyhub/web/src/features/commands/tree.generated.ts",
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/drawingPlan.ts",
+            "apps/monkeyhub/web/test/drawingPlan.test.ts",
+            "docs/architecture/semantic-registry.md",
+            "docs/architecture/system-map.md",
+            "governance/module_registry.json",
+            "governance/work_registry.json",
+            "packages/monkeydiagram/src/monkeydiagram/rendering/svg.py",
+            "packages/monkeydiagram/tests/test_drawing_svg.py",
+            "services/project-runtime/src/project_runtime/api/dto/drawings.py",
+            "services/project-runtime/src/project_runtime/api/routes/drawings.py",
+            "services/project-runtime/src/project_runtime/application/drawing_plans.py",
+            "services/project-runtime/tests/test_native_drawings.py"
+          ],
+          "depends_on": []
+        },
+        {
           "id": "srv-lost-result",
           "status": "active",
           "branch": "claude/srv-lost-result",

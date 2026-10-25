@@ -8008,6 +8008,28 @@ export type ModelAssetRequestDto = {
 };
 
 /**
+ * ModelBoundsDto
+ */
+export type ModelBoundsDto = {
+    /**
+     * Min
+     */
+    min: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Max
+     */
+    max: [
+        number,
+        number,
+        number
+    ];
+};
+
+/**
  * ModelExportRequest
  */
 export type ModelExportRequest = {
@@ -9060,6 +9082,10 @@ export type PlanDimensionChoicesDto = {
      * Lengthunit
      */
     lengthUnit: string;
+    /**
+     * The box around what a drawing of this model draws, in its length unit; null when its retained bounds cannot be read. A new section cuts through its middle by default.
+     */
+    modelBounds?: ModelBoundsDto | null;
     /**
      * Dimensions
      */

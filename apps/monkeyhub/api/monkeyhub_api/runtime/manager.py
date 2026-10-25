@@ -75,6 +75,9 @@ _DOCUMENT_RECORD_KINDS = (STUDIO_SOURCE_DOCUMENT, STUDIO_DOCUMENT_MODEL_SOURCE)
 _WORK_COPY_CHECK_S = _IDLE_RETAINED_REFRESH_S
 # How many of each project's Studio events the Hub keeps to open a new page's panel with.
 _STUDIO_REPLAY = 200
+# A drawing of a large model waits on its exact hidden-line solve: on housing (13 units) one elevation took
+# 125-190 s, past the 180 s every other request gets, and its answer was lost though the drawing was made (S15).
+DRAWING_TIMEOUT_S = 900
 # Forwarded POSTs that read and never change the project, so no operation is
 # admitted for them: a body names what to read, or the project is read again.
 # How long the Hub waits for POST /api/revisions: its build wait (at most 300 s) and its checks.
@@ -1142,7 +1145,8 @@ class ProjectRuntimeManager:
                 runtime.operations.bind_proposal(admission, proposal, base.version)
             dispatched = True
             # A revision waits for its own build, read-back and validation (#185).
-            timeout = REVISION_TIMEOUT_S if parsed.path == "/api/revisions" else 180
+            timeout = (REVISION_TIMEOUT_S if parsed.path == "/api/revisions"
+                       else DRAWING_TIMEOUT_S if parsed.path.startswith("/api/drawings/") else 180)
             result = request_http(worker.url, path, method, body or None, forwarded, timeout=timeout)
             sends = 1
             # A failure that did nothing passes without the person: the same request goes again, a few times

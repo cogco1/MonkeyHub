@@ -12,6 +12,7 @@ from copy import deepcopy
 from itertools import chain, count, product
 from datetime import datetime, timezone
 from uuid import uuid4
+from math import ceil
 from pathlib import PurePath
 
 from monkeycad.patch import select_patch_operations
@@ -30,7 +31,8 @@ from monkeydiagram.sources import (
 )
 
 from .artifacts import (
-    ModelSource, _document_pages, _document_source_lock, document_bytes, drawing_revision_replacement, list_documents,
+    ModelSource, _document_pages, _document_source_lock, artifact_bytes, document_bytes, drawing_revision_replacement, list_documents,
+    model_index,
 )
 from ..binding import retained_sources
 from .decisions import project_recipe
@@ -92,6 +94,22 @@ def _drawn_objects(receipt, hidden):
     return [object_id for object_id in physical if object_id not in left_out]
 
 
+def _tidy(value: float, unit: str, *, up: bool = False) -> float:
+    """A default length as the drawing panel shows one (S15): whole millimetres, else two decimals of the unit;
+    ``up`` never rounds a reach short of what it must cover."""
+    places = 0 if unit == "millimeter" else 2
+    scaled = value * 10 ** places
+    return round((ceil(scaled - 1e-9) if up else round(scaled)) / 10 ** places, places)
+
+
+def _model_floor(receipt, hidden) -> float | None:
+    """The lowest point of what a cut plan draws, from its retained bounds; None when they are not all there."""
+    try:
+        return min(receipt["readback"][object_id]["bbox"]["min"][2] for object_id in _drawn_objects(receipt, hidden))
+    except (KeyError, TypeError, ValueError, IndexError):
+        return None
+
+
 def _frames_something(receipt, frame: ElevationView, hidden) -> bool:
     """Whether a drawn object's bounds reach the frame's window within its depth: no drawing of nothing is retained.
 
@@ -138,7 +156,7 @@ def _section_frame(receipt, *, name, section, prior_frame, depth, crop_uv, scale
                           "The section plane cuts none of the drawn objects; move it through the model.")
     beyond = max(d for corners in extents.values() for *_, d in corners)
     if depth is None:
-        depth = prior_frame["far_depth"] if kept else beyond * (1 + VIEW_MARGIN)
+        depth = prior_frame["far_depth"] if kept else _tidy(beyond * (1 + VIEW_MARGIN), unit, up=True)
     if crop_uv is None and kept:
         crop_uv = prior_frame["crop_uv"]
     if crop_uv is None:
@@ -306,8 +324,14 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
     drawing_id = drawing_id or (previous.drawing_id if previous else _new_plan_id(binding, "section" if vertical else "floor-plan"))
     scale = scale_denominator or (int(prior_frame["scale"].split(":")[1]) if prior_frame else 100)
     if not vertical:
-        cut = cut_height if cut_height is not None else prior_frame.get("origin", (0, 0, 1.2 / UNIT_METRES[unit]))[2]
-        low = bottom if bottom is not None else (prior_frame["origin"][2] - prior_frame["far_depth"] if prior_frame else 0)
+        # A new plan with no height of its own cuts 1.2 m above the bottom of the model and looks down to it
+        # (S15): a model that does not stand on Z 0 was cut at 1.2 m above nothing, or below the building.
+        floor = None
+        if not prior_frame and (cut_height is None or bottom is None):
+            floor = _model_floor(cad_receipt, set(hidden_object_ids or ()))
+        floor = 0 if floor is None else floor
+        cut = cut_height if cut_height is not None else prior_frame.get("origin", (0, 0, _tidy(floor + 1.2 / UNIT_METRES[unit], unit)))[2]
+        low = bottom if bottom is not None else (prior_frame["origin"][2] - prior_frame["far_depth"] if prior_frame else (floor if floor < cut else 0))
         if cut <= low:
             raise StudioError(422, "DRAWING_DEPTH_INVALID", "The cut must be above the bottom of the plan view.")
     if previous and _document_source(previous) != model_source:
@@ -638,11 +662,37 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
     return result
 
 
-def plan_dimension_choices(binding, model_source=None, source_stage_ref=None, source_asset=None):
+def plan_dimension_choices(binding, model_source=None, source_stage_ref=None, source_asset=None, projections=None):
     model, stage_ref = _plan_source(binding, source_stage_ref, model_source, source_asset)
     _, receipt = _complete_source(binding, model, stage_ref, geometry=False)
-    return {"lengthUnit": receipt["identity"]["length_unit"],
+    return {"lengthUnit": receipt["identity"]["length_unit"], "modelBounds": _model_bounds(binding, model, stage_ref, projections),
             "dimensions": [] if isinstance(model, DrawingAssetSource) else list(list_plan_dimension_intents(binding, model, stage_ref))}
+
+
+def _model_bounds(binding, model, stage_ref, projections) -> dict | None:
+    """The box around the model, in its own unit: where a new section cuts by default (S15).
+
+    Read without decoding the shapes (#12): a CAD receipt's own read-back, or
+    an imported or composed model's index, whose bounds come from the file's
+    saved geometry and are kept by its bytes. None when neither has them; the
+    drawing then falls back to its own default and the route still checks the cut.
+    """
+    try:
+        source, receipt = _complete_source(binding, model, stage_ref, geometry=False)
+        readback = receipt.get("readback")
+        if isinstance(readback, dict) and readback:
+            boxes = [row["bbox"] for row in readback.values() if isinstance(row, dict) and row.get("bbox")]
+        else:
+            artifact = source.artifact
+            _, data = artifact_bytes(binding, artifact.sha256, run_id=source.run_id)
+            index = model_index(data, artifact.sha256, bounds_for=lambda ids: ids, projections=projections)
+            boxes = [row["bounds"] for row in index["objects"] if row.get("bounds") and row.get("bounds_space") == "world"]
+        if not boxes:
+            return None
+        return {"min": [min(box["min"][axis] for box in boxes) for axis in range(3)],
+                "max": [max(box["max"][axis] for box in boxes) for axis in range(3)]}
+    except (StudioError, ProjectRepositoryError, DrawingElevationError, AttributeError, KeyError, TypeError, ValueError, IndexError):
+        return None
 
 
 def dimension_proposal(binding, *, run_id, asset_sha256, revision_ref, dimension_id, value,
