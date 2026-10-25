@@ -1711,7 +1711,7 @@
             "label": "Generate cut plan",
             "label_zh": "生成剖切平面",
             "aliases": [
-              "floor plan"
+              "cut plane settings"
             ],
             "channel": "front",
             "entries": [

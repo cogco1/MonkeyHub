@@ -52,7 +52,7 @@
   },
   {
    "say": "出一张平面图",
-   "command": "drawing.plan.generate",
+   "command": "drawing.quick.plan",
    "route": true,
    "capability": "drawing.orthographic"
   },

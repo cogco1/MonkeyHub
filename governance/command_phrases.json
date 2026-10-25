@@ -1685,24 +1685,24 @@
   },
   "drawing.plan.generate": {
    "zh": [
-    "出一张平面图",
-    "从模型切个平面",
-    "按这个高度剖平面图"
+    "新建剖切平面",
+    "在图纸设置里调剖切高度",
+    "按这个高度重新剖切"
    ],
    "en": [
-    "generate a floor plan from model",
-    "cut a plan at this height"
+    "new cut plane in the drawing settings",
+    "adjust the cut height in drawing settings"
    ],
    "aliases_zh": [
-    "出平面",
-    "平面图",
-    "剖平面",
-    "切平面"
+    "剖切平面",
+    "调剖切",
+    "图纸设置",
+    "剖切高度"
    ],
    "aliases_en": [
-    "floor plan",
-    "plan cut",
-    "make plan"
+    "cut plane",
+    "cut settings",
+    "plan cut settings"
    ]
   },
   "drawing.plan.hide_object": {
@@ -1787,6 +1787,71 @@
     "save recipe",
     "save style",
     "drawing preset"
+   ]
+  },
+  "drawing.quick.elevations": {
+   "zh": [
+    "出一张南立面",
+    "出立面图",
+    "四个立面都出一下"
+   ],
+   "en": [
+    "draw the elevations",
+    "make the south elevation"
+   ],
+   "aliases_zh": [
+    "出立面",
+    "出立面图",
+    "立面图",
+    "南立面",
+    "北立面",
+    "东立面",
+    "西立面"
+   ],
+   "aliases_en": [
+    "elevations",
+    "elevation drawing",
+    "south elevation"
+   ]
+  },
+  "drawing.quick.plan": {
+   "zh": [
+    "出一张平面图",
+    "把模型出个平面图",
+    "给我平面图"
+   ],
+   "en": [
+    "draw a floor plan",
+    "make a plan drawing of this model"
+   ],
+   "aliases_zh": [
+    "出平面",
+    "出平面图",
+    "平面图"
+   ],
+   "aliases_en": [
+    "floor plan",
+    "plan drawing"
+   ]
+  },
+  "drawing.quick.section": {
+   "zh": [
+    "出一张剖面图",
+    "把楼剖开出个剖面图",
+    "给我剖面图"
+   ],
+   "en": [
+    "draw a section",
+    "make a section drawing of this model"
+   ],
+   "aliases_zh": [
+    "出剖面",
+    "出剖面图",
+    "剖面图"
+   ],
+   "aliases_en": [
+    "section drawing",
+    "building section"
    ]
   },
   "drawing.recipe.follow_live": {
