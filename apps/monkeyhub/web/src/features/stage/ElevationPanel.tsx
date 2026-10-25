@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { usePreferences } from "../settings/preferences";
+import { useDeveloperMode, usePreferences } from "../settings/preferences";
+import { elementWords } from "./elementWords";
 import { elevationOf, type DraftObject, type ElevationCommand, type ElevationDatum, type ElevationReference } from "./modelDraft";
 import "./ElevationPanel.css";
 
@@ -14,12 +15,13 @@ export interface ElevationControls {
 const toMm = (metres: number) => Math.round(metres * 1000);
 const fromMm = (millimetres: number) => millimetres / 1000;
 
+
 /** A selected mass's vertical controls; all writes enter the same local draft history. */
 export function ElevationPanel({ controls, busy, error, onReference }: {
   controls: ElevationControls; busy: boolean; error: string | null;
   onReference(elevation: number | null): void;
 }) {
-  const { language } = usePreferences(), zh = language === "zh-CN";
+  const { language } = usePreferences(), zh = language === "zh-CN", developer = useDeveloperMode();
   const { object, objects, levels, onApply } = controls, facts = elevationOf(object);
   const [datumId, setDatumId] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
@@ -29,8 +31,14 @@ export function ElevationPanel({ controls, busy, error, onReference }: {
   const apply = (command: Omit<ElevationCommand, "kind" | "elementId">) => {
     setLocalError(null); return onApply({ ...command, kind: "elevation", elementId: object.elementId });
   };
-  const label = (row: DraftObject) => row.elementId.startsWith("drawn-")
-    ? `${zh ? "体块" : "Mass"} ${objects.indexOf(row) + 1}` : row.elementId;
+  // A drawn mass by its number; another element by what it is, numbered among its kind. The id is for developers.
+  const label = (row: DraftObject) => {
+    if (row.elementId.startsWith("drawn-")) return `${zh ? "体块" : "Mass"} ${objects.indexOf(row) + 1}`;
+    if (developer) return row.elementId;
+    const words = elementWords(row.elementId, zh);
+    const same = objects.filter(other => !other.elementId.startsWith("drawn-") && elementWords(other.elementId, zh) === words);
+    return same.length > 1 ? `${words} ${same.indexOf(row) + 1}` : words;
+  };
   const references = [
     ...levels.map(level => ({ key: `level:${level.levelId}`, label: `${level.name} · ${toMm(level.elevation)} mm`,
       reference: { kind: "level", id: level.levelId, offset: 0 } as ElevationReference, value: level.elevation })),

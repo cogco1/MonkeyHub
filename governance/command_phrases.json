@@ -1789,29 +1789,101 @@
     "drawing preset"
    ]
   },
-  "drawing.quick.elevations": {
+  "drawing.quick.elevation_east": {
+   "zh": [
+    "出一张东立面",
+    "出东立面",
+    "给我东立面图"
+   ],
+   "en": [
+    "draw the east elevation",
+    "make the east elevation"
+   ],
+   "aliases_zh": [
+    "东立面",
+    "东立面图",
+    "出东立面"
+   ],
+   "aliases_en": [
+    "east elevation"
+   ]
+  },
+  "drawing.quick.elevation_north": {
+   "zh": [
+    "出一张北立面",
+    "出北立面",
+    "给我北立面图"
+   ],
+   "en": [
+    "draw the north elevation",
+    "make the north elevation"
+   ],
+   "aliases_zh": [
+    "北立面",
+    "北立面图",
+    "出北立面"
+   ],
+   "aliases_en": [
+    "north elevation"
+   ]
+  },
+  "drawing.quick.elevation_south": {
    "zh": [
     "出一张南立面",
+    "出南立面",
+    "给我南立面图"
+   ],
+   "en": [
+    "draw the south elevation",
+    "make the south elevation"
+   ],
+   "aliases_zh": [
+    "南立面",
+    "南立面图",
+    "出南立面"
+   ],
+   "aliases_en": [
+    "south elevation"
+   ]
+  },
+  "drawing.quick.elevation_west": {
+   "zh": [
+    "出一张西立面",
+    "出西立面",
+    "给我西立面图"
+   ],
+   "en": [
+    "draw the west elevation",
+    "make the west elevation"
+   ],
+   "aliases_zh": [
+    "西立面",
+    "西立面图",
+    "出西立面"
+   ],
+   "aliases_en": [
+    "west elevation"
+   ]
+  },
+  "drawing.quick.elevations": {
+   "zh": [
     "出立面图",
-    "四个立面都出一下"
+    "四个立面都出一下",
+    "把四面立面都出了"
    ],
    "en": [
     "draw the elevations",
-    "make the south elevation"
+    "draw all four elevations"
    ],
    "aliases_zh": [
     "出立面",
     "出立面图",
     "立面图",
-    "南立面",
-    "北立面",
-    "东立面",
-    "西立面"
+    "四个立面"
    ],
    "aliases_en": [
     "elevations",
-    "elevation drawing",
-    "south elevation"
+    "elevation drawings"
    ]
   },
   "drawing.quick.plan": {

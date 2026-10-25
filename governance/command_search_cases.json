@@ -57,6 +57,11 @@
    "capability": "drawing.orthographic"
   },
   {
+   "say": "出一张南立面",
+   "command": "drawing.quick.elevation_south",
+   "route": true
+  },
+  {
    "say": "生成渲染图",
    "command": "render.run.generate",
    "route": true,
