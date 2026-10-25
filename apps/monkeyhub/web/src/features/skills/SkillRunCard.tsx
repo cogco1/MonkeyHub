@@ -10,8 +10,8 @@
 
 import { useState } from "react";
 
-import type { ChatMessage, ChatSkillRun } from "./api/generated";
-import { ChatCard } from "./ChatCard";
+import type { ChatMessage, ChatSkillRun } from "../../api/generated";
+import { ChatCard } from "../../ChatCard";
 
 const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 

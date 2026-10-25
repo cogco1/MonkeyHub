@@ -17,7 +17,7 @@ import { MODEL_PREVIEW_RETAINED, previewSourceKey } from "./features/artifacts/u
 import type { WorkspaceDesignContext, WorkspacePosition } from "./app/ProjectWorkspace";
 import { MonitorPage } from "./MonitorPage";
 import { ChatCard, ChatCardDetails } from "./ChatCard";
-import { AnsweredSkillQuestion, SkillRunCard, skillRunWords } from "./SkillRunCard";
+import { AnsweredSkillQuestion, SkillRunCard, skillRunWords } from "./features/skills/SkillRunCard";
 import { DeveloperOnly, useDeveloperMode } from "./features/settings/preferences";
 import { HistoryPage } from "./features/designHistory/HistoryPage";
 import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessageContent";
