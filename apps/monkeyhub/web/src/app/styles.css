@@ -1047,6 +1047,21 @@ button.chip:hover {
   color: var(--muted);
 }
 
+.picked__action {
+  padding: 2px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.picked__action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .editing-base {
   display: flex;
   flex-wrap: wrap;
@@ -1333,6 +1348,16 @@ button.chip:hover {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.stage-import-choice > span,
+.stage-import-choice > button:not(.stage-quick-drawings__close) {
+  white-space: nowrap;
+}
+
+.stage-import-choice select {
+  flex: 1;
+  min-width: 0;
 }
 
 .stage-quick-drawings__close {

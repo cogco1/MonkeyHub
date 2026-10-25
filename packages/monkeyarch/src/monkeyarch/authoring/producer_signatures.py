@@ -19,8 +19,8 @@ from typing import Any
 def producer_signatures() -> dict[str, dict[str, Any]]:
     """The authoring contracts the Studio can query and execute.
 
-    Prisms, bounded planar surfaces, curves, lofts, walls with hosted apertures, straight flights and
-    railings expose their authored parameters here. Other existing producers remain executable;
+    Prisms, bounded planar surfaces, curves, lofts, walls with hosted apertures, straight flights,
+    railings and imported objects expose their authored parameters here. Other existing producers remain executable;
     they are not advertised as semantic creation tools until their authored
     parameter contract is exposed here.
     Values and placements belong to the project's record, never this table.
@@ -301,6 +301,33 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
         "constraints": [
             "No segment may be vertical, and height must exceed the rail's size.",
             "A railing publishes no top datum and neither hosts voids nor acts as one.",
+        ],
+    }, "imported": {
+        "producer": "imported",
+        "label": "导入几何",
+        "description": (
+            "Objects of a model file registered with the project (an uploaded 3dm or a Live Rhino snapshot), kept "
+            "exactly as the file made them. Move and turn place them; their shape is the file's."
+        ),
+        "parameters": obj({
+            "asset": {"type": "string", "minLength": 64, "maxLength": 64,
+                      "description": "The sha256 of the registered model file."},
+            "objects": {"type": "array", "minItems": 1, "items": identifier,
+                        "description": "Ids of the file's top-level objects this element is."},
+            "move": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3,
+                     "description": "[X, Y-up, Z] metres the objects are moved by, after turn; defaults to none."},
+            "turn": {"type": "number",
+                     "description": "Degrees about the vertical (+Y) axis through the origin, before move; defaults to 0."},
+            "extent": obj({"min": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                           "max": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}},
+                          ("min", "max")),
+        }),
+        "references": obj({}),
+        "requiredParameters": ["asset", "objects"],
+        "requiredReferences": [],
+        "constraints": [
+            "Only placement changes: to remove one, remove the element; a new shape is drawn with another producer.",
+            "An imported element publishes no datum and neither hosts voids nor acts as one.",
         ],
     }}
     # Agents read this table in order, so it runs from the lowest sufficient

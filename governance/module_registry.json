@@ -3487,6 +3487,18 @@
             ]
           },
           {
+            "id": "design.from_import",
+            "label": "Make it a design you can change",
+            "label_zh": "转成能改的设计",
+            "aliases": [
+              "make the imported model editable",
+              "导入的模型转成设计",
+              "快照转成设计"
+            ],
+            "channel": "background",
+            "entries": []
+          },
+          {
             "id": "draft.record.continue",
             "label": "Record edits and continue",
             "label_zh": "记录修改并继续",
@@ -6971,7 +6983,10 @@
         "row_digests",
         "binding_for",
         "compare",
-        "object_rows"
+        "object_rows",
+        "ImportedPlacement",
+        "place_imported_objects",
+        "adopt_named_objects"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -7002,7 +7017,8 @@
         "packages/monkeycad/tests/test_model_conversion_regressions.py",
         "packages/monkeycad/tests/test_sketchup_reader.py",
         "packages/monkeycad/tests/test_three_dm_compose.py",
-        "packages/monkeycad/tests/test_state_file.py"
+        "packages/monkeycad/tests/test_state_file.py",
+        "packages/monkeycad/tests/test_three_dm_imported.py"
       ],
       "notes": "The single source of the inspection key sets that viewers and readback both check against. formats/ also holds the bounded 3DM/GLB mesh codecs (meshes.py) and their conversion providers (conversion.py), SketchUp reading (sketchup_reader.py) and the composition of a patched .3dm (three_dm_compose.py).",
       "files": [
@@ -7306,7 +7322,8 @@
         "Absolute numeric prism/face base references and read-only placement of drawn elements through their existing datum dependencies; free placement publishes its own fixed base instead of binding an editable Level.",
         "the voids relation: with_void_hosts annotates every ElementRow with the hosts naming it (voided_by); a void keeps obj-<id>, retained hidden, with no top datum or support relation; a host emits <id>-body and the difference that keeps obj-<id>",
         "realising a block as a wall in place (wall_fields_from_block, #419 Stage C): a rectangular prism standing on a level or datum becomes the wall producer's fields under the same element id; the line runs the way the longest side runs (the first of equal ones), on that side when the block lies right of it, else on the opposite long face, so along starts beside the side's first corner whichever way the outline winds and doors and windows are set out from the line's face; corners rounded to the nanometre still make a rectangle; a tilted plane, panel cutouts, an outline that is not a rectangle or is bound to parameters, and a block lifted off its base are refused with the reason",
-        "where a wall's along is measured on a line of two stated points (wall_along_line): the same turn produce_wall makes when inward lies left of the line"
+        "where a wall's along is measured on a line of two stated points (wall_along_line): the same turn produce_wall makes when inward lies left of the line",
+        "the imported element: objects of a registered model file named by its sha256 and their ids, placed by a move and a turn about the vertical; it produces no operation, its box is what direct edits move and turn, and an edit of its shape is refused"
       ],
       "does_not_own": [
         "turning a reference into a plan coordinate or an elevation datum - monkeyarch.domain.reference_resolver",
@@ -7347,7 +7364,9 @@
         "wall_along_line",
         "element_vertical_extent",
         "parameter_unit",
-        "canonical_params"
+        "canonical_params",
+        "imported_placement",
+        "imported_box"
       ],
       "depends_on": [
         "archflow.contracts.fields",
@@ -7386,7 +7405,8 @@
         "tests/integration/test_prism_cutouts.py",
         "tests/integration/test_occt_execution.py",
         "packages/monkeyarch/tests/test_wall_explicit_point_reference.py",
-        "packages/monkeyarch/tests/test_wall_realization.py"
+        "packages/monkeyarch/tests/test_wall_realization.py",
+        "packages/monkeyarch/tests/test_imported_elements.py"
       ],
       "notes": "The single geometry-emission owner on the spine; monument vocabulary (solids of revolution, boolean chains, classical-order members) would be added here rather than beside it.",
       "files": [
@@ -11462,7 +11482,8 @@
         "the one-call revision (revise over RevisionPorts, POST /api/revisions): base, keep decisions protected, a touched rejected option, conditions in reach that no check can verify, the build, the read-back and comparison, validation, admission and Continue, in that order, answered as landed, admitted, problems, needs_question or refused; every step is an existing route or function",
         "reading page marks (a circle, outline, stroke or arrow on a drawing, a view sheet or a model view's object-ID image, and a stroke on the model) into the components and elements they cover, with how much of each lies in the mark and why a mark has no clear target, deterministically and without a model call or write; a registered page is read as it was drawn and answered for by the record state it was drawn from (POST /api/markup/resolve)",
         "the edit log: each retained candidate change along a run's line read again against its exact source record, as element and parameter edits with numeric before, after and direction, and gathered per field; a reading, never a new record",
-        "reading a model attached from outside the project (a Live Rhino snapshot) as building parts, by each object's name, its layer and its shape and then the project's model, kept per file"
+        "reading a model attached from outside the project (a Live Rhino snapshot) as building parts, by each object's name, its layer and its shape and then the project's model, kept per file",
+        "making a model attached from outside the project (a Live Rhino snapshot, an uploaded 3dm) a design that can be changed: one semantic edit at the file's own run, a component per part it is read as and an imported element per object or Rhino group (POST /api/model-assets/design; none named is the model attached last)"
       ],
       "does_not_own": [
         "running the proposal - project_runtime.candidate",
@@ -11711,7 +11732,12 @@
         "GET /api/model-assets/{asset_sha256}/parts",
         "model_parts",
         "read_model_parts",
-        "snapshot_subjects"
+        "snapshot_subjects",
+        "POST /api/model-assets/design",
+        "conversion_edit",
+        "imported_placements",
+        "imported_shapes",
+        "GET /api/model-assets/attached"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -11862,7 +11888,8 @@
         "services/project-runtime/tests/test_markup.py",
         "services/project-runtime/tests/test_markup_routes.py",
         "services/project-runtime/tests/test_edit_log.py",
-        "services/project-runtime/tests/test_model_parts.py"
+        "services/project-runtime/tests/test_model_parts.py",
+        "services/project-runtime/tests/test_imported_design.py"
       ],
       "notes": "ADR-001's record, section 2.1, makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -11907,7 +11934,8 @@
         "services/project-runtime/src/project_runtime/api/routes/markup.py",
         "services/project-runtime/src/project_runtime/api/dto/markup.py",
         "services/project-runtime/src/project_runtime/application/edit_log.py",
-        "services/project-runtime/src/project_runtime/application/model_parts.py"
+        "services/project-runtime/src/project_runtime/application/model_parts.py",
+        "services/project-runtime/src/project_runtime/application/imported_design.py"
       ]
     },
     {

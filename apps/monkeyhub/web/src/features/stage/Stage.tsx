@@ -232,6 +232,8 @@ export function Stage({
   status,
   artifactError,
   picked,
+  importedModel,
+  importChoice,
   versions,
   hasNewVersions = false,
   onVersionsOpen,
@@ -322,6 +324,14 @@ export function Stage({
   status: ViewportStatus;
   artifactError: StudioApiError | null;
   picked: PickedFacts | null;
+  /**
+   * The model on view was attached from outside the project (a Live Rhino snapshot, an uploaded 3dm): a click
+   * on it names nothing, so it offers to make the model a design that can be changed (#300 item 22 B).
+   */
+  importedModel?: { onConvert(): void; busy: boolean };
+  /** Which attached model to make a design of, when there are several: the last attached chosen first (S21). */
+  importChoice?: { models: readonly { assetSha256: string; label: string }[]; selected: string; busy: boolean;
+    onSelect(assetSha256: string): void; onConvert(): void; onCancel(): void };
   versions: readonly VersionGroup[];
   hasNewVersions?: boolean;
   onVersionsOpen?(): void;
@@ -1612,23 +1622,28 @@ export function Stage({
   const infoSubject = useMemo<ComponentInfoSubject | null>(() => {
     if (!infoOpen || documentOpen) return null;
     if (picked === null) return infoPending ? { kind: "pending" } : { kind: "unresolved", label: null };
-    if (picked.componentId === null) return { kind: "unresolved", label: designObjectLabel(picked.elementId) };
+    if (picked.componentId === null) return { kind: "unresolved", label: designObjectLabel(picked.elementId, zh) };
     return { kind: "card", card: buildComponentCard({
       componentId: picked.componentId, elementId: picked.elementId,
-      modelLabel: designObjectLabel(picked.componentId) ?? picked.componentId,
+      modelLabel: designObjectLabel(picked.componentId, zh) ?? picked.componentId,
       shown: shownModel, pickMatchesShown: pickMatchesShown(picked, shownModel), board: componentBoard,
       lineage: shownLineage ?? null, lineagePending: shownLineage === undefined, changes: changesSince,
     }, statusWord) };
-  }, [infoOpen, documentOpen, picked, infoPending, shownModel, componentBoard, statusWord, shownLineage, changesSince]);
+  }, [infoOpen, documentOpen, picked, infoPending, shownModel, componentBoard, statusWord, shownLineage, changesSince, zh]);
   const pickedStatus = picked && (
     <span className="picked" title={developerMode ? t("stage.picked.title", {
       status: picked.status, sourceState: picked.sourceState,
-    }) : designObjectLabel(picked.elementId ?? picked.componentId) ?? undefined}>
+    }) : designObjectLabel(picked.elementId ?? picked.componentId, zh) ?? undefined}>
       <span className="label">{t("stage.picked.label")}</span>
       <span className="picked__name">{developerMode
         ? picked.elementId ?? picked.componentId ?? t("stage.picked.none")
-        : designObjectLabel(picked.elementId ?? picked.componentId) ?? t("stage.picked.unresolved")}</span>
+        : designObjectLabel(picked.elementId ?? picked.componentId, zh) ?? t("stage.picked.unresolved")}</span>
       {developerMode && picked.status !== "resolved" && <span className="picked__meta">{picked.status}</span>}
+      {importedModel && picked.componentId === null && picked.elementId === null && <>
+        <span className="picked__meta">{t("stage.picked.imported")}</span>
+        <button type="button" className="picked__action" data-command="design.from_import" disabled={importedModel.busy}
+          onClick={importedModel.onConvert}>{t("stage.picked.convert")}</button>
+      </>}
     </span>
   );
   // #352: the drawing plane sits in the tools' More; while it is not the ground (XY), the status
@@ -1855,6 +1870,17 @@ export function Stage({
           </span>)}
         </> : <PlainFailure error={asStudioApiError(quickDrawing.error)} />}
         <button type="button" data-command="view.notice.dismiss" className="stage-quick-drawings__close" aria-label={t("stage.quick.close")} onClick={() => setQuickDrawing(null)}>×</button>
+      </div>}
+      {importChoice && <div className="stage-quick-drawings stage-import-choice" role="group" aria-label={t("stage.importChoice.label")}>
+        <span>{t("stage.importChoice.label")}</span>
+        <select aria-label={t("stage.importChoice.label")} value={importChoice.selected} disabled={importChoice.busy}
+          onChange={(event) => importChoice.onSelect(event.target.value)}>
+          {importChoice.models.map((model) => <option key={model.assetSha256} value={model.assetSha256}>{model.label}</option>)}
+        </select>
+        <button type="button" data-command="design.from_import" disabled={importChoice.busy} onClick={importChoice.onConvert}>
+          {t("stage.picked.convert")}</button>
+        <button type="button" data-command="view.notice.dismiss" className="stage-quick-drawings__close"
+          aria-label={t("stage.quick.close")} onClick={importChoice.onCancel}>×</button>
       </div>}
       {onReturnToBoard && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
         <button data-command="view.tab.board" type="button" onClick={onReturnToBoard}>{t("workspace.returnToBoard")}</button>
