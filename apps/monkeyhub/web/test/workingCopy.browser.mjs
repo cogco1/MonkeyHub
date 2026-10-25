@@ -90,11 +90,22 @@ async function equalCanvas() {
   }
 }
 async function inkImage() { await equalCanvas(); await delay(380); return inkCanvas().evaluate((canvas) => canvas.toDataURL()); }
-async function drawLine(source, baseline, y) {
-  const before = annotationWrites().length;
-  allowedMutation = { method: "PUT", path: "/api/model-annotations", source, revision: baseline.revisionSha256 };
-  await openTracing();
-  await equalCanvas();
+// GH-300/b3-tracing: each opening of the tracing paper is a new blank sheet. Strokes stay
+// on the open sheet (one local Undo history) and the sheet is retained once, as one
+// model-annotation revision of its exact source, when the person leaves it.
+const paperInk = () => inkCanvas().evaluate((canvas) =>
+  canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data.some((value, index) => index % 4 === 3 && value > 0));
+async function exitPaper() {
+  await cmd(page.locator("#annotation-tools"), "view.markup_tools.cancel").click();
+  await until(() => page.locator(".stage-model canvas.annotate").count(), (count) => count === 0, "Leaving the paper must take its ink off the model");
+  assert.equal(await page.locator("#annotation-tools").count(), 0);
+}
+async function blankPaper() {
+  await openTracing(); await equalCanvas();
+  assert.equal(await undo().isDisabled(), true, "A reopened paper has nothing to undo");
+  assert.equal(await paperInk(), false, "A reopened paper starts blank");
+}
+async function strokeLine(y) {
   await cmd(page.locator("#annotation-tools"), "view.markup_tools.line").click();
   await until(() => activeCanvas().getAttribute("data-armed"), (value) => value === "true", "Line tool did not arm");
   const box = await activeCanvas().boundingBox();
@@ -103,21 +114,47 @@ async function drawLine(source, baseline, y) {
   await page.mouse.down();
   await page.mouse.move(box.x + box.width * 0.51, box.y + box.height * y + 13, { steps: 6 });
   await page.mouse.up();
-  await until(() => annotationWrites().length, (count) => count === before + 1, "Exactly one source-bound ink write must finish");
+  // Disarm without changing the stroke or its retained view.
+  await cmd(page.locator("#annotation-tools"), "view.markup_tools.line").click();
+}
+async function drawPaper(source, baseline, ys) {
+  const before = annotationWrites().length;
+  await blankPaper();
+  for (const y of ys) await strokeLine(y);
+  await until(() => undo().isEnabled(), Boolean, "The paper's strokes must be undoable");
+  await delay(400);
+  assert.equal(annotationWrites().length, before, "Strokes stay on the open paper until it is left");
+  const image = await inkImage();
+  allowedMutation = { method: "PUT", path: "/api/model-annotations", source, revision: baseline.revisionSha256 };
+  await exitPaper();
+  await until(() => annotationWrites().length, (count) => count === before + 1, "Leaving the paper must retain it in exactly one source-bound write");
   const write = annotationWrites()[before];
   assert.equal(allowedMutation, null);
-  assert.deepEqual(write.body.annotations.slice(0, -1), baseline.annotations);
-  assert.equal(write.body.annotations.length, baseline.annotations.length + 1);
-  const line = write.body.annotations.at(-1);
-  assert.equal(line.kind, "line");
+  assert.equal(write.body.annotations.length, ys.length, "The retained paper holds exactly this sheet's strokes");
+  assert.ok(write.body.annotations.every((gesture) => gesture.kind === "line"));
   assert.deepEqual(write.response.modelSource, source);
   assert.deepEqual(write.response.annotations, write.body.annotations.map((gesture) => ({
     label: null, lengthModelUnits: null, worldDirection: null, worldEnd: null, worldStart: null, ...gesture,
   })));
-  await until(() => undo().isEnabled(), Boolean, "The source's new stroke must be undoable");
-  // Disarm without changing the stroke or its retained view.
-  await cmd(page.locator("#annotation-tools"), "view.markup_tools.line").click();
-  return { ...write, line, image: await inkImage() };
+  return { ...write, line: write.body.annotations[0], image };
+}
+async function openVersions() {
+  const button = page.locator('.stage__versions-toggle[data-command="design.go_to_step.versions"]');
+  if (await button.getAttribute("aria-expanded") !== "true") await button.click();
+  await page.locator("#stage-versions-panel").waitFor();
+}
+const savedPapers = {};
+const paperRow = (saved) => cmd(page.locator("#stage-versions-panel"), "view.markup_tools.restore_paper", { arg: saved.response.revisionSha256 });
+async function restorePaper(saved) {
+  const other = saved === savedPapers.A ? savedPapers.B : savedPapers.A;
+  await openVersions();
+  await until(() => paperRow(saved).count(), (count) => count === 1, "This model's retained paper must be in its history");
+  assert.equal(await paperRow(other).count(), 0, "The other model's paper must not appear in this model's history");
+  await until(() => paperRow(saved).isEnabled(), Boolean, "The retained paper must be restorable");
+  await paperRow(saved).click();
+  await page.locator("#annotation-tools").waitFor();
+  await until(() => undo().isDisabled(), Boolean, "Reopening a retained paper is not itself an edit");
+  assert.equal(await inkImage(), saved.image, "History restores the complete retained paper");
 }
 async function documentSnapshot() {
   const runs = (await readdir(path.join(projectRoot, "runs"), { withFileTypes: true })).filter((row) => row.isDirectory()).map((row) => row.name).sort();
@@ -265,23 +302,29 @@ try {
     assert.equal(await undo().isDisabled(), true);
     assert.deepEqual(await getJson("/api/model-annotations", B), annotationsB);
   });
-  await step("A and B lines save only their own exact source with the same camera", async () => {
+  await step("A and B papers are each retained once on exit, to their own exact source with the same camera", async () => {
     await view(A); assert.equal(await undo().isDisabled(), true);
-    savedA = await drawLine(A, annotationsA, 0.5);
+    savedA = savedPapers.A = await drawPaper(A, annotationsA, [0.42, 0.5]);
+    await blankPaper();
+    await exitPaper();
+    assert.equal(annotationWrites().length, 1, "Opening and leaving a blank paper does not overwrite A's retained paper");
     await view(B); assert.equal(await undo().isDisabled(), true);
-    savedB = await drawLine(B, annotationsB, 0.68);
+    savedB = savedPapers.B = await drawPaper(B, annotationsB, [0.68]);
     assert.deepEqual(savedA.line.camera, savedB.line.camera);
     assert.deepEqual(savedA.line.screenSize, savedB.line.screenSize);
     assert.notEqual(savedA.line.id, savedB.line.id);
     assert.deepEqual(await getJson("/api/working-draft"), draftBefore);
   });
-  await step("switching A/B restores independent visible ink and Undo histories", async () => {
+  await step("switching A/B opens blank papers, and each history restores only its own paper", async () => {
     for (const [source, saved] of [[A, savedA], [B, savedB]]) {
-      await view(source); assert.equal(await undo().isEnabled(), true);
-      assert.equal(await inkImage(), saved.image);
+      await view(source);
+      await blankPaper();
       assert.deepEqual(await getJson("/api/model-annotations", source), saved.response);
+      assert.deepEqual(await getJson("/api/model-annotations/history", source), [saved.response]);
+      await restorePaper(saved);
+      await exitPaper();
     }
-    assert.equal(annotationWrites().length, 2);
+    assert.equal(annotationWrites().length, 2, "Switching, reopening and restoring unchanged papers write nothing");
     assert.equal(positionWrites().length, 0);
   });
   await step("only explicit Continue persists B as the runtime working position", async () => {
@@ -292,28 +335,31 @@ try {
     await until(() => getJson("/api/working-draft"), (value) => value.current?.runId === B.runId, "Continue did not retain B");
     await ready(B);
     await until(state, (value) => sourceKey(value.editingModelSource ?? {}) === sourceKey(B), "Editing source must become exact B");
-    await openTracing();
-    assert.equal(await inkImage(), savedB.image);
+    await blankPaper();
+    await exitPaper();
     assert.deepEqual(await getJson("/api/working-copies/retained-options"), group, "Tree Continue changes current, not the retained Exploration");
   });
-  await step("reload restores exact B and its server ink while existing drawings remain unchanged", async () => {
+  await step("reload keeps both retained papers in their own histories while existing drawings remain unchanged", async () => {
     const start = requests.length;
     await page.goto(`${origin}/?lang=en`, { waitUntil: "domcontentloaded" });
-    await ready(B, start); await openTracing(); await equalCanvas();
+    await ready(B, start);
     const restoredRead = requests.slice(start).findLast((row) => row.path === "/api/model-annotations" && row.method === "GET" && row.response &&
       sourceKey(row.response.modelSource) === sourceKey(B));
     assert.deepEqual(restoredRead.response, savedB.response, "The new page must itself reread B's exact saved annotation revision");
     assert.deepEqual((await state()).editingModelSource, B);
-    assert.deepEqual(await getJson("/api/model-annotations", B), savedB.response);
-    assert.equal(await undo().isDisabled(), true);
+    assert.deepEqual(await getJson("/api/model-annotations/history", A), [savedA.response]);
+    assert.deepEqual(await getJson("/api/model-annotations/history", B), [savedB.response]);
+    await blankPaper(); await exitPaper();
     assert.deepEqual([...new Set(requests.slice(start).filter((row) => /^\/api\/artifacts\/[^/]+\/bytes$/.test(row.path)).map((row) => row.path))], [`/api/artifacts/${B.assetSha256}/bytes`]);
     assert.ok(requests.slice(start).some((row) => row.path === "/api/state" && new URLSearchParams(row.query).get("run") === B.runId));
+    await restorePaper(savedB);
     await until(() => inkCanvas().evaluate((canvas, point) => {
       const [x, y] = point;
       const pixels = canvas.getContext("2d").getImageData(Math.max(0, x - 3), Math.max(0, y - 3), 7, 7).data;
       return pixels.some((value, index) => index % 4 === 3 && value > 0);
     }, savedB.line.screen[0].map((value, index) => Math.round((value + savedB.line.screen[1][index]) / 2))),
     Boolean, "The specific B stroke midpoint must be painted after reload");
+    await exitPaper();
     const after = await documentSnapshot();
     for (const before of documentsBefore) assert.deepEqual(after.find((row) => documentKey(row.dto) === documentKey(before.dto)), before);
     const additional = after.filter((row) => !documentsBefore.some((old) => documentKey(old.dto) === documentKey(row.dto)));
