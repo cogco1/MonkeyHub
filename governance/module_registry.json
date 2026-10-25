@@ -4444,6 +4444,18 @@
             "in_place": true
           },
           {
+            "id": "chat.skill_run.keep",
+            "label": "Keep a script the AI ran as a skill",
+            "label_zh": "把 AI 现写的脚本留下成 skill",
+            "args": [
+              "runId"
+            ],
+            "entries": [
+              "壳113"
+            ],
+            "in_place": true
+          },
+          {
             "id": "chat.permission.cancel",
             "label": "Cancel the agent's request",
             "label_zh": "取消授权请求",

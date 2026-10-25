@@ -8813,6 +8813,29 @@ export const COMMAND_TREE: CommandTree = {
       "inPlace": true
     },
     {
+      "id": "chat.skill_run.keep",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Keep a script the AI ran as a skill",
+        "zh-CN": "把 AI 现写的脚本留下成 skill"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳113"
+      ],
+      "args": [
+        "runId"
+      ],
+      "inPlace": true
+    },
+    {
       "id": "chat.permission.cancel",
       "capability": "chat.conversation",
       "label": {

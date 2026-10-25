@@ -1404,6 +1404,10 @@
             "hub.shell"
           ],
           "write_scope": [
+            "apps/monkeyhub/web/src/features/commands/tree.generated.ts",
+            "docs/audits/hub-entries.md",
+            "docs/architecture/semantic-registry.md",
+            "docs/architecture/system-map.md",
             "apps/monkeyhub/api/monkeyhub_api/chat/guides.py",
             "apps/monkeyhub/api/monkeyhub_api/chat/routes.py",
             "apps/monkeyhub/api/monkeyhub_api/chat/skill_cards.py",
