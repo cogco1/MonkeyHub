@@ -402,7 +402,8 @@ class OperationManager:
                     admission.misses, admission.working_at, admission.lost_at = 0, time.monotonic(), None
                     status = running if running and not (job and job.get("status") in {"queued", "running", "failed"}) else job.get("status")
                     record.status = {"queued": "queued", "running": "executing", "failed": "failed"}[status]
-                    record.reason = job.get("error") if job else None
+                    # A job that failed without its own words keeps its run's: what the receipt says went wrong (S15).
+                    record.reason = job.get("error") or (candidate.get("error") if candidate else None) if job else None
                 elif record.candidateId and record.status in _ACTIVE and (job or not worker_alive or (
                         candidate and not admission.accepting_candidate
                         and candidate.get("status") not in {"completed", "succeeded", "failed"})):

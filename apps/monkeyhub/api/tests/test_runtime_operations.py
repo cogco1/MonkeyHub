@@ -1162,6 +1162,31 @@ class RecordReliabilityTests(unittest.TestCase):
         self.assertEqual(self.status(manager, admission), "executing")
 
 
+class InvalidShapeReasonTests(unittest.TestCase):
+    """S15: a mass drawn while the view looked level at the ground fails in CAD; the person is told why and what to do."""
+
+    def test_the_receipt_s_invalid_shape_is_the_reason_and_the_notice_says_what_to_do(self) -> None:
+        from project_runtime.status import incomplete_reason
+
+        receipt = {"seat_execution_complete": False, "seat_results": [{"seat_id": "modeler", "status": "failed",
+                   "cad": {"failures": [{"code": "cad_execution.step_shape_invalid", "message": "obj-drawn-1a2b is not a valid shape"}]}}]}
+        reason = incomplete_reason(receipt)
+        self.assertIn("obj-drawn-1a2b is not a valid shape", reason)
+        self.assertEqual(incomplete_reason({"seat_results": []}), "The retained runner receipt reports incomplete seat execution.")
+        manager = OperationManager("p")
+        admission, _ = manager.admit(str(uuid4()), "POST", "/api/proposals/studio-p1/candidate", b"",
+                                     retained=None, source="studio", session_id=None)
+        manager.replied(admission, HttpResult(202, json.dumps({"jobId": "job-1", "candidateId": admission.record.candidateId}).encode(), {}))
+        # The job failed without words of its own; its run's reason is kept.
+        manager.reconcile({"jobs": [{"candidateId": admission.record.candidateId, "jobId": "job-1", "status": "failed"}],
+                           "candidates": [{"candidateId": admission.record.candidateId, "status": "running", "error": reason}]}, worker_alive=True)
+        record = next(row for row in manager.records() if row.operationId == admission.record.operationId)
+        self.assertEqual((record.status, record.reason), ("failed", reason))
+        [card] = producers.operations(manager.records())
+        self.assertIn("轴测", card.summaryZh)
+        self.assertNotIn("valid shape", card.summaryZh)
+
+
 class JournalSpellingTests(unittest.TestCase):
     """Gap 26: one folder, one journal, however an earlier Hub spelled it."""
 

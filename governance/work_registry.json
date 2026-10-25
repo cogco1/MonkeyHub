@@ -1048,6 +1048,31 @@
           "depends_on": []
         },
         {
+          "id": "srv-front-view-mass",
+          "status": "active",
+          "branch": "claude/srv-front-view-mass",
+          "worktree": "C:\\Users\\Public\\renou\\dev\\wt\\claude-srv-front-view-mass",
+          "base_ref": "1aa2c804",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "S15 (server, 10-25): a drawing tool picked while the view looks level at the ground (Front, Right) on the XY work plane turns the view to the axonometric one first and says so; a mass that still cannot be built is named in the run's reason (the CAD step's own words), kept on the Hub's operation, and the attention notice says in Chinese to draw it again from an axonometric view.",
+          "modules": [
+            "hub.shell",
+            "project_runtime.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
+            "apps/monkeyhub/api/monkeyhub_api/attention/producers.py",
+            "apps/monkeyhub/api/tests/test_runtime_operations.py",
+            "services/project-runtime/src/project_runtime/status.py",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
+        },
+        {
           "id": "srv-awkward-five",
           "status": "active",
           "branch": "claude/srv-awkward-five",
