@@ -6694,6 +6694,26 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
+      "id": "draft.record.discard",
+      "capability": "design.history",
+      "label": {
+        "en": "Discard draft",
+        "zh-CN": "丢掉草稿"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模61"
+      ],
+      "args": []
+    },
+    {
       "id": "draft.record.continue",
       "capability": "design.history",
       "label": {

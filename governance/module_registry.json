@@ -3398,6 +3398,15 @@
             ]
           },
           {
+            "id": "draft.record.discard",
+            "label": "Discard draft",
+            "label_zh": "丢掉草稿",
+            "channel": "background",
+            "entries": [
+              "模61"
+            ]
+          },
+          {
             "id": "draft.record.continue",
             "label": "Record edits and continue",
             "label_zh": "记录修改并继续",

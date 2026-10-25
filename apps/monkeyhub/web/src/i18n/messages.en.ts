@@ -735,6 +735,8 @@ export const messagesEn = {
   // #302: Sync is named by its result, Record; edits always save themselves.
   "stage.sync.label": "Record",
   "stage.sync.dirty": "Unrecorded edits",
+  "stage.sync.restored": "A draft from last time is not recorded yet: Record keeps it, Discard draft puts it away",
+  "stage.sync.discard": "Discard draft",
   "stage.sync.autosaved": "Unrecorded edits · saved automatically",
   "stage.sync.autosaving": "Unrecorded edits · saving…",
   "stage.sync.busy": "Recording; keep editing",

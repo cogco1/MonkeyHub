@@ -706,6 +706,8 @@ export const messagesZhCN = {
   // #302：“同步”按结果命名为“记录”；修改始终自动保存。
   "stage.sync.label": "记录",
   "stage.sync.dirty": "有未记录的修改",
+  "stage.sync.restored": "上次留下的草稿还没记录：要留就点「记录」，不要就点「丢掉草稿」",
+  "stage.sync.discard": "丢掉草稿",
   "stage.sync.autosaved": "有未记录的修改 · 已自动保存",
   "stage.sync.autosaving": "有未记录的修改 · 正在自动保存…",
   "stage.sync.busy": "正在记录，可继续编辑",

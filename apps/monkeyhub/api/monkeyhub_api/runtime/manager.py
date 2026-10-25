@@ -250,6 +250,13 @@ def _start_timed_out(worker) -> bool:
 
     return (worker.state == "unavailable" and worker.desired_state == "stopped" and worker.process_id is None
             and worker.error is not None and worker.error.code == "START_TIMEOUT")
+
+
+def _still_there(worker) -> bool:
+    """A worker whose process runs and is meant to, whether or not it answered its last health checks."""
+
+    return (worker.state in {"ready", "busy"} or (
+        worker.state == "unavailable" and worker.desired_state == "running" and worker.process_id is not None))
 # A Studio that stops this often within the window is left for a person to recover.
 _RESTARTS_PER_WINDOW = 3
 _RESTART_WINDOW_S = 600.0
@@ -572,7 +579,9 @@ class ProjectRuntimeManager:
                 candidates.update((row["candidateId"], row) for row in current.get("candidates", []))
                 scanned += current.get("runsScanned", 0)
                 result = current
-        if runtime.binding.run_ids() != run_ids:
+        # A run begun meanwhile leaves every row read true; the next read lists it. On housing a read in small pages
+        # took most of a minute, and each run a record or drawing began in that time threw the whole read away (S19).
+        if not set(run_ids) <= set(runtime.binding.run_ids()):
             raise HubFailure(409, "RUNTIME_CHANGED", "Project runs changed during runtime inspection; read its next snapshot.")
         result["candidates"] = list(candidates.values())
         result["runsScanned"] = scanned
@@ -612,9 +621,11 @@ class ProjectRuntimeManager:
         with runtime.lock:
             previous = runtime.retained
             runtime.retained = retained
-            # A worker that is there, only late with a health check while it builds, has not lost what it works on.
-            unanswered = (not alive and worker is not None and worker.state in {"ready", "busy"}
-                          and latest is not None and latest.instance_id == worker.instance_id and latest.state in {"ready", "busy"})
+            # A worker that is there, only late with a health check while it builds, has not lost what it works on;
+            # nor has one the supervisor calls unavailable because it went on not answering, while its process
+            # runs and is still meant to (S19: a housing record was called lost while its Studio was building it).
+            unanswered = (not alive and worker is not None and latest is not None and latest.instance_id == worker.instance_id
+                          and all(_still_there(row) for row in (worker, latest)))
             moved = runtime.operations.reconcile(retained, worker_alive=alive, worker_unanswered=unanswered)
         if alive and projection_key != runtime.projection_key:
             # A verified candidate remains observed even if the independent
@@ -913,12 +924,14 @@ class ProjectRuntimeManager:
             due = prompted or checked or time.monotonic() >= next_retained_read
             try:
                 moves = runtime.index_moves
-                if due and not prompted and read_at == moves:
+                if runtime.operations.expire():
+                    self.emit("operation/reconciled", runtime.runtime_id)
+                if due and not prompted and read_at == moves and not runtime.operations.awaiting_result():
                     # Only the idle fallback or a page opening the project
                     # again asks, and only whether a separate client changed
                     # the project through its runtime. With no index commit
                     # heard since the last read, the retained history is not
-                    # read again (#363, ADR-012).
+                    # read again (#363, ADR-012). A run called lost a short while ago is still looked for (S19).
                     due = False
                     next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
                 if due:
@@ -1140,6 +1153,11 @@ class ProjectRuntimeManager:
                 source_run = proposal.get("sourceRunId")
                 base = runtime.binding.load_run(source_run).base if source_run else runtime.binding.head()
                 runtime.operations.bind_proposal(admission, proposal, base.version)
+            if admission and self.applications is not None:
+                # The Studio has work from now on, before any retained read says so: one building a large model
+                # misses health checks, and without this the supervisor called it unavailable after a few seconds
+                # and the run it was building lost (S19). The next retained read sets it again from what it reads.
+                self.applications.set_busy(project_dir=runtime.project_dir, busy=True)
             dispatched = True
             # A revision waits for its own build, read-back and validation (#185).
             timeout = REVISION_TIMEOUT_S if parsed.path == "/api/revisions" else 180
