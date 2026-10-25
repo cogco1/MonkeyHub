@@ -662,6 +662,48 @@ class OperationRecoveryTests(unittest.TestCase):
         self.assertEqual(observed.source, "retained")
         self.assertIsNone(observed.admissionSequence, "a receipt without an admission journal cannot invent request order")
 
+    def test_a_refresh_reads_the_recent_runs_in_one_page_and_smaller_ones_only_when_it_does_not_finish(self):
+        # S15: fifty reads of one run each cost a 319-run project 3.3 s a refresh; one page of fifty, 0.08 s.
+        first, first_result = self.candidate()
+        second, second_result = self.candidate()
+        binding = bound_project(self.app.state)
+        snapshot = self.snapshot(live=True)
+        self.manager.reconcile(snapshot, worker_alive=True)
+        runtime = ProjectRuntime("paged-runtime", self.fixture.PROJECT_ID, str(self.settings.project_dir),
+                                 self.manager, binding, retained=snapshot)
+        manager = ProjectRuntimeManager(None, None)
+        worker = SimpleNamespace(url="http://owned-worker/")
+        limits, refuse_above = [], [None]
+
+        def read(_url, path, **_kwargs):
+            limit = int(parse_qs(urlsplit(path).query)["limit"][0])
+            limits.append(limit)
+            if refuse_above[0] is not None and limit > refuse_above[0]:
+                raise TimeoutError("this page does not finish within the budget")
+            response = self.client.get(path)
+            return HttpResult(response.status_code, response.content, dict(response.headers))
+
+        expected = {first_result["candidateId"], second_result["candidateId"]}
+        with patch("monkeyhub_api.runtime.manager.request_http", side_effect=read):
+            paged = manager._read_retained(runtime, worker=worker)
+            self.assertEqual(limits, [50], "the recent window is one request")
+            self.assertEqual({row["candidateId"] for row in paged["candidates"]}, expected)
+            self.assertTrue(all(row["status"] == "completed" for row in paged["candidates"]))
+
+            limits.clear()
+            refuse_above[0] = 10
+            smaller = manager._read_retained(runtime, worker=worker)
+            self.assertEqual(limits[:2], [50, 10], "a page that does not finish is read again in smaller ones")
+            self.assertEqual({row["candidateId"] for row in smaller["candidates"]}, expected)
+            limits.clear()
+            manager._read_retained(runtime, worker=worker)
+            self.assertNotIn(50, limits, "for a while the project starts from the page that finished")
+            runtime.retained_page_until = 0.0
+            limits.clear()
+            refuse_above[0] = None
+            manager._read_retained(runtime, worker=worker)
+            self.assertEqual(limits, [50], "then the largest page is tried again")
+
     def test_runtime_pages_revalidate_completed_and_new_candidates_without_a_full_history_probe(self):
         first, first_result = self.candidate()
         second, second_result = self.candidate()

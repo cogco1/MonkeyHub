@@ -214,7 +214,18 @@ class ProjectRuntime:
     # project that say it moved (``index_hint``): the observer's idle reads
     # compare it, since nothing watches the project (ADR-012).
     index_moves: int = 0
+    # A smaller page of the worker's retained state (``RETAINED_PAGES``) that finished within the request budget
+    # where a larger one did not, and until when reads start from it rather than from the largest again.
+    retained_page: int = 0
+    retained_page_until: float = 0.0
 
+
+# The page sizes a retained read tries, largest first (S15). One page of the 50 newest runs read in 0.08 s
+# on a 319-run project where fifty reads of one run took 3.3 s, each paying the whole project's listing; a
+# page that does not finish within the budget (a project whose results are large) is read in smaller ones.
+RETAINED_PAGES = (50, 10, 1)
+# How long a project read in a smaller page keeps it before the largest is tried again.
+RETAINED_PAGE_HOLD_S = 600.0
 
 # Waits between sends of one request; a test passes without sleeping.
 _pause = time.sleep
@@ -511,38 +522,56 @@ class ProjectRuntimeManager:
         ids = runtime.operations.candidate_ids()
         run_ids = runtime.binding.run_ids()
         candidates = {}
-        if worker is not None:
-            # Preserve the existing recent window and tracked operations, but
-            # never make one HTTP request parse fifty large retained results.
-            # A page discovers ordinary runs without misclassifying them as
-            # explicit candidates. Every refresh revalidates its evidence.
-            recent = tuple(reversed(run_ids[-50:]))
-            reads = [(offset, (run_id,) if run_id in ids else ())
-                     for offset, run_id in enumerate(recent)]
-            reads.extend((len(run_ids), (candidate_id,)) for candidate_id in ids if candidate_id not in recent)
-            reads = reads or [(0, ())]
-        else:
-            # In-process cold/recovery reads have no HTTP deadline. They use
-            # the same inspector and never trust a previous completed row.
-            reads = [(0, ids[offset:offset + 200]) for offset in range(0, len(ids), 200)] or [(0, ())]
-        result = None
-        scanned = 0
-        for offset, chunk in reads:
-            if worker is None:
-                current = runtime_dto(inspect_runtime(runtime.binding, run_ids=chunk)).model_dump(by_alias=True)
-            else:
-                query = urlencode([("limit", "1"), ("offset", str(offset)), *(("candidateId", value) for value in chunk)])
-                response = request_http(worker.url, f"/api/runtime?{query}", timeout=10)
-                if response.status != 200:
-                    raise HubFailure(503, "RUNTIME_READ_FAILED", "The bound Studio could not read its runtime state.")
-                current = response.json()
+        def check(current: dict, result: dict | None) -> None:
             if current.get("projectId") != runtime.project_id or project_key(current.get("projectDir", "")) != project_key(runtime.project_dir):
                 raise HubFailure(409, "PROJECT_MISMATCH", "The runtime snapshot belongs to another project.")
             if result is not None and (result.get("published"), result.get("branches")) != (current.get("published"), current.get("branches")):
                 raise HubFailure(409, "RUNTIME_CHANGED", "The project changed during runtime inspection; read its next snapshot.")
-            candidates.update((row["candidateId"], row) for row in current.get("candidates", []))
-            scanned += current.get("runsScanned", 0)
-            result = current
+
+        result = None
+        scanned = 0
+        if worker is not None:
+            # The recent window and the tracked operations. A page discovers ordinary runs without misclassifying
+            # them as explicit candidates; every refresh revalidates its evidence. The window is read in the
+            # largest page that finishes within the request budget (``RETAINED_PAGES``), never one large
+            # retained result per request more than that budget allows.
+            recent = tuple(reversed(run_ids[-50:]))
+            smaller = runtime.retained_page if time.monotonic() < runtime.retained_page_until else 0
+            sizes = [size for size in RETAINED_PAGES if not smaller or size <= smaller]
+            for attempt, size in enumerate(sizes):
+                reads = [(offset, size, tuple(run_id for run_id in recent[offset:offset + size] if run_id in ids))
+                         for offset in range(0, len(recent), size)]
+                reads.extend((len(run_ids), 1, (candidate_id,)) for candidate_id in ids if candidate_id not in recent)
+                result, scanned, read = None, 0, {}
+                try:
+                    for offset, limit, chunk in reads or [(0, 1, ())]:
+                        query = urlencode([("limit", str(limit)), ("offset", str(offset)), *(("candidateId", value) for value in chunk)])
+                        response = request_http(worker.url, f"/api/runtime?{query}", timeout=10)
+                        if response.status != 200:
+                            raise HubFailure(503, "RUNTIME_READ_FAILED", "The bound Studio could not read its runtime state.")
+                        current = response.json()
+                        check(current, result)
+                        read.update((row["candidateId"], row) for row in current.get("candidates", []))
+                        scanned += current.get("runsScanned", 0)
+                        result = current
+                except (OSError, TimeoutError, HTTPException, HubFailure) as exc:
+                    if attempt == len(sizes) - 1 or (isinstance(exc, HubFailure) and exc.error.code != "RUNTIME_READ_FAILED"):
+                        raise
+                    continue
+                runtime.retained_page = 0 if size == RETAINED_PAGES[0] else size
+                if runtime.retained_page and runtime.retained_page != smaller:
+                    runtime.retained_page_until = time.monotonic() + RETAINED_PAGE_HOLD_S
+                candidates.update(read)
+                break
+        else:
+            # In-process cold/recovery reads have no HTTP deadline. They use
+            # the same inspector and never trust a previous completed row.
+            for chunk in [ids[offset:offset + 200] for offset in range(0, len(ids), 200)] or [()]:
+                current = runtime_dto(inspect_runtime(runtime.binding, run_ids=chunk)).model_dump(by_alias=True)
+                check(current, result)
+                candidates.update((row["candidateId"], row) for row in current.get("candidates", []))
+                scanned += current.get("runsScanned", 0)
+                result = current
         if runtime.binding.run_ids() != run_ids:
             raise HubFailure(409, "RUNTIME_CHANGED", "Project runs changed during runtime inspection; read its next snapshot.")
         result["candidates"] = list(candidates.values())
