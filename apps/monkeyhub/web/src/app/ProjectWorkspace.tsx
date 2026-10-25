@@ -80,6 +80,8 @@ export interface ProjectWorkspaceProps {
    * front commands, the rest being in its advanced tools and Ctrl K. Other surfaces show as they are.
    */
   embedded?: boolean;
+  /** The step the working design stands on, as the left column names it under the project ("V16"); null when nothing names it. */
+  projectStep?: string | null;
 }
 
 /** What the Stage chip says about the editing position, for the chat composer's target label (#285). */
@@ -94,7 +96,7 @@ export interface WorkspacePosition {
 
 /** One mounted project: the Board, its page editor and the same local model draft. */
 export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, candidateFollowsHead = false, treeFocus = null, active = true, refreshKey = 0, documentRequest = null,
-  comparisonRequest = null, onComparisonClose, onWorkspaceChange, onChatRequest, onRenderChatRequest, onHandToAi, onDesignContextChange, onPositionChange, embedded = false }: ProjectWorkspaceProps) {
+  comparisonRequest = null, onComparisonClose, onWorkspaceChange, onChatRequest, onRenderChatRequest, onHandToAi, onDesignContextChange, onPositionChange, embedded = false, projectStep = null }: ProjectWorkspaceProps) {
   const renderReader = useRef<(() => RenderView | null) | null>(null);
   const registerRenderReader = useCallback((reader: (() => RenderView | null) | null) => { renderReader.current = reader; }, []);
   const readRenderView = useCallback(() => renderReader.current?.() ?? null, []);
@@ -343,7 +345,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
       {refreshError && <ErrorPanel error={refreshError} what="GET /api/protocol" />}
       {(archVisited || modelVisible) && <div data-project-surface="arch" hidden={!modelShown} inert={!active || !modelShown}
         style={{ height: "100%", minHeight: 0, display: modelShown ? "block" : "none" }}>
-        <App server={server.value} expectedProjectId={boundProjectId.current} initialRunId={treeView?.runId ?? candidateRunId}
+        <App server={server.value} expectedProjectId={boundProjectId.current} projectStep={projectStep} initialRunId={treeView?.runId ?? candidateRunId}
           initialRunAsset={treeView?.assetSha256 ?? null} initialRunRequest={viewRequest}
           initialRunFollowsHead={treeView ? false : candidateFollowsHead} documentSource={pageOpen ? visit.source : null}
           initialDocumentIntent={documentIntent} initialSketchRequest={sketchRequest}

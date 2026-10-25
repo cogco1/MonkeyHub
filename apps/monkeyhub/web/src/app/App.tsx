@@ -278,7 +278,7 @@ const FOLLOW_WORDS: Readonly<Record<FollowNotice["state"], MessageKey>> = {
   "moved-on": "stage.follow.undoMoved", unsynced: "stage.follow.undoUnsynced", failed: "stage.follow.undoFailed",
 };
 
-export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onBoard, onChatRequest, onDesignContextChange, onRenderReader, cameraRequest = null, onView, onRecorder, onOpenTree, treeMove = null }: {
+export default function App({ server, expectedProjectId, projectStep = null, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onBoard, onChatRequest, onDesignContextChange, onRenderReader, cameraRequest = null, onView, onRecorder, onOpenTree, treeMove = null }: {
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;
   /**
    * The last move of the Working Head the project's Design Tree made, a Continue or its Undo (#575). The tree's toast
@@ -322,6 +322,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   onBoard?: (source: PageSource) => void;
   onChatRequest?: () => void;
   onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
+  /** The step the working design stands on, as the left column names it under the project; the model's title when it is that step. */
+  projectStep?: string | null;
 }) {
   const studio = useStudio();
   const t = useT();
@@ -647,7 +649,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     [project?.projectId, projection?.referenceRun.runId, projection?.stateDigest, loadedArtifact?.runId, sourceLabel]);
   const [viewerProjection, setViewerProjection] = useState<StateProjectionDto | null>(null);
   const modelSources = useMemo(() => {
-    const options = workingCopies.flatMap((copy) => copy.options.map((option) => ({
+    const options: { label: string; modelSource: ModelSourceDto; studioFile?: boolean }[] = workingCopies.flatMap((copy) => copy.options.map((option) => ({
       label: `${copy.label} · ${option.label}`, modelSource: option.modelSource,
     })));
     if (artifacts.status === "ready") {
@@ -656,7 +658,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         if (artifact.representation !== "composed" && rows.some((row) => row.runId === artifact.runId && row.representation === "composed")) continue;
         if (!artifact.modelSource || options.some((row) => row.modelSource.runId === artifact.runId &&
           row.modelSource.assetSha256 === artifact.sha256)) continue;
-        options.push({ label: artifact.fileName, modelSource: artifact.modelSource });
+        // A file the person brought keeps the name they gave it; one the Studio wrote names nothing they know.
+        options.push({ label: artifact.fileName, modelSource: artifact.modelSource, studioFile: artifact.representation !== "external" });
       }
     }
     return options;
@@ -3623,6 +3626,12 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     [candidateEntries, t, utteranceOf],
   );
   const selectedSentence = sentenceOfCandidate(selectedCandidateId);
+  // S15: the model's title. The working design's step goes by the name the left column gives it under the project;
+  // another model by its option's or the person's own file name, else the words it was asked in; else no title,
+  // never a file name the Studio wrote ("studio-candidate-modeler@….preview.3dm").
+  const editingRow = modelSources.find((row) => sameModelSource(row.modelSource, editingModelSource));
+  const editingBaseName = (projectStep && editingRunId !== null && workingDraft?.current?.runId === editingRunId ? projectStep : null)
+    ?? (editingRow && !editingRow.studioFile ? editingRow.label : null) ?? sentenceOfCandidate(editingRunId);
 
   const evidenceCounts = {
     honesty: honestyCount(projection, selectedCandidate, selectedValidation),
@@ -3989,8 +3998,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             loadingSha={artifactLoadingSha}
             loadedShas={loadedShas}
             editingBaseRunId={projection?.referenceRunSource === "none" ? null : projection?.referenceRun.runId ?? null}
-            editingBaseLabel={modelSources.find((row) => sameModelSource(row.modelSource, editingModelSource))?.label ??
-              sentenceOfCandidate(projection?.referenceRun.runId ?? null)}
+            editingBaseLabel={editingBaseName}
             explicitBase={sourceRunId !== null}
             changingBase={changingBase || selectingWorkingCopy}
             baseError={baseError}

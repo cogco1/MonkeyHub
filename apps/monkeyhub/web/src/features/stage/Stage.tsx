@@ -1454,8 +1454,8 @@ export function Stage({
     editingModelSource.stateDigest === viewedModelSource.stateDigest &&
     editingModelSource.assetSha256 === viewedModelSource.assetSha256;
   // S01: a file name is not what a person calls a version; it shows for developers only.
-  const editingLabel = editingBaseLabel ?? (developerMode ? versions.find((group) => group.runId === editingBaseRunId)?.exports[0]?.artifact.fileName : null)
-    ?? t("stage.base.savedSource");
+  // A model nothing names has no title on the bar (S15); the editing-base row still says it is the chosen version.
+  const editingLabel = editingBaseLabel ?? (developerMode ? versions.find((group) => group.runId === editingBaseRunId)?.exports[0]?.artifact.fileName : null) ?? null;
   const versionCount = designHistory ? designHistory.history?.stages.length ?? 0 : new Set([
     ...versions.flatMap((group) => group.exports.filter(({ artifact }) => artifact.format === "3dm" && artifact.sha256 !== null)
       .map(({ artifact }) => `${group.runId}:${artifact.sha256}`)),
@@ -1479,7 +1479,7 @@ export function Stage({
   const baseQuestion = Boolean(baseNotice || baseRecord || baseNotSaved) || (editingBaseRunId !== null && (Boolean(baseError) || (loadedRunId !== null && !sameSource)));
   const baseWords = editingBaseRunId !== null && <span role="status" aria-live="polite">
     {changingBase ? <span className="wait-late">{t("stage.base.loading")}</span> : sameSource ? t("stage.base.sameSource") : t("stage.base.current")}
-    {!sameSource && <strong className="editing-base__name" title={editingLabel ?? undefined}> {editingLabel}</strong>}
+    {!sameSource && <strong className="editing-base__name" title={editingLabel ?? undefined}> {editingLabel ?? t("stage.base.savedSource")}</strong>}
   </span>;
   const editingStatus = baseQuestion ? (
     <InlineDecision className="editing-base" compact label={t("stage.base.label")}
@@ -1740,7 +1740,7 @@ export function Stage({
       {/* #337: Modeling's menus, in the project bar while Modeling is on screen: the model the next edit
           starts from, Versions, the Design Tree, the commands on the editing base, then Export and More (#352). */}
       <SurfaceMenus label={t("stage.ariaLabel")} active={active}>
-        {editingBaseRunId !== null && <><span className="stage-bar__model" title={editingLabel ?? undefined}>{editingLabel}</span><MenuSeparator /></>}
+        {editingBaseRunId !== null && editingLabel && <><span className="stage-bar__model" title={editingLabel ?? undefined}>{editingLabel}</span><MenuSeparator /></>}
         {/* Versions and the Design Tree stay over a document page: a drawing comment views and continues Stages (#302).
             Export and More act on the 3D model and wait until the page is closed. */}
         <MenuCommand data-command="design.go_to_step.versions" className="stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel" onClick={toggleVersions}>
