@@ -1,9 +1,10 @@
 """Every row of the entry audit says where it went, and the command tree agrees.
 
-docs/audits/hub-entries.md lists the 711 entries the web interface showed on 2026-10-21. Its last two
-columns say which capability group and which command of governance/module_registry.json now answers
-for each row, or why none does. A command's `entries` name the same rows, so a person looking for a
-button finds its command, and a command names the buttons it replaced (plan 1.5, ADR-014 B1).
+docs/audits/hub-entries.md lists the 711 entries the web interface showed on 2026-10-21 and the ones
+added since (712 rows). Its last two columns say which capability group and which command of
+governance/module_registry.json now answers for each row, or why none does. A command's `entries` name
+the same rows, so a person looking for a button finds its command, and a command names the buttons it
+replaced (plan 1.5, ADR-014 B1).
 """
 
 from __future__ import annotations
@@ -54,9 +55,9 @@ class HubEntriesCoverageTests(unittest.TestCase):
         cls.tree = command_tree(json.loads(REGISTRY.read_text(encoding="utf-8")))
         cls.commands = {command["id"]: command for command in cls.tree["commands"]}
 
-    def test_the_audit_keeps_its_711_rows_and_their_codes(self) -> None:
-        self.assertEqual(len(self.rows), 711)
-        self.assertEqual(len({row["代码"] for row in self.rows}), 711)
+    def test_the_audit_keeps_its_712_rows_and_their_codes(self) -> None:
+        self.assertEqual(len(self.rows), 712)
+        self.assertEqual(len({row["代码"] for row in self.rows}), 712)
 
     def test_every_row_names_its_commands_or_why_it_has_none(self) -> None:
         for row in self.rows:
