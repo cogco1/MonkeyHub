@@ -799,6 +799,8 @@ export const messagesZhCN = {
   "stage.quick.east": "东立面",
   "stage.quick.drawn": "已出：{names}，在「图纸」里能看到。",
   "stage.quick.close": "收起",
+  "stage.quick.oneFailed": "{label}没出来：{reason} 可以再点一次，只出{label}。",
+  "stage.quick.onlyThis": "只出{label}",
   "stage.display.original": "原始材质",
   "stage.display.originalTitle": "文件自身的材质与颜色",
   "stage.display.modeling": "建模显示",

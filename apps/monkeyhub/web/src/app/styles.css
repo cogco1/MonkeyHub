@@ -1320,12 +1320,19 @@ button.chip:hover {
 .stage-quick-drawings {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 6px 16px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   font-size: 13px;
+}
+
+.stage-quick-drawings__failed {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .stage-quick-drawings__close {
