@@ -4519,6 +4519,15 @@
               "壳59"
             ],
             "in_place": true
+          },
+          {
+            "id": "chat.skill_run.keep",
+            "label": "Keep this script as a skill",
+            "label_zh": "把这个脚本留成 skill",
+            "args": [
+              "runId"
+            ],
+            "in_place": true
           }
         ]
       },

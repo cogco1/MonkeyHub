@@ -8997,6 +8997,27 @@ export const COMMAND_TREE: CommandTree = {
       "inPlace": true
     },
     {
+      "id": "chat.skill_run.keep",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Keep this script as a skill",
+        "zh-CN": "把这个脚本留成 skill"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "runId"
+      ],
+      "inPlace": true
+    },
+    {
       "id": "project.create.new",
       "capability": "project.manage",
       "label": {
