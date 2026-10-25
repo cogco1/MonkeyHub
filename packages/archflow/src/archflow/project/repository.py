@@ -2437,10 +2437,14 @@ class FilesystemProjectRepository:
         runs = self.layout.runs
         if not runs.is_dir():
             return ()
-        return tuple(sorted(
-            item.name for item in runs.iterdir()
-            if not item.name.startswith(".") and item.is_dir()
-        ))
+        # scandir, not iterdir + is_dir: a directory entry already says what it
+        # is, where a stat per run cost a 300-run project a read of its work
+        # tens of seconds (GH-300/srv S20).
+        with os.scandir(runs) as entries:
+            return tuple(sorted(
+                item.name for item in entries
+                if not item.name.startswith(".") and item.is_dir()
+            ))
 
     def load_run(self, run_id: str) -> RunRef:
         require_identifier(run_id, "run_id")

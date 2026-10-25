@@ -26,7 +26,7 @@ const ProjectWorkspace = lazy(() => import("./app/ProjectWorkspace").then((modul
 import { presentFailure } from "./chatError";
 import { clock, currentStep, describeCall, describeStep, dismissible, operationStep, rawDetail, rawLine, resultCandidates, stepText, turnsOf, unfinishedOperations, unrecoverable, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
 import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } from "./monitorData";
-import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
+import { ACTIVE_OPERATIONS, activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
 import { ProjectSkills } from "./features/skills/SkillsPanel";
 import { SkillGrants } from "./features/skills/SkillPermissions";
@@ -912,15 +912,33 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       projectDir: item.projectDir, projectId: item.projectId, runtimeId: item.runtimeId }))];
 
   // Read the project's Worktree Graph while its card is open, and again as its work changes.
-  const operationSignature = (projectRuntime?.operations ?? []).map((item) => `${item.operationId}:${item.status}`).join("|");
+  // An operation's steps while it runs (queued … committing) are one state here:
+  // the card reads the graph when work starts and when it settles. A large
+  // project's graph takes tens of seconds while its Studio builds, holding the
+  // working draft's guard, and every step of one Record asked for it again (S20).
+  const operationSignature = (projectRuntime?.operations ?? []).map((item) =>
+    `${item.operationId}:${ACTIVE_OPERATIONS.has(item.status) ? "running" : item.status}`).join("|");
+  // One read at a time; a change during a read is read once more when it is back.
+  const worktreesWanted = useRef<string | null>(null);
+  const worktreesReading = useRef<{ again: boolean } | null>(null);
   useEffect(() => {
     const runtimeId = projectRuntime?.runtimeId;
-    if (!projectInfo || !runtimeId || projectRuntime?.projection !== "ready") return;
-    let live = true;
-    request<WorktreeGraphDto>(`/api/runtime/projects/${encodeURIComponent(runtimeId)}/studio/api/worktrees`)
-      .then((graph) => { if (live) setWorktrees({ runtimeId, graph }); })
-      .catch(() => { /* Unread, the card shows no status rather than a stale one. */ });
-    return () => { live = false; };
+    const wanted = projectInfo && runtimeId && projectRuntime?.projection === "ready" ? runtimeId : null;
+    worktreesWanted.current = wanted;
+    if (!wanted) return;
+    const read = (id: string) => {
+      worktreesReading.current = { again: false };
+      void request<WorktreeGraphDto>(`/api/runtime/projects/${encodeURIComponent(id)}/studio/api/worktrees`)
+        .then((graph) => { if (worktreesWanted.current === id) setWorktrees({ runtimeId: id, graph }); })
+        .catch(() => { /* Unread, the card shows no status rather than a stale one. */ })
+        .finally(() => {
+          const again = worktreesReading.current?.again;
+          worktreesReading.current = null;
+          if (again && worktreesWanted.current) read(worktreesWanted.current);
+        });
+    };
+    if (worktreesReading.current) worktreesReading.current.again = true;
+    else read(wanted);
   }, [projectInfo, projectRuntime?.runtimeId, projectRuntime?.projection, operationSignature]);
   const graph = worktrees?.runtimeId === projectRuntime?.runtimeId ? worktrees?.graph ?? null : null;
   const status = graph ? projectStatus(graph) : null;

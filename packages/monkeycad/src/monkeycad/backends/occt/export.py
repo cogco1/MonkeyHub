@@ -464,6 +464,7 @@ def execute_occt_export(
     document_user_text = {f"archflow:{key}": value for key, value in supplied.items()}
     timings: dict[str, float] = {}
     started = time.perf_counter()
+    deflection = tolerance / 4.0 if preview else None
 
     def failure_receipt(code: str, detail: str, **artifacts) -> OcctExecutionReceipt:
         timings["total_seconds"] = time.perf_counter() - started
@@ -499,9 +500,11 @@ def execute_occt_export(
                          "execution_path": "occt", "scope": "verified_source_shapes"}
         with _occt_step(operation_observer, "occt_reuse_check", parent_event_id=observation_parent_id,
                         timings=timings, timing_key="reuse_check_seconds", details=reuse_details):
+            remembered = _remembered_step_source(prior_step_sha256, unit, deflection)
             reused_shapes = _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256,
-                                                  diagnostics=reuse_details)
-        build = build_program_shapes(program, **({"reusable_shapes": reused_shapes} if reused_shapes else {}),
+                                                  diagnostics=reuse_details, remembered=remembered)
+        build = build_program_shapes(program, **({"reusable_shapes": reused_shapes,
+                                                  "reused_checked": remembered is not None} if reused_shapes else {}),
                                      operation_observer=operation_observer, observation_parent_id=observation_parent_id,
                                      difference_strategy=difference_strategy)
     except OcctCapabilityError as exc:
@@ -562,6 +565,9 @@ def execute_occt_export(
             )
             if failures:
                 read_span["status"] = "failed"
+            else:
+                _remember_step_source(exact_artifact["sha256"], unit, deflection,
+                                      {object_id: build.objects[object_id].shape for object_id in physical})
     if read_error is not None:
         return failure_receipt(
             "cad_execution.step_readback_failed", str(read_error), exact_artifact=exact_artifact
@@ -659,7 +665,30 @@ def execute_occt_export(
     )
 
 
-def _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256, *, diagnostics=None) -> dict[str, Any]:
+# The shapes of the last STEP this process wrote and verified, by its bytes'
+# sha256 (GH-300/srv S20). The next record names that STEP as its reuse source,
+# and the file's digest is checked against it first: these are the very shapes
+# those bytes were written from, built and checked here, and read back to match.
+# A housing model's STEP is ~50 MB; reading it again cost a record 5-10 s, more
+# than building every object, and its cold-read shapes then had to be checked
+# and meshed again for the preview. Kept per preview deflection, so a preview
+# is never drawn from a mesh another deflection left on a shape.
+_STEP_SOURCES: list[tuple[str, str, float | None, Mapping[str, Any]]] = []
+
+
+def _remember_step_source(sha256: str, length_unit: str, deflection: float | None, shapes: Mapping[str, Any]) -> None:
+    _STEP_SOURCES[:] = [(sha256, length_unit, deflection, dict(shapes))]
+
+
+def _remembered_step_source(sha256: str | None, length_unit: str, deflection: float | None) -> Mapping[str, Any] | None:
+    for digest, unit, kept_deflection, shapes in tuple(_STEP_SOURCES):
+        if digest == sha256 and unit == length_unit and kept_deflection == deflection:
+            return shapes
+    return None
+
+
+def _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256, *, diagnostics=None,
+                          remembered: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Load unchanged physical inputs from the exact source the caller chose."""
 
     details = diagnostics if diagnostics is not None else {}
@@ -682,8 +711,11 @@ def _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256,
             details.update(cache_reason="source_artifact_changed", cache_checks={"artifact": "changed"})
             raise CadExecutionError("OCCT reuse source differs from its certified STEP")
     details.update(cache_reason="source_step_readback_failed", cache_checks={"artifact": "same"})
-    entries = read_step(source, length_unit=program.proposal.length_unit.value)
-    by_name = {entry.name: entry.shape for entry in entries}
+    if remembered is None:
+        entries = read_step(source, length_unit=program.proposal.length_unit.value)
+        by_name = {entry.name: entry.shape for entry in entries}
+    else:
+        entries, by_name = tuple(remembered), dict(remembered)
     if len(by_name) != len(entries) or set(by_name) != set(delivered_object_ids(prior_program.proposal)):
         details.update(cache_reason="source_object_identity_changed", cache_checks={"artifact": "same", "object_names": "changed"})
         raise CadExecutionError("OCCT reuse source has missing or ambiguous physical objects")
