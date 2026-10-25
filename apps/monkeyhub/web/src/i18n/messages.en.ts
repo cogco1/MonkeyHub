@@ -828,6 +828,8 @@ export const messagesEn = {
   "stage.quick.east": "east elevation",
   "stage.quick.drawn": "Drawn: {names}. They are in Drawings.",
   "stage.quick.close": "Close",
+  "stage.quick.oneFailed": "The {label} was not drawn: {reason} Draw the {label} again on its own.",
+  "stage.quick.onlyThis": "Draw the {label} only",
   "stage.display.original": "Original materials",
   "stage.display.originalTitle": "The file's own materials and colours",
   "stage.display.modeling": "Modeling",

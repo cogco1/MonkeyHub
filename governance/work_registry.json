@@ -1048,6 +1048,29 @@
           "depends_on": []
         },
         {
+          "id": "srv-quick-draw-stale",
+          "status": "active",
+          "branch": "claude/srv-quick-draw-stale",
+          "worktree": "C:\\Users\\Public\\renou\\dev\\wt\\claude-srv-quick-draw-stale",
+          "base_ref": "bc25532d",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "S15 (server, 10-25, external review): a one-click drawing answered after the model on screen changed is not shown as the new model's (each request takes a ticket that a change of model ends); four elevations drawn together keep those drawn when one fails, name the one that did not, and offer to draw it on its own.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/src/features/stage/quickDrawing.ts",
+            "apps/monkeyhub/web/src/app/styles.css",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/quickDrawing.test.ts",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
+        },
+        {
           "id": "srv-front-view-mass",
           "status": "active",
           "branch": "claude/srv-front-view-mass",

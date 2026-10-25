@@ -15,8 +15,9 @@ import { createRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, us
 import type { StudioApiError } from "../../api/project-runtime/client";
 import type { DocumentAnnotationRefDto, DocumentVisualInputDto, GestureDto, ModelSourceDto, ProjectArtifactDto, SourceDocumentDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/project-runtime/generated";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
-import { ErrorPanel, PlainFailure } from "../../app/ErrorPanel";
+import { ErrorPanel, PlainFailure, plainFailureText } from "../../app/ErrorPanel";
 import { asStudioApiError } from "../../api/project-runtime/error";
+import { QuickTickets, settleElevations } from "./quickDrawing";
 import { designObjectLabel } from "../../app/format";
 import type { EvidenceTab } from "../../app/evidence";
 import { FailureActions } from "../../app/FailureActions";
@@ -46,6 +47,7 @@ type QuickDrawingKind = "plan" | "section" | "elevations";
 const QUICK_ELEVATIONS = [["front", "stage.quick.south"], ["back", "stage.quick.north"], ["left", "stage.quick.west"], ["right", "stage.quick.east"]] as const;
 // One direction asked for by name ("出一张南立面") draws that one elevation only.
 const QUICK_DIRECTIONS = { south: 0, north: 1, west: 2, east: 3 } as const;
+const QUICK_DIRECTION_OF: Record<string, keyof typeof QUICK_DIRECTIONS> = { front: "south", back: "north", left: "west", right: "east" };
 import { Annotate, GESTURE_TOOLS, type AnnotationStyle, type GestureTool } from "../../workspaces/monkeyarch/Annotate";
 import { VersionsStrip, type VersionGroup, type DesignHistoryControls } from "./VersionsStrip";
 import { DocumentCanvas, type DocumentViewContext } from "../../workspaces/monkeydiagram/DocumentCanvas";
@@ -582,14 +584,19 @@ export function Stage({
   // S15: plans, sections and elevations in one click from the model on screen, at default places, with no
   // drawing settings first: a plan 1.2 m above the model's bottom (the drawing route's default), a section
   // through the middle of the model along its long side, and the four elevations.
-  const [quickDrawing, setQuickDrawing] = useState<{ kind: QuickDrawingKind; state: "busy" } | { kind: QuickDrawingKind; state: "drawn"; pages: { page: PageSource; label: string }[] }
+  const [quickDrawing, setQuickDrawing] = useState<{ kind: QuickDrawingKind; state: "busy" }
+    | { kind: QuickDrawingKind; state: "drawn"; pages: { page: PageSource; label: string }[]; failed: { label: string; direction: string; error: unknown }[] }
     | { kind: QuickDrawingKind; state: "failed"; error: unknown } | null>(null);
-  useEffect(() => { setQuickDrawing(null); }, [viewedModelSource?.runId, viewedModelSource?.assetSha256, viewedAsset?.assetSha256]);
+  // An answer that comes back after the model on screen changed is the other model's: it is not shown here (S15).
+  const quickTickets = useRef(new QuickTickets());
+  useEffect(() => { quickTickets.current.expire(); setQuickDrawing(null); }, [viewedModelSource?.runId, viewedModelSource?.assetSha256, viewedAsset?.assetSha256]);
   const quickSource = documentProjectId === null ? null : viewedModelSource ? { projectId: documentProjectId, modelSource: viewedModelSource }
     : viewedAsset ? { projectId: documentProjectId, sourceAsset: viewedAsset } : null;
   const quickDraw = async (kind: QuickDrawingKind, only: keyof typeof QUICK_DIRECTIONS | null = null) => {
     if (!quickSource || quickDrawing?.state === "busy") return;
+    const ticket = quickTickets.current.issue();
     setQuickDrawing({ kind, state: "busy" });
+    let failed: { label: string; direction: string; error: unknown }[] = [];
     try {
       const pages: { page: PageSource; label: string }[] = [];
       const keep = (drawn: SourceDocumentDto, label: string) => pages.push({ page: pageSource(drawn, drawn.pages[0]?.pageIndex ?? 0), label });
@@ -608,12 +615,17 @@ export function Stage({
       } else {
         // All four at once: the Runtime's drawing workers solve them side by side.
         const views = only === null ? QUICK_ELEVATIONS : [QUICK_ELEVATIONS[QUICK_DIRECTIONS[only]]];
-        const drawn = await Promise.all(views.map(([view]) => studio.elevation({ ...quickSource, view, hiddenLines: true })));
-        drawn.forEach((document, index) => keep(document, t(views[index][1])));
+        // Each one drawn is kept; one refused is said on its own, and the others are not lost with it.
+        const results = await Promise.allSettled(views.map(([view]) => studio.elevation({ ...quickSource, view, hiddenLines: true })));
+        const settled = settleElevations(results, views.map(([view, label]) => ({ label: t(label), direction: QUICK_DIRECTION_OF[view] })),
+          (drawn) => pageSource(drawn, drawn.pages[0]?.pageIndex ?? 0));
+        pages.push(...settled.pages);
+        failed = settled.failed;
+        if (pages.length === 0) throw failed[0].error;
       }
-      setQuickDrawing({ kind, state: "drawn", pages });
+      if (quickTickets.current.isCurrent(ticket)) setQuickDrawing({ kind, state: "drawn", pages, failed });
     } catch (error) {
-      setQuickDrawing({ kind, state: "failed", error });
+      if (quickTickets.current.isCurrent(ticket)) setQuickDrawing({ kind, state: "failed", error });
     }
   };
   const chooseSection = (axis: SectionAxis | "off") => {
@@ -1836,6 +1848,11 @@ export function Stage({
           <span>{t("stage.quick.drawn", { names: quickDrawing.pages.map((row) => row.label).join("、") })}</span>
           {onBoard && <button type="button" data-command="drawing.live_section.place_on_board"
             onClick={() => { for (const row of quickDrawing.pages) onBoard(row.page); }}>{t("stage.section.toBoard")}</button>}
+          {quickDrawing.failed.map((row) => <span key={row.direction} className="stage-quick-drawings__failed" role="alert" data-quick-failed={row.direction}>
+            {t("stage.quick.oneFailed", { label: row.label, reason: plainFailureText(row.error) })}
+            <button type="button" data-command={`drawing.quick.elevation_${row.direction}`} onClick={() => void quickDraw("elevations", row.direction as keyof typeof QUICK_DIRECTIONS)}>
+              {t("stage.quick.onlyThis", { label: row.label })}</button>
+          </span>)}
         </> : <PlainFailure error={asStudioApiError(quickDrawing.error)} />}
         <button type="button" data-command="view.notice.dismiss" className="stage-quick-drawings__close" aria-label={t("stage.quick.close")} onClick={() => setQuickDrawing(null)}>×</button>
       </div>}
