@@ -1817,7 +1817,7 @@ export function Stage({
           {onBoard && <button type="button" data-command="drawing.live_section.place_on_board"
             onClick={() => { for (const row of quickDrawing.pages) onBoard(row.page); }}>{t("stage.section.toBoard")}</button>}
         </> : <PlainFailure error={asStudioApiError(quickDrawing.error)} />}
-        <button type="button" className="stage-quick-drawings__close" aria-label={t("stage.quick.close")} onClick={() => setQuickDrawing(null)}>×</button>
+        <button type="button" data-command="view.notice.dismiss" className="stage-quick-drawings__close" aria-label={t("stage.quick.close")} onClick={() => setQuickDrawing(null)}>×</button>
       </div>}
       {onReturnToBoard && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
         <button data-command="view.tab.board" type="button" onClick={onReturnToBoard}>{t("workspace.returnToBoard")}</button>
