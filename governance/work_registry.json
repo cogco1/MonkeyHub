@@ -1019,6 +1019,7 @@
           "write_scope": [
             "apps/monkeyhub/web/src/ChatShell.tsx",
             "apps/monkeyhub/web/src/app/App.tsx",
+            "apps/monkeyhub/web/src/app/ErrorPanel.tsx",
             "apps/monkeyhub/web/src/app/ProjectWorkspace.tsx",
             "apps/monkeyhub/web/src/features/commands/tree.generated.ts",
             "apps/monkeyhub/web/src/features/designHistory/HistoryPage.tsx",
@@ -1030,6 +1031,7 @@
             "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
             "apps/monkeyhub/web/src/workspaces/monkeyboard/board.css",
             "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
+            "apps/monkeyhub/web/test/boardReplacement.browser.mjs",
             "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "apps/monkeyhub/web/test/designTree.browser.mjs",
             "apps/monkeyhub/web/test/handToAi.browser.mjs",
