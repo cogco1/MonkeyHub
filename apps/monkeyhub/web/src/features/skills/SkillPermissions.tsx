@@ -18,8 +18,8 @@ import {
   type GrantsActions, type GrantsState, type SkillGrant, type SkillGrantsApi, type SkillProblem, type ToolGrant,
 } from "./skillGrants";
 import {
-  createHubSettingsApi, initialRunSettingState, runSettingActions, SKILL_AGENT_RUN_CHOICES,
-  type HubSettingsApi, type RunSettingActions, type RunSettingState,
+  createHubSettingsApi, initialLowRiskState, initialRunSettingState, lowRiskActions, runSettingActions,
+  SKILL_AGENT_RUN_CHOICES, type HubSettingsApi, type LowRiskState, type RunSettingActions, type RunSettingState,
 } from "./skillRunSetting";
 import "./skills.css";
 import { AutoRetry } from "../../app/AutoRetry";
@@ -49,7 +49,24 @@ export function SkillRunChoice({ settings }: { settings?: HubSettingsApi }) {
   const [state, setState] = useState<RunSettingState>(initialRunSettingState);
   const actions = useMemo(() => runSettingActions(api, setState), [api]);
   useEffect(() => { void actions.load(); }, [actions]);
-  return <SkillRunChoiceView state={state} actions={actions} />;
+  return <><SkillRunChoiceView state={state} actions={actions} /><LowRiskChoice api={api} /></>;
+}
+
+/** S23: the one switch for scripts that only read the project and write their outputs; on unless a person turned it off. */
+export function LowRiskChoice({ api }: { api: HubSettingsApi }) {
+  const t = useT();
+  const [state, setState] = useState<LowRiskState>(initialLowRiskState);
+  const actions = useMemo(() => lowRiskActions(api, setState), [api]);
+  useEffect(() => { void actions.load(); }, [actions]);
+  return <div className="skills__agent-runs skills__low-risk">
+    <label className="skills__agent-run">
+      <input type="checkbox" checked={state.on ?? true} disabled={state.on === null || state.saving}
+        onChange={(event) => void actions.choose(event.target.checked)} />
+      <span><span className="skills__agent-run-label">{t("skills.lowRisk.title")}</span>
+        <span className="skills__agent-run-hint">{t("skills.lowRisk.hint")}</span></span>
+    </label>
+    {state.error && <p className="skills__error" role="alert"><PlainFailure error={state.error} lead={t("skills.agentRuns.saveFailed")} /></p>}
+  </div>;
 }
 
 export function SkillRunChoiceView({ state, actions }: { state: RunSettingState; actions: RunSettingActions }) {
@@ -174,7 +191,7 @@ function GrantRow({ grant, state, actions, when, t }: {
       <span className="skills__status" data-status={status}>{t(STATUS_KEYS[status])}</span>
     </div>
     <dl className="skills__facts">
-      <dt>{t("skills.grants.allows")}</dt><dd><AccessList access={grant.access} t={t} declaredOnly /></dd>
+      <dt>{t("skills.grants.allows")}</dt><dd><AccessList access={{ ...grant.access, read: grant.access.read ?? undefined }} t={t} declaredOnly /></dd>
       <dt>{t("skills.grants.by")}</dt><dd>{t(METHOD_KEYS[grant.method])}</dd>
       <dt>{t("skills.grants.at")}</dt><dd>{when(grant.grantedAt)}</dd>
       {grant.revokedAt && <><dt>{t("skills.grants.revokedAt")}</dt><dd>{when(grant.revokedAt)}</dd></>}

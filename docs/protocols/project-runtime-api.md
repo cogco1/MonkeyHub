@@ -2385,6 +2385,27 @@ and `SKILL_PERMISSION_WITHDRAWN` (the turn ended first) run nothing. "granted" r
 asks nothing; "never" asks nothing and also refuses an Agent any skill that declares access. While the Hub's designLoop
 is "enforced" (#185) the setting reads as "never".
 
+**Tiers and a chat's scripts (S23).** What a run declares puts it in one tier (`skill_access.tier`, recorded as the
+run's `tier`): `low` declares nothing (it reads the project and its inputs, writes only its outputs, no network, no
+program) and runs without asking while the Hub setting `lowRiskScriptsRun` is on (unset is on; off asks "this time /
+no" before each such run); `first` (programs, packages, `read` folders outside the project) is asked once, and "always
+allow this kind" holds for every skill and project; `each` (network, ssh, `write` outside) is asked before every run:
+no lasting grant allows these, only a grant for that run, and the Hub refuses to write one (`SKILL_GRANT_EACH_TIME`).
+`GET /api/skills/{id}/needs` also answers `tier` and `eachTime`. The bootstrap now holds reads too: a file outside the
+run's folders, the project, its Python and the system's folder is refused unless `access.read` names it (a file that is
+not there is not refused). Without the network it also refuses loopback (the Hub's, the Runtime's and the Studio's
+ports; only a socket the run bound on loopback itself may be reached, as `socket.socketpair` and asyncio need), name
+lookups, listening on other addresses, native network libraries through ctypes (directly or through `LoadLibrary`),
+native file and pipe opens, named pipes and opening other processes. A compiled extension that opens a socket in its
+own C code is outside what an audit hook sees. A failed run's record carries `failureWords`, one Chinese sentence for
+the person (e.g. 已拦下：这个脚本想连本机的 Hub 接口（127.0.0.1:8790），低风险档不允许；要用请换成需要批准的方式。).
+`POST /api/skills/scratch/run` runs a script an Agent wrote in a chat (`description`, optional `name`, `code` as
+`main.py` or `files` with `entry`, optional `access`, `inputs`, `parameters`), checked and allowed as a skill is, named
+`scratch:<12 hex of codeSha256>` with source "scratch"; its code is kept only in the run's record (`scratch`).
+`POST /api/skills/scratch/needs` answers what it would need. The Hub shows each Agent run as a card in the chat
+(`skillRun`); a script that succeeded is kept as the person's own skill with
+`POST /api/chat/sessions/{id}/skill-runs/{runId}/keep` (`skill_library.write_package`), and every project then has it.
+
 Skill packages. `GET /api/skills/library` lists the packages shipped with MonkeyHub (`apps/monkeyhub/skills/`,
 the same path in the release, source "bundled") and the user's own (`%LOCALAPPDATA%\MonkeyHub\skill-packages`, or the folder
 `MONKEYHUB_SKILL_PACKAGES` names; source "user"), each with the version the project holds and `upToDate`.

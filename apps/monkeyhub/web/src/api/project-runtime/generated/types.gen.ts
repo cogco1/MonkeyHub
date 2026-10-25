@@ -12361,6 +12361,128 @@ export type ScopeOptionDto = {
 };
 
 /**
+ * ScratchRunRequestDto
+ *
+ * Run a chat's script on project inputs, as a skill run is (inputs, parameters).
+ */
+export type ScratchRunRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Description
+     *
+     * what it does, in one line, for the person
+     */
+    description: string;
+    /**
+     * Name
+     *
+     * the skill name it would be kept under, e.g. pdf-color-stats
+     */
+    name?: string | null;
+    /**
+     * Code
+     *
+     * the Python script, run as main.py
+     */
+    code?: string | null;
+    /**
+     * Files
+     *
+     * several files by relative path, with entry
+     */
+    files?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Entry
+     *
+     * the file to run among files
+     */
+    entry?: string | null;
+    /**
+     * what it needs beyond reading the project and writing its outputs; leave it out when it needs nothing, and it runs without asking
+     */
+    access?: SkillAccessDto | null;
+    manifest?: SkillManifestDto | null;
+    /**
+     * Inputs
+     */
+    inputs?: {
+        [key: string]: SkillInputRefDto;
+    };
+    /**
+     * Parameters
+     */
+    parameters?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Agentrun
+     *
+     * set by the Hub for a chat's run
+     */
+    agentRun?: boolean;
+    /**
+     * Grantid
+     *
+     * set by the Hub: the one-run grant a person gave for this run
+     */
+    grantId?: string | null;
+};
+
+/**
+ * ScratchScriptDto
+ *
+ * A script an Agent wrote in a chat (S23): one file as ``code``, or ``files`` with their ``entry``.
+ */
+export type ScratchScriptDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Description
+     *
+     * what it does, in one line, for the person
+     */
+    description: string;
+    /**
+     * Name
+     *
+     * the skill name it would be kept under, e.g. pdf-color-stats
+     */
+    name?: string | null;
+    /**
+     * Code
+     *
+     * the Python script, run as main.py
+     */
+    code?: string | null;
+    /**
+     * Files
+     *
+     * several files by relative path, with entry
+     */
+    files?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Entry
+     *
+     * the file to run among files
+     */
+    entry?: string | null;
+    /**
+     * what it needs beyond reading the project and writing its outputs; leave it out when it needs nothing, and it runs without asking
+     */
+    access?: SkillAccessDto | null;
+    manifest?: SkillManifestDto | null;
+};
+
+/**
  * SeatTimingDto
  */
 export type SeatTimingDto = {
@@ -22870,6 +22992,84 @@ export type ReadSkillGrantsApiSkillsApprovalsGetResponses = {
 };
 
 export type ReadSkillGrantsApiSkillsApprovalsGetResponse = ReadSkillGrantsApiSkillsApprovalsGetResponses[keyof ReadSkillGrantsApiSkillsApprovalsGetResponses];
+
+export type ReadScratchNeedsApiSkillsScratchNeedsPostData = {
+    body: ScratchScriptDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/skills/scratch/needs';
+};
+
+export type ReadScratchNeedsApiSkillsScratchNeedsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadScratchNeedsApiSkillsScratchNeedsPostError = ReadScratchNeedsApiSkillsScratchNeedsPostErrors[keyof ReadScratchNeedsApiSkillsScratchNeedsPostErrors];
+
+export type ReadScratchNeedsApiSkillsScratchNeedsPostResponses = {
+    /**
+     * Response Read Scratch Needs Api Skills Scratch Needs Post
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadScratchNeedsApiSkillsScratchNeedsPostResponse = ReadScratchNeedsApiSkillsScratchNeedsPostResponses[keyof ReadScratchNeedsApiSkillsScratchNeedsPostResponses];
+
+export type RunScratchApiSkillsScratchRunPostData = {
+    body: ScratchRunRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/skills/scratch/run';
+};
+
+export type RunScratchApiSkillsScratchRunPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RunScratchApiSkillsScratchRunPostError = RunScratchApiSkillsScratchRunPostErrors[keyof RunScratchApiSkillsScratchRunPostErrors];
+
+export type RunScratchApiSkillsScratchRunPostResponses = {
+    /**
+     * Response Run Scratch Api Skills Scratch Run Post
+     *
+     * Successful Response
+     */
+    202: {
+        [key: string]: unknown;
+    };
+};
+
+export type RunScratchApiSkillsScratchRunPostResponse = RunScratchApiSkillsScratchRunPostResponses[keyof RunScratchApiSkillsScratchRunPostResponses];
 
 export type ReadSkillRunApiSkillsRunsRunIdGetData = {
     body?: never;

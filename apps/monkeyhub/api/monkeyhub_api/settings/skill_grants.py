@@ -18,7 +18,8 @@ when it was withdrawn and allows nothing. Three kinds of answer:
   Runtime ignores one that reaches the file another way;
 - allowed for one skill, by name and source, which may hold such an item;
 - allowed for one run: bound to the project, skill and code the card showed,
-  for ``ONCE_MINUTES``, and taken by the first run that names it.
+  for ``ONCE_MINUTES``, and taken by the first run that names it. The
+  network, ssh and writing outside the project are allowed only so (S23).
 
 A version grant a project still holds from before S-1 is carried over once,
 as a grant for that skill only (``migrate``): the person allowed that skill,
@@ -98,6 +99,11 @@ def allow(runtime_root: Path, access: Mapping[str, Any], *, method: Literal["car
         raise HubFailure(422, "SKILL_GRANT_TOO_BROAD",
                          "These allow anything and are allowed only for one skill or one run: "
                          + "; ".join(f"{key} {', '.join(items)}" for key, items in wide.items()) + ".")
+    each = form.each_time()
+    if each and once is None:
+        raise HubFailure(422, "SKILL_GRANT_EACH_TIME",
+                         "The network, ssh and writing outside the project are allowed for one run at a time (S23): "
+                         + form.describe(each) + ".")
     moment = now or datetime.now(timezone.utc)
     bound = None
     if once is not None:

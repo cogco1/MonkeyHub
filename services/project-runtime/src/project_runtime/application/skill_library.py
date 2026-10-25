@@ -169,6 +169,42 @@ def package_problem(package: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def write_package(package: dict[str, Any], *, root: Path | None = None) -> Path:
+    """Write one skill as a package in the user's folder (S23: a chat's script a person kept); the folder it is in.
+
+    ``package`` is what ``read_package`` reads back: name, description, body, files, entry, manifest, access. It is
+    checked as an installed package is, and refused rather than written when it would be listed with an error. A
+    name the folder already holds is refused: nobody's skill is replaced. The package is written beside its place
+    and renamed into it, so no reader sees half of it.
+    """
+
+    skill_id, _ = skills.skill_content(**package)
+    name = skill_id.removeprefix(skills.SKILL_ID_PREFIX)
+    problem = package_problem(package)
+    if problem is not None:
+        raise StudioError(422, "SKILL_PACKAGE_INVALID", f"{name}: {problem['detail']}")
+    root = root or user_root()
+    target = root / name
+    if target.exists():
+        raise StudioError(409, "SKILL_EXISTS", f"The skill folder already holds {name}.")
+    staging = root / f".{name}-{os.getpid()}-{id(package):x}"
+    staging.mkdir(parents=True)
+    spec = {key: package[key] for key in ("name", "description", "entry", "manifest", "access")
+            if package.get(key) is not None}
+    (staging / "skill.json").write_text(json.dumps(spec, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (staging / "SKILL.md").write_text(package["body"], encoding="utf-8")
+    for relative, text in (package.get("files") or {}).items():
+        path = staging.joinpath(*relative.split("/"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    try:
+        staging.rename(target)
+    except OSError as failure:
+        # A folder whose name starts with a dot is never listed, so what is left of it here is never read.
+        raise StudioError(409, "SKILL_EXISTS", f"{name} could not be put in the skill folder ({failure}).") from failure
+    return target
+
+
 def _read(source: str, folder: Path) -> InstalledSkill:
     try:
         package = read_package(folder)

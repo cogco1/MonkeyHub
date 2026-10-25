@@ -236,7 +236,7 @@ class SkillLibraryTest(unittest.TestCase):
         commands = {name: (sys.executable, "-c", "pass") for name in ("codex", "claude")}
         store = chat.ChatStore(self.runtime.resolve(), "http://127.0.0.1:8790", commands=commands)
         self.addCleanup(store.shutdown)
-        ask = {"access": {"ssh": ["renou-win"]}, "broad": {}, "skill": {"name": "blender-render", "source": "user"},
+        ask = {"access": {"programs": ["blender"]}, "broad": {}, "skill": {"name": "blender-render", "source": "user"},
                "projectId": "housing-13-units", "codeSha256": "c" * 64}
         once = store._allow_skill(ask, once=True, ref="question-1")
         always = store._allow_skill(ask, once=False, ref="question-2")
@@ -248,7 +248,7 @@ class SkillLibraryTest(unittest.TestCase):
         self.assertIsNone(rows[always].skill, "always allow: every skill and project")
         self.assertEqual(rows[wide].skill.name, "blender-render", "what allows anything: this skill only")
         grants = skill_access.read_grants(skill_grants.grants_path(self.runtime.resolve()))
-        self.assertEqual(skill_access.needed({"ssh": ["renou-win"]}, grants, skill_access.SkillRef("other", "user"),
+        self.assertEqual(skill_access.needed({"programs": ["blender"]}, grants, skill_access.SkillRef("other", "user"),
                                              resolve=str), {})
         self.assertTrue(all(row.method == "card" for row in rows.values()))
         self.assertLessEqual(datetime.fromisoformat(rows[once].granted_at), datetime.now(timezone.utc))

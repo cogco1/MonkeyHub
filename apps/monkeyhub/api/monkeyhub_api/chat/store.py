@@ -26,7 +26,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Callable, Literal, Mapping
+from typing import Callable, Literal, Mapping, Sequence
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -34,14 +34,15 @@ from pydantic import Field
 
 from .. import projects
 from ..runtime.workers import project_key
-from . import acp_grants, activity, guides, mcp_server, media, providers, skill_plugins, studio_tool, transport, turn_context
+from . import (acp_grants, activity, guides, mcp_server, media, providers, skill_cards, skill_plugins, studio_tool,
+               transport, turn_context)
 from ..settings.store import read_application_settings
 
 from ..models import (
     ChatAttachment, ChatAttention, ChatChangeListApproval, ChatCreateRequest, ChatDesignContext, ChatDetail,
     ChatMarkupContext, ChatMessage, ChatPostRequest, ChatProject,
     ChatDocument, ChatDocumentRef, ChatPresentationBindRequest, ChatPresentationBinding, ChatPresentationRequest,
-    ChatPermission, ChatPermissionOption, ChatPermissionRequest, ChatSuggestion,
+    ChatPermission, ChatPermissionOption, ChatPermissionRequest, ChatSkillKeepRequest, ChatSkillRun, ChatSuggestion,
     ChatProjectRequest, ChatProvider, ChatSummary, ChatUsageSource, ChatWorkspace, HubError, HubFailure,
 )
 from .turn_trace import HubTurnObserver
@@ -1425,18 +1426,23 @@ class ChatStore:
     def _design_loop_enforced(self) -> bool:
         return read_application_settings(self.runtime_root).design_loop == studio_tool.DESIGN_LOOP_ENFORCED
 
-    def request_skill_permission(self, session_id: str, title: str, ask: Mapping | None = None) -> str:
-        """Put what a skill run needs to the person in the running chat, as a question with three buttons.
+    def request_skill_permission(self, session_id: str, title: str, ask: Mapping | None = None, *,
+                                 choices: Sequence[str] = ("allow_always", "allow_once", "reject")) -> str:
+        """Put what a skill run needs to the person in the running chat, as a question with its buttons.
 
         ``ask`` is what the answer would allow (S-1): ``access``, the ``skill``
         it is for, the ``projectId`` and ``codeSha256`` of this run, and the
         ``broad`` part of the access, which is allowed only for that skill.
         The Hub keeps it, and writes the grant itself when the person answers.
+        ``choices`` are the buttons (S23): what is asked before every run has
+        no "from now on", and a run that needs no grant has no ``ask``.
         """
 
         broad = bool(ask and ask.get("broad"))
-        always = ("总是允许这个 skill / Always allow for this skill" if broad
-                  else "总是允许 / Always allow")
+        names = {"allow_always": ("以后这个 skill 都允许 / Always allow for this skill" if broad
+                                  else "以后都允许这类 / Always allow this kind"),
+                 "allow_once": "允许这一次 / Only this time", "reject": "不 / No"}
+        kinds = {"allow_always": "allow_always", "allow_once": "allow_once", "reject": "reject_once"}
         future = Future()
         with self._lock:
             session = self._session(session_id)
@@ -1444,10 +1450,8 @@ class ChatStore:
             if self._closing or running is None or running.stop.is_set():
                 raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is not running, so no one can be asked.")
             permission = ChatPermission(id=str(uuid4()), title=title, options=[
-                ChatPermissionOption(optionId="allow_always", name=always, kind="allow_always"),
-                ChatPermissionOption(optionId="allow_once", name="只这一次 / Only this time", kind="allow_once"),
-                ChatPermissionOption(optionId="reject", name="不 / No", kind="reject_once"),
-            ])
+                ChatPermissionOption(optionId=choice, name=names[choice], kind=kinds[choice])
+                for choice in ("allow_always", "allow_once", "reject") if choice in choices])
             session.messages.append(ChatMessage(
                 id=f"{self._answering(session)}:permission:{permission.id}", role="tool", content=permission.title,
                 createdAt=_now(), status="streaming", permission=permission,
@@ -1502,6 +1506,63 @@ class ChatStore:
             once={"projectId": str(ask["projectId"]), "codeSha256": str(ask["codeSha256"])} if once else None)
         return row.grant_id
 
+    def record_skill_run(self, session_id: str, run: ChatSkillRun) -> dict:
+        """Show a run an Agent started in this chat as its own card, under the turn that started it (S23)."""
+
+        with self._lock:
+            session = self._session(session_id)
+            if any(row.skillRun is not None and row.skillRun.runId == run.runId for row in session.messages):
+                return {"runId": run.runId}
+            session.messages.append(ChatMessage(
+                id=f"{self._answering(session)}:skill-run:{run.runId}", role="tool", content=skill_cards.card_text(run),
+                createdAt=_now(), status="complete", skillRun=run))
+            session.updatedAt = _now()
+            self._save(session)
+        return {"runId": run.runId}
+
+    def update_skill_run(self, session_id: str, run_id: str, report: Mapping) -> dict:
+        """What a run came to, read from its record: its status, the sentence for a failure, its outputs."""
+
+        with self._lock:
+            session = self._session(session_id)
+            message = self._skill_run_message(session, run_id)
+            run = message.skillRun
+            status = report.get("status")
+            if status not in ("queued", "running", "succeeded", "failed") or (run.status in ("succeeded", "failed")):
+                return {"runId": run_id, "status": run.status}
+            outputs = [str(row.get("name")) for row in report.get("outputs") or () if isinstance(row, Mapping)][:20]
+            words = report.get("failureWords") if status == "failed" else None
+            message.skillRun = run.model_copy(update={"status": status, "outputs": outputs,
+                                                      "words": str(words)[:400] if words else None})
+            message.content = skill_cards.card_text(message.skillRun)
+            session.updatedAt = _now()
+            self._save(session)
+            return {"runId": run_id, "status": status}
+
+    def keep_skill_run(self, session_id: str, run_id: str, request: ChatSkillKeepRequest) -> ChatDetail:
+        """Keep a chat's script as the person's own skill: written to their skill folder, every project has it."""
+
+        with self._lock:
+            session = self._session(session_id)
+            if request.projectId != session.projectId:
+                raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "This script belongs to a different project.")
+            message = self._skill_run_message(session, run_id)
+            if message.skillRun.keptAs is not None:
+                raise HubFailure(409, "SKILL_KEEP_DONE", f"已经留下为 skill「{message.skillRun.keptAs}」了。")
+            skill_cards.keep(message.skillRun, request.name, project_id=session.projectId)
+            message.skillRun = message.skillRun.model_copy(update={"keptAs": request.name, "keptAt": _now()})
+            message.content = skill_cards.card_text(message.skillRun)
+            session.updatedAt = _now()
+            self._save(session)
+        return self.get(session_id)
+
+    @staticmethod
+    def _skill_run_message(session: _SavedChat, run_id: str) -> ChatMessage:
+        message = next((row for row in session.messages if row.skillRun is not None and row.skillRun.runId == run_id), None)
+        if message is None:
+            raise HubFailure(404, "CHAT_SKILL_RUN_NOT_FOUND", "This chat ran no such skill or script.")
+        return message
+
     def resolve_permission(self, session_id: str, permission_id: str, request: ChatPermissionRequest) -> ChatDetail:
         with self._lock:
             session = self._session(session_id)
@@ -1531,7 +1592,13 @@ class ChatStore:
                 self._permissions.pop((session_id, permission_id), None)
                 self._save(session)
                 raise HubFailure(409, "CHAT_PERMISSION_EXPIRED", "This permission request is no longer waiting for a decision.") from None
-            message.content += " · " + (option.name if option else "Cancelled")
+            if (session_id, permission_id) in self._skill_questions:
+                # A skill's question stays where it was asked and says what the answer was (S23).
+                message.permissionOutcome = {"allow_once": "allowed_once", "allow_always": "allowed_always",
+                                             None: "cancelled"}.get(chosen, "refused")
+                message.content += " · " + skill_cards.OUTCOME_WORDS[message.permissionOutcome]
+            else:
+                message.content += " · " + (option.name if option else "Cancelled")
             active = self._running[session_id]
             if active.trace:
                 active.trace.permission(permission_id, completed=True)

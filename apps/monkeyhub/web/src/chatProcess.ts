@@ -201,7 +201,7 @@ export interface ProcessTurn {
   user: ChatMessage | null;
   /** The turn's tool calls, folded together. */
   steps: ChatMessage[];
-  /** What stays in the conversation: the Agent's text, public progress and waiting permission prompts. */
+  /** What stays in the conversation: the Agent's text, public progress, waiting permission prompts, skill run cards and answered skill questions. */
   visible: ChatMessage[];
   /** Steps that read back a candidate the architect can open. */
   results: ChatMessage[];
@@ -216,7 +216,7 @@ const time = (value: string | undefined) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-/** A transcript as turns. A permission prompt stays visible only while its turn can still answer it. */
+/** A transcript as turns. A permission prompt stays visible only while its turn can still answer it; a skill's stays, answered. */
 export function turnsOf(messages: readonly ChatMessage[], running: boolean): ProcessTurn[] {
   const turns: ProcessTurn[] = [];
   let current: ProcessTurn | null = null;
@@ -240,7 +240,8 @@ export function turnsOf(messages: readonly ChatMessage[], running: boolean): Pro
     current.steps.push(message);
     if (message.status === "failed") current.failed++;
     if (message.candidateId) current.results.push(message);
-    if (running && message.permission) current.visible.push(message);
+    // A skill's run card, and a skill's question once answered, stay where they are and say what happened (S23).
+    if ((running && message.permission) || message.skillRun || message.permissionOutcome) current.visible.push(message);
   }
   return turns;
 }

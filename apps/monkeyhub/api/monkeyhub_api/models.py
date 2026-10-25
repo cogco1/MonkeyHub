@@ -212,6 +212,40 @@ class ChatPermission(BaseModel):
     options: list[ChatPermissionOption]
 
 
+class ChatSkillRun(BaseModel):
+    """A skill or a chat's script an Agent ran, as the conversation shows it (S23).
+
+    ``asked`` says what let it run: ``no`` (it declared nothing, so nobody was asked), ``earlier`` (an answer
+    given before), ``once`` or ``always`` (the answer to this run's card). A script (``kind`` scratch) keeps its
+    code here until the person keeps it as a skill (``keptAs``) or the conversation goes.
+    """
+
+    runId: str
+    kind: Literal["scratch", "skill"]
+    name: str | None = None
+    description: str
+    code: str
+    tier: Literal["low", "first", "each"]
+    asked: Literal["no", "earlier", "once", "always"]
+    access: dict[str, Any] | None = None
+    status: Literal["queued", "running", "succeeded", "failed"] = "queued"
+    words: str | None = None
+    outputs: list[str] = Field(default_factory=list)
+    keptAs: str | None = None
+    keptAt: str | None = None
+    # A script's own content, kept until the person keeps it or the conversation goes: entry, files, manifest.
+    script: dict[str, Any] | None = None
+
+
+class ChatSkillKeepRequest(BaseModel):
+    """Keep a chat's script as a skill under this name (S23)."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    projectId: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
 class ChatAttachment(BaseModel):
     id: str
     name: str
@@ -387,6 +421,9 @@ class ChatMessage(BaseModel):
     # open that exact run. Absent on older records and on every other message.
     candidateId: str | None = None
     permission: ChatPermission | None = None
+    # How a skill's question was answered (S23): it stays where it was asked, saying so.
+    permissionOutcome: Literal["allowed_once", "allowed_always", "refused", "cancelled"] | None = None
+    skillRun: ChatSkillRun | None = None
     attachments: list[ChatAttachment] = Field(default_factory=list)
     documents: list[ChatDocument] = Field(default_factory=list)
     sourceTurnId: str | None = None

@@ -15,7 +15,8 @@ import unittest
 
 from project_runtime.application.skill_access import (
     GRANTS_SCHEMA, GrantsUnreadable, SkillRef, access_added, access_within, asked, broad, describe_added,
-    describe_added_zh, lasting, needed, once_grant, package_name, parse_grants, program_name, read_grants,
+    describe_added_zh, each_time, lasting, needed, once_grant, package_name, parse_grants, program_name, read_grants,
+    tier,
 )
 
 # A machine where no declared folder is a link resolves each one as itself.
@@ -60,11 +61,27 @@ class AccessTests(unittest.TestCase):
         self.assertEqual(describe_added(added), "use the network; run git; write to D:\\Projects; install shapely")
         self.assertEqual(describe_added_zh(added), "联网；运行 git；写入 D:\\Projects；安装 shapely")
 
-    def test_reading_is_not_asked_about(self) -> None:
-        # The runner does not hold a script to what it reads; asking would promise what nothing keeps.
+    def test_reading_outside_the_project_is_asked_as_a_folder(self) -> None:
+        # S23: the runner holds a script to what it reads, so reading a folder outside the project is asked about.
         declared = {"network": False, "read": ["C:\\Windows\\Fonts", "*"]}
-        self.assertEqual(access_added(declared, None, resolve=NO_LINKS), {})
-        self.assertNotIn("read", asked(declared))
+        self.assertEqual(access_added(declared, None, resolve=NO_LINKS), {"read": ["C:\\Windows\\Fonts", "*"]})
+        self.assertEqual(access_added({"read": ["d:/data/site/2026"]}, {"read": ["D:\\data\\site"]}, resolve=NO_LINKS), {},
+                         "below an allowed folder")
+        self.assertEqual(broad(declared), {"read": ["*"]}, "reading anything is allowed only for one skill or run")
+        self.assertEqual(describe_added_zh({"read": ["D:\\data"]}), "读取 D:\\data")
+
+    def test_three_tiers(self) -> None:
+        # The user's rule of 2026-10-25: nothing declared runs; programs, packages and reading outside are asked
+        # once; the network, ssh and writing outside are asked every time.
+        self.assertEqual([tier(access) for access in (None, {}, {"network": False, "programs": []})], ["low"] * 3)
+        for access in ({"programs": ["blender"]}, {"packages": ["shapely"]}, {"read": ["D:\\data"]}):
+            with self.subTest(access=access):
+                self.assertEqual((tier(access), each_time(access)), ("first", {}))
+        for access, each in (({"network": True, "programs": ["blender"]}, {"network": True}),
+                             ({"ssh": ["vast-gpu"]}, {"ssh": ["vast-gpu"]}),
+                             ({"write": ["D:\\out"], "read": ["D:\\in"]}, {"write": ["D:\\out"]})):
+            with self.subTest(access=access):
+                self.assertEqual((tier(access), each_time(access)), ("each", each))
 
     def test_programs_compare_by_name_and_packages_by_distribution(self) -> None:
         self.assertEqual([program_name(item) for item in ("Blender.exe", "D:\\Blender\\blender.exe", "/usr/bin/git")],
@@ -119,17 +136,34 @@ class GrantTests(unittest.TestCase):
     def test_an_item_allowed_once_holds_for_every_skill_and_a_skill_grant_for_that_skill_only(self) -> None:
         grants = parse_grants(document(
             grant("all", {"programs": ["blender"]}),
-            grant("own", {"ssh": ["renou-win"]}, skill=BLENDER),
-            grant("gone", {"network": True}, revoked=True)))
-        blender_run = {"programs": ["blender"], "ssh": ["renou-win"], "network": False}
+            grant("own", {"read": ["D:\\assets"]}, skill=BLENDER),
+            grant("gone", {"packages": ["shapely"]}, revoked=True)))
+        blender_run = {"programs": ["blender"], "read": ["D:\\assets\\hdri"], "network": False}
         self.assertEqual(needed(blender_run, grants, BLENDER, resolve=NO_LINKS), {})
         self.assertEqual(needed(blender_run, grants, SkillRef("site-plan-map", "user"), resolve=NO_LINKS),
-                         {"ssh": ["renou-win"]}, "another skill is not allowed the host")
+                         {"read": ["D:\\assets\\hdri"]}, "another skill is not allowed the folder")
         self.assertEqual(needed(blender_run, grants, SkillRef("blender-render", "shared"), resolve=NO_LINKS),
-                         {"ssh": ["renou-win"]}, "a skill of the same name from a shared folder is another skill")
-        self.assertEqual(needed({"network": True}, grants, BLENDER, resolve=NO_LINKS), {"network": True},
+                         {"read": ["D:\\assets\\hdri"]}, "a skill of the same name from a shared folder is another skill")
+        self.assertEqual(needed({"packages": ["shapely"]}, grants, BLENDER, resolve=NO_LINKS), {"packages": ["shapely"]},
                          "a withdrawn grant allows nothing")
         self.assertEqual(lasting(grants, BLENDER)["programs"], ["blender"])
+
+    def test_the_network_ssh_and_writing_outside_are_never_allowed_for_long(self) -> None:
+        # A grant from before S23 that allowed them for good, for every skill or for one, still allows its other items.
+        grants = parse_grants(document(
+            grant("old", {"network": True, "programs": ["blender"], "write": ["D:\\out"]}),
+            grant("own", {"ssh": ["renou-win"]}, skill=BLENDER)))
+        run = {"network": True, "programs": ["blender"], "ssh": ["renou-win"], "write": ["D:\\out"]}
+        self.assertEqual(needed(run, grants, BLENDER, resolve=NO_LINKS),
+                         {"network": True, "ssh": ["renou-win"], "write": ["D:\\out"]})
+        self.assertEqual(lasting(grants, BLENDER), {"network": False, "programs": ["blender"], "ssh": [], "read": [],
+                                                    "write": [], "packages": []})
+        once = {"projectId": "housing", "codeSha256": "a" * 64, "expiresAt": (NOW + timedelta(minutes=30)).isoformat()}
+        one_run = parse_grants(document(grant("run-1", {"network": True, "ssh": ["renou-win"], "write": ["D:\\out"]},
+                                              skill=BLENDER, once=once)))
+        self.assertIsNotNone(once_grant(one_run, "run-1", BLENDER, project_id="housing", code_sha256="a" * 64,
+                                        needs=needed(run, grants, BLENDER, resolve=NO_LINKS), now=NOW, used=(),
+                                        resolve=NO_LINKS), "a grant for one run allows them for that run")
 
     def test_an_item_that_allows_anything_counts_only_in_a_grant_for_that_skill(self) -> None:
         # The Hub refuses to write such a grant for every skill; one written into the file by hand allows nothing.

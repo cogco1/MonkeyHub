@@ -187,3 +187,16 @@ test("GH-58: one the Hub cannot recover can be dismissed and then leaves; one th
   assert.deepEqual(unfinishedOperations([{ ...waiting, acknowledgedAt: "2026-09-25T10:00:00Z" }, { ...silent, acknowledgedAt: "2026-09-25T10:00:00Z" }])
     .map((item) => item.operationId), ["waiting", "silent"], "one that can still be recovered stays whatever its record says");
 });
+
+test("a skill run's card and a skill question once answered stay in the conversation after the turn (S23)", () => {
+  const run = { runId: "skill-run-0123abcd0123", kind: "scratch", description: "数一下 PDF 里的颜色", code: "c".repeat(12),
+    tier: "low", asked: "no", status: "succeeded" } as const;
+  const messages: ChatMessage[] = [
+    message({ id: "u-0", role: "user", content: "统计一下颜色" }),
+    message({ id: "u-0:permission:q1", role: "tool", content: "AI 要运行… · 已允许这一次 / Allowed this time", permissionOutcome: "allowed_once" }),
+    message({ id: "u-0:skill-run:skill-run-0123abcd0123", role: "tool", content: "临时脚本", skillRun: run }),
+    message({ id: "u-0:t1", role: "tool", content: "studio_request · GET /api/skills/runs/skill-run-0123abcd0123 · completed" }),
+  ];
+  const [turn] = turnsOf(messages, false);
+  assert.deepEqual(turn!.visible.map((row) => row.id), ["u-0:permission:q1", "u-0:skill-run:skill-run-0123abcd0123"]);
+});

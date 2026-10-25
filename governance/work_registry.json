@@ -1389,6 +1389,62 @@
             "governance/work_registry.json"
           ],
           "depends_on": []
+        },
+        {
+          "id": "srv-adhoc-scripts",
+          "status": "active",
+          "branch": "claude/srv-adhoc-scripts",
+          "worktree": "C:/Users/Public/renou/dev/wt/claude-srv-adhoc-scripts",
+          "base_ref": "bc25532d",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "S23 (server, 10-25): a script an Agent writes in a chat runs through the Hub (POST /api/skills/scratch/run), its code kept in its run's record. Three tiers: one that declares nothing (reads the project, writes only its outputs, no network, no program) runs without asking unless Settings turns low-risk scripts off; programs, packages and reading outside the project are asked once; the network, ssh and writing outside are asked every run. The runner now also holds reads, and without the network refuses loopback (the Hub's own ports), DNS, native network libraries and pipes. Each run gets a card in the chat; a script that helped is kept as a skill with one click. Answered skill questions stay in place saying what was allowed.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat/guides.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/routes.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/skill_cards.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/tool_calls.py",
+            "apps/monkeyhub/api/monkeyhub_api/models.py",
+            "apps/monkeyhub/api/monkeyhub_api/settings/models.py",
+            "apps/monkeyhub/api/monkeyhub_api/settings/skill_grants.py",
+            "apps/monkeyhub/api/tests/test_acp_chat.py",
+            "apps/monkeyhub/api/tests/test_skill_agent_runs.py",
+            "apps/monkeyhub/api/tests/test_skill_grants.py",
+            "apps/monkeyhub/api/tests/test_skill_library.py",
+            "apps/monkeyhub/web/src/ChatShell.css",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/SkillRunCard.tsx",
+            "apps/monkeyhub/web/src/api/generated/index.ts",
+            "apps/monkeyhub/web/src/api/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/chatProcess.ts",
+            "apps/monkeyhub/web/src/features/skills/SkillPermissions.tsx",
+            "apps/monkeyhub/web/src/features/skills/skillRunSetting.ts",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/chatProcess.test.ts",
+            "apps/monkeyhub/web/test/skillRunSetting.test.ts",
+            "docs/protocols/project-runtime-api.md",
+            "governance/architecture_policy.json",
+            "governance/work_registry.json",
+            "services/project-runtime/src/project_runtime/api/dto/skill_grants.py",
+            "services/project-runtime/src/project_runtime/api/dto/skills.py",
+            "services/project-runtime/src/project_runtime/api/routes/skills.py",
+            "services/project-runtime/src/project_runtime/application/skill_access.py",
+            "services/project-runtime/src/project_runtime/application/skill_library.py",
+            "services/project-runtime/src/project_runtime/application/skill_runs.py",
+            "services/project-runtime/tests/test_skill_access.py",
+            "services/project-runtime/tests/test_skill_library.py",
+            "services/project-runtime/tests/test_skill_runs.py"
+          ],
+          "depends_on": []
         }
       ]
     }

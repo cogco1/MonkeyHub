@@ -113,8 +113,9 @@ class SkillLibraryTest(unittest.TestCase):
             answer = self.client.get("/api/skills/skill:rule-study/needs")
         self.assertEqual(answer.status_code, 200, answer.text)
         body = answer.json()
-        self.assertEqual((body["skill"], body["needs"], body["broad"]),
-                         ({"name": "rule-study", "source": "user"}, {"programs": ["blender"]}, {}))
+        self.assertEqual((body["skill"], body["needs"], body["broad"], body["tier"], body["eachTime"]),
+                         ({"name": "rule-study", "source": "user"},
+                          {"programs": ["blender"], "read": ["C:\\Windows\\Fonts"]}, {}, "first", {}))
         binding = bound_project(self.client.app.state)
         self.assertIsNone(skills.latest_version(binding, "skill:rule-study"), "nothing was retained")
         self.assertEqual(self.client.get("/api/skills/skill:missing/needs").json()["code"], "SKILL_NOT_INSTALLED")

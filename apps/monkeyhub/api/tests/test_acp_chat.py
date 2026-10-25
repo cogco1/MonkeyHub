@@ -420,12 +420,62 @@ class AcpChatTests(unittest.TestCase):
                              {"permissionId": question, "status": "answered", "optionId": "allow_always",
                               "grantId": None})
             self.assertEqual(client.get(f"{ask}/{question}").status_code, 404, "an answer is read once")
+            answered = next(m for m in self.store.get(session.id).messages if m.id.endswith(f":permission:{question}"))
+            self.assertEqual((answered.permission, answered.permissionOutcome), (None, "allowed_always"),
+                             "S23: the question stays where it was asked and says what was allowed")
+            self.assertTrue(answered.content.endswith("已允许，以后这类不再问 / Allowed from now on"), answered.content)
+            each = client.post(ask, json={"title": "联网", "choices": ["allow_once", "reject"]}).json()["permissionId"]
+            shown = next(m.permission for m in self.store.get(session.id).messages
+                         if m.permission and m.permission.id == each)
+            self.assertEqual([(o.optionId, o.name) for o in shown.options],
+                             [("allow_once", "允许这一次 / Only this time"), ("reject", "不 / No")],
+                             "what is asked before every run has no 'from now on'")
+            client.post(f"/api/chat/sessions/{session.id}/permissions/{each}",
+                        json={"projectId": session.projectId, "optionId": "reject"})
+            self.assertEqual(next(m for m in self.store.get(session.id).messages
+                                  if m.id.endswith(f":permission:{each}")).permissionOutcome, "refused")
             unanswered = client.post(ask, json={"title": "Run again"}).json()["permissionId"]
             client.post(f"/api/chat/sessions/{session.id}/permissions/{acp.id}",
                         json={"projectId": session.projectId, "optionId": "allow"})
             self.finished(session)
             self.assertEqual(client.get(f"{ask}/{unanswered}").json()["status"], "withdrawn",
                              "a question the turn left unanswered is withdrawn with it")
+
+    def test_a_script_the_agent_ran_has_its_card_and_one_click_keeps_it_as_a_skill(self):
+        # S23: the card shows what ran and what let it run; keeping it writes a package every project finds.
+        skills = self.root / "my skills"
+        with patch.dict(os.environ, {"MONKEYHUB_SKILL_PACKAGES": str(skills)}), \
+                patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
+            app = create_app(HubSettings(runtime_root=self.runtime))
+            with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
+                session = self.create()
+                runs = f"/api/chat/sessions/{session.id}/skill-runs"
+                card = {"runId": "skill-run-0123abcd0123", "kind": "scratch", "name": "pdf-colours",
+                        "description": "数一下 PDF 里的颜色", "code": "c" * 12, "tier": "low", "asked": "no",
+                        "script": {"files": {"main.py": "print('colours')\n"}, "entry": "main.py", "manifest": None}}
+                self.assertEqual(client.post(runs, json=card).status_code, 201)
+                keep = f"{runs}/{card['runId']}/keep"
+                early = client.post(keep, json={"projectId": session.projectId, "name": "pdf-colours"})
+                self.assertEqual((early.status_code, early.json()["code"]), (409, "SKILL_KEEP_NOT_SUCCEEDED"))
+                client.put(f"{runs}/{card['runId']}", json={"status": "succeeded", "outputs": [{"name": "colours.png"}]})
+                shown = next(m for m in self.store.get(session.id).messages if m.skillRun is not None)
+                self.assertEqual((shown.skillRun.status, shown.skillRun.outputs), ("succeeded", ["colours.png"]))
+                self.assertIn("没问你：只读项目文件、只写自己的输出", shown.content)
+                self.assertEqual(client.post(keep, json={"projectId": "other", "name": "pdf-colours"}).status_code, 409)
+                kept = client.post(keep, json={"projectId": session.projectId, "name": "pdf-colours"})
+                self.assertEqual(kept.status_code, 200, kept.text)
+                card_now = next(m["skillRun"] for m in kept.json()["messages"] if m.get("skillRun"))
+                self.assertEqual(card_now["keptAs"], "pdf-colours")
+                from project_runtime.application import skill_library
+                found = skill_library.installed().find("pdf-colours")
+                self.assertEqual((found.source, found.content["entry"], found.content["files"]),
+                                 ("user", "main.py", {"main.py": "print('colours')\n"}), "every project finds it now")
+                again = client.post(keep, json={"projectId": session.projectId, "name": "pdf-colours"})
+                self.assertEqual(again.json()["code"], "SKILL_KEEP_DONE")
+                client.post(runs, json={**card, "runId": "skill-run-0123abcd0124", "status": "succeeded"})
+                taken = client.post(f"{runs}/skill-run-0123abcd0124/keep", json={"projectId": session.projectId,
+                                                                                  "name": "pdf-colours"})
+                self.assertEqual(taken.json()["code"], "SKILL_KEEP_EXISTS", "nobody's skill is replaced")
 
     def test_project_context_opens_new_acp_session_without_loading_old_transcript(self):
         session = self.create()

@@ -17,6 +17,8 @@ from ...authentication import request_attribution
 from ...binding import bound_project
 from ...errors import StudioError
 from ..dto.skills import (
+    ScratchRunRequestDto,
+    ScratchScriptDto,
     SkillDto,
     SkillIndexDto,
     SkillRequestDto,
@@ -44,6 +46,43 @@ def read_skill_grants(request: Request) -> dict:
     binding = bound_project(request.app.state)
     rows = skills.grant_rows(binding, skill_runs.used_once_grants(binding))
     return {"projectId": binding.project_id, "approvals": [approval_dto(row).model_dump(by_alias=True) for row in rows]}
+
+
+def _scratch(payload) -> skill_runs.ScratchSkill:
+    return skill_runs.scratch_skill(
+        description=payload.description, code=payload.code, files=payload.files, entry=payload.entry,
+        access=None if payload.access is None else payload.access.model_dump(),
+        manifest=None if payload.manifest is None else payload.manifest.model_dump(by_alias=True), name=payload.name)
+
+
+@router.post("/skills/scratch/needs")
+def read_scratch_needs(request: Request, payload: ScratchScriptDto) -> dict:
+    """What a run of a chat's script would need a person to allow now, and its tier (S23); nothing runs."""
+
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The script names another project.")
+    return skill_runs.scratch_needs(binding, _scratch(payload))
+
+
+@router.post("/skills/scratch/run", status_code=202)
+def run_scratch(request: Request, payload: ScratchRunRequestDto) -> dict:
+    """Run a script an Agent wrote in a chat as a background job, before anyone keeps it as a skill (S23).
+
+    It is checked and allowed as an installed skill is: one that declares no ``access`` reads the project and its
+    inputs, writes only its outputs and runs without asking; the runner refuses it anything else. Its code, access
+    and tier are kept in the run's own record (``scratch``), and nowhere else; its outputs are registered as a
+    skill run's are. Refused with SKILL_ACCESS_NEEDED, SKILL_INPUT_MISSING or SKILL_REPEATED_FAILURE as a skill run is.
+    """
+
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The run names another project.")
+    return skill_runs.submit_scratch_run(
+        binding, request.app.state.jobs, _scratch(payload),
+        inputs={name: ref.model_dump(by_alias=True, exclude_none=True) for name, ref in payload.inputs.items()},
+        parameters=payload.parameters, attribution=request_attribution(request), agent=payload.agent_run,
+        grant_id=payload.grant_id)
 
 
 @router.get("/skills/runs/{run_id}")

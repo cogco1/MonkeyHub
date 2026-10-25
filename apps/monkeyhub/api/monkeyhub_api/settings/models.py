@@ -50,6 +50,9 @@ class UserSettingsDto(BaseModel):
     # never: as granted, and an Agent starts no skill that declares access.
     # Unset is ask. While designLoop is enforced (#185) the Hub reads it as never.
     skill_agent_runs: Literal["ask", "granted", "never"] | None = Field(default=None, alias="skillAgentRuns")
+    # 低风险脚本直接跑 (S23): a chat's script or skill that declares nothing (reads the project, writes only its
+    # outputs, no network, no other program) runs without asking. Absent means on; off asks before each such run.
+    low_risk_scripts: bool | None = Field(default=None, alias="lowRiskScriptsRun")
     chat_model: str | None = Field(
         default=None, alias="chatModel", min_length=1, pattern=r"^[^\x00-\x1f\x7f]+$",
     )

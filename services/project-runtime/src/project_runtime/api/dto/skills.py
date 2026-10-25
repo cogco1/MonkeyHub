@@ -143,6 +143,32 @@ class SkillRunRequestDto(_Frozen):
                                  description="set by the Hub: the one-run grant a person gave for this run")
 
 
+class ScratchScriptDto(_Frozen):
+    """A script an Agent wrote in a chat (S23): one file as ``code``, or ``files`` with their ``entry``."""
+
+    project_id: str = Field(alias="projectId", min_length=1)
+    description: str = Field(min_length=1, max_length=300, description="what it does, in one line, for the person")
+    name: str | None = Field(default=None, max_length=MAX_NAME_LENGTH,
+                             description="the skill name it would be kept under, e.g. pdf-color-stats")
+    code: str | None = Field(default=None, description="the Python script, run as main.py")
+    files: dict[str, str] | None = Field(default=None, description="several files by relative path, with entry")
+    entry: str | None = Field(default=None, description="the file to run among files")
+    access: SkillAccessDto | None = Field(
+        default=None, description="what it needs beyond reading the project and writing its outputs; leave it out when "
+                                  "it needs nothing, and it runs without asking")
+    manifest: SkillManifestDto | None = None
+
+
+class ScratchRunRequestDto(ScratchScriptDto):
+    """Run a chat's script on project inputs, as a skill run is (inputs, parameters)."""
+
+    inputs: dict[str, SkillInputRefDto] = Field(default_factory=dict)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    agent_run: bool = Field(alias="agentRun", default=False, description="set by the Hub for a chat's run")
+    grant_id: str | None = Field(alias="grantId", default=None,
+                                 description="set by the Hub: the one-run grant a person gave for this run")
+
+
 def skill_index_row(row: SkillVersion) -> SkillIndexRowDto:
     payload = row.payload
     return SkillIndexRowDto(id=row.skill_id, version=row.version, name=payload["name"],

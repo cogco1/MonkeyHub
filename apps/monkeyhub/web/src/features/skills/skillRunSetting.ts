@@ -96,6 +96,41 @@ export interface RunSettingActions {
   choose(value: SkillAgentRuns): Promise<void>;
 }
 
+/** S23: whether a script that declares nothing runs without asking (`lowRiskScriptsRun`); unset is on, only off is written. */
+export interface LowRiskState {
+  readonly on: boolean | null;
+  readonly saving: boolean;
+  readonly error: HubError | null;
+}
+
+export const initialLowRiskState: LowRiskState = { on: null, saving: false, error: null };
+
+export const lowRiskOf = (settings: UserSettings): boolean => settings.lowRiskScriptsRun !== false;
+
+export function lowRiskActions(api: HubSettingsApi, setState: (update: (state: LowRiskState) => LowRiskState) => void) {
+  return {
+    async load() {
+      try {
+        const on = lowRiskOf(await api.read());
+        setState((state) => ({ ...state, on, error: null }));
+      } catch (cause) {
+        setState((state) => ({ ...state, error: asHubError(cause) }));
+      }
+    },
+    async choose(on: boolean) {
+      setState((state) => ({ ...state, on, saving: true, error: null }));
+      try {
+        // Every other preference goes back exactly as the Hub holds it now; on is written as unset.
+        const current = await api.read();
+        const saved = lowRiskOf(current) === on ? current : await api.write({ ...current, lowRiskScriptsRun: on ? null : false });
+        setState((state) => ({ ...state, on: lowRiskOf(saved), saving: false }));
+      } catch (cause) {
+        setState((state) => ({ ...state, on: !on, saving: false, error: asHubError(cause) }));
+      }
+    },
+  };
+}
+
 export function runSettingActions(api: HubSettingsApi, setState: SetState): RunSettingActions {
   const job = { wanted: DEFAULT_SKILL_AGENT_RUNS, running: false };
   return {
