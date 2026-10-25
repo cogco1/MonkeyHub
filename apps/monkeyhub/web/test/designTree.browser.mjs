@@ -118,6 +118,10 @@ async function runtime(request, response, url, body) {
         candidates: history.candidates.map(candidate => ({ ...candidate, review: reviews.get(`candidate:${candidate.candidateId}`) ?? null })) });
     }
     if (method === "GET" && name === "/api/worktrees") { treeReads.push(name); return json(fixture.worktrees()); }
+    // S08: the Board shows Board | Layout once the layout holds something; this one has a page of text.
+    if (method === "GET" && name === "/api/publication") return json({ projectId: PROJECT, revisionSha256: null, title: "Layout",
+      spec: { width: 1280, height: 720, template: "hero" }, sources: [],
+      pages: [{ id: "page-1", elements: [{ id: "note", kind: "text", x: 80, y: 80, width: 480, height: 60, text: "Review", fontSize: 32 }] }] });
     // #575: the project trash, and Restore of one cleaned draft.
     if (method === "GET" && name === "/api/trash") return json(fixture.trash());
     if (method === "POST" && name === "/api/trash/restore") { writes.push({ method, name, body }); return json(fixture.restoreTrashed(body)); }

@@ -125,3 +125,6 @@
 .monkeyboard-render-details dd { margin: 2px 0 8px; overflow-wrap: anywhere; }
 @media (max-width: 1000px) { .monkeyboard-sources { flex-basis: 215px; padding: 14px 8px; } }
 @media (max-width: 700px) { .monkeyboard-body { position: relative; } .monkeyboard-sources { position: absolute; inset: 0 auto 0 0; width: min(280px, 85%); box-sizing: border-box; z-index: 15; box-shadow: var(--shadow); } .monkeyboard-source { padding: 9px; } .monkeyboard-canvas .excalidraw .welcome-screen-center__heading { font-size: 20px; } }
+/* S08: diamond and ellipse leave the toolbar for More (Board.tsx); their keys and the tools themselves stay. */
+.monkeyboard-canvas .excalidraw .App-toolbar label.ToolIcon:has(> input[data-testid="toolbar-diamond"]),
+.monkeyboard-canvas .excalidraw .App-toolbar label.ToolIcon:has(> input[data-testid="toolbar-ellipse"]) { display: none; }

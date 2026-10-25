@@ -132,6 +132,19 @@ try {
   await page.goto(origin);
   await page.waitForFunction(() => window.__boardApi && !document.querySelector(".monkeyboard-initializing"));
 
+  // S08 B: the toolbar keeps the everyday tools; diamond and ellipse wait in More, one press away.
+  const toolbar = page.locator(".App-toolbar");
+  for (const tool of ["selection", "rectangle", "arrow", "line", "freedraw", "text", "eraser"]) {
+    assert.equal(await toolbar.locator(`[data-testid="toolbar-${tool}"]`).isVisible(), true, `${tool} stays on the toolbar`);
+  }
+  for (const tool of ["diamond", "ellipse"]) assert.equal(await toolbar.locator(`[data-testid="toolbar-${tool}"]`).isVisible(), false, `${tool} leaves the toolbar`);
+  await page.locator(".monkeyboard-actions summary").click();
+  await cmd(page.locator(".monkeyboard-actions-panel"), "view.board_tools.ellipse").click();
+  assert.equal(await page.evaluate(() => window.__boardApi.getAppState().activeTool.type), "ellipse", "More picks the ellipse");
+  assert.equal(await page.locator(".monkeyboard-actions").getAttribute("open"), null, "and closes");
+  await page.evaluate(() => window.__boardApi.setActiveTool({ type: "selection" }));
+  console.log("PASS diamond and ellipse are in More, the everyday tools on the toolbar");
+
   // A circle over the drawing and a sentence beside it, selected together with the drawing they are about.
   await page.evaluate((sentence) => {
     const { convertToExcalidrawElements, CaptureUpdateAction } = window.__boardHelpers, api = window.__boardApi;

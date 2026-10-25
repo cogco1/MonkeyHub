@@ -21,6 +21,8 @@ import { currentView, DesignTreeBar, type DesignTreeView } from "../features/des
 import { useDesignTree, useSeenCandidates } from "../features/designTree/useDesignTree";
 import { treeWords } from "../features/designTree/words";
 import { useT } from "../i18n/useT";
+import { useDeveloperMode } from "../features/settings/preferences";
+import { publicationClient } from "../api/project-runtime/publication";
 import type { MessageKey } from "../i18n/messages.en";
 import { createComparisonHost, type HostedComparison } from "../workspaces/monkeyarch/viewer/comparisonPair";
 import { AutoRetry } from "./AutoRetry";
@@ -290,6 +292,19 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     }
     onRenderChatRequest(request);
   }), [onRenderChatRequest]);
+  // S08: Board | Layout shows only once the layout holds something (or in developer mode, or on Layout itself);
+  // until then the Board stands alone, and 放入汇报 is still how a layout begins.
+  const developer = useDeveloperMode();
+  const [layoutUsed, setLayoutUsed] = useState(false);
+  useEffect(() => {
+    if (layoutUsed || developer || !active || server.status !== "ready" || workspace !== "board") return;
+    let live = true;
+    void publicationClient(connection).read().then((saved) => {
+      if (live && saved.pages.some((page) => page.elements.length > 0)) setLayoutUsed(true);
+    }, () => { /* an unreadable layout keeps the switch away; Layout is still reachable from 放入汇报 and Ctrl K */ });
+    return () => { live = false; };
+  }, [layoutUsed, developer, active, server.status, workspace, refreshKey, connection]);
+  useEffect(() => { if (workspace === "publish") setLayoutUsed(true); }, [workspace]);
   const handToAi = useMemo(() => onHandToAi ? (request: HandToAiRequest) => {
     if (boundProjectId.current === undefined || request.projectId !== boundProjectId.current) {
       return Promise.reject(new HandToAiError("PROJECT_CHANGED", "The request names a project this workspace is not bound to."));
@@ -317,7 +332,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
         position stays at the right end, where the Stage chip opens the Design Tree. #300: Board and its
         Layout mode share one rail entry, and this switch moves between the two mounted surfaces. */}
     <ProjectBar label={t("workspace.surfaceBar")} frontOnly={embedded && (shown === "arch" || (shown === "board" && !pageOpen))}
-      lead={((shown === "board" && !pageOpen) || shown === "publish") && <BoardModeSwitch mode={workspace === "publish" ? "layout" : "board"}
+      lead={((shown === "board" && !pageOpen && (layoutUsed || developer)) || shown === "publish") && <BoardModeSwitch mode={workspace === "publish" ? "layout" : "board"}
         onChange={(mode) => onWorkspaceChange(mode === "layout" ? "publish" : "board")} />}
       position={designTree.available && <DesignTreeBar data={designTree} seen={seenCandidates.seen} open={shown === "tree"} viewing={viewing}
         onToggle={() => { if (comparison) { closeComparison(); onWorkspaceChange("tree"); }

@@ -137,6 +137,12 @@ function replacementCopy(t: TFunction) {
   };
 }
 
+/**
+ * S08: the Board's toolbar keeps what is drawn every day (select, rectangle, line, arrow, text, pen, eraser);
+ * diamond and ellipse wait in More (board.css hides their toolbar buttons only, so their keys still work).
+ */
+const moreShapesCopy = { en: { diamond: "Diamond", ellipse: "Ellipse" }, "zh-CN": { diamond: "菱形", ellipse: "椭圆" } };
+
 const sketchCopy = {
   en: { newFrame: "New sketch frame", frameName: "Sketch", panel: "Sketch frame", level: "Level", storeyHeight: "Storey height (m)",
     scale: "Scale", uncalibrated: "Not calibrated — select one straight line inside the frame and enter its real length.",
@@ -1522,6 +1528,10 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
         <div className="monkeyboard-actions-panel" role="group" aria-label={boardText.more}>
           {bar.shown("view.canvas.fit") && <button data-command="view.canvas.fit" disabled={!ready} onClick={() => canvas.current?.scrollToContent(undefined, { fitToContent: true, animate: false })}>{text.fit}</button>}
           {legacy && bar.shown("markup.hand_to_ai.open") && <button data-command="markup.hand_to_ai.open" disabled={!ready || busy || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>}
+          {(["diamond", "ellipse"] as const).filter((shape) => bar.shown(`view.board_tools.${shape}`)).map((shape) =>
+            <button key={shape} type="button" data-command={shape === "diamond" ? "view.board_tools.diamond" : "view.board_tools.ellipse"} disabled={!ready}
+              onClick={() => { closeActions(); canvas.current?.setActiveTool({ type: shape }); root.current?.querySelector<HTMLElement>(".excalidraw")?.focus(); }}>
+              {moreShapesCopy[language][shape]}</button>)}
           {bar.shown("sketch.to_model.new_frame") && <button data-command="sketch.to_model.new_frame" disabled={!ready || busy || saveState.conflict} onClick={() => { void newSketchFrame(); }}>{sketchCopy[language].newFrame}</button>}
           {bar.shown("markup.hand_to_ai.enter_crit") && <button data-command="markup.hand_to_ai.enter_crit" disabled={!ready} onClick={enterCrit}>{text.crit}</button>}
           {bar.shown("markup.clear") && <button type="button" data-command="markup.clear" disabled={!ready || busy || saveState.conflict || !hasAnnotations} onClick={clearAnnotations} title={text.clearAnnotationsHint}>{text.clearAnnotations}</button>}

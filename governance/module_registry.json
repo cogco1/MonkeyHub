@@ -1434,6 +1434,33 @@
               "revisionSha256"
             ],
             "in_place": true
+          },
+          {
+            "id": "view.board_tools.diamond",
+            "label": "Diamond",
+            "label_zh": "菱形",
+            "surface": "board",
+            "group": "board",
+            "channel": "front",
+            "in_place": true,
+            "aliases": [
+              "rhombus",
+              "画菱形"
+            ]
+          },
+          {
+            "id": "view.board_tools.ellipse",
+            "label": "Ellipse",
+            "label_zh": "椭圆",
+            "surface": "board",
+            "group": "board",
+            "channel": "front",
+            "in_place": true,
+            "aliases": [
+              "oval",
+              "画椭圆",
+              "画圆"
+            ]
           }
         ]
       }

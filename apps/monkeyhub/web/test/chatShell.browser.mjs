@@ -3294,6 +3294,10 @@ try {
   assert.equal(await visibleWorkspace().getByRole("textbox", { name: "Visual direction", exact: true }).inputValue(), "Keep this Render draft");
   assert.equal(workspaceFixture.requests.filter((row) => /\/api\/artifacts/.test(row.name)).length, modelReadsBeforeRender, "Render and Board switches keep the loaded model");
   assert.equal(await page.locator('.chat-project-workspace:not([hidden])').count(), 1);
+  // S08: Board | Layout shows once the layout holds something. B's is empty so far: the Board stands alone.
+  assert.equal(await visibleWorkspace().getByRole("radiogroup", { name: "Board mode", exact: true }).count(), 0, "an empty layout keeps the switch away");
+  const layoutB = workspaceFixture.projects.get("B");
+  layoutB.publication = { ...layoutB.publication, pages: [{ id: "page-1", elements: [{ id: "note", kind: "text", x: 80, y: 80, width: 480, height: 60, text: "Structure review", fontSize: 32 }] }] };
   await railTool("view.tab.board").click(); await waitWorkspace("board");
   assert.deepEqual(new Set(workspaceFixture.requests.filter((row) => row.name === "/api/board").map((row) => row.projectId)), new Set(["A", "B"]));
   await page.screenshot({ path: path.join(temporary, "hub-board.png") });

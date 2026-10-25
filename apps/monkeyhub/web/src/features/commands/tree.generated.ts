@@ -2936,6 +2936,51 @@ export const COMMAND_TREE: CommandTree = {
       "inPlace": true
     },
     {
+      "id": "view.board_tools.diamond",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Diamond",
+        "zh-CN": "菱形"
+      },
+      "terms": [
+        "rhombus",
+        "画菱形"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true
+    },
+    {
+      "id": "view.board_tools.ellipse",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Ellipse",
+        "zh-CN": "椭圆"
+      },
+      "terms": [
+        "oval",
+        "画椭圆",
+        "画圆"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true
+    },
+    {
       "id": "markup.hand_to_ai.hand_over",
       "capability": "markup.review",
       "label": {
