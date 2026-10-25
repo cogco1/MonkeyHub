@@ -215,6 +215,36 @@ class OcctDrawingTests(unittest.TestCase):
         self.assertEqual(lines, project_occt_lines(tuple(reversed(self.entries)),
                                                   object_ids=("cover", "panel"), **self.frame))
 
+    def test_the_mesh_solve_draws_the_exact_lines_within_its_mesh_tolerance(self) -> None:
+        from monkeycad.backends.occt.projection import project_occt_mesh_lines
+
+        tolerance = 0.005
+        exact = project_occt_lines(self.entries, object_ids=("panel", "cover"), **self.frame)
+        meshed = project_occt_mesh_lines(self.entries, object_ids=("panel", "cover"), mesh_deflection=tolerance, **self.frame)
+
+        def segments(lines, name, kind):
+            return [(a, b) for line in lines if (line.object_id, line.kind) == (name, kind)
+                    for a, b in zip(line.points, line.points[1:])]
+
+        def near(point, pieces):
+            def distance(a, b):
+                dx, dy = b[0] - a[0], b[1] - a[1]
+                t = max(0.0, min(1.0, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / (dx * dx + dy * dy or 1.0)))
+                return math.dist(point, (a[0] + t * dx, a[1] + t * dy))
+            return any(distance(a, b) <= 2 * tolerance for a, b in pieces)
+
+        for name in ("panel", "cover"):
+            for kind in ("visible", "hidden"):
+                ours, theirs = segments(meshed, name, kind), segments(exact, name, kind)
+                with self.subTest(object=name, kind=kind):
+                    self.assertEqual(bool(ours), bool(theirs))
+                    for first, second in ((ours, theirs), (theirs, ours)):
+                        for a, b in first:
+                            for i in range(11):
+                                self.assertTrue(near((a[0] + (b[0] - a[0]) * i / 10, a[1] + (b[1] - a[1]) * i / 10), second))
+        self.assertEqual(meshed, project_occt_mesh_lines(tuple(reversed(self.entries)), object_ids=("cover", "panel"),
+                                                         mesh_deflection=tolerance, **self.frame), "the same lines every time")
+
     def test_depth_range_excludes_shapes_beyond_it_and_cuts_crossing_shapes_exactly(self) -> None:
         from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
         from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
