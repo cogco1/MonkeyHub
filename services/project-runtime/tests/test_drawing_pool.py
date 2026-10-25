@@ -69,6 +69,67 @@ class DrawingPoolSizeTests(unittest.TestCase):
         self.assertEqual((refusal.code, str(refusal)), ("SECTION_PLANE_MISSES_MODEL", "the plane misses"))
 
 
+class DrawingWorkerReuseTests(unittest.TestCase):
+    """S15: what a drawing spends besides solving its view."""
+
+    def test_a_worker_draws_the_model_it_read_last_without_reading_it_again(self) -> None:
+        reads = []
+
+        def read(repository, source):
+            reads.append(source)
+            return f"verified {source}"
+
+        drawing_runs._LAST_READ.clear()
+        self.addCleanup(drawing_runs._LAST_READ.clear)
+        same = {"model-a": True}
+        with patch.object(drawing_runs, "_opened", return_value=object()),                 patch.object(drawing_runs, "read_elevation_source", side_effect=read),                 patch.object(drawing_runs, "_same_bytes", side_effect=lambda root, source: same.get(source, True)):
+            self.assertEqual(drawing_runs._read_source("/p", "model-a"), "verified model-a")
+            self.assertEqual(drawing_runs._read_source("/p", "model-a"), "verified model-a")
+            self.assertEqual(drawing_runs._read_source("/p", "model-b"), "verified model-b")
+            self.assertEqual(drawing_runs._read_source("/p", "model-a"), "verified model-a")
+            self.assertEqual(drawing_runs._read_source("/q", "model-a"), "verified model-a")
+            same["model-a"] = False  # its bytes changed on disk: read, and verified, again
+            self.assertEqual(drawing_runs._read_source("/q", "model-a"), "verified model-a")
+        self.assertEqual(reads, ["model-a", "model-b", "model-a", "model-a", "model-a"],
+                         "the same model in the same project is read once; another one, or changed bytes, read again")
+        self.assertEqual(len(drawing_runs._LAST_READ), 1, "a worker keeps only the model it drew last")
+
+    def test_the_source_is_checked_again_only_when_the_project_may_have_changed(self) -> None:
+        from contextlib import ExitStack, nullcontext
+
+        from project_runtime.application import drawings
+        from project_runtime.binding import ReadToken
+
+        class Repository:
+            @staticmethod
+            def working_draft_guard():
+                return nullcontext()
+
+        class Binding:
+            repository = Repository()
+            token: ReadToken | None = None
+
+            def read_token(self, *, wait=True):
+                return self.token
+
+        binding, checks = Binding(), []
+        first = ReadToken("e", 3, "f", False)
+        with patch.object(drawings, "_complete_source", side_effect=lambda *args: checks.append(args)):
+            # Only settled since: the same files. A write of this process, a changed layout, or no token: check again.
+            for now, checked in ((ReadToken("e", 3, "f", True), 0), (ReadToken("e", 4, "f", False), 1),
+                                 (ReadToken("e", 3, "g", False), 1), (None, 1)):
+                checks.clear()
+                binding.token = now
+                with ExitStack() as held:
+                    token = drawings._HELD_GUARD.set((binding, held, first))
+                    try:
+                        with drawings._retaining(binding, "model", None)():
+                            pass
+                    finally:
+                        drawings._HELD_GUARD.reset(token)
+                self.assertEqual(len(checks), checked, now)
+
+
 @unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class DrawingPoolTests(CandidateTestCase):
     def setUp(self) -> None:
@@ -214,6 +275,20 @@ class NativeDrawingPoolTests(unittest.TestCase):
         self.assertEqual(again["revisionRef"], first["revisionRef"], "the registered drawing answers the repeat")
         self.assertEqual(solved, ["run_draw_task"], "only the new view is solved; nobody reads the model to verify it")
         self.assertNotEqual(right["assetSha256"], first["assetSha256"])
+
+    def test_a_worker_draws_again_from_the_model_it_read_but_not_from_one_changed_on_disk(self) -> None:
+        source = self.upload()
+        drawing_pool.stop()
+        drawing_pool.start(1)  # one worker: the second and third views go to the worker that read the model
+        self.elevation(source)
+        self.elevation(source, "right")
+        registration = next(row for row in self.client.get("/api/artifacts").json()["artifacts"]
+                            if row["runId"] == source["runId"] and row["sha256"] == source["assetSha256"])
+        self.repository.layout.resolve_relative(registration["relativePath"]).write_bytes(b"tampered")
+        refused = self.client.post("/api/drawings/elevations", json={
+            "projectId": PROJECT_ID, "sourceAsset": source, "view": "back", "drawingId": "wall-back"})
+        self.assertGreaterEqual(refused.status_code, 400, refused.text)
+        self.assertNotIn(refused.status_code, (500,), refused.text)
 
 
 if __name__ == "__main__":
