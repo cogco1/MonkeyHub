@@ -572,6 +572,10 @@ try {
         if (!artifacts.artifacts.some((row) => row.runId === imported.runId)) artifacts.artifacts.push(imported);
         return await json(imported, 201);
       }
+      // S08: the Board reads the layout once to decide whether Board | Layout shows; this one is empty.
+      if (method === "GET" && url.pathname === "/api/publication") return await json({ projectId, revisionSha256: null, title: "Layout", spec: { width: 1280, height: 720, template: "hero" }, sources: [], pages: [] });
+      // A sentence typed into the composer is looked up as a command; this Hub has no meaning search.
+      if (method === "POST" && url.pathname === "/api/commands/meaning") return await json({ state: "unavailable", hits: [], route: null });
       assert.fail(`Unexpected API request: ${method} ${url.pathname}${url.search}`);
     } catch (error) { errors.push(error.stack ?? String(error)); await route.abort("blockedbyclient"); }
   });

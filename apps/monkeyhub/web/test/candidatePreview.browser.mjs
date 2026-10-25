@@ -561,6 +561,8 @@ try {
       }
       // #326: a retained model's preview; these fixtures retain none, and a runtime without one answers null.
       if (method === "GET" && /^\/api\/model-assets\/[0-9a-f]{64}\/preview$/.test(name)) return await json(null);
+      // S08: the Board reads the layout once to decide whether Board | Layout shows; this one is empty.
+      if (method === "GET" && name === "/api/publication") return await json({ projectId, revisionSha256: null, title: "Layout", spec: { width: 1280, height: 720, template: "hero" }, sources: [], pages: [] });
       assert.fail(`Unexpected request: ${method} ${name}`);
     } catch (error) {
       errors.push(error.stack ?? String(error)); await route.fulfill({ status: 500, body: String(error) }).catch(() => {});
