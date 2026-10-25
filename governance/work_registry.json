@@ -1163,6 +1163,26 @@
             "apps/monkeyhub/web/src/ChatShell.css"
           ],
           "depends_on": []
+        },
+        {
+          "id": "srv-board-current",
+          "status": "active",
+          "branch": "claude/srv-board-current",
+          "worktree": "C:\\Users\\Public\\renou\\dev\\wt\\claude-srv-board-current",
+          "base_ref": "c09633cd",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "S15 (server, 10-25): a board with no saved place opens on the pages of the design's current step and the title above them, not on the middle of all its content; thi-hemp opened on its old \"V12 · 当前版本\" while the model was V16.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeyboard/boardNavigation.ts",
+            "apps/monkeyhub/web/test/boardNavigation.test.ts",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
         }
       ]
     }

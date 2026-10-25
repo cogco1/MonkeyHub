@@ -7,8 +7,9 @@
  * the return is the board they left, not a refitted one.
  */
 
+import type { SourceDocumentDto } from "../../api/project-runtime/generated";
 import { sceneBoxContains } from "../../features/canvas/sceneHit";
-import { imageSource, type PageSource } from "./boardScene";
+import { findSource, imageSource, type PageSource } from "./boardScene";
 
 /** The part of the live canvas that is the operator's place on the board. */
 export interface BoardViewState {
@@ -78,4 +79,41 @@ export function pageSourceAt(
     return source;
   }
   return null;
+}
+
+/**
+ * Where a board opens when nobody left a place on it: the pages of the design's current step.
+ *
+ * A board that grows with the design keeps every earlier version, and its
+ * middle is an old one (thi-hemp opened on "V12 · 当前版本" while the model was
+ * V16, written far above it). A page belongs to the current step when its
+ * document was registered in that step's run or drawn from its model; the
+ * text written just above those pages, their title, comes with them. Nothing
+ * of the step on the board, or no step known, leaves the board opening on all
+ * of its content as before.
+ */
+export function currentStepElements<T extends Record<string, unknown>>(
+  elements: readonly T[], documents: readonly SourceDocumentDto[], runId: string | null,
+): T[] {
+  if (!runId) return [];
+  const pages = elements.filter((element) => {
+    if (element.isDeleted) return false;
+    const source = imageSource(element);
+    if (source === null) return false;
+    const document = findSource(documents, source);
+    return source.runId === runId || document?.runId === runId || document?.modelSource?.runId === runId;
+  });
+  if (pages.length === 0) return [];
+  const box = (element: Record<string, unknown>) => ({ left: Number(element.x), top: Number(element.y),
+    right: Number(element.x) + Number(element.width), bottom: Number(element.y) + Number(element.height) });
+  const around = pages.map(box).reduce((all, one) => ({ left: Math.min(all.left, one.left), top: Math.min(all.top, one.top),
+    right: Math.max(all.right, one.right), bottom: Math.max(all.bottom, one.bottom) }));
+  // A row's title sits just above it and starts at the row's left edge, which may be left of these pages.
+  const above = Math.max(400, (around.bottom - around.top) / 2), wide = around.right - around.left;
+  const titles = elements.filter((element) => {
+    if (element.isDeleted || element.type !== "text") return false;
+    const text = box(element);
+    return text.bottom <= around.top && text.top >= around.top - above && text.right > around.left - wide && text.left < around.right;
+  });
+  return [...titles, ...pages];
 }
