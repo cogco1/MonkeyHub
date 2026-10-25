@@ -1434,6 +1434,33 @@
               "revisionSha256"
             ],
             "in_place": true
+          },
+          {
+            "id": "view.board_tools.diamond",
+            "label": "Diamond",
+            "label_zh": "菱形",
+            "surface": "board",
+            "group": "board",
+            "channel": "front",
+            "in_place": true,
+            "aliases": [
+              "rhombus",
+              "画菱形"
+            ]
+          },
+          {
+            "id": "view.board_tools.ellipse",
+            "label": "Ellipse",
+            "label_zh": "椭圆",
+            "surface": "board",
+            "group": "board",
+            "channel": "front",
+            "in_place": true,
+            "aliases": [
+              "oval",
+              "画椭圆",
+              "画圆"
+            ]
           }
         ]
       }
@@ -1445,9 +1472,11 @@
       "host": "runtime",
       "kind": "authoring",
       "status": "PRODUCTION",
-      "purpose": "Hand marks and a note to the AI: send design feedback from the Board, discuss an image or render, run a crit, send the tracing paper review, submit a page note, or clear the marks.",
-      "purpose_zh": "把批注和意见交给 AI：从画板发送设计反馈、讨论图片或渲染、进行 Crit、发送描图纸审阅意见、提交本页意见，或清除批注。",
+      "purpose": "Hand marks and one sentence to the AI from the Board's selection, a document page or the model's tracing paper: the sentence on the first circle, the marked objects and a picture attached, sent into the project's conversation. Developer mode keeps the exact-model design feedback, image discussion, page note and tracing paper review to the Board.",
+      "purpose_zh": "把批注和一句话交给 AI：画板选中浮层、文档页、模型描图纸各一个「交给 AI」，原话挂在第一个圈上，圈到的对象和截图作为附件发进项目对话。开发者模式保留精确绑定模型的设计反馈、讨论图片、本页意见和描图纸审阅发画板。",
       "goals": [
+        "hand marks to the AI",
+        "交给 AI",
         "send feedback to the AI",
         "discuss this drawing",
         "submit a page note",
@@ -1460,7 +1489,6 @@
       "aliases": [
         "hand off marks",
         "ask for a change",
-        "交给 AI",
         "评图"
       ],
       "requires": [
@@ -1474,19 +1502,22 @@
         "GET /api/document-comments"
       ],
       "works": [
+        "one Hand to AI on the Board selection, the document page and the tracing paper, sent into the project's conversation with a picture and the marks",
         "Board feedback that opens a proposal in Modeling",
         "page notes with reference pages and their saved marks",
         "a tracing paper review placed on the Board"
       ],
       "missing": [
-        "one hand-off shared by the Board, the document page and the tracing paper"
+        "the AI reading the handed-over marks as a change list (claude/300-b3-change-list)"
       ],
       "tests": [
-        "apps/monkeyhub/web/test/boardIntentHandoff.browser.mjs",
         "apps/monkeyhub/web/test/boardFeedback.test.ts",
+        "apps/monkeyhub/web/test/boardIntentHandoff.browser.mjs",
         "apps/monkeyhub/web/test/boardRender.test.ts",
         "apps/monkeyhub/web/test/boardWhiteboard.browser.mjs",
         "apps/monkeyhub/web/test/documentCanvas.browser.mjs",
+        "apps/monkeyhub/web/test/handToAi.browser.mjs",
+        "apps/monkeyhub/web/test/handToAi.test.ts",
         "services/project-runtime/tests/test_document_visual_providers.py",
         "services/project-runtime/tests/test_documents.py"
       ],
@@ -1497,6 +1528,19 @@
         "channel": "side",
         "commands": [
           {
+            "id": "markup.hand_to_ai.hand_over",
+            "label": "Hand to AI",
+            "label_zh": "交给 AI",
+            "channel": "front",
+            "in_place": true,
+            "aliases": [
+              "send to AI",
+              "ask AI to change this",
+              "发给 AI",
+              "让 AI 改"
+            ]
+          },
+          {
             "id": "markup.hand_to_ai.open",
             "label": "Send design feedback",
             "label_zh": "发送设计反馈",
@@ -1505,7 +1549,8 @@
               "板8",
               "板65",
               "板66"
-            ]
+            ],
+            "tier": "developer"
           },
           {
             "id": "markup.hand_to_ai.send",
@@ -1514,7 +1559,8 @@
             "entries": [
               "板69",
               "板72"
-            ]
+            ],
+            "tier": "developer"
           },
           {
             "id": "markup.hand_to_ai.discuss",
@@ -1523,7 +1569,8 @@
             "opens": true,
             "entries": [
               "板63"
-            ]
+            ],
+            "tier": "developer"
           },
           {
             "id": "markup.hand_to_ai.continue_in_chat",
@@ -1536,7 +1583,8 @@
               "板80",
               "板83"
             ],
-            "in_place": true
+            "in_place": true,
+            "tier": "developer"
           },
           {
             "id": "markup.hand_to_ai.enter_crit",
@@ -1561,7 +1609,8 @@
             "surface": "modeling",
             "entries": [
               "模70"
-            ]
+            ],
+            "tier": "developer"
           },
           {
             "id": "markup.hand_to_ai.submit_page_note",
@@ -1574,7 +1623,8 @@
               "文45",
               "文46",
               "文47"
-            ]
+            ],
+            "tier": "developer"
           },
           {
             "id": "markup.clear",

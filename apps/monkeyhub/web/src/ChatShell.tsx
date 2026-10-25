@@ -9,6 +9,8 @@ import { ProjectRuntimeProvider, useProjectRevision, useStudio } from "./api/pro
 import { projectStores, relayHubStream } from "./api/project-runtime/projectStore";
 import type { ModelSourceDto, ProjectRefreshDto, RenderPageRefDto, SourceDocumentDto } from "./api/project-runtime/generated";
 import { BoardRenderError, type BoardRenderChatRequest } from "./workspaces/monkeyboard/boardRender";
+import { HandToAiError, handToAiMessage, type HandToAiRequest, type HandToAiSent } from "./features/handToAi/handToAi";
+import { rememberHandOff } from "./features/handToAi/handOffRecords";
 import { ImageThumbnail } from "./workspaces/render/RenderResults";
 import { ModelThumbnail } from "./features/artifacts/ModelThumbnail";
 import { MODEL_PREVIEW_RETAINED, previewSourceKey } from "./features/artifacts/useRetainedModelPreview";
@@ -1217,6 +1219,56 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       const target = { projectDir: tab.projectDir, projectId: tab.projectId };
       callback = (request) => renderHandOver.current(target, request);
       renderCallbacks.current.set(tab.runtimeId!, callback);
+    }
+    return callback;
+  };
+  // S08: 「交给 AI」 from a project's Board, page or tracing paper is sent at once, as one message with its
+  // attachments, into that project's conversation: the one open in the column when it is this project's and can
+  // take a message, else the attention conversation, else a new one. The composer's own draft is left alone.
+  const handOff = useRef<(target: { projectDir?: string; projectId?: string }, request: HandToAiRequest) => Promise<HandToAiSent>>(async () => {
+    throw new HandToAiError("CONVERSATION_UNAVAILABLE", "No conversation.");
+  });
+  handOff.current = async (target, handed) => {
+    if (!target.projectDir || handed.projectId !== target.projectId) throw new HandToAiError("PROJECT_CHANGED", "Another project.");
+    if (actionLock.current || sending !== null) throw new HandToAiError("CONVERSATION_BUSY", "A message is being sent.");
+    const projectTarget = target.projectDir;
+    const selected = selection.current.projectDir === projectTarget ? selection.current.chatId : null;
+    const shown = selected ? (chat?.id === selected ? chat : sessions.find((row) => row.id === selected)) : undefined;
+    const usable = selected && shown && !shown.sourceSessionId && !shown.archived ? selected : null;
+    if (usable && shown?.status === "running") throw new HandToAiError("CONVERSATION_BUSY", "A reply is running.");
+    actionLock.current = true;
+    try {
+      const routed = usable ? null : attentionLayout ? await attentionConversation(projectTarget).catch(() => null) : null;
+      const reading = usable ?? routed;
+      let current = reading ? await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(reading)}`) : null;
+      if (current && (current.archived || current.sourceSessionId)) current = null;
+      if (current?.status === "running") throw new HandToAiError("CONVERSATION_BUSY", "A reply is running.");
+      if (!current) {
+        const body: ChatCreateRequest = { projectDir: projectTarget, provider: usableDefaults.provider, model: usableProvider ? null : draftModel };
+        current = await request<ChatDetail>("/api/chat/sessions", body);
+      }
+      await ensureProject(projectTarget, current.projectId);
+      const body: ChatPostRequest = { content: handToAiMessage(handed.surface, handed.words, handed.marks, preferences.language), projectId: current.projectId,
+        attachments: await Promise.all(handed.files.map(async (file) => ({ name: file.name, mimeType: file.type || "application/octet-stream", data: await fileData(file, t.attachmentRead) }))) };
+      const posted = await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(current.id)}/messages`, body);
+      rememberHandOff({ id: crypto.randomUUID(), at: new Date().toISOString(), projectDir: projectTarget, surface: handed.surface,
+        words: handed.words.trim(), marks: handed.marks, thumbnail: handed.thumbnail, chatId: posted.id });
+      // The person follows the reply where it lands, when this project is the one in the column.
+      if (selection.current.projectDir === projectTarget) {
+        setArchivedView(false); setChatId(posted.id); setChat(posted); setFreshChat(false);
+        followLatest.current = true; setLatest({ away: false, unseen: 0 });
+      }
+      void refresh();
+      return { chatId: posted.id };
+    } finally { actionLock.current = false; }
+  };
+  const handOffCallbacks = useRef(new Map<string, (request: HandToAiRequest) => Promise<HandToAiSent>>());
+  const workspaceHandOffCallback = (tab: ToolTab) => {
+    let callback = handOffCallbacks.current.get(tab.runtimeId!);
+    if (!callback) {
+      const target = { projectDir: tab.projectDir, projectId: tab.projectId };
+      callback = (request) => handOff.current(target, request);
+      handOffCallbacks.current.set(tab.runtimeId!, callback);
     }
     return callback;
   };
@@ -2494,7 +2546,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             <ErrorBoundary label={t.tools}><Suspense fallback={<SurfaceSkeleton surface={item.id} name={t[labelOf(item.id)]} step={s.stepPage} />}>
               <ProjectWorkspace workspace={item.id === "monkeyboard" ? "board" : item.id === "publish" ? "publish" : item.id === "drawing" ? "drawing" : item.id === "monkeyrender" ? "render" : item.id === "tree" ? "tree" : "arch"} active={visible}
                 expectedProjectId={item.projectId} candidateRunId={item.candidate} candidateFollowsHead={item.followHead} treeFocus={item.focus ?? null}
-                refreshKey={item.revision} onChatRequest={focusConversation} onRenderChatRequest={workspaceRenderCallback(item)}
+                refreshKey={item.revision} onChatRequest={focusConversation} onRenderChatRequest={workspaceRenderCallback(item)} onHandToAi={workspaceHandOffCallback(item)}
                 documentRequest={item.projectDir ? documentRequests[item.projectDir] : undefined}
                 comparisonRequest={comparison?.runtimeId === item.runtimeId ? comparison.request : null}
                 onComparisonClose={workspaceComparisonClose(item.runtimeId)}

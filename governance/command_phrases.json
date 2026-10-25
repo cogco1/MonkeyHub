@@ -2168,6 +2168,26 @@
     "stop crit"
    ]
   },
+  "markup.hand_to_ai.hand_over": {
+   "zh": [
+    "把圈的地方交给 AI",
+    "让 AI 按我圈的改",
+    "这几处圈好了发给 AI"
+   ],
+   "en": [
+    "hand these marks to the AI",
+    "send what I circled to the AI"
+   ],
+   "aliases_zh": [
+    "交给AI",
+    "发给AI",
+    "圈了让AI改"
+   ],
+   "aliases_en": [
+    "hand to AI",
+    "send marks to AI"
+   ]
+  },
   "markup.hand_to_ai.open": {
    "zh": [
     "打开设计反馈面板",

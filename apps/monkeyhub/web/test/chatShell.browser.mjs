@@ -1101,7 +1101,8 @@ async function requestedChangeLands() {
 
     // #575: a Continue from the Design Tree is the tree's own move. Its toast offers the one Undo that write has;
     // Modeling, back on screen, follows it without a notice or an Undo of its own.
-    await bar.locator(".stage-chip").click();
+    // S08: with no Stage under Current the grey chip is developer mode's; the rail opens the tree.
+    await railTool(RAIL["Design tree"], land).click();
     const tree = land.locator('.chat-project-workspace:not([hidden]) [data-project-surface="tree"]');
     await cmd(bar, "view.design_tree.list").click();
     await tree.locator('[role="treeitem"][data-kind="stage"]').click();
@@ -1111,7 +1112,7 @@ async function requestedChangeLands() {
     await toast.filter({ hasText: "Current is now “S0”" }).waitFor();
     assert.equal(await toast.locator('[data-action="undo"]').count(), 1, "the tree's toast offers its Undo");
     assert.deepEqual([continues().length, continues().at(-1).body.runId], [2, "home-L"]);
-    await bar.locator(".stage-chip").click();
+    await cmd(bar, "view.design_tree.leave").click();
     const following = Date.now() + 15000;
     while (!workspaceFixture.requests.slice(marker).some((row) => row.projectId === projectId && row.name === "/api/state" && row.query.run === "home-L")) {
       if (Date.now() > following) assert.fail("Modeling did not follow the tree's Continue");
@@ -1160,6 +1161,9 @@ async function boardImageDiscussion() {
   await page.setViewportSize({ width: 1440, height: 960 });
   if (page.url().startsWith(origin)) await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
   await page.goto(origin);
+  // S08: discussing an image for a render is developer mode's now; 交给 AI is the ordinary hand-off (handToAi.browser.mjs).
+  await developerModeOnNextLoad(true);
+  await page.reload();
   await cmd(page, "project.open", { arg: name }).first().click();
   await studioReady();
   await showEntry("Board");
@@ -1285,6 +1289,7 @@ async function boardImageDiscussion() {
   chat.status = "idle";
   emitRuntime();
   await cmd(page, "chat.composer.send").waitFor();
+  await developerModeOnNextLoad(false);
 }
 /** GH-432: retained structured suggestions in the real built UI, with synthetic local APIs. */
 async function suggestionCards() {

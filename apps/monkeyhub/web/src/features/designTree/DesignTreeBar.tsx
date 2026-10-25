@@ -79,7 +79,7 @@ export function DesignTreeBar({ data, seen, open, viewing, onToggle, onBackToCur
   onRecordEdits?: (() => Promise<void>) | null;
 }) {
   const t = useT();
-  const { language } = usePreferences();
+  const { language, developerMode } = usePreferences();
   const tree = data.tree;
   const words = useMemo(() => treeWords(t, tree), [t, tree]);
   const stage = tree?.currentStage ? words.stageName(tree.nodes.get(tree.currentStage)!) : tree ? t("designTree.chip.noStage") : null;
@@ -102,13 +102,14 @@ export function DesignTreeBar({ data, seen, open, viewing, onToggle, onBackToCur
     void data.continueFrom(node.id);
   };
   return <div className="design-tree-bar" role="region" aria-label={t("designTree.bar")}>
-    <button data-command="view.design_history.toggle" type="button" className="stage-chip" aria-pressed={open} data-state={data.status} disabled={!tree && data.status === "loading"}
+    {/* S08: the grey 状态树 / 尚无阶段 strip says nothing a person acts on; it is developer mode's. */}
+    {(developerMode || tree?.currentStage) && <button data-command="view.design_history.toggle" type="button" className="stage-chip" aria-pressed={open} data-state={data.status} disabled={!tree && data.status === "loading"}
       title={open ? t("designTree.chip.leave") : t("designTree.chip.open")} onClick={onToggle}>
       <TreeIcon />
       <span className="stage-chip__position">{position}</span>
       {working > 0 && <span className="stage-chip__attention" data-kind="running"><span aria-hidden="true">·</span> {t("designTree.chip.running", { count: working })}</span>}
       {data.status === "failed" && !tree && <span className="stage-chip__warning" aria-hidden="true">!</span>}
-    </button>
+    </button>}
     {fresh.length > 0 && <button data-command="attention.decide.show_ready" type="button" className="stage-chip__ready" onClick={() => onShowReady(fresh[0]!)}>
       <span>{fresh.length === 1 ? t("designTree.chip.readyOne") : t("designTree.chip.ready", { count: fresh.length })}</span>
       <span aria-hidden="true">·</span> <strong>{t("designTree.action.view")}</strong>

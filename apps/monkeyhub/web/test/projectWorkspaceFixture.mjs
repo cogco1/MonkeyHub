@@ -105,7 +105,9 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
     const value = { runtime, published, home, assets, artifact,
       board: boards.get(id) ?? { projectId: id, title: `Board ${id}`, elements: [], seenDocuments: [], revisionSha256: null },
       // #300: Layout, Board's second mode, edits the project's publication; none is saved yet.
-      publication: { projectId: id, revisionSha256: null, title: `Layout ${id}`, spec: { width: 1280, height: 720, template: "hero" }, pages: [], sources: [] } };
+      // S08: the Board shows Board | Layout once the layout holds something; B's has a page of text.
+      publication: { projectId: id, revisionSha256: null, title: `Layout ${id}`, spec: { width: 1280, height: 720, template: "hero" }, sources: [],
+        pages: id === "B" ? [{ id: "page-1", elements: [{ id: "note", kind: "text", x: 80, y: 80, width: 480, height: 60, text: "Structure review", fontSize: 32 }] }] : [] } };
     projects.set(id, value); return value;
   }
   // Everything a conditional view of this fixture is derived from.

@@ -604,12 +604,13 @@ function App() {
         <input data-command="preference.workspace.projects_folder" id="workspace-dir" value={launchDraft.workspaceDir ?? ""} placeholder={workspace?.workspaceDir ?? ""}
           aria-invalid={launchInvalid?.field === "workspace-dir" ? true : undefined}
           onChange={(event) => changeLaunch({ workspaceDir: event.target.value || null })} /></div>
-      <div className="settings-row settings-row--wide"><div className="settings-row__text"><label htmlFor="library-dir">{t("libraryDir")}</label><p className="settings-row__hint">{t("libraryHelp")}</p></div>
+      {/* S08: the skills library project is developer mode's. */}
+      <DeveloperOnly><div className="settings-row settings-row--wide"><div className="settings-row__text"><label htmlFor="library-dir">{t("libraryDir")}</label><p className="settings-row__hint">{t("libraryHelp")}</p></div>
         <input data-command="preference.workspace.library_project" id="library-dir" value={launchDraft.libraryDir ?? ""} aria-describedby="library-dir-status"
           aria-invalid={libraryIssue ? true : undefined}
           onChange={(event) => changeLaunch({ libraryDir: event.target.value || null })} /></div>
       <ErrorMessage issue={libraryIssue} language={preferences.language} />
-      <p className="help" id="library-dir-status">{t("libraryStatus")}</p>
+      <p className="help" id="library-dir-status">{t("libraryStatus")}</p></DeveloperOnly>
       <details className="advanced"><summary data-command="view.disclosure.toggle" data-command-arg="launch_options">{t("advanced")}</summary>
         <WorkspaceDiagnosticsSettings />
         {/* The Hub starts and stops the project service with the project and keeps its default port: developer mode only. */}

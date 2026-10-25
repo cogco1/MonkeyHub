@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent } from "react";
-import { CaptureUpdateAction, convertToExcalidrawElements, MainMenu, newElementWith, WelcomeScreen } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, convertToExcalidrawElements, exportToBlob, MainMenu, newElementWith, WelcomeScreen } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement, FileId } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, DataURL, ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
@@ -8,7 +8,9 @@ import { useProjectMoved, useProjectRevision, useStudio } from "../../api/projec
 import type { StudioClient } from "../../api/project-runtime/client";
 import type { BoardDto, FrameLevelDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { CANVAS_APP_STATE, PROJECT_CANVAS_CLASS, ProjectCanvas, useScenePointer, useWheelZoom } from "../../features/canvas/ProjectCanvas";
-import { DeveloperOnly, usePreferences } from "../../features/settings/preferences";
+import { DeveloperOnly, useDeveloperMode, usePreferences } from "../../features/settings/preferences";
+import { HandToAiBar } from "../../features/handToAi/HandToAiBar";
+import { HAND_TO_AI_WORDS, HandToAiError, handToAiErrorText, marksFile, pngFile, thumbnailOf, useHandToAi, type HandToAiMark } from "../../features/handToAi/handToAi";
 import { plainFailureText } from "../../app/ErrorPanel";
 import { renderDocumentVisual } from "../monkeydiagram/documentVisualInput";
 import { createBoardSaveQueue, type BoardSaveState } from "./boardSaveQueue";
@@ -60,8 +62,8 @@ const selectionCopy = {
 };
 
 const whiteboardCopy = {
-  en: { more: "More board actions", hideSources: "Hide project documents", welcome: "Drop a drawing or image here", gestures: "Circle, draw an arrow, or type a note.", example: "Drawing + arrow + note", designHint: "Select a project drawing and your marks to discover design feedback.", oneSource: "Mark the drawing you want changed inside its own frame. Other selected drawings travel as reference only.", connectReference: "Draw an arrow between the edit drawing and each extra drawing, and select it too, to send them as reference.", referenceMarks: "Marks on a reference drawing cannot be sent. Select that reference's image on its own.", stale: "This drawing is no longer available. Select its current page from project documents.", outside: "Move the selected marks fully onto the drawing before sending.", unsupported: "This selection cannot be sent yet. Use solid outline marks on an uncropped drawing.", invalid: "A selected object has invalid geometry. Redraw it before sending.", linkModel: "Link model in MonkeyDiagram" },
-  "zh-CN": { more: "更多画板操作", hideSources: "收起项目资料", welcome: "拖入图纸或图片开始", gestures: "圈画、画箭头，或直接写下想法。", example: "图纸 + 箭头 + 文字", designHint: "选中项目图纸与圈线，即可查看设计反馈入口。", oneSource: "请在要修改的那张图纸的图框内画出标记；同时选中的其他图纸只作参考。", connectReference: "在主改图纸与每张附加图纸之间画一根连线并一并选中，它们才会作为参考发送。", referenceMarks: "参考图纸上的标记无法一起发送，请只选中该参考图片本身。", stale: "这张图纸已不可用，请从项目资料重新选择当前图页。", outside: "请先将选中圈线完整移入图纸范围。", unsupported: "此选区暂时无法发送，请使用实线轮廓标记及未裁切的图纸。", invalid: "选中对象的几何无效，请重新绘制后发送。", linkModel: "在 MonkeyDiagram 中关联模型" },
+  en: { more: "More board actions", hideSources: "Hide project documents", welcome: "Drop a drawing or image here", gestures: "Circle, draw an arrow, or type a note.", example: "Drawing + arrow + note", designHint: "Circle what should change, write one sentence, and choose Hand to AI.", oneSource: "Mark the drawing you want changed inside its own frame. Other selected drawings travel as reference only.", connectReference: "Draw an arrow between the edit drawing and each extra drawing, and select it too, to send them as reference.", referenceMarks: "Marks on a reference drawing cannot be sent. Select that reference's image on its own.", stale: "This drawing is no longer available. Select its current page from project documents.", outside: "Move the selected marks fully onto the drawing before sending.", unsupported: "This selection cannot be sent yet. Use solid outline marks on an uncropped drawing.", invalid: "A selected object has invalid geometry. Redraw it before sending.", linkModel: "Link model in MonkeyDiagram" },
+  "zh-CN": { more: "更多画板操作", hideSources: "收起项目资料", welcome: "拖入图纸或图片开始", gestures: "圈画、画箭头，或直接写下想法。", example: "图纸 + 箭头 + 文字", designHint: "圈出要改的地方，写一句话，点「交给 AI」。", oneSource: "请在要修改的那张图纸的图框内画出标记；同时选中的其他图纸只作参考。", connectReference: "在主改图纸与每张附加图纸之间画一根连线并一并选中，它们才会作为参考发送。", referenceMarks: "参考图纸上的标记无法一起发送，请只选中该参考图片本身。", stale: "这张图纸已不可用，请从项目资料重新选择当前图页。", outside: "请先将选中圈线完整移入图纸范围。", unsupported: "此选区暂时无法发送，请使用实线轮廓标记及未裁切的图纸。", invalid: "选中对象的几何无效，请重新绘制后发送。", linkModel: "在 MonkeyDiagram 中关联模型" },
 };
 
 type FeedbackContext = { source: PageSource | null; reason: "modelRequired" | "oneSource" | "connectReference" | "referenceMarks" | "stale" | "outside" | "unsupported" | "invalid" | null };
@@ -96,6 +98,30 @@ function isAnnotation(element: ExcalidrawElement, sketchFrames: ReadonlySet<stri
     && ["freedraw", "line", "arrow", "rectangle", "ellipse", "diamond", "text"].includes(element.type);
 }
 
+type Box = { x: number; y: number; width: number; height: number };
+/** An element's box on the board; a line's points already sit inside its width and height. */
+function boxOf(elements: readonly ExcalidrawElement[]): Box | null {
+  if (elements.length === 0) return null;
+  const left = Math.min(...elements.map((element) => Math.min(element.x, element.x + element.width)));
+  const top = Math.min(...elements.map((element) => Math.min(element.y, element.y + element.height)));
+  const right = Math.max(...elements.map((element) => Math.max(element.x, element.x + element.width)));
+  const bottom = Math.max(...elements.map((element) => Math.max(element.y, element.y + element.height)));
+  return { x: Math.round(left), y: Math.round(top), width: Math.round(right - left), height: Math.round(bottom - top) };
+}
+const overlaps = (a: Box, b: Box) => a.x <= b.x + b.width && b.x <= a.x + a.width && a.y <= b.y + b.height && b.y <= a.y + a.height;
+const textOf = (element: ExcalidrawElement) => element.type === "text" ? (element as { text?: string }).text?.trim() ?? "" : "";
+
+/** S08: what 「交给 AI」 would take from the selection: how many marks, and the words already written among them. */
+type HandPick = { marks: number; text: string };
+function handPickOf(elements: readonly ExcalidrawElement[], selectedIds: AppState["selectedElementIds"]): HandPick | null {
+  const chosen = elements.filter((element) => selectedIds[element.id] && !element.isDeleted);
+  if (chosen.length === 0) return null;
+  const sketchFrames = sketchFrameIds(elements), infoCards = componentInfoCardIds(elements as unknown as readonly Record<string, unknown>[]);
+  const marks = chosen.filter((element) => isAnnotation(element, sketchFrames, infoCards));
+  if (marks.length === 0) return null;
+  return { marks: marks.filter((element) => element.type !== "text").length, text: marks.map(textOf).filter(Boolean).join(" ") };
+}
+
 function replacementCopy(t: TFunction) {
   return {
     action: t("board.replacement.action"),
@@ -110,6 +136,12 @@ function replacementCopy(t: TFunction) {
     workCopyHint: t("board.replacement.workCopyHint"),
   };
 }
+
+/**
+ * S08: the Board's toolbar keeps what is drawn every day (select, rectangle, line, arrow, text, pen, eraser);
+ * diamond and ellipse wait in More (board.css hides their toolbar buttons only, so their keys still work).
+ */
+const moreShapesCopy = { en: { diamond: "Diamond", ellipse: "Ellipse" }, "zh-CN": { diamond: "菱形", ellipse: "椭圆" } };
 
 const sketchCopy = {
   en: { newFrame: "New sketch frame", frameName: "Sketch", panel: "Sketch frame", level: "Level", storeyHeight: "Storey height (m)",
@@ -580,6 +612,17 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const renderChatRef = useRef(onRenderChatRequest); renderChatRef.current = onRenderChatRequest;
   const feedbackQueued = useRef(false);
   const [feedbackWaiting, setFeedbackWaiting] = useState(false);
+  // S08: one 「交给 AI」 for the selected marks; the older design-feedback and image-discussion dialogs are developer mode's.
+  const developer = useDeveloperMode();
+  const handToAi = useHandToAi();
+  const handToAiRef = useRef(handToAi); handToAiRef.current = handToAi;
+  // Without a conversation to take it (a Board on its own) the older entries stay, as they were.
+  const legacy = developer || !handToAi;
+  const [handPick, setHandPick] = useState<HandPick | null>(null);
+  const [handWords, setHandWords] = useState("");
+  const [handSending, setHandSending] = useState(false);
+  const handSendingRef = useRef(false);
+  const [handError, setHandError] = useState<string | null>(null);
   const [pages, setPages] = useState<Record<string, number>>({});
   const [exportFormat, setExportFormat] = useState<"merged-pdf" | "page-pdfs" | "png" | "jpeg">("merged-pdf");
   const [exportZip, setExportZip] = useState(false);
@@ -706,6 +749,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     const images = gesture || !renderChatRef.current ? []
       : selectedRenderPages(elements as unknown as readonly Record<string, unknown>[], appState.selectedElementIds, documentsRef.current);
     setRenderPages((previous) => JSON.stringify(previous) === JSON.stringify(images) ? previous : images);
+    const pick = gesture || !handToAiRef.current ? null : handPickOf(elements, appState.selectedElementIds);
+    setHandPick((previous) => JSON.stringify(previous) === JSON.stringify(pick) ? previous : pick);
     // The panel follows the selected sketch frame; only what it shows is compared,
     // so dragging a shape inside the frame does not re-render it on every pointer move.
     const sketch = sketchSelectionOf(elements, appState.selectedElementIds);
@@ -1303,8 +1348,14 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     const current = api.getSceneElementsIncludingDeleted();
     const sketchFrames = sketchFrameIds(current);
     const infoCards = componentInfoCardIds(current as unknown as readonly Record<string, unknown>[]);
-    const removed = new Set(current.filter((element) => isAnnotation(element, sketchFrames, infoCards)).map((element) => element.id));
-    if (removed.size === 0) return;
+    removeMarks(new Set(current.filter((element) => isAnnotation(element, sketchFrames, infoCards)).map((element) => element.id)));
+    root.current?.querySelector<HTMLElement>(".excalidraw")?.focus();
+  };
+  /** Take these marks off the board in one undoable step; what they were bound to keeps its other bindings. */
+  const removeMarks = (removed: ReadonlySet<string>) => {
+    const api = canvas.current;
+    if (!api || removed.size === 0) return;
+    const current = api.getSceneElementsIncludingDeleted();
     const elements = current.map((element) => {
       if (element.isDeleted) return element;
       if (removed.has(element.id)) return newElementWith(element, { isDeleted: true });
@@ -1314,7 +1365,46 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     });
     api.updateScene({ elements, appState: { selectedElementIds: {}, selectedGroupIds: {} }, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
     capture(elements);
-    root.current?.querySelector<HTMLElement>(".excalidraw")?.focus();
+  };
+  /**
+   * S08: the selected marks and one sentence, handed to the AI in the project's conversation: a picture of the
+   * marks over what they cover, and the marks file with the sentence on the first circle. Once the conversation
+   * took them, the marks leave the board (Ctrl+Z brings them back); the message and History keep them.
+   */
+  const handOver = async () => {
+    const api = canvas.current, host = handToAiRef.current;
+    if (!api || !host || !ready || handSendingRef.current) return;
+    handSendingRef.current = true; setHandSending(true); setHandError(null);
+    try {
+      const all = api.getSceneElements();
+      const selectedIds = api.getAppState().selectedElementIds;
+      const chosen = all.filter((element) => selectedIds[element.id]);
+      const sketchFrames = sketchFrameIds(all), infoCards = componentInfoCardIds(all as unknown as readonly Record<string, unknown>[]);
+      const marks = chosen.filter((element) => isAnnotation(element, sketchFrames, infoCards));
+      const words = handWords.trim() || marks.map(textOf).filter(Boolean).join(" ");
+      if (marks.length === 0) throw new HandToAiError("NOTHING_MARKED", "Nothing marked.");
+      if (!words) throw new HandToAiError("EMPTY", "No words.");
+      const area = boxOf(chosen)!;
+      // The picture shows the marks over everything they cover, as the person sees it.
+      const shown = all.filter((element) => selectedIds[element.id] || overlaps(boxOf([element])!, area));
+      const blob = await exportToBlob({ elements: shown, files: api.getFiles(), mimeType: "image/png", exportPadding: 24, maxWidthOrHeight: 2400,
+        appState: { ...api.getAppState(), exportBackground: true, viewBackgroundColor: "#ffffff", exportWithDarkMode: false } });
+      const markRows: HandToAiMark[] = marks.map((element) => ({ id: element.id, kind: element.type, bounds: boxOf([element]), text: textOf(element) || null }));
+      const covered = shown.filter((element) => !marks.includes(element)).map((element) => {
+        const page = imageSource(element as unknown as Record<string, unknown>);
+        const document = page ? findSource(documentsRef.current, page) : null;
+        return { id: element.id, kind: element.type, bounds: boxOf([element]), selected: Boolean(selectedIds[element.id]),
+          ...(page ? { page: { ...page, fileName: document?.fileName ?? null, pageNumber: page.pageIndex + 1 } } : {}),
+          ...(textOf(element) ? { text: textOf(element) } : {}) };
+      });
+      const files = [pngFile(blob, "board"), marksFile("board", words, markRows, { board: { title: titleRef.current, area }, objects: covered })];
+      await host({ projectId: board.projectId, surface: "board", words, marks: marks.filter((element) => element.type !== "text").length,
+        files, thumbnail: await thumbnailOf(blob) });
+      if (!alive.current) return;
+      removeMarks(new Set(marks.map((element) => element.id)));
+      setHandWords(""); setNotice(HAND_TO_AI_WORDS[language].sent);
+    } catch (cause) { if (alive.current) setHandError(handToAiErrorText(cause, language)); }
+    finally { handSendingRef.current = false; if (alive.current) setHandSending(false); }
   };
   // One sketch frame carries the only scene-to-metres affine there is. It is an
   // ordinary Excalidraw frame, so it is saved, undone and versioned like the
@@ -1437,7 +1527,11 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
         <summary className="menu-command" data-command="view.menu.toggle" data-command-arg="board_more">{boardText.more}</summary>
         <div className="monkeyboard-actions-panel" role="group" aria-label={boardText.more}>
           {bar.shown("view.canvas.fit") && <button data-command="view.canvas.fit" disabled={!ready} onClick={() => canvas.current?.scrollToContent(undefined, { fitToContent: true, animate: false })}>{text.fit}</button>}
-          {bar.shown("markup.hand_to_ai.open") && <button data-command="markup.hand_to_ai.open" disabled={!ready || busy || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>}
+          {legacy && bar.shown("markup.hand_to_ai.open") && <button data-command="markup.hand_to_ai.open" disabled={!ready || busy || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>}
+          {(["diamond", "ellipse"] as const).filter((shape) => bar.shown(`view.board_tools.${shape}`)).map((shape) =>
+            <button key={shape} type="button" data-command={shape === "diamond" ? "view.board_tools.diamond" : "view.board_tools.ellipse"} disabled={!ready}
+              onClick={() => { closeActions(); canvas.current?.setActiveTool({ type: shape }); root.current?.querySelector<HTMLElement>(".excalidraw")?.focus(); }}>
+              {moreShapesCopy[language][shape]}</button>)}
           {bar.shown("sketch.to_model.new_frame") && <button data-command="sketch.to_model.new_frame" disabled={!ready || busy || saveState.conflict} onClick={() => { void newSketchFrame(); }}>{sketchCopy[language].newFrame}</button>}
           {bar.shown("markup.hand_to_ai.enter_crit") && <button data-command="markup.hand_to_ai.enter_crit" disabled={!ready} onClick={enterCrit}>{text.crit}</button>}
           {bar.shown("markup.clear") && <button type="button" data-command="markup.clear" disabled={!ready || busy || saveState.conflict || !hasAnnotations} onClick={clearAnnotations} title={text.clearAnnotationsHint}>{text.clearAnnotations}</button>}
@@ -1519,7 +1613,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
         </ProjectCanvas>
         {!ready && <div className="monkeyboard-initializing" role="status">{text.loading}</div>}
         {busy && <div className="monkeyboard-busy" role="status">{text.busy}</div>}
-        {!critMode && (context || source || renderPages.length > 0) && <div className="monkeyboard-context" role="group" aria-label={language === "en" ? "Selected drawing actions" : "选中图纸操作"}>
+        {!critMode && (context || source || renderPages.length > 0 || handPick) && <div className="monkeyboard-context" role="group" aria-label={language === "en" ? "Selected drawing actions" : "选中图纸操作"}>
           {contextDocument && contextSource && <div className="monkeyboard-context-source">
             <div className="monkeyboard-context-identity">
               <span>{selectionCopy[language].selected} · {contextSource.pageIndex + 1}/{contextDocument.pageCount}</span>
@@ -1532,16 +1626,21 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
           <div className="monkeyboard-context-actions">
             {source && selected && onOpenDocument && <button data-command="view.open_document.page" disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(selected)}>{text.openPage}</button>}
             {source && <button data-command="document.replace_page.open" disabled={!ready || busy || saveState.conflict} onClick={openSelectedReplacement}>{replacementText.action}</button>}
-            {/* #253: a plain registered image needs no model; nothing is saved or sent from here. */}
-            {onRenderChatRequest && renderPages.length > 0 && <button type="button" className="monkeyboard-render-open" data-command="markup.hand_to_ai.discuss" disabled={!ready} onClick={openRender}>{renderCopy[language].action}</button>}
-            {context && (context.reason === "modelRequired" && context.source
+            {/* #253: a plain registered image needs no model; nothing is saved or sent from here. S08: developer mode's, beside 交给 AI. */}
+            {legacy && onRenderChatRequest && renderPages.length > 0 && <button type="button" className="monkeyboard-render-open" data-command="markup.hand_to_ai.discuss" disabled={!ready} onClick={openRender}>{renderCopy[language].action}</button>}
+            {/* S08: the exact-model design proposal is developer mode's; 交给 AI below needs no linked model. */}
+            {legacy && context && (context.reason === "modelRequired" && context.source
               ? <button type="button" className="monkeyboard-context-next" data-command="view.open_document.link_model" disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(context.source!)}>{boardText.linkModel}</button>
               : <button className="monkeyboard-primary monkeyboard-context-next" data-command="markup.hand_to_ai.open" disabled={!!context.reason || !ready || busy || saveState.conflict || feedbackWaiting} aria-describedby={context.reason ? "monkeyboard-context-hint" : undefined} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>)}
           </div>
-          {context?.reason && <p id="monkeyboard-context-hint" role="status">{context.reason === "modelRequired" ? feedbackCopy[language].modelRequired : boardText[context.reason]}</p>}
+          {legacy && context?.reason && <p id="monkeyboard-context-hint" role="status">{context.reason === "modelRequired" ? feedbackCopy[language].modelRequired : boardText[context.reason]}</p>}
+          {handPick && handToAi && <HandToAiBar words={handWords} onWords={(value) => { setHandWords(value); setHandError(null); }} placeholder={handPick.text}
+            disabled={!ready || saveState.conflict} sending={handSending} error={handError} onSend={() => { void handOver(); }} />}
         </div>}
         {critMode && <div className="monkeyboard-crit-actions" role="group" aria-label={text.crit}>
-          <button type="button" className="monkeyboard-primary" data-command="markup.hand_to_ai.open" disabled={!ready || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : text.critSubmit}</button>
+          {legacy && <button type="button" className="monkeyboard-primary" data-command="markup.hand_to_ai.open" disabled={!ready || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : text.critSubmit}</button>}
+          {handPick && handToAi && <HandToAiBar words={handWords} onWords={(value) => { setHandWords(value); setHandError(null); }} placeholder={handPick.text}
+            disabled={!ready || saveState.conflict} sending={handSending} error={handError} onSend={() => { void handOver(); }} />}
           <button type="button" data-command="markup.clear" disabled={!ready || busy || saveState.conflict || !hasAnnotations} onClick={clearAnnotations} title={text.clearAnnotationsHint}>{text.clearAnnotations}</button>
           <button type="button" data-command="markup.hand_to_ai.exit_crit" onClick={exitCrit}>{text.critExit}</button>
         </div>}

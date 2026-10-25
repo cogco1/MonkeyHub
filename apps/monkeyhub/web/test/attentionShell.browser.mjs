@@ -344,7 +344,8 @@ try {
   assert.equal(await bar.locator(".monkeyboard-title").count(), 0, "and the board's title field");
   await bar.locator('[data-command-arg="board_more"]').click();
   assert.deepEqual(await bar.locator(".monkeyboard-actions-panel [data-command]").evaluateAll((items) => items.map((item) => item.getAttribute("data-command"))),
-    ["view.canvas.fit", "sketch.to_model.new_frame"], "More keeps Fit and New sketch frame");
+    ["view.canvas.fit", "view.board_tools.diamond", "view.board_tools.ellipse", "sketch.to_model.new_frame"],
+    "More keeps Fit, the diamond and ellipse the toolbar left out (S08), and New sketch frame");
   await bar.locator('[data-command-arg="board_more"]').click();
   await shoot(page, "attention-board-desktop-light");
   await page.locator(".attention-shell__top").click({ position: { x: 1200, y: 20 } });

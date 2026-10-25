@@ -242,10 +242,12 @@ export const COMMAND_TREE: CommandTree = {
       "status": "PRODUCTION",
       "host": "runtime",
       "purpose": {
-        "en": "Hand marks and a note to the AI: send design feedback from the Board, discuss an image or render, run a crit, send the tracing paper review, submit a page note, or clear the marks.",
-        "zh-CN": "把批注和意见交给 AI：从画板发送设计反馈、讨论图片或渲染、进行 Crit、发送描图纸审阅意见、提交本页意见，或清除批注。"
+        "en": "Hand marks and one sentence to the AI from the Board's selection, a document page or the model's tracing paper: the sentence on the first circle, the marked objects and a picture attached, sent into the project's conversation. Developer mode keeps the exact-model design feedback, image discussion, page note and tracing paper review to the Board.",
+        "zh-CN": "把批注和一句话交给 AI：画板选中浮层、文档页、模型描图纸各一个「交给 AI」，原话挂在第一个圈上，圈到的对象和截图作为附件发进项目对话。开发者模式保留精确绑定模型的设计反馈、讨论图片、本页意见和描图纸审阅发画板。"
       },
       "terms": [
+        "hand marks to the AI",
+        "交给 AI",
         "send feedback to the AI",
         "discuss this drawing",
         "submit a page note",
@@ -256,7 +258,6 @@ export const COMMAND_TREE: CommandTree = {
         "清除批注",
         "hand off marks",
         "ask for a change",
-        "交给 AI",
         "评图"
       ]
     },
@@ -2935,6 +2936,89 @@ export const COMMAND_TREE: CommandTree = {
       "inPlace": true
     },
     {
+      "id": "view.board_tools.diamond",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Diamond",
+        "zh-CN": "菱形"
+      },
+      "terms": [
+        "rhombus",
+        "画菱形"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true
+    },
+    {
+      "id": "view.board_tools.ellipse",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Ellipse",
+        "zh-CN": "椭圆"
+      },
+      "terms": [
+        "oval",
+        "画椭圆",
+        "画圆"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true
+    },
+    {
+      "id": "markup.hand_to_ai.hand_over",
+      "capability": "markup.review",
+      "label": {
+        "en": "Hand to AI",
+        "zh-CN": "交给 AI"
+      },
+      "terms": [
+        "send to AI",
+        "ask AI to change this",
+        "发给 AI",
+        "让 AI 改"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true,
+      "phrases": [
+        "把圈的地方交给 AI",
+        "让 AI 按我圈的改",
+        "这几处圈好了发给 AI",
+        "hand these marks to the AI",
+        "send what I circled to the AI"
+      ],
+      "aliases": [
+        "交给AI",
+        "发给AI",
+        "圈了让AI改",
+        "hand to AI",
+        "send marks to AI"
+      ]
+    },
+    {
       "id": "markup.hand_to_ai.open",
       "capability": "markup.review",
       "label": {
@@ -2945,7 +3029,7 @@ export const COMMAND_TREE: CommandTree = {
       "surface": "board",
       "group": "board",
       "channel": "side",
-      "tier": "basic",
+      "tier": "developer",
       "place": null,
       "when": [],
       "shortcut": null,
@@ -2981,7 +3065,7 @@ export const COMMAND_TREE: CommandTree = {
       "surface": "board",
       "group": "board",
       "channel": "side",
-      "tier": "basic",
+      "tier": "developer",
       "place": null,
       "when": [],
       "shortcut": null,
@@ -3017,7 +3101,7 @@ export const COMMAND_TREE: CommandTree = {
       "surface": "board",
       "group": "board",
       "channel": "side",
-      "tier": "basic",
+      "tier": "developer",
       "place": null,
       "when": [],
       "shortcut": null,
@@ -3053,7 +3137,7 @@ export const COMMAND_TREE: CommandTree = {
       "surface": "board",
       "group": "board",
       "channel": "side",
-      "tier": "basic",
+      "tier": "developer",
       "place": null,
       "when": [],
       "shortcut": null,
@@ -3149,7 +3233,7 @@ export const COMMAND_TREE: CommandTree = {
       "surface": "modeling",
       "group": "board",
       "channel": "side",
-      "tier": "basic",
+      "tier": "developer",
       "place": null,
       "when": [],
       "shortcut": null,
@@ -3183,7 +3267,7 @@ export const COMMAND_TREE: CommandTree = {
       "surface": "document",
       "group": "board",
       "channel": "side",
-      "tier": "basic",
+      "tier": "developer",
       "place": null,
       "when": [],
       "shortcut": null,

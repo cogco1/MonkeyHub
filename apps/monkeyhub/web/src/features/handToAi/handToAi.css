@@ -1,0 +1,10 @@
+.hand-to-ai { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.hand-to-ai__row { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.hand-to-ai__words { flex: 1 1 14em; min-width: 8em; padding: 4px 8px; font: inherit; color: var(--ink); background: var(--control-bg, var(--panel));
+  border: 1px solid var(--control-border, var(--line)); border-radius: var(--control-radius, 6px); }
+.hand-to-ai__send { flex: none; padding: 4px 12px; font: inherit; font-weight: 600; cursor: pointer; color: var(--primary-ink, #fff);
+  background: var(--primary-bg, var(--accent)); border: 1px solid var(--primary-bg, var(--accent)); border-radius: var(--control-radius, 6px); }
+.hand-to-ai__send:disabled { opacity: .5; cursor: default; }
+.hand-to-ai__references > summary { cursor: pointer; font-size: .92em; color: var(--muted); }
+.hand-to-ai__error { margin: 0; color: var(--danger, var(--ink)); font-size: .92em; }
+.hand-to-ai__sent { margin: 0; font-size: .92em; color: var(--muted); }

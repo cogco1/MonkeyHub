@@ -9,6 +9,7 @@ import type { PageSource } from "../workspaces/monkeyboard/boardScene";
 import type { BoardPageRequest } from "../workspaces/monkeyboard/Board";
 import { BoardRenderError, type BoardRenderChatRequest } from "../workspaces/monkeyboard/boardRender";
 import type { BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
+import { HandToAiContext, HandToAiError, type HandToAiRequest, type HandToAiSent } from "../features/handToAi/handToAi";
 import App, { type WorkspaceDesignContext } from "./App";
 export type { WorkspaceDesignContext } from "./App";
 import { BoardModeSwitch } from "./BoardModeSwitch";
@@ -20,6 +21,8 @@ import { currentView, DesignTreeBar, type DesignTreeView } from "../features/des
 import { useDesignTree, useSeenCandidates } from "../features/designTree/useDesignTree";
 import { treeWords } from "../features/designTree/words";
 import { useT } from "../i18n/useT";
+import { useDeveloperMode } from "../features/settings/preferences";
+import { publicationClient } from "../api/project-runtime/publication";
 import type { MessageKey } from "../i18n/messages.en";
 import { createComparisonHost, type HostedComparison } from "../workspaces/monkeyarch/viewer/comparisonPair";
 import { AutoRetry } from "./AutoRetry";
@@ -64,6 +67,11 @@ export interface ProjectWorkspaceProps {
    * A host that cannot take it throws a BoardRenderError, which the Board's dialog shows.
    */
   onRenderChatRequest?: (request: BoardRenderChatRequest) => void;
+  /**
+   * S08: 「交给 AI」 from this project's Board, page or tracing paper, sent into the host's conversation for it.
+   * Only a request naming this workspace's own project is passed on; a host that cannot take it throws a HandToAiError.
+   */
+  onHandToAi?: (request: HandToAiRequest) => Promise<HandToAiSent>;
   onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
   /** Where a chat message lands (#285): the position the Stage chip states, as it states it. */
   onPositionChange?: (position: WorkspacePosition | null) => void;
@@ -86,7 +94,7 @@ export interface WorkspacePosition {
 
 /** One mounted project: the Board, its page editor and the same local model draft. */
 export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, candidateFollowsHead = false, treeFocus = null, active = true, refreshKey = 0, documentRequest = null,
-  comparisonRequest = null, onComparisonClose, onWorkspaceChange, onChatRequest, onRenderChatRequest, onDesignContextChange, onPositionChange, embedded = false }: ProjectWorkspaceProps) {
+  comparisonRequest = null, onComparisonClose, onWorkspaceChange, onChatRequest, onRenderChatRequest, onHandToAi, onDesignContextChange, onPositionChange, embedded = false }: ProjectWorkspaceProps) {
   const renderReader = useRef<(() => RenderView | null) | null>(null);
   const registerRenderReader = useCallback((reader: (() => RenderView | null) | null) => { renderReader.current = reader; }, []);
   const readRenderView = useCallback(() => renderReader.current?.() ?? null, []);
@@ -284,6 +292,26 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     }
     onRenderChatRequest(request);
   }), [onRenderChatRequest]);
+  // S08: Board | Layout shows only once the layout holds something (or in developer mode, or on Layout itself);
+  // until then the Board stands alone, and 放入汇报 is still how a layout begins.
+  const developer = useDeveloperMode();
+  const [layoutUsed, setLayoutUsed] = useState(false);
+  // Read once the Board is first shown, and again only when the project is refreshed: switching surfaces asks nothing.
+  const layoutRead = useRef<number | null>(null);
+  useEffect(() => {
+    if (layoutUsed || developer || !active || server.status !== "ready" || workspace !== "board" || layoutRead.current === refreshKey) return;
+    layoutRead.current = refreshKey;
+    void publicationClient(connection).read().then((saved) => {
+      if (saved.pages.some((page) => page.elements.length > 0)) setLayoutUsed(true);
+    }, () => { /* an unreadable layout keeps the switch away; Layout is still reachable from 放入汇报 and Ctrl K */ });
+  }, [layoutUsed, developer, active, server.status, workspace, refreshKey, connection]);
+  useEffect(() => { if (workspace === "publish") setLayoutUsed(true); }, [workspace]);
+  const handToAi = useMemo(() => onHandToAi ? (request: HandToAiRequest) => {
+    if (boundProjectId.current === undefined || request.projectId !== boundProjectId.current) {
+      return Promise.reject(new HandToAiError("PROJECT_CHANGED", "The request names a project this workspace is not bound to."));
+    }
+    return onHandToAi(request);
+  } : null, [onHandToAi]);
   useEffect(() => {
     if (!active || server.status !== "ready" || !documentRequest ||
         openedDocumentRequest.current === documentRequest.requestId) return;
@@ -300,12 +328,12 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   // What is on screen: the comparison covers the surface it was opened over, which stays mounted.
   const shown = comparison ? null : workspace;
   const modelShown = modelVisible && !comparison;
-  return <div className="project-workspace" style={{ height: "100%", minHeight: 0 }}>
+  return <HandToAiContext.Provider value={handToAi}><div className="project-workspace" style={{ height: "100%", minHeight: 0 }}>
     {/* #337: one bar over every surface. The surface on screen puts its menus on the left; the project's
         position stays at the right end, where the Stage chip opens the Design Tree. #300: Board and its
         Layout mode share one rail entry, and this switch moves between the two mounted surfaces. */}
     <ProjectBar label={t("workspace.surfaceBar")} frontOnly={embedded && (shown === "arch" || (shown === "board" && !pageOpen))}
-      lead={((shown === "board" && !pageOpen) || shown === "publish") && <BoardModeSwitch mode={workspace === "publish" ? "layout" : "board"}
+      lead={((shown === "board" && !pageOpen && (layoutUsed || developer)) || shown === "publish") && <BoardModeSwitch mode={workspace === "publish" ? "layout" : "board"}
         onChange={(mode) => onWorkspaceChange(mode === "layout" ? "publish" : "board")} />}
       position={designTree.available && <DesignTreeBar data={designTree} seen={seenCandidates.seen} open={shown === "tree"} viewing={viewing}
         onToggle={() => { if (comparison) { closeComparison(); onWorkspaceChange("tree"); }
@@ -371,5 +399,5 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
         </Suspense>
       </div>}
     </ProjectBar>
-  </div>;
+  </div></HandToAiContext.Provider>;
 }

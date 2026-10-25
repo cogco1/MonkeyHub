@@ -59,7 +59,7 @@ type FailureKind =
   | "network" | "version" | "crash" | "stale" | "project" | "base" | "pending" | "rejected"
   | "invariant" | "timeout" | "sectionMisses" | "sectionEye" | "section"
   | "drawingFont" | "drawingEmpty" | "drawingSource" | "drawing"
-  | "unsupported" | "write" | "record"
+  | "unsupported" | "write" | "record" | "notEditable"
   | "notFound" | "tooLarge" | "conflict" | "invalid" | "server" | "unknown";
 
 interface FailureCopy { readonly reason: string; readonly next: string }
@@ -137,6 +137,11 @@ const FAILURES: Record<FailureKind, Record<Language, FailureCopy>> = {
   drawing: {
     "zh-CN": { reason: "图纸没有生成。", next: "检查图纸设置后重试。" },
     en: { reason: "The drawing could not be made.", next: "Check the drawing settings, then try again." },
+  },
+  // A document whose pages were replaced one by one has no single file to edit (the Board's 获取可编辑副本).
+  notEditable: {
+    "zh-CN": { reason: "这份资料有的页已经单独换成了别的文件，没有一个文件能代表整份。", next: "去换上来的那份资料上取可编辑副本。" },
+    en: { reason: "Some pages of this document were replaced on their own, so no single file can stand for it.", next: "Get an editable copy of the document that replaced them." },
   },
   unsupported: {
     "zh-CN": { reason: "这项修改目前无法自动完成。", next: "换一种说法，或直接在模型上修改。" },
@@ -222,6 +227,7 @@ function failureKind(error: FailureLike): FailureKind {
   // with no status; only the server's answer means the change itself.
   if (code === MISSING_EDITABLE_CONTROL || (code === UNSUPPORTED_REQUEST && status > 0)) return "unsupported";
   if (code.endsWith("_WRITE_FAILED")) return "write";
+  if (code === "DOCUMENT_NOT_EDITABLE") return "notEditable";
   // A 409 `*_INVALID` is a retained record that contradicts itself, not a bad request.
   if (status === 409 && code.endsWith("_INVALID")) return "record";
   if (status === 404) return "notFound";
