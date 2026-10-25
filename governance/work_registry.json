@@ -1055,7 +1055,7 @@
           "base_ref": "af05e0907",
           "contributor": "Claude",
           "reviewer": null,
-          "handoff": "第三批第 9 条「圈一下说一句就改」第 2 步 (03 3-3): a message carries its marks; the design loop reads what they lie on and asks with a change list; the card runs the ticked items through design_submit, and an unsure item asks which part was meant. Built on claude/300-b3-markup (POST /api/markup/resolve); merge that first.",
+          "handoff": "第三批第 9 条「圈一下说一句就改」第 2 步 (03 3-3): a message carries its marks; the design loop reads what they lie on and asks with a change list; the card runs the ticked items through design_submit, and an unsure item asks which part was meant. Built on claude/300-b3-markup (POST /api/markup/resolve); merge that first. Item 23 (a small sure list made at once, with an undo) rides on branch claude/300-b3-quick-apply in this lane.",
           "modules": [
             "hub.shell"
           ],

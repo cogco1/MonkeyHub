@@ -35,8 +35,10 @@ from ..settings.models import UserSettingsDto
 from ..settings.store import SettingsError, read_user_settings
 from . import producers
 from .actions import AttentionExecutor, check_card
-from .change_list import ChangeList, ChangeListItem, change_list_card, check_against, unsure_cards
-from .models import AttentionItem
+from .change_list import (
+    ChangeList, ChangeListItem, applies_without_asking, approval, change_list_card, check_against, unsure_cards,
+)
+from .models import AttentionItem, CommandRef, Resolution, UndoSpec
 from .store import HUB_PROJECT_ID, AttentionStore, runtime_id
 
 # How long a project's events must stay quiet before its cards are read again.
@@ -192,7 +194,7 @@ class AttentionHub:
         return self.store.upsert(session.projectId, session.projectDir, draft)
 
     def propose_changes(self, session_id: str, message_id: str, question: str, items: Iterable[ChangeListItem], *,
-                        token: str) -> AttentionItem:
+                        token: str) -> "ChangeListAnswer":
         """A design-loop turn read the architect's marks as these changes: one change_list card, and a question per
         unsure item (#300 3-3).
 
@@ -202,6 +204,12 @@ class AttentionHub:
         words kept with them (that message, the page's comment and its text
         marks) and the working design's catalogue. A list they do not bear out is
         refused with what is wrong, and nothing is written.
+
+        A small list (at most ``SMALL_CHANGE`` parts), sure in every item and
+        taken from the message's own words, is not asked about (decision 5): it
+        is answered for the architect at once, its card says "changed N parts"
+        with an undo back to the working design as it stood, and the answer
+        carries the approval the Agent builds in this same turn.
         """
 
         if not token or not secrets.compare_digest(self.chats.presentation_token(session_id), token):
@@ -220,15 +228,32 @@ class AttentionHub:
             change_list = ChangeList(runId=message.markup.runId, items=list(items))
         except ValueError as exc:
             raise HubFailure(422, "CHANGE_LIST_REFUSED", str(exc)[:2000]) from exc
-        problems = check_against(change_list, readings["readings"], words,
-                                 self._catalog(session.projectId, session.projectDir))
+        catalog = self._catalog(session.projectId, session.projectDir)
+        problems = check_against(change_list, readings["readings"], words, catalog)
         if problems:
             raise HubFailure(422, "CHANGE_LIST_REFUSED", " ".join(problems)[:2000])
-        card = self.store.upsert(session.projectId, session.projectDir, change_list_card(
-            session_id, message_id, change_list, readings["readings"], words, question))
-        for draft in unsure_cards(card.id, change_list, readings["readings"]):
-            self.store.upsert(session.projectId, session.projectDir, draft)
-        return card
+        draft = change_list_card(session_id, message_id, change_list, readings["readings"], words, question)
+        quick = (applies_without_asking(change_list, readings["readings"], words, catalog)
+                 and not check_against(change_list, readings["readings"], [message.content], catalog))
+        if quick:
+            touched = len({target for item in change_list.items for target in item.targets})
+            draft = draft.model_copy(update={"title": f"Changed {touched} part{'s' if touched != 1 else ''}",
+                                             "titleZh": f"已改 {touched} 个构件"})
+        card = self.store.upsert(session.projectId, session.projectDir, draft)
+        if not quick:
+            for unsure in unsure_cards(card.id, change_list, readings["readings"]):
+                self.store.upsert(session.projectId, session.projectDir, unsure)
+            return ChangeListAnswer(card=card)
+        # Answered for the architect: the undo goes back to the working design as it stands before the Agent builds.
+        position = self.studio(session.projectId, session.projectDir, "GET", "/api/working-draft").get("current") or {}
+        applied = approval(card.id, change_list, [message.content])
+        self.store.begin(card.id, "run", by="machine")
+        undo = None if not position.get("runId") else UndoSpec(action=CommandRef(
+            commandId="design.go_to_step.continue",
+            args={"runId": position["runId"], "branchId": position.get("branchId")}))
+        card = self.store.settle(card.id, Resolution(optionId="run", by="machine", at=self._clock().isoformat(),
+                                                     receipt={"items": [str(n) for n in applied["items"]]}, undo=undo))
+        return ChangeListAnswer(card=card, applied=applied)
 
     def read_marks(self, project_id: str, project_dir: str, markup) -> tuple[dict, dict]:
         """A message's page ink, from its exact saved revision, and the Runtime's reading of each mark."""
@@ -370,6 +395,14 @@ class AttentionChangeListRequest(BaseModel):
     changes: list[ChangeListItem] = Field(min_length=1, max_length=30)
 
 
+class ChangeListAnswer(BaseModel):
+    """The list's card, and, when it was small and sure enough to apply at once, the approval to build now."""
+
+    card: AttentionItem
+    applied: dict[str, Any] | None = Field(default=None, description=(
+        "cardId, items, content and quotes, as a run card would send them; null while the list waits on its card."))
+
+
 def hub_router(attention: AttentionHub) -> APIRouter:
     """The project's attention conversation, and the questions a conversation's own tools put to its architect."""
 
@@ -391,8 +424,8 @@ def hub_router(attention: AttentionHub) -> APIRouter:
         token = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else ""
         return attention.ask(body.sessionId, body.messageId, body.question, body.reason, body.refs, token=token)
 
-    @routes.post("/api/attention/change-lists", response_model=AttentionItem, status_code=201)
-    def attention_change_list(request: Request, body: AttentionChangeListRequest) -> AttentionItem:
+    @routes.post("/api/attention/change-lists", response_model=ChangeListAnswer, status_code=201)
+    def attention_change_list(request: Request, body: AttentionChangeListRequest) -> ChangeListAnswer:
         """Called by the conversation's tool server when design_ask asks with a change list."""
 
         if request.client is None or request.client.host not in {"127.0.0.1", "::1"}:

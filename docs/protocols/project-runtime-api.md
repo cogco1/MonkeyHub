@@ -1223,6 +1223,9 @@ the architect's own words (the message, the page comment, its text marks) and th
 puts it on one `change_list` card (`POST /api/attention/change-lists`, refused with `422 CHANGE_LIST_REFUSED`),
 with a question for each unsure item. Running the card posts the architect's own passages with the ticked items
 as `changeListApproval`, and the Agent builds each group with `design_submit` and that group's `feedbackQuote`.
+A list of at most five parts, sure in every item and taken from the message's own words, is not asked about: the
+Hub answers it for the architect at once (the card says it changed N parts, with an undo back to the working
+design as it stood), and `design_ask` answers with the approval to build in the same turn.
 
 ## 6. Pick and gesture resolution
 

@@ -69,6 +69,7 @@ class FakeRuntimes:
         self.runtime = type("Runtime", (), {"project_id": "thi-hemp", "project_dir": project_dir})()
         self.events = StudioEvents(buffer_size=64)
         self.sent: list[tuple] = []
+        self.current = "run-v16"
 
     def open(self, project_id, project_dir):
         return self.runtime
@@ -86,6 +87,12 @@ class FakeRuntimes:
                  "label": "踢脚线也换", "fontSize": 0.02}], "comment": COMMENT})
         if route.path == "/api/markup/resolve":
             return answer(200, {"source": "drawing", "stateDigest": "c" * 64, "readings": READINGS})
+        if route.path == "/api/working-draft" and method == "GET":
+            return answer(200, {"projectId": "thi-hemp", "revisionSha256": "rev-0",
+                                "current": {"runId": self.current, "branchId": "main"}})
+        if route.path == "/api/working-draft" and method == "PUT":
+            self.current = json.loads(body)["runId"]
+            return answer(200, {"projectId": "thi-hemp"})
         if route.path == "/api/state":
             return answer(200, {"catalog": {"components": [
                 {"componentId": "wall-east", "elementIds": []}, {"componentId": "floor", "elementIds": ["joist-1", "joist-2"]},
@@ -130,7 +137,7 @@ class ChangeListFlowTests(unittest.TestCase):
         self.hub = AttentionHub(self.store, self.runtimes, self.chats, clock=lambda: NOW, user_settings=no_settings)
 
     def propose(self, *items, message="u1", token="token-c1"):
-        return self.hub.propose_changes("c1", message, "我这样读你的批注，对吗？", items, token=token)
+        return self.hub.propose_changes("c1", message, "我这样读你的批注，对吗？", items, token=token).card
 
     def listed(self):
         return [
@@ -198,6 +205,27 @@ class ChangeListFlowTests(unittest.TestCase):
         approval = self.chats.posted[-1][1].changeListApproval
         self.assertEqual([(row.n, row.targets) for row in approval.items], [(2, ["joist-2"])])
         self.assertEqual(self.chats.posted[-1][1].content, WORDS)
+
+    def test_a_small_sure_list_from_the_message_is_made_at_once_and_can_be_undone(self):
+        answer = self.hub.propose_changes("c1", "u1", "我这样读你的批注", [
+            item(1, ["east"], "东墙换成砖", "east wall in brick", ["wall-east"])], token="token-c1")
+        card = answer.card
+        self.assertEqual((card.state, card.resolution.by, card.titleZh), ("done", "machine", "已改 1 个构件"))
+        self.assertEqual(answer.applied["items"], [1])
+        self.assertEqual(answer.applied["quotes"][0]["feedbackQuote"], WORDS, "a passage of the message it answers")
+        self.assertEqual(self.chats.posted, [], "built in the Agent's own turn, not sent as a new message")
+        self.assertEqual([row.dedupeKey for row in self.store.items()], [], "nothing waits on the architect")
+        self.runtimes.current = "run-v17"  # the Agent's change landed
+        self.assertEqual(self.hub.executor.undo(card.id).item.state, "review", "the list waits on its card again")
+        self.assertEqual(self.runtimes.current, "run-v16", "undo returns to the working design as it stood")
+
+    def test_a_list_with_an_unsure_item_or_words_not_in_the_message_waits_on_its_card(self):
+        unsure = self.hub.propose_changes("c1", "u1", "q", self.listed()[:2], token="token-c1")
+        self.assertIsNone(unsure.applied)
+        self.assertEqual(unsure.card.state, "review")
+        from_text_mark = self.hub.propose_changes("c1", "u1", "q", [
+            item(1, ["east"], "踢脚线也换", "the skirting beside it too", ["skirting"], extra=True)], token="token-c1")
+        self.assertIsNone(from_text_mark.applied, "words written on the page, not in the message, are asked about")
 
     def test_a_list_with_nothing_sure_ticked_is_not_run(self):
         card = self.propose(*self.listed())
