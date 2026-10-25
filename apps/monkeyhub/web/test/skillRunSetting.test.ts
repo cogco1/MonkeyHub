@@ -91,7 +91,7 @@ test("the page shows the saved choice above the grants, each choice with its one
   assert.equal(checked(en), "granted", "the saved choice is the one marked");
   const choices = [...en.matchAll(/<input[^>]*type="radio"[^>]*value="([a-z]+)"/g)].map((match) => match[1]);
   assert.deepEqual(choices, ["ask", "granted", "never"]);
-  for (const text of ["Ask me in the chat", "Always allow, Only this time, No",
+  for (const text of ["Ask me in the chat", "the network, ssh and writing outside the project are asked about every run",
     "Only what I already allowed", "never asks you",
     "Only skills that need nothing allowed", "run programs, use the network, connect to servers, write files or install Python packages"]) {
     assert.ok(en.includes(text), text);
@@ -101,7 +101,7 @@ test("the page shows the saved choice above the grants, each choice with its one
     && at("What you allowed skills to do on this computer.") < at('class="skills__list"'), "under the title, above the grants");
 
   const zh = render("zh-CN");
-  for (const text of [">AI 在对话里运行 skill</legend>", "在对话里问我", "总是允许 / 只这一次 / 不", "只做我已经允许过的事", "只运行什么都不用允许的 skill"]) {
+  for (const text of [">AI 在对话里运行 skill</legend>", "在对话里问我", "联网、ssh、写项目以外的地方，每次运行前都问", "只做我已经允许过的事", "只运行什么都不用允许的 skill"]) {
     assert.ok(zh.includes(text), text);
   }
 });

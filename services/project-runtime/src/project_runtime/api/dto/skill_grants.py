@@ -24,24 +24,29 @@ class SkillRefDto(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-    source: Literal["bundled", "user", "shared"]
+    source: Literal["bundled", "user", "shared", "scratch"]
 
 
 class SkillAccessDto(BaseModel):
-    """Network and the four lists a person allows; reading is not one of them."""
+    """Network and the five lists a person allows (S23: reading folders outside the project is one)."""
 
     model_config = ConfigDict(extra="forbid")
 
     network: bool = False
     programs: list[str] = Field(default_factory=list, max_length=64)
     ssh: list[str] = Field(default_factory=list, max_length=64)
+    read: list[str] | None = Field(default=None, max_length=64)
     write: list[str] = Field(default_factory=list, max_length=64)
     packages: list[str] = Field(default_factory=list, max_length=64)
 
     @model_validator(mode="before")
     @classmethod
     def _compared_form(cls, value: Any) -> Any:
-        return skill_access.asked(value) if isinstance(value, dict) else value
+        if not isinstance(value, dict):
+            return value
+        form = skill_access.asked(value)
+        # A grant that reads nothing outside the project is written as before S23, so a Hub from before reads the file.
+        return form | {"read": form["read"] or None}
 
     def empty(self) -> bool:
         return skill_access.empty(self.model_dump())
@@ -50,6 +55,15 @@ class SkillAccessDto(BaseModel):
         """The items that allow anything, which are never allowed for every skill."""
 
         return skill_access.broad(self.model_dump())
+
+    def each_time(self) -> dict[str, Any]:
+        """The items only a grant for one run allows (S23): the network, ssh, writing outside."""
+
+        return skill_access.each_time(self.model_dump())
+
+    @staticmethod
+    def describe(access: dict[str, Any]) -> str:
+        return skill_access.describe_added(access)
 
 
 class SkillGrantDto(BaseModel):

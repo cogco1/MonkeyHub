@@ -53,14 +53,15 @@ class SkillGrantStoreTests(unittest.TestCase):
         self.assertFalse(skill_grants.grants_path(self.root).exists(), "reading writes nothing")
 
     def test_one_answer_allows_its_items_for_every_skill_and_a_runtime_reads_them(self) -> None:
-        row = skill_grants.allow(self.root, {"programs": ["Blender.exe"], "ssh": ["renou-win"]}, method="card",
+        row = skill_grants.allow(self.root, {"programs": ["Blender.exe"], "read": ["D:/Blender"]}, method="card",
                                  ref="attention-1", now=NOW)
-        self.assertEqual((row.access.programs, row.access.ssh, row.skill, row.method), (["blender"], ["renou-win"], None, "card"))
+        self.assertEqual((row.access.programs, row.access.read, row.skill, row.method),
+                         (["blender"], ["D:/Blender"], None, "card"))
         saved = json.loads(skill_grants.grants_path(self.root).read_text(encoding="utf-8"))
         self.assertEqual(saved["schema"], skill_access.GRANTS_SCHEMA)
         # What a Project Runtime reads at the path it is launched with.
         grants = runtime_reads(self.root)
-        self.assertEqual(skill_access.needed({"programs": ["blender"], "ssh": ["renou-win"]}, grants,
+        self.assertEqual(skill_access.needed({"programs": ["blender"], "read": ["D:/Blender/hdri"]}, grants,
                                              skill_access.SkillRef("anything", "bundled"), resolve=str), {})
         self.assertEqual([item.grant_id for item in runtime_reads(self.root)], [row.grant_id])
 
@@ -73,8 +74,22 @@ class SkillGrantStoreTests(unittest.TestCase):
         own = skill_grants.allow(self.root, {"programs": ["python"]}, method="card", skill=OWN)
         self.assertEqual((own.skill.name, own.skill.source), ("blender-render", "user"))
         with self.assertRaises(HubFailure) as nothing:
-            skill_grants.allow(self.root, {"network": False, "read": ["C:\\Windows\\Fonts"]}, method="card")
-        self.assertEqual(nothing.exception.error.code, "SKILL_GRANT_EMPTY", "reading is not something to allow")
+            skill_grants.allow(self.root, {"network": False, "programs": []}, method="card")
+        self.assertEqual(nothing.exception.error.code, "SKILL_GRANT_EMPTY")
+
+    def test_the_network_ssh_and_writing_outside_are_allowed_one_run_at_a_time(self) -> None:
+        # S23: asked before every run, so no answer allows them for good, for every skill or for one.
+        for access in ({"network": True}, {"ssh": ["renou-win"]}, {"write": ["D:/out"], "programs": ["blender"]}):
+            for skill in (None, OWN):
+                with self.subTest(access=access, skill=skill), self.assertRaises(HubFailure) as refused:
+                    skill_grants.allow(self.root, access, method="card", skill=skill)
+                self.assertEqual(refused.exception.error.code, "SKILL_GRANT_EACH_TIME")
+        self.assertEqual(skill_grants.read(self.root).grants, [], "nothing was kept")
+        once = skill_grants.allow(self.root, {"network": True}, method="card", skill=OWN,
+                                  once={"projectId": "housing", "codeSha256": "c" * 64})
+        self.assertTrue(once.access.network)
+        saved = json.loads(skill_grants.grants_path(self.root).read_text(encoding="utf-8"))
+        self.assertNotIn("read", saved["grants"][0]["access"], "written as before S23 when it reads nothing")
 
     def test_a_one_run_answer_is_bound_and_expires(self) -> None:
         once = {"projectId": "housing-13-units", "codeSha256": "c" * 64}
@@ -88,13 +103,13 @@ class SkillGrantStoreTests(unittest.TestCase):
             skill_grants.allow(self.root, {"ssh": ["renou-win"]}, method="card", once=once)
 
     def test_withdrawing_keeps_the_record_and_allows_nothing_more(self) -> None:
-        row = skill_grants.allow(self.root, {"network": True}, method="settings")
+        row = skill_grants.allow(self.root, {"programs": ["blender"]}, method="settings")
         withdrawn = skill_grants.revoke(self.root, row.grant_id, by="settings", now=NOW)
         self.assertEqual(withdrawn.revoked_at, NOW.isoformat())
         self.assertEqual(skill_grants.revoke(self.root, row.grant_id, by="settings").revoked_at, NOW.isoformat(),
                          "withdrawing twice answers the first")
-        self.assertEqual(skill_access.needed({"network": True}, runtime_reads(self.root), BLENDER, resolve=str),
-                         {"network": True})
+        self.assertEqual(skill_access.needed({"programs": ["blender"]}, runtime_reads(self.root), BLENDER, resolve=str),
+                         {"programs": ["blender"]})
         self.assertEqual(len(skill_grants.read(self.root).grants), 1)
         with self.assertRaises(HubFailure) as missing:
             skill_grants.revoke(self.root, "nobody", by="settings")
@@ -105,7 +120,7 @@ class SkillGrantStoreTests(unittest.TestCase):
         path.parent.mkdir(parents=True)
         path.write_text("{ not json", encoding="utf-8")
         for attempt in (lambda: skill_grants.read(self.root),
-                        lambda: skill_grants.allow(self.root, {"network": True}, method="card")):
+                        lambda: skill_grants.allow(self.root, {"programs": ["blender"]}, method="card")):
             with self.assertRaises(HubFailure) as refused:
                 attempt()
             self.assertEqual(refused.exception.error.code, "SKILL_GRANTS_UNREADABLE")
@@ -129,8 +144,10 @@ class SkillGrantStoreTests(unittest.TestCase):
                          "not a once grant, not one that needed nothing, not onto a shared folder's skill")
         self.assertEqual(carried[0].migrated_from["projectId"], "0925")
         grants = runtime_reads(self.root)
-        self.assertEqual(skill_access.needed({"programs": ["blender"], "ssh": ["renou-win"]}, grants, BLENDER,
+        self.assertEqual(skill_access.needed({"programs": ["blender"], "read": ["D:\\Blender"]}, grants, BLENDER,
                                              resolve=str), {})
+        self.assertEqual(skill_access.needed({"ssh": ["renou-win"]}, grants, BLENDER, resolve=str), {"ssh": ["renou-win"]},
+                         "ssh is asked before every run (S23), also once carried over")
         self.assertEqual(skill_access.needed({"programs": ["blender"]}, grants,
                                              skill_access.SkillRef("site-plan-map", "user"), resolve=str),
                          {"programs": ["blender"]}, "the person allowed that skill, not every skill")

@@ -14259,6 +14259,7 @@
         "apps/monkeyhub/api/monkeyhub_api/chat/visual_review.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/guides.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/routes.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/skill_cards.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/skill_plugins.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/turn_trace.py",
         "apps/monkeyhub/api/monkeyhub_api/computer_tools.py",

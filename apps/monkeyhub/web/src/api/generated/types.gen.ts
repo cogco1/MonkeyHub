@@ -1063,6 +1063,11 @@ export type ChatMessage = {
     candidateId?: string | null;
     permission?: ChatPermission | null;
     /**
+     * Permissionoutcome
+     */
+    permissionOutcome?: 'allowed_once' | 'allowed_always' | 'refused' | 'cancelled' | null;
+    skillRun?: ChatSkillRun | null;
+    /**
      * Attachments
      */
     attachments?: Array<ChatAttachment>;
@@ -1428,6 +1433,94 @@ export type ChatRenderContext = {
      * References
      */
     references?: Array<ChatDocumentRef>;
+};
+
+/**
+ * ChatSkillKeepRequest
+ *
+ * Keep a chat's script as a skill under this name (S23).
+ */
+export type ChatSkillKeepRequest = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
+ * ChatSkillRun
+ *
+ * A skill or a chat's script an Agent ran, as the conversation shows it (S23).
+ *
+ * ``asked`` says what let it run: ``no`` (it declared nothing, so nobody was asked), ``earlier`` (an answer
+ * given before), ``once`` or ``always`` (the answer to this run's card). A script (``kind`` scratch) keeps its
+ * code here until the person keeps it as a skill (``keptAs``) or the conversation goes.
+ */
+export type ChatSkillRun = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Kind
+     */
+    kind: 'scratch' | 'skill';
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Tier
+     */
+    tier: 'low' | 'first' | 'each';
+    /**
+     * Asked
+     */
+    asked: 'no' | 'earlier' | 'once' | 'always';
+    /**
+     * Access
+     */
+    access?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Status
+     */
+    status?: 'queued' | 'running' | 'succeeded' | 'failed';
+    /**
+     * Words
+     */
+    words?: string | null;
+    /**
+     * Outputs
+     */
+    outputs?: Array<string>;
+    /**
+     * Keptas
+     */
+    keptAs?: string | null;
+    /**
+     * Keptat
+     */
+    keptAt?: string | null;
+    /**
+     * Script
+     */
+    script?: {
+        [key: string]: unknown;
+    } | null;
 };
 
 /**
@@ -2957,7 +3050,7 @@ export type RuntimeProjectRequest = {
 /**
  * SkillAccessDto
  *
- * Network and the four lists a person allows; reading is not one of them.
+ * Network and the five lists a person allows (S23: reading folders outside the project is one).
  */
 export type SkillAccessDto = {
     /**
@@ -2972,6 +3065,10 @@ export type SkillAccessDto = {
      * Ssh
      */
     ssh?: Array<string>;
+    /**
+     * Read
+     */
+    read?: Array<string> | null;
     /**
      * Write
      */
@@ -3109,7 +3206,7 @@ export type SkillRefDto = {
     /**
      * Source
      */
-    source: 'bundled' | 'user' | 'shared';
+    source: 'bundled' | 'user' | 'shared' | 'scratch';
 };
 
 /**
@@ -3364,6 +3461,10 @@ export type UserSettingsDto = {
      * Skillagentruns
      */
     skillAgentRuns?: 'ask' | 'granted' | 'never' | null;
+    /**
+     * Lowriskscriptsrun
+     */
+    lowRiskScriptsRun?: boolean | null;
     /**
      * Chatmodel
      */
@@ -5069,6 +5170,105 @@ export type ReadSkillPermissionApiChatSessionsSessionIdSkillPermissionsPermissio
      */
     200: unknown;
 };
+
+export type RecordSkillRunApiChatSessionsSessionIdSkillRunsPostData = {
+    body: ChatSkillRun;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/skill-runs';
+};
+
+export type RecordSkillRunApiChatSessionsSessionIdSkillRunsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RecordSkillRunApiChatSessionsSessionIdSkillRunsPostError = RecordSkillRunApiChatSessionsSessionIdSkillRunsPostErrors[keyof RecordSkillRunApiChatSessionsSessionIdSkillRunsPostErrors];
+
+export type RecordSkillRunApiChatSessionsSessionIdSkillRunsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: unknown;
+};
+
+export type UpdateSkillRunApiChatSessionsSessionIdSkillRunsRunIdPutData = {
+    /**
+     * Body
+     */
+    body: {
+        [key: string]: unknown;
+    };
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/skill-runs/{run_id}';
+};
+
+export type UpdateSkillRunApiChatSessionsSessionIdSkillRunsRunIdPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateSkillRunApiChatSessionsSessionIdSkillRunsRunIdPutError = UpdateSkillRunApiChatSessionsSessionIdSkillRunsRunIdPutErrors[keyof UpdateSkillRunApiChatSessionsSessionIdSkillRunsRunIdPutErrors];
+
+export type UpdateSkillRunApiChatSessionsSessionIdSkillRunsRunIdPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostData = {
+    body: ChatSkillKeepRequest;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/skill-runs/{run_id}/keep';
+};
+
+export type KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostError = KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostErrors[keyof KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostErrors];
+
+export type KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatDetail;
+};
+
+export type KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostResponse = KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostResponses[keyof KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostResponses];
 
 export type InspectComputerApiComputerInspectPostData = {
     body: ComputerInspectRequest;

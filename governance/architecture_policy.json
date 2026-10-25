@@ -707,6 +707,18 @@
       "reason": "Creates one skill's own package folder under the user's MonkeyHub skill-envs (outside every project) for the requirements its granted access declares, and writes its marker after pip succeeds; the folder is reused by later runs."
     },
     {
+      "path": "services/project-runtime/src/project_runtime/application/skill_library.py",
+      "function": "write_package",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "rename"
+      ],
+      "kind": "skill_environment",
+      "owner": "project_runtime.skill_library",
+      "reason": "S23: writes one skill package a person kept from a chat into the user's own skill folder (outside every project), beside its place and renamed into it; a name the folder holds already is refused, nothing is replaced."
+    },
+    {
       "path": "packages/archflow/src/archflow/project/inputs.py",
       "function": "write_program_sheet_file",
       "operations": [
@@ -1668,9 +1680,10 @@
         "project_runtime.application.artifacts.WORK_COPY_WORKSPACE",
         "project_runtime.application.boards.export_board_pages",
         "project_runtime.application.boards.BoardExportPage",
-        "project_runtime.application.skill_library.installed"
+        "project_runtime.application.skill_library.installed",
+        "project_runtime.application.skill_library.write_package"
       ],
-      "reason": "MonkeyHub starts the Runtime (main), shares its refusals (errors) and embeds its wire shapes (api.dto); it reads a project in process only through the Runtime's declared read API (#519): ProjectBinding and ReadToken, the event log, the runtime status, the document and work-copy readers and the Board page export. Everything else in project_runtime is reached over the Hub's forwarding path, so the Runtime can change its insides without the Hub following them. The skills installed on this machine (skill_library.installed, S-1) are read the same way: the skill folders and what a person allowed are this machine's, not a project's, and listing them reads those folders only and touches no project."
+      "reason": "MonkeyHub starts the Runtime (main), shares its refusals (errors) and embeds its wire shapes (api.dto); it reads a project in process only through the Runtime's declared read API (#519): ProjectBinding and ReadToken, the event log, the runtime status, the document and work-copy readers and the Board page export. Everything else in project_runtime is reached over the Hub's forwarding path, so the Runtime can change its insides without the Hub following them. The skills installed on this machine (skill_library.installed, S-1) are read the same way: the skill folders and what a person allowed are this machine's, not a project's, and listing them reads those folders only and touches no project. Keeping a chat's script as a skill (skill_library.write_package, S23) writes one package into the user's own skill folder, checked as a listed package is, and touches no project either."
     },
     {
       "source": "services/project-runtime/src/project_runtime/binding",

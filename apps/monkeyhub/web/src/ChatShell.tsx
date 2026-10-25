@@ -17,6 +17,7 @@ import { MODEL_PREVIEW_RETAINED, previewSourceKey } from "./features/artifacts/u
 import type { WorkspaceDesignContext, WorkspacePosition } from "./app/ProjectWorkspace";
 import { MonitorPage } from "./MonitorPage";
 import { ChatCard, ChatCardDetails } from "./ChatCard";
+import { AnsweredSkillQuestion, SkillRunCard, skillRunWords } from "./features/skills/SkillRunCard";
 import { DeveloperOnly, useDeveloperMode } from "./features/settings/preferences";
 import { HistoryPage } from "./features/designHistory/HistoryPage";
 import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessageContent";
@@ -1647,6 +1648,17 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     } catch (cause) { if (selection.current.chatId === current.id) setError(asFailure(cause)); }
     finally { permissionLock.current = false; setPermissionBusy(null); }
   };
+  /** S23: keep a script the AI ran in this conversation as the person's own skill, under this name. */
+  const keepScript = async (runId: string, name: string) => {
+    if (!chat || chat.id !== chatId) return;
+    const current = chat;
+    setError(null);
+    try {
+      const detail = await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(current.id)}/skill-runs/${encodeURIComponent(runId)}/keep`,
+        { projectId: current.projectId, name });
+      if (selection.current.chatId === current.id) setChat(detail);
+    } catch (cause) { if (selection.current.chatId === current.id) setError(asFailure(cause)); }
+  };
   /** Make a new empty project in the workspace and open a conversation in it. */
   const createProject = async (event: FormEvent) => {
     event.preventDefault(); if (actionLock.current || !projectName.trim()) return;
@@ -2401,6 +2413,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
                 <ChatMarkdown text={message.content} streaming={message.status === "streaming"} />
                 {(message.status === "failed" || message.status === "interrupted") && <p className="chat-muted">{t[message.status]}</p>}
               </article>
+              : message.skillRun ? <SkillRunCard key={message.id} run={message.skillRun} words={skillRunWords[preferences.language]}
+                disabled={!chat || chat.projectId !== project?.projectId} onKeep={(name) => keepScript(message.skillRun!.runId, name)} />
+              : !message.permission ? <AnsweredSkillQuestion key={message.id} message={message} />
               : <div className="chat-activity chat-activity--permission" key={message.id} data-status={message.status}>
                 <div className="chat-permission" role="group" aria-label={message.permission!.title} aria-busy={permissionBusy === message.permission!.id}>
                   <p>{message.permission!.title}</p>
