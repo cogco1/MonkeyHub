@@ -3346,7 +3346,7 @@ export const COMMAND_TREE: CommandTree = {
         "zh-CN": "生成剖切平面"
       },
       "terms": [
-        "floor plan"
+        "cut plane settings"
       ],
       "surface": "drawings",
       "group": "drawings",
@@ -3376,20 +3376,20 @@ export const COMMAND_TREE: CommandTree = {
       ],
       "args": [],
       "phrases": [
-        "出一张平面图",
-        "从模型切个平面",
-        "按这个高度剖平面图",
-        "generate a floor plan from model",
-        "cut a plan at this height"
+        "新建剖切平面",
+        "在图纸设置里调剖切高度",
+        "按这个高度重新剖切",
+        "new cut plane in the drawing settings",
+        "adjust the cut height in drawing settings"
       ],
       "aliases": [
-        "出平面",
-        "平面图",
-        "剖平面",
-        "切平面",
-        "floor plan",
-        "plan cut",
-        "make plan"
+        "剖切平面",
+        "调剖切",
+        "图纸设置",
+        "剖切高度",
+        "cut plane",
+        "cut settings",
+        "plan cut settings"
       ]
     },
     {
@@ -6090,7 +6090,21 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "phrases": [
+        "出一张平面图",
+        "把模型出个平面图",
+        "给我平面图",
+        "draw a floor plan",
+        "make a plan drawing of this model"
+      ],
+      "aliases": [
+        "出平面",
+        "出平面图",
+        "平面图",
+        "floor plan",
+        "plan drawing"
+      ]
     },
     {
       "id": "drawing.quick.section",
@@ -6112,7 +6126,21 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "phrases": [
+        "出一张剖面图",
+        "把楼剖开出个剖面图",
+        "给我剖面图",
+        "draw a section",
+        "make a section drawing of this model"
+      ],
+      "aliases": [
+        "出剖面",
+        "出剖面图",
+        "剖面图",
+        "section drawing",
+        "building section"
+      ]
     },
     {
       "id": "drawing.quick.elevations",
@@ -6135,7 +6163,26 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [],
-      "args": []
+      "args": [],
+      "phrases": [
+        "出一张南立面",
+        "出立面图",
+        "四个立面都出一下",
+        "draw the elevations",
+        "make the south elevation"
+      ],
+      "aliases": [
+        "出立面",
+        "出立面图",
+        "立面图",
+        "南立面",
+        "北立面",
+        "东立面",
+        "西立面",
+        "elevations",
+        "elevation drawing",
+        "south elevation"
+      ]
     },
     {
       "id": "view.reference_model.show",

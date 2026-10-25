@@ -1048,6 +1048,29 @@
           "depends_on": []
         },
         {
+          "id": "srv-quick-search",
+          "status": "active",
+          "branch": "claude/srv-quick-search",
+          "worktree": "C:\\Users\\Public\\renou\\dev\\wt\\claude-srv-quick-search",
+          "base_ref": "7b4a6613",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "S15 (server, 10-25): a sentence about a drawing finds the one-click command it asks for (\"出一张平面图\" draws a plan; 剖面图, 南立面 and the rest likewise); the drawing page's cut plane keeps the words for its settings (新建剖切平面, 调剖切, 图纸设置). The coordinator's call of 10-25 08:2x.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/features/commands/tree.generated.ts",
+            "docs/architecture/semantic-registry.md",
+            "docs/architecture/system-map.md",
+            "governance/command_phrases.json",
+            "governance/command_search_cases.json",
+            "governance/module_registry.json",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
+        },
+        {
           "id": "srv-one-click-drawings",
           "status": "active",
           "branch": "claude/srv-one-click-drawings",
