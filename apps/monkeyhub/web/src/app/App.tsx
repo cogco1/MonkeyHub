@@ -3927,6 +3927,8 @@ export default function App({ server, expectedProjectId, projectStep = null, ini
             }}
             documentModelSources={modelSources}
             viewedModelSource={loadedModelSource}
+            viewedAsset={loadedModelSource === null && viewingExternalModel && loadedArtifact?.sha256
+              ? { runId: loadedArtifact.runId, assetSha256: loadedArtifact.sha256 } : null}
             editingModelSource={editingModelSource}
             onContinueModelSource={async (source) => {
               // The drawing's own Continue shows the refusal in the drawing panel.

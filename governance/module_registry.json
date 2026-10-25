@@ -3024,6 +3024,43 @@
             "entries": []
           },
           {
+            "id": "drawing.quick.plan",
+            "channel": "front",
+            "label": "Draw a floor plan",
+            "label_zh": "出平面",
+            "aliases": [
+              "floor plan",
+              "平面图",
+              "出平面图"
+            ],
+            "entries": []
+          },
+          {
+            "id": "drawing.quick.section",
+            "channel": "front",
+            "label": "Draw a section",
+            "label_zh": "出剖面",
+            "aliases": [
+              "section drawing",
+              "剖面图",
+              "出剖面图"
+            ],
+            "entries": []
+          },
+          {
+            "id": "drawing.quick.elevations",
+            "channel": "front",
+            "label": "Draw the elevations",
+            "label_zh": "出立面",
+            "aliases": [
+              "elevations",
+              "立面图",
+              "南立面",
+              "四个立面"
+            ],
+            "entries": []
+          },
+          {
             "id": "view.reference_model.show",
             "label": "Show reference model",
             "label_zh": "显示参考模型",

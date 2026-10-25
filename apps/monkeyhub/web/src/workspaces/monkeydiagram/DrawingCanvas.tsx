@@ -8,7 +8,7 @@ import { ResultActions } from "../../features/results/ResultActions";
 import { usePreferences } from "../../features/settings/preferences";
 import { useT } from "../../i18n/useT";
 import { DocumentSurface } from "./DocumentCanvas";
-import { defaultPlanForm, drawingDocumentKey, isVerticalSection, keptOnChosenVersion, latestRevisions, liveAction, PAPER_PENS, planFormFromDocument, planRequestFields,
+import { currentStepDrawing, defaultPlanForm, drawingDocumentKey, isVerticalSection, keptOnChosenVersion, latestRevisions, liveAction, PAPER_PENS, planFormFromDocument, planRequestFields,
   RECIPE_TARGETS, recipeDecision, recipeWrites, type PaperPen, type PlanForm } from "./drawingPlan";
 import { DressingControls, DressingOverlay } from "./DrawingDressing";
 import { DrawingMenu } from "./DrawingMenu";
@@ -100,6 +100,19 @@ const isCutPlan = (document: SourceDocumentDto | null) => document?.viewRecipe?.
 const UNIT_METRES: Record<string, number> = { meter: 1, millimeter: 0.001, inch: 0.0254, foot: 0.3048 };
 type SectionForm = { axis: "x" | "y"; position: number | null; toward: "+" | "-"; eyeHeight: number | null; fovDeg: number };
 /** A vertical cut across X or Y at the position, keeping the side the eye looks toward. */
+/** A length as the elevation panel shows it: whole millimetres, otherwise two decimals of the model's own unit. */
+function roundForUnit(value: number, unit: string): number {
+  return unit === "millimeter" ? Math.round(value) : Math.round(value * 100) / 100;
+}
+/** What a cut plan's status means, in Chinese; the service's sentence is English (S15). */
+const STATUS_ZH: Record<string, string> = {
+  current: "这张图和它的模型一致。",
+  frozen: "这张图停在出图时的那一版，重新出图才会跟上现在的模型。",
+  outdated: "模型改过了，这张图还是旧的；重新出图就按现在的模型出。",
+  "partially-broken": "有些尺寸或标注在现在的模型上找不到了；重新出图后检查一下。",
+  unknown: "暂时读不出这张图和模型的关系；重新出一次图就好。",
+  unit: "模型的长度单位和出这张图时不一样了，图上的位置不能直接换算；按现在的模型新出一张。",
+};
 function sectionLine(axis: "x" | "y", position: number, toward: "+" | "-"): SectionLineDto {
   return axis === "x" ? { line: [[position, 0], [position, 1]], keep: toward === "+" ? "right" : "left" }
     : { line: [[0, position], [1, position]], keep: toward === "+" ? "left" : "right" };
@@ -383,8 +396,15 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   // While the same drawing is read again, its fields keep the unit its last status gave them.
   const lengthUnit = choices?.lengthUnit ?? status?.lengthUnit ?? (lastStatus?.question === statusQuestion ? lastStatus?.status.lengthUnit : null) ?? "";
   const planCrop = isCutPlan(source) && !verticalOpen ? (source?.viewRecipe?.frame as { crop_uv?: number[] } | undefined)?.crop_uv : undefined;
-  const sectionPosition = section.position ?? (planCrop ? (section.axis === "x" ? planCrop[0] + planCrop[2] : planCrop[1] + planCrop[3]) / 2 : 0);
-  const sectionEyeHeight = section.eyeHeight ?? (lengthUnit ? 1.6 / (UNIT_METRES[lengthUnit] ?? 1) : NaN);
+  // A new cut goes through the middle of the model (S15), not of the plan last open or the origin, which can miss the
+  // building; defaults read as the elevation panel's numbers do: whole millimetres, else two decimals.
+  const modelBounds = choices?.modelBounds;
+  // An open vertical section cut the building where its own plane stands: without the model's bounds, there.
+  const sectionOrigin = verticalOpen ? (source?.viewRecipe?.frame as { origin?: number[] } | undefined)?.origin : undefined;
+  const sectionPosition = section.position ?? roundForUnit(modelBounds ? (modelBounds.min[section.axis === "x" ? 0 : 1] + modelBounds.max[section.axis === "x" ? 0 : 1]) / 2
+    : planCrop ? (section.axis === "x" ? planCrop[0] + planCrop[2] : planCrop[1] + planCrop[3]) / 2
+      : sectionOrigin ? sectionOrigin[section.axis === "x" ? 0 : 1] : 0, lengthUnit);
+  const sectionEyeHeight = section.eyeHeight ?? (lengthUnit ? roundForUnit(1.6 / (UNIT_METRES[lengthUnit] ?? 1), lengthUnit) : NaN);
   // Visibility is not part of the drawing identity. A save that finishes while another
   // workspace is visible still belongs here; project, revision, or source changes do not.
   const scopeKey = JSON.stringify([projectId, selected, selectedTargetValue, explicitTarget]);
@@ -414,9 +434,12 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
       setTarget(current => targetWasChosen.current && (history.stages.some(item => item.stageRef === current) ||
         available.artifacts.some(item => item.available && (item.representation === "external" || item.representation === "composed")
           && item.sha256 && assetKey({ runId: item.runId, assetSha256: item.sha256 }) === current)) ? current : defaultStage);
-      // Open the newest drawing instead of asking which revision is current.
-      const newest = latestRevisions(plans)[0];
-      if (!opened.current && newest) { opened.current = true; openDocument(newest); }
+      // Open the current step's newest drawing, or a new one when it has none, never an older version's (S15).
+      if (!opened.current) {
+        opened.current = true;
+        const current = currentStepDrawing(plans, working.source?.runId ?? working.head?.runId ?? null);
+        if (current) openDocument(current);
+      }
     }).catch(cause => { if (!cancelled) setError(asStudioApiError(cause)); }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [studio, projectId, active, refreshKey, refresh]);
@@ -447,7 +470,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     void studio.drawingPlanDimensions(unitTarget).then(value => {
       if (cancelled) return;
       setChoices(value);
-      if (!source && !dirty) setForm(defaultPlanForm(value.lengthUnit));
+      if (!source && !dirty) setForm(defaultPlanForm(value.lengthUnit, value.modelBounds?.min[2] ?? 0));
     }).catch(cause => { if (!cancelled) setError(asStudioApiError(cause)); });
     return () => { cancelled = true; };
   }, [studio, projectId, JSON.stringify(unitTarget), active, refresh]);
@@ -727,7 +750,10 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
       || (shown !== null && shown.status !== "current" && !liveBusy && action !== "rebuild"));
   const statusFollow = historical || explicitTarget || kept ? "frozen" : "live";
   const statusState = liveBusy ? "updating" : action === "blocked" ? "outdated" : shown?.status ?? "unknown";
-  const statusDetail = shown?.detail ?? (statusFailed ? text.statusError : "");
+  // The status in a sentence of the reader's language; the service's own English stays in English (S15).
+  const statusDetail = shown ? (language === "zh-CN" ? (/unit changed/i.test(shown.detail ?? "") ? STATUS_ZH.unit
+    : STATUS_ZH[statusFollow === "frozen" && shown.status === "current" ? "frozen" : shown.status] ?? STATUS_ZH.unknown)
+    : shown.detail) ?? "" : (statusFailed ? text.statusError : "");
   // Saving is a quiet word; a field left invalid is marked where it is and said at the bar's end; a refused save asks.
   const saving = source !== null && (perspectiveOpen ? busy : (busy && !liveBusy) || (dirty && appearanceHeld === null));
   const unsaved = source !== null && !perspectiveOpen && dirty && !busy && appearanceHeld === "invalid";

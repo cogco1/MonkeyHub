@@ -6071,6 +6071,73 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
+      "id": "drawing.quick.plan",
+      "capability": "model.view",
+      "label": {
+        "en": "Draw a floor plan",
+        "zh-CN": "出平面"
+      },
+      "terms": [
+        "floor plan",
+        "平面图",
+        "出平面图"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "drawing.quick.section",
+      "capability": "model.view",
+      "label": {
+        "en": "Draw a section",
+        "zh-CN": "出剖面"
+      },
+      "terms": [
+        "section drawing",
+        "剖面图",
+        "出剖面图"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "drawing.quick.elevations",
+      "capability": "model.view",
+      "label": {
+        "en": "Draw the elevations",
+        "zh-CN": "出立面"
+      },
+      "terms": [
+        "elevations",
+        "立面图",
+        "南立面",
+        "四个立面"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
       "id": "view.reference_model.show",
       "capability": "model.view",
       "label": {

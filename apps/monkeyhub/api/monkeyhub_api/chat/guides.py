@@ -205,6 +205,8 @@ def modelling(tier: bool | str) -> str:
 _GUIDES = {
     "/api/drawings": chr(10).join([
         "DRAWINGS: POST /api/drawings/elevations automatically registers results in MonkeyDiagram's documents list; drawing-only work admits nothing.",
+        "ELEVATIONS BY COMPASS (+Y is north unless the project says otherwise): 南立面/south = view 'front', 北/north = 'back', 西/west = 'left',",
+        "东/east = 'right'; minimal body {projectId, modelSource or sourceStageRef, view}. A floor plan with no cutHeight cuts 1.2 m above the model's bottom.",
         "QUANTITIES: POST /api/quantities {modelSource | sourceAsset | sourceStageRef}, the model a drawing would use, is a read: each physical",
         "member's area, closure, role and material (its facets, else the model's own) and, closed only, its volume; sums by material and role; format:\"csv\".",
         "Before drawing, read POST /api/intents/context for the task's scoped decisions (pathPrefix /api/decisions explains it).",

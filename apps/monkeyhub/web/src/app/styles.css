@@ -1316,6 +1316,22 @@ button.chip:hover {
   background: var(--panel);
 }
 
+/* S15: what a one-click plan, section or elevation drew, under the bar until it is put away. */
+.stage-quick-drawings {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 13px;
+}
+
+.stage-quick-drawings__close {
+  margin-left: auto;
+}
+
 .stage-decision > .base-choice:last-child {
   border-bottom: 0;
 }

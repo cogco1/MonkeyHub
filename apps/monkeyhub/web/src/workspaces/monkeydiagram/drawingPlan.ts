@@ -77,9 +77,14 @@ export function isVerticalSection(document: Pick<SourceDocumentDto, "viewRecipe"
 export const drawingDocumentKey = (source: Pick<SourceDocumentDto, "runId" | "assetSha256" | "revisionRef">) =>
   JSON.stringify([source.runId, source.assetSha256, source.revisionRef ?? null]);
 
-export function defaultPlanForm(lengthUnit: string): PlanForm {
+/**
+ * A new plan: cut 1.2 m above ``floor`` (the model's bottom when known, S15) and looking down to it, in whole
+ * millimetres or two decimals of the model's unit, as the panel shows its numbers.
+ */
+export function defaultPlanForm(lengthUnit: string, floor = 0): PlanForm {
   const heights: Record<string, number> = { millimeter: 1200, meter: 1.2, foot: 1.2 / .3048, inch: 1.2 / .0254 };
-  return { cutHeight: heights[lengthUnit] ?? 1.2, bottom: 0, scaleDenominator: 100, dimensions: [], dressing: [] };
+  const tidy = (value: number) => lengthUnit === "millimeter" ? Math.round(value) : Math.round(value * 100) / 100;
+  return { cutHeight: tidy(floor + (heights[lengthUnit] ?? 1.2)), bottom: tidy(floor), scaleDenominator: 100, dimensions: [], dressing: [] };
 }
 
 /** What an open vertical section may change; its plane is its own, and the runtime refuses plan-only fields on it. */
@@ -143,6 +148,18 @@ export const keptOnChosenVersion = (document: Pick<SourceDocumentDto, "viewRecip
 export const drawingIdentity = (document: Pick<SourceDocumentDto, "drawingId" | "fileName">) => document.drawingId ?? document.fileName;
 
 /** The newest revision of each drawing, newest drawing first; older revisions are history. */
+/**
+ * The drawing the page opens on (S15): the newest one drawn from the run of the design's current step (its
+ * model, or the file it was brought in as); none when that step has no drawing yet, so the page opens on a new
+ * one instead of an older version's.
+ */
+export function currentStepDrawing(documents: readonly SourceDocumentDto[], runId: string | null): SourceDocumentDto | null {
+  if (!runId) return null;
+  const drawnFrom = (document: SourceDocumentDto) => document.modelSource?.runId
+    ?? (document.viewRecipe?.sourceAsset as { runId?: string } | undefined)?.runId ?? null;
+  return latestRevisions(documents).find((document) => drawnFrom(document) === runId) ?? null;
+}
+
 export function latestRevisions(documents: readonly SourceDocumentDto[]): SourceDocumentDto[] {
   const latest = new Map<string, SourceDocumentDto>();
   for (const document of documents) {
