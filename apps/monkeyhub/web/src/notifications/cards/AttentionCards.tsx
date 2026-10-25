@@ -8,7 +8,7 @@ import { PlainFailure } from "../../app/ErrorPanel";
 import { openCard } from "../openChat";
 import { dismissCard, laterCard, queueSnapshot, reopenCard, resolveCard, subscribeQueue, undoCard, type QueueFailure } from "../queue";
 import { answersKey, chosenOption, COMPARE_DECIDE, comparedRuns, isPending, needsWords, orderedOptions, say } from "./cardText";
-import type { AttentionCard, CardActionResult, CommandRef } from "./types";
+import type { AttentionCard, CardActionResult, ChangeItem, CommandRef } from "./types";
 import "./cards.css";
 
 /**
@@ -71,7 +71,13 @@ function Opens({ refs, cardId }: { refs: readonly CommandRef[]; cardId: string }
   })}</div>;
 }
 
-function CardFrame({ card, project, fresh = false, compact = false, comparing = false, stale = false, children }: CardProps & { compact?: boolean; children?: ReactNode }) {
+function CardFrame({ card, project, fresh = false, compact = false, comparing = false, stale = false, items, blocked, children }: CardProps & {
+  compact?: boolean; children?: ReactNode;
+  /** The numbers ticked on a change list; the answer that runs them sends these (3-4). */
+  items?: readonly number[];
+  /** An answer that cannot be sent yet, with why. */
+  blocked?: (optionId: string) => string | null;
+}) {
   const { language } = usePreferences();
   const t = useT();
   const { busy, failure, act } = useCardActions();
@@ -102,10 +108,10 @@ function CardFrame({ card, project, fresh = false, compact = false, comparing = 
     {pending && card.options.length > 0 && <div className="attention-card__answers" role="group" aria-label={t("cards.answers")}>
       {orderedOptions(card).map((option) => <button key={option.id} type="button" data-option={option.id} data-command-view
         className={option.recommended ? "btn btn--primary attention-card__answer" : "btn attention-card__answer"}
-        disabled={busy !== null || stale || (needsWords(option) && !words.trim())}
+        disabled={busy !== null || stale || (needsWords(option) && !words.trim()) || Boolean(blocked?.(option.id))} title={blocked?.(option.id) ?? undefined}
         aria-describedby={`attention-card-${card.id}-${option.id}`}
         onClick={() => act(option.id, async () => {
-          const result = await resolveCard(card.id, option.id, needsWords(option) ? words.trim() : undefined);
+          const result = await resolveCard(card.id, option.id, needsWords(option) ? words.trim() : undefined, items && option.id === "run" ? items : undefined);
           note(option.action.commandId, "card");
           return result;
         })}>
@@ -144,7 +150,37 @@ export function DecisionCard(props: CardProps) {
 
 /** A version waiting on its Board frame, or the changes the marks were read as (their list joins with 3-3). */
 export function MarkupCard(props: CardProps) {
-  return <CardFrame {...props} />;
+  return props.card.kind === "change_list" && props.card.changeList ? <ChangeListCard {...props} /> : <CardFrame {...props} />;
+}
+
+/**
+ * The changes the marks were read as (3-4): each with what the agent understood and what it would touch, ticked unless
+ * it was unsure; the architect unticks what is wrong, and the card runs the rest as one change.
+ */
+function ChangeListCard(props: CardProps) {
+  const { language } = usePreferences();
+  const t = useT();
+  const { card } = props;
+  const list = card.changeList!;
+  const [ticked, setTicked] = useState<ReadonlySet<number>>(() => new Set(list.items.filter((item) => item.keep !== false && !item.unsure).map((item) => item.n)));
+  const chosen = list.items.filter((item) => ticked.has(item.n)).map((item) => item.n);
+  const toggle = (n: number) => setTicked((current) => { const next = new Set(current); if (!next.delete(n)) next.add(n); return next; });
+  const understood = (item: ChangeItem) => (language === "zh-CN" ? item.understandingZh : null) ?? item.understanding;
+  const pending = isPending(card);
+  return <CardFrame {...props} items={chosen} blocked={(option) => (option === "run" && chosen.length === 0 ? t("cards.changes.none") : null)}>
+    {card.changeWords && card.changeWords.length > 0 && <blockquote className="attention-card__words-said">{card.changeWords.join(" ")}</blockquote>}
+    <ol className="attention-card__changes" aria-label={t("cards.changes.label")}>{list.items.map((item) => <li key={item.n} data-unsure={item.unsure || undefined} data-ticked={ticked.has(item.n) || undefined}>
+      <label>
+        <input type="checkbox" checked={ticked.has(item.n)} disabled={!pending} onChange={() => toggle(item.n)} />
+        <span className="attention-card__change-n">{item.n}</span>
+        <span className="attention-card__change-text">
+          <b>{understood(item)}</b>
+          <small>{[item.unsure ? t("cards.changes.unsure") : null, item.targets?.length ? t("cards.changes.touches", { count: item.targets.length }) : null,
+            item.protected?.length ? t("cards.changes.keeps", { count: item.protected.length }) : null, item.extra ? t("cards.changes.extra") : null].filter(Boolean).join(" · ")}</small>
+        </span>
+      </label>
+    </li>)}</ol>
+  </CardFrame>;
 }
 
 /** A question with at most three answers, or something the system would do and has not done. */
