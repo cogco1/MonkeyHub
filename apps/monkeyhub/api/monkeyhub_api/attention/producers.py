@@ -93,7 +93,8 @@ class RunFacts:
 
 @dataclass(frozen=True)
 class PairFacts:
-    """The Studio's object comparison of a result (B) against another run (A): counts by what happened."""
+    """The Studio's object comparison of a result (B) against another run (A): counts by what happened, changed
+    meaning moved or resized (``hub.pair_facts``)."""
 
     changed: int
     added: int

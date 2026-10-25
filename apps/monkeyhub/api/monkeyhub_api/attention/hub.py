@@ -87,6 +87,24 @@ def run_facts(candidate: Mapping[str, Any]) -> producers.RunFacts:
                                             int(checks.get("unchecked", 0))))
 
 
+def pair_facts(compared: Mapping[str, Any]) -> producers.PairFacts:
+    """A pair's comparison (``GET /api/candidates/{B}/compare?against=A``) as a card counts it.
+
+    Changed is an object whose inspected box moved or changed size. One whose box stayed and only its geometry
+    digest differs is counted as unchanged: re-exporting the same imported shapes changes their digests (S28: 446
+    such of housing's 2663 after one triangle was added), and the card would name changes nobody made.
+    """
+
+    tolerance = float(compared.get("tolerance") or 0.0)
+    moved = lambda row: any(abs(a - b) > tolerance for side in ("min", "max")
+                            for a, b in zip(row["before"][side], row["after"][side]))
+    changed = [row for row in compared.get("objects") or () if row.get("status") == "changed"]
+    shifted = sum(1 for row in changed if not row.get("before") or not row.get("after") or moved(row))
+    return producers.PairFacts(changed=shifted, added=int(compared.get("added") or 0),
+                               removed=int(compared.get("removed") or 0),
+                               unchanged=int(compared.get("unchanged") or 0) + len(changed) - shifted)
+
+
 class AttentionHub:
     """The executor's ports on the Hub, and the producers run on the Hub's events."""
 
@@ -370,8 +388,7 @@ class AttentionHub:
                                                f"{urlencode({'against': before})}")
                 if compared is None or compared.get("candidateId") != after or compared.get("against") != before:
                     continue
-                self._keep(self._pairs, key, producers.PairFacts(
-                    **{name: int(compared.get(name) or 0) for name in ("changed", "added", "removed", "unchanged")}))
+                self._keep(self._pairs, key, pair_facts(compared))
             pairs[(after, before)] = self._pairs[key]
             self._pairs.move_to_end(key)
         return facts, pairs

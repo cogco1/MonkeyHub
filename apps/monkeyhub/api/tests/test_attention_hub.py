@@ -19,7 +19,8 @@ source_roots.put_first(ROOT)
 
 from project_runtime.events import StudioEvents
 
-from monkeyhub_api.attention.hub import AttentionHub
+from monkeyhub_api.attention import producers
+from monkeyhub_api.attention.hub import AttentionHub, pair_facts
 from monkeyhub_api.attention.store import AttentionStore, runtime_id
 from monkeyhub_api.models import ChatDetail, HubFailure
 from monkeyhub_api.runtime.models import OperationRecord
@@ -204,6 +205,15 @@ class AttentionHubTests(unittest.TestCase):
         self.hub.refresh(self.runtimes.runtime.runtime_id)
         self.assertEqual([row[1] for row in self.runtimes.forwarded[reads:]], ["/api/worktrees"],
                          "a run's records never change: they are read once")
+
+    def test_a_card_counts_as_changed_only_what_moved_or_resized(self):
+        box = lambda top: {"min": [0.0, 0.0, 0.0], "max": [1.0, 1.0, top]}
+        compared = {"tolerance": 1e-4, "added": 1, "removed": 0, "unchanged": 10, "changed": 3, "objects": [
+            {"name": "beam", "status": "changed", "before": box(3.0), "after": box(3.0)},       # re-exported, same shape
+            {"name": "deck", "status": "changed", "before": box(3.0), "after": box(3.00005)},   # within the tolerance
+            {"name": "wall", "status": "changed", "before": box(3.0), "after": box(3.5)},
+            {"name": "mass", "status": "added", "before": None, "after": box(6.0)}]}
+        self.assertEqual(pair_facts(compared), producers.PairFacts(changed=1, added=1, removed=0, unchanged=12))
 
     def test_answers_run_through_the_hub(self):
         self.runtimes.graph = {"head": {"runId": "run-v16"}, "lines": [result_line("run-a"), result_line("run-b")]}
