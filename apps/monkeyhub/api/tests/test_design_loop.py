@@ -115,6 +115,55 @@ class SubmitTests(unittest.TestCase):
             self.assertEqual(design_loop.call(HUB, "chat-1", "design_ask", {"question": "q", "reason": "r"})["recorded"],
                              "asked", "the reply still carries the question")
 
+    def test_marks_are_read_from_the_messages_own_page_revision(self) -> None:
+        from monkeyhub_api.chat import transport
+
+        page = {"runId": "run-7", "assetSha256": "a" * 64, "pageIndex": 0, "revisionSha256": "b" * 64}
+        chat = "00000000-0000-4000-8000-000000000001"
+        session = {"id": chat, "messages": [{"id": "m-1", "role": "user", "content": "东墙换成砖", "markup": page}]}
+        ink = [{"id": "east", "kind": "circle", "points": [[0.1, 0.1]]},
+               {"id": "note", "kind": "text", "points": [[0.5, 0.5]], "label": "踢脚线也换"}]
+        reading = {"markId": "east", "kind": "circle", "zone": "area", "hits": [], "ambiguous": True, "reason": "nothing"}
+        self.answers = [{"annotations": ink, "comment": "其它都刷白"},
+                        {"source": "drawing", "stateDigest": "c" * 64, "readings": [reading]}]
+        with patch.object(transport, "_request_json", return_value=session):
+            marks = design_loop.call(HUB, chat, "design_read", {"part": "marks"})["marks"]
+        self.assertEqual(self.sent[0]["path"].split("?")[0], "/api/document-annotations")
+        self.assertIn("revisionSha256=" + "b" * 64, self.sent[0]["path"])
+        self.assertEqual((self.sent[1]["path"], self.sent[1]["body"]["marks"]), ("/api/markup/resolve", ink))
+        self.assertEqual((marks["source"], marks["readings"], marks["comment"]), ("drawing", [reading], "其它都刷白"))
+        self.assertEqual(marks["marks"][1], {"markId": "note", "kind": "text", "label": "踢脚线也换"})
+        with patch.object(transport, "_request_json", return_value={"id": chat, "messages": [
+                {"id": "m-1", "role": "user", "content": "看看"}]}), self.assertRaises(HubFailure) as missing:
+            design_loop.call(HUB, chat, "design_read", {"part": "marks"})
+        self.assertEqual(missing.exception.error.code, "MARKS_MISSING")
+
+    def test_asking_with_changes_puts_the_list_on_a_card_and_ends_the_turn(self) -> None:
+        from monkeyhub_api.chat import transport
+
+        changes = [{"n": 1, "markIds": ["east"], "note": "东墙换成砖", "understanding": "east wall in brick",
+                    "targets": ["wall-east"]}]
+        ask = {"question": "我这样读你的批注，对吗？", "reason": "批注要你确认", "changes": changes}
+        refused = HubFailure(422, "CHANGE_LIST_REFUSED", "Item 1's words are not the architect's as written.")
+        with patch.object(transport, "_request_json", side_effect=refused):
+            answer = design_loop.call(HUB, "chat-1", "design_ask", ask)
+        self.assertEqual((answer["recorded"], answer["code"]), (None, "CHANGE_LIST_REFUSED"))
+        self.assertTrue(design_loop.stop_decision(json.loads(self.state.read_text(encoding="utf-8"))
+                                                  if self.state.exists() else None)[0])
+        self.assertIsNone(design_loop._loops["chat-1"]["asked"], "a refused list asks nothing")
+        posted = []
+        with (patch.object(transport, "_request_json",
+                           side_effect=lambda *a, **k: posted.append((*a, k)) or {"id": "att_" + "0" * 32}),
+              patch.dict("os.environ", {"MONKEYHUB_PRESENTATION_TOKEN": "token-1"})):
+            answer = design_loop.call(HUB, "chat-1", "design_ask", ask)
+        self.assertEqual((answer["recorded"], answer["cardId"]), ("asked", "att_" + "0" * 32))
+        self.assertEqual(posted[0][1:3], ("/api/attention/change-lists", "POST"))
+        self.assertEqual(posted[0][3], {"sessionId": "chat-1", "messageId": "m-1", "question": ask["question"],
+                                        "changes": changes})
+        self.assertEqual(posted[0][4]["headers"], {"Authorization": "Bearer token-1"})
+        state = json.loads(self.state.read_text(encoding="utf-8"))
+        self.assertEqual(state["asked"]["changeList"], "att_" + "0" * 32)
+
     def test_the_budget_is_configurable(self) -> None:
         with patch.dict("os.environ", {design_loop.REPAIR_BUDGET_ENV: "1"}):
             self.answers = [{"outcome": "problems", "code": "CHECKS_FAILED", "candidateId": "c-1"}]

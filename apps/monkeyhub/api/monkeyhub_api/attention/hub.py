@@ -22,6 +22,7 @@ import secrets
 import threading
 import time
 from typing import Annotated, Any
+from urllib.parse import urlencode
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
@@ -34,6 +35,7 @@ from ..settings.models import UserSettingsDto
 from ..settings.store import SettingsError, read_user_settings
 from . import producers
 from .actions import AttentionExecutor, check_card
+from .change_list import ChangeList, ChangeListItem, change_list_card, check_against, unsure_cards
 from .models import AttentionItem
 from .store import HUB_PROJECT_ID, AttentionStore, runtime_id
 
@@ -189,6 +191,66 @@ class AttentionHub:
         draft, = producers.questions([producers.AskedQuestion(session_id, message_id, question, reason, tuple(refs))])
         return self.store.upsert(session.projectId, session.projectDir, draft)
 
+    def propose_changes(self, session_id: str, message_id: str, question: str, items: Iterable[ChangeListItem], *,
+                        token: str) -> AttentionItem:
+        """A design-loop turn read the architect's marks as these changes: one change_list card, and a question per
+        unsure item (#300 3-3).
+
+        Only the conversation's own tool server proposes, as it asks. The list
+        is checked here, not taken on the Agent's word: against the Runtime's
+        reading of the marks of the message it answers, the architect's own
+        words kept with them (that message, the page's comment and its text
+        marks) and the working design's catalogue. A list they do not bear out is
+        refused with what is wrong, and nothing is written.
+        """
+
+        if not token or not secrets.compare_digest(self.chats.presentation_token(session_id), token):
+            raise HubFailure(403, "ATTENTION_QUESTION_UNBOUND", "Only this conversation's own tools can ask its architect.")
+        session = self.chats.get(session_id)
+        message = next((row for row in session.messages if row.id == message_id and row.role == "user"), None)
+        if message is None:
+            raise HubFailure(409, "ATTENTION_QUESTION_UNBOUND", "The question names no message the architect sent here.")
+        if message.markup is None:
+            raise HubFailure(409, "CHANGE_LIST_UNBOUND", "This message names no marks; ask with a plain question instead.")
+        page, readings = self.read_marks(session.projectId, session.projectDir, message.markup)
+        words = [text for text in (message.content, page.get("comment") or "",
+                                   *(row.get("label") or "" for row in page.get("annotations") or ()
+                                     if row.get("kind") == "text")) if text.strip()]
+        try:
+            change_list = ChangeList(runId=message.markup.runId, items=list(items))
+        except ValueError as exc:
+            raise HubFailure(422, "CHANGE_LIST_REFUSED", str(exc)[:2000]) from exc
+        problems = check_against(change_list, readings["readings"], words,
+                                 self._catalog(session.projectId, session.projectDir))
+        if problems:
+            raise HubFailure(422, "CHANGE_LIST_REFUSED", " ".join(problems)[:2000])
+        card = self.store.upsert(session.projectId, session.projectDir, change_list_card(
+            session_id, message_id, change_list, readings["readings"], words, question))
+        for draft in unsure_cards(card.id, change_list, readings["readings"]):
+            self.store.upsert(session.projectId, session.projectDir, draft)
+        return card
+
+    def read_marks(self, project_id: str, project_dir: str, markup) -> tuple[dict, dict]:
+        """A message's page ink, from its exact saved revision, and the Runtime's reading of each mark."""
+
+        query = {"projectId": project_id, "runId": markup.runId, "assetSha256": markup.assetSha256,
+                 "pageIndex": markup.pageIndex, "revisionSha256": markup.revisionSha256,
+                 **({"drawingRevisionRef": markup.drawingRevisionRef} if markup.drawingRevisionRef else {})}
+        page = self.studio(project_id, project_dir, "GET", f"/api/document-annotations?{urlencode(query)}")
+        target = {"runId": markup.runId, "assetSha256": markup.assetSha256, "pageIndex": markup.pageIndex,
+                  **({"drawingRevisionRef": markup.drawingRevisionRef} if markup.drawingRevisionRef else {})}
+        readings = self.studio(project_id, project_dir, "POST", "/api/markup/resolve", {
+            "projectId": project_id, "page": target, "marks": page.get("annotations") or []})
+        return page, readings
+
+    def _catalog(self, project_id: str, project_dir: str) -> set[str]:
+        # The working design's components and their elements: what an extra item may name.
+        state = self.studio(project_id, project_dir, "GET", "/api/state")
+        rows = (state.get("catalog") or {}).get("components") or ()
+        return ({row.get("componentId") for row in rows} | {element for row in rows for element in row.get("elementIds") or ()}
+                | {row.get("componentId") for row in state.get("componentTree") or ()}
+                | {row.get("elementId") for row in state.get("elements") or ()}) - {None}
+
     def _answered(self, project_id: str, project_dir: str, sessions: list[ChatDetail]) -> None:
         # A question is answered once its conversation has a newer message from the architect.
         latest = {session.id: next((row.id for row in reversed(session.messages) if row.role == "user"), None)
@@ -297,6 +359,17 @@ class AttentionQuestionRequest(BaseModel):
     refs: list[Annotated[str, Field(min_length=1, max_length=400)]] = Field(default_factory=list, max_length=20)
 
 
+class AttentionChangeListRequest(BaseModel):
+    """The changes a design-loop turn read the architect's marks as (design_ask with changes), for the message they
+    answer."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    sessionId: str = Field(min_length=1)
+    messageId: str = Field(min_length=1)
+    question: str = Field(min_length=1, max_length=2000)
+    changes: list[ChangeListItem] = Field(min_length=1, max_length=30)
+
+
 def hub_router(attention: AttentionHub) -> APIRouter:
     """The project's attention conversation, and the questions a conversation's own tools put to its architect."""
 
@@ -317,5 +390,15 @@ def hub_router(attention: AttentionHub) -> APIRouter:
         authorization = request.headers.get("authorization", "")
         token = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else ""
         return attention.ask(body.sessionId, body.messageId, body.question, body.reason, body.refs, token=token)
+
+    @routes.post("/api/attention/change-lists", response_model=AttentionItem, status_code=201)
+    def attention_change_list(request: Request, body: AttentionChangeListRequest) -> AttentionItem:
+        """Called by the conversation's tool server when design_ask asks with a change list."""
+
+        if request.client is None or request.client.host not in {"127.0.0.1", "::1"}:
+            raise HubFailure(403, "LOCAL_PRESENTER_REQUIRED", "The conversation's tools must connect from this machine.")
+        authorization = request.headers.get("authorization", "")
+        token = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else ""
+        return attention.propose_changes(body.sessionId, body.messageId, body.question, body.changes, token=token)
 
     return routes

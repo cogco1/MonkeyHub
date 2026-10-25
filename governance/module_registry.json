@@ -4066,7 +4066,8 @@
       ],
       "entrypoints": [],
       "works": [
-        "later, dismiss, bring back and undo on each card of the attention page"
+        "later, dismiss, bring back and undo on each card of the attention page",
+        "a change list's card: run its ticked items, or say which part an unsure item meant (#300 3-3)"
       ],
       "missing": [
         "the Hub serving the queue on main: until it does, notices come from the conversations"
@@ -4143,6 +4144,26 @@
             "label": "Restart the project service",
             "label_zh": "重新启动项目服务",
             "args": [],
+            "entries": []
+          },
+          {
+            "id": "attention.change_list.execute",
+            "label": "Make the ticked changes",
+            "label_zh": "按勾选的改",
+            "args": [
+              "items"
+            ],
+            "entries": []
+          },
+          {
+            "id": "attention.change_list.choose_target",
+            "label": "Choose the part an item meant",
+            "label_zh": "选这条指的构件",
+            "args": [
+              "cardId",
+              "n",
+              "target"
+            ],
             "entries": []
           }
         ]
