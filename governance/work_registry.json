@@ -1003,6 +1003,39 @@
             "docs/audits/hub-entries.md"
           ],
           "depends_on": []
+        },
+        {
+          "id": "srv-hand-to-ai",
+          "status": "active",
+          "branch": "claude/srv-hand-to-ai",
+          "worktree": "C:\\Users\\Public\\renou\\dev\\wt\\claude-srv-hand-to-ai",
+          "base_ref": "f6493a4f",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "S08 (server, 10-24): one 交给 AI on the Board's selection, the document page and the tracing paper, sent into the project's conversation as a message with its picture and marks; the sentence on the first circle, references folded beside it, the marks cleared once handed over and kept in History. The older hand-off entries are developer mode's. Then the Board toolbar, the Layout tab, the state-tree strip and the skills-project setting behind use or developer mode. The change list that reads the marks joins on Monday (claude/300-b3-change-list).",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/app/App.tsx",
+            "apps/monkeyhub/web/src/app/ProjectWorkspace.tsx",
+            "apps/monkeyhub/web/src/features/commands/tree.generated.ts",
+            "apps/monkeyhub/web/src/features/designHistory/HistoryPage.tsx",
+            "apps/monkeyhub/web/src/features/designHistory/historyPage.css",
+            "apps/monkeyhub/web/src/features/handToAi/",
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
+            "apps/monkeyhub/web/test/handToAi.browser.mjs",
+            "apps/monkeyhub/web/test/handToAi.test.ts",
+            "apps/monkeyhub/web/test/handToAiDocument.browser.mjs",
+            "docs/architecture/system-map.md",
+            "governance/command_phrases.json",
+            "governance/module_registry.json",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
         }
       ]
     }

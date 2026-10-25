@@ -81,6 +81,7 @@ import { EvidenceDrawer } from "../features/evidence/EvidenceDrawer";
 import { useStudioEvents } from "../features/events/EventStream";
 import { honestyCount } from "../features/evidence/HonestyTab";
 import { usePreferences } from "../features/settings/preferences";
+import { HAND_TO_AI_WORDS, HandToAiError, handToAiErrorText, marksFile, pngFile, pointMarks, thumbnailOf, useHandToAi } from "../features/handToAi/handToAi";
 import type { DirectModelAction, DirectModelTool } from "../features/stage/ModelEditPanel";
 import type { PushPullTarget } from "../workspaces/monkeyarch/interactionSession";
 import { applyDraftCommand, createModelDraft, currentDraft, drawnShapeFromSpec,
@@ -770,6 +771,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const [tracingPaperSend, setTracingPaperSend] = useState<{ busy: boolean; sent: boolean; error: string | null }>({ busy: false, sent: false, error: null });
   useEffect(() => { setTracingPaperSend({ busy: false, sent: false, error: null }); },
     [loadedModelSource?.runId, loadedModelSource?.stateDigest, loadedModelSource?.assetSha256, tracingPaperSignature]);
+  // S08: 「交给 AI」 on the tracing paper; sending it to the Board is developer mode's (and a bare Modeling's).
+  const handToAi = useHandToAi();
+  const [handModel, setHandModel] = useState<{ words: string; busy: boolean; error: string | null; sent: boolean }>({ words: "", busy: false, error: null, sent: false });
+  const handModelSending = useRef(false);
   const editGestures = (change: (current: readonly ModelGestureDto[]) => readonly ModelGestureDto[]) => {
     modelAnnotations.changeAnnotations(change(gestures));
   };
@@ -1073,6 +1078,39 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       tracingPaperSending.current = false;
     }
   }, [append, designHistory, gestures, loadedArtifact, loadedModelSource, modelAnnotations, persistentAnnotations, project]);
+
+  /**
+   * S08: the tracing paper's marks over the model as seen, each with the objects it hit, and the person's sentence
+   * on the first circle, handed to the AI in the project's conversation. Once taken, the tracing paper is cleared
+   * (undo brings the marks back); the saved annotation revision, the message and History keep them.
+   */
+  const handTracingPaperToAi = useCallback(async () => {
+    const viewport = viewportRef.current;
+    if (!handToAi || !viewport || handModelSending.current || !project || !loadedModelSource || !persistentAnnotations || !modelAnnotations.ready) return;
+    handModelSending.current = true;
+    setHandModel((current) => ({ ...current, busy: true, error: null, sent: false }));
+    const modelSource = { ...loadedModelSource };
+    try {
+      const words = handModel.words.trim();
+      if (gestures.length === 0) throw new HandToAiError("NOTHING_MARKED", "Nothing marked.");
+      if (!words) throw new HandToAiError("EMPTY", "No words.");
+      const acceptedStage = designHistory?.stages.find((stage) => sameModelSource(stage.modelSource, modelSource));
+      const capture = await captureTracingPaperReview(viewport, gestures, modelAnnotations.save);
+      const png = await renderTracingPaperSnapshotPng(capture.viewportPng, capture.saved.annotations);
+      const marks = pointMarks(capture.saved.annotations.map((gesture, index) => ({ id: String(index), kind: gesture.kind, points: gesture.screen, label: gesture.label })))
+        .map((mark, index) => ({ ...mark, hits: (capture.saved.annotations[index]?.hits ?? []).map((hit) => ({ ...hit })) }));
+      const files = [pngFile(png, "model"), marksFile("model", words, marks, { model: modelSource, stage: acceptedStage?.stageRef ?? null,
+        camera: capture.camera, screenSize: capture.screenSize, marksRevision: capture.saved.revisionSha256 ?? null, coordinates: "screen pixels" })];
+      await handToAi({ projectId: project.projectId, surface: "model", words, marks: gestures.filter((gesture) => gesture.kind !== "text").length,
+        files, thumbnail: await thumbnailOf(png) });
+      modelAnnotations.changeAnnotations([]);
+      setHandModel({ words: "", busy: false, error: null, sent: true });
+    } catch (cause) {
+      setHandModel((current) => ({ ...current, busy: false, error: handToAiErrorText(cause, language) }));
+    } finally {
+      handModelSending.current = false;
+    }
+  }, [handToAi, handModel.words, designHistory, gestures, loadedModelSource, modelAnnotations, persistentAnnotations, project, language]);
 
   const captureViewport = useCallback(async () => {
     const runId = loadedArtifact?.runId;
@@ -3858,9 +3896,14 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             modelAnnotations={persistentAnnotations ? modelAnnotations : null}
             annotationsReady={modelAnnotations.ready && !modelLoading &&
               (loadedArtifacts.length > 0 || sourceLabel === LOCAL_SOURCE_LABEL)}
-            tracingPaperReview={{ enabled: persistentAnnotations && modelAnnotations.ready && gestures.length > 0 && !modelLoading && loadedModelSource !== null,
+            handToAi={handToAi ? { words: handModel.words, busy: handModel.busy, error: handModel.error,
+              sent: handModel.sent ? HAND_TO_AI_WORDS[language].sent : null,
+              enabled: persistentAnnotations && modelAnnotations.ready && gestures.length > 0 && !modelLoading && loadedModelSource !== null,
+              onWords: (words: string) => setHandModel((current) => ({ ...current, words, error: null, sent: false })),
+              onSend: () => void handTracingPaperToAi() } : undefined}
+            tracingPaperReview={!handToAi || developerMode ? { enabled: persistentAnnotations && modelAnnotations.ready && gestures.length > 0 && !modelLoading && loadedModelSource !== null,
               busy: tracingPaperSend.busy, sent: tracingPaperSend.sent, error: tracingPaperSend.error,
-              onSend: () => void sendTracingPaperToBoard() }}
+              onSend: () => void sendTracingPaperToBoard() } : undefined}
             onEraseGestures={(indices) => editGestures((current) => current.filter((_, index) => !indices.includes(index)))}
             documentProjectId={binding?.projectId ?? null}
             documentView={documentView}

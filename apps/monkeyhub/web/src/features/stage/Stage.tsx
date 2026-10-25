@@ -1,4 +1,5 @@
 import { useConnection, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import { HandToAiBar } from "../handToAi/HandToAiBar";
 import { pageSource, type PageSource } from "../../workspaces/monkeyboard/boardScene";
 /**
  * The model, and the few facts that sit over it.
@@ -253,6 +254,7 @@ export function Stage({
   modelAnnotations,
   annotationsReady,
   tracingPaperReview,
+  handToAi,
   documentProjectId,
   documentModelSources,
   editingModelSource,
@@ -346,6 +348,8 @@ export function Stage({
   modelAnnotations: ModelAnnotationsHandle | null;
   annotationsReady: boolean;
   tracingPaperReview?: { enabled: boolean; busy: boolean; sent: boolean; error: string | null; onSend(): void };
+  /** S08: 「交给 AI」 for the tracing paper's marks and one sentence; absent where no conversation can take them. */
+  handToAi?: { words: string; enabled: boolean; busy: boolean; error: string | null; sent: string | null; onWords(words: string): void; onSend(): void };
   documentProjectId: string | null;
   documentModelSources: readonly { label: string; modelSource: ModelSourceDto }[];
   editingModelSource: ModelSourceDto | null;
@@ -2332,6 +2336,12 @@ export function Stage({
               ))}
             </span>
             {tool && activeTool && <span className="viewtools__hint quiet">{t("stage.tools.drawingHint", { tool: t(activeTool.labelKey) })}</span>}
+            {handToAi && <>
+              <span className="viewtools__sep" aria-hidden="true" />
+              <HandToAiBar className="model-hand-to-ai" words={handToAi.words} onWords={handToAi.onWords} disabled={!handToAi.enabled}
+                sending={handToAi.busy} error={handToAi.error} onSend={handToAi.onSend} />
+              {handToAi.sent && !handToAi.error && <span className="quiet" role="status">{handToAi.sent}</span>}
+            </>}
             {tracingPaperReview && <>
               <span className="viewtools__sep" aria-hidden="true" />
               <button data-command="markup.hand_to_ai.send_review" type="button" disabled={!tracingPaperReview.enabled || tracingPaperReview.busy}

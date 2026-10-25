@@ -9,7 +9,9 @@ import { ErrorPanel, PlainFailure } from "../../app/ErrorPanel";
 import { startClientTiming, type ClientTimingSpan } from "../../app/clientTiming";
 import { useT } from "../../i18n/useT";
 import { InlineDecision } from "../../notifications/cards/InlineDecision";
-import { usePreferences } from "../../features/settings/preferences";
+import { useDeveloperMode, usePreferences } from "../../features/settings/preferences";
+import { HandToAiBar } from "../../features/handToAi/HandToAiBar";
+import { base64Png, HAND_TO_AI_WORDS, HandToAiError, handToAiErrorText, marksFile, pointMarks, thumbnailOf, useHandToAi } from "../../features/handToAi/handToAi";
 import { eraseAt, inkPath, toPagePoint, zoomPageAt, type PagePoint, type PageView } from "./documentInk";
 import { useDocumentAnnotations, type createDocumentAnnotationsController } from "./useDocumentAnnotations";
 import { DocumentTextLayer } from "./DocumentTextLayer";
@@ -519,6 +521,11 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   const [continuingModel, setContinuingModel] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [references, setReferences] = useState<ReferencePage[]>([]);
+  // S08: the page's marks and its sentence go to the AI in the project's conversation; the exact-model page note is developer mode's.
+  const handToAi = useHandToAi();
+  const developer = useDeveloperMode();
+  const [handSending, setHandSending] = useState(false);
+  const [handError, setHandError] = useState<string | null>(null);
   const [drawingStyles, setDrawingStyles] = useState<Awaited<ReturnType<typeof studio.drawingStyles>>["styles"]>([]);
   const [styleId, setStyleId] = useState("arch400-white");
   const [scaleDenominator, setScaleDenominator] = useState(20);
@@ -840,6 +847,75 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
     } catch (cause) { if (isCurrent()) setError(asStudioApiError(cause)); }
     finally { if (mounted.current) setSending(false); }
   };
+  /**
+   * S08: the page as drawn, its marks with the sentence on the first circle, and any references with their purpose,
+   * handed to the AI. Once the conversation took them the page's marks and words are cleared (Ctrl+Z brings them
+   * back); the saved annotation revision, the message and History keep them.
+   */
+  const handOver = async () => {
+    if (!handToAi || handSending || sending || busy || !draft.ready || draft.readOnly || !document || !page || !file) return;
+    const scopeAtSubmit = submitScope.current;
+    const isCurrent = () => mounted.current && submitScope.current === scopeAtSubmit;
+    setHandSending(true); setHandError(null); setFeedback("");
+    try {
+      const words = draft.comment.trim();
+      const marks = draft.annotations;
+      if (marks.length === 0) throw new HandToAiError("NOTHING_MARKED", "Nothing marked.");
+      if (!words) throw new HandToAiError("EMPTY", "No words.");
+      const saved = await draft.save();
+      if (!isCurrent()) return;
+      const image = await renderDocumentVisual(file, page, marks);
+      const picture = base64Png(image.annotatedPngBase64 ?? image.pagePngBase64, "document", "page");
+      const files = [picture];
+      const attached: Record<string, unknown>[] = [];
+      for (const [index, reference] of references.entries()) {
+        const source = documents.find((item) => item.runId === reference.runId && item.assetSha256 === reference.assetSha256 &&
+          (item.revisionRef ?? null) === (reference.drawingRevisionRef ?? null));
+        const referencePage = source?.pages.find((item) => item.pageIndex === reference.pageIndex);
+        if (!source || !referencePage) throw new Error(t("document.referenceUnavailable"));
+        const [ink, bytes] = await Promise.all([
+          reference.includeAnnotations ? studio.documentAnnotations(source.runId, source.assetSha256, referencePage.pageIndex, null, source.revisionRef) : null,
+          studio.documentFile(source.runId, source.assetSha256, source.fileName, source.revisionRef)]);
+        const visual = await renderDocumentVisual(bytes, referencePage, ink?.annotations ?? []);
+        files.push(base64Png(visual.annotatedPngBase64 ?? visual.pagePngBase64, "document", `reference-${index + 1}`));
+        attached.push({ fileName: source.fileName, pageNumber: referencePage.pageIndex + 1, purpose: reference.note.trim() || null,
+          withMarks: reference.includeAnnotations });
+      }
+      if (!isCurrent()) return;
+      files.splice(1, 0, marksFile("document", words, pointMarks(marks), {
+        page: { fileName: document.fileName, pageNumber: page.pageIndex + 1, runId: document.runId, assetSha256: document.assetSha256,
+          revisionRef: document.revisionRef ?? null, marksRevision: saved.revisionSha256 ?? null, coordinates: "page fractions, origin top left" },
+        model: documentModelSource, references: attached }));
+      await handToAi({ projectId, surface: "document", words, marks: marks.filter((mark) => mark.kind !== "text").length, files,
+        thumbnail: await thumbnailOf(picture) });
+      if (!isCurrent()) return;
+      draft.setComment(""); draft.changeAnnotations([]); setReferences([]);
+      setFeedback(HAND_TO_AI_WORDS[language].sent);
+    } catch (cause) { if (isCurrent()) setHandError(handToAiErrorText(cause, language)); }
+    finally { if (mounted.current) setHandSending(false); }
+  };
+  const referencePicker = <>
+    <p>{t("document.referenceHint")}</p>
+    <div className="document-references__pages">{referenceChoices.map((choice) => {
+      const selected = references.find((item) => pageKey(item) === pageKey(choice));
+      return <div className="document-reference" key={pageKey(choice)}>
+        <label><input type="checkbox" checked={selected !== undefined} disabled={sending || handSending || (!selected && references.length >= 3)}
+          onChange={(event) => setReferences((current) => event.target.checked
+            ? [...current, { runId: choice.runId, assetSha256: choice.assetSha256, pageIndex: choice.pageIndex,
+              ...(choice.drawingRevisionRef ? { drawingRevisionRef: choice.drawingRevisionRef } : {}), note: "", includeAnnotations: false }]
+            : current.filter((item) => pageKey(item) !== pageKey(choice)))} /><span>{choice.label}</span></label>
+        {selected && <><label className="document-reference__ink"><input type="checkbox" checked={selected.includeAnnotations} disabled={sending || handSending}
+          aria-label={t("document.referenceInkLabel", { page: choice.label })}
+          onChange={(event) => setReferences((current) => current.map((item) => pageKey(item) === pageKey(choice)
+            ? { ...item, includeAnnotations: event.target.checked } : item))} /><span>{t("document.referenceInk")}</span></label>
+        <input type="text" value={selected.note} maxLength={500} disabled={sending || handSending}
+          aria-label={t("document.referencePurpose", { page: choice.label })} placeholder={t("document.referencePurposeHint")}
+          onChange={(event) => setReferences((current) => current.map((item) => pageKey(item) === pageKey(choice)
+            ? { ...item, note: event.target.value } : item))} /></>}
+      </div>;
+    })}</div>
+    {referenceChoices.length === 0 && <p>{t("document.noReferencePages")}</p>}
+  </>;
   return <div className="document-workspace" aria-label={t("document.workspace")} onKeyDown={(event) => {
     if (event.defaultPrevented || usesNativeTextEditing(event) || event.altKey || !(event.ctrlKey || event.metaKey)
       || event.currentTarget.closest("[inert], [aria-hidden='true']")
@@ -981,44 +1057,31 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
           {sheetError && <p className="document-drawing-styles__error" role="alert"><PlainFailure error={sheetError} /></p>}
           {stylesError && <AutoRetry failure={stylesError} data-command="view.notice.retry" data-command-arg="drawing_styles" retry={() => setStylesRetry((value) => value + 1)}>{t("document.drawingStylesRetry")}</AutoRetry>}
         </section>}
-        <label htmlFor="document-comment">{t("document.comment")}</label>
-        <textarea id="document-comment" value={review?.text ?? draft.comment} readOnly={draft.readOnly} disabled={!draft.ready || sending}
-          onChange={(event) => draft.setComment(event.target.value)} onBlur={draft.flush} placeholder={t("document.commentHint")} />
-        <div className="document-note-actions">
-          <button data-command="markup.hand_to_ai.submit_page_note" type="button" className="btn btn--accent" disabled={!documentVisualInputAvailable || !draft.ready || draft.readOnly || !draft.comment.trim() || !file || busy || sending || !modelMatches}
-            onClick={() => void submit()}>{t(sending ? "document.submitting" : "document.submit")}</button></div>
-        {!documentVisualInputAvailable && <p className="document-visual-unavailable" role="status">{t("document.visualUnavailable")}</p>}
-        {review === null && <details className="document-references">
-          <summary data-command="view.disclosure.toggle" data-command-arg="document_references">{t("document.references", { count: references.length })}</summary>
-          <p>{t("document.referenceHint")}</p>
-          <div className="document-references__pages">{referenceChoices.map((choice) => {
-            const selected = references.find((item) => pageKey(item) === pageKey(choice));
-            return <div className="document-reference" key={pageKey(choice)}>
-              <label><input type="checkbox" checked={selected !== undefined} disabled={sending || (!selected && references.length >= 3)}
-                onChange={(event) => setReferences((current) => event.target.checked
-                  ? [...current, { runId: choice.runId, assetSha256: choice.assetSha256, pageIndex: choice.pageIndex,
-                    ...(choice.drawingRevisionRef ? { drawingRevisionRef: choice.drawingRevisionRef } : {}), note: "", includeAnnotations: false }]
-                  : current.filter((item) => pageKey(item) !== pageKey(choice)))} /><span>{choice.label}</span></label>
-              {selected && <><label className="document-reference__ink"><input type="checkbox" checked={selected.includeAnnotations} disabled={sending}
-                aria-label={t("document.referenceInkLabel", { page: choice.label })}
-                onChange={(event) => setReferences((current) => current.map((item) => pageKey(item) === pageKey(choice)
-                  ? { ...item, includeAnnotations: event.target.checked } : item))} /><span>{t("document.referenceInk")}</span></label>
-              <input type="text" value={selected.note} maxLength={500} disabled={sending}
-                aria-label={t("document.referencePurpose", { page: choice.label })} placeholder={t("document.referencePurposeHint")}
-                onChange={(event) => setReferences((current) => current.map((item) => pageKey(item) === pageKey(choice)
-                  ? { ...item, note: event.target.value } : item))} /></>}
-            </div>;
-          })}</div>
-          {referenceChoices.length === 0 && <p>{t("document.noReferencePages")}</p>}
-        </details>}
+        {handToAi && review === null ? <HandToAiBar className="document-hand-to-ai" words={draft.comment} onWords={(value) => { draft.setComment(value); setHandError(null); }}
+          disabled={!draft.ready || draft.readOnly || !file || busy || sending} sending={handSending} error={handError}
+          onSend={() => { void handOver(); }} references={referencePicker} referenceCount={references.length} />
+          : <><label htmlFor="document-comment">{t("document.comment")}</label>
+          <textarea id="document-comment" value={review?.text ?? draft.comment} readOnly={draft.readOnly} disabled={!draft.ready || sending}
+            onChange={(event) => draft.setComment(event.target.value)} onBlur={draft.flush} placeholder={t("document.commentHint")} /></>}
+        {/* S08: the exact-model page note and its list are developer mode's, beside 交给 AI. Without a conversation (a bare page) it stays. */}
+        {(!handToAi || developer) && <>
+          <div className="document-note-actions">
+            <button data-command="markup.hand_to_ai.submit_page_note" type="button" className="btn btn--accent" disabled={!documentVisualInputAvailable || !draft.ready || draft.readOnly || !draft.comment.trim() || !file || busy || sending || handSending || !modelMatches}
+              onClick={() => void submit()}>{t(sending ? "document.submitting" : "document.submit")}</button></div>
+          {!documentVisualInputAvailable && <p className="document-visual-unavailable" role="status">{t("document.visualUnavailable")}</p>}
+          {review === null && !handToAi && <details className="document-references">
+            <summary data-command="view.disclosure.toggle" data-command-arg="document_references">{t("document.references", { count: references.length })}</summary>
+            {referencePicker}
+          </details>}
+        </>}
         {feedback && <p role="status">{feedback}</p>}
-        <details className="document-submitted"><summary data-command="view.handled.submitted_notes">{t("document.submittedNotes", { count: submitted.length })}</summary>
+        {(!handToAi || developer) && <details className="document-submitted"><summary data-command="view.handled.submitted_notes">{t("document.submittedNotes", { count: submitted.length })}</summary>
           {submitted.map((comment) => <article key={comment.commentRef}><p>{comment.utterance}</p>
             {comment.documentAnnotations.map((ref) => <button data-command="view.handled.view_page" data-command-arg={pageKey(ref)} key={`${pageKey(ref)}:${ref.revisionSha256}`} type="button" disabled={sending}
               onClick={() => { void switchDocumentPage(() => { setReview({ ref, text: comment.utterance }); setSelectedSha(ref.assetSha256); setSelectedRevision(ref.drawingRevisionRef ?? null); setSelectedRun(ref.runId); setPageIndex(ref.pageIndex); }); }}>
               {t("document.openSubmittedPage", { page: ref.pageIndex + 1 })}</button>)}
           </article>)}
-        </details>
+        </details>}
       </aside>}
     </div>
   </div>;
