@@ -783,6 +783,7 @@ export const messagesZhCN = {
   "stage.section.drawUnavailable": "请先打开一个已保存的模型版本，再出它的剖面。",
   "stage.section.drawn": "已出图：{fileName}。还没有放到 Board 上。",
   "stage.section.toBoard": "放到 Board",
+  "stage.sketch.turnedToAxon": "已切到轴测画体块",
   "stage.quick.plan": "出平面",
   "stage.quick.section": "出剖面",
   "stage.quick.elevations": "出立面",

@@ -1184,8 +1184,17 @@ export function Stage({
     keys.onEditLocked?.();
     return true;
   }, []);
+  // S15: a mass drawn on the ground while the view looks level at it (Front, Right, or a camera turned so)
+  // comes out flat and is refused as no valid shape when it is recorded. Picking a drawing tool there turns
+  // the view to the axonometric one first, and the step line says so.
+  const [turnedForSketch, setTurnedForSketch] = useState(false);
   const chooseDrawingTool = useCallback((next: SketchTool | null) => {
     if (next !== null && refuseLockedEdit()) { setMoreToolsOpen(false); return; }
+    const camera = next !== null && workPlaneName === "xy" ? viewportRef.current?.camera() : null;
+    const look = camera ? camera.target.map((value, axis) => value - camera.position[axis]) : null;
+    const level = look !== null && Math.abs(look[2]) < 0.35 * Math.hypot(look[0], look[1], look[2]);
+    if (level) viewportRef.current?.standardView("iso");
+    setTurnedForSketch(level);
     sketchEpoch.current += 1;
     setMoreToolsOpen(false);
     stopPushPull();
@@ -1197,7 +1206,7 @@ export function Stage({
     onTool(null); setEraser(false); setMeasuring(false); stopMeasuring();
     model?.onTool?.("select");
     showSketch({ ...cancelledSketch(interaction.current.sketch), tool: next });
-  }, [onTool, model?.onTool, refuseLockedEdit, showSketch, stopMeasuring, stopPushPull, stopMove, stopRotate, stopScale, tracingOpen, exitTracingPaper]);
+  }, [onTool, model?.onTool, refuseLockedEdit, showSketch, stopMeasuring, stopPushPull, stopMove, stopRotate, stopScale, tracingOpen, exitTracingPaper, workPlaneName, viewportRef]);
   const paperSourceRef = useRef(modelAnnotations?.save);
   paperSourceRef.current = modelAnnotations?.save;
   const openTracingPaper = async () => {
@@ -2450,6 +2459,7 @@ export function Stage({
                       : sketch.tool === "polygon" ? t("stage.sketch.polygonHint")
                         : !sketch.hasAnchor ? t("stage.sketch.firstCorner") : t("stage.sketch.secondCorner")}
                 {snapNote !== null && <span className="quiet"> · {t("stage.sketch.snapped", { kind: snapNote })}</span>}
+                {turnedForSketch && <span className="quiet" data-turned-for-sketch> · {t("stage.sketch.turnedToAxon")}</span>}
               </span>
               {sketch.hasAnchor && !sketchBusy && (sketch.tool !== "freehand" || sketch.phase === "height") && (
                 <label className="sketch-entry__value">

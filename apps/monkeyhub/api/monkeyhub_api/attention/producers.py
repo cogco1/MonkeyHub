@@ -328,6 +328,8 @@ def _reason_zh(record: OperationRecord) -> str:
 
     if _CJK.search(record.reason or ""):
         return record.reason or ""
+    if "is not a valid shape" in (record.reason or ""):
+        return "这个形状在当前视角下画不出体块：换到轴测视图（顶部「更多」里）再画一次。"
     if record.status == "needs_recovery":
         return "这一步没有留下能读回来的结果，项目里已有的内容不受影响；需要的话重新做一次。"
     if record.status == "stale":

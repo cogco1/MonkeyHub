@@ -812,6 +812,7 @@ export const messagesEn = {
   "stage.section.drawUnavailable": "Open a saved model version to draw its section.",
   "stage.section.drawn": "Drawn: {fileName}. It is not on the Board yet.",
   "stage.section.toBoard": "Put on Board",
+  "stage.sketch.turnedToAxon": "Turned to the axonometric view to draw a mass",
   "stage.quick.plan": "Plan",
   "stage.quick.section": "Section",
   "stage.quick.elevations": "Elevations",
