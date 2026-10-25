@@ -1139,7 +1139,8 @@
             "hub.shell"
           ],
           "write_scope": [
-            "apps/monkeyhub/web/src/ChatShell.css"
+            "apps/monkeyhub/web/src/ChatShell.css",
+            "apps/monkeyhub/web/test/workingCopy.browser.mjs"
           ],
           "depends_on": []
         }
