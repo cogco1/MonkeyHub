@@ -2409,13 +2409,15 @@ class ChatTests(unittest.TestCase):
         """#404 F7 moved every domain but modeling behind one line each: the CLI
         loads this description before every turn, and it was 15,972 characters.
         #419 states the construction script there instead of a producer index.
+        The scripts an Agent writes (S23) are one line here and their text is
+        behind pathPrefix /api/skills; that line is why the limits are 10200 and 28200.
         """
 
         tools = {tool["name"]: tool for tool in _tools_of(mcp_server)}
         modelling = tools["studio_request"]["description"]
         self.assertLessEqual(len(modelling.splitlines()), 106)
-        self.assertLessEqual(len(modelling), 10000)
-        self.assertLessEqual(len(json.dumps(list(tools.values()), ensure_ascii=False)), 28000)
+        self.assertLessEqual(len(modelling), 10200)
+        self.assertLessEqual(len(json.dumps(list(tools.values()), ensure_ascii=False)), 28200)
         for prefix in guides._GUIDES:
             self.assertIn(f"pathPrefix {prefix}", modelling, "each domain is named with where its text is")
             self.assertNotIn(guides._GUIDES[prefix].splitlines()[-1], modelling)

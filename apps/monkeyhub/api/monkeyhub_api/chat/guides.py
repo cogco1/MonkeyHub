@@ -118,15 +118,6 @@ _MODELLING = chr(10).join([
     "",
     "OTHER READS: GET /api/project, /api/state/volumes, /api/program, /api/options, /api/artifacts, /api/jobs/{id}.",
     "OTHER ACTIONS: POST /api/state/closure, /api/program, /api/options, /api/options/{id}/select, /api/candidates/combine.",
-    "SCRIPTS: when no action or installed skill does what the user asks (a count, a chart, a table from project documents),",
-    "write a small Python script and run it with POST /api/skills/scratch/run {description: one line for the user, name: a",
-    "skill name to keep it under, code, inputs: {name: a document {runId, assetSha256}, a model {modelSha256} or a drawing},",
-    "parameters}, never with Bash: the Hub keeps the code with the run and registers PDF/PNG outputs as documents. It runs as a",
-    "skill does (python main.py --inputs <dir with manifest.json> --params <json> --outputs <dir>); PyMuPDF (fitz),",
-    "numpy, Pillow and matplotlib are there. A script that only reads the project and writes its outputs runs without",
-    "asking; declare access {programs, read, network, ssh, write, packages} only for what it truly needs, and the Hub asks",
-    "the person. Read its statusPath until it ends; failureWords is the sentence to tell the user. The user can keep a",
-    "script that helped as a skill from its card in the chat.",
     "",
     "OTHER DOMAINS: before working in one, call studio_schema with its pathPrefix (and no path) once; the answer carries that",
     "domain's full guide beside its action list.",
@@ -136,6 +127,7 @@ _MODELLING = chr(10).join([
     "- Board, documents and page annotations: pathPrefix /api/board.",
     "- Model export or conversion (3DM, SKP, GLB, DWG): pathPrefix /api/exports.",
     "- AI image renders from a registered source image (providers, requests, results): pathPrefix /api/render.",
+    "- What no action or installed skill does (a count, a chart, a table): write and run a script yourself; pathPrefix /api/skills.",
     "Stage acceptance, formal issue and printer upload are separate from this tool's reversible design actions.",
 ])
 
@@ -356,6 +348,16 @@ _GUIDES = {
         "FOLLOW: GET /api/render/jobs/{jobId} answers queued, running, succeeded, failed or unknown; GET /api/render/jobs lists",
         "earlier attempts. On succeeded, show its document with chat_present kind=assistant documents:[{runId, assetSha256,",
         "revisionRef, pageIndex}] copied from it. Unknown means the outcome could not be confirmed: say so and do not resend.",
+    ]),
+    "/api/skills": chr(10).join([
+        "SCRIPTS: when no action or installed skill does what the user asks (a count, a chart, a table from project documents), write",
+        "a small Python script and run it with POST /api/skills/scratch/run {description: one line for the user, name: a skill name to",
+        "keep it under, code, inputs: {name: a document {runId, assetSha256}, a model {modelSha256} or a drawing}, parameters}, never",
+        "with Bash: the Hub keeps the code with the run and registers PDF/PNG outputs as documents. It runs as a skill does (python",
+        "main.py --inputs <dir with manifest.json> --params <json> --outputs <dir>); PyMuPDF (fitz), numpy, Pillow and matplotlib are",
+        "there. A script that only reads the project and writes its outputs runs without asking; declare access {programs, read,",
+        "network, ssh, write, packages} only for what it truly needs, and the Hub asks the person. Read its statusPath until it ends;",
+        "failureWords is the sentence to tell the user. The user can keep a script that helped as a skill from its card in the chat.",
     ]),
 }
 
