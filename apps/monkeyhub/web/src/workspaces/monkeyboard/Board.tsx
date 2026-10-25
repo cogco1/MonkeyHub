@@ -16,7 +16,7 @@ import { renderDocumentVisual } from "../monkeydiagram/documentVisualInput";
 import { createBoardSaveQueue, type BoardSaveState } from "./boardSaveQueue";
 import { BoardFeedbackError, prepareBoardDesignRequest, type BoardDesignRequest } from "./boardFeedback";
 import { BoardFeedbackGeometryError, createBoardFeedback, type BoardFeedbackSelection } from "./boardFeedbackGeometry";
-import { boardViewAppState, captureBoardView, pageSourceAt, type BoardDocumentOpen, type BoardViewState } from "./boardNavigation";
+import { boardViewAppState, captureBoardView, currentStepElements, pageSourceAt, type BoardDocumentOpen, type BoardViewState } from "./boardNavigation";
 import { BoardRenderError, handOverBoardRender, RENDER_REFERENCE_LIMIT, renderReferenceChoices, selectedRenderPages, type BoardRenderChatRequest } from "./boardRender";
 import { boardDocumentFrameName, documentKey, documentMime, findSource, imageSource, isTracingPaperReview, nextDocumentPosition, nextPagePlacement, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
 import { BoardSketchError, calibrateSketchFrame, insideSketchFrame, newSketchFrameData, sketchActionsFromFrame, sketchFrameData, sketchFrameIds, sketchSummary, type BoardSketchRequest, type SketchFrameData, type SketchSkipReason } from "./boardSketch";
@@ -536,17 +536,20 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPubl
   const t = useT();
   const text = boardCopy(language, t);
   const [attempt, setAttempt] = useState(0);
-  const [loaded, setLoaded] = useState<{ board: BoardDto; documents: SourceDocumentDto[]; files: BinaryFiles; failures: string[]; preview: PreviewLoader } | null>(null);
+  const [loaded, setLoaded] = useState<{ board: BoardDto; documents: SourceDocumentDto[]; files: BinaryFiles; failures: string[]; preview: PreviewLoader; currentRunId: string | null } | null>(null);
   const [error, setError] = useState<unknown>(null);
   useEffect(() => {
     let alive = true;
     setError(null);
     const preview = createPreviewLoader(studio);
-    void Promise.all([studio.board(), studio.documents()]).then(async ([board, list]) => {
+    // The design's current step only says where the board opens; a project without one opens on all of it.
+    const working = typeof studio.workingDraft === "function" ? studio.workingDraft().catch(() => null) : Promise.resolve(null);
+    void Promise.all([studio.board(), studio.documents(), working]).then(async ([board, list, draft]) => {
       if (expectedProjectId !== undefined && board.projectId !== expectedProjectId) throw new Error("The board belongs to another project.");
       if (list.projectId !== board.projectId) throw new Error("The document list belongs to another project.");
       const visual = await sceneFiles(board, list.documents, preview);
-      if (alive) setLoaded({ board, documents: list.documents, ...visual, preview });
+      const currentRunId = draft?.projectId === board.projectId ? draft.current?.runId ?? null : null;
+      if (alive) setLoaded({ board, documents: list.documents, ...visual, preview, currentRunId });
     }).catch((cause) => { if (alive) setError(cause); });
     return () => { alive = false; };
   }, [attempt, expectedProjectId]);
@@ -558,8 +561,10 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPubl
   </section>;
 }
 
-function BoardCanvas({ board, documents: initialDocuments, files, failures, preview, onSubmit, onSketch, onOpenDocument, onPublish, onRenderChatRequest, restoreView, active, refreshKey, pageRequest }: {
+function BoardCanvas({ board, documents: initialDocuments, files, failures, preview, currentRunId, onSubmit, onSketch, onOpenDocument, onPublish, onRenderChatRequest, restoreView, active, refreshKey, pageRequest }: {
   board: BoardDto; documents: SourceDocumentDto[]; files: BinaryFiles; failures: string[]; preview: PreviewLoader;
+  /** The run of the design's current step: a board with no saved place opens on its pages. */
+  currentRunId: string | null;
   onSubmit: (request: BoardDesignRequest) => void;
   onSketch: (request: BoardSketchRequest) => void;
   onOpenDocument?: (open: BoardDocumentOpen) => void;
@@ -731,10 +736,13 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     },
   }));
   const work = useRef(Promise.resolve());
+  // Where a board with no saved place opens: the current step's pages and their title, once the scene is in.
+  const opening = useRef<Set<string> | null>(restoreView !== null ? null
+    : new Set(currentStepElements(board.elements, initialDocuments, currentRunId).map((element) => String(element.id))));
   const [initialData] = useState<ExcalidrawInitialDataState>(() => {
     const restored = restoreView === null ? null : boardViewAppState(restoreView, board.elements);
     return {
-      elements: board.elements as unknown as ExcalidrawElement[], files, scrollToContent: restored === null,
+      elements: board.elements as unknown as ExcalidrawElement[], files, scrollToContent: restored === null && !opening.current?.size,
       // Moving or resizing snaps to other elements' edges, centres and gaps (#615); Alt+S turns it off for
       // the session, and holding Ctrl places freely while it is on.
       appState: { ...CANVAS_APP_STATE, objectsSnapModeEnabled: true,
@@ -1165,6 +1173,13 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     api.scrollToContent(targets, { fitToContent: true, animate: false });
     return true;
   }, [active, ready, queue]);
+  useEffect(() => {
+    const ids = opening.current, api = canvas.current;
+    if (!active || !ready || !api || !ids?.size) return;
+    opening.current = null;
+    const targets = api.getSceneElements().filter((element) => ids.has(element.id));
+    if (targets.length > 0) api.scrollToContent(targets, { fitToContent: true, animate: false });
+  }, [active, ready]);
   const handledPageRequest = useRef<string | null>(null);
   useEffect(() => {
     if (!active || !ready || !pageRequest || handledPageRequest.current === pageRequest.requestId) return;
