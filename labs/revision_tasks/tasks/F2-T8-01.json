@@ -1,0 +1,205 @@
+{
+  "spec_version": "TaskSpec@paper/1",
+  "task_id": "F2-T8-01",
+  "family": "F2",
+  "task_type": "T8_stale_evidence",
+  "stage_context": {
+    "stage": "technical",
+    "earlier_stages": [
+      "massing",
+      "architecture"
+    ]
+  },
+  "fixture": {
+    "fixture_id": "F2-portico-rotunda",
+    "version": "2",
+    "generator": "labs/revision_tasks/fixtures.py:f2_portico_rotunda",
+    "files_sha256": {
+      "labs/revision_tasks/fixtures.py": "3261abaaa5f9b4b1067fbd3598ef2e4860c383435e5157d08d31592fc7693a03"
+    }
+  },
+  "start_state": {
+    "state_ref": "fixture:F2-portico-rotunda@2",
+    "content_digest": "c9878f31b212ccef570be6c87bd039053462c2a58699dd23b9909e604805f41a",
+    "exact_base_digest": "35b186f4497b44bb7db5478ccb0bb46560fc64dca7481c99e241f9676fcdc13c"
+  },
+  "history": {
+    "history_ref": "labs/revision_tasks/history/events_v1.json",
+    "n_events": 0,
+    "sha256": null,
+    "tokens": 0
+  },
+  "contexts": {},
+  "intended_change": {
+    "text_en": "Set the link roof so that its top is exactly 0.3 m below the rotunda cornice.",
+    "typed_delta": [
+      {
+        "target": "parameter:transition_height",
+        "parameter": "transition_height",
+        "from": 11.2,
+        "to": 11.4
+      }
+    ]
+  },
+  "protected_relations": [
+    {
+      "id": "T1",
+      "kind": "equality",
+      "entities": [
+        "transition-body"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-transition-body",
+        "min": [
+          -6.0,
+          -14.0,
+          0.0
+        ],
+        "max": [
+          6.0,
+          -10.0,
+          11.4
+        ]
+      }
+    },
+    {
+      "id": "T2",
+      "kind": "equality",
+      "entities": [
+        "transition-roof"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-transition-roof",
+        "min": [
+          -6.3,
+          -15.0,
+          11.4
+        ],
+        "max": [
+          6.3,
+          -10.0,
+          11.7
+        ]
+      }
+    },
+    {
+      "id": "J1",
+      "kind": "clearance",
+      "entities": [
+        "transition-roof",
+        "rotunda-cornice"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "vertical_clearance",
+        "lower": [
+          "obj-transition-roof"
+        ],
+        "upper": [
+          "obj-rotunda-cornice-0",
+          "obj-rotunda-cornice-1",
+          "obj-rotunda-cornice-2",
+          "obj-rotunda-cornice-3",
+          "obj-rotunda-cornice-4",
+          "obj-rotunda-cornice-5",
+          "obj-rotunda-cornice-6",
+          "obj-rotunda-cornice-7"
+        ],
+        "min_m": 0.3
+      }
+    },
+    {
+      "id": "J3",
+      "kind": "non_interference",
+      "entities": [
+        "transition-roof",
+        "portico-entablature-rear"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": false,
+      "source": "fixture:planted-undeclared",
+      "measure": {
+        "check": "non_interference",
+        "a": [
+          "obj-transition-roof"
+        ],
+        "b": [
+          "obj-portico-entablature-rear"
+        ]
+      }
+    },
+    {
+      "id": "U1",
+      "kind": "equality",
+      "entities": [
+        "rotunda",
+        "portico"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": false,
+      "source": "fixture:unrelated-geometry",
+      "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+          "obj-rotunda-drum",
+          "obj-rotunda-dome",
+          "obj-portico-entablature-rear"
+        ]
+      }
+    }
+  ],
+  "gold": {
+    "affected_entities": [
+      "transition-body",
+      "transition-roof"
+    ],
+    "obligations_to_recheck": [
+      "J1"
+    ],
+    "expected_verdict": "held",
+    "acceptable_arm_outcomes": [
+      "accept"
+    ],
+    "annotated_by": "executor-draft-from-gold-v2",
+    "annotated_at": "2026-10-14T06:50:00Z",
+    "physical_basis": "Current cornice evidence 12.0 m (11.8 superseded): roof top 11.7, body top 11.4; J1 holds exactly; the roof clears the rear entablature by 0.4 m."
+  },
+  "oracle": {
+    "oracle_id": "geometry-readback-oracle",
+    "version": "1",
+    "sha256": "848bf9c994e56f9c76712330f2bed61c0e69ce971b3018d3bc96da1388e5ad28",
+    "method": "cold_readback_geometry",
+    "reads_metadata": false
+  },
+  "unknowns": [],
+  "backend": {
+    "kernel": "occt",
+    "versions": {}
+  },
+  "model_runtime": {
+    "model_id": null,
+    "effort": null,
+    "max_tokens": null
+  },
+  "budget": {
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "wall_clock_s": 300,
+    "usd_cap": 0
+  },
+  "rubric": {
+    "success": "the arm's outcome is acceptable and, when it executed, the oracle agrees with the expected verdict",
+    "failure": "any other outcome; an accept the oracle finds violated, or an accept of a refused task, is a false accept",
+    "partial": "none"
+  }
+}
