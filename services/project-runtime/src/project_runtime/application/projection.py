@@ -592,6 +592,18 @@ def _require_receipt_match(projection: StateProjection) -> None:
         )
 
 
+def is_model_file_start(projection: StateProjection) -> bool:
+    """Whether this is an attached model file's run read as the authored start on current HEAD (#300 item 22 B).
+
+    The run holds the file and no design, so it reads as the authored record;
+    a design made from the file starts from there, on a line of its own.
+    """
+
+    return (projection.reference.run.run_id.startswith("studio-model-") and projection.reference.receipt is None
+            and projection.record_source == AUTHORED_RECORD_PATH and projection.reference.run.base == projection.head
+            and projection.source_stage_ref is None)
+
+
 def require_actionable(projection: StateProjection) -> None:
     """Require the exact current reference before creating design work.
 
@@ -600,7 +612,7 @@ def require_actionable(projection: StateProjection) -> None:
     record, its receipt digest and the same canonical base as current HEAD.
     """
 
-    if projection.reference.source == "none":
+    if projection.reference.source == "none" or is_model_file_start(projection):
         return
     _require_exact_state(projection)
     if projection.reference.run.base != projection.head and projection.source_stage_ref is None:

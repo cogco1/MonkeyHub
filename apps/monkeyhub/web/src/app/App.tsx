@@ -1,4 +1,5 @@
 import { savedViewCamera, type RenderView } from "../workspaces/monkeyarch/viewer/renderView";
+import { useCommandActions } from "../features/commands/CommandProvider";
 /**
  * The studio shell: one conversation beside one model, and everything the
  * server said one click behind.
@@ -2811,6 +2812,30 @@ export default function App({ server, expectedProjectId, projectStep = null, ini
     [append, beginCandidatePreview, monitorDiagnostics, project, projection, recoverFromStaleBase, sourceRunId],
   );
 
+  // #300 item 22 B: a model attached from outside the project becomes a design that can be changed. The
+  // proposal is the runtime's one semantic edit at the file's own run; it runs as any proposal does, and its
+  // result is offered like any other, so continuing to it makes it the current design on a line of its own.
+  const convertImportedModel = useCallback(async () => {
+    // The model on view when it is one attached from outside; otherwise the runtime takes the one attached last.
+    const sha = loadedArtifact?.representation === "external" ? loadedArtifact.sha256 : null;
+    if (proposingRef.current) return;
+    proposingRef.current = true;
+    setProposalBusy(true);
+    try {
+      const proposal = await studio.designFromModelAsset(sha);
+      append({ kind: "proposal", proposal, agent: null, refinements: 0 });
+      await runCandidate(proposal.proposalId);
+    } catch (cause) {
+      const error = asStudioApiError(cause);
+      setArtifactError(error);
+      append({ kind: "refusal", error, what: "POST /api/model-assets/design" });
+    } finally {
+      proposingRef.current = false;
+      setProposalBusy(false);
+    }
+  }, [append, loadedArtifact, runCandidate]);
+  useCommandActions({ "design.from_import": { run: () => void convertImportedModel() } });
+
   const [tracingLevels, setTracingLevels] = useState<FrameLevelDto[]>([]);
   useEffect(() => {
     let stopped = false;
@@ -3868,6 +3893,8 @@ export default function App({ server, expectedProjectId, projectStep = null, ini
             onBoard={onBoard}
             onChatRequest={onChatRequest}
             onOpenTree={onOpenTree}
+            importedModel={viewingExternalModel ? { onConvert: () => void convertImportedModel(),
+              busy: proposalBusy || candidateBusy || modelRunPending !== null } : undefined}
             hasModel={sourceLabel !== null || hasLocalGeometry}
             onSketch={runSketch}
             parameterLocks={{ parameters: projection?.parameters ?? [], contextKey, busy: parameterLockBusy || modelRunPending !== null,

@@ -6963,6 +6963,28 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
+      "id": "design.from_import",
+      "capability": "design.history",
+      "label": {
+        "en": "Make it a design you can change",
+        "zh-CN": "转成能改的设计"
+      },
+      "terms": [
+        "make the imported model editable",
+        "导入的模型转成设计",
+        "快照转成设计"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
       "id": "draft.record.continue",
       "capability": "design.history",
       "label": {

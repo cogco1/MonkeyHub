@@ -89,6 +89,7 @@ import {
   readProjectApiProjectGet,
   readProjectsApiProjectsGet,
   createDeleteProposalApiProposalsDeletePost,
+  proposeDesignFromModelAssetApiModelAssetsDesignPost,
   createSketchProposalApiProposalsSketchPost,
   prepareModelingApiProjectModelingPost,
   createTransformProposalApiProposalsTransformPost,
@@ -864,6 +865,12 @@ export const createStudioClient = (connection: ServerConnection) => ({
 
   removeElement(body: DeleteElementRequestDto): Promise<ProposalDto> {
     return call("POST /api/proposals/delete", createDeleteProposalApiProposalsDeletePost({ client: connection.client, body }));
+  },
+
+  /** The proposal that makes an attached model (a Live Rhino snapshot, an uploaded 3dm) a design that can be changed; none names the one attached last. */
+  designFromModelAsset(assetSha256: string | null): Promise<ProposalDto> {
+    return call("POST /api/model-assets/design",
+      proposeDesignFromModelAssetApiModelAssetsDesignPost({ client: connection.client, body: assetSha256 ? { assetSha256 } : {} }));
   },
 
   editElevation(body: ElevationEditRequestDto): Promise<ProposalDto> {

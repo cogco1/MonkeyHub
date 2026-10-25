@@ -389,6 +389,25 @@ def _vertical_extent(row, context) -> VerticalExtentDto | None:
     return VerticalExtentDto(base=base, top=top)
 
 
+def _imported_shape(row, extent) -> tuple[DrawnShapeDto | None, str | None, None, VerticalExtentDto | None]:
+    """Imported objects as a direct edit sees them: the box they stand in, to move or turn; their shape is their file's."""
+
+    from monkeyarch.authoring.element_producers import ElementProducerError, imported_box
+
+    try:
+        box = imported_box(row)
+    except ElementProducerError as exc:
+        return None, str(exc), None, extent
+    if box is None:
+        return None, "This imported element states no extent to move it by.", None, extent
+    corners, bottom, height = box
+    # The plane a drawn prism stands on: x along x, its v along -z, so x by v is +y, the way it rises.
+    return (DrawnShapeDto(profile=[[x, -z] for x, z in corners], height=max(height, 1e-3), parameter_bound_fields=[],
+                          work_plane={"origin": [0.0, bottom, 0.0], "xAxis": [1.0, 0.0, 0.0], "yAxis": [0.0, 0.0, -1.0],
+                                      "normal": [0.0, 1.0, 0.0]}),
+            None, None, extent)
+
+
 def _drawn_shapes(projection: StateProjection) -> dict[str, tuple[
         DrawnShapeDto | None, str | None, ElementElevationDto | None, VerticalExtentDto | None]]:
     """Read drawing inputs and vertical extents through the existing in-memory producer datum graph."""
@@ -405,6 +424,9 @@ def _drawn_shapes(projection: StateProjection) -> dict[str, tuple[
         producer = row.producer
         # Every placement above has published its top, so any base it names reads here.
         extent = _vertical_extent(row, context)
+        if producer == "imported":
+            shapes[entity.entity_id] = _imported_shape(row, extent)
+            continue
         if producer not in {"prism", "planar-surface"}:
             shapes[entity.entity_id] = (None, f"Direct push/pull supports drawn faces and prisms, not {producer}.", None, extent)
             continue

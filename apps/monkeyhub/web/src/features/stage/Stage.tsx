@@ -230,6 +230,7 @@ export function Stage({
   status,
   artifactError,
   picked,
+  importedModel,
   versions,
   hasNewVersions = false,
   onVersionsOpen,
@@ -320,6 +321,11 @@ export function Stage({
   status: ViewportStatus;
   artifactError: StudioApiError | null;
   picked: PickedFacts | null;
+  /**
+   * The model on view was attached from outside the project (a Live Rhino snapshot, an uploaded 3dm): a click
+   * on it names nothing, so it offers to make the model a design that can be changed (#300 item 22 B).
+   */
+  importedModel?: { onConvert(): void; busy: boolean };
   versions: readonly VersionGroup[];
   hasNewVersions?: boolean;
   onVersionsOpen?(): void;
@@ -1617,6 +1623,11 @@ export function Stage({
         ? picked.elementId ?? picked.componentId ?? t("stage.picked.none")
         : designObjectLabel(picked.elementId ?? picked.componentId) ?? t("stage.picked.unresolved")}</span>
       {developerMode && picked.status !== "resolved" && <span className="picked__meta">{picked.status}</span>}
+      {importedModel && picked.componentId === null && picked.elementId === null && <>
+        <span className="picked__meta">{t("stage.picked.imported")}</span>
+        <button type="button" className="picked__action" data-command="design.from_import" disabled={importedModel.busy}
+          onClick={importedModel.onConvert}>{t("stage.picked.convert")}</button>
+      </>}
     </span>
   );
   // #352: the drawing plane sits in the tools' More; while it is not the ground (XY), the status

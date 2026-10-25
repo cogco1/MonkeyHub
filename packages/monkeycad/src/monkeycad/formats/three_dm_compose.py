@@ -49,20 +49,250 @@ class ComposedPatch:
 
     ``prior_program`` is the program the composed model's native objects come
     from, ``program`` the one the run compiled, ``replacement_3dm`` the run's
-    native export of it.
+    native export of it. A seat that built nothing natively (its elements are
+    all imported objects) has no program on that side, and no export.
     """
 
-    prior_program: CompiledGeometryProgram
-    program: CompiledGeometryProgram
-    replacement_3dm: bytes
+    prior_program: CompiledGeometryProgram | None
+    program: CompiledGeometryProgram | None
+    replacement_3dm: bytes | None
+
+
+#: The user string an imported object carries in a composed model: ``<file sha256>:<object id in that file>``.
+IMPORTED_KEY = "archflow:imported"
+#: The name the object had in its file, kept beside the ``obj-<element>`` name the record reads it by.
+SOURCE_NAME_KEY = "archflow:source_name"
+
+
+@dataclass(frozen=True)
+class ImportedPlacement:
+    """One imported element, as ``place_imported_objects`` places it (``monkeyarch`` ``imported_placement``).
+
+    ``objects`` are top-level object ids of the file whose sha256 is
+    ``asset``. They are turned ``turn`` degrees about the record's +Y axis
+    through its origin, then moved by ``move``: record metres, (x, y-up,
+    z-plan), which the CAD frame writes as (x, z, y).
+    """
+
+    element_id: str
+    component_id: str
+    asset: str
+    objects: tuple[str, ...]
+    move: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    turn: float = 0.0
+
+
+def object_groups(data: bytes) -> dict[str, int]:
+    """Each top-level object's first Rhino group, by object id; an object in no group is left out."""
+
+    import rhino3dm
+
+    model = _read(rhino3dm, data, "model")
+    groups: dict[str, int] = {}
+    for item in model.Objects:
+        if item.Attributes.IsInstanceDefinitionObject:
+            continue
+        listed = [int(group) for group in (item.Attributes.GetGroupList() or ())]
+        if listed:
+            groups[str(item.Attributes.Id)] = min(listed)
+    return groups
+
+
+def place_imported_objects(
+    base_3dm: bytes, *, sources: Mapping[str, bytes], placements: Sequence[ImportedPlacement],
+) -> bytes:
+    """The base with its imported objects replaced by the record's: each copied from its file and placed.
+
+    Every top-level object of the base that is imported (it carries
+    ``IMPORTED_KEY``, or it is one of the placed objects itself, as when the
+    base is the file) is taken out. Each placement's objects are then copied
+    from its file with their GUID, layer, attributes and geometry, turned and
+    moved, named ``obj-<element>`` (``obj-<element>-<n>`` when there are
+    several), and labelled with their component, their file and object
+    (``IMPORTED_KEY``) and the name they had (``SOURCE_NAME_KEY``). An object
+    the record no longer places is gone; nothing else in the base changes.
+    Block instances keep the base's definitions, which must be there. The
+    result is read back before it is returned.
+    """
+
+    import rhino3dm
+
+    base = _read(rhino3dm, base_3dm, "composed base")
+    files = {asset: _read(rhino3dm, data, f"imported model {asset[:12]}") for asset, data in sources.items()}
+    placed_ids = {object_id for placement in placements for object_id in placement.objects}
+    if len(placed_ids) != sum(len(placement.objects) for placement in placements):
+        raise CadPatchError("two imported elements place the same object")
+    base_layers = {layer.FullPath: layer.Index for layer in base.Layers}
+    definitions = {str(definition.Id) for definition in base.InstanceDefinitions}
+    taken = {item.Attributes.Id for item in base.Objects
+             if not item.Attributes.IsInstanceDefinitionObject
+             and (item.Attributes.GetUserString(IMPORTED_KEY) or str(item.Attributes.Id) in placed_ids)}
+    kept = {item.Attributes.Id for item in base.Objects} - taken
+    expected: dict[Any, _ObjectRow] = {}
+    copies = []
+    for placement in placements:
+        model = files.get(placement.asset)
+        if model is None:
+            raise CadPatchError(f"{placement.element_id}: its model file {placement.asset[:12]} was not supplied")
+        objects = {str(item.Attributes.Id): item for item in model.Objects if not item.Attributes.IsInstanceDefinitionObject}
+        layers = {layer.Index: layer.FullPath for layer in model.Layers}
+        transform = _placement_transform(rhino3dm, placement, model.Settings.ModelUnitSystem, base.Settings.ModelUnitSystem)
+        several = len(placement.objects) > 1
+        for index, object_id in enumerate(placement.objects):
+            item = objects.get(object_id)
+            if item is None:
+                raise CadPatchError(f"{placement.element_id}: its model file has no top-level object {object_id}")
+            geometry = item.Geometry.Duplicate()
+            if isinstance(geometry, rhino3dm.InstanceReference) and str(geometry.ParentIdefId) not in definitions:
+                raise CadPatchError(f"{placement.element_id}: block {object_id} has no definition in the composed model")
+            if transform is not None and not geometry.Transform(transform):
+                raise CadPatchError(f"{placement.element_id}: object {object_id} could not be placed")
+            path = layers.get(item.Attributes.LayerIndex)
+            if path not in base_layers:
+                raise CadPatchError(f"{placement.element_id}: the composed model has no layer {path!r} for {object_id}")
+            attributes = item.Attributes.Duplicate() if hasattr(item.Attributes, "Duplicate") else item.Attributes
+            source_name = attributes.Name or ""
+            attributes.Name = f"obj-{placement.element_id}-{index}" if several else f"obj-{placement.element_id}"
+            attributes.LayerIndex = base_layers[path]
+            attributes.RemoveFromAllGroups()
+            attributes.SetUserString("archflow:component", placement.component_id)
+            attributes.SetUserString(IMPORTED_KEY, f"{placement.asset}:{object_id}")
+            attributes.SetUserString(SOURCE_NAME_KEY, source_name)
+            copies.append((geometry, attributes))
+    for object_id in taken:
+        base.Objects.Delete(object_id)
+    # What each placed object reads back as: the same copy written to a file of its own and read again,
+    # since a saved object's encoding is what the file keeps of it, not what was handed to it.
+    alone = rhino3dm.File3dm()
+    for geometry, attributes in copies:
+        expected_id = attributes.Id
+        if base.Objects.Add(geometry, attributes) != expected_id or alone.Objects.Add(geometry, attributes) != expected_id:
+            raise CadPatchError(f"imported object {attributes.Name} did not keep its id {expected_id}")
+    paths = {index: path for path, index in base_layers.items()}
+    placed = {attributes.Id: attributes for _, attributes in copies}
+    for item in _read(rhino3dm, base64.b64decode(alone.Encode()), "placed imported objects").Objects:
+        attributes = placed[item.Attributes.Id]
+        expected[item.Attributes.Id] = _ObjectRow(
+            attributes.Name, paths.get(attributes.LayerIndex),
+            _object_row(_Item(item.Geometry, attributes), paths, None).strings,
+            canonical_digest(item.Geometry.Encode()))
+    encoded = base64.b64decode(base.Encode())
+    final = _read(rhino3dm, encoded, "placed composed model")
+    rows = _object_rows(final, members=False)
+    failures: list[str] = []
+    if set(rows) != kept | set(expected):
+        failures.append("its objects are not the base's kept ones and the placed ones")
+    _compare_rows(failures, "imported object", expected, {key: rows[key] for key in expected if key in rows})
+    if failures:
+        raise CadPatchError(f"the placed imported objects do not read back: {'; '.join(failures[:12])}")
+    return encoded
+
+
+def adopt_named_objects(base_3dm: bytes, *, programs: Sequence[CompiledGeometryProgram]) -> bytes:
+    """The base with each untagged object named as a program's element taken as that program's native object.
+
+    A complete model uploaded for a state may hold the record's objects
+    without the identity an export writes: named ``<element>`` where the
+    program delivers ``obj-<element>``, with no ``archflow:`` strings
+    (#300 item 22: housing). Each delivered object the base lacks, for
+    which the base holds exactly one top-level object of that bare name and
+    no archflow identity, is renamed ``obj-<element>`` and given the strings
+    the export gives it, but its material labels; its GUID, layer and
+    geometry stay the base's. Nothing else changes, and a base with nothing
+    to adopt comes back as the same bytes. A patch can then replace the
+    adopted objects of a changed element and keep the rest as they were.
+    """
+
+    import rhino3dm
+
+    from monkeycad.program import expected_object_semantics
+
+    model = _read(rhino3dm, base_3dm, "composed base")
+    by_name: dict[str, list[Any]] = {}
+    for item in model.Objects:
+        if not item.Attributes.IsInstanceDefinitionObject:
+            by_name.setdefault(item.Attributes.Name or "", []).append(item)
+    adopted = 0
+    for program in programs:
+        objects = expected_object_semantics(program)["objects"]
+        for name, row in objects.items():
+            if name in by_name or not name.startswith("obj-"):
+                continue
+            matches = by_name.get(name[len("obj-"):], [])
+            if len(matches) != 1 or any(key.startswith("archflow:")
+                                        for key, _ in (matches[0].Attributes.GetUserStrings() or ())):
+                continue
+            attributes = matches[0].Attributes
+            attributes.Name = name
+            for key, value in row["user_text"].items():
+                if key not in _MATERIAL_LABELS:
+                    attributes.SetUserString(key, value)
+            by_name[name] = matches
+            adopted += 1
+    if not adopted:
+        return base_3dm
+    encoded = base64.b64decode(model.Encode())
+    reopened = _read(rhino3dm, encoded, "adopted composed model")
+    if {item.Attributes.Id for item in reopened.Objects} != {item.Attributes.Id for item in model.Objects}:
+        raise CadPatchError("adopting the composed model's named objects changed its objects")
+    return encoded
+
+
+@dataclass(frozen=True)
+class _Item:
+    """A geometry and its attributes, read as a model object is (``_object_row``)."""
+
+    Geometry: Any
+    Attributes: Any
+
+
+def _placement_transform(rhino3dm: Any, placement: ImportedPlacement, file_unit: Any, base_unit: Any) -> Any:
+    """The file's units to the base's, turned and moved in the CAD frame; None when that is the identity."""
+
+    scale = rhino3dm.UnitSystem.UnitScale(file_unit, base_unit)
+    metres = rhino3dm.UnitSystem.UnitScale(rhino3dm.UnitSystem.Meters, base_unit)
+    if not all(math.isfinite(value) and value > 0 for value in (scale, metres)):
+        raise CadPatchError(f"{placement.element_id}: its model file's unit cannot be converted")
+    turn = math.radians(placement.turn)
+    cos, sin = math.cos(turn), math.sin(turn)
+    if abs(placement.turn) < 1e-12:
+        cos, sin = 1.0, 0.0
+    # Record (x, y-up, z) is CAD (x, z, y): a turn about record +Y takes CAD (X, Y) to (X cos + Y sin, -X sin + Y cos).
+    move = (placement.move[0] * metres, placement.move[2] * metres, placement.move[1] * metres)
+    if scale == 1.0 and (cos, sin) == (1.0, 0.0) and move == (0.0, 0.0, 0.0):
+        return None
+    transform = rhino3dm.Transform.Identity()
+    transform.M00, transform.M01, transform.M03 = cos * scale, sin * scale, move[0]
+    transform.M10, transform.M11, transform.M13 = -sin * scale, cos * scale, move[1]
+    transform.M22, transform.M23 = scale, move[2]
+    return transform
+
+
+@dataclass(frozen=True)
+class _Selection:
+    """What a patch deletes from the base and keeps of its native objects (``select_patch_operations``'s three answers)."""
+
+    delete_object_names: tuple[str, ...]
+    kept_object_ids: tuple[str, ...]
+    empty: bool
+
+
+def _patch_selection(program: CompiledGeometryProgram | None, prior_program: CompiledGeometryProgram | None) -> Any:
+    """The compiled-program diff, or, when a side built nothing natively, everything the other side delivers."""
+
+    if program is not None and prior_program is not None:
+        return select_patch_operations(program, prior_program)
+    prior = sorted(delivered_object_ids(prior_program.proposal)) if prior_program is not None else []
+    new = delivered_object_ids(program.proposal) if program is not None else ()
+    return _Selection(tuple(prior), (), not prior and not new)
 
 
 def patch_composed_three_dm(
     base_3dm: bytes,
     *,
-    prior_program: CompiledGeometryProgram,
-    program: CompiledGeometryProgram,
-    replacement_3dm: bytes,
+    prior_program: CompiledGeometryProgram | None,
+    program: CompiledGeometryProgram | None,
+    replacement_3dm: bytes | None,
 ) -> bytes:
     """Replace changed native objects inside an existing composed display model.
 
@@ -91,12 +321,16 @@ def patch_composed_three_dm(
 
     import rhino3dm
 
-    selection = select_patch_operations(program, prior_program)
+    selection = _patch_selection(program, prior_program)
     base = _read(rhino3dm, base_3dm, "composed base")
-    donor = _read(rhino3dm, replacement_3dm, "native replacement")
-    unit = getattr(rhino3dm.UnitSystem, _UNIT_TO_RHINO[program.proposal.length_unit.value][0])
-    if donor.Settings.ModelUnitSystem != unit:
-        raise CadPatchError("native replacement must use the program's length unit")
+    if program is None:
+        # Nothing native is built now: no export to read, only the prior native objects to take out.
+        donor, unit = rhino3dm.File3dm(), base.Settings.ModelUnitSystem
+    else:
+        donor = _read(rhino3dm, replacement_3dm, "native replacement")
+        unit = getattr(rhino3dm.UnitSystem, _UNIT_TO_RHINO[program.proposal.length_unit.value][0])
+        if donor.Settings.ModelUnitSystem != unit:
+            raise CadPatchError("native replacement must use the program's length unit")
     base_unit = base.Settings.ModelUnitSystem
     unit_scale = rhino3dm.UnitSystem.UnitScale(unit, base_unit)
     if base_unit.name in {"None", "Unset", "CustomUnits"} or not math.isfinite(unit_scale) or unit_scale <= 0:
@@ -120,8 +354,8 @@ def patch_composed_three_dm(
 
     base_objects = physical(base)
     donor_objects = physical(donor)
-    prior_names = set(delivered_object_ids(prior_program.proposal))
-    new_names = set(delivered_object_ids(program.proposal))
+    prior_names = set(delivered_object_ids(prior_program.proposal)) if prior_program is not None else set()
+    new_names = set(delivered_object_ids(program.proposal)) if program is not None else set()
     missing = prior_names - base_objects.keys()
     if missing:
         raise CadPatchError(f"composed base is missing native objects: {sorted(missing)}")
@@ -395,9 +629,12 @@ def verify_composed_three_dm(
     expected = _object_rows(source, members=False)
     expected_members = _object_rows(source, members=True)
     for patch in patches:
-        donor = _read(rhino3dm, patch.replacement_3dm, "native replacement")
-        selection = select_patch_operations(patch.program, patch.prior_program)
-        prior_names = set(delivered_object_ids(patch.prior_program.proposal))
+        donor = (_read(rhino3dm, patch.replacement_3dm, "native replacement") if patch.program is not None
+                 else rhino3dm.File3dm())
+        if patch.program is None:
+            donor.Settings.ModelUnitSystem = source.Settings.ModelUnitSystem
+        selection = _patch_selection(patch.program, patch.prior_program)
+        prior_names = set(delivered_object_ids(patch.prior_program.proposal)) if patch.prior_program is not None else set()
         named: dict[str, list[Any]] = {}
         for object_id, row in expected.items():
             named.setdefault(row.name, []).append(object_id)
@@ -411,7 +648,8 @@ def verify_composed_three_dm(
         for item in donor.Objects:
             if not item.Attributes.IsInstanceDefinitionObject:
                 exports.setdefault(item.Attributes.Name, []).append(item)
-        for name in sorted(set(delivered_object_ids(patch.program.proposal)) - set(selection.kept_object_ids)):
+        delivered = delivered_object_ids(patch.program.proposal) if patch.program is not None else ()
+        for name in sorted(set(delivered) - set(selection.kept_object_ids)):
             items = exports.get(name, [])
             if len(items) != 1:
                 failures.append(f"the native export holds {len(items)} objects named {name}")
@@ -422,7 +660,8 @@ def verify_composed_three_dm(
     _compare_rows(failures, "object", expected, _object_rows(final, members=False))
     _compare_rows(failures, "block member", expected_members, _object_rows(final, members=True))
 
-    targets = _material_targets(final, tuple(patch.program for patch in patches), material_by_component,
+    targets = _material_targets(final, tuple(patch.program for patch in patches if patch.program is not None),
+                                material_by_component,
                                 material_colors, material_by_part)
     from_object = rhino3dm.ObjectMaterialSource.MaterialFromObject
     from_layer = rhino3dm.ObjectMaterialSource.MaterialFromLayer

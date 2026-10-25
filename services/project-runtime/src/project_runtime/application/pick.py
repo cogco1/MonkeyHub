@@ -142,6 +142,15 @@ def resolve_pick(
     if not any(
         key.startswith(IDENTITY_PREFIX) for key in request.user_strings
     ):
+        # A complete model uploaded for this state may carry no archflow
+        # identity while each object is named exactly as the element the
+        # record made of it (#300 item 22: housing's 2663 objects). That
+        # name answers; any other untagged object stays unbound.
+        named = next((element for element in projection.elements
+                      if element.element_id == _text(request.object_name)), None)
+        if named is not None and named.component_id in _component_ids(projection):
+            return answer(RESOLVED, component_id=named.component_id, element_id=named.element_id,
+                          detail="named as this element in the complete model")
         return answer(UNBOUND, detail=UNBOUND_DETAIL)
     component_id = _text(request.user_strings.get(COMPONENT_KEY))
     if component_id is None:

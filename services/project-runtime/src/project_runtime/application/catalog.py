@@ -213,14 +213,19 @@ def catalog_of(binding: ProjectBinding, projection: StateProjection) -> Catalog:
             "this design state"
         )
     else:
+        from .imported_design import imported_placements, imported_shapes
+
+        imported = imported_shapes(binding, run_id) if imported_placements(projection.record) else ()
         try:
-            shapes = shapes_of(binding, run_id)
+            shapes = shapes_of(binding, run_id) + imported
         except StudioError as exc:
-            shapes = None
-            honesty.append(
-                f"object coverage unknown: reference run {run_id} has no inspection to "
-                f"join ({exc.code})"
-            )
+            # A run whose seats built only imported objects has no inspection: its objects are those placed.
+            shapes = imported or None
+            if not imported:
+                honesty.append(
+                    f"object coverage unknown: reference run {run_id} has no inspection to "
+                    f"join ({exc.code})"
+                )
     return build_catalog(projection, shapes, inspection_run=run_id if shapes else None, honesty=honesty)
 
 
