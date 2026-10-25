@@ -583,7 +583,10 @@ class ProjectRuntimeManager:
         with runtime.lock:
             previous = runtime.retained
             runtime.retained = retained
-            runtime.operations.reconcile(retained, worker_alive=alive)
+            # A worker that is there, only late with a health check while it builds, has not lost what it works on.
+            unanswered = (not alive and worker is not None and worker.state in {"ready", "busy"}
+                          and latest is not None and latest.instance_id == worker.instance_id and latest.state in {"ready", "busy"})
+            moved = runtime.operations.reconcile(retained, worker_alive=alive, worker_unanswered=unanswered)
         if alive and projection_key != runtime.projection_key:
             # A verified candidate remains observed even if the independent
             # default-view rebuild is slow. It does not make that view ready.
@@ -594,6 +597,9 @@ class ProjectRuntimeManager:
             runtime.error = None
             runtime.projection = "ready" if alive else "stale" if worker else "unknown"
             runtime.projection_key = projection_key
+        if moved:
+            # An operation this read settled, a lost one found again among them: its card is read again (S15).
+            self.emit("operation/reconciled", runtime.runtime_id)
         busy = runtime.operations._has_active() or any(row.get("status") in {"queued", "running"} for row in retained.get("jobs", []))
         self.applications.set_busy(project_dir=runtime.project_dir, busy=busy)
         if previous is not None and previous.get("published") != retained.get("published"):

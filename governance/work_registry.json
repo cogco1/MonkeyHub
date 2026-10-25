@@ -1048,6 +1048,27 @@
           "depends_on": []
         },
         {
+          "id": "srv-lost-result",
+          "status": "active",
+          "branch": "claude/srv-lost-result",
+          "worktree": "C:\\Users\\Public\\renou\\dev\\wt\\claude-srv-cli-words",
+          "base_ref": "64147e9d",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "S15 (server, 10-25): a run is called lost (\"生成方案的结果找不回来了\") only after three reads in a row find its job over with no result or its Studio, still running, late with health checks; a Studio that is gone loses it at once as before. A read that settles an operation tells the attention queue, so a notice whose run was found again goes away. The notice's Chinese summary is a sentence, not the runner's English.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
+            "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
+            "apps/monkeyhub/api/monkeyhub_api/attention/producers.py",
+            "apps/monkeyhub/api/tests/test_runtime_operations.py",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
+        },
+        {
           "id": "srv-drawing-speed",
           "status": "active",
           "branch": "claude/srv-drawing-speed",

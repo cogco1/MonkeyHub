@@ -35,7 +35,8 @@ from project_runtime.settings import StudioSettings
 from project_runtime.api.dto.runtime import runtime_dto
 from monkeyhub_api.models import HubFailure
 from monkeyhub_api.runtime.manager import ProjectRuntime, ProjectRuntimeManager
-from monkeyhub_api.runtime.operations import OperationManager
+from monkeyhub_api.attention import producers
+from monkeyhub_api.runtime.operations import LOST_AFTER_MISSES, OperationManager
 from monkeyhub_api.runtime.workers import earlier_project_keys, project_key
 from monkeyhub_api.runtime.worker_http import HttpResult
 
@@ -979,6 +980,63 @@ class OperationRecoveryTests(unittest.TestCase):
         record = next(row for row in accepting.records() if row.candidateId == candidate_id and row.source == "studio")
         self.assertEqual(record.status, "completed")
         self.assertTrue(record.committed)
+
+
+class LostResultTests(unittest.TestCase):
+    """S15: a run is called lost only after several reads find nothing working on it, and found again it completes."""
+
+    def started(self, manager):
+        admission, _ = manager.admit(str(uuid4()), "POST", "/api/proposals/studio-p1/candidate", b"",
+                                     retained=None, source="studio", session_id=None)
+        manager.replied(admission, HttpResult(202, json.dumps({"jobId": "job-1", "candidateId": admission.record.candidateId,
+                                                               "status": "queued"}).encode(), {}))
+        return admission
+
+    @staticmethod
+    def status(manager, admission):
+        return next(row for row in manager.records() if row.operationId == admission.record.operationId).status
+
+    def test_a_job_over_before_its_result_is_read_is_not_lost_and_completes_once_read(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        candidate_id = admission.record.candidateId
+        over = {"jobs": [{"candidateId": candidate_id, "jobId": "job-1", "status": "succeeded"}], "candidates": []}
+        for _ in range(LOST_AFTER_MISSES - 1):
+            manager.reconcile(over, worker_alive=True)
+            self.assertEqual(self.status(manager, admission), "executing")
+        found = {**over, "candidates": [{"candidateId": candidate_id, "status": "completed", "receiptRef": "project://p/r"}]}
+        self.assertTrue(manager.reconcile(found, worker_alive=True), "a read that settles an operation says so")
+        self.assertEqual(self.status(manager, admission), "completed")
+        self.assertFalse(manager.reconcile(found, worker_alive=True), "nothing moved on the next read")
+
+    def test_a_worker_late_with_its_health_check_loses_a_run_only_after_several_reads(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        for _ in range(LOST_AFTER_MISSES - 1):
+            manager.reconcile({"candidates": []}, worker_alive=False, worker_unanswered=True)
+            self.assertEqual(self.status(manager, admission), "executing")
+        manager.reconcile({"candidates": []}, worker_alive=False, worker_unanswered=True)
+        self.assertEqual(self.status(manager, admission), "needs_recovery")
+        # The result read after all: the operation completes and its notice has nothing left to say.
+        manager.reconcile({"candidates": [{"candidateId": admission.record.candidateId, "status": "completed"}]}, worker_alive=True)
+        self.assertEqual(self.status(manager, admission), "completed")
+        self.assertEqual(producers.operations(manager.records()), [])
+
+    def test_a_worker_that_is_gone_loses_its_run_at_once(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        manager.reconcile({"candidates": []}, worker_alive=False)
+        self.assertEqual(self.status(manager, admission), "needs_recovery")
+
+    def test_the_notice_of_a_lost_run_reads_in_chinese(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        manager.reconcile({"candidates": []}, worker_alive=False)
+        [card] = producers.operations(manager.records())
+        self.assertEqual(card.titleZh, "生成方案的结果找不回来了")
+        self.assertRegex(card.summaryZh, r"[一-鿿]")
+        self.assertNotIn("worker", card.summaryZh)
+        self.assertIn("worker", card.summary, "the English record keeps the runner's own sentence")
 
 
 class JournalSpellingTests(unittest.TestCase):

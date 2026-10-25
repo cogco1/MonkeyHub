@@ -302,7 +302,7 @@ def operations(records: Iterable[OperationRecord]) -> list[AttentionDraft]:
         if title is None:
             continue
         drafts.append(_card(
-            title, (record.reason, record.reason) if record.reason else None, channel="notice", kind="info",
+            title, (record.reason, _reason_zh(record)) if record.reason else None, channel="notice", kind="info",
             source=AttentionSource(operationId=record.operationId, jobId=record.jobId,
                                    runIds=[record.candidateId] if record.candidateId else []),
             dedupeKey=f"{OPERATIONS}{record.operationId}:{record.status}",
@@ -317,6 +317,22 @@ def operations(records: Iterable[OperationRecord]) -> list[AttentionDraft]:
             opens=[CommandRef(commandId=OPEN_CONVERSATION, args={"sessionId": record.sessionId})]
             if record.sessionId else []))
     return drafts
+
+
+_CJK = re.compile(r"[一-鿿]")
+
+
+def _reason_zh(record: OperationRecord) -> str:
+    """The reason in words a Chinese reader reads (S15): the runner's own English sentence named run ids and
+    receipts on the attention page; it stays in English for the AI the card can hand it to."""
+
+    if _CJK.search(record.reason or ""):
+        return record.reason or ""
+    if record.status == "needs_recovery":
+        return "这一步没有留下能读回来的结果，项目里已有的内容不受影响；需要的话重新做一次。"
+    if record.status == "stale":
+        return "它依据的版本已经变了，没有执行；在现在的版本上重新做一次。"
+    return "原因只有英文记录，可以点「交给 AI 处理」让 AI 去查。"
 
 
 def _failure_words(record: OperationRecord, what: str, zh: str) -> str:
