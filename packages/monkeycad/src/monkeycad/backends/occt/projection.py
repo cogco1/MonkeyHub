@@ -253,6 +253,40 @@ def project_occt_lines(
     return tuple(sorted(set(lines), key=lambda line: (line.object_id, line.kind, line.points)))
 
 
+def occt_edge_points(entries: Sequence[StepEntry], *, object_ids: Sequence[str], linear_deflection: float,
+                     ) -> dict[str, tuple[tuple[tuple[float, float, float], ...], ...]]:
+    """Each named shape's B-rep edges as 3D polylines within ``linear_deflection``, in the shape's frame and unit.
+
+    What a hidden-line result in a drawing plane no longer says: how far each
+    drawn edge lies from the viewer. Each edge appears once; nothing is written.
+    The shapes are not checked again: these are the ones a solve just accepted.
+    """
+
+    if (isinstance(linear_deflection, bool) or not isinstance(linear_deflection, (int, float))
+            or not math.isfinite(linear_deflection) or linear_deflection <= 0.0):
+        raise OcctBackendError("drawing linear_deflection must be finite and positive in the shape's unit")
+    occ = _occt()
+    by_name = {entry.name: entry for entry in entries if entry.name is not None}
+    edges: dict[str, tuple[tuple[tuple[float, float, float], ...], ...]] = {}
+    for name in sorted(object_ids):
+        entry = by_name.get(name)
+        if entry is None:
+            raise OcctBackendError(f"drawing object {name!r} is unknown")
+        polylines = set()
+        for item in _explore(occ, entry.shape, occ.TopAbs.TopAbs_EDGE):
+            edge = occ.TopoDS.TopoDS.Edge_s(item)
+            if occ.BRep.BRep_Tool.Degenerated_s(edge):
+                continue
+            sample = occ.GCPnts.GCPnts_UniformDeflection(occ.BRepAdaptor.BRepAdaptor_Curve(edge), float(linear_deflection), True)
+            if not sample.IsDone():
+                raise OcctBuildError(f"drawing object {entry.name!r}: edge discretization failed")
+            points = tuple((float(p.X()), float(p.Y()), float(p.Z())) for p in (sample.Value(i) for i in range(1, sample.NbPoints() + 1)))
+            if len(points) > 1:
+                polylines.add(min(points, tuple(reversed(points))))
+        edges[entry.name] = tuple(sorted(polylines))
+    return edges
+
+
 def project_occt_mesh_lines(
     entries: Sequence[StepEntry], *, object_ids: Sequence[str],
     origin: Sequence[float], right: Sequence[float], up: Sequence[float],
@@ -325,5 +359,6 @@ __all__ = [
     "OcctDrawingPolyline",
     "OcctDrawingRegion",
     "project_occt_lines",
+    "occt_edge_points",
     "project_occt_mesh_lines",
 ]

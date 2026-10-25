@@ -6687,6 +6687,7 @@
         "OcctBackendError",
         "project_occt_lines",
         "project_occt_mesh_lines",
+        "occt_edge_points",
         "section_occt_lines",
         "section_occt_regions",
         "OcctDrawingPolyline",
@@ -7147,7 +7148,8 @@
         "the scanline depth buffer at twice the output resolution and the edge visibility test against it, reduced to an anti-aliased greyscale PNG whose longer side is the requested size (mesh_line_view); given fills, the object in front under each pixel (the lowest label among coplanar ones), each visible surface filled flat without light in its own sRGB colour, an object without one grey under a hatch, the edges over them, as an RGB PNG naming the objects that show",
         "RENDERER_VERSION, derived from the source of this module's drawing functions, tessellate_shape and the model reader (read_elevation_source), so it changes whenever the same input would draw different pixels without a hand bump; and mesh_pipeline: every setting and library version (OCP, numpy, Pillow) that changes the pixels",
         "working memory bounded by pixel count: triangles are rasterised and edges sampled in chunks of at most a million candidate pixels, splitting a large triangle into row bands; the output side is at most MAX_SIZE_PX",
-        "the caller-named PNG text chunks; no time or random id in the bytes"
+        "the caller-named PNG text chunks; no time or random id in the bytes",
+        "show_flush_hidden_lines (S22): a hidden line of the polygonal hidden-line solve found on its object's nearest 3D edges for its depth and drawn visible when, at each of FLUSH_SAMPLES samples, no triangle covers it nearer than the caller's depth tolerance (an edge lying in a nearer face's plane, as a mullion flush with a wall's end); one under its own object's visible line, or along a nearer face's outline within that tolerance, stays hidden"
       ],
       "does_not_own": [
         "exact retained drawings, their receipts and the elevation frames - monkeydiagram.drawing_runs",
@@ -7182,7 +7184,8 @@
         "MAX_CAMERA_EDGE_PX",
         "CAMERA_RENDERER_VERSION",
         "DEPTH_NEAREST",
-        "ID_BACKGROUND"
+        "ID_BACKGROUND",
+        "show_flush_hidden_lines"
       ],
       "depends_on": [
         "monkeycad.occt",
@@ -9234,7 +9237,7 @@
         "ElevationSource: the retained STEP and OcctExecutionReceipt@1 a drawing is derived from, and the verification that they agree (SHA, run, base, unit, Z-up, STEP names = physical object ids)",
         "ElevationView: origin, look/right/up along the model axes, crop window, near/far depths, hidden-line switch, chord deflection and sheet scale, checked for consistency",
         "the in-memory projection value (project_model_axis_elevation): polylines, SVG and PNG, minting nothing",
-        "which solve an elevation's visibility uses (S22): the mesh solve at the drawing cleanup tolerance, the exact solve when the mesh solve cannot run, named in the receipt's projection.algorithm",
+        "which solve an elevation's visibility uses (S22): the mesh solve at the drawing cleanup tolerance with its flush hidden lines drawn (show_flush_hidden_lines, at FLUSH_DEPTH_SHARE of that tolerance), the exact solve when the mesh solve cannot run, named in the receipt's projection.algorithm",
         "the drawing run: created with base = source run base, or reused only when it already carries that base",
         "DrawingProjectionReceipt@1 (retained as drawing-projection-receipt): source binding, frame, backend, counts and the two artifact refs",
         "the drawing cleanup tolerance, CLEANUP_TOLERANCE_MM on the sheet in the source unit at the view's scale, applied by all three freeze paths to the cropped lines they draw, with the CleanupReport kept in the receipt's cleanup and never in the recipe",

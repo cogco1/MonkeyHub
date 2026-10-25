@@ -37,9 +37,13 @@ from typing import Any, Callable, Mapping, Sequence
 from uuid import uuid4
 
 from monkeycad.backends.occt.errors import OcctBackendError, OcctBuildError
-from monkeycad.backends.occt.projection import OcctDrawingPolyline, project_occt_lines, project_occt_mesh_lines
+from monkeycad.backends.occt.projection import (
+    OcctDrawingPolyline, occt_edge_points, project_occt_lines, project_occt_mesh_lines,
+)
 from monkeycad.backends.occt.section import OcctSectionPerspective, project_occt_section_perspective, section_occt_lines
 from monkeycad.backends.occt.step import StepEntry
+from monkeycad.backends.occt.preview import tessellate_shape
+from monkeydiagram.projection.mesh_views import ANGULAR_DEFLECTION, ObjectMesh, show_flush_hidden_lines
 from monkeydiagram.rendering.svg import (
     CleanupReport,
     DrawingSvgError,
@@ -64,10 +68,14 @@ _TOLERANCE = 1e-9
 #: Paper tolerance of the drawing cleanup: at any sheet scale, what differs by less is not seen.
 CLEANUP_TOLERANCE_MM = 0.05
 #: How an elevation decides what is hidden (S22). The exact solve took 100-190 s on a 2663-object imported
-#: model, the mesh solve 6 s for the same lines: its triangles are cut at the paper tolerance, so a planar
-#: face hides exactly and a curved one within what the cleanup cannot see either.
+#: model, the mesh solve with its flush check 11 s for the same lines: its triangles are cut at the paper
+#: tolerance, so a planar face hides exactly and a curved one within what the cleanup cannot see either.
 MESH_ELEVATION_ALGORITHM = ("HLRBRep_PolyAlgo hidden-line solve over every listed object, triangulated at the "
-                            "paper tolerance, then per-object extraction")
+                            "paper tolerance, then per-object extraction; a hidden line only a flush face covers is drawn")
+#: A hidden line is drawn when no face covers it nearer than this share of the paper tolerance (0.05 mm at
+#: 1:100): an edge lying in a face's plane (a mullion flush with a wall's end) is seen, as the exact solve
+#: sees it; one 0.5 mm behind a cladding panel stays hidden.
+FLUSH_DEPTH_SHARE = 0.01
 EXACT_ELEVATION_ALGORITHM = "HLRBRep_Algo exact hidden-line solve over every listed object, then per-object extraction"
 
 
@@ -251,6 +259,20 @@ class ElevationProjection:
         }
 
 
+def _solved_meshes(entries: Sequence[StepEntry], object_ids: Sequence[str], deflection: float) -> tuple[ObjectMesh, ...]:
+    # The triangles the mesh solve just hid with (same deflection, so the shapes' meshes are kept as they are).
+    wanted, meshes = set(object_ids), []
+    for entry in entries:
+        if entry.name in wanted:
+            try:
+                vertices, triangles = tessellate_shape(entry.shape, linear_deflection=deflection,
+                                                       angular_deflection=ANGULAR_DEFLECTION)
+            except OcctBackendError:  # a curve: it hides nothing
+                continue
+            meshes.append(ObjectMesh(entry.name, tuple(vertices), tuple(triangles)))
+    return tuple(meshes)
+
+
 def project_model_axis_elevation(
     entries: Sequence[StepEntry], *, object_ids: Sequence[str], view: ElevationView, unit: str,
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
@@ -275,8 +297,13 @@ def project_model_axis_elevation(
             common = dict(object_ids=tuple(object_ids), origin=view.origin, right=view.right, up=view.up,
                           linear_deflection=view.linear_deflection, depth_range=(view.near_depth, view.far_depth))
             try:
-                lines = project_occt_mesh_lines(**common, entries=entries,
-                                                mesh_deflection=_paper_tolerance(unit, view.scale_denominator))
+                tolerance = _paper_tolerance(unit, view.scale_denominator)
+                lines = project_occt_mesh_lines(**common, entries=entries, mesh_deflection=tolerance)
+                lines, _ = show_flush_hidden_lines(
+                    lines, _solved_meshes(entries, common["object_ids"], tolerance),
+                    occt_edge_points(entries, object_ids=common["object_ids"], linear_deflection=tolerance),
+                    origin=view.origin, right=view.right, up=view.up,
+                    match_tolerance=tolerance, depth_tolerance=tolerance * FLUSH_DEPTH_SHARE)
                 algorithm = MESH_ELEVATION_ALGORITHM
             except OcctBuildError as exc:
                 lines = project_occt_lines(entries, **common)

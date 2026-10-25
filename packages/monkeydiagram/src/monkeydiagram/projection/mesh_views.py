@@ -925,3 +925,136 @@ def _camera_renderer_version() -> str:
 RENDERER_VERSION = _renderer_version()
 #: The camera passes' own version, derived the same way.
 CAMERA_RENDERER_VERSION = _camera_renderer_version()
+
+
+# ---- hidden lines that only a flush face hides (S22) ---------------------------------
+#
+# The polygonal hidden-line solve (``project_occt_mesh_lines``) decides an
+# edge lying in an occluding face's plane - a mullion flush with a wall's end
+# face, the two touching - by rounding, and often calls it hidden, where the
+# exact solve and a drafter draw it. Here each hidden line is found on its
+# object's 3D edges again, and a line is drawn visible when, at every sample
+# along it, no triangle covers it nearer than ``depth_tolerance``.
+
+#: Samples taken along each hidden line; all of them must be uncovered.
+FLUSH_SAMPLES = 3
+
+
+def _closest_on_segments(np, points, a, b):
+    """For each 2D point, the parameter and distance of its nearest point on every segment a->b (points x segments)."""
+
+    d = b - a
+    length = np.einsum("ij,ij->i", d, d)
+    t = np.clip(np.einsum("pij,ij->pi", points[:, None, :] - a[None], d) / np.where(length > 0, length, 1.0), 0.0, 1.0)
+    nearest = a[None] + t[..., None] * d[None]
+    return t, np.linalg.norm(points[:, None, :] - nearest, axis=2)
+
+
+def show_flush_hidden_lines(lines, meshes: Sequence[ObjectMesh], edges: Mapping[str, Sequence[Sequence[Sequence[float]]]], *,
+                            origin: Sequence[float], right: Sequence[float], up: Sequence[float],
+                            match_tolerance: float, depth_tolerance: float):
+    """``lines`` with every hidden line that no surface covers by more than ``depth_tolerance`` made visible.
+
+    ``lines`` are ``OcctDrawingPolyline`` values in the frame ``origin``,
+    ``right``, ``up`` (look ``-(right x up)``); ``meshes`` are every drawn
+    object's triangles and ``edges`` its 3D edges, both in the model frame.
+    A hidden line is matched to its object's nearest edges, within
+    ``match_tolerance`` in the drawing plane, to know its depth; one that matches no edge, or that
+    any triangle covers nearer at one sample, stays hidden. Returns the lines
+    and how many changed.
+    """
+
+    import numpy as np
+    from monkeycad.backends.occt.projection import OcctDrawingPolyline
+
+    origin_v, right_v, up_v = (np.asarray(value, dtype=float) for value in (origin, right, up))
+    look = -np.cross(right_v, up_v)
+
+    def project(points):
+        relative = np.asarray(points, dtype=float).reshape(-1, 3) - origin_v
+        return relative @ right_v, relative @ up_v, relative @ look
+
+    # Every sample of a hidden line, with each depth an edge of its object gives it there.
+    rows_line, rows_u, rows_v, rows_w = [], [], [], []
+    hidden = [index for index, line in enumerate(lines) if line.kind == "hidden"]
+    by_object: dict[str, list[int]] = {}
+    for index in hidden:
+        by_object.setdefault(lines[index].object_id, []).append(index)
+    visible_by_object: dict[str, list[tuple[Any, Any]]] = {}
+    for line in lines:
+        if line.kind == "visible":
+            visible_by_object.setdefault(line.object_id, []).extend(zip(line.points, line.points[1:]))
+    for object_id, indices in by_object.items():
+        segments = [(polyline[i], polyline[i + 1]) for polyline in edges.get(object_id, ()) for i in range(len(polyline) - 1)]
+        if not segments:
+            continue
+        au, av, aw = project([a for a, _ in segments])
+        bu, bv, bw = project([b for _, b in segments])
+        a2, b2 = np.stack([au, av], axis=1), np.stack([bu, bv], axis=1)
+        own = visible_by_object.get(object_id, [])
+        own_a = np.asarray([a for a, _ in own], dtype=float).reshape(-1, 2)
+        own_b = np.asarray([b for _, b in own], dtype=float).reshape(-1, 2)
+        for index in indices:
+            points = np.asarray(lines[index].points, dtype=float)
+            steps = np.cumsum(np.r_[0.0, np.linalg.norm(np.diff(points, axis=0), axis=1)])
+            if steps[-1] <= 0.0:
+                continue
+            at = steps[-1] * (np.arange(FLUSH_SAMPLES) + 0.5) / FLUSH_SAMPLES
+            samples = np.stack([np.interp(at, steps, points[:, 0]), np.interp(at, steps, points[:, 1])], axis=1)
+            # Under the object's own visible line it is the edge behind that one (a box's back edge): hidden.
+            if len(own_a) and (_closest_on_segments(np, samples, own_a, own_b)[1].min(axis=1) <= match_tolerance).all():
+                continue
+            t, distance = _closest_on_segments(np, samples, a2, b2)
+            depth = aw[None] + t * (bw - aw)[None]
+            for sample in range(FLUSH_SAMPLES):
+                # The nearest edges only: another edge a little aside (a closure's other arris) has another depth.
+                nearest = distance[sample].min()
+                if nearest > match_tolerance:
+                    continue
+                matched = np.flatnonzero(distance[sample] <= nearest + depth_tolerance)
+                for w in np.unique(depth[sample, matched]):
+                    rows_line.append((index, sample)); rows_u.append(samples[sample, 0]); rows_v.append(samples[sample, 1])
+                    rows_w.append(w)
+    if not rows_line:
+        return tuple(lines), 0
+    pu, pv, pw = (np.asarray(values, dtype=float) for values in (rows_u, rows_v, rows_w))
+    covered = np.zeros(len(pu), dtype=bool)
+    for mesh in meshes:
+        triangles = np.asarray(mesh.triangles, dtype=np.int64).reshape(-1, 3)
+        if not len(triangles):
+            continue
+        u, v, w = project(mesh.vertices)
+        tu, tv, tw = u[triangles], v[triangles], w[triangles]
+        active = np.flatnonzero(~covered & (pu >= tu.min()) & (pu <= tu.max()) & (pv >= tv.min()) & (pv <= tv.max())
+                                & (pw > tw.min() + depth_tolerance))
+        if not len(active):
+            continue
+        area = (tu[:, 1] - tu[:, 0]) * (tv[:, 2] - tv[:, 0]) - (tu[:, 2] - tu[:, 0]) * (tv[:, 1] - tv[:, 0])
+        usable = np.abs(area) > 1e-15
+        tu, tv, tw, area = tu[usable], tv[usable], tw[usable], area[usable]
+        if not len(area):
+            continue
+        # How far below zero each weight may go: a sample within depth_tolerance of a triangle's border is
+        # on it (an edge along a nearer face's outline stays hidden, as the exact solve keeps it).
+        sides = np.stack([np.hypot(tu[:, 2] - tu[:, 1], tv[:, 2] - tv[:, 1]), np.hypot(tu[:, 0] - tu[:, 2], tv[:, 0] - tv[:, 2]),
+                          np.hypot(tu[:, 1] - tu[:, 0], tv[:, 1] - tv[:, 0])], axis=1)
+        slack = depth_tolerance * sides / np.abs(area)[:, None]
+        chunk = max(1, 2_000_000 // len(area))
+        for start in range(0, len(active), chunk):
+            rows = active[start:start + chunk]
+            x, y = pu[rows, None], pv[rows, None]
+            # Barycentric weights of each sample in each triangle.
+            l1 = ((tu[None, :, 1] - x) * (tv[None, :, 2] - y) - (tu[None, :, 2] - x) * (tv[None, :, 1] - y)) / area[None]
+            l2 = ((tu[None, :, 2] - x) * (tv[None, :, 0] - y) - (tu[None, :, 0] - x) * (tv[None, :, 2] - y)) / area[None]
+            l3 = 1.0 - l1 - l2
+            inside = (l1 >= -slack[None, :, 0]) & (l2 >= -slack[None, :, 1]) & (l3 >= -slack[None, :, 2])
+            nearer = l1 * tw[None, :, 0] + l2 * tw[None, :, 1] + l3 * tw[None, :, 2] < pw[rows, None] - depth_tolerance
+            covered[rows] = (inside & nearer).any(axis=1)
+    # A sample is seen when one of its depths is uncovered; a line when all its samples are.
+    seen: dict[tuple[int, int], bool] = {}
+    for key, hit in zip(rows_line, covered):
+        seen[key] = seen.get(key, False) or not hit
+    shown = {index for index in hidden if all(seen.get((index, sample), False) for sample in range(FLUSH_SAMPLES))}
+    result = tuple(OcctDrawingPolyline(line.object_id, "visible", line.points) if index in shown else line
+                   for index, line in enumerate(lines))
+    return tuple(sorted(set(result), key=lambda line: (line.object_id, line.kind, line.points))), len(shown)
