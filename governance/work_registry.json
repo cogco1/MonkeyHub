@@ -1048,6 +1048,27 @@
           "depends_on": []
         },
         {
+          "id": "srv-drawing-speed",
+          "status": "active",
+          "branch": "claude/srv-drawing-speed",
+          "worktree": "C:\\Users\\Public\\renou\\dev\\wt\\claude-srv-drawing-speed",
+          "base_ref": "64147e9d",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "S15 (server, 10-25): drawings as fast in series as before the drawing pool (thi-hemp: 15 requests 59 s, the old Hub 59 s, the pool before this 96 s). A drawing worker keeps the model it read last and draws the next view of it without reading and decoding it again; the Runtime checks a drawing's source a second time, before retaining it, only when the project's read token moved since the first check.",
+          "modules": [
+            "monkeydiagram.drawing_runs",
+            "project_runtime.documents"
+          ],
+          "write_scope": [
+            "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
+            "services/project-runtime/src/project_runtime/application/drawings.py",
+            "services/project-runtime/tests/test_drawing_pool.py",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
+        },
+        {
           "id": "b3-change-list",
           "status": "active",
           "branch": "claude/300-b3-change-list",

@@ -58,7 +58,7 @@ from .artifacts import (
     artifact_bytes, document_bytes, list_artifacts, list_documents, require_complete_model, require_model_source, save_document,
 )
 from ..binding import retained_sources
-from ..binding import ProjectBinding
+from ..binding import ProjectBinding, ReadToken
 from ..monitoring import StudioMonitor
 from .projection import StateProjection, project_state, require_readable
 from .projections import (DOCUMENT_PAGE, DRAWING_SOURCE, ELEVATION, MODEL_INDEX, MODEL_PARTS, SECTION_PERSPECTIVE, SHEET, ProjectionQueue,
@@ -827,7 +827,7 @@ def _worn_materials(binding, model_source: ModelSource, source, object_ids) -> d
     return worn
 
 
-_HELD_GUARD: ContextVar[tuple[ProjectBinding, ExitStack] | None] = ContextVar("drawing_write_guard", default=None)
+_HELD_GUARD: ContextVar[tuple[ProjectBinding, ExitStack, ReadToken | None] | None] = ContextVar("drawing_write_guard", default=None)
 
 
 def drawing_sources(operation):
@@ -837,14 +837,15 @@ def drawing_sources(operation):
     the freeze retains (``_retaining``, which checks the source again under
     it), until the drawing is registered; so the check and the retained write
     stay atomic with cleanup, and neither writes nor other drawings wait for a
-    solve.
+    solve. The read token taken once the guard is held tells the second check
+    whether anything was written since the first.
     """
 
     @wraps(operation)
     def guarded(binding: ProjectBinding, *args, **kwargs):
         with ExitStack() as held:
             held.enter_context(binding.repository.working_draft_guard())
-            token = _HELD_GUARD.set((binding, held))
+            token = _HELD_GUARD.set((binding, held, binding.read_token(wait=False)))
             try:
                 return operation(binding, *args, **kwargs)
             finally:
@@ -861,14 +862,24 @@ def _solving() -> None:
 
 
 def _retaining(binding: ProjectBinding, model_source, stage_ref):
-    """What a freeze enters before it retains: the write guard again, kept until registration, and the source checked."""
+    """What a freeze enters before it retains: the write guard again, kept until registration, and the source checked.
+
+    The source is checked again only when the project's files may have
+    changed since the first check: this process wrote below the project (a
+    cleanup, another drawing, a candidate) or read a changed layout. With
+    the same read token the second check would read the same files and give
+    the first one's answer; it cost a drawing up to a second (S15).
+    """
 
     @contextmanager
     def retaining():
         held = _HELD_GUARD.get()
         if held is not None:
             held[1].enter_context(binding.repository.working_draft_guard())
-        _complete_source(binding, model_source, stage_ref)
+        first, now = None if held is None else held[2], binding.read_token(wait=False)
+        # Whether the fingerprint has settled since may differ; which files it names may not.
+        if first is None or now is None or (now.epoch, now.serial, now.fingerprint) != (first.epoch, first.serial, first.fingerprint):
+            _complete_source(binding, model_source, stage_ref)
         yield
 
     return retaining

@@ -323,10 +323,43 @@ def _opened(project_root: str) -> FilesystemProjectRepository:
     return repository
 
 
+#: The source this drawing worker read last, with its shapes (S15). A source names its model by the
+#: sha256 of its bytes and of its registration or receipt, so the same source is the same verified model;
+#: the next drawing of it in this worker draws from what was read instead of decoding the model again
+#: (about a second on thi-hemp, every drawing). The model's bytes are still hashed each time, so one
+#: changed on disk since is read, and refused, as before. Only one, so a worker holds no more than the
+#: model it drew last.
+_LAST_READ: list[tuple[tuple[str, ElevationSource | NativeModelSource], VerifiedElevationSource]] = []
+
+
+def _same_bytes(project_root: str, source: ElevationSource | NativeModelSource) -> bool:
+    import hashlib
+
+    repository = _opened(project_root)
+    try:
+        if isinstance(source, NativeModelSource):
+            read_artifact_bytes(repository, source.artifact)
+            return True
+        step = repository.layout.run(source.run_id).workspaces / source.step_workspace / source.step_file_name
+        return hashlib.sha256(step.read_bytes()).hexdigest() == source.step_sha256
+    except (DrawingElevationError, OSError, ValueError):
+        return False
+
+
+def _read_source(project_root: str, source: ElevationSource | NativeModelSource) -> VerifiedElevationSource:
+    key = (project_root, source)
+    if _LAST_READ and _LAST_READ[0][0] == key and _same_bytes(project_root, source):
+        return _LAST_READ[0][1]
+    _LAST_READ.clear()
+    verified = read_elevation_source(_opened(project_root), source)
+    _LAST_READ.append((key, verified))
+    return verified
+
+
 def verify_draw_source(project_root: str, source: ElevationSource | NativeModelSource) -> VerifiedElevationSource:
     """Verify a source as a drawing task does, writing nothing: what a caller needs of it without its shapes."""
 
-    return _shapeless(read_elevation_source(_opened(project_root), source))
+    return _shapeless(_read_source(project_root, source))
 
 
 @dataclass(frozen=True, slots=True)
@@ -375,7 +408,7 @@ def run_camera_task(task: CameraTask) -> CameraResult:
     from monkeycad.formats.three_dm_inspector import inspect_three_dm_index
 
     started = perf_counter()
-    verified = read_elevation_source(_opened(task.project_root), task.source)
+    verified = _read_source(task.project_root, task.source)
     loaded = perf_counter()
     boxes = [row["bbox"] for row in (verified.receipt.get("readback") or {}).values()
              if isinstance(row, Mapping) and isinstance(row.get("bbox"), Mapping)]
@@ -431,7 +464,7 @@ def run_draw_task(task: DrawTask) -> DrawResult:
     """Verify a task's source and draw its view, writing nothing: what a ``drawer`` runs in another process."""
 
     events: list[Mapping[str, Any]] = []
-    verified = read_elevation_source(_opened(task.project_root), task.source)
+    verified = _read_source(task.project_root, task.source)
     if task.kind == ELEVATION_KIND:
         drawn = _draw_elevation(verified, task.view, backend_identity(), events.append, task.parent_event_id)
     elif task.kind == SECTION_PERSPECTIVE_KIND:
