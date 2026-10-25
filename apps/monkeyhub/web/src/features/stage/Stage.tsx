@@ -44,6 +44,8 @@ const SECTION_AXES: Record<SectionAxis, 0 | 1 | 2> = { x: 0, y: 1, z: 2 };
 type QuickDrawingKind = "plan" | "section" | "elevations";
 // +Y is north: the front view looks north from the south side (the drawing route's view frames).
 const QUICK_ELEVATIONS = [["front", "stage.quick.south"], ["back", "stage.quick.north"], ["left", "stage.quick.west"], ["right", "stage.quick.east"]] as const;
+// One direction asked for by name ("出一张南立面") draws that one elevation only.
+const QUICK_DIRECTIONS = { south: 0, north: 1, west: 2, east: 3 } as const;
 import { Annotate, GESTURE_TOOLS, type AnnotationStyle, type GestureTool } from "../../workspaces/monkeyarch/Annotate";
 import { VersionsStrip, type VersionGroup, type DesignHistoryControls } from "./VersionsStrip";
 import { DocumentCanvas, type DocumentViewContext } from "../../workspaces/monkeydiagram/DocumentCanvas";
@@ -585,7 +587,7 @@ export function Stage({
   useEffect(() => { setQuickDrawing(null); }, [viewedModelSource?.runId, viewedModelSource?.assetSha256, viewedAsset?.assetSha256]);
   const quickSource = documentProjectId === null ? null : viewedModelSource ? { projectId: documentProjectId, modelSource: viewedModelSource }
     : viewedAsset ? { projectId: documentProjectId, sourceAsset: viewedAsset } : null;
-  const quickDraw = async (kind: QuickDrawingKind) => {
+  const quickDraw = async (kind: QuickDrawingKind, only: keyof typeof QUICK_DIRECTIONS | null = null) => {
     if (!quickSource || quickDrawing?.state === "busy") return;
     setQuickDrawing({ kind, state: "busy" });
     try {
@@ -605,8 +607,9 @@ export function Stage({
         keep(await studio.drawingPlan({ ...quickSource, sourceKind: "human", board: "on-request", section: { origin, normal } }), t("stage.quick.sectionLabel"));
       } else {
         // All four at once: the Runtime's drawing workers solve them side by side.
-        const drawn = await Promise.all(QUICK_ELEVATIONS.map(([view]) => studio.elevation({ ...quickSource, view, hiddenLines: true })));
-        drawn.forEach((document, index) => keep(document, t(QUICK_ELEVATIONS[index][1])));
+        const views = only === null ? QUICK_ELEVATIONS : [QUICK_ELEVATIONS[QUICK_DIRECTIONS[only]]];
+        const drawn = await Promise.all(views.map(([view]) => studio.elevation({ ...quickSource, view, hiddenLines: true })));
+        drawn.forEach((document, index) => keep(document, t(views[index][1])));
       }
       setQuickDrawing({ kind, state: "drawn", pages });
     } catch (error) {
@@ -1642,7 +1645,9 @@ export function Stage({
   const toggleBarMenu = (menu: "export" | "more") => {
     if (barMenu === menu) { setBarMenu(null); return; }
     setBarMenu(menu);
-    if (tracingOpen) exitTracingPaper();
+    // More holds the views: turning the model to look again is part of marking it up, so the tracing paper
+    // stays open with its tools (S15; it closed, saved, and had to be opened again). Export still ends it.
+    if (tracingOpen && menu !== "more") exitTracingPaper();
     setParameterLocksOpen(false); setMoreToolsOpen(false);
     if ((workspaceElement.current?.clientWidth ?? 0) <= 560) setVersionsOpen(false);
   };
@@ -1680,6 +1685,10 @@ export function Stage({
     },
     ...Object.fromEntries((["plan", "section", "elevations"] as const).map((kind) => [`drawing.quick.${kind}`, {
       run: () => { void quickDraw(kind); },
+      available: () => !quickSource ? t("stage.quick.unavailable") : quickDrawing?.state === "busy" ? t("stage.section.drawing") : true,
+    }])),
+    ...Object.fromEntries((Object.keys(QUICK_DIRECTIONS) as (keyof typeof QUICK_DIRECTIONS)[]).map((direction) => [`drawing.quick.elevation_${direction}`, {
+      run: () => { void quickDraw("elevations", direction); },
       available: () => !quickSource ? t("stage.quick.unavailable") : quickDrawing?.state === "busy" ? t("stage.section.drawing") : true,
     }])),
   } : {});

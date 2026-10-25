@@ -162,7 +162,7 @@ const composerWords = {
     newTopicRemove: "移除新话题",
     target: "将修改：当前", targetUnrecorded: "未记录的修改不包括在内", sending: "发送中…",
     sendTo: (name: string) => `发到：${name}`, sendToAttention: "关注对话", sendToNew: "新对话",
-    routeSays: (label: string) => `这句话可以直接做：「${label}」`, routeRun: "直接做", routeSend: "还是发给 AI",
+    routeSays: (label: string) => `这句话可以直接做：「${label}」`, routeRun: "直接做", routeSend: "还是发给 AI", routeKeys: "回车直接做 · Esc 发给 AI",
     providerSwitched: (from: string, to: string) => `要用 ${from} 得先装，现在用的是 ${to}`,
     suggestLabel: "试试这几句", suggestHint: "说一句话，会放进三类之一：需要你决定、等你批注、猜你可能想要",
     suggestCompare: (a: number, b: number) => `V${a} 和 V${b} 哪个好`, suggestWhere: "现在做到哪了", suggestPrepare: "帮我准备下次评图",
@@ -178,7 +178,7 @@ const composerWords = {
     newTopicRemove: "Remove New topic",
     target: "Changes: Current", targetUnrecorded: "unrecorded edits not included", sending: "Sending…",
     sendTo: (name: string) => `To: ${name}`, sendToAttention: "the attention conversation", sendToNew: "a new conversation",
-    routeSays: (label: string) => `This can be done directly: ${label}`, routeRun: "Do it", routeSend: "Send to the AI instead",
+    routeSays: (label: string) => `This can be done directly: ${label}`, routeRun: "Do it", routeSend: "Send to the AI instead", routeKeys: "Enter does it · Esc sends it to the AI",
     providerSwitched: (from: string, to: string) => `${from} has to be installed first; using ${to} for now`,
     suggestLabel: "Try one of these", suggestHint: "Say one thing; it lands in one of three kinds: needs your decision, waits for your marks, a guess at what you want",
     suggestCompare: (a: number, b: number) => `Which is better, V${a} or V${b}`, suggestWhere: "Where are we now", suggestPrepare: "Help me prepare for the next review",
@@ -885,6 +885,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       : (loading ? "" : t.noProvider)
     : "";
   const composerDisabledReason = !project ? t.projectRequired : busy ? t.actionPending : undefined;
+  // 08: the command a sentence names, offered before the model; it goes once the words change.
+  const routeShown = routed !== null && routed.text === draft.trim();
+  const runRouted = (more: Record<string, string> = {}) => {
+    if (!routed) return;
+    const { command, args } = routed.offer;
+    if (commands.run(command.id, "composer", { args: { ...args, ...more } })) setDrafts((value) => ({ ...value, [draftKey]: "" }));
+    setRouted(null);
+  };
   const sendDisabledReason = running ? (renderDraft ? t.renderContextAfterReply : !draft.trim() ? t.interjectEmpty : undefined)
     : composerDisabledReason ?? (!draft.trim() && !attachments.length ? t.sendEmpty
       : !chatId && !availableProvider?.available ? t.noProvider : undefined);
@@ -2439,14 +2447,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           onPaste={(event) => { if (event.clipboardData.files.length) { event.preventDefault(); addAttachments(Array.from(event.clipboardData.files)); } }}>
           {draggingFiles && <p className="chat-attachment-drop" role="status">{t.dropFiles}</p>}
           {/* 08: the command the sentence names, offered before the model; it goes once the words change. */}
-          {routed && routed.text === draft.trim() && (() => {
-            const { command, args, missing } = routed.offer;
-            const runWith = (more: Record<string, string> = {}) => {
-              if (commands.run(command.id, "composer", { args: { ...args, ...more } })) setDrafts((value) => ({ ...value, [draftKey]: "" }));
-              setRouted(null);
-            };
+          {routeShown && routed && (() => {
+            const { command, missing } = routed.offer;
+            const runWith = runRouted;
             return <div className="chat-route" role="group" aria-label={w.routeSays(command.label[preferences.language])}>
-              <p className="chat-route__says">{w.routeSays(command.label[preferences.language])}</p>
+              <p className="chat-route__says">{w.routeSays(command.label[preferences.language])}{!missing && <small className="chat-route__keys">{w.routeKeys}</small>}</p>
               {missing ? <div className="chat-route__which" role="group" aria-label={w.routeWhich(missing.name)}>
                 <span>{w.routeWhich(missing.name)}</span>
                 {missing.choices.slice(0, 6).map((choice) => <button key={choice.value} data-command={command.id} data-command-arg={choice.value}
@@ -2492,7 +2497,15 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             }}><Icon name="close" /></button>
           </li>)}</ul>}
           <label className="sr-only" htmlFor="chat-input">{t.placeholder}</label><textarea id="chat-input" ref={input} value={draft} aria-describedby={project ? "chat-target" : undefined} aria-description={composerDisabledReason} aria-keyshortcuts="Enter Shift+Enter" placeholder={!project ? t.projectRequired : running && !renderDraft ? t.interjectPlaceholder : t.placeholder} disabled={!project || busy}
-            onChange={(event) => setDrafts((value) => ({ ...value, [draftKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
+            onChange={(event) => setDrafts((value) => ({ ...value, [draftKey]: event.target.value }))} onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              // S15: with the direct-do card up, Enter does it and Esc sends the words to the AI instead.
+              if (routeShown && routed && event.key === "Escape") { event.preventDefault(); sendAsWritten.current = true; void send(); return; }
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                if (routeShown && routed && !routed.offer.missing) runRouted(); else void send();
+              }
+            }} />
           <input ref={fileInput} type="file" multiple hidden aria-label={t.attach} disabled={!project || busy} onChange={(event) => { addAttachments(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
           <div className="chat-composer__bottom"><ComposerMenu label={w.composerMenu} disabled={!project || busy} disabledReason={composerDisabledReason} items={[
             { key: "attach", label: t.attach, onSelect: () => fileInput.current?.click() },

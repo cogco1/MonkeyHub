@@ -6152,7 +6152,6 @@ export const COMMAND_TREE: CommandTree = {
       "terms": [
         "elevations",
         "立面图",
-        "南立面",
         "四个立面"
       ],
       "surface": "modeling",
@@ -6165,23 +6164,159 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [],
       "args": [],
       "phrases": [
-        "出一张南立面",
         "出立面图",
         "四个立面都出一下",
+        "把四面立面都出了",
         "draw the elevations",
-        "make the south elevation"
+        "draw all four elevations"
       ],
       "aliases": [
         "出立面",
         "出立面图",
         "立面图",
-        "南立面",
-        "北立面",
-        "东立面",
-        "西立面",
+        "四个立面",
         "elevations",
-        "elevation drawing",
+        "elevation drawings"
+      ]
+    },
+    {
+      "id": "drawing.quick.elevation_south",
+      "capability": "model.view",
+      "label": {
+        "en": "Draw the south elevation",
+        "zh-CN": "出南立面"
+      },
+      "terms": [
+        "south elevation",
+        "南立面",
+        "南立面图"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "出一张南立面",
+        "出南立面",
+        "给我南立面图",
+        "draw the south elevation",
+        "make the south elevation"
+      ],
+      "aliases": [
+        "南立面",
+        "南立面图",
+        "出南立面",
         "south elevation"
+      ]
+    },
+    {
+      "id": "drawing.quick.elevation_north",
+      "capability": "model.view",
+      "label": {
+        "en": "Draw the north elevation",
+        "zh-CN": "出北立面"
+      },
+      "terms": [
+        "north elevation",
+        "北立面",
+        "北立面图"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "出一张北立面",
+        "出北立面",
+        "给我北立面图",
+        "draw the north elevation",
+        "make the north elevation"
+      ],
+      "aliases": [
+        "北立面",
+        "北立面图",
+        "出北立面",
+        "north elevation"
+      ]
+    },
+    {
+      "id": "drawing.quick.elevation_west",
+      "capability": "model.view",
+      "label": {
+        "en": "Draw the west elevation",
+        "zh-CN": "出西立面"
+      },
+      "terms": [
+        "west elevation",
+        "西立面",
+        "西立面图"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "出一张西立面",
+        "出西立面",
+        "给我西立面图",
+        "draw the west elevation",
+        "make the west elevation"
+      ],
+      "aliases": [
+        "西立面",
+        "西立面图",
+        "出西立面",
+        "west elevation"
+      ]
+    },
+    {
+      "id": "drawing.quick.elevation_east",
+      "capability": "model.view",
+      "label": {
+        "en": "Draw the east elevation",
+        "zh-CN": "出东立面"
+      },
+      "terms": [
+        "east elevation",
+        "东立面",
+        "东立面图"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "出一张东立面",
+        "出东立面",
+        "给我东立面图",
+        "draw the east elevation",
+        "make the east elevation"
+      ],
+      "aliases": [
+        "东立面",
+        "东立面图",
+        "出东立面",
+        "east elevation"
       ]
     },
     {

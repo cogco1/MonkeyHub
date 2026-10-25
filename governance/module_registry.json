@@ -3055,8 +3055,51 @@
             "aliases": [
               "elevations",
               "立面图",
-              "南立面",
               "四个立面"
+            ],
+            "entries": []
+          },
+          {
+            "id": "drawing.quick.elevation_south",
+            "label": "Draw the south elevation",
+            "label_zh": "出南立面",
+            "aliases": [
+              "south elevation",
+              "南立面",
+              "南立面图"
+            ],
+            "entries": []
+          },
+          {
+            "id": "drawing.quick.elevation_north",
+            "label": "Draw the north elevation",
+            "label_zh": "出北立面",
+            "aliases": [
+              "north elevation",
+              "北立面",
+              "北立面图"
+            ],
+            "entries": []
+          },
+          {
+            "id": "drawing.quick.elevation_west",
+            "label": "Draw the west elevation",
+            "label_zh": "出西立面",
+            "aliases": [
+              "west elevation",
+              "西立面",
+              "西立面图"
+            ],
+            "entries": []
+          },
+          {
+            "id": "drawing.quick.elevation_east",
+            "label": "Draw the east elevation",
+            "label_zh": "出东立面",
+            "aliases": [
+              "east elevation",
+              "东立面",
+              "东立面图"
             ],
             "entries": []
           },

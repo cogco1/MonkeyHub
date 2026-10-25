@@ -1048,6 +1048,35 @@
           "depends_on": []
         },
         {
+          "id": "srv-awkward-five",
+          "status": "active",
+          "branch": "claude/srv-awkward-five",
+          "worktree": "C:\\Users\\Public\\renou\\dev\\wt\\claude-srv-awkward-five",
+          "base_ref": "258dcd91",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "S15 (server, 10-25): with the composer's direct-do card up, Enter does it and Esc sends the words to the AI; a sentence naming one elevation (出一张南立面) draws that one; the elevation reference list names elements by what they are (墙 3 · 顶部 674 mm), their ids for developers only; opening the bar's More, where the views are, keeps the tracing paper and its tools.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/ChatShell.css",
+            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/src/features/stage/ElevationPanel.tsx",
+            "apps/monkeyhub/web/src/features/stage/elementWords.ts",
+            "apps/monkeyhub/web/src/features/commands/tree.generated.ts",
+            "apps/monkeyhub/web/test/elevationWords.test.ts",
+            "docs/architecture/semantic-registry.md",
+            "docs/architecture/system-map.md",
+            "governance/command_phrases.json",
+            "governance/command_search_cases.json",
+            "governance/module_registry.json",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
+        },
+        {
           "id": "srv-quick-search",
           "status": "active",
           "branch": "claude/srv-quick-search",
