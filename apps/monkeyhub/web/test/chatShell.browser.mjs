@@ -827,7 +827,10 @@ const autosavedModelRestart = async () => {
   await railTool("view.tab.modeling").click();
   await waitWorkspace();
   const status = visibleWorkspace().locator(".model-tools__sync-status");
-  await status.filter({ hasText: /^Unrecorded edits · saved automatically$/ }).waitFor();
+  // S19: a draft from an earlier session says so until it is recorded, and can be discarded.
+  const restoredLine = /^A draft from last time is not recorded yet: Record keeps it, Discard draft puts it away$/;
+  await status.filter({ hasText: restoredLine }).waitFor();
+  assert.equal(await cmd(visibleWorkspace(), "draft.record.discard").count(), 1, "a restored draft offers Discard draft");
   // Reopening restored the retained commands and saved them back unchanged.
   await until(() => draft.writes.length === 1, "the restored draft was never retained again");
   assert.deepEqual(draft.writes[0].draft.commands, commands);
@@ -874,7 +877,7 @@ const autosavedModelRestart = async () => {
   await cmd(visibleWorkspace(), "draft.tools.undo").click();
   await cmd(visibleWorkspace(), "draft.tools.redo").click();
   await until(() => draft.localDraft.commands.length === commands.length, "the redone push/pull was not autosaved");
-  await status.filter({ hasText: /^Unrecorded edits · saved automatically$/ }).waitFor();
+  await status.filter({ hasText: restoredLine }).waitFor();
   assert.deepEqual(draft.localDraft.commands, commands);
   await openSettings();
   await restartAllowed("the next accepted autosave releases the update restart");
