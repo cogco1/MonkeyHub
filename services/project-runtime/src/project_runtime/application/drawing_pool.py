@@ -66,6 +66,15 @@ def _end_with(sentinel) -> None:
     os._exit(0)
 
 
+def _read_ahead(project_root: str, source) -> None:
+    # Reading the source leaves it with this worker for its next drawing; a source that does not verify is
+    # refused by the drawing that asks for it, not here.
+    try:
+        verify_draw_source(project_root, source)
+    except Exception:  # noqa: BLE001 - nothing waits for this answer
+        pass
+
+
 def _ready() -> bool:
     # Importing this module in a worker loads the drawing code and OCCT, as its first drawing would.
     return True
@@ -100,14 +109,21 @@ class DrawingPool:
         known = self.verified(source)
         if known is not None:
             return known
-        verified = self._solve(verify_draw_source, project_root, source)
+        verified = self._solve(verify_draw_source, project_root, source, read_ahead=self.workers - 1)
         self.keep(source, verified)
         return verified
 
-    def _solve(self, function, *arguments):
+    def _solve(self, function, *arguments, read_ahead: int = 0):
         executor = self._running()
         try:
-            return executor.submit(function, *arguments).result()
+            future = executor.submit(function, *arguments)
+            # S22: the other workers read the same source meanwhile. Drawings of a source just verified come
+            # together (the four elevations at once), and each worker reads a source once and keeps it: on
+            # housing-13-units that read is 13 s, so without this the other three waited for the first read
+            # and then read it again each.
+            for _ in range(read_ahead):
+                executor.submit(_read_ahead, *arguments)
+            return future.result()
         except BrokenProcessPool as exc:
             self._replace(executor)
             raise StudioError(503, "DRAWING_WORKER_LOST", "The drawing worker stopped before the drawing was done; "

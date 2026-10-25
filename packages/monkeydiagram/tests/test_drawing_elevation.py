@@ -150,6 +150,18 @@ class ProjectionValueTests(unittest.TestCase):
         self.assertEqual(counts["objects_drawn_in_svg"], 3)
         self.assertTrue(result.png.startswith(b"\x89PNG"))
 
+    def test_the_mesh_solve_draws_what_the_exact_solve_draws_and_falls_back_to_it(self) -> None:
+        from monkeycad.backends.occt.errors import OcctBuildError
+
+        view = _view(hidden_lines=True)
+        meshed = self.project(view)
+        self.assertEqual(meshed.algorithm, views.MESH_ELEVATION_ALGORITHM)
+        with patch.object(views, "project_occt_mesh_lines", side_effect=OcctBuildError("a face could not be triangulated")):
+            exact = self.project(view)
+        self.assertTrue(exact.algorithm.startswith(views.EXACT_ELEVATION_ALGORITHM))
+        self.assertIn("a face could not be triangulated", exact.algorithm)
+        self.assertEqual(meshed.svg, exact.svg, "planar faces: the same cleaned lines, visible and hidden")
+
     def test_the_far_plane_removes_what_lies_beyond_it(self) -> None:
         self.assertEqual(svg_objects(self.project(_view(far_depth=10.0)).svg), ("skin", "wall"))
 
@@ -280,7 +292,7 @@ class FreezeElevationTests(unittest.TestCase):
         self.assertEqual(reopened.load_run("drawing-run").base, self.source_run.base)
         self.assertEqual(reopened.read_head(), self.head)
 
-        with patch.object(views, "project_occt_lines", wraps=views.project_occt_lines) as project:
+        with patch.object(views, "project_occt_mesh_lines", wraps=views.project_occt_mesh_lines) as project:
             again = freeze_model_axis_elevation(reopened, source=self.source, view=_view(), drawing_run_id="drawing-run",
                                                 operation_observer=observations.append, parent_event_id="repeated-operation")
         self.assertEqual(project.call_count, 1)
@@ -338,7 +350,7 @@ class FreezeElevationTests(unittest.TestCase):
         for error in (OcctBackendError("projection stopped"), asyncio.CancelledError()):
             with self.subTest(error=type(error).__name__):
                 observations = []
-                with patch.object(views, "project_occt_lines", side_effect=error) as project:
+                with patch.object(views, "project_occt_mesh_lines", side_effect=error) as project:
                     with self.assertRaises(asyncio.CancelledError if isinstance(error, asyncio.CancelledError) else DrawingElevationError):
                         freeze_model_axis_elevation(self.repository, source=self.source, view=_view(), drawing_run_id="failed-run",
                                                     operation_observer=observations.append)

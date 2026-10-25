@@ -1,7 +1,9 @@
 """Model-axis elevations, axonometrics and section perspectives of verified shapes, drawn in memory.
 
-Every selected shape takes part in one exact hidden-line solve for a frame
-stated along the model axes (``monkeycad.backends.occt.projection.project_occt_lines``);
+Every selected shape takes part in one hidden-line solve for a frame stated
+along the model axes: an elevation's on the shapes triangulated at the paper
+tolerance (``project_occt_mesh_lines``), exact (``project_occt_lines``) when
+that cannot run, a section perspective's exact;
 the visible (and, on request, hidden) polylines are cropped and serialised as
 one deterministic SVG whose every polyline names its source physical object,
 and a PNG is rendered from that SVG (``monkeydiagram.rendering.svg``).
@@ -34,8 +36,8 @@ from time import perf_counter
 from typing import Any, Callable, Mapping, Sequence
 from uuid import uuid4
 
-from monkeycad.backends.occt.errors import OcctBackendError
-from monkeycad.backends.occt.projection import OcctDrawingPolyline, project_occt_lines
+from monkeycad.backends.occt.errors import OcctBackendError, OcctBuildError
+from monkeycad.backends.occt.projection import OcctDrawingPolyline, project_occt_lines, project_occt_mesh_lines
 from monkeycad.backends.occt.section import OcctSectionPerspective, project_occt_section_perspective, section_occt_lines
 from monkeycad.backends.occt.step import StepEntry
 from monkeydiagram.rendering.svg import (
@@ -61,6 +63,12 @@ SECTION_PERSPECTIVE_KIND = "section-perspective"
 _TOLERANCE = 1e-9
 #: Paper tolerance of the drawing cleanup: at any sheet scale, what differs by less is not seen.
 CLEANUP_TOLERANCE_MM = 0.05
+#: How an elevation decides what is hidden (S22). The exact solve took 100-190 s on a 2663-object imported
+#: model, the mesh solve 6 s for the same lines: its triangles are cut at the paper tolerance, so a planar
+#: face hides exactly and a curved one within what the cleanup cannot see either.
+MESH_ELEVATION_ALGORITHM = ("HLRBRep_PolyAlgo hidden-line solve over every listed object, triangulated at the "
+                            "paper tolerance, then per-object extraction")
+EXACT_ELEVATION_ALGORITHM = "HLRBRep_Algo exact hidden-line solve over every listed object, then per-object extraction"
 
 
 @contextmanager
@@ -119,6 +127,12 @@ def finite_number(value, label: str) -> float:
     return float(value)
 
 
+def _paper_tolerance(unit: str, scale_denominator: int) -> float:
+    """``CLEANUP_TOLERANCE_MM`` on the sheet, in the source's unit at the drawing's scale."""
+
+    return CLEANUP_TOLERANCE_MM * scale_denominator / (1000.0 * UNIT_METRES[unit])
+
+
 def clean_view_lines(lines, regions, *, crop_uv, hidden_lines: bool, unit: str, scale_denominator: int):
     """The lines one drawing draws, cropped to its window and cleaned at the paper tolerance, with the report.
 
@@ -127,7 +141,7 @@ def clean_view_lines(lines, regions, *, crop_uv, hidden_lines: bool, unit: str, 
     """
 
     drawn = lines if hidden_lines else tuple(line for line in lines if line.kind != "hidden")
-    tolerance = CLEANUP_TOLERANCE_MM * scale_denominator / (1000.0 * UNIT_METRES[unit])
+    tolerance = _paper_tolerance(unit, scale_denominator)
     return clean_drawing(crop_polylines(drawn, crop_uv), regions, tolerance=tolerance)
 
 
@@ -223,6 +237,7 @@ class ElevationProjection:
     svg: bytes
     png: bytes
     cleanup: CleanupReport | None = None
+    algorithm: str = ""
 
     def counts(self) -> dict[str, Any]:
         visible = [line for line in self.lines if line.kind == "visible"]
@@ -257,10 +272,15 @@ def project_model_axis_elevation(
     try:
         with observed_stage(operation_observer, "drawing.hlr", parent_event_id=parent_event_id,
                              details={"scope": "global_visibility", "input_object_ids": sorted(object_ids)}) as observation:
-            lines = project_occt_lines(
-                entries, object_ids=tuple(object_ids), origin=view.origin, right=view.right, up=view.up,
-                linear_deflection=view.linear_deflection, depth_range=(view.near_depth, view.far_depth),
-            )
+            common = dict(object_ids=tuple(object_ids), origin=view.origin, right=view.right, up=view.up,
+                          linear_deflection=view.linear_deflection, depth_range=(view.near_depth, view.far_depth))
+            try:
+                lines = project_occt_mesh_lines(**common, entries=entries,
+                                                mesh_deflection=_paper_tolerance(unit, view.scale_denominator))
+                algorithm = MESH_ELEVATION_ALGORITHM
+            except OcctBuildError as exc:
+                lines = project_occt_lines(entries, **common)
+                algorithm = f"{EXACT_ELEVATION_ALGORITHM} (the mesh solve could not run: {exc})"
             observation["emitted_object_ids"] = sorted({line.object_id for line in lines})
         with observed_stage(operation_observer, "drawing.svg", parent_event_id=parent_event_id,
                              details={"input_object_ids": sorted({line.object_id for line in lines})}) as observation:
@@ -275,7 +295,7 @@ def project_model_axis_elevation(
             png = render_svg_png(svg)
     except (OcctBackendError, DrawingSvgError) as exc:
         raise DrawingElevationError(f"elevation {view.name}: {exc}") from exc
-    return ElevationProjection(lines=lines, svg=svg, png=png, cleanup=cleanup)
+    return ElevationProjection(lines=lines, svg=svg, png=png, cleanup=cleanup, algorithm=algorithm)
 
 
 # ---------------------------------------------------------------- section perspective

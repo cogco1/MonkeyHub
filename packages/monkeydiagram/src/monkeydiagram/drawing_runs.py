@@ -741,12 +741,13 @@ def freeze_cut_plan(
 
 
 def _draw_elevation(verified: VerifiedElevationSource, view: ElevationView, backend, observer, parent_event_id) -> DrawnView:
-    return _drawn(view.to_dict(), project_model_axis_elevation(
+    projection = project_model_axis_elevation(
         verified.entries, object_ids=tuple(name for name in verified.physical_object_ids
                                            if name not in inspection_witness_ids(verified.receipt)),
         view=view, unit=verified.length_unit,
         operation_observer=observer, parent_event_id=parent_event_id, semantics=object_semantics(verified.receipt),
-    ), backend)
+    )
+    return _drawn(view.to_dict(), projection, backend, {"algorithm": projection.algorithm})
 
 
 def freeze_model_axis_elevation(

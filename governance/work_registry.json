@@ -1048,6 +1048,33 @@
           "depends_on": []
         },
         {
+          "id": "srv-elevation-speed",
+          "status": "active",
+          "branch": "claude/srv-elevation-speed",
+          "worktree": "C:\\Users\\Public\\renou\\dev\\wt\\claude-srv-elevation-speed",
+          "base_ref": "bc25532d",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "S22 (server, 10-25): the model page's four elevations of housing-13-units in 27 s instead of 144 s. An elevation's visibility is solved on each shape's triangulation at the drawing cleanup tolerance (HLRBRep_PolyAlgo; housing south elevation 114 s -> 6 s, the same lines within 0.1 mm on paper), exactly when that cannot run; a source verified for the first time is read meanwhile by the other drawing workers, so the four elevations do not read the model one round after another.",
+          "modules": [
+            "monkeycad.occt",
+            "monkeydiagram.drawing_runs",
+            "project_runtime.documents"
+          ],
+          "write_scope": [
+            "packages/monkeycad/src/monkeycad/backends/occt/projection.py",
+            "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
+            "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
+            "packages/monkeydiagram/tests/test_drawing_elevation.py",
+            "services/project-runtime/src/project_runtime/application/drawing_pool.py",
+            "services/project-runtime/tests/test_drawing_pool.py",
+            "tests/integration/test_occt_execution.py",
+            "governance/module_registry.json",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
+        },
+        {
           "id": "srv-front-view-mass",
           "status": "active",
           "branch": "claude/srv-front-view-mass",

@@ -94,6 +94,29 @@ class DrawingWorkerReuseTests(unittest.TestCase):
                          "the same model in the same project is read once; another one, or changed bytes, read again")
         self.assertEqual(len(drawing_runs._LAST_READ), 1, "a worker keeps only the model it drew last")
 
+    def test_the_other_workers_read_a_source_while_the_first_verifies_it(self) -> None:
+        from concurrent.futures import Future
+
+        submitted = []
+
+        class Executor:
+            def submit(self, function, *arguments):
+                submitted.append((function, arguments))
+                future = Future()
+                future.set_result(f"verified {arguments[1]}")
+                return future
+
+        pool = drawing_pool.DrawingPool(3)
+        with patch.object(pool, "_running", return_value=Executor()):
+            self.assertEqual(pool.source("/p", "model-a"), "verified model-a")
+            self.assertEqual(pool.source("/p", "model-a"), "verified model-a")
+        self.assertEqual(submitted, [(drawing_runs.verify_draw_source, ("/p", "model-a")),
+                                     (drawing_pool._read_ahead, ("/p", "model-a")),
+                                     (drawing_pool._read_ahead, ("/p", "model-a"))],
+                         "one verification answers; the two other workers read the model meanwhile, and only once")
+        with patch.object(drawing_pool, "verify_draw_source", side_effect=OSError("gone")):
+            self.assertIsNone(drawing_pool._read_ahead("/p", "model-a"), "a read ahead that fails is the asking drawing's to report")
+
     def test_the_source_is_checked_again_only_when_the_project_may_have_changed(self) -> None:
         from contextlib import ExitStack, nullcontext
 
@@ -265,9 +288,9 @@ class NativeDrawingPoolTests(unittest.TestCase):
         solved = []
         original = drawing_pool.DrawingPool._solve
 
-        def counted(pool, function, *arguments):
+        def counted(pool, function, *arguments, **options):
             solved.append(function.__name__)
-            return original(pool, function, *arguments)
+            return original(pool, function, *arguments, **options)
 
         with patch.object(drawing_pool.DrawingPool, "_solve", counted):
             again = self.elevation(source)
