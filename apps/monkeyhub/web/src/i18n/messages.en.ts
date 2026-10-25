@@ -639,6 +639,7 @@ export const messagesEn = {
   "stage.picked.unresolved": "Not yet identified in this design",
   "stage.picked.imported": "This is an imported model",
   "stage.picked.convert": "Make it a design you can change",
+  "stage.importChoice.label": "Which imported model",
   "stage.tools.circle.label": "Circle",
   "stage.tools.circle.title": "Circle an area: this is what I mean",
   "stage.tools.arrow.label": "Arrow",

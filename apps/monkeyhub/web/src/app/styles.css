@@ -1343,6 +1343,16 @@ button.chip:hover {
   font-size: 13px;
 }
 
+.stage-import-choice > span,
+.stage-import-choice > button:not(.stage-quick-drawings__close) {
+  white-space: nowrap;
+}
+
+.stage-import-choice select {
+  flex: 1;
+  min-width: 0;
+}
+
 .stage-quick-drawings__close {
   margin-left: auto;
 }

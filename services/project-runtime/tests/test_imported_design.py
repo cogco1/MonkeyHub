@@ -101,6 +101,8 @@ class ImportedDesignTests(unittest.TestCase):
         source = {row["object_id"] for row in inspect_three_dm_index(data, bounds_for=lambda ids: ids)["objects"]
                   if not row["is_instance_definition_object"]}
 
+        attached = self.client.get("/api/model-assets/attached").json()
+        self.assertEqual([(row["assetSha256"], row["fileName"]) for row in attached], [(sha, "0928 snapshot.3dm")])
         # Named, or by default the model attached last: here the same one.
         named = self.client.post("/api/model-assets/design", json={"assetSha256": sha})
         self.assertEqual(named.status_code, 201, named.text)

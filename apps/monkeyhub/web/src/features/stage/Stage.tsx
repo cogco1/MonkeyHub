@@ -231,6 +231,7 @@ export function Stage({
   artifactError,
   picked,
   importedModel,
+  importChoice,
   versions,
   hasNewVersions = false,
   onVersionsOpen,
@@ -326,6 +327,9 @@ export function Stage({
    * on it names nothing, so it offers to make the model a design that can be changed (#300 item 22 B).
    */
   importedModel?: { onConvert(): void; busy: boolean };
+  /** Which attached model to make a design of, when there are several: the last attached chosen first (S21). */
+  importChoice?: { models: readonly { assetSha256: string; label: string }[]; selected: string; busy: boolean;
+    onSelect(assetSha256: string): void; onConvert(): void; onCancel(): void };
   versions: readonly VersionGroup[];
   hasNewVersions?: boolean;
   onVersionsOpen?(): void;
@@ -1849,6 +1853,17 @@ export function Stage({
             onClick={() => { for (const row of quickDrawing.pages) onBoard(row.page); }}>{t("stage.section.toBoard")}</button>}
         </> : <PlainFailure error={asStudioApiError(quickDrawing.error)} />}
         <button type="button" data-command="view.notice.dismiss" className="stage-quick-drawings__close" aria-label={t("stage.quick.close")} onClick={() => setQuickDrawing(null)}>×</button>
+      </div>}
+      {importChoice && <div className="stage-quick-drawings stage-import-choice" role="group" aria-label={t("stage.importChoice.label")}>
+        <span>{t("stage.importChoice.label")}</span>
+        <select aria-label={t("stage.importChoice.label")} value={importChoice.selected} disabled={importChoice.busy}
+          onChange={(event) => importChoice.onSelect(event.target.value)}>
+          {importChoice.models.map((model) => <option key={model.assetSha256} value={model.assetSha256}>{model.label}</option>)}
+        </select>
+        <button type="button" data-command="design.from_import" disabled={importChoice.busy} onClick={importChoice.onConvert}>
+          {t("stage.picked.convert")}</button>
+        <button type="button" data-command="view.notice.dismiss" className="stage-quick-drawings__close"
+          aria-label={t("stage.quick.close")} onClick={importChoice.onCancel}>×</button>
       </div>}
       {onReturnToBoard && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
         <button data-command="view.tab.board" type="button" onClick={onReturnToBoard}>{t("workspace.returnToBoard")}</button>

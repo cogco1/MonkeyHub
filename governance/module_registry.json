@@ -11730,7 +11730,8 @@
         "POST /api/model-assets/design",
         "conversion_edit",
         "imported_placements",
-        "imported_shapes"
+        "imported_shapes",
+        "GET /api/model-assets/attached"
       ],
       "depends_on": [
         "archflow.contracts.canonical",

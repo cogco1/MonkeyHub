@@ -80,6 +80,48 @@ def read_model_asset_parts(request: Request, asset_sha256: str = Path(pattern=r"
     return attached_parts(request, asset_sha256)
 
 
+class AttachedModelDto(BaseModel):
+    """One model attached from outside the project, as a design can be made from it."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    asset_sha256: str = Field(alias="assetSha256")
+    file_name: str = Field(alias="fileName")
+    object_count: int | None = Field(alias="objectCount", default=None)
+    attached_at: str = Field(alias="attachedAt", description="When its run was made, UTC ISO 8601.")
+
+
+@router.get("/model-assets/attached", response_model=list[AttachedModelDto], response_model_by_alias=True)
+def list_attached_models(request: Request) -> list[AttachedModelDto]:
+    """The models attached from outside the project (Live Rhino snapshots, uploaded 3dm), the last attached first."""
+
+    return _attached(bound_project(request.app.state))
+
+
+def _attached(binding) -> list[AttachedModelDto]:
+    """Each model file run's registration, newest run first."""
+
+    import json
+    from datetime import datetime, timezone
+
+    layout = binding.repository.layout
+    rows = []
+    for run_id in binding.run_ids():
+        if not run_id.startswith("studio-model-"):
+            continue
+        root = layout.run(run_id).root
+        asset = next(iter(sorted((root / "records").glob("studio-model-asset-*.json"))), None)
+        if asset is None:
+            continue
+        payload = json.loads(asset.read_bytes())
+        if payload.get("representation") != "external":
+            continue
+        rows.append(((root / "run.json").stat().st_mtime, AttachedModelDto(
+            asset_sha256=run_id.removeprefix("studio-model-"), file_name=str(payload.get("fileName") or ""),
+            object_count=payload.get("objectCount"),
+            attached_at=datetime.fromtimestamp((root / "run.json").stat().st_mtime, timezone.utc).isoformat())))
+    return [row for _, row in sorted(rows, key=lambda item: -item[0])]
+
+
 class DesignFromModelRequestDto(BaseModel):
     """Which attached model to make a design of; none names the one attached last."""
 
@@ -140,8 +182,7 @@ def propose_design_from_model_asset(request: Request, body: DesignFromModelReque
 def _last_attached(binding) -> str:
     """The sha256 of the model attached last: the newest run holding a model file alone."""
 
-    layout = binding.repository.layout
-    runs = [run_id for run_id in binding.run_ids() if run_id.startswith("studio-model-")]
-    if not runs:
+    attached = _attached(binding)
+    if not attached:
         raise StudioError(404, "MODEL_ASSET_NOT_FOUND", "No model has been attached to this project to make a design of.")
-    return max(runs, key=lambda run_id: (layout.run(run_id).root / "run.json").stat().st_mtime).removeprefix("studio-model-")
+    return attached[0].asset_sha256

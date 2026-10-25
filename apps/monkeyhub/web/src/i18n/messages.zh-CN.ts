@@ -616,6 +616,7 @@ export const messagesZhCN = {
   "stage.picked.unresolved": "尚未在当前设计中识别",
   "stage.picked.imported": "这是导入的模型",
   "stage.picked.convert": "转成能改的设计",
+  "stage.importChoice.label": "转哪一份导入的模型",
   "stage.tools.circle.label": "圈选",
   "stage.tools.circle.title": "圈出区域：这就是我指的部分",
   "stage.tools.arrow.label": "箭头",

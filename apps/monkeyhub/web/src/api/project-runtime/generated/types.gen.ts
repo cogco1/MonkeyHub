@@ -425,6 +425,32 @@ export type ArtifactListDto = {
 };
 
 /**
+ * AttachedModelDto
+ *
+ * One model attached from outside the project, as a design can be made from it.
+ */
+export type AttachedModelDto = {
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Filename
+     */
+    fileName: string;
+    /**
+     * Objectcount
+     */
+    objectCount?: number | null;
+    /**
+     * Attachedat
+     *
+     * When its run was made, UTC ISO 8601.
+     */
+    attachedAt: string;
+};
+
+/**
  * AttributesOp
  */
 export type AttributesOp = {
@@ -19368,6 +19394,43 @@ export type ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetResponses = {
 };
 
 export type ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetResponse = ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetResponses[keyof ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetResponses];
+
+export type ListAttachedModelsApiModelAssetsAttachedGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/model-assets/attached';
+};
+
+export type ListAttachedModelsApiModelAssetsAttachedGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListAttachedModelsApiModelAssetsAttachedGetError = ListAttachedModelsApiModelAssetsAttachedGetErrors[keyof ListAttachedModelsApiModelAssetsAttachedGetErrors];
+
+export type ListAttachedModelsApiModelAssetsAttachedGetResponses = {
+    /**
+     * Response List Attached Models Api Model Assets Attached Get
+     *
+     * Successful Response
+     */
+    200: Array<AttachedModelDto>;
+};
+
+export type ListAttachedModelsApiModelAssetsAttachedGetResponse = ListAttachedModelsApiModelAssetsAttachedGetResponses[keyof ListAttachedModelsApiModelAssetsAttachedGetResponses];
 
 export type ProposeDesignFromModelAssetApiModelAssetsDesignPostData = {
     body: DesignFromModelRequestDto;

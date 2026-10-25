@@ -90,6 +90,7 @@ import {
   readProjectsApiProjectsGet,
   createDeleteProposalApiProposalsDeletePost,
   proposeDesignFromModelAssetApiModelAssetsDesignPost,
+  listAttachedModelsApiModelAssetsAttachedGet,
   createSketchProposalApiProposalsSketchPost,
   prepareModelingApiProjectModelingPost,
   createTransformProposalApiProposalsTransformPost,
@@ -145,6 +146,7 @@ import type {
   ProjectArtifactDto,
   ProjectListDto,
   ProposalDto,
+  AttachedModelDto,
   ModelingInitializeDto,
   SketchBatchRequestDto,
   DocumentTracingRequestDto,
@@ -865,6 +867,11 @@ export const createStudioClient = (connection: ServerConnection) => ({
 
   removeElement(body: DeleteElementRequestDto): Promise<ProposalDto> {
     return call("POST /api/proposals/delete", createDeleteProposalApiProposalsDeletePost({ client: connection.client, body }));
+  },
+
+  /** The models attached from outside the project, the last attached first. */
+  attachedModels(): Promise<AttachedModelDto[]> {
+    return call("GET /api/model-assets/attached", listAttachedModelsApiModelAssetsAttachedGet({ client: connection.client }));
   },
 
   /** The proposal that makes an attached model (a Live Rhino snapshot, an uploaded 3dm) a design that can be changed; none names the one attached last. */
