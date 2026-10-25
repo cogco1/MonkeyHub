@@ -130,7 +130,7 @@ class ResultProducerTests(unittest.TestCase):
         card, = producers.results({**result, "head": current}, now=NOW, facts=worse,
                                   pairs={("run-b", "run-v16"): producers.PairFacts(changed=3, added=2, removed=0, unchanged=234)})
         self.assertEqual([row.textZh for row in card.evidence], [
-            "237 → 239 个构件，改了 3 个、加了 2 个", "总高 9.6 → 12 m，占地 47.61 → 50 m²", "成立 131 → 129 项，违反 0 → 2 项"])
+            "237 → 239 个构件，改了 3 个、加了 2 个", "总高 9.6 m → 12 m，占地 47.61 m² → 50 m²", "成立 131 → 129 项，违反 0 → 2 项"])
         self.assertEqual(card.evidence[2].status, "warn", "a new violation is flagged")
         named = {**current, "label": "V16 - floor junction with one floor layer: 23/32 plywood on the NLT"}
         ahead = graph(line("run-b", detail="This result already continues the current head."), head=None)

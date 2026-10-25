@@ -287,6 +287,9 @@ export function plainFailureText(cause: unknown): string {
  * code and words are for developer mode, folded, as in the panel. Use it wherever a refusal would otherwise print
  * `error.detail`.
  */
+// A Chinese sentence ends in a full-width stop and runs on into the next without a space.
+const gap = (text: string) => (/[。！？：]$/.test(text) ? "" : " ");
+
 export function PlainFailure({ error, className, lead }: { error: FailureLike; className?: string; lead?: string }) {
   const t = useT();
   const { developerMode, language } = usePreferences();
@@ -295,7 +298,7 @@ export function PlainFailure({ error, className, lead }: { error: FailureLike; c
   const details = developerMode || failureKind(error) === "unknown";
   return (
     <span className={`plain-failure${className ? ` ${className}` : ""}`}>
-      {lead && <>{lead} </>}{copy.reason} {copy.next}
+      {lead && <>{lead}{gap(lead)}</>}{copy.reason}{gap(copy.reason)}{copy.next}
       <FailureActions reason={copy.reason} ai={AI_CAN_HELP.has(failureKind(error))} undo={UNDO_HELPS.has(failureKind(error))}
         technical={developerMode ? `${error.code}: ${error.detail}` : undefined} />
       {details && <details key={`${error.code}:${error.detail}`} className="card__details" open={developerMode}>

@@ -147,8 +147,11 @@ def _number(value: float) -> str:
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 
-def _from_to(before: float, after: float) -> str:
-    return _number(after) if _number(before) == _number(after) else f"{_number(before)} → {_number(after)}"
+def _from_to(before: float, after: float, unit: str) -> str:
+    """One value with its unit, or both when they differ: each number carries the unit."""
+    if _number(before) == _number(after):
+        return f"{_number(after)} {unit}"
+    return f"{_number(before)} {unit} → {_number(after)} {unit}"
 
 
 def evidence(a: RunFacts | None, b: RunFacts | None, pair: PairFacts | None) -> list[EvidenceRow]:
@@ -172,12 +175,12 @@ def evidence(a: RunFacts | None, b: RunFacts | None, pair: PairFacts | None) -> 
         rows.append(EvidenceRow(key="quantity", label="Quantity", labelZh="数量", text=text, textZh=text_zh,
                                 status="ok"))
     if a and b and a.height is not None and b.height is not None and a.footprint is not None and b.footprint is not None:
-        height, area = _from_to(a.height, b.height), _from_to(a.footprint, b.footprint)
+        height, area = _from_to(a.height, b.height, "m"), _from_to(a.footprint, b.footprint, "m²")
         same = _number(a.height) == _number(b.height) and _number(a.footprint) == _number(b.footprint)
         tail = (" — the same", "，两版一样") if same else ("", "")
         rows.append(EvidenceRow(key="geometry", label="Geometry", labelZh="几何",
-                                text=f"Height {height} m, footprint {area} m²{tail[0]}",
-                                textZh=f"总高 {height} m，占地 {area} m²{tail[1]}", status="ok"))
+                                text=f"Height {height}, footprint {area}{tail[0]}",
+                                textZh=f"总高 {height}，占地 {area}{tail[1]}", status="ok"))
     if a and b and a.checks is not None and b.checks is not None:
         (held_a, violated_a, unchecked_a), (held_b, violated_b, unchecked_b) = a.checks, b.checks
         if not any(a.checks) and not any(b.checks):

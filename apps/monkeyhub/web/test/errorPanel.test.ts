@@ -188,4 +188,8 @@ test("a refusal shown in a corner of the screen is one sentence and one next ste
   // Choosing a result while the model holds unrecorded edits (S28): say which edits and what to do.
   const unrecorded = plainFailure({ status: 409, code: "DESIGN_TREE_UNSYNCED_EDITS", detail: "Modeling holds edits not yet recorded." }, "zh-CN");
   assert.deepEqual(unrecorded, { reason: "模型页上还有没记录的修改。", next: "先在模型页点「记录」或撤掉这些修改，再来选。" });
+  // Chinese sentences run on without a space; English ones keep it.
+  const shown = render({ status: 409, code: "DESIGN_TREE_UNSYNCED_EDITS", detail: "Modeling holds edits not yet recorded." }, "zh-CN");
+  assert.match(shown, /没能保存。模型页上还有没记录的修改。先在模型页点/);
+  assert.match(render({ status: 409, code: "DESIGN_TREE_UNSYNCED_EDITS", detail: "x" }), /^<span class="plain-failure">Could not save\. \S/);
 });
