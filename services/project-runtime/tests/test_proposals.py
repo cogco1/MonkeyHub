@@ -742,6 +742,27 @@ class DirectSemanticProposalTests(ProposalTestCase):
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
 
+    def test_removing_the_last_part_of_a_component_takes_the_component_and_says_so(self):
+        # 录屏 bug 1: an edit that left a component holding nothing made every later recording fail.
+        from project_runtime.binding import bound_project
+        from project_runtime.application.projection import project_state
+
+        record = project_state(bound_project(self.client.app.state)).record
+        owners: dict[str, list[str]] = {}
+        for element in record.entities_of("Element@1"):
+            owners.setdefault(element.fields.get("component_id") or element.parent_id, []).append(element.entity_id)
+        leaves = sorted((len(rows), component) for component, rows in owners.items()
+                        if not any(item.parent_id == component and item.schema == "Component@1" for item in record.entities))
+        self.assertTrue(leaves, "the reference project has a component of parts alone")
+        component = leaves[0][1]
+        held = [item.entity_id for item in record.entities if item.parent_id == component] + owners[component]
+        proposal = self.submit({"summary": "Remove its parts.", "removeEntityIds": sorted(set(held))})
+        removed = {row["entityId"] for row in proposal["change"]["changes"] if row["action"] == "remove"}
+        self.assertLessEqual({component, *held}, removed, "the emptied component goes with its parts")
+        self.assertIn("已清理 1 个空构件", proposal["change"]["summary"])
+        accepted = self.client.post(f"/api/proposals/{proposal['proposalId']}/candidate")
+        self.assertEqual(accepted.status_code, 202, accepted.text)
+
     def test_existing_entity_metadata_upserts_preserve_omitted_fields(self):
         from archflow.state.state_record import apply_state_record_operator
         from project_runtime.binding import bound_project
