@@ -945,8 +945,9 @@ export default function App({ server, expectedProjectId, projectStep = null, ini
           candidateId: attempt.accepted.candidateId, jobId: attempt.accepted.jobId, status: attempt.accepted.status });
       }
       local.recoverySaved = currentDraft(local.history);
+      // Its own line says what it is and what to do with it (stage.sync.restored).
       local.restored = true;
-      local.error = retained?.pending ? t("stage.sync.recovered") : null;
+      local.error = null;
       localModels.current.set(draftKey, local);
       refreshLocalModel();
     } catch (cause) {
@@ -3089,12 +3090,13 @@ export default function App({ server, expectedProjectId, projectStep = null, ini
   /** Put away a restored draft (S19): the model goes back to its recorded base and the saved draft is cleared. */
   const discardRestoredDraft = useCallback(() => {
     const session = localModel;
-    if (!session?.restored || session.busy || refuseViewedEdit()) return;
-    const base = ensureLocalModel(false);
-    Object.assign(session, { history: base.history, synced: base.synced, pending: null, error: null, restored: false });
+    if (!draftKey || !session?.restored || session.busy || refuseViewedEdit()) return;
+    // The restored session goes; a new one starts from the recorded base, as if nothing had been drawn.
+    localModels.current.delete(draftKey);
+    const base = ensureLocalModel();
     refreshLocalModel(); setPicked(null); setSelection(null);
-    void retainLocalModel(session, true).catch((cause) => autosaveFailed(session, cause));
-  }, [localModel, refuseViewedEdit, ensureLocalModel, refreshLocalModel, retainLocalModel, autosaveFailed]);
+    void retainLocalModel(base, true).catch((cause) => autosaveFailed(base, cause));
+  }, [draftKey, localModel, refuseViewedEdit, ensureLocalModel, refreshLocalModel, retainLocalModel, autosaveFailed]);
 
   const redoModel = useCallback(async () => {
     if (!canRedoModel || refuseViewedEdit()) return;

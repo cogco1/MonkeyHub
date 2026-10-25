@@ -741,7 +741,6 @@ export const messagesEn = {
   "stage.sync.autosaving": "Unrecorded edits · saving…",
   "stage.sync.busy": "Recording; keep editing",
   "stage.sync.readFailed": "Record status is unavailable. Record again to reconnect.",
-  "stage.sync.recovered": "A draft whose recording had not finished was restored. Check it, then Record to continue.",
   "stage.sync.recoveryFailed": "The draft could not be restored; its saved record is kept: {reason}",
   "stage.sync.recoveryBlocked": "The earlier draft could not be restored, so it is not overwritten. Resolve the restore error first.",
   "stage.sync.draftUnread": "The working draft has not been read yet, so edits cannot be saved automatically.",

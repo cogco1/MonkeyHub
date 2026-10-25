@@ -712,7 +712,6 @@ export const messagesZhCN = {
   "stage.sync.autosaving": "有未记录的修改 · 正在自动保存…",
   "stage.sync.busy": "正在记录，可继续编辑",
   "stage.sync.readFailed": "记录状态暂时不可用，再点记录可重新连接。",
-  "stage.sync.recovered": "已恢复尚未完成记录的草稿。检查后点击记录继续。",
   "stage.sync.recoveryFailed": "草稿恢复失败，原始记录已保留：{reason}",
   "stage.sync.recoveryBlocked": "原有草稿未能恢复，已阻止覆盖；请先解决恢复错误。",
   "stage.sync.draftUnread": "工作草稿尚未读取，无法自动保存。",
