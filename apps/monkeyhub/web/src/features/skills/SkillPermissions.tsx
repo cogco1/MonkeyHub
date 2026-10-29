@@ -30,7 +30,7 @@ const PROBLEM_KEYS = {
   entry_syntax: "skills.problems.kind.entry_syntax", missing_file: "skills.problems.kind.missing_file",
   name_differs: "skills.problems.kind.name_differs", unreadable: "skills.problems.kind.unreadable",
 } as const;
-const TOOL_KEYS = { run: "skills.tools.run", network: "skills.tools.network", hub: "skills.tools.hub" } as const;
+const TOOL_KEYS = { run: "skills.tools.run", network: "skills.tools.network", hub: "skills.tools.hub", edit: "skills.tools.edit" } as const;
 const WHO_KEYS = { user: "skills.problems.who.user", bundled: "skills.problems.who.bundled" } as const;
 const METHOD_KEYS = { card: "skills.grants.method.card", settings: "skills.grants.method.settings", migrated: "skills.grants.method.migrated" } as const;
 

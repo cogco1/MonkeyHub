@@ -10,6 +10,7 @@ import { applicationSettingsApiSettingsAppsGet, chatProviderLoginApiChatProvider
 import "./styles.css";
 import { FabPage } from "./FabPage";
 import { ChatShell, type HubSettings } from "./ChatShell";
+import { McpServersSettings } from "./features/settings/McpServers";
 import { CommandProvider } from "./features/commands/CommandProvider";
 import { chooseShell, useShellLayout } from "./app/shellLayout";
 import { plainFailure } from "./app/ErrorPanel";
@@ -574,6 +575,7 @@ function App() {
       <CredentialField id="coding-plan" inputId="coding-plan-token" title={keyWords.planToken} status={credentialRows["coding-plan"]}
         language={preferences.language} link={planPreset?.link} linkLabel={keyWords.getToken} placeholder="sk-…"
         variable="ANTHROPIC_AUTH_TOKEN" onChanged={keyChanged} />
+      <McpServersSettings language={preferences.language} />
       <div className="settings-row"><div className="settings-row__text"><span className="settings-row__title">{words.connections}</span><p className="settings-row__hint">{words.connectionsHint}</p></div>
         <button data-command="view.notice.retry" data-command-arg="connections" id="recheck-connections" className="btn" type="button" disabled={!connected} onClick={() => void readSettings(true)}>{t("recheck")}</button></div>
     </> }, { id: "render", label: words.render, icon: "render", body: <>

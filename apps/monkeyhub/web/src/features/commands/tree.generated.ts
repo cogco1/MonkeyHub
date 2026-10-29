@@ -12727,6 +12727,25 @@ export const COMMAND_TREE: CommandTree = {
       ]
     },
     {
+      "id": "preference.chat_permission.choose",
+      "capability": "preference.settings",
+      "label": {
+        "en": "What this conversation may do",
+        "zh-CN": "这个对话可以做什么"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true
+    },
+    {
       "id": "preference.chat_model.custom_apply",
       "capability": "preference.settings",
       "label": {
@@ -12894,6 +12913,44 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗57"
       ],
+      "args": [],
+      "inPlace": true
+    },
+    {
+      "id": "preference.chat_mcp.from_claude",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Use the MCP servers set up in Claude Code",
+        "zh-CN": "用 Claude Code 里配好的 MCP 服务器"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true
+    },
+    {
+      "id": "preference.chat_mcp.server",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Turn one MCP server on or off",
+        "zh-CN": "开关一个 MCP 服务器"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
       "args": [],
       "inPlace": true
     },

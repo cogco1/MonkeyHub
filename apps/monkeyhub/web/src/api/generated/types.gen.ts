@@ -841,6 +841,14 @@ export type ChatCreateRequest = {
      * Title
      */
     title?: string | null;
+    /**
+     * Kind
+     */
+    kind?: 'project' | 'folder' | 'auto';
+    /**
+     * Permissionmode
+     */
+    permissionMode?: 'read' | 'ask' | 'open' | null;
 };
 
 /**
@@ -906,6 +914,14 @@ export type ChatDetail = {
      * Projectdir
      */
     projectDir: string;
+    /**
+     * Kind
+     */
+    kind?: 'project' | 'folder';
+    /**
+     * Permissionmode
+     */
+    permissionMode?: 'read' | 'ask' | 'open' | null;
     /**
      * Title
      */
@@ -1144,6 +1160,18 @@ export type ChatPermission = {
 };
 
 /**
+ * ChatPermissionModeRequest
+ *
+ * What this conversation's next turns may do unasked.
+ */
+export type ChatPermissionModeRequest = {
+    /**
+     * Permissionmode
+     */
+    permissionMode: 'read' | 'ask' | 'open';
+};
+
+/**
  * ChatPermissionOption
  */
 export type ChatPermissionOption = {
@@ -1353,6 +1381,10 @@ export type ChatProject = {
      * Chatcount
      */
     chatCount: number;
+    /**
+     * Kind
+     */
+    kind?: 'project' | 'folder';
     /**
      * Version
      */
@@ -1627,6 +1659,14 @@ export type ChatSummary = {
      * Projectdir
      */
     projectDir: string;
+    /**
+     * Kind
+     */
+    kind?: 'project' | 'folder';
+    /**
+     * Permissionmode
+     */
+    permissionMode?: 'read' | 'ask' | 'open' | null;
     /**
      * Title
      */
@@ -2281,6 +2321,80 @@ export type JobDto = {
      * where this job lives; it is not version history
      */
     persistence: string;
+};
+
+/**
+ * McpServerView
+ *
+ * One server as the settings page lists it: never its environment's or headers' values.
+ */
+export type McpServerView = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Source
+     */
+    source: 'hub' | 'claude';
+    /**
+     * Transport
+     */
+    transport: 'stdio' | 'http' | 'sse';
+    /**
+     * Target
+     *
+     * the command it runs, or the URL it reaches
+     */
+    target: string;
+    /**
+     * Envkeys
+     */
+    envKeys?: Array<string>;
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+};
+
+/**
+ * McpServersUpdate
+ */
+export type McpServersUpdate = {
+    /**
+     * Fromclaude
+     */
+    fromClaude?: boolean | null;
+    /**
+     * Disabled
+     */
+    disabled?: Array<string> | null;
+    /**
+     * Servers
+     */
+    servers?: {
+        [key: string]: {
+            [key: string]: unknown;
+        };
+    } | null;
+};
+
+/**
+ * McpServersView
+ */
+export type McpServersView = {
+    /**
+     * Fromclaude
+     */
+    fromClaude: boolean;
+    /**
+     * Servers
+     */
+    servers: Array<McpServerView>;
+    /**
+     * Claudeproblem
+     */
+    claudeProblem?: string | null;
 };
 
 /**
@@ -3290,7 +3404,7 @@ export type ToolGrantDto = {
     /**
      * Action
      */
-    action: 'run' | 'network' | 'hub';
+    action: 'run' | 'network' | 'hub' | 'edit';
     /**
      * Grantedat
      */
@@ -5297,6 +5411,98 @@ export type KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostResponses 
 };
 
 export type KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostResponse = KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostResponses[keyof KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostResponses];
+
+export type ChatMcpServersApiChatMcpServersGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/chat/mcp-servers';
+};
+
+export type ChatMcpServersApiChatMcpServersGetErrors = {
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+};
+
+export type ChatMcpServersApiChatMcpServersGetError = ChatMcpServersApiChatMcpServersGetErrors[keyof ChatMcpServersApiChatMcpServersGetErrors];
+
+export type ChatMcpServersApiChatMcpServersGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: McpServersView;
+};
+
+export type ChatMcpServersApiChatMcpServersGetResponse = ChatMcpServersApiChatMcpServersGetResponses[keyof ChatMcpServersApiChatMcpServersGetResponses];
+
+export type UpdateChatMcpServersApiChatMcpServersPutData = {
+    body: McpServersUpdate;
+    path?: never;
+    query?: never;
+    url: '/api/chat/mcp-servers';
+};
+
+export type UpdateChatMcpServersApiChatMcpServersPutErrors = {
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+};
+
+export type UpdateChatMcpServersApiChatMcpServersPutError = UpdateChatMcpServersApiChatMcpServersPutErrors[keyof UpdateChatMcpServersApiChatMcpServersPutErrors];
+
+export type UpdateChatMcpServersApiChatMcpServersPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: McpServersView;
+};
+
+export type UpdateChatMcpServersApiChatMcpServersPutResponse = UpdateChatMcpServersApiChatMcpServersPutResponses[keyof UpdateChatMcpServersApiChatMcpServersPutResponses];
+
+export type ChatPermissionModeApiChatSessionsSessionIdPermissionModePutData = {
+    body: ChatPermissionModeRequest;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/permission-mode';
+};
+
+export type ChatPermissionModeApiChatSessionsSessionIdPermissionModePutErrors = {
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+};
+
+export type ChatPermissionModeApiChatSessionsSessionIdPermissionModePutError = ChatPermissionModeApiChatSessionsSessionIdPermissionModePutErrors[keyof ChatPermissionModeApiChatSessionsSessionIdPermissionModePutErrors];
+
+export type ChatPermissionModeApiChatSessionsSessionIdPermissionModePutResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatDetail;
+};
+
+export type ChatPermissionModeApiChatSessionsSessionIdPermissionModePutResponse = ChatPermissionModeApiChatSessionsSessionIdPermissionModePutResponses[keyof ChatPermissionModeApiChatSessionsSessionIdPermissionModePutResponses];
 
 export type InspectComputerApiComputerInspectPostData = {
     body: ComputerInspectRequest;

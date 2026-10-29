@@ -850,6 +850,17 @@
       "reason": "Saves chat attachment bytes and atomically saves their transcript metadata and native CLI session ids only under the explicit nonproject Hub runtime/chats directory; design project writes still use existing Runtime/P036 interfaces."
     },
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/recycle.py",
+      "function": "set_aside",
+      "operations": [
+        "mkdir",
+        "replace"
+      ],
+      "kind": "application_conversation",
+      "owner": "hub.shell",
+      "reason": "Renames a folder the Hub made and no longer needs (an archived chat's scratch) into the day's quarantine folder _TRASH_<YYYYMMDD> under the same nonproject Hub runtime root, from where it goes to the Recycle Bin when the bin keeps it whole. Nothing is deleted and no project data is written."
+    },
+    {
       "path": "apps/monkeyhub/api/monkeyhub_api/chat/skill_plugins.py",
       "function": "materialize",
       "operations": [

@@ -69,7 +69,7 @@ const menuWords = {
   "zh-CN": {
     menus: "菜单", back: "后退到上一个对话", forward: "前进到下一个对话",
     file: "文件", edit: "编辑", view: "视图", help: "帮助",
-    newChat: "新对话", newProject: "新建项目…", addProject: "添加已有项目…", exportArchive: "导出项目归档…", restoreArchive: "恢复项目归档…", settings: "设置…",
+    newChat: "新对话", newProject: "新建项目…", addProject: "打开文件夹或项目…", exportArchive: "导出项目归档…", restoreArchive: "恢复项目归档…", settings: "设置…",
     undo: "撤销", redo: "重做", cut: "剪切", copy: "复制", paste: "粘贴", selectAll: "全选",
     sidebar: "侧栏", tools: "工具面板", theme: "主题", system: "跟随系统", dark: "深色", light: "浅色",
     uiStyle: "界面风格", classic: "经典", quiet: "静默仪表", titleblock: "图签", night: "夜航",
@@ -79,7 +79,7 @@ const menuWords = {
   en: {
     menus: "Menus", back: "Back to the previous conversation", forward: "Forward to the next conversation",
     file: "File", edit: "Edit", view: "View", help: "Help",
-    newChat: "New chat", newProject: "New project…", addProject: "Add existing project…", exportArchive: "Export project archive…", restoreArchive: "Restore project archive…", settings: "Settings…",
+    newChat: "New chat", newProject: "New project…", addProject: "Open a folder or project…", exportArchive: "Export project archive…", restoreArchive: "Restore project archive…", settings: "Settings…",
     undo: "Undo", redo: "Redo", cut: "Cut", copy: "Copy", paste: "Paste", selectAll: "Select all",
     sidebar: "Sidebar", tools: "Tools panel", theme: "Theme", system: "Match system", dark: "Dark", light: "Light",
     uiStyle: "Interface style", classic: "Classic", quiet: "Quiet instrument", titleblock: "Title block", night: "Night flight",
@@ -604,6 +604,9 @@ function SurfaceSkeleton({ surface, name, step, startedAt = null, words, onCance
   </div>;
 }
 
+/** What a conversation's turns may do unasked (gap 4). */
+type ChatPermissionMode = NonNullable<ChatDetail["permissionMode"]>;
+
 export function ChatShell({ preferences, settings, settingsDirty = false, configuredProject, defaults, workspace, apps, onRuntimeEvent, onAppearance }: Props) {
   const runtimeEventRef = useRef(onRuntimeEvent);
   runtimeEventRef.current = onRuntimeEvent;
@@ -750,6 +753,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // The model this conversation will use next. An existing chat keeps its own;
   // a new one starts from the saved default until it is sent.
   const [draftModel, setDraftModel] = useState<string | null>(defaults.model);
+  // What a new conversation's turns may do unasked, chosen before it exists; null takes the Hub's default for its kind.
+  const [draftPermission, setDraftPermission] = useState<ChatPermissionMode | null>(null);
+  const [permissionModeBusy, setPermissionModeBusy] = useState(false);
   const [customModel, setCustomModel] = useState<string | null>(null);
   const [modelBusy, setModelBusy] = useState(false);
   const [permissionBusy, setPermissionBusy] = useState<string | null>(null);
@@ -900,6 +906,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // The connection as the Hub named it, short enough to read in a sentence.
   const connectionName = (availableProvider?.label ?? connection.provider ?? "").replace(/\s+CLI$/, "") || null;
   const chosenModel = chat?.id === chatId ? chat.model ?? null : draftModel;
+  const chosenPermission: ChatPermissionMode = chat?.id === chatId
+    ? chat.permissionMode ?? (chat.kind === "folder" ? "ask" : "open")
+    : draftPermission ?? (project?.kind === "folder" ? "ask" : "open");
   // What this connection actually lists, plus whatever is already chosen: a
   // hand-entered id stays selectable even while a catalogue is unreadable.
   const modelOptions = [...new Set([...(availableProvider?.models ?? []), ...(chosenModel ? [chosenModel] : [])])];
@@ -1271,7 +1280,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       if (current && (current.archived || current.sourceSessionId)) current = null;
       if (current?.status === "running") throw new HandToAiError("CONVERSATION_BUSY", "A reply is running.");
       if (!current) {
-        const body: ChatCreateRequest = { projectDir: projectTarget, provider: usableDefaults.provider, model: usableProvider ? null : draftModel };
+        const body: ChatCreateRequest = { projectDir: projectTarget, provider: usableDefaults.provider, model: usableProvider ? null : draftModel,
+          kind: projects.find((item) => item.projectDir === projectTarget)?.kind ?? "project", permissionMode: draftPermission };
         current = await request<ChatDetail>("/api/chat/sessions", body);
       }
       await ensureProject(projectTarget, current.projectId);
@@ -1521,7 +1531,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       const reading = routed ?? chatId;
       let current = chat?.id === reading ? chat : reading ? await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(reading)}`) : null;
       if (!current) {
-        const body: ChatCreateRequest = { projectDir: target, provider: usableDefaults.provider, model: usableProvider ? null : draftModel };
+        const body: ChatCreateRequest = { projectDir: target, provider: usableDefaults.provider, model: usableProvider ? null : draftModel,
+          kind: project?.kind ?? "project", permissionMode: draftPermission };
         current = await request<ChatDetail>("/api/chat/sessions", body);
         setDrafts((value) => ({ ...value, [key]: "", [current!.id]: value[key] || content }));
         setDraftAttachments((value) => ({ ...value, [key]: [], [current!.id]: value[key] ?? files }));
@@ -1530,7 +1541,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         if (selection.current.projectDir === target && selection.current.chatId === chatId) { setChatId(current.id); setChat(current); setFreshChat(false); }
       }
       if (current.archived) { setChat(current); return; }
-      await ensureProject(target, current.projectId);
+      // A plain folder has no project service to open.
+      if (current.kind !== "folder") await ensureProject(target, current.projectId);
       const body: ChatPostRequest = { content, projectId: current.projectId };
       // #253: an image discussion names its own exact pages and needs no design state; only a
       // New topic the architect chose still starts from the editing state.
@@ -1619,6 +1631,15 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     catch (cause) { setError(asFailure(cause)); }
     finally { setModelBusy(false); }
   };
+  /** Change what this conversation's next turns may do unasked: read only, ask first, or anything. */
+  const choosePermissionMode = async (value: ChatPermissionMode) => {
+    if (!chatId || chat?.id !== chatId) { setDraftPermission(value); return; }
+    if (running || archived || permissionModeBusy || value === chosenPermission) return;
+    setPermissionModeBusy(true); setError(null);
+    try { setChat(await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(chatId)}/permission-mode`, { permissionMode: value }, "PUT")); }
+    catch (cause) { setError(asFailure(cause)); }
+    finally { setPermissionModeBusy(false); }
+  };
   const stop = async () => {
     // A workspace being opened (a reload reopens the saved ones) holds the lock too; stopping the turn does not wait for it.
     if (!chatId || (actionLock.current && !openingRef.current)) return;
@@ -1695,7 +1716,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (actionLock.current || !path.trim()) return;
     actionLock.current = true; setBusy(true); setDialogError(null);
     try {
-      const body: ChatCreateRequest = { projectDir: path.trim().replace(/^"(.*)"$/, "$1"), provider: usableDefaults.provider, model: usableDefaults.model };
+      // One "open a folder": a MonkeyHub project opens as a project, any other folder as a conversation in that folder.
+      const body: ChatCreateRequest = { projectDir: path.trim().replace(/^"(.*)"$/, "$1"), provider: usableDefaults.provider, model: usableDefaults.model, kind: "auto" };
       const created = await request<ChatDetail>("/api/chat/sessions", body);
       selectChat(created); setChat(created); addDialog.current?.close(); setFolder(""); await refresh();
     } catch (cause) { setDialogError(asFailure(cause)); }
@@ -2557,6 +2579,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
               <option value="">{t.modelCliDefault}</option>
               {modelOptions.map((item) => <option key={item} value={item}>{item}</option>)}
               <option value="__custom__">{t.modelCustom}</option>
+            </select>
+            <label className="sr-only" htmlFor="chat-permission">{t.permissionLabel}</label>
+            <select data-command="preference.chat_permission.choose" id="chat-permission" className="chat-connection__model" value={chosenPermission}
+              disabled={running || permissionModeBusy || busy || Boolean(chat?.sourceSessionId)} title={t.permissionHint}
+              onChange={(event) => void choosePermissionMode(event.target.value as ChatPermissionMode)}>
+              <option value="read">{t.permissionRead}</option>
+              <option value="ask">{t.permissionAsk}</option>
+              <option value="open">{t.permissionOpen}</option>
             </select>
             {availableProvider?.modelCatalog === "checking" && <span className="chat-connection__note">{t.modelChecking}</span>}
             {modelBusy && <span className="chat-connection__note" role="status">{t.modelSaving}</span>}

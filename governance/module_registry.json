@@ -4308,7 +4308,8 @@
         "GET /api/chat/sessions/{session_id}",
         "POST /api/chat/sessions/{session_id}/messages",
         "POST /api/chat/sessions/{session_id}/stop",
-        "PUT /api/chat/sessions/{session_id}/archive"
+        "PUT /api/chat/sessions/{session_id}/archive",
+        "PUT /api/chat/sessions/{session_id}/permission-mode"
       ],
       "works": [
         "a new conversation in the open project",
@@ -5806,7 +5807,9 @@
         "GET /api/settings/user",
         "PUT /api/settings/user",
         "GET /api/settings/apps",
-        "PUT /api/settings/apps"
+        "PUT /api/settings/apps",
+        "GET /api/chat/mcp-servers",
+        "PUT /api/chat/mcp-servers"
       ],
       "works": [
         "theme, interface style and text size, saved for this person"
@@ -5956,6 +5959,13 @@
             "place": "composer"
           },
           {
+            "id": "preference.chat_permission.choose",
+            "label": "What this conversation may do",
+            "label_zh": "这个对话可以做什么",
+            "entries": [],
+            "in_place": true
+          },
+          {
             "id": "preference.chat_model.custom_apply",
             "label": "Use a custom model id",
             "label_zh": "使用自定义模型 ID",
@@ -6029,6 +6039,20 @@
             "entries": [
               "窗57"
             ],
+            "in_place": true
+          },
+          {
+            "id": "preference.chat_mcp.from_claude",
+            "label": "Use the MCP servers set up in Claude Code",
+            "label_zh": "用 Claude Code 里配好的 MCP 服务器",
+            "entries": [],
+            "in_place": true
+          },
+          {
+            "id": "preference.chat_mcp.server",
+            "label": "Turn one MCP server on or off",
+            "label_zh": "开关一个 MCP 服务器",
+            "entries": [],
             "in_place": true
           },
           {
@@ -14377,7 +14401,11 @@
         "apps/monkeyhub/api/monkeyhub_api/attention/hub.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/producers.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/change_list.py",
-        "apps/monkeyhub/api/monkeyhub_api/attention/rules.py"
+        "apps/monkeyhub/api/monkeyhub_api/attention/rules.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/agent_routes.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/claude_grants.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/mcp_servers.py",
+        "apps/monkeyhub/api/monkeyhub_api/recycle.py"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
