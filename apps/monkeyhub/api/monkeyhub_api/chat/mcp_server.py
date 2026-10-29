@@ -37,7 +37,7 @@ if __package__ in {None, ""}:
 
 from .. import projects
 from ..app import locator
-from . import design_loop, guides, providers, studio_tool, tool_calls, tool_output, transport
+from . import design_loop, guides, hub_tools, providers, studio_tool, tool_calls, tool_output, transport
 
 from ..models import ChatPresentationBindRequest, ChatPresentationRequest, HubFailure
 
@@ -45,7 +45,7 @@ from ..models import ChatPresentationBindRequest, ChatPresentationRequest, HubFa
 # The Hub's own bookkeeping answers, which carry nothing from the project or a
 # skill: they reach the Agent as they are. Every other answer is framed as data
 # and cut when long (tool_output).
-_HUB_OWN = frozenset({"chat_present", "presentation_bind", "project_create"})
+_HUB_OWN = frozenset({"chat_present", "presentation_bind", "project_create", *hub_tools.HUB_OWN})
 
 
 def _bound_source(hub: str, name: str, arguments: object, external: ChatPresentationBindRequest | None,
@@ -236,6 +236,9 @@ def _mcp(hub_at, chat_id: str | None, external: ChatPresentationBindRequest | No
         {"type": "object", "properties": {"path": {"type": "string"}, "name": {"type": "string"},
                                             "mimeType": {"type": "string"}}, "required": ["path"], "additionalProperties": False},
     ]}}
+    if not reaching_out:
+        # A Hub conversation's own tools: its memory, its wake-ups and the other conversations (hub_tools).
+        tools.extend(hub_tools.tool_definitions())
     if design_loop_only:
         tools = design_loop.tool_definitions()
     elif external is not None:
@@ -292,6 +295,8 @@ def _mcp(hub_at, chat_id: str | None, external: ChatPresentationBindRequest | No
                         raise HubFailure(409, "CHAT_PRESENTATION_BIND_REQUIRED", "Call presentation_bind before publishing or using project tools.")
                     elif reaching_out and name == "chat_present":
                         value = tool_calls._present_tool(hub, chat_id, arguments, presentation_binding["token"])
+                    elif not reaching_out and not design_loop_only and name in hub_tools.TOOL_NAMES:
+                        value = hub_tools.call(hub, chat_id, name, arguments)
                     else:
                         value = tool_calls.call_tool(hub, chat_id, name, arguments)
                     arguments = params.get("arguments", {})

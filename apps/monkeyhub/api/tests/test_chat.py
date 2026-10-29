@@ -989,6 +989,7 @@ class ChatTests(unittest.TestCase):
         # Computer use is named here like the rest; whether it may actually run
         # is the policy file's answer, given by the route the tool calls.
         exposed = ("studio_schema", "studio_request", "visual_review", "fab_request", "attachment_read", "chat_present",
+                   "memory_note", "chat_schedule", "chat_find", "chat_read", "chat_send",
                    "computer_inspect", "computer_action", "computer_record")
         self.assertEqual(set(override["monkeyhub"]["enabled_tools"]), set(exposed))
         self.assertEqual(override["monkeyhub"]["tools"], {
@@ -3630,7 +3631,8 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(replies[0]["result"]["protocolVersion"], "2024-11-05")
         self.assertEqual({tool["name"] for tool in replies[1]["result"]["tools"]},
                          {"studio_schema", "studio_request", "visual_review", "fab_request", "attachment_read",
-                          "chat_present", "computer_inspect", "computer_action", "computer_record"})
+                          "chat_present", "computer_inspect", "computer_action", "computer_record",
+                          "memory_note", "chat_schedule", "chat_find", "chat_read", "chat_send"})
 
     # ---- a turn that names its own source and focus
 

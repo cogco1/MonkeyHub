@@ -411,6 +411,22 @@ class ChatSuggestionSelection(BaseModel):
     revision: int = Field(ge=0)
 
 
+class ChatMessageOrigin(BaseModel):
+    """Who sent a user-role message that no person typed in this conversation.
+
+    ``schedule``: a wake-up this conversation set (``label`` says when it repeats).
+    ``chat``: another conversation of this Hub (``chatId``, its ``title``), ``depth``
+    messages into a chain that no person started.
+    """
+
+    kind: Literal["schedule", "chat"]
+    label: str = Field(default="", max_length=200)
+    scheduleId: str | None = None
+    chatId: str | None = None
+    title: str | None = Field(default=None, max_length=200)
+    depth: int = Field(default=0, ge=0, le=16)
+
+
 class ChatMessage(BaseModel):
     id: str
     role: Literal["user", "assistant", "tool"]
@@ -440,6 +456,8 @@ class ChatMessage(BaseModel):
     # The marks this message is about, and the change list items it runs (#300 3-3).
     markup: ChatMarkupContext | None = None
     changeListApproval: ChatChangeListApproval | None = None
+    # Set when no person typed this message here: a wake-up or another conversation sent it.
+    origin: ChatMessageOrigin | None = None
 
 
 class ChatSummary(BaseModel):

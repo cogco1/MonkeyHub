@@ -39,6 +39,12 @@ _CLAUDE_APPROVED = (
     "mcp__monkeyhub__fab_request",
     "mcp__monkeyhub__attachment_read",
     "mcp__monkeyhub__chat_present",
+    # The Hub's own conversation tools (hub_tools): memory, wake-ups, other conversations.
+    "mcp__monkeyhub__memory_note",
+    "mcp__monkeyhub__chat_schedule",
+    "mcp__monkeyhub__chat_find",
+    "mcp__monkeyhub__chat_read",
+    "mcp__monkeyhub__chat_send",
 )
 
 
