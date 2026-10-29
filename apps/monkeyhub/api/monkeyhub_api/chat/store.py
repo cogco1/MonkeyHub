@@ -34,14 +34,14 @@ from pydantic import Field
 
 from .. import projects, recycle
 from ..runtime.workers import project_key
-from . import (acp_grants, activity, claude_grants, guides, mcp_server, media, providers, skill_cards,
-               skill_plugins, studio_tool, transport, turn_context)
+from . import (acp_grants, activity, claude_grants, guides, hub_tools, mcp_server, media, notes, origins, providers,
+               skill_cards, skill_plugins, studio_tool, transport, turn_context)
 from . import mcp_servers as external_mcp
 from ..settings.store import read_application_settings
 
 from ..models import (
     ChatAttachment, ChatAttention, ChatChangeListApproval, ChatCreateRequest, ChatDesignContext, ChatDetail,
-    ChatMarkupContext, ChatMessage, ChatPostRequest, ChatProject,
+    ChatMarkupContext, ChatMessage, ChatMessageOrigin, ChatPostRequest, ChatProject,
     ChatDocument, ChatDocumentRef, ChatPresentationBindRequest, ChatPresentationBinding, ChatPresentationRequest,
     ChatPermission, ChatPermissionOption, ChatPermissionRequest, ChatSkillKeepRequest, ChatSkillRun, ChatSuggestion,
     ChatProjectRequest, ChatProvider, ChatSummary, ChatUsageSource, ChatWorkspace, HubError, HubFailure,
@@ -1096,7 +1096,8 @@ class ChatStore:
         if session.archived:
             raise HubFailure(409, "CHAT_ARCHIVED", "Restore this archived chat before sending another message.")
 
-    def post(self, session_id: str, request: ChatPostRequest) -> ChatDetail:
+    def post(self, session_id: str, request: ChatPostRequest, *, origin: ChatMessageOrigin | None = None) -> ChatDetail:
+        """``origin``: a wake-up or another conversation sent this, not a person typing here (hub_tools)."""
         images: list[ChatDocument] = []
         if request.renderContext is not None:
             with self._lock:
@@ -1142,7 +1143,7 @@ class ChatStore:
                 # Context remains native continuation, with no client source override.
                 request = request.model_copy(update={"content": card.suggestion.prompt})
             if session_id in self._running:
-                return self._interject(session_id, request)
+                return self._interject(session_id, request, origin)
             provider = next(row for row in self.providers() if row.id == session.provider)
             legacy_codex = session.provider == "codex" and session.transport == "cli" and provider.installed
             if not provider.available and not legacy_codex:
@@ -1168,7 +1169,7 @@ class ChatStore:
                                                 suggestionSelection=request.suggestionSelection,
                                                 attachments=[attachment for attachment, _ in attachments],
                                                 documents=images, markup=request.markupContext,
-                                                changeListApproval=request.changeListApproval))
+                                                changeListApproval=request.changeListApproval, origin=origin))
             session.status, session.error, session.updatedAt = "running", None, _now()
             self._save(session, tuple(attachments))
             self._sessions[session_id] = session
@@ -1179,7 +1180,7 @@ class ChatStore:
                                markup=request.markupContext, approval=request.changeListApproval, trace=HubTurnObserver(
                 self.usage_log, _turn_id(session), session.projectId, session.provider, session.model,
             ))
-            self._start(session_id, running, content)
+            self._start(session_id, running, origins.turn_text(origin, content))
             return self.get(session_id)
 
     def _start(self, session_id: str, running: _Running, content: str, carried: tuple[str, ...] = (),
@@ -1199,7 +1200,8 @@ class ChatStore:
                                           daemon=True, name=f"hub-chat-{session_id[:8]}")
         running.thread.start()
 
-    def _interject(self, session_id: str, request: ChatPostRequest) -> ChatDetail:
+    def _interject(self, session_id: str, request: ChatPostRequest,
+                   origin: ChatMessageOrigin | None = None) -> ChatDetail:
         """Take a message sent while this chat's turn runs (#301); the lock is held.
 
         It is kept like any other message and marked as an interjection. Claude
@@ -1225,7 +1227,10 @@ class ChatStore:
         # The running turn holds this same record and saves it as it goes, so
         # the message joins it in place rather than through a replacement copy.
         session = self._sessions[session_id]
-        message = ChatMessage(id=str(uuid4()), role="user", content=content, createdAt=_now(), interjection="pending")
+        message = ChatMessage(id=str(uuid4()), role="user", content=content, createdAt=_now(), interjection="pending",
+                              origin=origin)
+        # What the Agent reads says who sent it when no person did; the transcript keeps the words as sent.
+        content = origins.turn_text(origin, content)
         session.messages.append(message)
         session.updatedAt = _now()
         try:
@@ -1464,7 +1469,7 @@ class ChatStore:
                      {"url": row["url"], **({"http_headers": row["headers"]} if row.get("headers") else {})})
             mcp_servers[name] = {**entry, "enabled": True, "required": False}
         tool_names = ("studio_schema", "studio_request", "visual_review", "fab_request", "attachment_read",
-                      "chat_present", *computer_tools.TOOL_NAMES)
+                      "chat_present", *hub_tools.TOOL_NAMES, *computer_tools.TOOL_NAMES)
         mcp_servers["monkeyhub"] = {
             **mcp, "enabled": True, "required": True,
             "env_vars": ["MONKEYHUB_PRESENTATION_TOKEN", studio_tool.DESIGN_LOOP_ENV],
@@ -2136,6 +2141,8 @@ class ChatStore:
                     "Do not switch Hub configuration, open a different project, or guess a service URL. "
                     "If a required domain action is unavailable, say what cannot be done. "
                     + guides._SUGGESTION_INSTRUCTIONS + "\n\n"
+                    # The architect's standing instructions and what was remembered, every turn (notes).
+                    + notes.turn_block(self.runtime_root, session.projectDir)
                     + content
                 )
                 # Where the request itself begins: a note about the tools goes
@@ -2497,6 +2504,8 @@ class ChatStore:
                if session.provider != "codex" else "")
             + "Do not change MonkeyHub's own configuration or records. "
             "If something the user asks cannot be done here, say what and why.\n\n"
+            # The architect's standing instructions and notes, the folder's own scope standing for a project's (notes).
+            + notes.turn_block(self.runtime_root, session.projectDir, place="folder")
             + content
         )
 

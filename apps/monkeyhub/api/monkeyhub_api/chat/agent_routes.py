@@ -6,7 +6,7 @@ from . import mcp_servers
 from ..models import ChatDetail, ChatPermissionModeRequest, HubError
 
 
-def agent_router(chats) -> APIRouter:
+def access_router(chats) -> APIRouter:
     routes = APIRouter()
     error_responses = {409: {"model": HubError}, 422: {"model": HubError}}
 

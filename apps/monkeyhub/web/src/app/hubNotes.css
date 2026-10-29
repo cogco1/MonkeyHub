@@ -1,0 +1,39 @@
+/* The Notes page, Find conversations, and the wake-up lines above the composer. */
+.hub-notes,.hub-finder{display:flex;flex-direction:column;gap:14px}
+.hub-notes__section{display:flex;flex-direction:column;gap:8px}
+.hub-notes__section h3{display:flex;align-items:baseline;gap:8px;margin:0;font-size:var(--text-ui);font-weight:var(--heading-weight,600);color:var(--ink)}
+.hub-notes__section h3 small{color:var(--muted);font-size:var(--text-caption);font-weight:400}
+.hub-notes__box{display:flex;flex-direction:column;gap:4px}
+.hub-notes__label{color:var(--muted);font-size:var(--text-caption)}
+.hub-notes__box textarea{box-sizing:border-box;width:100%;min-height:64px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);
+  background:var(--panel);color:var(--ink);font:inherit;font-size:var(--text-ui);line-height:1.5;resize:vertical}
+.hub-notes__box textarea:focus{outline:2px solid var(--line-2);outline-offset:0}
+.hub-notes__list,.hub-finder__results,.hub-wakeups{margin:0;padding:0;list-style:none}
+.hub-notes__list li{display:flex;align-items:baseline;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}
+.hub-notes__list li[data-removed]{color:var(--muted)}
+.hub-notes__list li[data-removed] .hub-notes__text{text-decoration:line-through}
+.hub-notes__text{flex:1;min-width:0;color:inherit;font-size:var(--text-ui);overflow-wrap:anywhere}
+.hub-notes__scope{flex:none;color:var(--muted);font-size:var(--text-caption)}
+.hub-notes__action{flex:none;min-width:24px;padding:2px 6px;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--muted);font:inherit;
+  font-size:var(--text-caption);cursor:pointer}
+.hub-notes__action:hover{background:var(--surface-hover);color:var(--ink)}
+.hub-notes__action:disabled{cursor:default;opacity:.5}
+.hub-notes__empty{margin:0;color:var(--muted);font-size:var(--text-caption)}
+.hub-notes__error{margin:0;color:var(--danger,#b42318);font-size:var(--text-caption)}
+.hub-finder__input{box-sizing:border-box;width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);
+  color:var(--ink);font:inherit;font-size:var(--text-ui)}
+.hub-finder__hit{display:flex;flex-direction:column;gap:3px;width:100%;padding:8px 6px;border:0;border-bottom:1px solid var(--line);background:transparent;
+  color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.hub-finder__hit:hover{background:var(--surface-hover)}
+.hub-finder__title{display:flex;align-items:center;gap:6px;font-size:var(--text-ui);font-weight:600}
+.hub-finder__project{color:var(--muted);font-size:var(--text-caption)}
+.hub-finder__snippet{color:var(--muted);font-size:var(--text-caption);line-height:1.45;overflow-wrap:anywhere}
+.hub-wakeups{display:flex;flex-direction:column;gap:2px;margin:0 0 6px}
+.hub-wakeups li{display:flex;align-items:baseline;gap:8px;padding:4px 8px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel-2);
+  font-size:var(--text-caption);color:var(--muted)}
+.hub-wakeups li[data-status=paused]{border-style:dashed}
+.hub-wakeups__when{flex:none;color:var(--ink);font-weight:600}
+.hub-wakeups__prompt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hub-wakeups__next{flex:none}
+.chat-origin{display:inline-block;margin:0 0 4px;color:var(--muted);font-size:var(--text-caption)}
+.attention-shell__caption-actions{display:flex;align-items:center;gap:2px}

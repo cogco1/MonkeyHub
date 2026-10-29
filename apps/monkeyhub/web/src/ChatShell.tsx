@@ -39,6 +39,8 @@ import { CardRuntimes, ComparisonDecision } from "./notifications/cards/Attentio
 import { answersKey } from "./notifications/cards/cardText";
 import { chooseShell, useShellLayout } from "./app/shellLayout";
 import { AttentionShell, RECENT_CONVERSATIONS, type CenterView, type ShellProject } from "./app/AttentionShell";
+import { NotesPanel } from "./app/NotesPanel";
+import { WakeupStrip } from "./app/WakeupStrip";
 import { useT } from "./i18n/useT";
 import { attentionConversation, queueSnapshot } from "./notifications/queue";
 import { useNoticeRegion } from "./notifications/regions";
@@ -2130,6 +2132,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const messageEntry = (message: ChatMessage) => <article className={`chat-message chat-message--${message.role}`} key={message.id}>
     {message.role === "user" && message.contextMode === "project" && <p className="chat-muted">{t.contextProjectMessage}</p>}
     {message.role === "user" && message.contextMode === "stage" && <p className="chat-muted">{t.contextStageMessage}: {message.confirmedStageLabel}</p>}
+    {/* No person typed it here: a wake-up this conversation set, or another conversation, sent it. */}
+    {message.role === "user" && message.origin && <p className="chat-origin" data-origin={message.origin.kind}>{message.origin.kind === "schedule"
+      ? tc("origin.schedule") : tc("origin.chat", { title: message.origin.title ?? "" })}</p>}
     {message.role === "user" && message.interjection && <p className="chat-muted" data-interjection={message.interjection}>{t.interjected} · {{ pending: t.interjectionPending, delivered: t.interjectionDelivered, restarted: t.interjectionRestarted, undelivered: t.interjectionUndelivered }[message.interjection]}</p>}
     <ChatMarkdown text={message.content} streaming={message.status === "streaming"} />
     {message.role === "assistant" && message.suggestion && <ChatSuggestionCard key={`${chat!.id}:${message.id}:${message.presentationRevision}`}
@@ -2498,6 +2503,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             picker?.focus();
             try { (picker as unknown as { showPicker?: () => void })?.showPicker?.(); } catch { /* A browser that will not open it still focused it. */ }
           }} />}
+        {/* When this conversation continues by itself, and the Cancel for each. */}
+        <WakeupStrip chatId={chat?.id === chatId ? chatId : null} status={chat?.id === chatId ? chat?.status ?? null : null} />
         {archived ? <div className="chat-archived-notice">
           <p>{t.archivedNotice}</p>
           <button data-command="chat.archive.restore" className="chat-activity__open" disabled={archiveBusy !== null} onClick={() => void setArchived(chat!, false)}><Icon name="restore" /><span>{t.restoreChat}</span></button>
@@ -2768,6 +2775,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       conversationActive={running || sending !== null}
       notices={statusNotices} conversation={conversationLog} composer={composerArea} surfaces={workspacePages(panel)}
       taskItems={taskItems} dialogs={dialogs}
+      notesPage={<NotesPanel projectDir={projectDir} projectName={project?.name ?? null} runtimeId={projectRuntime?.runtimeId ?? null} folder={project?.kind === "folder"} />}
+      onOpenFound={(hit) => selectChat(sessions.find((item) => item.id === hit.chatId)
+        ?? ({ id: hit.chatId, projectDir: hit.projectDir, archived: hit.archived } as ChatSummary))}
       historyPage={projectRuntime && projectDir ? <ProjectRuntimeProvider key={`history:${projectRuntime.runtimeId}`} runtimeId={projectRuntime.runtimeId}
         baseUrl={`${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`}><HistoryPage projectDir={projectDir} active /></ProjectRuntimeProvider> : null}
       onAttentionConversation={() => { setChatId(null); setChat(null); setFreshChat(false); }} /></CardRuntimes.Provider>;

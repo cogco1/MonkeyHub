@@ -33,8 +33,10 @@ from ..attention.actions import action_router
 from ..attention.hub import AttentionHub, hub_router
 from ..attention.routes import attention_router
 from ..attention.store import AttentionStore
-from ..chat.agent_routes import agent_router
+from ..chat.agent_routes import access_router
+from ..chat.hub_routes import agent_router, notes_router
 from ..chat.routes import projects_router, providers_router, sessions_router
+from ..chat.wakeups import Wakeups
 from ..commands.routes import CommandMeaning, commands_router
 from ..chat.store import ChatStore
 from ..computer_tools import ComputerService
@@ -95,6 +97,8 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     chats = ChatStore(settings.runtime_root, f"http://127.0.0.1:{settings.port}", applications=applications, resume=True)
     runtimes = ProjectRuntimeManager(applications, chats)
     chats.on_change = runtimes.chat_changed
+    # A conversation continues by itself at a time, on a repeat or after a project job (wake-ups).
+    wakeups = Wakeups(settings.runtime_root, chats, hub_url=f"http://127.0.0.1:{settings.port}")
 
     def update_busy() -> str | None:
         if any(row.status == "running" for row in chats.list()):
@@ -129,7 +133,9 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         threading.Thread(target=applications.restore_studios, args=(runtimes.open,), name="restore-studios",
                          daemon=True).start()
         attention.start()
+        wakeups.start()
         yield
+        await asyncio.to_thread(wakeups.stop)
         await asyncio.to_thread(attention.stop)
         await asyncio.to_thread(updates.shutdown)
         await asyncio.to_thread(chats.shutdown)
@@ -144,6 +150,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     app.state.runtimes = runtimes
     app.state.updates = updates
     app.state.attention = attention
+    app.state.wakeups = wakeups
     app.state.integrations = IntegrationPackManager()
     # Desktop automation costs two PowerShell hosts, so it is composed on first
     # use rather than started with the Hub, and there is only ever one.
@@ -285,7 +292,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         return project_archive.restore_archive(body, runtime_root=settings.runtime_root)
 
     app.include_router(sessions_router(chats))
-    app.include_router(agent_router(chats))
+    app.include_router(access_router(chats))
 
     computer_errors = {403: {"model": HubError}, 409: {"model": HubError}, 422: {"model": HubError}}
 
@@ -320,6 +327,9 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     meaning = CommandMeaning(source_root, settings.runtime_root / "cache")
     meaning.start()
     app.include_router(commands_router(meaning))
+    # Conversation notes, wake-ups and messages between conversations, after every earlier route.
+    app.include_router(notes_router(chats))
+    app.include_router(agent_router(chats, wakeups))
     if settings.hub_web_dir is not None:
         if not (settings.hub_web_dir / "index.html").is_file():
             raise ValueError("hub_web_dir must contain the built Hub index.html")

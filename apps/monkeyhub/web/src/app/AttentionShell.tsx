@@ -9,6 +9,7 @@ import { OPEN_CARD_EVENT, type OpenCardDetail } from "../notifications/openChat"
 import { showingQueue } from "../notifications/queue";
 import { useNoticeRegion } from "../notifications/regions";
 import { AdvancedTools } from "./AdvancedTools";
+import { ChatFinder, type ChatSearchHit } from "./ChatFinder";
 import "./attentionShell.css";
 
 /**
@@ -20,12 +21,12 @@ import "./attentionShell.css";
  */
 
 export type CenterView = "attention" | "board" | "model" | "tool";
-export type SidePage = "background" | "history" | "handled" | "ignored" | "tools";
-const SIDE_PAGES: readonly SidePage[] = ["background", "history", "handled", "ignored", "tools"];
+export type SidePage = "background" | "history" | "notes" | "find" | "handled" | "ignored" | "tools";
+const SIDE_PAGES: readonly SidePage[] = ["background", "history", "notes", "find", "handled", "ignored", "tools"];
 /** The command that shows each side page: its rail item and its tab carry it, and Ctrl K finds it. */
 const SIDE_COMMANDS: Readonly<Record<SidePage, string>> = {
-  background: "view.background.toggle", history: "view.design_history.toggle", handled: "view.handled.toggle",
-  ignored: "view.ignored.toggle", tools: "view.advanced_tools.toggle",
+  background: "view.background.toggle", history: "view.design_history.toggle", notes: "view.notes.toggle",
+  find: "view.chat_search.toggle", handled: "view.handled.toggle", ignored: "view.ignored.toggle", tools: "view.advanced_tools.toggle",
 };
 /** How many of a project's conversations stand under its row. */
 export const RECENT_CONVERSATIONS = 3;
@@ -101,6 +102,10 @@ export interface AttentionShellProps {
   taskItems: ReactNode;
   /** The open project's 修改历史 page (2-6), bound to its runtime by the host; absent without an open project. */
   historyPage?: ReactNode;
+  /** The standing instructions and what was remembered, for every conversation and the open project. */
+  notesPage?: ReactNode;
+  /** Open a conversation Find conversations found, wherever it is listed. */
+  onOpenFound?(hit: ChatSearchHit): void;
   dialogs: ReactNode;
   /** The left column's Attention: no conversation is chosen, so the next message goes to the attention conversation. */
   onAttentionConversation(): void;
@@ -189,8 +194,12 @@ export function AttentionShell(props: AttentionShellProps) {
       </button>
       <div className="attention-shell__caption">
         <span>{props.archivedView ? t("shell.archived") : t("shell.projects")}</span>
-        <button type="button" className="chat-icon" aria-pressed={props.archivedView} aria-label={t("shell.archived")} title={t("shell.archived")}
-          onClick={() => props.onArchivedView(!props.archivedView)}><Icon name="archive" /></button>
+        <span className="attention-shell__caption-actions">
+          {props.onOpenFound && <button type="button" className="chat-icon" aria-pressed={side === "find"} aria-label={t("shell.side.find")} title={t("shell.side.find")}
+            data-command="view.chat_search.toggle" onClick={() => open("find")}><Glyph path={SEARCH} /></button>}
+          <button type="button" className="chat-icon" aria-pressed={props.archivedView} aria-label={t("shell.archived")} title={t("shell.archived")}
+            onClick={() => props.onArchivedView(!props.archivedView)}><Icon name="archive" /></button>
+        </span>
       </div>
       {!projects.length && <p className="attention-shell__empty">{t("shell.noProjects")}</p>}
       <ul className="attention-shell__projects">{projects.map((project) => <li key={project.projectDir}>
@@ -223,6 +232,8 @@ export function AttentionShell(props: AttentionShellProps) {
           data-command="project.create.add_existing" onClick={props.onAddProject}><Icon name="folder" /></button>
         {props.usage && <button type="button" className="attention-shell__row attention-shell__usage" data-command="view.usage.open" onClick={props.usage.onOpen}>
           <Icon name="chart" /><span>{props.usage.label}</span></button>}
+        {props.notesPage && <button type="button" className="chat-icon" aria-pressed={side === "notes"} aria-label={t("shell.side.notes")} title={t("shell.side.notes")}
+          data-command="view.notes.toggle" onClick={() => open("notes")}><Icon name="file" /></button>}
         <button type="button" className="chat-icon" aria-label={t("shell.settings")} title={t("shell.settings")}
           data-command="view.settings.open" onClick={props.onSettings}><Icon name="settings" /></button>
       </div>
@@ -299,6 +310,9 @@ export function AttentionShell(props: AttentionShellProps) {
           {side === "background" ? <ul className="chat-tasks attention-shell__tasks">{props.taskItems}</ul>
             : side === "tools" ? <AdvancedTools />
             : side === "history" && props.historyPage ? props.historyPage
+            : side === "notes" && props.notesPage ? props.notesPage
+            : side === "find" && props.onOpenFound ? <ChatFinder projectName={projectName}
+              onOpen={(hit) => { props.onOpenFound!(hit); setDrawer(true); setSide(null); setLeftOpen(false); }} />
             : queue.available && side === "handled" ? <CardHistory states={["done"]} empty="shell.side.handled.empty" projectName={projectName} />
             : queue.available && side === "ignored" ? <CardHistory states={["dismissed"]} empty="shell.side.ignored.empty" projectName={projectName} />
             : <p className="attention-shell__empty">{t(`shell.side.${side}.empty` as MessageKey)}</p>}
@@ -309,7 +323,8 @@ export function AttentionShell(props: AttentionShellProps) {
       {(Boolean(props.historyPage) || side !== null) && <div className="attention-shell__rail" role="toolbar" aria-orientation="vertical" aria-label={t("shell.side")}>
         {SIDE_PAGES.filter((page) => side !== null || (page === "history" && Boolean(props.historyPage))).map((page) => <button key={page} type="button" className="attention-shell__rail-item" aria-pressed={side === page}
           data-command={SIDE_COMMANDS[page]} onClick={() => open(page)}>
-          <Icon name={page === "background" ? "tasks" : page === "history" ? "tree" : page === "handled" ? "archive" : page === "ignored" ? "restore" : "display"} />
+          <Icon name={page === "background" ? "tasks" : page === "history" ? "tree" : page === "notes" ? "file" : page === "find" ? "chat"
+            : page === "handled" ? "archive" : page === "ignored" ? "restore" : "display"} />
           <span>{pageLabel(page)}</span>{page === "background" && backgroundCount > 0 && <span className="attention-shell__count">{backgroundCount}</span>}
         </button>)}
       </div>}

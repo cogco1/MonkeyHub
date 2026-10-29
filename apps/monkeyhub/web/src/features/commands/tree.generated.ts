@@ -9020,6 +9020,69 @@ export const COMMAND_TREE: CommandTree = {
       "inPlace": true
     },
     {
+      "id": "chat.note.remove",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Remove a remembered note",
+        "zh-CN": "删除一条记住的事"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "noteId"
+      ],
+      "inPlace": true
+    },
+    {
+      "id": "chat.note.restore",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Put a removed note back",
+        "zh-CN": "撤销删除记住的事"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "noteId"
+      ],
+      "inPlace": true
+    },
+    {
+      "id": "chat.wakeup.cancel",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Cancel a wake-up",
+        "zh-CN": "取消定时继续"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "wakeupId"
+      ],
+      "inPlace": true
+    },
+    {
       "id": "project.create.new",
       "capability": "project.manage",
       "label": {
@@ -12251,6 +12314,70 @@ export const COMMAND_TREE: CommandTree = {
       ],
       "args": [],
       "inPlace": true
+    },
+    {
+      "id": "view.notes.toggle",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Show notes and memory",
+        "zh-CN": "查看说明与记忆"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "打开说明与记忆",
+        "看看记住了什么",
+        "改一下给 AI 的规矩",
+        "show my standing instructions",
+        "what did you remember"
+      ],
+      "aliases": [
+        "说明",
+        "记忆",
+        "规矩",
+        "notes",
+        "memory",
+        "instructions"
+      ]
+    },
+    {
+      "id": "view.chat_search.toggle",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Find conversations",
+        "zh-CN": "查找对话"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "查找以前的对话",
+        "搜一下聊过的内容",
+        "找那条对话",
+        "search my conversations",
+        "find an old chat"
+      ],
+      "aliases": [
+        "搜索对话",
+        "历史对话",
+        "search chats",
+        "find chat"
+      ]
     },
     {
       "id": "preference.appearance.theme_system",

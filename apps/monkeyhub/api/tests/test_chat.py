@@ -1010,6 +1010,7 @@ class ChatTests(unittest.TestCase):
         # Computer use is named here like the rest; whether it may actually run
         # is the policy file's answer, given by the route the tool calls.
         exposed = ("studio_schema", "studio_request", "visual_review", "fab_request", "attachment_read", "chat_present",
+                   "memory_note", "chat_schedule", "chat_find", "chat_read", "chat_send",
                    "computer_inspect", "computer_action", "computer_record")
         self.assertEqual(set(override["monkeyhub"]["enabled_tools"]), set(exposed))
         self.assertEqual(override["monkeyhub"]["tools"], {
@@ -2432,14 +2433,15 @@ class ChatTests(unittest.TestCase):
         loads this description before every turn, and it was 15,972 characters.
         #419 states the construction script there instead of a producer index.
         The scripts an Agent writes (S23) are one line here and their text is
-        behind pathPrefix /api/skills; that line is why the limits are 10200 and 28200.
+        behind pathPrefix /api/skills; that line is why the limits are 10200 and 28200. The five conversation
+        tools (hub_tools: notes, wake-ups, other conversations) add about 4,000 characters: 32400 for the whole.
         """
 
         tools = {tool["name"]: tool for tool in _tools_of(mcp_server)}
         modelling = tools["studio_request"]["description"]
         self.assertLessEqual(len(modelling.splitlines()), 106)
         self.assertLessEqual(len(modelling), 10200)
-        self.assertLessEqual(len(json.dumps(list(tools.values()), ensure_ascii=False)), 28200)
+        self.assertLessEqual(len(json.dumps(list(tools.values()), ensure_ascii=False)), 32400)
         for prefix in guides._GUIDES:
             self.assertIn(f"pathPrefix {prefix}", modelling, "each domain is named with where its text is")
             self.assertNotIn(guides._GUIDES[prefix].splitlines()[-1], modelling)
@@ -3652,7 +3654,8 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(replies[0]["result"]["protocolVersion"], "2024-11-05")
         self.assertEqual({tool["name"] for tool in replies[1]["result"]["tools"]},
                          {"studio_schema", "studio_request", "visual_review", "fab_request", "attachment_read",
-                          "chat_present", "computer_inspect", "computer_action", "computer_record"})
+                          "chat_present", "computer_inspect", "computer_action", "computer_record",
+                          "memory_note", "chat_schedule", "chat_find", "chat_read", "chat_send"})
 
     # ---- a turn that names its own source and focus
 

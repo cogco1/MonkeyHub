@@ -573,5 +573,58 @@ class SubagentTests(_Fixture):
         self.assertLess(order.index("u-1:toolu_task"), order.index("u-1:toolu_sub"), "the helper's row follows its call")
 
 
+class TogetherWithNotesAndMessagesTests(_Fixture):
+    """Where the two lines meet: a folder's own notes, the Hub's conversation tools in a folder and at every level."""
+
+    def test_a_folder_turn_carries_the_folders_own_instructions(self):
+        from monkeyhub_api.chat import notes
+
+        notes.set_instructions(self.runtime, None, "Reply briefly.")
+        notes.set_instructions(self.runtime, str(self.folder.resolve()), "Deleted files go to the Recycle Bin.")
+        session = self.create(self.folder)
+        self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="hello"))
+        self.assertEqual(self.finished(session).status, "idle")
+        prompt = self.calls()[-1]["prompt"]
+        self.assertIn("[This folder]\nDeleted files go to the Recycle Bin.", prompt)
+        self.assertIn("[All conversations]\nReply briefly.", prompt)
+        self.assertLess(prompt.index("Recycle Bin."), prompt.index("hello"), "before the request")
+
+    def test_a_folder_conversation_keeps_the_hubs_conversation_tools(self):
+        from monkeyhub_api.chat import hub_tools, mcp_server
+        from test_chat import _tools_of
+
+        names = {tool["name"] for tool in _tools_of_folder(mcp_server)}
+        self.assertTrue(set(hub_tools.TOOL_NAMES) <= names, names)
+        self.assertNotIn("studio_request", names)
+        self.assertTrue(set(hub_tools.TOOL_NAMES) <= {tool["name"] for tool in _tools_of(mcp_server)})
+
+    def test_every_level_keeps_the_hubs_conversation_tools(self):
+        from monkeyhub_api.chat import hub_tools
+
+        session = self.create(self.folder)
+        for mode in ("read", "ask", "open"):
+            self.store.set_permission_mode(session.id, mode)
+            with self.store._lock:
+                command, _ = self.store._command(self.store._sessions[session.id])
+            approved = command[command.index("--allowedTools") + 1].split(",")
+            for name in hub_tools.TOOL_NAMES:
+                self.assertIn(f"mcp__monkeyhub__{name}", approved, (mode, name))
+
+
+def _tools_of_folder(module):
+    """The tools a folder conversation's stdio server lists, read from its own listing."""
+    import io
+
+    class _Stream(io.StringIO):
+        def reconfigure(self, **kwargs):
+            return None
+
+    reader = _Stream(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}) + "\n")
+    writer = _Stream()
+    with patch.object(module.sys, "stdin", reader), patch.object(module.sys, "stdout", writer):
+        module._mcp("http://127.0.0.1:1", "00000000-0000-4000-8000-000000000000", folder_only=True)
+    return json.loads(writer.getvalue().strip().splitlines()[-1])["result"]["tools"]
+
+
 if __name__ == "__main__":
     unittest.main()
