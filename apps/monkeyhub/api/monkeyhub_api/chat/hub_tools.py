@@ -12,7 +12,7 @@ import os
 from urllib.parse import urlencode
 
 from .. import projects
-from . import notes, relay, transport
+from . import transport
 from ..models import HubFailure
 
 TOOL_NAMES = ("memory_note", "chat_schedule", "chat_find", "chat_read", "chat_send")
@@ -23,62 +23,44 @@ HUB_OWN = frozenset({"memory_note", "chat_schedule", "chat_send"})
 # ---- the MCP side ------------------------------------------------------------
 
 def tool_definitions() -> list[dict]:
+    # One sentence each and bare types: this listing is read before each turn. Every bound and rule is the route's
+    # own (notes, wakeups, relay) and comes back in its refusal; unknown arguments are refused by _fields.
     return [
-        {"name": "memory_note", "description": (
-            "Keep a short note the architect asked you to remember, or remove one. The architect's instructions and these "
-            "notes are given to every later turn: of every conversation (scope all) or of this project (scope project, "
-            "the default). The architect sees each note in the Hub and can delete it. Keep only what the architect asked "
-            "you to remember or confirmed, one fact per note, under 500 characters. remove takes the id shown beside a note."),
+        {"name": "memory_note", "description": "Keep or remove a note the architect asked you to remember; later turns "
+         "read it. scope project or all; remove takes id.",
          "inputSchema": {"type": "object", "properties": {
              "action": {"type": "string", "enum": ["add", "remove"]},
-             "text": {"type": "string", "minLength": 1, "maxLength": notes.NOTE_LIMIT},
-             "scope": {"type": "string", "enum": ["project", "all"], "default": "project"},
-             "id": {"type": "string", "minLength": 8},
-         }, "required": ["action"], "additionalProperties": False}},
-        {"name": "chat_schedule", "description": (
-            "Wake this conversation later so it continues by itself. Timing, exactly one: inMinutes or at (an ISO "
-            "date-time, local time without an offset) for once; everyMinutes (at least 5) or dailyAt (HH:MM local, "
-            "optional weekdays 0=Monday..6=Sunday) to repeat; afterJob {path} to wake when a job of this project ends, "
-            "path being its read such as /api/skills/runs/<runId>, /api/render/jobs/<jobId>, /api/jobs/<jobId> or "
-            "/api/exports/<exportId> (gives up after 4 hours). When due, the Hub sends prompt to this conversation as a "
-            "message no person typed and you run one turn; a running turn finishes first. Use it when the architect asks "
-            "for a later or repeated check, or to pick up after a long job instead of waiting in this turn. The architect "
-            "sees and can cancel every wake-up. action list shows this conversation's; cancel takes an id."),
+             "text": {"type": "string"},
+             "scope": {"type": "string", "enum": ["project", "all"]},
+             "id": {"type": "string"},
+         }, "required": ["action"]}},
+        {"name": "chat_schedule", "description": "Wake this conversation later with prompt: inMinutes or at (local ISO) "
+         "once, everyMinutes or dailyAt (HH:MM, weekdays 0=Mon) repeating, or afterJob {path}; list; cancel id.",
          "inputSchema": {"type": "object", "properties": {
              "action": {"type": "string", "enum": ["add", "list", "cancel"]},
-             "prompt": {"type": "string", "minLength": 1, "maxLength": 4000},
-             "inMinutes": {"type": "number", "minimum": 1},
+             "prompt": {"type": "string"},
+             "inMinutes": {"type": "number"},
              "at": {"type": "string"},
-             "everyMinutes": {"type": "integer", "minimum": 5},
-             "dailyAt": {"type": "string", "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"},
-             "weekdays": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 6}, "maxItems": 7},
-             "afterJob": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"],
-                          "additionalProperties": False},
-             "id": {"type": "string", "minLength": 8},
-         }, "required": ["action"], "additionalProperties": False}},
-        {"name": "chat_find", "description": (
-            "Find this Hub's conversations. With query: those whose title or messages contain every word, newest first, "
-            "each with up to three matching snippets. Without: the newest conversations. archived true searches the "
-            "archived ones instead. Use the chatId with chat_read or chat_send."),
+             "everyMinutes": {"type": "integer"},
+             "dailyAt": {"type": "string"},
+             "weekdays": {"type": "array", "items": {"type": "integer"}},
+             "afterJob": {"type": "object", "properties": {"path": {"type": "string"}}},
+             "id": {"type": "string"},
+         }, "required": ["action"]}},
+        {"name": "chat_find", "description": "Find conversations by words in their titles or messages, else the newest; "
+         "gives chatIds.",
          "inputSchema": {"type": "object", "properties": {
-             "query": {"type": "string", "maxLength": 200},
-             "archived": {"type": "boolean", "default": False},
-             "limit": {"type": "integer", "minimum": 1, "maximum": relay.SEARCH_LIMIT, "default": 10},
-         }, "additionalProperties": False}},
-        {"name": "chat_read", "description": "Read the last messages of another conversation by chatId: what the architect "
-         "and its Agent said, without tool steps, each cut at 2000 characters.",
+             "query": {"type": "string"}, "archived": {"type": "boolean"},
+             "limit": {"type": "integer"},
+         }}},
+        {"name": "chat_read", "description": "Read another conversation's last messages.",
          "inputSchema": {"type": "object", "properties": {
-             "chatId": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 30, "default": 10},
-         }, "required": ["chatId"], "additionalProperties": False}},
-        {"name": "chat_send", "description": (
-            "Send a message to another conversation of this Hub (a chatId from chat_find), as a colleague's request. It "
-            "arrives there marked as coming from this conversation and starts a turn there, or joins the one running. "
-            "Its answer stays in that conversation: read it later with chat_read, ask it to chat_send back, or wake "
-            "yourself with chat_schedule to check. A chain of such messages that no person started stops after "
-            f"{relay.RELAY_DEPTH}."),
+             "chatId": {"type": "string"}, "limit": {"type": "integer"},
+         }, "required": ["chatId"]}},
+        {"name": "chat_send", "description": "Send text to another conversation; it answers there.",
          "inputSchema": {"type": "object", "properties": {
-             "chatId": {"type": "string"}, "text": {"type": "string", "minLength": 1, "maxLength": 8000},
-         }, "required": ["chatId", "text"], "additionalProperties": False}},
+             "chatId": {"type": "string"}, "text": {"type": "string"},
+         }, "required": ["chatId", "text"]}},
     ]
 
 

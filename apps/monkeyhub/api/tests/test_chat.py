@@ -2433,15 +2433,16 @@ class ChatTests(unittest.TestCase):
         loads this description before every turn, and it was 15,972 characters.
         #419 states the construction script there instead of a producer index.
         The scripts an Agent writes (S23) are one line here and their text is
-        behind pathPrefix /api/skills; that line is why the limits are 10200 and 28200. The five conversation
-        tools (hub_tools: notes, wake-ups, other conversations) add about 4,000 characters: 32400 for the whole.
+        behind pathPrefix /api/skills; that line is why the limits are 10200 and 28200.
         """
 
         tools = {tool["name"]: tool for tool in _tools_of(mcp_server)}
         modelling = tools["studio_request"]["description"]
         self.assertLessEqual(len(modelling.splitlines()), 106)
         self.assertLessEqual(len(modelling), 10200)
-        self.assertLessEqual(len(json.dumps(list(tools.values()), ensure_ascii=False)), 32400)
+        # 29887 measured +200: the five conversation tools (hub_tools), cut to one sentence and bare types each, add
+        # 1809 characters; without them the listing is about 28080, so 28200 cannot hold them.
+        self.assertLessEqual(len(json.dumps(list(tools.values()), ensure_ascii=False)), 30087)
         for prefix in guides._GUIDES:
             self.assertIn(f"pathPrefix {prefix}", modelling, "each domain is named with where its text is")
             self.assertNotIn(guides._GUIDES[prefix].splitlines()[-1], modelling)
