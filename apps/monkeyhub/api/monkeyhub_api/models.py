@@ -133,6 +133,9 @@ ChatStatus = Literal["idle", "running", "failed", "interrupted"]
 # What a conversation waits for from the architect (#300). One value for now:
 # an unanswered permission request.
 ChatAttention = Literal["permission"]
+# What a conversation works in: a MonkeyHub project, read here and changed only
+# through the Hub (ADR-012), or any other folder, which it reads and writes.
+ChatKind = Literal["project", "folder"]
 
 
 class ChatProvider(BaseModel):
@@ -189,6 +192,8 @@ class ChatProject(BaseModel):
     projectDir: str
     name: str
     chatCount: int
+    # A plain folder is listed beside the projects; it has no version, Stage or step.
+    kind: ChatKind = "project"
     # The project's own published position, read through its existing P036
     # interfaces so a conversation can say which version it is talking about.
     # A candidate is not a version and never appears here.
@@ -446,6 +451,9 @@ class ChatSummary(BaseModel):
     id: str
     projectId: str
     projectDir: str
+    # "folder": projectId is "folder:<digest>" and projectDir is the folder the
+    # conversation reads and writes; it has no design tools.
+    kind: ChatKind = "project"
     title: str
     provider: ChatProviderId
     model: str | None = None
@@ -487,6 +495,8 @@ class ChatCreateRequest(BaseModel):
     provider: ChatProviderId
     model: str | None = Field(default=None, min_length=1)
     title: str | None = Field(default=None, min_length=1, max_length=200)
+    # "auto": a MonkeyHub project when the folder is one, else the folder itself.
+    kind: Literal["project", "folder", "auto"] = "project"
 
 
 class ChatPresentationBindRequest(BaseModel):

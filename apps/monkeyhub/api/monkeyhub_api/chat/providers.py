@@ -73,7 +73,7 @@ _RUNTIME_FOLDERS = ("cache", "config", "diagnostics", "logs", "runtime", "skill-
                     "workspace")
 
 
-def _claude_denied(project_dir: str, runtime_root: Path | None = None) -> tuple[str, ...]:
+def _claude_denied(project_dir: str | None, runtime_root: Path | None = None) -> tuple[str, ...]:
     """What a headless turn may not write although its tools are approved.
 
     The bound project: the agent reads the project where it is, and its design
@@ -90,8 +90,11 @@ def _claude_denied(project_dir: str, runtime_root: Path | None = None) -> tuple[
     junction the path is written with, and ``<folder>/*.json`` leaves the
     folders below it writable. Bash is not a file tool, so this does not
     confine it.
+
+    A conversation in a plain folder (``project_dir`` None) has no project to
+    keep: it writes its folder, and only the Hub's own places are closed to it.
     """
-    rules = [_edit_rule(project_dir, "/**")]
+    rules = [_edit_rule(project_dir, "/**")] if project_dir is not None else []
     if runtime_root is not None:
         rules += [_edit_rule(path, suffix) for path, suffix in _guarded(Path(runtime_root))]
     return tuple(dict.fromkeys(rules))

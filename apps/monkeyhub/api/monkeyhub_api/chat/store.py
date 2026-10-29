@@ -488,6 +488,11 @@ class ChatStore:
             folded[key] = (spelling, total + count)
         listed: dict[tuple[str, str], ChatProject] = {}
         for key, (spelling, count) in folded.items():
+            if projects.is_folder_id(key[0]):
+                # A plain folder has no version, Stage or step to read.
+                listed[key] = ChatProject(projectId=key[0], projectDir=spelling, name=Path(spelling).name or spelling,
+                                          chatCount=count, kind="folder")
+                continue
             version, stage = projects._listed_project(spelling)[1]
             listed[key] = ChatProject(projectId=key[0], projectDir=spelling, name=key[0],
                                         chatCount=count, version=version, stage=stage, step=projects.current_step(spelling))
@@ -700,7 +705,7 @@ class ChatStore:
             if self._closing or session.archived:
                 raise HubFailure(409, "CHAT_UNAVAILABLE", "Restore the conversation or reconnect after Hub restarts.")
             if (request.projectId != session.projectId or request.sourceSessionId != (session.sourceSessionId or f"hub:{session_id}")
-                    or projects._project(session.projectDir) != (session.projectId, session.projectDir)):
+                    or projects._bound(session.projectId, session.projectDir) != (session.projectId, session.projectDir)):
                 raise HubFailure(409, "CHAT_PRESENTATION_MISMATCH", "The presentation belongs to a different project or source session.")
             _presented_id(request.messageId, "messageId")
             _presented_id(request.turnId, "turnId")
@@ -844,10 +849,21 @@ class ChatStore:
             provider = next(row for row in self.providers() if row.id == request.provider)
             if not provider.available:
                 raise HubFailure(503, "CHAT_PROVIDER_UNAVAILABLE", provider.detail)
-            project_id, project_dir = projects._project(request.projectDir)
+            kind = request.kind
+            if kind == "auto":
+                # The one "open a folder" the architect sees: a MonkeyHub project opens as one, any other folder as itself.
+                try:
+                    project_id, project_dir = projects._project(request.projectDir)
+                    kind = "project"
+                except HubFailure:
+                    kind = "folder"
+            if kind == "folder":
+                project_id, project_dir = projects._folder(request.projectDir)
+            elif request.kind != "auto":
+                project_id, project_dir = projects._project(request.projectDir)
             now = _now()
             session = _SavedChat(
-                id=str(uuid4()), projectId=project_id, projectDir=project_dir,
+                id=str(uuid4()), projectId=project_id, projectDir=project_dir, kind=kind,
                 title=request.title or "New chat", provider=request.provider, model=request.model,
                 createdAt=now, updatedAt=now,
                 transport="acp" if self._use_acp and request.provider == "codex" else "cli",
@@ -861,7 +877,8 @@ class ChatStore:
         """Hold the same lock across configuration changes and turn admission."""
         with self._lock:
             target = project_key(project_dir) if project_dir else None
-            if any(project_key(self._sessions[key].projectDir) != target for key in self._running):
+            if any(project_key(self._sessions[key].projectDir) != target for key in self._running
+                   if self._sessions[key].kind == "project"):
                 raise HubFailure(409, "CHAT_PROJECT_BUSY", "Stop the running chat before switching the active project.")
             yield
 
@@ -871,7 +888,8 @@ class ChatStore:
             if app_id in {"monkeyarch", "monkeyboard"} and stopping:
                 configured = project_dir if project_dir is not None else read_application_settings(self.runtime_root).project_dir
                 target = project_key(configured) if configured else None
-                if any(target is not None and project_key(self._sessions[key].projectDir) == target for key in self._running):
+                if any(target is not None and self._sessions[key].kind == "project"
+                       and project_key(self._sessions[key].projectDir) == target for key in self._running):
                     raise HubFailure(409, "CHAT_RUNNING", "Stop the running chat before closing its design tools.")
             yield
 
@@ -893,6 +911,9 @@ class ChatStore:
                 self._takes_messages(bound)
                 if request.projectId != bound.projectId:
                     raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "This message belongs to a different project.")
+                if bound.kind == "folder":
+                    raise HubFailure(409, "CHAT_FOLDER_NO_DESIGN", "A conversation in a folder has no registered images; "
+                                     "attach the files instead.")
                 project = bound.projectId, bound.projectDir
             # Outside the lock: checking the pages reads the project's documents,
             # and a refused page leaves nothing kept and nothing started.
@@ -900,8 +921,13 @@ class ChatStore:
         with self._lock:
             session = self._session(session_id).model_copy(deep=True)
             self._takes_messages(session)
-            if request.projectId != session.projectId or projects._project(session.projectDir) != (session.projectId, session.projectDir):
+            if (request.projectId != session.projectId
+                    or projects._bound(session.projectId, session.projectDir) != (session.projectId, session.projectDir)):
                 raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "This message belongs to a different project.")
+            if session.kind == "folder" and (request.designContext is not None or request.markupContext is not None
+                                             or request.changeListApproval is not None):
+                raise HubFailure(409, "CHAT_FOLDER_NO_DESIGN", "A conversation in a folder has no design to point at; "
+                                 "open a MonkeyHub project for design work.")
             if request.suggestionSelection is not None:
                 selection = request.suggestionSelection
                 if any(row.role == "user" and row.suggestionSelection == selection for row in session.messages):
@@ -1192,7 +1218,16 @@ class ChatStore:
 
     def _tool_connection(self, session: _SavedChat) -> dict:
         return {"command": sys.executable, "args": [str(Path(mcp_server.__file__).resolve()), "--mcp",
-                "--hub-url", self.hub_url, "--chat-id", session.id, "--scratch", str(self._scratch_path(session.id))]}
+                "--hub-url", self.hub_url, "--chat-id", session.id, "--scratch", str(self._scratch_path(session.id)),
+                *(("--folder",) if session.kind == "folder" else ())]}
+
+    @staticmethod
+    def _workdir(session: _SavedChat) -> str:
+        """Where a turn starts: a folder conversation's own folder; a project's, this Hub's source checkout or the project."""
+        if session.kind == "folder":
+            return session.projectDir
+        source = providers._source_checkout()
+        return str(source) if source is not None else session.projectDir
 
     def _codex_mcp(self, session: _SavedChat, command, environment) -> dict:
         """Keep the same project-only MCP configuration for both native transports."""
@@ -1256,8 +1291,7 @@ class ChatStore:
         # it is a checkout, with the bound project readable beside it. A
         # candidate is produced through the Hub, which writes the project
         # (ADR-012), and the code that produced it can be fixed here.
-        source = providers._source_checkout()
-        workdir = str(source) if source is not None else session.projectDir
+        workdir = self._workdir(session)
         if kind == "codex":
             # Let Codex read its native profile, provider and credentials.
             # Its table overrides merge, so disable the effective MCP names
@@ -1296,7 +1330,8 @@ class ChatStore:
                 only_library = (*(("--plugin-dir", str(skills)) if skills is not None else ()),
                                 "--setting-sources", "project,local", "--settings",
                                 skill_plugins.claude_settings(self.runtime_root, providers._claude_user_settings()))
-            denied = providers._claude_denied(session.projectDir, self.runtime_root)
+            # A folder conversation writes its folder; only the Hub's own places stay closed to it.
+            denied = providers._claude_denied(None if session.kind == "folder" else session.projectDir, self.runtime_root)
             if environment.get(studio_tool.DESIGN_LOOP_ENV) == studio_tool.DESIGN_LOOP_ENFORCED:
                 # Enforced (#185): no shell, so the Agent reaches the design only through this Hub, which vouches
                 # for it; a shell could reach the Runtime's port and act as a person.
@@ -1571,7 +1606,8 @@ class ChatStore:
     def resolve_permission(self, session_id: str, permission_id: str, request: ChatPermissionRequest) -> ChatDetail:
         with self._lock:
             session = self._session(session_id)
-            if request.projectId != session.projectId or projects._project(session.projectDir) != (session.projectId, session.projectDir):
+            if (request.projectId != session.projectId
+                    or projects._bound(session.projectId, session.projectDir) != (session.projectId, session.projectDir)):
                 raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "This permission belongs to a different project.")
             future = self._permissions.get((session_id, permission_id))
             message = next((row for row in session.messages if row.permission and row.permission.id == permission_id), None)
@@ -1690,7 +1726,7 @@ class ChatStore:
                     "mcp_servers": self._codex_mcp(session, commands["codex"], environment),
                 })
                 client = CodexAcpSession(
-                    command=self._acp_command, cwd=str(providers._source_checkout() or session.projectDir),
+                    command=self._acp_command, cwd=self._workdir(session),
                     environment=environment,
                     # Nonempty ACP mcpServers would replace the disabled entries
                     # above. This per-chat adapter already has the exact binding.
@@ -1812,7 +1848,7 @@ class ChatStore:
         try:
             with self._lock:
                 session = self._sessions[session_id]
-                prompt = (
+                prompt = self._folder_prompt(session, content) if session.kind == "folder" else (
                     "You are the assistant in MonkeyHub. Reply in the user's language. "
                     "Develop the user's design through reversible candidates. Batch steps whose outcome is already clear; "
                     "generate and inspect a candidate when the next design decision depends on its result, then revise as needed. "
@@ -1922,10 +1958,11 @@ class ChatStore:
                 if isinstance(prepared, dict):
                     self._recipe_skills(session, prepared.get("memory"), library)
                 prompt += "\n\n" + turn_context._CONTEXT_NOTE + "\n" + providers._redact(json.dumps(prepared, ensure_ascii=False))
-            else:
+            elif session.kind == "project":
                 # Memory is the project's, not the design state's: a turn with
                 # no design context still gets what its words are about. The
                 # prepared context above already carries it as ContextPack.memory.
+                # A folder conversation has no project and so no project memory.
                 if running.stop.is_set():
                     return
                 try:
@@ -2000,7 +2037,7 @@ class ChatStore:
                 prompt_input = json.dumps({"type": "user", "session_id": session.nativeSessionId or session.cliStartId or session.id,
                     "parent_tool_use_id": None, "message": {"role": "user", "content": blocks}}, ensure_ascii=False) + "\n"
             kwargs = {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {"start_new_session": True}
-            process = subprocess.Popen(command, cwd=providers._source_checkout() or session.projectDir, env=environment, stdin=subprocess.PIPE,
+            process = subprocess.Popen(command, cwd=self._workdir(session), env=environment, stdin=subprocess.PIPE,
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
                                        errors="replace", shell=False, **kwargs)
             with self._lock:
@@ -2185,6 +2222,23 @@ class ChatStore:
                 # Closing hands work to the adapter's own thread and waits for
                 # it; that never happens while this store's lock is held.
                 abandoned.close()
+
+    def _folder_prompt(self, session: _SavedChat, content: str) -> str:
+        """The envelope of a turn in a plain folder: ordinary work on the person's files, no design tools."""
+        scratch = self._scratch_path(session.id)
+        return (
+            "You are the assistant in MonkeyHub, working in the folder " + session.projectDir + " on this computer. "
+            "Reply in the user's language. This conversation is not bound to a MonkeyHub project, so it has no "
+            "design tools; read, write and run in this folder as the user asks, within what this conversation is "
+            "allowed to do. Files you no longer need go to the Recycle Bin or a quarantine folder; never delete "
+            "the user's files permanently. "
+            + (f"Temporary calculation scripts can go in this chat's scratch directory at {scratch}; it is put away "
+               "when the chat is archived, so save anything the user keeps in their folder. "
+               if session.provider != "codex" else "")
+            + "Do not change MonkeyHub's own configuration or records. "
+            "If something the user asks cannot be done here, say what and why.\n\n"
+            + content
+        )
 
     def _close_input(self, running: _Running) -> None:
         """Close Claude's stdin once its turn has a result. The lock is held."""
