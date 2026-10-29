@@ -4531,6 +4531,36 @@
               "壳59"
             ],
             "in_place": true
+          },
+          {
+            "id": "chat.note.remove",
+            "label": "Remove a remembered note",
+            "label_zh": "删除一条记住的事",
+            "args": [
+              "noteId"
+            ],
+            "entries": [],
+            "in_place": true
+          },
+          {
+            "id": "chat.note.restore",
+            "label": "Put a removed note back",
+            "label_zh": "撤销删除记住的事",
+            "args": [
+              "noteId"
+            ],
+            "entries": [],
+            "in_place": true
+          },
+          {
+            "id": "chat.wakeup.cancel",
+            "label": "Cancel a wake-up",
+            "label_zh": "取消定时继续",
+            "args": [
+              "wakeupId"
+            ],
+            "entries": [],
+            "in_place": true
           }
         ]
       },
@@ -5767,6 +5797,20 @@
               "窗2"
             ],
             "in_place": true
+          },
+          {
+            "id": "view.notes.toggle",
+            "label": "Show notes and memory",
+            "label_zh": "查看说明与记忆",
+            "opens": true,
+            "entries": []
+          },
+          {
+            "id": "view.chat_search.toggle",
+            "label": "Find conversations",
+            "label_zh": "查找对话",
+            "opens": true,
+            "entries": []
           }
         ]
       },
@@ -14372,6 +14416,10 @@
         "apps/monkeyhub/web/src/features/commands/",
         "apps/monkeyhub/web/src/app/AttentionShell.tsx",
         "apps/monkeyhub/web/src/app/AdvancedTools.tsx",
+        "apps/monkeyhub/web/src/app/NotesPanel.tsx",
+        "apps/monkeyhub/web/src/app/ChatFinder.tsx",
+        "apps/monkeyhub/web/src/app/WakeupStrip.tsx",
+        "apps/monkeyhub/web/src/app/hubNotes.css",
         "apps/monkeyhub/api/monkeyhub_api/attention/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/models.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/store.py",
