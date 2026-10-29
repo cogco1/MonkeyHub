@@ -157,7 +157,8 @@ function ToolGrantRow({ grant, state, actions, when, t }: {
   const { revoking, revokeError } = state;
   const status = grant.revokedAt ? "revoked" : "active";
   const error = revokeError?.grantId === grant.grantId ? revokeError.error : null;
-  const what = t(TOOL_KEYS[grant.action], { project: grant.projectId });
+  // A folder's grant names its folder; a project's id names its project.
+  const what = t(TOOL_KEYS[grant.action], { project: grant.place ?? grant.projectId });
   return <li className="skills__row" data-status={status}>
     <div className="skills__head">
       <strong className="skills__name">{what}</strong>

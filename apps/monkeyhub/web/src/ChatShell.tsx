@@ -25,7 +25,7 @@ import { ChatSuggestionCard } from "./ChatSuggestionCard";
 import { findSource, type PageSource } from "./workspaces/monkeyboard/boardScene";
 const ProjectWorkspace = lazy(() => import("./app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
-import { clock, currentStep, describeCall, describeStep, dismissible, operationStep, rawDetail, rawLine, resultCandidates, stepText, turnsOf, unfinishedOperations, unrecoverable, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
+import { clock, currentStep, describeCall, describeStep, dismissible, operationStep, rawDetail, rawLine, resultCandidates, stepText, stepTree, turnsOf, unfinishedOperations, unrecoverable, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
 import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } from "./monitorData";
 import { ACTIVE_OPERATIONS, activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
@@ -516,7 +516,7 @@ function ComposerMenu({ label, disabled, disabledReason, items }: { label: strin
 
 type ChatWords = (typeof words)[keyof typeof words];
 const processWords = (t: ChatWords): ProcessWords => ({ steps: t.processStep, prepare: t.processPrepare,
-  webSearch: t.processWebSearch, desktop: t.processDesktop, permission: t.processPermission });
+  webSearch: t.processWebSearch, desktop: t.processDesktop, permission: t.processPermission, subagent: t.processSubagent });
 /** The wall clock while `active`; a finished turn needs no ticking. */
 /** Under this, a wait shows only that it runs; past it, how far along it is (08 加载分档). */
 const LONG_WAIT_SECONDS = 10;
@@ -563,9 +563,15 @@ function ProcessRow({ turn, running, open, t, onToggle }: {
       <svg className="chat-process__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
     </button>
     {open && <div className="chat-process__body" id={body}>
-      <ol className="chat-process__steps">{turn.steps.map((step) => <li key={step.id} data-status={step.status}>
+      <ol className="chat-process__steps">{stepTree(turn.steps).map(({ step, children }) => <li key={step.id} data-status={step.status}>
         <span className="chat-process__mark" aria-hidden="true">{stepMark(step.status)}</span>
-        <span>{stepText(describeStep(step), names)}{step.status === "failed" && <span className="chat-process__step-failed"> · {t.processStepFailed}</span>}</span>
+        <span>{stepText(describeStep(step), names)}{step.status === "failed" && <span className="chat-process__step-failed"> · {t.processStepFailed}</span>}
+          {/* A subagent's own calls fold under the call that started it (gap 5). */}
+          {children.length > 0 && <details className="chat-process__sub"><summary>{t.processSubagentSteps(children.length)}</summary>
+            <ol className="chat-process__steps">{children.map((child) => <li key={child.id} data-status={child.status}>
+              <span className="chat-process__mark" aria-hidden="true">{stepMark(child.status)}</span>
+              <span>{stepText(describeStep(child), names)}{child.status === "failed" && <span className="chat-process__step-failed"> · {t.processStepFailed}</span>}</span>
+            </li>)}</ol></details>}</span>
       </li>)}</ol>
       <DeveloperOnly><ChatCardDetails className="chat-process__technical" summary={t.processTechnical}>
         <ol>{turn.steps.map((step) => <li key={step.id}>
@@ -906,9 +912,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // The connection as the Hub named it, short enough to read in a sentence.
   const connectionName = (availableProvider?.label ?? connection.provider ?? "").replace(/\s+CLI$/, "") || null;
   const chosenModel = chat?.id === chatId ? chat.model ?? null : draftModel;
+  // What each did before levels: a folder asks, Codex asks, a project's Claude turn may do everything (as the Hub decides).
   const chosenPermission: ChatPermissionMode = chat?.id === chatId
-    ? chat.permissionMode ?? (chat.kind === "folder" ? "ask" : "open")
-    : draftPermission ?? (project?.kind === "folder" ? "ask" : "open");
+    ? chat.permissionMode ?? (chat.kind === "folder" || chat.provider === "codex" ? "ask" : "open")
+    : draftPermission ?? (project?.kind === "folder" || connection.provider === "codex" ? "ask" : "open");
   // What this connection actually lists, plus whatever is already chosen: a
   // hand-entered id stays selectable even while a catalogue is unreadable.
   const modelOptions = [...new Set([...(availableProvider?.models ?? []), ...(chosenModel ? [chosenModel] : [])])];

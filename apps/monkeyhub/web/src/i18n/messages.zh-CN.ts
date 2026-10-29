@@ -1672,6 +1672,8 @@ export const chatCopy = {
     processPrepare: (label: string) => `准备${label}`,
     processWebSearch: (query: string) => query ? `网络搜索：${query}` : "网络搜索",
     processDesktop: (target: string) => `桌面操作：${target}`,
+    processSubagent: (task: string) => `助手：${task}`,
+    processSubagentSteps: (count: number) => `助手做了 ${count} 步`,
     processPermission: (choice: string) => choice ? `权限：${choice}` : "权限请求",
     processStep: {
       boardRead: "读取画板", boardUpdate: "更新画板", boardExport: "导出画板", designContext: "读取设计上下文",

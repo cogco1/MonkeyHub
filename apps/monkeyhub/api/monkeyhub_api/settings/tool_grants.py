@@ -52,6 +52,8 @@ class ToolGrantDto(BaseModel):
     granted_at: str = Field(alias="grantedAt")
     # The permission card the person answered.
     ref: str | None = None
+    # A folder grant's folder, as Settings shows it; a project's id names its project already.
+    place: str | None = None
     revoked_at: str | None = Field(default=None, alias="revokedAt")
     revoked_by: str | None = Field(default=None, alias="revokedBy")
 
@@ -98,7 +100,7 @@ def covers(runtime_root: Path, project_id: str, action: str) -> bool:
                for row in document.grants)
 
 
-def allow(runtime_root: Path, project_id: str, action: str, *, ref: str | None = None,
+def allow(runtime_root: Path, project_id: str, action: str, *, ref: str | None = None, place: str | None = None,
           now: datetime | None = None) -> ToolGrantDto:
     """Keep the answer: ``action`` is allowed in this project. Allowing what is already allowed answers the grant in force."""
 
@@ -113,7 +115,7 @@ def allow(runtime_root: Path, project_id: str, action: str, *, ref: str | None =
                      if row.project_id == project_id and row.action == action and row.revoked_at is None), None)
         if held is not None:
             return held
-        row = ToolGrantDto(grantId=uuid.uuid4().hex, projectId=project_id, action=action, ref=ref,
+        row = ToolGrantDto(grantId=uuid.uuid4().hex, projectId=project_id, action=action, ref=ref, place=place,
                            grantedAt=(now or datetime.now(timezone.utc)).isoformat())
         document.grants.append(row)
         store.save_tool_grants(grants_path(runtime_root), document)

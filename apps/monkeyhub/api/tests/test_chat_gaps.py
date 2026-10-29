@@ -324,6 +324,88 @@ class PermissionLevelTests(_Fixture):
         with self.assertRaises(HubFailure):
             tool_grants.allow(self.runtime, "chat-project", "edit")
 
+    def test_a_folders_always_answer_keeps_the_folder_settings_shows(self):
+        from monkeyhub_api.chat import acp_grants
+        from monkeyhub_api.models import ChatPermissionRequest
+        from monkeyhub_api.settings import tool_grants
+
+        session = self.create(self.folder)
+        self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="ask-test"))
+        card = next(row for row in self.asked(session).messages if row.permission is not None)
+        self.store.resolve_permission(session.id, card.permission.id,
+                                      ChatPermissionRequest(projectId=session.projectId, optionId=acp_grants.HUB_PROJECT))
+        self.finished(session)
+        [grant] = tool_grants.read(self.runtime).grants
+        self.assertEqual((grant.project_id, grant.place), (session.projectId, session.projectDir))
+
+    def test_a_new_codex_conversation_keeps_asking_as_it_always_did(self):
+        self.assertEqual(self.create(self.project, kind="project", provider="codex").permissionMode, "ask")
+        self.assertEqual(self.create(self.project, kind="project", provider="claude").permissionMode, "open")
+
+    def codex_acp(self, mode):
+        """One Codex ACP turn at this level, through a stand-in adapter that records what it was started with."""
+        from monkeyhub_api.chat import acp_session as adapter
+
+        started = []
+
+        class Recorder:
+            def __init__(self, **arguments):
+                started.append(arguments)
+                self.default_model = "fixture-model-a"
+
+            def prompt(self, text, session_id, model, on_session, timeout_s, *, images=()):
+                on_session("fixture/session:recorded")
+
+            def close(self):
+                pass
+
+        session = self.create(self.folder, provider="codex")
+        self.store._sessions[session.id].transport = "acp"
+        self.store.set_permission_mode(session.id, mode)
+        with patch.object(adapter, "CodexAcpSession", Recorder):
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="hello"))
+            self.finished(session)
+        return session, started[0]["environment"]["INITIAL_AGENT_MODE"]
+
+    def test_codex_takes_the_level_as_its_adapter_mode(self):
+        self.assertEqual(self.codex_acp("open")[1], "agent")
+        self.assertEqual(self.codex_acp("ask")[1], "read-only")
+        session, mode = self.codex_acp("read")
+        self.assertEqual(mode, "read-only")
+
+    def test_changing_the_level_starts_codex_on_a_new_adapter(self):
+        closed = []
+
+        class Cached:
+            def close(self):
+                closed.append(True)
+
+        session = self.create(self.folder, provider="codex")
+        self.store._acp_sessions[session.id] = Cached()
+        self.store.set_permission_mode(session.id, "open")
+        self.assertEqual(closed, [True])
+        self.assertNotIn(session.id, self.store._acp_sessions)
+
+    def test_a_read_only_codex_question_is_answered_no_and_says_so(self):
+        session = self.create(self.folder, provider="codex")
+        self.store.set_permission_mode(session.id, "read")
+        with self.store._lock:
+            saved = self.store._sessions[session.id]
+            saved.transport, saved.acpSessionId = "acp", "fixture/session:read"
+            saved.messages.append(chat.ChatMessage(id="u-1", role="user", content="look", createdAt="2026-10-29"))
+            self.store._running[session.id] = chat._Running(turns=["u-1"])
+        try:
+            future = self.store._acp_permission(session.id, {
+                "sessionId": "fixture/session:read",
+                "options": [{"optionId": "yes", "name": "Allow", "kind": "allow_once"},
+                            {"optionId": "no", "name": "Reject", "kind": "reject_once"}],
+                "toolCall": {"toolCallId": "t1", "title": "Run command?", "rawInput": {"command": "del x"}}})
+            self.assertEqual(future.result(timeout=1), "no")
+            self.assertIn("refused: this conversation is read only", self.store.get(session.id).messages[-1].content)
+        finally:
+            with self.store._lock:
+                self.store._running.pop(session.id, None)
+
 
 class ExternalMcpTests(_Fixture):
     """The person's other MCP servers: chosen in the Hub, given to the turn, their keys never shown."""
@@ -392,6 +474,38 @@ class ExternalMcpTests(_Fixture):
         self.assertEqual(private["drive"]["http_headers"], {"Authorization": self.SECRET})
         self.assertTrue(private["monkeyhub"]["enabled"])
 
+    def test_claude_codes_servers_for_the_folder_join_its_turns(self):
+        from monkeyhub_api.chat import mcp_servers
+
+        config = self.root / "claude" / ".claude.json"
+        saved = json.loads(config.read_text(encoding="utf-8"))
+        saved["projects"] = {str(self.folder).replace("\\", "/") + "/": {
+            "mcpServers": {"rhino": {"command": "rhino-mcp"}},
+            "enabledMcpjsonServers": ["approved"], "disabledMcpjsonServers": ["refused"]}}
+        config.write_text(json.dumps(saved), encoding="utf-8")
+        (self.folder / ".mcp.json").write_text(json.dumps({"mcpServers": {
+            "approved": {"command": "ok-mcp"}, "refused": {"command": "no-mcp"}, "unasked": {"command": "maybe-mcp"}}}),
+            encoding="utf-8")
+        mcp_servers.update(self.runtime, mcp_servers.McpServersUpdate(fromClaude=True))
+        self.assertEqual(sorted(mcp_servers.effective(self.runtime, str(self.folder))),
+                         ["approved", "blender", "drive", "rhino"])
+        self.assertEqual(sorted(mcp_servers.effective(self.runtime, str(self.project))), ["blender", "drive"])
+
+    def test_a_server_is_added_to_and_taken_off_the_hubs_own_list(self):
+        from monkeyhub_api.chat import mcp_servers
+
+        view = mcp_servers.update(self.runtime, mcp_servers.McpServersUpdate(add={
+            "pdf": {"command": "pdf-mcp", "args": ["--port", "0"], "env": {"PDF_KEY": "pdf-secret-123456"}}}))
+        [row] = [item for item in view.servers if item.source == "hub"]
+        self.assertEqual((row.name, row.command, row.args, row.envKeys, row.enabled),
+                         ("pdf", "pdf-mcp", ["--port", "0"], ["PDF_KEY"], True))
+        self.assertNotIn("pdf-secret-123456", view.model_dump_json())
+        self.assertIn("pdf", mcp_servers.effective(self.runtime))
+        with self.assertRaises(HubFailure):
+            mcp_servers.update(self.runtime, mcp_servers.McpServersUpdate(add={"monkeyhub": {"command": "x"}}))
+        view = mcp_servers.update(self.runtime, mcp_servers.McpServersUpdate(remove=["pdf"]))
+        self.assertEqual([item for item in view.servers if item.source == "hub"], [])
+
     def test_the_settings_routes_read_and_change_the_list(self):
         from fastapi.testclient import TestClient
         from monkeyhub_api.app.composition import HubSettings, create_app
@@ -451,6 +565,8 @@ class SubagentTests(_Fixture):
         rows = {row.id.split(":", 1)[1]: row for row in saved.messages if row.role == "tool"}
         self.assertTrue(rows["toolu_task"].content.startswith("Agent · survey the folder · completed"))
         self.assertTrue(rows["toolu_sub"].content.startswith(activity.SUBAGENT_MARK + "Read · completed"))
+        self.assertEqual(rows["toolu_sub"].parentCallId, "u-1:toolu_task", "it folds under the call that started it")
+        self.assertIsNone(rows["toolu_task"].parentCallId)
         answer = "".join(row.content for row in saved.messages if row.role == "assistant")
         self.assertEqual(answer, "I'll ask a helper.")
         order = [row.id for row in saved.messages]

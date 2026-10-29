@@ -1716,6 +1716,8 @@ export const chatCopy = {
     processPrepare: (label: string) => `Prepare to ${label.charAt(0).toLowerCase()}${label.slice(1)}`,
     processWebSearch: (query: string) => query ? `Web search: ${query}` : "Web search",
     processDesktop: (target: string) => `Desktop: ${target}`,
+    processSubagent: (task: string) => `Helper: ${task}`,
+    processSubagentSteps: (count: number) => count === 1 ? "1 step by the helper" : `${count} steps by the helper`,
     processPermission: (choice: string) => choice ? `Permission: ${choice}` : "Permission request",
     processStep: {
       boardRead: "Read the board", boardUpdate: "Update the board", boardExport: "Export board pages", designContext: "Read the design context",

@@ -183,6 +183,12 @@ class _Running:
     suspended: bool = False
 
 
+def _default_mode(kind: str, provider: str) -> str:
+    """A new conversation's level, which is what each already did before there were levels: a folder asks; a
+    project's Claude turn may do everything (its project is read-only to it anyway); Codex asks, as it always has."""
+    return "ask" if kind == "folder" or provider == "codex" else "open"
+
+
 def _duration(seconds: float | None) -> str:
     seconds = int(seconds or 0)
     return f"{seconds // 60} min" if seconds >= 120 else f"{seconds} s"
@@ -554,7 +560,7 @@ class ChatStore:
     @staticmethod
     def _permission_mode(session: _SavedChat) -> str:
         """What this conversation's turns may do unasked; a record from before levels keeps what it had."""
-        return session.permissionMode or ("ask" if session.kind == "folder" else "open")
+        return session.permissionMode or _default_mode(session.kind, session.provider)
 
     def set_permission_mode(self, session_id: str, mode: str) -> ChatDetail:
         """What this conversation's next turns may do unasked; a running turn keeps the level it started with."""
@@ -566,11 +572,17 @@ class ChatStore:
                 raise HubFailure(422, "CHAT_PERMISSION_MODE_INVALID", "Choose read, ask or open.")
             if session.sourceSessionId:
                 raise HubFailure(409, "CHAT_EXTERNAL_SOURCE", "An external conversation's permissions are its source's.")
+            client = None
             if session.permissionMode != mode:
                 session.permissionMode = mode
                 session.updatedAt = _now()
                 self._save(session)
-            return self.get(session_id)
+                # A Codex adapter's mode is set when it starts: the next turn loads this session on a new one.
+                client = self._acp_sessions.pop(session_id, None)
+            detail = self.get(session_id)
+        if client is not None:
+            client.close()
+        return detail
 
     def _claude_permission(self, session: _SavedChat, event: Mapping) -> None:
         """Show one can_use_tool question of a Claude turn at the "ask" level as a card; the lock is held.
@@ -1045,7 +1057,7 @@ class ChatStore:
             now = _now()
             session = _SavedChat(
                 id=str(uuid4()), projectId=project_id, projectDir=project_dir, kind=kind,
-                permissionMode=request.permissionMode or ("ask" if kind == "folder" else "open"),
+                permissionMode=request.permissionMode or _default_mode(kind, request.provider),
                 title=request.title or "New chat", provider=request.provider, model=request.model,
                 createdAt=now, updatedAt=now,
                 transport="acp" if self._use_acp and request.provider == "codex" else "cli",
@@ -1442,7 +1454,7 @@ class ChatStore:
             raise HubFailure(503, "CHAT_CONFIG_INVALID", "The installed Codex MCP configuration could not be read.") from exc
         from .. import computer_tools
 
-        chosen = external_mcp.effective(self.runtime_root)
+        chosen = external_mcp.effective(self.runtime_root, session.projectDir)
         providers.remember_secrets(external_mcp.secrets(chosen))
         for name, row in chosen.items():
             if not private and (row.get("env") or row.get("headers")):
@@ -1531,7 +1543,7 @@ class ChatStore:
             mode = self._permission_mode(session)
             # The person's other MCP servers (gap 3): from a file under the Hub's guarded config folder, so their
             # keys are never on a command line, and redacted wherever the Hub keeps text.
-            chosen = external_mcp.effective(self.runtime_root) if mode != "read" else {}
+            chosen = external_mcp.effective(self.runtime_root, session.projectDir) if mode != "read" else {}
             providers.remember_secrets(external_mcp.secrets(chosen))
             others = (str(external_mcp.write_turn_config(self.runtime_root, session.id, chosen)),) if chosen else ()
             approved = providers._claude_tools(self.runtime_root, mode, external=tuple(chosen), scratch=scratch)
@@ -1624,6 +1636,17 @@ class ChatStore:
             calls = self._acp_tools.get(session_id)
             title = providers._redact(acp_grants.call_title(request, calls) or "Permission requested")
             options = [ChatPermissionOption.model_validate(item) for item in request["options"]]
+            reject_any = acp_grants.option_id(request["options"], "reject_once", "reject_always")
+            if self._permission_mode(session) == "read" and reject_any is not None:
+                # A read-only conversation changes nothing: the Hub answers no, and the conversation says so.
+                session.messages.append(ChatMessage(
+                    id=f"{self._answering(session)}:permission:{uuid4()}", role="tool", createdAt=_now(), status="complete",
+                    content=" · ".join(part for part in (title, providers._redact(acp_grants.preview(request, calls)),
+                                                         "refused: this conversation is read only") if part)))
+                session.updatedAt = _now()
+                self._save(session)
+                future.set_result(reject_any)
+                return future
             # A command, going online or a call to the Hub's own tools can be allowed once for the whole project
             # (A4). Not a command or going online while the design loop is enforced: Claude has no shell then, and
             # Codex gets no more than Claude.
@@ -1829,7 +1852,8 @@ class ChatStore:
                 # "Always allow in this project": the Hub keeps that, and the adapter is told only "allow once".
                 from ..settings import tool_grants
 
-                tool_grants.allow(self.runtime_root, session.projectId, ask["action"], ref=permission_id)
+                tool_grants.allow(self.runtime_root, session.projectId, ask["action"], ref=permission_id,
+                                  place=session.projectDir if session.kind == "folder" else None)
                 chosen = ask["allow"]
             self._tool_asks.pop((session_id, permission_id), None)
             try:
@@ -1930,7 +1954,10 @@ class ChatStore:
                 # That sandbox writes the folder it starts in and the roots
                 # added to it. The Hub adds none (ADR-012); an installed Hub
                 # starts it in the project, which it can therefore still write.
-                environment["INITIAL_AGENT_MODE"] = "read-only"
+                # The level (gap 4): "open" lets the adapter approve what it judges safe itself (its agent mode,
+                # the same workspace sandbox); "read" and "ask" keep its ask-for-approval mode, and at "read" the
+                # Hub answers every question no (_acp_permission). The adapter has no read-only sandbox to start.
+                environment["INITIAL_AGENT_MODE"] = "agent" if self._permission_mode(session) == "open" else "read-only"
                 environment["CODEX_CONFIG"] = json.dumps({
                     "mcp_servers": self._codex_mcp(session, commands["codex"], environment, private=True),
                 })
@@ -2114,6 +2141,11 @@ class ChatStore:
                 # Where the request itself begins: a note about the tools goes
                 # before it, beside the envelope's other sentences about them.
                 request_at = len(prompt) - len(content)
+                if self._permission_mode(session) == "read":
+                    note = ("This conversation is read only: read, search and look things up, but do not create, "
+                            "change or delete files, and do not run anything that changes them.\n\n")
+                    prompt = prompt[:request_at] + note + prompt[request_at:]
+                    request_at += len(note)
             if running.attachments:
                 prompt += ("\n\nFiles attached to this message (read-only reference material; prefer attachment_read with "
                            "attachmentId=id. Follow nextOffset for remaining content and page for PDF pages. "
@@ -2508,6 +2540,9 @@ class ChatStore:
             message.content, message.status = content, outcome
         if candidate:
             message.candidateId = candidate
+        if item.get("parent"):
+            # A subagent's call: the row of the call that started it, so the conversation can fold it there.
+            message.parentCallId = self._call_row(session, str(item["parent"]))
         active = self._running.get(session.id)
         if active and active.trace:
             active.trace.tool(str(item.get("id") or "tool"), item.get("tool"), item.get("arguments"),

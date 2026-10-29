@@ -1127,6 +1127,10 @@ export type ChatMessage = {
     interjection?: 'pending' | 'delivered' | 'restarted' | 'undelivered' | null;
     markup?: ChatMarkupContext | null;
     changeListApproval?: ChatChangeListApproval | null;
+    /**
+     * Parentcallid
+     */
+    parentCallId?: string | null;
 };
 
 /**
@@ -2348,6 +2352,18 @@ export type McpServerView = {
      */
     target: string;
     /**
+     * Command
+     */
+    command?: string | null;
+    /**
+     * Args
+     */
+    args?: Array<string>;
+    /**
+     * Url
+     */
+    url?: string | null;
+    /**
      * Envkeys
      */
     envKeys?: Array<string>;
@@ -2377,6 +2393,18 @@ export type McpServersUpdate = {
             [key: string]: unknown;
         };
     } | null;
+    /**
+     * Add
+     */
+    add?: {
+        [key: string]: {
+            [key: string]: unknown;
+        };
+    } | null;
+    /**
+     * Remove
+     */
+    remove?: Array<string> | null;
 };
 
 /**
@@ -3413,6 +3441,10 @@ export type ToolGrantDto = {
      * Ref
      */
     ref?: string | null;
+    /**
+     * Place
+     */
+    place?: string | null;
     /**
      * Revokedat
      */

@@ -12955,6 +12955,44 @@ export const COMMAND_TREE: CommandTree = {
       "inPlace": true
     },
     {
+      "id": "preference.chat_mcp.add",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Add an MCP server",
+        "zh-CN": "添加 MCP 服务器"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true
+    },
+    {
+      "id": "preference.chat_mcp.remove",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Remove an MCP server",
+        "zh-CN": "移除 MCP 服务器"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true
+    },
+    {
       "id": "preference.secret.key",
       "capability": "preference.settings",
       "label": {

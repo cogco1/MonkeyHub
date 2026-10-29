@@ -447,6 +447,8 @@ class ChatMessage(BaseModel):
     # The marks this message is about, and the change list items it runs (#300 3-3).
     markup: ChatMarkupContext | None = None
     changeListApproval: ChatChangeListApproval | None = None
+    # A subagent's call (gap 5): the id of the row of the call that started the subagent, where it folds.
+    parentCallId: str | None = None
 
 
 class ChatSummary(BaseModel):
