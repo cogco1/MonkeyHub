@@ -90,7 +90,8 @@ class HubSettings:
 def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> FastAPI:
     applications = Applications(source_root, settings.runtime_root, settings.port)
     fabrication = Fabrication(source_root)
-    chats = ChatStore(settings.runtime_root, f"http://127.0.0.1:{settings.port}", applications=applications)
+    # A turn a restart cut off continues by itself when this Hub starts (resume).
+    chats = ChatStore(settings.runtime_root, f"http://127.0.0.1:{settings.port}", applications=applications, resume=True)
     runtimes = ProjectRuntimeManager(applications, chats)
     chats.on_change = runtimes.chat_changed
 

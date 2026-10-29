@@ -108,6 +108,8 @@ class _SavedChat(ChatDetail):
     acpDefaultModel: str | None = None
     # Read from the transcript on every summary (#300); a record never stores it.
     attention: ChatAttention | None = Field(default=None, exclude=True)
+    # The user message whose turn a Hub restart already resumed once; a second cut-off waits for the person.
+    resumedTurn: str | None = None
 
 
 # A summary is these fields of the record, plus its attention read fresh.
@@ -174,6 +176,23 @@ class _Running:
     # The ACP prompt is with the adapter; steering is offered only then.
     prompting: bool = False
     steering: threading.Lock = field(default_factory=threading.Lock)
+    # When the CLI last reported anything; the turn is stopped only after timeout_s of nothing.
+    active_at: float = 0.0
+    # Hub is closing and this turn was cut off to be resumed when Hub starts again.
+    suspended: bool = False
+
+
+def _duration(seconds: float | None) -> str:
+    seconds = int(seconds or 0)
+    return f"{seconds // 60} min" if seconds >= 120 else f"{seconds} s"
+
+
+# What a turn cut off by a Hub restart is resumed with, on its own native session.
+_RESUME_NOTE = ("MonkeyHub restarted while you were working on the user's last request, and your previous step was cut "
+                "off. Continue that request from where you stopped: first check what was already done (files, tool "
+                "results, candidates) and do not repeat completed changes.")
+# How long a closing Hub lets running turns finish before it cuts them off for resuming.
+_SHUTDOWN_GRACE_S = 10.0
 
 
 def _presented_id(value: str, field: str) -> str:
@@ -192,7 +211,8 @@ def _presented_id(value: str, field: str) -> str:
 
 
 class ChatStore:
-    def __init__(self, runtime_root: Path, hub_url: str, *, applications=None, commands=None, acp_command=None, timeout_s: float = 900):
+    def __init__(self, runtime_root: Path, hub_url: str, *, applications=None, commands=None, acp_command=None,
+                 timeout_s: float = 900, max_turn_s: float | None = None, resume: bool = False):
         self.root = runtime_root / "chats"
         self.runtime_root = runtime_root
         self.usage_log = UsageLog(runtime_root / "diagnostics" / "monkeymonitor")
@@ -212,7 +232,12 @@ class ChatStore:
         # What a permission card's "always allow in this project" would allow, and the adapter option it is answered
         # with (A4); kept until the person answers.
         self._tool_asks: dict[tuple[str, str], dict[str, str]] = {}
+        # timeout_s is how long a turn may report nothing before it is stopped,
+        # not how long it may take; max_turn_s is an optional total. resume:
+        # a turn a Hub restart cut off continues by itself on the next start.
         self.timeout_s = timeout_s
+        self.max_turn_s = max_turn_s
+        self.resume = resume
         self._lock = threading.RLock()
         self._sessions: dict[str, _SavedChat] = {}
         self._running: dict[str, _Running] = {}
@@ -235,6 +260,7 @@ class ChatStore:
     def _load(self) -> None:
         if self._loaded:
             return
+        resumable: list[str] = []
         for path in sorted(self.root.glob("*.json")):
             try:
                 session = _SavedChat.model_validate_json(path.read_text(encoding="utf-8"))
@@ -244,7 +270,9 @@ class ChatStore:
             except (ValueError, OSError, HubFailure) as exc:
                 raise HubFailure(503, "CHAT_RECORD_INVALID", "A saved chat record could not be read.") from exc
             self._sessions[session.id] = session
-            if session.status == "running":
+            if session.status == "running" and self._resumable(session):
+                resumable.append(session.id)
+            elif session.status == "running":
                 session.status = "interrupted"
                 session.error = HubError(code="CHAT_INTERRUPTED", detail="Hub closed before this turn finished. You can continue this conversation.")
                 for message in session.messages:
@@ -258,6 +286,57 @@ class ChatStore:
                 # Archived before this Hub started: its scratch was temporary computation (#404 item 6).
                 self._clear_scratch(session.id)
         self._loaded = True
+        for session_id in resumable:
+            self._resume(session_id)
+
+    def _resumable(self, session: _SavedChat) -> bool:
+        """Whether a turn a Hub restart cut off can go on by itself: once per user message, on its own native session."""
+        if not self.resume or self._closing or session.sourceSessionId or session.archived:
+            return False
+        native = session.acpSessionId if session.transport == "acp" else session.nativeSessionId
+        return bool(native) and session.resumedTurn != _turn_id(session)
+
+    def _resume(self, session_id: str) -> None:
+        """Continue a cut-off turn on the same native session; the lock is held, the store loaded.
+
+        What it had shown stays; what was still streaming is marked cut off. A
+        message sent during it that the Agent never read goes with the resume.
+        If its connection is gone, the chat is left interrupted as before.
+        """
+        session = self._sessions[session_id]
+        session.resumedTurn = _turn_id(session)
+        waiting = []
+        for message in session.messages:
+            if message.status == "streaming":
+                message.status = "interrupted"
+            message.permission = None
+            if message.interjection == "pending":
+                waiting.append((message.id, message.content))
+        try:
+            provider = next(row for row in self.providers() if row.id == session.provider)
+            available = provider.available or (session.provider == "codex" and session.transport == "cli"
+                                               and provider.installed)
+        except Exception:  # noqa: BLE001 - a connection that cannot be checked is not resumed
+            available = False
+        if not available:
+            for message in session.messages:
+                if message.interjection == "pending":
+                    message.interjection = "undelivered"
+            session.status = "interrupted"
+            session.error = HubError(code="CHAT_INTERRUPTED", detail="Hub closed before this turn finished. You can continue this conversation.")
+            self._save(session)
+            return
+        session.status, session.error, session.updatedAt = "running", None, _now()
+        self._save(session)
+        content = _RESUME_NOTE + "".join("\n\n" + text for _, text in waiting)
+        running = _Running(trace=HubTurnObserver(self.usage_log, _turn_id(session), session.projectId,
+                                                 session.provider, session.model))
+        self._start(session_id, running, content, carried=tuple(identifier for identifier, _ in waiting))
+
+    def _waiting_on_person(self, session_id: str) -> bool:
+        """A question of this chat's is waiting for the person: the turn is not silent, it is waiting."""
+        with self._lock:
+            return any(key[0] == session_id and not future.done() for key, future in self._permissions.items())
 
     def _attachment_path(self, session_id: str, attachment: ChatAttachment) -> Path:
         suffix = Path(attachment.name).suffix.lower()
@@ -1763,7 +1842,7 @@ class ChatStore:
                     running.prompting = False
             return None
         except AcpCancelled:
-            if not running.redirected:
+            if not (running.redirected or running.suspended):
                 running.stop.set()
             return None
         except Exception as exc:
@@ -1839,11 +1918,12 @@ class ChatStore:
         retained: dict | None = None
         stderr: list[str] = []
         completed_turn = False
-        # When this turn's own limit is spent. Preparing a named source is bound
-        # by it and cancellable within it, and the CLI transport — which holds
-        # one total limit for the turn — gets what preparing left rather than a
-        # fresh limit beside it. The ACP adapter keeps its own inactivity
-        # interval, which this is not and cannot stand in for.
+        timed_out: str | None = None
+        # When preparing this turn's context has to be done by. Preparing a
+        # named source is bound by it and cancellable within it. The provider
+        # then has no total limit at all: a CLI turn is stopped only after
+        # timeout_s with nothing from it (and max_turn_s, when set), and the ACP
+        # adapter keeps its own inactivity interval of the same length.
         deadline = time.monotonic() + self.timeout_s
         try:
             with self._lock:
@@ -2011,14 +2091,6 @@ class ChatStore:
                     running.trace.ready()
                 error = self._run_acp(session_id, prompt, running)
                 return
-            if time.monotonic() >= deadline:
-                # The CLI transport holds one total limit for the turn, so a
-                # budget preparing already spent starts no process: a CLI given
-                # no time would be reported as its own failure rather than as
-                # the limit it actually ran into.
-                error = HubError(code="CHAT_TIMEOUT", detail="This turn's time limit was spent before "
-                                 "the CLI could be started.")
-                return
             command, environment = self._command(session, running.attachments, library)
             running.library_skills = "--setting-sources" in command and "--disable-slash-commands" not in command
             if running.trace:
@@ -2097,20 +2169,36 @@ class ChatStore:
             feeder.start()
             reader.start()
             errors.start()
-            timer = threading.Timer(max(0.0, deadline - time.monotonic()),
-                                    lambda: providers._stop_process(process) if process.poll() is None else None)
-            timer.daemon = True
-            timer.start()
             last_save = 0.0
             failure_deadline = None
+            # No total limit: the turn runs as long as the CLI keeps reporting.
+            # It is stopped only after timeout_s of silence, and a question
+            # waiting for the person is not silence. max_turn_s, when set, is a
+            # total the person chose.
+            hard_deadline = time.monotonic() + self.max_turn_s if self.max_turn_s else None
+            running.active_at = time.monotonic()
             try:
-                while time.monotonic() < (failure_deadline or deadline):
-                    try:
-                        line = output.get(timeout=max(0.0, (failure_deadline or deadline) - time.monotonic()))
-                    except queue.Empty:
+                while True:
+                    now = time.monotonic()
+                    if failure_deadline is not None and now >= failure_deadline:
                         break
+                    if hard_deadline is not None and now >= hard_deadline:
+                        timed_out = "total"
+                        break
+                    if self._waiting_on_person(session_id):
+                        running.active_at = now
+                    quiet_left = running.active_at + self.timeout_s - now
+                    if quiet_left <= 0:
+                        timed_out = "quiet"
+                        break
+                    try:
+                        line = output.get(timeout=max(0.0, min(1.0, quiet_left, *(
+                            [failure_deadline - now] if failure_deadline is not None else []))))
+                    except queue.Empty:
+                        continue
                     if line is None:
                         break
+                    running.active_at = time.monotonic()
                     try:
                         event = json.loads(line)
                     except ValueError:
@@ -2137,18 +2225,20 @@ class ChatStore:
                             if event_error and failure_deadline is None:
                                 # Bounded drain: keep a following failed result,
                                 # but never wait indefinitely for inherited pipes.
-                                failure_deadline = min(deadline, time.monotonic() + 2.0)
+                                failure_deadline = time.monotonic() + 2.0
                         if time.monotonic() - last_save >= 0.3:
                             self._save(session)
                             last_save = time.monotonic()
-                try:
-                    process.wait(timeout=max(0.0, (failure_deadline or deadline) - time.monotonic()))
-                except subprocess.TimeoutExpired:
-                    providers._stop_process(process)
+                if timed_out is None:
+                    try:
+                        # Its output has ended; the CLI exits on its own right after.
+                        process.wait(timeout=max(0.0, (failure_deadline - time.monotonic()) if failure_deadline
+                                                 else min(self.timeout_s, 30.0)))
+                    except subprocess.TimeoutExpired:
+                        providers._stop_process(process)
             finally:
                 with self._lock:
                     self._close_input(running)
-                timer.cancel()
                 if process.poll() is None:
                     providers._stop_process(process)
                 process.wait(timeout=10)
@@ -2158,9 +2248,12 @@ class ChatStore:
                     thread.join(timeout=max(0.0, joined_until - time.monotonic()))
                 # Each daemon owns/closes its pipe. A descendant retaining a
                 # pipe can outlive the CLI, but cannot hold this turn's outcome.
-            if not (running.stop.is_set() or running.redirected):
-                if time.monotonic() >= deadline and error is None:
-                    error = HubError(code="CHAT_TIMEOUT", detail="The CLI did not finish within this turn's time limit.")
+            if not (running.stop.is_set() or running.redirected or running.suspended):
+                if timed_out == "quiet" and error is None:
+                    error = HubError(code="CHAT_TIMEOUT", detail=f"The CLI reported nothing for {_duration(self.timeout_s)}, "
+                                     "so this turn was stopped. Send a message to continue it.")
+                elif timed_out == "total" and error is None:
+                    error = HubError(code="CHAT_TIMEOUT", detail=f"This turn reached its limit of {_duration(self.max_turn_s)}.")
                 elif process.returncode and error is None:
                     detail = "".join(stderr).strip()[-1000:] or f"The CLI exited with code {process.returncode}."
                     error = HubError(code="CHAT_PROCESS_FAILED", detail=detail)
@@ -2173,7 +2266,11 @@ class ChatStore:
             with self._lock:
                 session = self._sessions[session_id]
                 stopped = running.stop.is_set()
-                halted = stopped or running.redirected
+                # Cut off by a closing Hub: the record stays "running" for the next start to resume.
+                suspended = running.suspended and not stopped
+                if suspended:
+                    error = None
+                halted = stopped or running.redirected or suspended
                 self._clear_permissions(session_id)
                 # What Claude read without echoing it back still reached it when
                 # its turn finished normally; a stopped or failed turn read none.
@@ -2191,11 +2288,12 @@ class ChatStore:
                 # finishes late; one handed over is left for that steer to settle.
                 running.waiting = [row for row in running.waiting if row[0] in handed]
                 for message in session.messages:
-                    if message.interjection == "pending" and message.id not in following:
+                    if message.interjection == "pending" and message.id not in following and not suspended:
                         message.interjection = "undelivered"
                 if not follow:
                     self._acp_tools.pop(session_id, None)
-                session.status = "running" if follow else "interrupted" if stopped else "failed" if error else "idle"
+                session.status = ("running" if follow or suspended else "interrupted" if stopped
+                                  else "failed" if error else "idle")
                 session.error = HubError(code="CHAT_STOPPED", detail="The response was stopped.") if stopped else error
                 for message in session.messages:
                     if message.status == "streaming":
@@ -2416,10 +2514,24 @@ class ChatStore:
         # leaving a CLI probe behind.
         if checking is not None:
             checking.join(timeout=10)
-        # Normal Hub shutdown lets admitted work finish. The explicit stop
-        # endpoint only terminates that chat's own process tree.
+        # A turn has no total limit, so closing cannot wait for it to finish:
+        # each one gets a short grace, then is cut off and left "running" in its
+        # record, which the next start resumes on the same native session.
+        until = time.monotonic() + _SHUTDOWN_GRACE_S
         for thread in threads:
-            thread.join()
+            thread.join(timeout=max(0.0, until - time.monotonic()))
+        with self._lock:
+            cut = [(running, running.process, self._acp_sessions.get(key)) for key, running in self._running.items()]
+            for running, _, _ in cut:
+                running.suspended = True
+        for running, process, client in cut:
+            if client is not None:
+                client.cancel()
+            if process is not None:
+                providers._stop_process(process)
+        for running, _, _ in cut:
+            if running.thread is not None:
+                running.thread.join(timeout=10)
         for client in self._acp_sessions.values():
             client.close()
         self._acp_sessions.clear()

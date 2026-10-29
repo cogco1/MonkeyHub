@@ -154,6 +154,11 @@ if "--output-format" in args:
               "text": "Explain the phrase You've hit your limit and how a rate_limit error works."}]}})
         emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "retryable",
               "is_error": True, "content": "rate_limit: this tool call can be retried"}]}})
+    if "steady-test" in prompt:
+        # A long turn that keeps reporting: about 4 s, never quiet for more than 0.4 s.
+        for _ in range(10):
+            emit({"type": "stream_event", "session_id": native, "event": {"type": "ping"}})
+            time.sleep(0.4)
     emit({"type": "stream_event", "event": {"type": "content_block_delta",
         "delta": {"type": "text_delta", "text": "hello "}}})
     emit({"type": "stream_event", "event": {"type": "content_block_delta",
@@ -4711,17 +4716,35 @@ class ChatTests(unittest.TestCase):
         self.assertIn(turn_context._CONTEXT_NOTE, self.calls()[-1]["prompt"])
         return elapsed
 
-    def test_preparing_the_context_is_taken_out_of_the_cli_turns_own_limit(self):
+    def test_a_cli_turn_is_stopped_for_silence_not_for_how_long_preparing_took(self):
         session = self.create()
         self.store.timeout_s = 3.0
-        # The same turn twice against the real fake CLI, which holds until it is
-        # stopped: only how long preparing took differs.
+        # The same turn twice against the real fake CLI, which reports nothing
+        # until it is stopped: only how long preparing took differs.
         quick = self.paused_turn(session, 0.05)
         slow = self.paused_turn(session, 1.5)
-        # The CLI's share is what preparing left. Were the two limits separate,
-        # the slower preparation would push this turn out by its whole 1.5s.
-        self.assertLess(slow - quick, 1.0,
-                        f"the CLI was given a fresh limit beside the preparation ({quick=:.2f} {slow=:.2f})")
+        # The CLI has no total limit: it is stopped after timeout_s of silence
+        # counted from its own start, so a slower preparation only adds itself.
+        self.assertGreater(slow - quick, 1.0,
+                           f"preparing shortened the CLI's own quiet limit ({quick=:.2f} {slow=:.2f})")
+        detail = self.store.get(session.id).error.detail
+        self.assertIn("reported nothing", detail)
+
+    def test_a_cli_turn_that_keeps_reporting_outlives_the_quiet_limit(self):
+        """No 15-minute cap: a turn that keeps reporting runs past timeout_s; only silence stops it."""
+        session = self.create(provider="claude")
+        self.store.timeout_s = 1.5
+        self.post(session, "steady-test")
+        finished = wait_for(lambda: self.store.get(session.id), lambda row: row.status != "running", timeout=20)
+        self.assertEqual(finished.status, "idle", finished.error)
+
+    def test_an_optional_total_limit_still_stops_a_turn(self):
+        session = self.create(provider="claude")
+        self.store.timeout_s, self.store.max_turn_s = 10.0, 1.5
+        self.post(session, "steady-test")
+        finished = wait_for(lambda: self.store.get(session.id), lambda row: row.status != "running", timeout=20)
+        self.assertEqual(finished.error.code, "CHAT_TIMEOUT")
+        self.assertIn("limit of", finished.error.detail)
 
     def test_the_acp_adapter_keeps_its_own_inactivity_interval(self):
         from monkeyhub_api.chat import acp_session as adapter
