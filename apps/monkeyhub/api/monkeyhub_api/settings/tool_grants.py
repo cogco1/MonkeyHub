@@ -15,6 +15,8 @@ Three kinds of request can be allowed this way, and only these:
 
 A tool of any other MCP server is never one of them.
 
+- ``edit``: a file tool, only in a plain folder a conversation works in (projectId ``folder:...``), which it writes.
+
 An edit is never one of them. The bound project is read-only to every agent's file tools (ADR-012), and Claude
 is denied every edit there; a project-wide grant of edits would give Codex more than Claude has. Nothing here is
 read by a Project Runtime, and no grant here reaches a skill (``skill_grants`` is a separate file).
@@ -35,7 +37,7 @@ from . import store
 
 GRANTS_FILE = Path("config") / "tool-grants.json"
 GRANTS_SCHEMA = "MonkeyHubToolGrants@1"
-ACTIONS = ("run", "network", "hub")
+ACTIONS = ("run", "network", "hub", "edit")
 _lock = threading.Lock()
 
 
@@ -46,7 +48,7 @@ class ToolGrantDto(BaseModel):
 
     grant_id: str = Field(alias="grantId")
     project_id: str = Field(alias="projectId", min_length=1)
-    action: Literal["run", "network", "hub"]
+    action: Literal["run", "network", "hub", "edit"]
     granted_at: str = Field(alias="grantedAt")
     # The permission card the person answered.
     ref: str | None = None
@@ -102,6 +104,9 @@ def allow(runtime_root: Path, project_id: str, action: str, *, ref: str | None =
 
     if action not in ACTIONS:
         raise HubFailure(422, "TOOL_GRANT_INVALID", f"Only {', '.join(ACTIONS)} can be allowed for a whole project.")
+    if action == "edit" and not project_id.startswith("folder:"):
+        # A project is read-only to every agent's file tools (ADR-012); only a plain folder is written.
+        raise HubFailure(422, "TOOL_GRANT_INVALID", "Edits can be allowed for a folder, never for a project.")
     with _lock:
         document = read(runtime_root)
         held = next((row for row in document.grants

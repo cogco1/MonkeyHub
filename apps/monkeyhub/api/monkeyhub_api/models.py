@@ -136,6 +136,8 @@ ChatAttention = Literal["permission"]
 # What a conversation works in: a MonkeyHub project, read here and changed only
 # through the Hub (ADR-012), or any other folder, which it reads and writes.
 ChatKind = Literal["project", "folder"]
+# What a conversation's agent may do unasked (gap 4): read only; read and ask before changing anything; anything.
+ChatPermissionMode = Literal["read", "ask", "open"]
 
 
 class ChatProvider(BaseModel):
@@ -454,6 +456,9 @@ class ChatSummary(BaseModel):
     # "folder": projectId is "folder:<digest>" and projectDir is the folder the
     # conversation reads and writes; it has no design tools.
     kind: ChatKind = "project"
+    # Null on records from before levels: "open" for a project (its files change only through the Hub anyway),
+    # "ask" for a folder.
+    permissionMode: ChatPermissionMode | None = None
     title: str
     provider: ChatProviderId
     model: str | None = None
@@ -497,6 +502,7 @@ class ChatCreateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     # "auto": a MonkeyHub project when the folder is one, else the folder itself.
     kind: Literal["project", "folder", "auto"] = "project"
+    permissionMode: ChatPermissionMode | None = None
 
 
 class ChatPresentationBindRequest(BaseModel):
@@ -621,6 +627,14 @@ class ChatModelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
 
     model: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class ChatPermissionModeRequest(BaseModel):
+    """What this conversation's next turns may do unasked."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    permissionMode: ChatPermissionMode
 
 
 class ChatArchiveRequest(BaseModel):

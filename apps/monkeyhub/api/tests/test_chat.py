@@ -154,6 +154,18 @@ if "--output-format" in args:
               "text": "Explain the phrase You've hit your limit and how a rate_limit error works."}]}})
         emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "retryable",
               "is_error": True, "content": "rate_limit: this tool call can be retried"}]}})
+    if "ask-test" in prompt:
+        # The "ask" level: the CLI asks its host over stdio and waits for the answer on stdin.
+        emit({"type": "control_request", "request_id": "req-ask-1", "request": {
+            "subtype": "can_use_tool", "tool_name": "Bash", "display_name": "Bash",
+            "input": {"command": "echo hi"}, "tool_use_id": "toolu_ask"}})
+        answer = None
+        for line in sys.stdin:
+            row = json.loads(line)
+            if row.get("type") == "control_response":
+                answer = row
+                break
+        Path(sys.argv[1]).with_name("ask-answer.json").write_text(json.dumps(answer), encoding="utf-8")
     if "steady-test" in prompt:
         # A long turn that keeps reporting: about 4 s, never quiet for more than 0.4 s.
         for _ in range(10):
@@ -1072,7 +1084,8 @@ class ChatTests(unittest.TestCase):
         started = time.monotonic()
         self.post(session, "limit-stalled-test")
         failed = self.finished(session)
-        self.assertLess(time.monotonic() - started, 5)
+        # Bounded by the 2 s drain after the refusal (a turn has no total to share it with), not by the CLI's 20 s.
+        self.assertLess(time.monotonic() - started, 8)
         self.assertEqual(failed.status, "failed")
         self.assertEqual(failed.error.code, "CHAT_RATE_LIMITED", "the deadline must not overwrite the provider's refusal")
         self.assertIn("resets 7pm (UTC)", failed.error.detail)

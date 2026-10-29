@@ -33,6 +33,7 @@ from ..attention.actions import action_router
 from ..attention.hub import AttentionHub, hub_router
 from ..attention.routes import attention_router
 from ..attention.store import AttentionStore
+from ..chat.agent_routes import agent_router
 from ..chat.routes import projects_router, providers_router, sessions_router
 from ..commands.routes import CommandMeaning, commands_router
 from ..chat.store import ChatStore
@@ -284,6 +285,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         return project_archive.restore_archive(body, runtime_root=settings.runtime_root)
 
     app.include_router(sessions_router(chats))
+    app.include_router(agent_router(chats))
 
     computer_errors = {403: {"model": HubError}, 409: {"model": HubError}, 422: {"model": HubError}}
 

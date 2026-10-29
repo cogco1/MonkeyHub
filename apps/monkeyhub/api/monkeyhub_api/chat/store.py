@@ -34,8 +34,9 @@ from pydantic import Field
 
 from .. import projects, recycle
 from ..runtime.workers import project_key
-from . import (acp_grants, activity, guides, mcp_server, media, providers, skill_cards, skill_plugins, studio_tool,
-               transport, turn_context)
+from . import (acp_grants, activity, claude_grants, guides, mcp_server, media, providers, skill_cards,
+               skill_plugins, studio_tool, transport, turn_context)
+from . import mcp_servers as external_mcp
 from ..settings.store import read_application_settings
 
 from ..models import (
@@ -232,6 +233,8 @@ class ChatStore:
         # What a permission card's "always allow in this project" would allow, and the adapter option it is answered
         # with (A4); kept until the person answers.
         self._tool_asks: dict[tuple[str, str], dict[str, str]] = {}
+        # A Claude turn's open can_use_tool questions (gap 4), by its request id: the card that shows each.
+        self._claude_requests: dict[tuple[str, str], str] = {}
         # timeout_s is how long a turn may report nothing before it is stopped,
         # not how long it may take; max_turn_s is an optional total. resume:
         # a turn a Hub restart cut off continues by itself on the next start.
@@ -547,6 +550,105 @@ class ChatStore:
             session.updatedAt = _now()
             self._save(session)
             return self.get(session_id)
+
+    @staticmethod
+    def _permission_mode(session: _SavedChat) -> str:
+        """What this conversation's turns may do unasked; a record from before levels keeps what it had."""
+        return session.permissionMode or ("ask" if session.kind == "folder" else "open")
+
+    def set_permission_mode(self, session_id: str, mode: str) -> ChatDetail:
+        """What this conversation's next turns may do unasked; a running turn keeps the level it started with."""
+        with self._lock:
+            session = self._session(session_id)
+            if session_id in self._running:
+                raise HubFailure(409, "CHAT_RUNNING", "Wait for this reply to finish before changing what it may do.")
+            if mode not in providers.PERMISSION_MODES:
+                raise HubFailure(422, "CHAT_PERMISSION_MODE_INVALID", "Choose read, ask or open.")
+            if session.sourceSessionId:
+                raise HubFailure(409, "CHAT_EXTERNAL_SOURCE", "An external conversation's permissions are its source's.")
+            if session.permissionMode != mode:
+                session.permissionMode = mode
+                session.updatedAt = _now()
+                self._save(session)
+            return self.get(session_id)
+
+    def _claude_permission(self, session: _SavedChat, event: Mapping) -> None:
+        """Show one can_use_tool question of a Claude turn at the "ask" level as a card; the lock is held.
+
+        The answer goes back on the turn's stdin. An "always" given earlier for this kind here answers at once,
+        and the conversation says so; a turn that is ending is answered no.
+        """
+        request = event.get("request") if isinstance(event.get("request"), Mapping) else {}
+        request_id = event.get("request_id")
+        running = self._running.get(session.id)
+        if not isinstance(request_id, str):
+            return
+        if request.get("subtype") != "can_use_tool":
+            # Anything else the CLI asks a host is answered at once, so it never waits on a question nobody sees.
+            if running is not None and running.stdin is not None:
+                running.stdin.put(json.dumps({"type": "control_response", "response": {
+                    "subtype": "error", "request_id": request_id,
+                    "error": "MonkeyHub answers only permission questions."}}) + "\n")
+            return
+        tool = str(request.get("tool_name") or "tool")
+        arguments = request.get("input") if isinstance(request.get("input"), Mapping) else {}
+
+        def answer(allow: bool, message: str | None = None) -> None:
+            channel = running.stdin if running is not None else None
+            if channel is not None:
+                channel.put(claude_grants.response(request_id, arguments, allow, message))
+
+        if running is None or running.stop.is_set() or self._closing:
+            answer(False, "This turn is ending.")
+            return
+        action = claude_grants.action_of(tool, folder=session.kind == "folder")
+        if action in ("run", "network") and self._design_loop_enforced():
+            action = None
+        title = providers._redact(" · ".join(part for part in (
+            str(request.get("display_name") or tool), claude_grants.preview(tool, arguments)) if part))
+        if action is not None:
+            from ..settings import tool_grants
+
+            if tool_grants.covers(self.runtime_root, session.projectId, action):
+                session.messages.append(ChatMessage(
+                    id=f"{self._answering(session)}:permission:{uuid4()}", role="tool", createdAt=_now(), status="complete",
+                    content=title + " · allowed by your earlier answer here"))
+                session.updatedAt = _now()
+                answer(True)
+                return
+        always = {"run": "这里的命令一直允许 / Always allow commands here",
+                  "network": "这里联网一直允许 / Always allow going online here",
+                  "hub": "这里 MonkeyHub 自己的工具一直允许 / Always allow MonkeyHub's own tools here",
+                  "edit": "这个文件夹里改文件一直允许 / Always allow edits in this folder"}
+        options = [ChatPermissionOption(optionId="allow_once", name="只这一次 / Only this time", kind="allow_once"),
+                   *([ChatPermissionOption(optionId=acp_grants.HUB_PROJECT, kind="allow_always", name=always[action])]
+                     if action is not None else []),
+                   ChatPermissionOption(optionId="reject_once", name="不 / No", kind="reject_once")]
+        permission = ChatPermission(id=str(uuid4()), title=title, options=options)
+        session.messages.append(ChatMessage(
+            id=f"{self._answering(session)}:permission:{permission.id}", role="tool", content=permission.title,
+            createdAt=_now(), status="streaming", permission=permission))
+        session.updatedAt = _now()
+        future = Future()
+        self._permissions[(session.id, permission.id)] = future
+        self._claude_requests[(session.id, request_id)] = permission.id
+        if action is not None:
+            self._tool_asks[(session.id, permission.id)] = {"action": action, "allow": "allow_once"}
+        future.add_done_callback(lambda done: answer(done.result() == "allow_once"))
+        if running.trace:
+            running.trace.permission(permission.id)
+
+    def _claude_withdrawn(self, session: _SavedChat, event: Mapping) -> None:
+        """The CLI took back a question it asked (its step was interrupted): the card says so; the lock is held."""
+        permission_id = self._claude_requests.pop((session.id, str(event.get("request_id"))), None)
+        future = self._permissions.pop((session.id, permission_id), None) if permission_id else None
+        self._tool_asks.pop((session.id, permission_id), None)
+        if future is not None:
+            with suppress(InvalidStateError):
+                future.set_result(None)
+        for message in session.messages:
+            if message.permission is not None and message.permission.id == permission_id:
+                message.permission, message.status = None, "interrupted"
 
     def projects(self) -> list[ChatProject]:
         # Only the conversations are read under the store's lock; the projects'
@@ -943,6 +1045,7 @@ class ChatStore:
             now = _now()
             session = _SavedChat(
                 id=str(uuid4()), projectId=project_id, projectDir=project_dir, kind=kind,
+                permissionMode=request.permissionMode or ("ask" if kind == "folder" else "open"),
                 title=request.title or "New chat", provider=request.provider, model=request.model,
                 createdAt=now, updatedAt=now,
                 transport="acp" if self._use_acp and request.provider == "codex" else "cli",
@@ -1308,8 +1411,12 @@ class ChatStore:
         source = providers._source_checkout()
         return str(source) if source is not None else session.projectDir
 
-    def _codex_mcp(self, session: _SavedChat, command, environment) -> dict:
-        """Keep the same project-only MCP configuration for both native transports."""
+    def _codex_mcp(self, session: _SavedChat, command, environment, *, private: bool = False) -> dict:
+        """Keep the same MCP configuration for both native transports: MonkeyHub's own and the person's chosen.
+
+        ``private`` says the configuration travels in the adapter's environment rather than on a command line,
+        so a server whose environment or headers hold values can be given; on a command line it is left out.
+        """
         mcp = self._tool_connection(session)
         listing = subprocess.run(
             [*command, "-C", session.projectDir, "mcp", "list", "--json"],
@@ -1335,6 +1442,15 @@ class ChatStore:
             raise HubFailure(503, "CHAT_CONFIG_INVALID", "The installed Codex MCP configuration could not be read.") from exc
         from .. import computer_tools
 
+        chosen = external_mcp.effective(self.runtime_root)
+        providers.remember_secrets(external_mcp.secrets(chosen))
+        for name, row in chosen.items():
+            if not private and (row.get("env") or row.get("headers")):
+                continue
+            entry = ({"command": row["command"], "args": row["args"], **({"env": row["env"]} if row.get("env") else {})}
+                     if row["type"] == "stdio" else
+                     {"url": row["url"], **({"http_headers": row["headers"]} if row.get("headers") else {})})
+            mcp_servers[name] = {**entry, "enabled": True, "required": False}
         tool_names = ("studio_schema", "studio_request", "visual_review", "fab_request", "attachment_read",
                       "chat_present", *computer_tools.TOOL_NAMES)
         mcp_servers["monkeyhub"] = {
@@ -1379,7 +1495,8 @@ class ChatStore:
             # (ADR-012); an installed Hub's workspace is the project itself.
             mcp_servers = self._codex_mcp(session, commands[kind], environment)
             command = [*commands[kind], "exec", "--json", "--skip-git-repo-check",
-                       "-C", workdir, "-s", "workspace-write", "--color", "never",
+                       "-C", workdir, "-s", "read-only" if self._permission_mode(session) == "read" else "workspace-write",
+                       "--color", "never",
                        "-c", f"mcp_servers={providers._toml_value(mcp_servers)}"]
             if model:
                 command += ["-m", model]
@@ -1411,12 +1528,22 @@ class ChatStore:
                                 skill_plugins.claude_settings(self.runtime_root, providers._claude_user_settings()))
             # A folder conversation writes its folder; only the Hub's own places stay closed to it.
             denied = providers._claude_denied(None if session.kind == "folder" else session.projectDir, self.runtime_root)
+            mode = self._permission_mode(session)
+            # The person's other MCP servers (gap 3): from a file under the Hub's guarded config folder, so their
+            # keys are never on a command line, and redacted wherever the Hub keeps text.
+            chosen = external_mcp.effective(self.runtime_root) if mode != "read" else {}
+            providers.remember_secrets(external_mcp.secrets(chosen))
+            others = (str(external_mcp.write_turn_config(self.runtime_root, session.id, chosen)),) if chosen else ()
+            approved = providers._claude_tools(self.runtime_root, mode, external=tuple(chosen), scratch=scratch)
+            # "ask": the CLI asks this Hub over stdio, and the conversation shows the question (claude_grants).
+            asking = (("--permission-mode", "manual", "--permission-prompts", "host", "--permission-prompt-tool", "stdio")
+                      if mode == "ask" else ("--permission-mode", "dontAsk", "--permission-prompts", "none"))
             if environment.get(studio_tool.DESIGN_LOOP_ENV) == studio_tool.DESIGN_LOOP_ENFORCED:
                 # Enforced (#185): no shell, so the Agent reaches the design only through this Hub, which vouches
                 # for it; a shell could reach the Runtime's port and act as a person.
                 denied = (*denied, "Bash", "PowerShell")
             command = [*commands[kind], "-p", "--output-format", "stream-json", "--verbose",
-                       "--include-partial-messages", "--permission-mode", "dontAsk", "--permission-prompts", "none",
+                       "--include-partial-messages", *asking,
                        # Two different questions, and both have to be answered.
                        # `--tools` is what exists; `--allowedTools` is what is
                        # approved without anybody to ask, which is the whole of
@@ -1426,14 +1553,15 @@ class ChatStore:
                        # `--disallowedTools` then takes Write and Edit back in
                        # the bound project, which is read here and changed only
                        # through the Hub (ADR-012).
-                       "--tools", "default", "--allowedTools", ",".join(providers._claude_approved(self.runtime_root)),
+                       "--tools", "default", "--allowedTools", ",".join(approved),
                        *(("--disallowedTools", *denied) if denied else ()),
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
                        *only_library,
                        "--add-dir", str(scratch),
                        # alwaysLoad: the CLI otherwise defers every MCP tool behind
                        # a ToolSearch round trip, one model call before any design work.
-                       "--strict-mcp-config", "--mcp-config", json.dumps({"mcpServers": {"monkeyhub": {**mcp, "alwaysLoad": True}}})]
+                       "--strict-mcp-config", "--mcp-config", json.dumps({"mcpServers": {"monkeyhub": {**mcp, "alwaysLoad": True}}}),
+                       *others]
             command += ["--resume", session.nativeSessionId] if session.nativeSessionId else ["--session-id", session.cliStartId or session.id]
             # Every turn reads stream-json from stdin, so a message sent while
             # it runs reaches it at its next step (#301). Each one read is
@@ -1729,6 +1857,8 @@ class ChatStore:
             return self.get(session_id)
 
     def _clear_permissions(self, session_id: str) -> None:
+        for key in [key for key in self._claude_requests if key[0] == session_id]:
+            self._claude_requests.pop(key)
         for key, future in list(self._permissions.items()):
             if key[0] == session_id:
                 self._permissions.pop(key)
@@ -1802,7 +1932,7 @@ class ChatStore:
                 # starts it in the project, which it can therefore still write.
                 environment["INITIAL_AGENT_MODE"] = "read-only"
                 environment["CODEX_CONFIG"] = json.dumps({
-                    "mcp_servers": self._codex_mcp(session, commands["codex"], environment),
+                    "mcp_servers": self._codex_mcp(session, commands["codex"], environment, private=True),
                 })
                 client = CodexAcpSession(
                     command=self._acp_command, cwd=self._workdir(session),
@@ -2416,6 +2546,17 @@ class ChatStore:
                 return None, False
             if kind != "item.started" and item.get("type") == "agent_message":
                 text, message_id = item.get("text", ""), str(item.get("id", "answer"))
+        elif kind == "stream_event" and event.get("parent_tool_use_id"):
+            # A subagent's own words as they stream: its result comes back as its call's result (gap 5).
+            return None, False
+        elif kind == "assistant" and event.get("parent_tool_use_id"):
+            # A subagent's step: its calls are rows of their own under the call that started it; its words are
+            # not this turn's answer.
+            for row in event.get("message", {}).get("content", []) or []:
+                if isinstance(row, dict) and row.get("type") == "tool_use":
+                    self._tool_message(session, activity._claude_call(row, None, event["parent_tool_use_id"]),
+                                       "item.started", environment)
+            return None, False
         elif kind == "stream_event":
             inner = event.get("event", {})
             if inner.get("type") == "content_block_delta" and inner.get("delta", {}).get("type") == "text_delta":
@@ -2434,6 +2575,13 @@ class ChatStore:
             if isinstance(event.get("uuid"), str):
                 self._delivered(session, event["uuid"])
             return None, False
+        elif kind == "control_request":
+            # A question the CLI asks this Hub at the "ask" level (gap 4).
+            self._claude_permission(session, event)
+            return None, False
+        elif kind == "control_cancel_request":
+            self._claude_withdrawn(session, event)
+            return None, False
         elif kind == "command_lifecycle":
             if event.get("state") == "started" and isinstance(event.get("command_uuid"), str):
                 self._delivered(session, event["command_uuid"])
@@ -2443,7 +2591,8 @@ class ChatStore:
                 if isinstance(row, dict) and row.get("type") == "tool_result":
                     identifier = self._call_row(session, str(row.get("tool_use_id") or "tool"))
                     asked = next((item for item in session.messages if item.id == identifier), None)
-                    self._tool_message(session, activity._claude_call(row, asked), "item.completed", environment)
+                    self._tool_message(session, activity._claude_call(row, asked, event.get("parent_tool_use_id")),
+                                       "item.completed", environment)
             return None, False
         elif kind == "result" and isinstance(event.get("result"), str):
             text, message_id = event["result"], "claude-answer"

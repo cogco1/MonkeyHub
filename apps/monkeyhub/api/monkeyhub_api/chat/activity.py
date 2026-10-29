@@ -26,6 +26,10 @@ _ACTIVITY_PREVIEW = 320
 # speak for the project, so only their results may name a candidate.
 _CLAUDE_TOOL_PREFIX = "mcp__monkeyhub__"
 _BOUND_TOOLS = ("studio_schema", "studio_request", "fab_request")
+# A subagent's own calls are rows of their own, marked as the subagent's and kept right under the call that started
+# it (gap 5); the call that starts one is named by what it was asked to do.
+SUBAGENT_MARK = "↳ "
+_SUBAGENT_TOOLS = ("Task", "Agent")
 
 
 def _tool_text(value) -> str:
@@ -79,13 +83,14 @@ def _tool_values(body: str, requested_run: str | None = None) -> tuple[list[str]
     return named, candidate
 
 
-def _claude_call(block: Mapping, asked: ChatMessage | None) -> dict:
+def _claude_call(block: Mapping, asked: ChatMessage | None, parent: str | None = None) -> dict:
     """One Claude `tool_use` or `tool_result` block as the same MCP call item.
 
     Claude sends the two halves as separate events joined only by
     `tool_use_id`, and the result half names neither the tool nor what was
     asked. The call's own row already wrote that down, so the result reuses it
-    rather than inventing a second record of the same call.
+    rather than inventing a second record of the same call. ``parent`` is the
+    subagent call this one was made under, if any.
     """
     if block.get("type") == "tool_use":
         name = str(block.get("name") or "tool")
@@ -97,10 +102,12 @@ def _claude_call(block: Mapping, asked: ChatMessage | None) -> dict:
             "server": "monkeyhub" if bound else None,
             "tool": name[len(_CLAUDE_TOOL_PREFIX):] if bound else name,
             "arguments": block.get("input"), "status": "in_progress", "result": None, "error": None,
+            "parent": parent,
         }
     content = block.get("content")
     text = _tool_text({"content": content} if isinstance(content, list) else content)
-    head = (asked.content.splitlines()[0].split(" · ") if asked and asked.content else [])
+    first = asked.content.splitlines()[0] if asked and asked.content else ""
+    head = first.removeprefix(SUBAGENT_MARK).split(" · ") if first else []
     method, _, path = (head[1] if len(head) > 1 else "").partition(" ")
     failed = bool(block.get("is_error"))
     return {
@@ -111,6 +118,7 @@ def _claude_call(block: Mapping, asked: ChatMessage | None) -> dict:
         "status": "failed" if failed else "completed",
         "result": None if failed else text,
         "error": text if failed else None,
+        "parent": parent,
     }
 
 
@@ -167,11 +175,13 @@ def _tool_activity(item: Mapping, environment=None) -> tuple[str, str | None, bo
     status = str(item.get("status") or "")
     failed = bool(refusal) or status == "failed" or (isinstance(result, dict) and result.get("isError") is True)
     # The summary is one line whatever the CLI put in the arguments.
-    head = " ".join(" · ".join(part for part in (
-        str(item.get("tool") or item.get("server") or "tool"),
-        " ".join(str(arguments[name]) for name in ("method", "path") if isinstance(arguments.get(name), str)),
-        "failed" if failed else status,
-    ) if part).split())[:300]
+    tool = str(item.get("tool") or item.get("server") or "tool")
+    asked_for = " ".join(str(arguments[name]) for name in ("method", "path") if isinstance(arguments.get(name), str))
+    if tool in _SUBAGENT_TOOLS and isinstance(arguments.get("description"), str):
+        asked_for = arguments["description"]
+    head = " ".join(" · ".join(part for part in (tool, asked_for, "failed" if failed else status) if part).split())[:300]
+    if item.get("parent"):
+        head = SUBAGENT_MARK + head
     body = refusal if failed and refusal else _tool_text(result)
     asked = arguments.get("path") if isinstance(arguments.get("path"), str) else ""
     # A refused or failed call names no candidate, whatever it asked for.

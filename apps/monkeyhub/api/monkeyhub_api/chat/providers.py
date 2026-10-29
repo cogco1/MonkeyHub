@@ -62,6 +62,32 @@ def _claude_approved(runtime_root: Path) -> tuple[str, ...]:
     )
 
 
+# What each permission level of a conversation gives a Claude turn beside the tools above (gap 4):
+# "read" reads, searches and looks online but changes nothing; "ask" may do the same unasked and asks in the
+# conversation before anything else; "open" may do everything, MCP servers included. The Hub's own places stay
+# closed at every level (_claude_denied). Subagents (Task/Agent) are allowed at each; they inherit the level.
+PERMISSION_MODES = ("read", "ask", "open")
+_CHANGING = ("Write", "Edit", "Bash")
+_WEB = ("WebFetch", "WebSearch")
+_SUBAGENTS = ("Task", "Agent")
+_OPEN_ONLY = ("PowerShell", "NotebookEdit")
+
+
+def _claude_tools(runtime_root: Path, mode: str, *, external: tuple[str, ...] = (),
+                  scratch: Path | None = None) -> tuple[str, ...]:
+    """What a headless turn at this level may use unasked: ``_claude_approved``, then the level's own.
+
+    ``external`` names the other MCP servers the turn is given: each is allowed whole at "open", asked at "ask"
+    and not used at "read". At "ask" the chat's own ``scratch`` stays writable unasked.
+    """
+    base = _claude_approved(runtime_root)
+    if mode == "open":
+        return (*base, *_OPEN_ONLY, *_WEB, *_SUBAGENTS, *(f"mcp__{name}" for name in external))
+    kept = tuple(name for name in base if name not in _CHANGING)
+    own = (_edit_rule(scratch, "/**"),) if mode == "ask" and scratch is not None else ()
+    return (*kept, *_WEB, *_SUBAGENTS, *own)
+
+
 # The CLI reads a rule's path as a gitignore pattern. A folder name that
 # carries one of these is matched literally only once they are escaped.
 _RULE_PATTERN = re.compile(r"([\\*?\[\]])")
@@ -222,11 +248,21 @@ def _open_console(command_line: str, cwd: str) -> None:
                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
+# Values that are secret whatever they are called: an MCP server's environment and headers (``mcp_servers``).
+_SECRETS: set[str] = set()
+
+
+def remember_secrets(values) -> None:
+    _SECRETS.update(value for value in values if isinstance(value, str) and len(value) >= 8)
+
+
 def _redact(text: str, environment: Mapping[str, str] | None = None) -> str:
     """Never expose provider credentials in the transcript or an error body."""
     for key, value in (environment or os.environ).items():
         if re.search(r"key|token|secret|password|access.?code", key, re.I) and len(value) >= 8:
             text = text.replace(value, "[redacted]")
+    for value in tuple(_SECRETS):
+        text = text.replace(value, "[redacted]")
     # Keys saved in Hub settings are never in the environment of this process.
     for value in credentials.saved_values():
         text = text.replace(value, "[redacted]")

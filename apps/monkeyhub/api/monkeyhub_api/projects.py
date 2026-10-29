@@ -262,7 +262,10 @@ def _folder(path: str) -> tuple[str, str]:
     try:
         FilesystemProjectRepository.open(resolved).read_head()
     except (OSError, ValueError, RuntimeError):
-        pass
+        if (resolved / "project.json").exists():
+            # A project that cannot be read is still a project: never a folder an agent may write into.
+            raise HubFailure(409, "CHAT_FOLDER_IS_PROJECT", "This folder holds a MonkeyHub project that could not be "
+                             "read; repair or restore it rather than opening it as a plain folder.") from None
     else:
         raise HubFailure(409, "CHAT_FOLDER_IS_PROJECT",
                          "This folder is a MonkeyHub project; open it as a project, whose files change only through the Hub.")

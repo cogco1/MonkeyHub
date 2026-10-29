@@ -83,6 +83,15 @@ class FolderChatTests(_Fixture):
                 self.create(path)
             self.assertEqual(refused.exception.error.code, code)
 
+    def test_a_damaged_project_is_never_opened_as_a_writable_folder(self):
+        damaged = self.root / "damaged"
+        damaged.mkdir()
+        (damaged / "project.json").write_text("{not json", encoding="utf-8")
+        for kind in ("folder", "auto"):
+            with self.subTest(kind=kind), self.assertRaises(HubFailure) as refused:
+                self.create(damaged, kind=kind)
+            self.assertEqual(refused.exception.error.code, "CHAT_FOLDER_IS_PROJECT")
+
     def test_claude_starts_in_the_folder_and_may_write_it_but_not_the_hubs_own_places(self):
         session = self.create(self.folder)
         with self.store._lock:
@@ -209,6 +218,243 @@ class ResumeTests(_Fixture):
         self.assertEqual(call["args"][call["args"].index("resume") + 1], native)
         self.assertIn("MonkeyHub restarted", call["prompt"])
         self.store.stop(session.id)
+
+
+class PermissionLevelTests(_Fixture):
+    """Read only, ask before changing anything, or anything; and the "ask" questions as cards."""
+
+    def command(self, session):
+        with self.store._lock:
+            return self.store._command(self.store._sessions[session.id])[0]
+
+    @staticmethod
+    def approved(command):
+        return command[command.index("--allowedTools") + 1].split(",")
+
+    def test_a_folder_starts_at_ask_and_a_project_at_open(self):
+        self.assertEqual(self.create(self.folder).permissionMode, "ask")
+        self.assertEqual(self.create(self.project, kind="project").permissionMode, "open")
+
+    def test_each_level_names_what_a_turn_may_use_unasked(self):
+        session = self.create(self.folder)
+        self.store.set_permission_mode(session.id, "read")
+        read = self.command(session)
+        self.assertEqual(read[read.index("--permission-mode") + 1], "dontAsk")
+        for name in ("Write", "Edit", "Bash", "PowerShell"):
+            self.assertNotIn(name, self.approved(read), name)
+        for name in ("Read", "Grep", "WebFetch", "WebSearch", "Task", "Agent"):
+            self.assertIn(name, self.approved(read), name)
+        self.store.set_permission_mode(session.id, "ask")
+        ask = self.command(session)
+        self.assertEqual(ask[ask.index("--permission-mode") + 1], "manual")
+        self.assertEqual(ask[ask.index("--permission-prompt-tool") + 1], "stdio")
+        self.assertEqual(ask[ask.index("--permission-prompts") + 1], "host")
+        self.assertNotIn("Bash", self.approved(ask))
+        self.assertIn(providers._edit_rule(self.store._scratch_path(session.id), "/**"), self.approved(ask),
+                      "the chat's own scratch stays writable unasked")
+        self.store.set_permission_mode(session.id, "open")
+        opened = self.command(session)
+        self.assertEqual(opened[opened.index("--permission-prompts") + 1], "none")
+        for name in ("Write", "Edit", "Bash", "PowerShell", "WebFetch", "WebSearch", "Agent"):
+            self.assertIn(name, self.approved(opened), name)
+
+    def test_the_level_cannot_change_under_a_running_turn_or_to_something_else(self):
+        session = self.create(self.folder)
+        with self.assertRaises(HubFailure) as refused:
+            self.store.set_permission_mode(session.id, "everything")
+        self.assertEqual(refused.exception.error.code, "CHAT_PERMISSION_MODE_INVALID")
+        with self.store._lock:
+            self.store._running[session.id] = chat._Running()
+        try:
+            with self.assertRaises(HubFailure) as running:
+                self.store.set_permission_mode(session.id, "open")
+            self.assertEqual(running.exception.error.code, "CHAT_RUNNING")
+        finally:
+            with self.store._lock:
+                self.store._running.pop(session.id, None)
+
+    def asked(self, session):
+        return wait_for(lambda: self.store.get(session.id), lambda row: row.attention == "permission")
+
+    def answer_file(self):
+        return json.loads((self.root / "ask-answer.json").read_text(encoding="utf-8"))
+
+    def test_an_ask_level_question_is_a_card_and_its_answer_goes_back_to_the_cli(self):
+        from monkeyhub_api.models import ChatPermissionRequest
+
+        session = self.create(self.folder)
+        self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="ask-test"))
+        card = next(row for row in self.asked(session).messages if row.permission is not None)
+        self.assertIn("echo hi", card.permission.title)
+        self.assertEqual([option.kind for option in card.permission.options], ["allow_once", "allow_always", "reject_once"])
+        self.store.resolve_permission(session.id, card.permission.id,
+                                      ChatPermissionRequest(projectId=session.projectId, optionId="allow_once"))
+        self.assertEqual(self.finished(session).status, "idle")
+        answer = self.answer_file()["response"]
+        self.assertEqual((answer["subtype"], answer["request_id"]), ("success", "req-ask-1"))
+        self.assertEqual(answer["response"], {"behavior": "allow", "updatedInput": {"command": "echo hi"}})
+
+    def test_no_is_a_deny_and_always_answers_the_next_question_here_by_itself(self):
+        from monkeyhub_api.chat import acp_grants
+        from monkeyhub_api.models import ChatPermissionRequest
+        from monkeyhub_api.settings import tool_grants
+
+        session = self.create(self.folder)
+        self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="ask-test"))
+        card = next(row for row in self.asked(session).messages if row.permission is not None)
+        self.store.resolve_permission(session.id, card.permission.id,
+                                      ChatPermissionRequest(projectId=session.projectId, optionId="reject_once"))
+        self.finished(session)
+        self.assertEqual(self.answer_file()["response"]["response"]["behavior"], "deny")
+        self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="ask-test again"))
+        card = [row for row in self.asked(session).messages if row.permission is not None][-1]
+        self.store.resolve_permission(session.id, card.permission.id,
+                                      ChatPermissionRequest(projectId=session.projectId, optionId=acp_grants.HUB_PROJECT))
+        self.finished(session)
+        self.assertTrue(tool_grants.covers(self.runtime, session.projectId, "run"))
+        self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="ask-test third"))
+        finished = self.finished(session)
+        self.assertEqual(self.answer_file()["response"]["response"]["behavior"], "allow")
+        self.assertTrue(any("allowed by your earlier answer here" in row.content for row in finished.messages))
+
+    def test_edits_can_be_allowed_for_a_folder_and_never_for_a_project(self):
+        from monkeyhub_api.settings import tool_grants
+
+        tool_grants.allow(self.runtime, "folder:abc", "edit")
+        with self.assertRaises(HubFailure):
+            tool_grants.allow(self.runtime, "chat-project", "edit")
+
+
+class ExternalMcpTests(_Fixture):
+    """The person's other MCP servers: chosen in the Hub, given to the turn, their keys never shown."""
+
+    SECRET = "Bearer drive-secret-token-123456"
+
+    def setUp(self):
+        super().setUp()
+        claude = self.root / "claude"
+        claude.mkdir(exist_ok=True)
+        (claude / ".claude.json").write_text(json.dumps({"mcpServers": {
+            "blender": {"command": "uvx", "args": ["blender-mcp"]},
+            "drive": {"type": "http", "url": "https://drive.example/mcp", "headers": {"Authorization": self.SECRET}},
+            "monkeyhub": {"command": "evil"},
+            "bad name": {"command": "x"},
+        }}), encoding="utf-8")
+
+    def test_claude_codes_servers_are_listed_without_their_keys_and_used_only_when_switched_on(self):
+        from monkeyhub_api.chat import mcp_servers
+
+        view = mcp_servers.public(self.runtime)
+        self.assertFalse(view.fromClaude)
+        self.assertEqual([(row.name, row.enabled) for row in view.servers], [("blender", False), ("drive", False)])
+        self.assertEqual(mcp_servers.effective(self.runtime), {})
+        view = mcp_servers.update(self.runtime, mcp_servers.McpServersUpdate(fromClaude=True, disabled=["blender"]))
+        self.assertEqual([(row.name, row.enabled) for row in view.servers], [("blender", False), ("drive", True)])
+        self.assertNotIn(self.SECRET, view.model_dump_json())
+        self.assertEqual(view.servers[1].envKeys, ["Authorization"])
+        self.assertEqual(list(mcp_servers.effective(self.runtime)), ["drive"])
+
+    def test_a_turn_reads_the_servers_from_a_file_and_may_use_them_at_open_only(self):
+        from monkeyhub_api.chat import mcp_servers
+
+        mcp_servers.update(self.runtime, mcp_servers.McpServersUpdate(fromClaude=True))
+        session = self.create(self.folder)
+        self.store.set_permission_mode(session.id, "open")
+        with self.store._lock:
+            command, _ = self.store._command(self.store._sessions[session.id])
+        self.assertNotIn(self.SECRET, " ".join(command), "a key is never on a command line")
+        at = command.index("--mcp-config")
+        self.assertEqual(list(json.loads(command[at + 1])["mcpServers"]), ["monkeyhub"])
+        given = json.loads(Path(command[at + 2]).read_text(encoding="utf-8"))["mcpServers"]
+        self.assertEqual(sorted(given), ["blender", "drive"])
+        self.assertTrue(Path(command[at + 2]).resolve().is_relative_to((self.runtime / "config").resolve()))
+        approved = command[command.index("--allowedTools") + 1].split(",")
+        self.assertIn("mcp__blender", approved)
+        self.assertIn("mcp__drive", approved)
+        self.assertEqual(providers._redact("header " + self.SECRET), "header [redacted]")
+        self.store.set_permission_mode(session.id, "read")
+        with self.store._lock:
+            read, _ = self.store._command(self.store._sessions[session.id])
+        self.assertEqual(read.count("--mcp-config"), 1)
+        self.assertTrue(read[read.index("--mcp-config") + 2].startswith("--"), "read gives no other server")
+
+    def test_codex_gets_a_keyed_server_only_through_its_environment(self):
+        from monkeyhub_api.chat import mcp_servers
+
+        mcp_servers.update(self.runtime, mcp_servers.McpServersUpdate(fromClaude=True))
+        session = self.create(self.folder, provider="codex")
+        with self.store._lock:
+            saved = self.store._sessions[session.id]
+            shown = self.store._codex_mcp(saved, self.commands["codex"], dict(os.environ))
+            private = self.store._codex_mcp(saved, self.commands["codex"], dict(os.environ), private=True)
+        self.assertTrue(shown["blender"]["enabled"])
+        self.assertNotIn("drive", shown, "a server with keys never goes on a command line")
+        self.assertEqual(private["drive"]["http_headers"], {"Authorization": self.SECRET})
+        self.assertTrue(private["monkeyhub"]["enabled"])
+
+    def test_the_settings_routes_read_and_change_the_list(self):
+        from fastapi.testclient import TestClient
+        from monkeyhub_api.app.composition import HubSettings, create_app
+
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
+            app = create_app(HubSettings(runtime_root=self.runtime))
+        with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
+            listed = client.get("/api/chat/mcp-servers")
+            self.assertEqual(listed.status_code, 200, listed.text)
+            changed = client.put("/api/chat/mcp-servers", json={"fromClaude": True})
+            self.assertEqual(changed.status_code, 200, changed.text)
+            self.assertTrue(changed.json()["fromClaude"])
+            self.assertNotIn(self.SECRET, changed.text)
+            session = self.create(self.folder)
+            level = client.put(f"/api/chat/sessions/{session.id}/permission-mode", json={"permissionMode": "read"})
+            self.assertEqual(level.status_code, 200, level.text)
+            self.assertEqual(level.json()["permissionMode"], "read")
+
+
+class SubagentTests(_Fixture):
+    """Subagents are allowed at every level; their calls are rows under the call that started them, their words
+    never this turn's answer."""
+
+    def test_subagents_are_allowed_at_every_level(self):
+        session = self.create(self.folder)
+        for mode in ("read", "ask", "open"):
+            self.store.set_permission_mode(session.id, mode)
+            with self.store._lock:
+                command, _ = self.store._command(self.store._sessions[session.id])
+            approved = command[command.index("--allowedTools") + 1].split(",")
+            self.assertIn("Agent", approved, mode)
+            self.assertIn("Task", approved, mode)
+
+    def test_a_subagents_calls_are_marked_rows_and_its_words_stay_out_of_the_answer(self):
+        from monkeyhub_api.chat import activity
+
+        session = self.create(self.folder)
+        saved = chat._SavedChat.model_validate(session.model_dump())
+        saved.messages.append(chat.ChatMessage(id="u-1", role="user", content="survey", createdAt="2026-10-29"))
+        events = [
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "I'll ask a helper."},
+             {"type": "tool_use", "id": "toolu_task", "name": "Agent",
+              "input": {"description": "survey the folder", "prompt": "list it", "subagent_type": "Explore"}}]}},
+            {"type": "assistant", "parent_tool_use_id": "toolu_task", "message": {"content": [
+                {"type": "text", "text": "subagent thinking aloud"},
+                {"type": "tool_use", "id": "toolu_sub", "name": "Read", "input": {"file_path": "readme.txt"}}]}},
+            {"type": "stream_event", "parent_tool_use_id": "toolu_task", "event": {
+                "type": "content_block_delta", "delta": {"type": "text_delta", "text": "subagent delta"}}},
+            {"type": "user", "parent_tool_use_id": "toolu_task", "message": {"content": [
+                {"type": "tool_result", "tool_use_id": "toolu_sub", "content": "hello"}]}},
+            {"type": "user", "message": {"content": [
+                {"type": "tool_result", "tool_use_id": "toolu_task", "content": "the folder holds readme.txt"}]}},
+        ]
+        with self.store._lock:
+            for event in events:
+                self.store._event(saved, event, {})
+        rows = {row.id.split(":", 1)[1]: row for row in saved.messages if row.role == "tool"}
+        self.assertTrue(rows["toolu_task"].content.startswith("Agent · survey the folder · completed"))
+        self.assertTrue(rows["toolu_sub"].content.startswith(activity.SUBAGENT_MARK + "Read · completed"))
+        answer = "".join(row.content for row in saved.messages if row.role == "assistant")
+        self.assertEqual(answer, "I'll ask a helper.")
+        order = [row.id for row in saved.messages]
+        self.assertLess(order.index("u-1:toolu_task"), order.index("u-1:toolu_sub"), "the helper's row follows its call")
 
 
 if __name__ == "__main__":
