@@ -32,7 +32,7 @@ from uuid import uuid4
 
 from pydantic import Field
 
-from .. import projects
+from .. import projects, recycle
 from ..runtime.workers import project_key
 from . import (acp_grants, activity, guides, mcp_server, media, providers, skill_cards, skill_plugins, studio_tool,
                transport, turn_context)
@@ -269,8 +269,13 @@ class ChatStore:
         return self.root / projects._identifier(session_id) / "scratch"
 
     def _clear_scratch(self, session_id: str) -> None:
-        """Remove a chat's scratch: temporary computation, never a project record or an attachment."""
-        shutil.rmtree(self._scratch_path(session_id), ignore_errors=True)
+        """Put a chat's scratch away: temporary computation, never a project record or an attachment.
+
+        Never deleted for good: it is renamed into the runtime root's quarantine
+        at once and then goes to the Recycle Bin when the bin can keep it whole
+        (``recycle``); what the bin cannot take stays in quarantine for the person.
+        """
+        recycle.discard(self._scratch_path(session_id), self.runtime_root, f"chat-{session_id}-scratch")
 
     def attachment(self, session_id: str, attachment_id: str) -> tuple[ChatAttachment, Path]:
         with self._lock:

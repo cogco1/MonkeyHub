@@ -929,6 +929,10 @@ class ChatTests(unittest.TestCase):
         (attachments / "sketch.png").write_bytes(b"not scratch")
         self.assertTrue(self.store.set_archived(session.id, True).archived)
         self.assertFalse(scratch.exists())
+        # Put away, never deleted for good: it waits in the runtime root's quarantine (or the Recycle Bin).
+        aside = [path for path in self.runtime.glob("_TRASH_*/chat-" + session.id + "-scratch-*")]
+        self.assertEqual(len(aside), 1)
+        self.assertEqual((aside[0] / "work" / "trial.py").read_text(encoding="utf-8"), "print('volume')")
         self.assertTrue((attachments / "sketch.png").exists(), "attachments are the chat's record, not scratch")
         self.assertTrue((self.store._scratch_path(kept.id) / "kept.txt").exists(), "another chat's scratch stays")
         # Something left in an archived chat's scratch is cleared when Hub starts again.
