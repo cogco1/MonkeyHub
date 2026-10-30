@@ -3,7 +3,12 @@
 It lists the chat's tools, with the guides that describe them, and answers
 each call through ``tool_calls``. A Hub conversation passes its chat id; an
 external host passes its project folder and source session instead and binds
-them with presentation_bind.
+them with presentation_bind. An external host with no project yet passes its
+source session alone, and binds a project it makes with project_create, or an
+existing one it names to presentation_bind (gap 39). Without --hub-url it finds
+the Hub again for every call from runtime/hub.json under the Hub's runtime root,
+checked against the Hub's health, so a Hub restarted on a new port is found
+without restarting the connection (gap 44); the conversation is then rebound.
 """
 
 from __future__ import annotations
@@ -31,13 +36,54 @@ if __package__ in {None, ""}:
     sys.modules.setdefault("monkeyhub_api.chat.mcp_server", sys.modules[__name__])
 
 from .. import projects
-from . import guides, providers, tool_calls, transport
+from ..app import locator
+from . import design_loop, guides, providers, studio_tool, tool_calls, transport
 
 from ..models import ChatPresentationBindRequest, ChatPresentationRequest, HubFailure
 
 
-def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | None = None) -> None:
+def _bound_source(hub: str, name: str, arguments: object, external: ChatPresentationBindRequest | None,
+                  source: dict | None) -> tuple[ChatPresentationBindRequest, dict | None]:
+    """What an external connection binds: its launch project, a project it names, or one project_create makes."""
+
+    if name == "project_create":
+        if external is not None:
+            raise HubFailure(409, "CHAT_PROJECT_BOUND", "This connection is bound to its project; project_create is for a "
+                             "connection started with only --source-session-id.")
+        if not isinstance(arguments, dict) or set(arguments) != {"name"}:
+            raise HubFailure(422, "CHAT_PROJECT_CREATE_INVALID", "project_create takes the new project's name only.")
+        project = transport._request_json(hub, "/api/chat/projects", "POST", {"name": arguments["name"]})
+        return ChatPresentationBindRequest(projectDir=project["projectDir"], **source), project
+    if external is not None:
+        if arguments:
+            raise HubFailure(422, "CHAT_PRESENTATION_INVALID", "The connection already fixes its project and source session.")
+        return external, None
+    if not isinstance(arguments, dict) or set(arguments) != {"projectDir"}:
+        raise HubFailure(409, "CHAT_PROJECT_REQUIRED", "This connection has no project yet: make one with project_create "
+                         "{name}, or bind an existing one with presentation_bind {projectDir}.")
+    return ChatPresentationBindRequest(projectDir=arguments["projectDir"], **source), None
+
+
+def _hub_at(hub_url: str | None, runtime_root: str | None):
+    """The Hub a call goes to: the URL given, or the one runtime/hub.json names, looked up at each call."""
+
+    if hub_url:
+        return transport._url(hub_url)
+    return lambda: transport._url(locator.locate(runtime_root))
+
+
+def _mcp(hub_at, chat_id: str | None, external: ChatPresentationBindRequest | None = None,
+         source: dict | None = None, *, design_loop_only: bool = False) -> None:
+    """``design_loop_only`` lists only the design-loop tools (#185): a headless turn that revises the design.
+
+    Started that way for an external host, the connection binds itself at the first call and publishes the
+    request in ``MONKEYHUB_DESIGN_REQUEST_FILE`` as the user's message, the words every change answers.
+    ``source`` without ``external`` is a connection started with no project (gap 39): presentation_bind
+    {projectDir} or project_create {name} binds it.
+    """
     from .. import computer_tools
+
+    reaching_out = external is not None or source is not None  # an external connection, bound yet or not
 
     sys.stdin.reconfigure(encoding="utf-8")
     sys.stdout.reconfigure(encoding="utf-8")
@@ -132,16 +178,22 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Refusals spend nothing: VISUAL_BUDGET_EXHAUSTED, VISUAL_REVIEW_NOT_WARRANTED, VISUAL_REVIEW_OUT_OF_ORDER,",
         "VISUAL_SOURCE_MISMATCH (read the current exact source), VISUAL_PROVIDER_UNAVAILABLE. VISUAL_PROVIDER_FAILED spends the review.",
     ])
-    modelling = guides._MODELLING
-    presentation_instructions = guides._PRESENTATION_INSTRUCTIONS if external else guides._NATIVE_PRESENTATION_INSTRUCTIONS
+    # The design loop the conversation was started with; a later change reaches the next conversation.
+    tier = studio_tool.design_loop_tier()
+    enforced = tier == studio_tool.DESIGN_LOOP_ENFORCED
+    modelling = guides.modelling(tier)
+    if enforced:
+        request_schema["properties"]["feedbackQuote"]["description"] = request_schema["properties"]["feedbackQuote"][
+            "description"].replace("/api/admissions or PUT /api/working-draft", "/api/admissions, /api/revisions or PUT /api/working-draft")
+    presentation_instructions = guides._PRESENTATION_INSTRUCTIONS if reaching_out else guides._NATIVE_PRESENTATION_INSTRUCTIONS
     tools = [
         {"name": "chat_present", "description": presentation_instructions, "inputSchema": {
             **ChatPresentationRequest.model_json_schema(),
-            "properties": {key: ({**value, "enum": ["progress", "assistant"]} if key == "kind" and not external else
-                                 {**value, "enum": ["streaming"], "default": "streaming"} if key == "status" and not external else value)
+            "properties": {key: ({**value, "enum": ["progress", "assistant"]} if key == "kind" and not reaching_out else
+                                 {**value, "enum": ["streaming"], "default": "streaming"} if key == "status" and not reaching_out else value)
                            for key, value in ChatPresentationRequest.model_json_schema()["properties"].items()
                            if key not in {"projectId", "sourceSessionId"}},
-            "required": ["turnId", "messageId", "kind"] if external else ["messageId", "kind"],
+            "required": ["turnId", "messageId", "kind"] if reaching_out else ["messageId", "kind"],
         }},
         {"name": "studio_schema", "description": "Discover current chat actions by omitting path; optional pathPrefix (such as /api/drawings) narrows the list "
          "and, for drawings, decisions, Board, exports or render, also answers that domain's guide. Omit method to include both reads and writes; "
@@ -176,10 +228,23 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         {"type": "object", "properties": {"path": {"type": "string"}, "name": {"type": "string"},
                                             "mimeType": {"type": "string"}}, "required": ["path"], "additionalProperties": False},
     ]}}
-    if external:
+    if design_loop_only:
+        tools = design_loop.tool_definitions()
+    elif external is not None:
         tools.insert(0, {"name": "presentation_bind", "description": "Connect this source session to its configured Hub project, "
                         "reusing the same conversation across turns/reconnects. Returns its URL and default presentation instructions.",
                         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}})
+    elif source is not None:
+        tools.insert(0, {"name": "presentation_bind", "description": "Connect this source session to an existing Hub project "
+                        "by its folder (projectDir), reusing the same conversation across turns/reconnects. Returns its URL and "
+                        "default presentation instructions. This connection has no project of its own; project_create makes one.",
+                        "inputSchema": {"type": "object", "properties": {"projectDir": {"type": "string", "minLength": 1}},
+                                        "required": ["projectDir"], "additionalProperties": False}})
+        tools.insert(1, {"name": "project_create", "description": "Make a new, empty MonkeyHub project in the Hub's workspace, "
+                        "named name (it becomes its id), and connect this source session to it as presentation_bind does. "
+                        "Only for a connection started without a project; it makes one project once.",
+                        "inputSchema": {"type": "object", "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 80}},
+                                        "required": ["name"], "additionalProperties": False}})
     for line in sys.stdin:
         try:
             request = json.loads(line)
@@ -193,17 +258,31 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
                 result = {"tools": tools}
             elif method == "tools/call":
                 try:
+                    hub = hub_at() if callable(hub_at) else hub_at
                     name, arguments = params.get("name", ""), params.get("arguments", {})
-                    if external and name == "presentation_bind":
-                        if arguments:
-                            raise HubFailure(422, "CHAT_PRESENTATION_INVALID", "The connection already fixes its project and source session.")
+                    if reaching_out and name in ("presentation_bind", "project_create"):
+                        external, project = _bound_source(hub, name, arguments, external, source)
                         presentation_binding = transport._request_json(hub, "/api/chat/presentation/bind", "POST", external.model_dump())
                         chat_id = presentation_binding["chatId"]
                         value = {key: value for key, value in presentation_binding.items() if key != "token"}
                         value["instructions"] = guides._PRESENTATION_INSTRUCTIONS
-                    elif external and presentation_binding is None:
+                        # The call a bound connection most often skips, said where it binds: a project tool
+                        # before the user's request is published is refused CHAT_NOT_RUNNING.
+                        value["next"] = ("Before any project tool, publish the user's request: chat_present kind=user "
+                                         "with a new UUID turnId and messageId and their words as content.")
+                        if project is not None:
+                            value["project"] = project
+                    elif external is not None and presentation_binding is None and design_loop_only:
+                        presentation_binding = transport._request_json(hub, "/api/chat/presentation/bind", "POST", external.model_dump())
+                        chat_id = presentation_binding["chatId"]
+                        design_loop.publish_request(hub, chat_id, presentation_binding["token"])
+                        value = tool_calls.call_tool(hub, chat_id, name, arguments)
+                    elif reaching_out and external is None:
+                        raise HubFailure(409, "CHAT_PROJECT_REQUIRED", "This connection has no project yet: make one with "
+                                         "project_create {name}, or bind an existing one with presentation_bind {projectDir}.")
+                    elif reaching_out and presentation_binding is None:
                         raise HubFailure(409, "CHAT_PRESENTATION_BIND_REQUIRED", "Call presentation_bind before publishing or using project tools.")
-                    elif external and name == "chat_present":
+                    elif reaching_out and name == "chat_present":
                         value = tool_calls._present_tool(hub, chat_id, arguments, presentation_binding["token"])
                     else:
                         value = tool_calls.call_tool(hub, chat_id, name, arguments)
@@ -211,7 +290,8 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
                     image_read = (params.get("name") == "studio_request"
                                   and (str(arguments.get("method", "GET")).upper(),
                                        urlsplit(arguments.get("path", "")).path) in {
-                                           ("GET", "/api/drawings/model-view"), ("POST", "/api/board/export")})
+                                           ("GET", "/api/drawings/model-view"), ("POST", "/api/board/export"),
+                                           ("POST", "/api/board/view")})
                     if name == "visual_review" and value.get("delivery") == "frames":
                         metadata = {key: item for key, item in value.items() if key != "frames"}
                         content = [{"type": "text", "text": providers._redact(json.dumps(metadata, ensure_ascii=False))}]
@@ -250,18 +330,25 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mcp", action="store_true", required=True)
-    parser.add_argument("--hub-url", required=True)
+    parser.add_argument("--hub-url", help="The running Hub's URL; left out, runtime/hub.json names it at each call")
+    parser.add_argument("--runtime-root", help="Where to read runtime/hub.json; default %%LOCALAPPDATA%%/MonkeyHub")
     parser.add_argument("--chat-id")
     parser.add_argument("--project-dir")
     parser.add_argument("--source-session-id")
     parser.add_argument("--provider", choices=("codex", "claude", "coding-plan"), default="codex")
     parser.add_argument("--title", default="External conversation")
+    parser.add_argument("--design-loop", action="store_true",
+                        help="List only the design-loop tools: a headless turn that revises the design (#185).")
     args = parser.parse_args()
     if args.source_session_id and args.project_dir:
         external = ChatPresentationBindRequest(projectDir=args.project_dir, sourceSessionId=args.source_session_id,
                                                provider=args.provider, chatId=args.chat_id, title=args.title)
-        _mcp(transport._url(args.hub_url), args.chat_id, external)
+        _mcp(_hub_at(args.hub_url, args.runtime_root), args.chat_id, external, design_loop_only=args.design_loop)
+    elif args.source_session_id:
+        _mcp(_hub_at(args.hub_url, args.runtime_root), args.chat_id, None, {"sourceSessionId": args.source_session_id,
+                                                               "provider": args.provider, "chatId": args.chat_id, "title": args.title})
     elif args.chat_id and not args.source_session_id and not args.project_dir:
-        _mcp(transport._url(args.hub_url), projects._identifier(args.chat_id))
+        _mcp(_hub_at(args.hub_url, args.runtime_root), projects._identifier(args.chat_id), design_loop_only=args.design_loop)
     else:
-        parser.error("Use --chat-id for a Hub-owned conversation, or --project-dir and --source-session-id for external presentation.")
+        parser.error("Use --chat-id for a Hub-owned conversation, or --source-session-id (with --project-dir, or without "
+                     "one to make or name a project) for external presentation.")

@@ -40,6 +40,20 @@ class RenderCameraDto(BaseModel):
         return self
 
 
+class SectionClipDto(BaseModel):
+    """A live section plane (G5): a point on it and the normal toward the side that stays drawn, in the model's frame."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid", allow_inf_nan=False)
+    origin: tuple[float, float, float]
+    normal: tuple[float, float, float]
+
+    @model_validator(mode="after")
+    def _normal(self):
+        if not any(self.normal):
+            raise ValueError("a section plane's normal is not the zero vector")
+        return self
+
+
 class RenderViewSourceRequestDto(BaseModel):
     """Freeze the visible camera image against one exact retained model."""
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
@@ -49,12 +63,53 @@ class RenderViewSourceRequestDto(BaseModel):
     camera: RenderCameraDto
     screen_size: tuple[int, int] = Field(alias="screenSize")
     png_base64: str = Field(alias="pngBase64", min_length=1, max_length=44739244)
+    clip: SectionClipDto | None = Field(default=None, description=(
+        "The live section the view was cut at, kept in its recipe so a camera pass of it is cut the same way."))
 
     @model_validator(mode="after")
     def valid_size(self):
         if any(value < 1 or value > 4096 for value in self.screen_size):
             raise ValueError("screenSize must contain two pixel dimensions between 1 and 4096")
         return self
+
+
+class CameraPassCameraDto(BaseModel):
+    """A pinhole camera in the model's frame and length unit."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    position: tuple[float, float, float]
+    target: tuple[float, float, float]
+    up: tuple[float, float, float] = (0.0, 0.0, 1.0)
+    fov_deg: float = Field(alias="fovDeg", default=45.0, ge=1.0, le=170.0, description="vertical field of view")
+
+
+class CameraPassViewDto(BaseModel):
+    """A saved perspective model view: the document ``POST /api/render/views`` registered."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    run_id: str = Field(alias="runId", min_length=1)
+    asset_sha256: str = Field(alias="assetSha256", pattern=r"^[0-9a-f]{64}$")
+
+
+class CameraPassRequestDto(BaseModel):
+    """Draw an ID, a line and a depth image of one exact model through a perspective camera (#19).
+
+    Name ``view`` (a saved model view, which brings its own model) or
+    ``camera`` with ``size`` and one model: ``modelSource``, or ``sourceAsset``
+    as the drawing routes take an imported or snapshot model.
+    """
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    project_id: str = Field(alias="projectId", min_length=1)
+    view: CameraPassViewDto | None = None
+    camera: CameraPassCameraDto | None = None
+    size: tuple[int, int] | None = Field(default=None, description="the camera's view in pixels; its aspect is kept")
+    long_edge: int = Field(alias="longEdge", default=2048, ge=16, le=4096)
+    id_by: Literal["object", "layer", "material"] = Field(alias="idBy", default="layer")
+    model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
+    source_asset: dict[str, str] | None = Field(alias="sourceAsset", default=None,
+                                                description="{runId, assetSha256} of an imported or snapshot model")
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
+    clip: SectionClipDto | None = Field(default=None, description=(
+        "Cut the model at a live section plane first, as the Modeling viewport does; a saved view's own cut "
+        "applies when none is given. Its outline is drawn as lines; its cut faces are not filled."))
 
 
 class RenderCapabilityDto(BaseModel):

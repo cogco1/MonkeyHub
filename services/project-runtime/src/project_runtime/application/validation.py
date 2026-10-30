@@ -29,7 +29,14 @@ The coverage description reads the published references and the candidate's
 exact retained StateRecord. A record can declare obligations without supplying
 an executable criterion or an authorized commitment. These sources are shown
 separately from the receipt: project conditions are not yet projected into its
-two normative gates, and their empty input is not a successful check.
+two normative gates, and their empty input is not a successful check. While
+the design loop checks conditions (advisory or enforced, #185), the obligations
+that name a check in ``state_record.OBLIGATION_CHECKS`` are checked on the
+candidate's record and inspected boxes and on its source run's, and reported
+beside the receipt; one that names none stays unchecked. They are reported,
+never a clause of review readiness: no tier makes them block a person's or the
+Agent's admission. In enforced, POST /api/revisions refuses a new violation
+itself.
 
 Nothing here writes. A validation is a reading of records the run already
 retained; the published position, ``canonical/`` and ``input/`` are untouched,
@@ -44,7 +51,7 @@ import threading
 from typing import Any, Callable, Mapping
 
 from archflow.submission.canonical_state import ArtifactRef, CanonicalState
-from archflow.state.state_record import StateRecord
+from archflow.state.state_record import ObligationResult, StateRecord, check_obligations, obligation_measured
 from archflow.submission.model import CandidateDelta, CandidateSubmission, Claim
 from archflow.validation.engine import (
     ArtifactPresentValidator,
@@ -57,6 +64,7 @@ from archflow.validation.model import ValidationReceipt
 from archflow.project.refs import (
     ProjectRecordRef,
     ProjectVersionRef,
+    RunRef,
     parse_record_file_name,
     record_ref_from_uri,
 )
@@ -68,6 +76,7 @@ from ..errors import StudioError, error_sentence
 from .artifacts import ArtifactRecord
 from ..binding import ProjectBinding, ReferenceRun
 from .candidate import CandidateRun, RelationTotals, SeatOutcome
+from .compare import Shape, shapes_of
 
 # The claim a candidate makes about itself: this run happened, and here is the
 # record that says so. It is not a design assertion and it gates nothing; it
@@ -120,6 +129,10 @@ VALIDATOR_NOTE = (
     "execute architectural criteria. This receipt checks artifact presence "
     "and base match only. Declared relation results are reported separately."
 )
+# The note while the design loop checks conditions (advisory or enforced); legacy keeps the one above.
+CHECKED_VALIDATOR_NOTE = VALIDATOR_NOTE.removesuffix("Declared relation results are reported separately.") + (
+    "Declared relation results and the results of obligations that name an "
+    "executable check are reported separately.")
 
 # The five clauses of review readiness, named exactly as they travel.
 RECEIPT_CLAUSE = "validation.receipt"
@@ -158,6 +171,17 @@ class ReviewReadiness:
 
 
 @dataclass(frozen=True, slots=True)
+class ObligationReadout:
+    """The candidate's obligation results, and which violations its source run did not have."""
+
+    results: tuple[ObligationResult, ...]
+    new_violations: tuple[str, ...]
+    source_run_id: str | None
+    # What could not be read; the results then cover less than the record declares.
+    honesty: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class CandidateValidation:
     """One candidate's receipt and review readiness for the route."""
 
@@ -173,6 +197,8 @@ class CandidateValidation:
     honesty: tuple[str, ...]
     # Source description, not a claim that the receipt checked these duties.
     canonical_facts: str
+    obligations: ObligationReadout = ObligationReadout((), (), None)
+    validator_note: str = VALIDATOR_NOTE
 
 
 def _record_conditions(ref: ProjectRecordRef, record: StateRecord) -> str:
@@ -194,6 +220,7 @@ def _condition_sources(
     head: ProjectVersionRef,
     candidate: CandidateRun,
     published: Mapping[str, Any],
+    checks: bool = False,
 ) -> str:
     """Read only the published refs and this candidate's bound record.
 
@@ -248,7 +275,8 @@ def _condition_sources(
     lines.append(
         "The candidate record is not substituted for the published sources. "
         "Recorded obligation statuses are declarations, not results of this "
-        "validation; project conditions remain unchecked."
+        "validation; project conditions remain unchecked"
+        + (" except where an obligation check listed separately reports them." if checks else ".")
     )
     return " ".join(lines)
 
@@ -451,9 +479,13 @@ def _validate(
     events: StudioEventSink,
     published: Mapping[str, Any],
 ) -> CandidateValidation:
-    canonical_facts = _condition_sources(binding, head, candidate, published)
+    # The conditions are checked and listed only while the design loop checks them (advisory or enforced, #185);
+    # in legacy a validation answers exactly as it did before. They never enter review readiness.
+    checks = binding.settings.design_loop_checks
+    canonical_facts = _condition_sources(binding, head, candidate, published, checks)
     artifacts, honesty = _artifacts_of(candidate)
-    honesty = honesty + _exports_of(candidate)
+    obligations = candidate_obligations(binding, candidate) if checks else ObligationReadout((), (), None)
+    honesty = honesty + _exports_of(candidate) + obligations.honesty
     receipt = validate_submission(
         CanonicalState(ref=head),
         _submission(candidate, artifacts),
@@ -480,7 +512,70 @@ def _validate(
         blocked_by=readiness.blocked_by,
         honesty=honesty,
         canonical_facts=canonical_facts,
+        obligations=obligations,
+        validator_note=CHECKED_VALIDATOR_NOTE if checks else VALIDATOR_NOTE,
     )
+
+
+def candidate_obligations(binding: ProjectBinding, candidate: CandidateRun, *,
+                          shapes: tuple[Shape, ...] | None = None) -> ObligationReadout:
+    """Check the candidate's obligations on its exact record and inspected boxes, and on its source run's.
+
+    The source is the run the candidate's retained change names; its record is
+    the one that change was applied to. A violation is new when the source's
+    own result for that obligation was not a violation. A candidate with no
+    retained change has no source, and every violation it carries is new.
+    ``shapes`` are the candidate's own inspected objects when the caller has
+    already read them.
+    """
+
+    honesty: list[str] = []
+    try:
+        run = binding.load_run(candidate.candidate_id)
+        receipt = binding.repository.load_json(record_ref_from_uri(candidate.receipt_ref, binding.project_id))
+        _, record = binding.exact_state_record(ReferenceRun(run=run, source="validation", receipt=receipt))
+    except (ProjectRepositoryError, StudioError, OSError, TypeError, ValueError) as exc:
+        return ObligationReadout((), (), None, (f"obligations were not checked: the candidate record could not be read ({error_sentence(exc)})",))
+    if not record.obligations:
+        return ObligationReadout((), (), None)
+    measured = any(obligation_measured(row) for row in record.obligations)
+    boxes = None
+    if measured:
+        boxes = _boxes_of(shapes) if shapes is not None else _boxes(binding, candidate.candidate_id, honesty)
+    results = check_obligations(record, boxes=boxes)
+    source_run_id, before = None, {}
+    try:
+        delta = binding.candidate_delta(candidate.candidate_id)
+        if delta is not None:
+            source_run_id = RunRef.from_dict(delta["source_run_ref"]).run_id
+            if delta.get("source_record_ref") is not None:
+                payload = binding.repository.load_json(ProjectRecordRef.from_dict(delta["source_record_ref"]))
+            else:
+                payload = delta["source_record"]
+            source = StateRecord.from_dict(payload)
+            before = {row.obligation_id: row.status for row in check_obligations(
+                source, boxes=_boxes(binding, source_run_id, None) if measured else None)}
+    except (ProjectRepositoryError, StudioError, OSError, KeyError, TypeError, ValueError) as exc:
+        honesty.append(f"the source run's obligations could not be read ({error_sentence(exc)}); every violation counts as new")
+    new = tuple(row.obligation_id for row in results if row.status == "violated" and before.get(row.obligation_id) != "violated")
+    return ObligationReadout(results, new, source_run_id, tuple(honesty))
+
+
+def _boxes(binding: ProjectBinding, run_id: str, honesty: list[str] | None) -> dict[str, tuple] | None:
+    """A run's inspected object boxes by name, or None when it retained no inspection."""
+
+    try:
+        shapes = shapes_of(binding, run_id)
+    except (StudioError, ProjectRepositoryError) as exc:
+        if honesty is not None:
+            honesty.append(f"measured obligations were not checked on {run_id}: {error_sentence(exc)}")
+        return None
+    return _boxes_of(shapes)
+
+
+def _boxes_of(shapes: tuple[Shape, ...]) -> dict[str, tuple]:
+    return {shape.name: (tuple(shape.bbox_min), tuple(shape.bbox_max)) for shape in shapes
+            if shape.bbox_min is not None and shape.bbox_max is not None}
 
 
 def _artifacts_of(

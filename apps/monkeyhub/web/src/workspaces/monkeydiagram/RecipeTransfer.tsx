@@ -32,7 +32,7 @@ const words = {
  * quiet note on its status line until the Drawing clears it.
  */
 export function useRecipeTransfer(projectId: string, active = true): { menu: ReactNode; row: ReactNode; note: string | null; clearNote(): void } {
-  const studio = useStudio(), { language } = usePreferences(), text = words[language];
+  const studio = useStudio(), { language, developerMode } = usePreferences(), text = words[language];
   const [open, setOpen] = useState(false), [recipes, setRecipes] = useState<DecisionDto[]>([]);
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [note, setNote] = useState<string | null>(null);
   const [pending, setPending] = useState<{ content: string; preview: RecipeInspectDto } | null>(null);
@@ -102,17 +102,18 @@ export function useRecipeTransfer(projectId: string, active = true): { menu: Rea
     finally { if (token === generation.current) setBusy(false); }
   }
 
-  const menu = <DrawingMenu label={text.title} className="recipe-transfer" panelClassName="recipe-transfer__body" open={open} onOpenChange={expanded => {
+  const menu = <DrawingMenu label={text.title} command="view.menu.toggle" commandArg="recipe_transfer" className="recipe-transfer" panelClassName="recipe-transfer__body" open={open} onOpenChange={expanded => {
     setOpen(expanded);
     if (expanded && !open && active && !busy) void refresh();
   }}>
     <p>{text.hint}</p>
-    <button type="button" disabled={busy || !active} onClick={() => void refresh()}>{text.refresh}</button>
+    <button data-command="drawing.recipe.refresh" type="button" disabled={busy || !active} onClick={() => void refresh()}>{text.refresh}</button>
     {recipes.length === 0 && !busy && <p>{text.empty}</p>}
     <ul>{recipes.map(row => <li key={row.decisionId}>
       <span>{row.typedBinding?.kind === "recipe" && values(row.typedBinding.graphics)} · {row.scope.extent === "stage" ? text.stage : text.project}</span>
-      <button type="button" disabled={busy || !active} onClick={() => void download(row)}>{text.export}</button>
-      {row.source.kind === "recipe-export" && <details><summary>{text.version}</summary><p>{text.fileVersion}: {row.source.exportSha256}</p></details>}
+      <button data-command="drawing.recipe.export" data-command-arg={row.decisionId} type="button" disabled={busy || !active} onClick={() => void download(row)}>{text.export}</button>
+      {/* A recipe's file hash, decision and source revision are for developer mode. */}
+      {developerMode && row.source.kind === "recipe-export" && <details><summary data-command="view.disclosure.toggle" data-command-arg="recipe_version">{text.version}</summary><p>{text.fileVersion}: {row.source.exportSha256}</p></details>}
     </li>)}</ul>
     <label className="recipe-transfer__file">{text.file}<input type="file" accept=".json,application/json" disabled={busy || !active} onChange={event => {
       const file = event.target.files?.[0]; event.target.value = ""; if (file) void inspect(file);
@@ -121,11 +122,11 @@ export function useRecipeTransfer(projectId: string, active = true): { menu: Rea
   const row = (pending || error) && <>
     {pending && <div className="recipe-transfer__preview">
       <div><strong>{values(pending.preview.graphics)}</strong><p>{text.preview}</p>
-        <details><summary>{text.version}</summary><p>{text.fileVersion}: {pending.preview.exportSha256}</p>
-          <p>{text.decision}: {pending.preview.sourceDecisionId}</p><p>{text.source}: {pending.preview.sourceRevisionSha256}</p></details></div>
+        {developerMode && <details><summary data-command="view.disclosure.toggle" data-command-arg="recipe_version">{text.version}</summary><p>{text.fileVersion}: {pending.preview.exportSha256}</p>
+          <p>{text.decision}: {pending.preview.sourceDecisionId}</p><p>{text.source}: {pending.preview.sourceRevisionSha256}</p></details>}</div>
       <div className="recipe-transfer__actions">
-        <button type="button" className="btn--accent" disabled={busy || !active} onClick={() => void confirm()}>{text.confirm}</button>
-        <button type="button" disabled={busy} onClick={() => setPending(null)}>{text.cancel}</button>
+        <button data-command="drawing.recipe.import_confirm" type="button" className="btn--accent" disabled={busy || !active} onClick={() => void confirm()}>{text.confirm}</button>
+        <button data-command="drawing.recipe.import_cancel" type="button" disabled={busy} onClick={() => setPending(null)}>{text.cancel}</button>
       </div>
     </div>}
     {error && <p className="recipe-transfer__error" role="alert">{error}</p>}

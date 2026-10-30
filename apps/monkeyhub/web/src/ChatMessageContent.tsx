@@ -2,12 +2,13 @@ import { Fragment, useId, useMemo, useRef, useState, type ReactNode } from "reac
 import { marked, type Token, type Tokens } from "marked";
 import type { ChatAttachment, ChatMessage } from "./api/generated";
 import { ChatCard } from "./ChatCard";
+import { useDeveloperMode } from "./features/settings/preferences";
 import "./ChatMessageContent.css";
 
 export type ChatDocument = NonNullable<ChatMessage["documents"]>[number];
 type Labels = { attachments: string; previewImage: string; close: string; download: string;
   imageLoading: string; imageFailed: string; openDocument: string; filesTitle: string;
-  fileCount: (count: number) => string; fileDetails: (count: number) => string;
+  fileCount: (count: number) => string; fileDetails: (count: number) => string; moreFiles: (count: number) => string;
   filePage: (page: number) => string; fileReference: (index: number) => string;
   renderRoleSource: string; renderRoleReference: string };
 
@@ -81,16 +82,16 @@ function ImagePreview({ src, name, downloadUrl, labels }: { src: string; name: s
   const opener = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   return <div className="chat-image">
-    {state !== "failed" && <button className="chat-image__preview" type="button" ref={opener}
+    {state !== "failed" && <button data-command="view.open_file.image" className="chat-image__preview" type="button" ref={opener}
       aria-label={`${labels.previewImage}: ${name}`} disabled={state !== "ready"} onClick={() => dialog.current?.showModal()}>
       <img src={src} alt={name} loading="lazy" decoding="async" onLoad={() => setState("ready")} onError={() => setState("failed")} />
     </button>}
     {state !== "ready" && <p className="chat-muted" role="status">{state === "failed" ? labels.imageFailed : labels.imageLoading}</p>}
     <dialog className="chat-image-dialog" ref={dialog} aria-labelledby={titleId} onClose={() => opener.current?.focus()}>
       <div className="chat-image-dialog__heading"><h2 id={titleId}>{name}</h2>
-        <button type="button" onClick={() => dialog.current?.close()} autoFocus>{labels.close}</button></div>
+        <button data-command="view.dialog.close" type="button" onClick={() => dialog.current?.close()} autoFocus>{labels.close}</button></div>
       {state === "ready" && <img src={src} alt={name} />}
-      <a href={downloadUrl} download={name}>{labels.download}</a>
+      <a data-command="view.open_file.download" href={downloadUrl} download={name}>{labels.download}</a>
     </dialog>
   </div>;
 }
@@ -99,6 +100,7 @@ export function ChatMessageFiles({ sessionId, messageId, attachments = [], docum
   sessionId: string; messageId: string; attachments?: ChatAttachment[]; documents?: ChatDocument[];
   onOpenDocument?: (document: ChatDocument) => void; documentBusy?: boolean; labels: Labels;
 }) {
+  const developer = useDeveloperMode();
   type FileRow = { key: string; name: string; mimeType: string; url: string; downloadUrl: string;
     size?: number; document?: ChatDocument };
   // A document's identity includes its page and revision. Keep its original route index;
@@ -145,17 +147,18 @@ export function ChatMessageFiles({ sessionId, messageId, attachments = [], docum
             </span>
           </div>
           <div className="chat-file-row__actions">
-            {file.document && onOpenDocument && <button type="button" className="chat-activity__open" disabled={documentBusy}
+            {file.document && onOpenDocument && <button data-command="view.open_file.document" type="button" className="chat-activity__open" disabled={documentBusy}
               onClick={() => onOpenDocument(file.document!)}>{labels.openDocument}</button>}
-            <a href={file.downloadUrl} download={file.name}>{labels.download}</a>
+            <a data-command="view.open_file.download" href={file.downloadUrl} download={file.name}>{labels.download}</a>
           </div>
         </div>
       </li>;
     })}
   </ul>;
-  const sources = rows.filter((row) => row.document);
+  // Every file stays in reach; the records each one was read from are for developer mode.
+  const sources = developer ? rows.filter((row) => row.document) : [];
   return <ChatCard className="chat-files" title={labels.filesTitle} status={labels.fileCount(rows.length)}
-    details={remaining.length || sources.length ? { label: labels.fileDetails(remaining.length), children: <>
+    details={remaining.length || sources.length ? { label: developer ? labels.fileDetails(remaining.length) : labels.moreFiles(remaining.length), children: <>
       {remaining.length > 0 && list(remaining)}
       {sources.length > 0 && <dl className="chat-file-sources">{sources.map((row) => <div key={row.key}>
         <dt>{row.name} · {labels.filePage((row.document!.pageIndex ?? 0) + 1)}{reference(row) && <> · {reference(row)}</>}</dt>

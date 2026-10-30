@@ -1,5 +1,6 @@
 """Read explicitly selected Codex JSONL files into content-free usage events.
 
+The first agent usage source (``monkeymonitor.sources.AGENT_SOURCES["codex"]``).
 Supported rows are session_meta, turn_context and selected event_msg metadata. The
 token_count info contains total_token_usage and/or last_token_usage. Repeated
 cumulative snapshots are not new calls. A discontinuity uses the reported last
@@ -19,6 +20,8 @@ from typing import Iterable, Iterator, Mapping
 
 from .pricing import billing_plan
 from .usage import TokenUsage, UsageEvent
+
+AGENT = "codex"
 
 
 def bound_codex_sources(bindings: object, home: Path, warnings: list[str]) -> tuple[dict[Path, str], dict[str, str]]:
@@ -77,7 +80,7 @@ def bound_codex_sources(bindings: object, home: Path, warnings: list[str]) -> tu
     return paths, {session: projects[session] for session in paths.values()}
 
 
-def _tokens(value: object) -> TokenUsage | None:
+def tokens(value: object) -> TokenUsage | None:
     if not isinstance(value, Mapping):
         return None
     # Codex does not currently publish a separate one-hour write count. Zero
@@ -223,7 +226,7 @@ def _read_rows(path: Path, file_index: int, warnings: list[str], expected_sessio
                 info = payload.get("info")
                 if not isinstance(info, dict):
                     continue
-                current, last = _tokens(info.get("total_token_usage")), _tokens(info.get("last_token_usage"))
+                current, last = tokens(info.get("total_token_usage")), tokens(info.get("last_token_usage"))
                 if current is None and last is None:
                     continue
             else:
@@ -307,7 +310,7 @@ def _session_events(rows: list[_Row], inherited_turns: set[str]) -> Iterator[Usa
     events, turns = [], {}
     for row in rows:
         inherited = row.inherited or row.turn_id is not None and row.turn_id in inherited_turns
-        common = dict(source="codex", provider=row.provider, model=row.model,
+        common = dict(source=AGENT, provider=row.provider, model=row.model,
             billing_mode="subscription_equivalent", source_ref=f"codex:{row.session_key}",
             session_id=row.session_id, parent_session_id=row.parent_session_id, turn_id=row.turn_id)
         if row.kind != "token_count":

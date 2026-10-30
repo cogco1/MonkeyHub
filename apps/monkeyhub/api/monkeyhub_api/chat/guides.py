@@ -30,14 +30,14 @@ _SUGGESTION_INSTRUCTIONS = (
 # studio_schema answers with that domain's pathPrefix, read when the work
 # actually turns to it.
 _MODELLING = chr(10).join([
-    "Use the bound project's Studio API in metres; plan points are (x, z) and 3D points (x, y, z), with Y up.",
+    "Use the bound project's Studio API in metres; plan points (x, z), +z north (3DM +Y, glTF -Z); 3D (x, y, z), Y up.",
     "Design tools prepare the project's runtime themselves; nobody needs to open a page first.",
     "The bodies below are complete for the ordinary case: send them as written. studio_schema is for a field not shown here",
     "or for correcting a refusal. The chat fills projectId; omit it.",
     "",
     "START: POST /api/project/modeling with body {} prepares an empty project once (an existing project keeps its model inputs)",
     "and answers the default base: {stateDigest, sourceStageRef, levels: [{levelId, elevation}], components: [{componentId,",
-    "parentComponentId}], elementCount}. Write the first script against it directly; no read first.",
+    "parentComponentId}], elementCount}. Write the first script against it; no read first.",
     "CURRENT MODEL: GET /api/construction/model gives stateDigest, levels, parameters and one entry per geometry id:",
     "form, bounds, cuts, cutBy, facets and the capabilities they unlock. Without ?run=<candidateId> it reads the default",
     "source; with it, send sourceRunId on writes. Keep sourceStageRef when provided. With elementCount > 0, read it before changing geometry.",
@@ -68,7 +68,7 @@ _MODELLING = chr(10).join([
     "marked material_status undeclared; a succeeded candidate checked both on readback. GET /api/construction/model?run=<candidateId>",
     "shows the facets and partFacets it was built from. Leave a missing material unknown, or offer it as a reversible proposal.",
     "CAPABILITIES appear per entity in the model view once its facets allow them, e.g. hosted-opening",
-    "(a door or window with its frame and leaf) on a wall: POST /api/proposals/hosted-opening.",
+    "(an opening for a door or window) on a wall: POST /api/proposals/hosted-opening.",
     "DOMAINS: GET /api/domains/{structure|envelope}/readiness says what a domain reads or which facets to add; it never guesses.",
     "PARAMETERS: POST /api/proposals {stateDigest, semanticEdit: {summary, parameters: [...]}} defines linked dimensions;",
     "a script binds one with param(\"key\") as a height or an at offset. semanticEdit never carries geometry.",
@@ -130,13 +130,90 @@ _MODELLING = chr(10).join([
     "Stage acceptance, formal issue and printer upload are separate from this tool's reversible design actions.",
 ])
 
+# The same guide while the design loop is enforced (#185): one call replaces the
+# candidate, admission and Continue steps; everything about writing a change, and
+# about reading and looking at a result, is the same text.
+_REVISE = [
+    "CHANGE THE DESIGN (the design loop is enforced): every change the user asks for goes through one call,",
+    "POST /api/revisions {sourceRunId, stateDigest, kind, proposal, summary, keep?, supersedes?, land?, buildOnly?},",
+    "with the loop's taskClass beside method/path, as for an admission. deterministic_edit lands in this one call.",
+    "spatial_formal or polish: send buildOnly: true, read GET /api/candidates/{candidateId} for its modelSource, look",
+    "with visual_review, then land it with {sourceRunId, stateDigest, candidateId, summary} (a repair names the looked-at",
+    "attempt in supersedes). The same candidateId lands an option, program or combination built from the working design.",
+    "sourceRunId and stateDigest are the working design's, as GET /api/revisions/context answers them (working), or the",
+    "working a landed change answered; that read also lists what the user kept and rejected, in their words, every",
+    "condition and whether a check can verify it, and the last landed change. kind names the route the change would",
+    "take, and proposal is that route's body without",
+    "stateDigest, sourceRunId, keep and summary: construction {script, parameters?}, facets {targets}, hosted-opening",
+    "{host, kind, along, width, ...}, elevation {action: 'set-datum', levelId, value}, or proposal {semanticEdit}.",
+    "The chat fills projectId, messageSource and rawLanguage. The call protects every keep no checked condition states",
+    "(a keep one states is checked on the built change), stops on a rejected",
+    "option or on a condition no check can verify, builds the change, reads its model back, validates it, admits it and",
+    "moves the user's working design onto it. It answers exactly one outcome:",
+    "- landed: done. Say what changed, from compare (each changed object with its box before and after).",
+    "- problems: nothing moved. Each problem names its source (proposal, build, readback, relation:<id>, obligation:<id>).",
+    "  Correct the change and submit it again against the same base, with supersedes: [the candidateId that failed].",
+    "- needs_question: nothing was built or moved. Ask the user exactly what detail and questionRefs name, quoting their",
+    "  words, and stop; do not work around it. A rejected option, or a kept target no checked condition states, changes",
+    "  only after the user revises that decision; a keep a checked condition states is checked on the built change.",
+    "  A condition no check can verify is the user's to confirm, never yours.",
+    "- built: buildOnly's answer; nothing is admitted until you land the candidate.",
+    "- refused: read the working design again (STALE_BASE) or correct the request.",
+    "land: false admits an alternative the user asked to compare and leaves their working design where it is.",
+    "Your own POST /api/admissions of a result and PUT /api/working-draft are refused (DESIGN_LOOP_REQUIRED); rejecting",
+    "or withdrawing a result stays available.",
+    "",
+]
+_LINES = _MODELLING.split(chr(10))
+_MODELLING_REVISIONS = chr(10).join([
+    *(line for line in _LINES[:_LINES.index("") + 1]),
+    *(line for line in _LINES[_LINES.index("") + 1:_LINES.index("CANDIDATE: when a proposal answers status 'proposed', POST /api/proposals/{id}/candidate with no body and awaitSeconds: 60 beside method/path.")]
+      if not line.startswith("STAGES:")),
+    *_REVISE,
+    *_LINES[_LINES.index("OBSERVE: GET /api/candidates/{id} lists retained objects: Z-up bbox [x, z, y], lengthUnit, upAxis or objectReadbackError."):
+            _LINES.index("ADMIT: when a model revision loop is complete, POST /api/admissions once with")],
+    *_LINES[_LINES.index("OTHER READS: GET /api/project, /api/state/volumes, /api/program, /api/options, /api/artifacts, /api/jobs/{id}."):],
+])
+
+
+# advisory: the steps as before, and what the checks the design loop now runs add to the reads.
+_ADVISORY = [
+    "CONDITIONS: a candidate read and its validation also list relationProblems (declared relations violated or left",
+    "unchecked) and obligationProblems (conditions the design must keep that are violated, new where the design it was",
+    "made from did not violate them, or that no check could verify). They block nothing; name each in your answer.",
+    "GET /api/revisions/context reads what the architect kept and rejected, in their words, and how each condition",
+    "stands on the working design.",
+]
+_MODELLING_ADVISORY = chr(10).join([
+    *_LINES[:_LINES.index("OTHER READS: GET /api/project, /api/state/volumes, /api/program, /api/options, /api/artifacts, /api/jobs/{id}.")],
+    *_ADVISORY,
+    *_LINES[_LINES.index("OTHER READS: GET /api/project, /api/state/volumes, /api/program, /api/options, /api/artifacts, /api/jobs/{id}."):],
+])
+
+
+def modelling(tier: bool | str) -> str:
+    """studio_request's guide: the one-call revision while the design loop is enforced; the steps as before, told
+    about the problem lists, while it is advisory; the steps exactly as before in legacy (``True`` is enforced)."""
+    if tier is True or tier == "enforced":
+        return _MODELLING_REVISIONS
+    return _MODELLING_ADVISORY if tier == "advisory" else _MODELLING
+
+
 # The full text of each domain the upfront guide names in one line. Answered
 # with studio_schema action discovery for that pathPrefix, never repeated in
 # the schema answers themselves.
 _GUIDES = {
     "/api/drawings": chr(10).join([
         "DRAWINGS: POST /api/drawings/elevations automatically registers results in MonkeyDiagram's documents list; drawing-only work admits nothing.",
+        "QUANTITIES: POST /api/quantities {modelSource | sourceAsset | sourceStageRef}, the model a drawing would use, is a read: each physical",
+        "member's area, closure, role and material (its facets, else the model's own) and, closed only, its volume; sums by material and role; format:\"csv\".",
         "Before drawing, read POST /api/intents/context for the task's scoped decisions (pathPrefix /api/decisions explains it).",
+        "DIAGRAMS WITHOUT A MODEL: POST /api/drawings/diagrams {drawingId, kind, spec, title, subtitle?, styleId?}: kind 'network' draws nodes at",
+        "the places you give (at is a node's centre, y down the page) joined by edges (line main|loop|return|branch; to may be a point);",
+        "Leave every node's at out and they are laid out in columns along the edges, groups together (edges then join two nodes).",
+        "'section' draws spans, shapes and moves at one scale, height up; 'timeline' draws lanes of segments and events across a time axis.",
+        "studio_schema with this path gives each spec. The same drawingId with a changed spec is a new revision.",
+        "It is registered like a sheet and does not go on the Board by itself; viewRecipe.warnings names an edge that runs through a node.",
         "SECTION PERSPECTIVE (剖透视): POST /api/drawings/section-perspectives cuts the exact model with a section plane, removes the side the eye is on,",
         "and draws the kept side in true perspective: the cut filled (poché) and true to scale at 1:scaleDenominator, farther geometry smaller,",
         "lines perpendicular to the cut converging at the eye's point on it. Minimal body: {projectId, sourceStageRef or modelSource,",
@@ -206,33 +283,43 @@ _GUIDES = {
         "Use each decision once for its relevant effect: preserve/filter for supported hard constraints, a generation preference for soft wording, or defer for unsupported effects. Inspect the next artifact and name any remaining gap; a context entry alone proves no behavior changed.",
     ]),
     "/api/memory": chr(10).join([
-        "PROJECT MEMORY is how this project works, not what it settled: where retained content is (a locator), where to look first for a topic (a source policy) and which library skill a task follows (a recipe). POST /api/memory saves one from the user's words; use its studio_schema.",
+        "PROJECT MEMORY is how this project works, not what it settled: where retained content is (a locator), where to look first for a topic (a source policy) and which installed skill a task follows (a recipe). POST /api/memory saves one from the user's words; use its studio_schema.",
         "The chat fills rawLanguage/messageSource from this actual user turn and sourceKind=agent. Never supply them, and never save an item the user did not say. Scope is project and authority explicit; omit both.",
         "LOCATOR, when the user says where content is (e.g. 项目图框在这份文件里): {kind: 'locator', value: {label: their name for it, target}}. target is {kind: 'document', runId, assetSha256, revisionRef, pageIndex} from GET /api/documents, {kind: 'artifact', sha256} or {kind: 'board', revisionSha256, elementId}. A file path or URL is never a target: the file must be registered first.",
         "A where-is question: GET /api/memory/locate?q=<their words>, and answer with the current target. A stale one is reported with its staleReason, never replaced by a guess.",
         "SOURCE POLICY, when the user says where to look first for a topic or what not to use: {kind: 'source_policy', value: {topic: their words, keys: some of materials/regulations/products/precedents, prefer: [...], avoid: [...], note}}. Their message is the evidence; no design, page or board is needed.",
-        "RECIPE, when the user says a task should always follow a procedure the skill library holds (e.g. 以后出平面图前都按事务所的填充标准检查一下): {kind: 'recipe', value: {task: their words for the task, skill: the skill as you see it, e.g. 'monkeyhub-library:hatch-review'}, appliesWhen: {domains: the ones their words indicate, of design/drawing/copy/research}}. The chat pins the library's current version (skill:<name>@<version>); with no library set, or no such skill, it refuses and says why: tell the user, never name another skill. The steps stay in the skill.",
+        "RECIPE, when the user says a task should always follow a procedure an installed skill holds (e.g. 以后出平面图前都按事务所的填充标准检查一下): {kind: 'recipe', value: {task: their words for the task, skill: the skill as you see it, e.g. 'monkeyhub-library:hatch-review'}, appliesWhen: {domains: the ones their words indicate, of design/drawing/copy/research}}. The chat pins the installed skill's current code (skill:<name>@<code>); with no such skill installed it refuses and says why: tell the user, never name another skill. The steps stay in the skill.",
         "Every context read, the prepared one included, carries ContextPack.memory: the locators, source policies and recipes its words are about. Follow a policy's prefer/avoid unless the request says otherwise, and say which sources you used.",
-        "A recipe the turn carries has a skill: load the skill named in load before doing its task, and follow it. Its note says whether the pinned version is still the library's (pinned 1, library now 2) or the skill is not in the library; say so to the user and let them choose. Nothing is swapped for them.",
+        "A recipe the turn carries has a skill: load the skill named in load before doing its task, and follow it. Its note says whether the installed skill still has the pinned code, or the skill is not installed; say so to the user and let them choose. Nothing is swapped for them.",
         "POST /api/memory/about {projectId, utterance} only reads that same selection with no design state; a turn without design context is already handed it.",
         "GET /api/memory lists items (?kind=locator|source_policy|recipe) with their revisionRef. On the user's request to forget one, POST /api/memory/{memoryId}/revisions with action=revoke and that revisionRef as expectedRevisionRef; the chat binds the reason and revisionMessageSource.",
     ]),
     "/api/board": chr(10).join([
         "BOARD: GET /api/board reads the Board; PUT /api/board saves it. Board arranges document references; generated drawings are saved by their drawing API.",
+        "AN IMAGE OR PDF YOU WERE GIVEN: POST /api/documents {attachmentId} registers a PNG, JPEG or PDF attachment of this conversation as a project document; a Board image then names it.",
         "GET /api/documents lists registered drawings and pages (?runId=<runId> for one run's); GET /api/document-annotations reads page annotations and",
         "PUT /api/document-annotations saves them. Use their schemas for exact inputs. For page edits, read existing annotations and use",
         "baseRevisionSha256 with the exact run/asset/page/drawingRevisionRef.",
+        "RECEIVED: seenDocuments marks a registered document as already placed, so the Board does not place it again: the JSON text of",
+        '[runId, revisionRef], or [runId, assetSha256] only for a document without a revision. A drawing revision named by its asset is refused (BOARD_SEEN_KEY_INVALID).',
         'DRAWING PAGE: POST /api/board/export is a read-only native MCP image: body {projectId, pages:[{runId, assetSha256, revisionRef, pageIndex}], format:"png", zip:false, maxEdge:2048}.',
         "Copy exact source fields from GET /api/documents or the generated drawing result; revisionRef must be explicit (null for sources without a revision),",
         "pageIndex is zero-based. One clean source page, no annotations, at most 2048 pixels per edge and 4 MiB; use smaller maxEdge if too large. No operationId or awaitSeconds.",
+        "WHAT IS DRAWN ON THE BOARD: POST /api/board/view is a read-only native MCP image of one frame or region with its pages under the person's",
+        "strokes, shapes, text and tracing-paper snapshots, as the Board shows them: body {projectId, frameId} (a frame's element id; the answer's",
+        "frames lists them) or {projectId, region:{x, y, width, height}} in scene coordinates, optional maxEdge 64-2048. Beside the image it lists",
+        "every mark: type, colours, box, updatedAt, frameId, text, and onPages (each page under it, the shared part as page fractions from the top",
+        "left). Read it whenever the user refers to what they drew or wrote on the Board; POST /api/board/export shows the clean page only.",
     ]),
     "/api/exports": chr(10).join([
-        "MODEL CONVERSION: When asked to export/convert a model to 3DM, SKP, GLB or DWG, use POST /api/exports via studio_request. Do not use an export button or write a converter in the shell.",
+        "MODEL CONVERSION: When asked to export/convert a model to 3DM, SKP, GLB, DWG, or for a game engine OBJ or FBX, use POST /api/exports via studio_request. Do not use an export button or write a converter in the shell.",
         "Body: {targetFormat: 'glb', attachmentId: '<exact chat attachment id>'} for an upload, or {targetFormat: 'glb', projectRevision: {runId, stateDigest, assetSha256}} for the exact current project model.",
         "Read current project state/artifacts first; never substitute an upload for project state. If 'this model' could mean the project or an upload, or multiple uploads match, ask which model. Do not guess by filename or newest file.",
         "Read GET /api/exports/capabilities for supported routes. Submission returns jobId/statusPath; poll that statusPath with GET, report queued/running progress, and only on succeeded return its downloadUrl as a Markdown link with warnings.",
         "On failed/interrupted report failureReason, never invent a file link. For SKP/DWG without an available verified executor, say 当前没有配置可用的执行器; never describe the format as permanently unsupported.",
         "Installed software does not establish conversion capability. The backend chooses providers; users do not need to choose software. Same-format validated delivery is not a conversion. Do not use awaitSeconds on exports.",
+        "AXES: the plan's +z is north, the 3DM's +Y and the GLB's -Z; the GLB, the 3DM and the Hub viewport agree, turned from Z-up to Y-up and never mirrored.",
+        "What the 3DM hides (the solid an opening or a cut removes, a hidden layer) is left out of a GLB, STL, OBJ or FBX; the report counts it as omitted 'hidden object'. Say so with the warnings.",
     ]),
     "/api/render": chr(10).join([
         "RENDER: an AI render makes one new image from one exact registered source image (a PNG or JPEG page), up to the",

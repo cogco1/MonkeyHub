@@ -85,6 +85,17 @@ def measure_shape(shape) -> ShapeMeasure:
     )
 
 
+def surface_area(shape) -> float:
+    """The total area of a shape's faces, in its length unit squared: a closed solid's skin, an open surface's sheet."""
+
+    occ = _occt()
+    if shape is None or shape.IsNull():
+        raise OcctBuildError("cannot measure a null shape")
+    properties = occ.GProp.GProp_GProps()
+    occ.BRepGProp.BRepGProp.SurfaceProperties_s(shape, properties)
+    return float(properties.Mass())
+
+
 def classify_point(shape, cad_xyz: Sequence[float]) -> str:
     """``inside`` | ``outside`` | ``boundary`` for one point in the CAD frame."""
 

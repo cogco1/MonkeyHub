@@ -13,6 +13,7 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHand
 
 from monkeymonitor.__main__ import main
 from monkeymonitor.server import MonitorData, make_server
+from monkeymonitor.sources import AGENT_SOURCES
 from monkeymonitor.store import BUSY_NOTICE, UsageLog
 from monkeymonitor.usage import TokenUsage, UsageEvent
 
@@ -104,6 +105,21 @@ class MonitorServerTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as bad:
             self.json("/api/sources/codex", method="PUT", body={"paths": ["relative.jsonl"]})
         self.assertEqual(bad.exception.code, 400)
+
+    def test_every_registered_agent_has_explicit_mutable_sources(self):
+        source = Path(self.temp.name) / "export.json"
+        source.write_text("{}", encoding="utf-8")
+        _, listing = self.json("/api/sources")
+        self.assertEqual(listing, {"agents": {agent: {"paths": []} for agent in AGENT_SOURCES}})
+        _, selected = self.json("/api/sources/usage-file", method="PUT", body={"paths": [str(source)]})
+        self.assertEqual(selected, {"paths": [source.resolve().as_posix()]})
+        _, listing = self.json("/api/sources")
+        self.assertEqual(listing["agents"]["usage-file"], selected)
+        self.assertEqual(listing["agents"]["codex"], {"paths": []})
+        for method, body in (("GET", None), ("PUT", {"paths": []})):
+            with self.subTest(method=method), self.assertRaises(HTTPError) as unknown:
+                self.json("/api/sources/some-other-agent", method=method, body=body)
+            self.assertEqual(unknown.exception.code, 404)
 
     def test_busy_log_is_503_not_an_empty_snapshot(self):
         class Busy:

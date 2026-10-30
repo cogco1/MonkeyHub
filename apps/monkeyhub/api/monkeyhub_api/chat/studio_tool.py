@@ -9,7 +9,12 @@ and a render submission.
 
 from __future__ import annotations
 
+import base64
+import binascii
+from hashlib import sha256
+from io import BytesIO
 import json
+import os
 import re
 from typing import Mapping
 
@@ -18,8 +23,8 @@ from . import guides, providers, transport
 from ..models import HubFailure
 
 
-_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|project|construction(?:/model)?|domains(?:/[a-z]+/readiness)?|state/(?:frame|volumes)|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|memory(?:/locate)?|drawings/(?:styles|model-view|plans/vector|plans/dimensions|corrections)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision|render/(?:capabilities|jobs(?:/[A-Za-z0-9_-]+)?))$")
-_POST = re.compile(r"^/api/(exports|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|memory(?:/about|/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(?:construction|facets|hosted-opening|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets|section-perspectives|plans|plans/status)|admissions|render/jobs)$")
+_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|revisions/context|project|construction(?:/model)?|domains(?:/[a-z]+/readiness)?|state/(?:frame|volumes)|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|memory(?:/locate)?|drawings/(?:styles|model-view|plans/vector|plans/dimensions|corrections)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision|render/(?:capabilities|jobs(?:/[A-Za-z0-9_-]+)?|views/passes/camera-pass-[0-9a-f]+)|live-rhino/(?:instances|document)|skills/library|skills/[A-Za-z0-9:_.-]+/(?:runs|needs)|skills/runs/skill-run-[0-9a-f]+)$")
+_POST = re.compile(r"^/api/(exports|documents|revisions|project/modeling|intents/context|quantities|board/(?:export|view)|decisions(?:/[A-Za-z0-9_-]+/revisions)?|memory(?:/about|/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(?:construction|facets|hosted-opening|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets|section-perspectives|plans|plans/status|diagrams)|admissions|render/jobs|render/views/passes|live-rhino/(?:write|snapshot)|skills/[A-Za-z0-9:_.-]+/run)$")
 _WRITE = re.compile(r"^/api/(board|document-annotations|working-draft)$")
 # The agent routes the construction contract replaced (#419). The Studio still
 # serves them to its own web client, so a refusal names the agent's route
@@ -53,11 +58,68 @@ _MEANING_REFUSAL = "Meaning is added with POST /api/proposals/facets."
 
 # POSTs that only read. They go to the bound Studio as a GET would, with no
 # mutation admission: there is nothing to admit, recover or replay.
-_POST_READS = {"/api/intents/context", "/api/drawings/plans/status", "/api/memory/about"}
+_POST_READS = {"/api/intents/context", "/api/drawings/plans/status", "/api/memory/about", "/api/quantities"}
 
 
-def _schema_allowed(method: str, path: str) -> bool:
+# The one call that carries a change onto the working design (#185). The chat
+# offers it only while the design loop is enforced, and then the Runtime takes
+# no other way there from the Agent.
+REVISIONS = "/api/revisions"
+DESIGN_LOOP_LEGACY, DESIGN_LOOP_ADVISORY, DESIGN_LOOP_ENFORCED = "legacy", "advisory", "enforced"
+# The call is offered only while the design loop is enforced; what a change is written from, while it checks
+# conditions (advisory or enforced). In legacy the chat is offered neither.
+REVISION_ACTION = ("POST", REVISIONS)
+CONTEXT_ACTION = ("GET", REVISIONS + "/context")
+LOOP_ACTIONS = frozenset({REVISION_ACTION, CONTEXT_ACTION})
+# What the conversation was started with: the Hub sets it for every CLI turn it
+# starts, and an external host sets it itself. It decides the guide and the action
+# list; whether the call is allowed is still asked of the Hub when it is made.
+DESIGN_LOOP_ENV = "MONKEYHUB_DESIGN_LOOP"
+
+
+def _tier(value: object) -> str:
+    value = str(value or "").strip().lower()
+    return value if value in (DESIGN_LOOP_ADVISORY, DESIGN_LOOP_ENFORCED) else DESIGN_LOOP_LEGACY
+
+
+def design_loop_tier() -> str:
+    """The design loop this conversation was started with: legacy unless the Hub said advisory or enforced."""
+    return _tier(os.environ.get(DESIGN_LOOP_ENV))
+
+
+def design_loop_offered() -> bool:
+    """Whether this conversation was started with the design loop enforced."""
+    return design_loop_tier() == DESIGN_LOOP_ENFORCED
+
+
+def design_loop_setting(hub: str) -> str:
+    """This Hub's designLoop setting now; an unreadable setting reads as the default."""
+    from ..settings.models import DESIGN_LOOP_DEFAULT
+    try:
+        value = transport._request_json(hub, "/api/settings/apps", timeout=10).get("designLoop")
+    except (HubFailure, OSError, ValueError, AttributeError):
+        value = None
+    return _tier(value or DESIGN_LOOP_DEFAULT)
+
+
+def design_loop_enforced(hub: str) -> bool:
+    """Whether this Hub's designLoop setting is enforced; an unreadable setting reads as the default."""
+    return design_loop_setting(hub) == DESIGN_LOOP_ENFORCED
+
+
+def loop_action_offered(method: str, path: str, tier: str) -> bool:
+    """Whether a design-loop action is offered in ``tier``; every other action is not a loop action."""
+    if (method, path) == REVISION_ACTION:
+        return tier == DESIGN_LOOP_ENFORCED
+    if (method, path) == CONTEXT_ACTION:
+        return tier != DESIGN_LOOP_LEGACY
+    return True
+
+
+def _schema_allowed(method: str, path: str, *, enforced: bool = False, tier: str | None = None) -> bool:
     """Apply the execution allow-list to a schema template, never to a write."""
+    if not loop_action_offered(method, path, tier or (DESIGN_LOOP_ENFORCED if enforced else DESIGN_LOOP_LEGACY)):
+        return False
     pattern = {"GET": _READ, "POST": _POST, "PUT": _WRITE}.get(method)
     return pattern is not None and any(
         pattern.fullmatch(re.sub(r"\{[^}/]+\}", sample, path))
@@ -86,6 +148,17 @@ def _semantic_edit_refusal(body) -> HubFailure | None:
     return None
 
 
+def _revision_refusal(body) -> HubFailure | None:
+    """Why a revision's change may not be sent from the chat: the same narrowing its own route has here."""
+    if not isinstance(body, Mapping) or not isinstance(body.get("proposal"), Mapping):
+        return None  # the Runtime's own validation answers a malformed body
+    if body.get("kind") == "proposal":
+        return _semantic_edit_refusal(body["proposal"])
+    if body.get("kind") == "elevation":
+        return _elevation_refusal(body["proposal"])
+    return None
+
+
 def _elevation_refusal(body) -> HubFailure | None:
     """Why an agent's elevation request may not be sent, or None for a set-datum.
 
@@ -96,14 +169,14 @@ def _elevation_refusal(body) -> HubFailure | None:
     return None
 
 
-def _available_actions(document: dict) -> list[dict]:
+def _available_actions(document: dict, *, enforced: bool = False, tier: str | None = None) -> list[dict]:
     """A view of this Runtime and this chat's transport, not another registry."""
     return [
         {"method": method.upper(), "path": path,
          "summary": str(operation.get("summary") or operation.get("operationId") or "")[:180]}
         for path, operations in sorted(document.get("paths", {}).items())
         for method, operation in sorted(operations.items())
-        if isinstance(operation, dict) and _schema_allowed(method.upper(), path)
+        if isinstance(operation, dict) and _schema_allowed(method.upper(), path, enforced=enforced, tier=tier)
     ]
 
 
@@ -121,9 +194,10 @@ def _discovery(arguments: dict) -> tuple[str | None, str, int, int]:
     return method, prefix, offset, limit
 
 
-def _discover_actions(base: str, arguments: dict) -> dict:
+def _discover_actions(base: str, arguments: dict, *, enforced: bool = False, tier: str | None = None) -> dict:
     method, prefix, offset, limit = _discovery(arguments)
-    rows = [row for row in _available_actions(transport._request_json(base, "/openapi.json"))
+    rows = [row for row in _available_actions(transport._request_json(base, "/openapi.json"), enforced=enforced,
+                                              tier=tier)
             if row["path"].startswith(prefix) and (method is None or row["method"] == method.upper())]
     result = {"actions": rows[offset:offset + limit], "total": len(rows), "offset": offset, "limit": limit,
               "note": "Current Runtime actions exposed to this chat. Choose method/path for studio_schema to read inputs; "
@@ -303,6 +377,40 @@ def _read_drawing_page(base: str, body) -> dict:
     picture = transport._request_json(base, "/api/board/export", "POST", {**body, "maxEdge": max_edge}, png=True)
     return {**picture, "source": {"projectId": body["projectId"], **page},
             "representation": "registered-document-page", "annotationsIncluded": False}
+
+
+_BOARD_VIEW_FIELDS = frozenset({"projectId", "frameId", "region", "maxEdge", "revisionSha256"})
+
+
+def _read_board_view(base: str, body) -> dict:
+    """One frame or region of the Board as drawn, with every mark on it listed (gap 28): a read, never admitted.
+
+    The Studio draws the registered pages under the person's strokes, shapes,
+    text and tracing-paper snapshots and says where each mark lies on each
+    page; the image reaches the agent as a native MCP image, the list as text.
+    """
+
+    if not isinstance(body, dict) or set(body) - _BOARD_VIEW_FIELDS:
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "Read the Board with {projectId, frameId or region {x, y, width, "
+                         "height}, maxEdge, revisionSha256}; with neither frameId nor region it is the whole board.")
+    max_edge = body.get("maxEdge", transport._PAGE_IMAGE_MAX_EDGE)
+    if type(max_edge) is not int or not 64 <= max_edge <= transport._PAGE_IMAGE_MAX_EDGE:
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "maxEdge must be an integer from 64 to 2048.")
+    answer = transport._request_json(base, "/api/board/view", "POST", {**body, "maxEdge": max_edge})
+    image = answer.get("image") if isinstance(answer, dict) else None
+    try:
+        data = base64.b64decode(image["data"], validate=True)
+        if len(data) > transport._PAGE_IMAGE_MAX_BYTES or sha256(data).hexdigest() != image["sha256"]:
+            raise ValueError("image digest or size")
+    except (TypeError, KeyError, ValueError, binascii.Error) as invalid:
+        raise HubFailure(502, "CHAT_TOOL_FAILED", "The Studio answered an invalid Board image.") from invalid
+    stream = BytesIO(data)
+    stream.headers = {"Content-Type": "image/png"}
+    picture = transport._page_image(stream)
+    if (picture["width"], picture["height"]) != (image.get("width"), image.get("height")):
+        raise HubFailure(502, "CHAT_TOOL_FAILED", "The Studio answered a Board image of another size.")
+    return {**picture, **{key: value for key, value in answer.items() if key != "image"},
+            "representation": "board-region", "annotationsIncluded": True}
 
 
 def _render_provider_available(base: str, body) -> None:

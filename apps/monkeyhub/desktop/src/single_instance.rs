@@ -10,7 +10,8 @@
 //!   without a notice and then starts as the running desktop. Only if that takes longer than
 //!   30 seconds does it say that MonkeyHub is still closing or starting.
 //!
-//! Other roots have other names, so explicit independent roots still run side by side.
+//! Other roots have other names, so explicit independent roots still run side by side, except
+//! in 工作坊模式 (#668), where the name is the account's and a second root waits like the first.
 //! Hub's `hub.lock` remains the second guard.
 
 #[cfg(windows)]
@@ -18,7 +19,7 @@ pub use native::{attach, claim, restarting_for_update};
 
 /// Non-Windows builds have no single-instance check.
 #[cfg(not(windows))]
-pub fn claim(_runtime_root: &std::path::Path, _trial: bool) -> Result<bool, String> {
+pub fn claim(_runtime_root: &std::path::Path, _trial: bool, _per_account: bool) -> Result<bool, String> {
     Ok(true)
 }
 
@@ -238,6 +239,15 @@ mod native {
             .collect())
     }
 
+    /// 工作坊模式 (#668): one key for the account, whatever runtime root a launch names. A
+    /// `Local\` name is already confined to the logon session.
+    fn account_key() -> Result<String, String> {
+        Ok(sha256(b"MonkeyHub workshop account")?[..16]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect())
+    }
+
     fn mutex_name(key: &str) -> String {
         format!(r"Local\MonkeyHub-{key}")
     }
@@ -319,19 +329,28 @@ mod native {
         taken
     }
 
-    /// Ok(true): this process owns the runtime root. Ok(false): another desktop owns it and the
-    /// person was told what it is doing, so this launch must exit. An update trial never asks
-    /// or tells: it fails, and the update helper rolls back.
-    pub fn claim(runtime_root: &Path, trial: bool) -> Result<bool, String> {
+    /// Ok(true): this process owns the runtime root, or with `per_account` (工作坊模式, #668)
+    /// the account. Ok(false): another desktop owns it and the person was told what it is
+    /// doing, so this launch must exit. An update trial never asks or tells: it fails, and the
+    /// update helper rolls back.
+    pub fn claim(runtime_root: &Path, trial: bool, per_account: bool) -> Result<bool, String> {
         per_monitor_dpi();
-        let key = instance_key(runtime_root)?;
+        let key = if per_account {
+            account_key()?
+        } else {
+            instance_key(runtime_root)?
+        };
         let name = mutex_name(&key);
         if trial {
             if !acquire(&name, TRIAL_WAIT_MS)? {
-                return Err(format!(
-                    "Another MonkeyHub desktop is still using runtime directory {}; the update trial did not start.",
-                    runtime_root.display()
-                ));
+                return Err(if per_account {
+                    "Another MonkeyHub desktop is still running for this account; the update trial did not start.".into()
+                } else {
+                    format!(
+                        "Another MonkeyHub desktop is still using runtime directory {}; the update trial did not start.",
+                        runtime_root.display()
+                    )
+                });
             }
         } else if !acquire(&name, 0)? && !follow_owner(&key, &name, WAIT_FOR_OWNER, show_notice)? {
             return Ok(false);
@@ -757,6 +776,17 @@ mod native {
             let runtime = directory.key("Runtime");
             for other in ["Other", "", r"Runtime\Nested"] {
                 assert_ne!(directory.key(other), runtime, "{other}");
+            }
+        }
+
+        #[test]
+        fn workshop_mode_has_one_lock_for_the_account_whatever_the_root() {
+            let directory = Directory::new();
+            let account = account_key().unwrap();
+            assert_eq!(account, account_key().unwrap());
+            assert_eq!(account.len(), 32);
+            for root in ["Runtime", "Other"] {
+                assert_ne!(directory.key(root), account, "{root}");
             }
         }
 

@@ -226,7 +226,7 @@ export function ComponentTree({
     return (
       <li key={`c:${node.id}`} className="tree__item">
         <div className={`tree__row${selected ? " tree__row--selected" : ""}`} style={{ paddingLeft: `${depth * 14}px` }}>
-          <button
+          <button data-command="component.find.fold" data-command-arg={node.id}
             type="button"
             className="tree__fold"
             aria-label={isFolded ? t("tree.unfold") : t("tree.fold")}
@@ -235,7 +235,7 @@ export function ComponentTree({
           >
             {hasBelow ? (isFolded ? "▸" : "▾") : "·"}
           </button>
-          <button
+          <button data-command="component.find.pick" data-command-arg={node.id}
             type="button"
             className={`tree__name${missing ? " tree__name--missing" : ""}`}
             onClick={() => onPick(node.id, null)}
@@ -278,7 +278,7 @@ export function ComponentTree({
                     <span className="tree__fold" aria-hidden="true">
                       ·
                     </span>
-                    <button type="button" className="tree__name" onClick={() => onPick(node.id, id)}>
+                    <button data-command="component.find.pick_element" data-command-arg={id} type="button" className="tree__name" onClick={() => onPick(node.id, id)}>
                       <span className="mono">{id}</span>
                     </button>
                     <span className="tree__meta">

@@ -298,7 +298,8 @@ def _resolved_keep_ref(ref: str, entities: set[str], parameters: set[str]) -> st
 
 def _unknown_keep_ref(ref: str) -> BlockedNeedsHuman:
     return BlockedNeedsHuman(
-        "the keep ref names nothing in this record",
+        f"keep names {ref}, which is neither an entity nor a parameter of this record; keep takes entity:<id> or "
+        "parameter:<key>",
         question=(
             f"keep names {ref}, which this record declares neither as an "
             "entity nor as a parameter. Which did you mean?"
@@ -645,16 +646,21 @@ def delete_element_proposal(
     Delete is a design edit like any other: it becomes the same
     ``StateRecordOperator`` an agent's ``removeEntityIds`` produces, and runs
     through the same candidate. Nothing is compiled by a model — a keystroke
-    must not become a model call — and nothing beyond the named element is
-    removed.
+    must not become a model call — and nothing is removed beyond the named
+    element and, when that element was all its component held, the component:
+    a component left holding nothing is no object, and a candidate refuses it
+    (strict coverage), so it goes with its element, as a construction
+    ``delete`` takes a shape's component with its body. A component that still
+    holds anything else stays.
 
     What stands on it is the reason a delete can be refused. The kernel's own
-    dependency edges say which elements reference this one and which declared
-    relations name it; removing it under them would either dangle those
-    references or silently take objects the architect never picked. Both are
-    refused here, with the dependents named, so the answer is a fact about the
-    building rather than a failure inside the record. An element that names
-    this one in ``references.voids`` is cut by it, and is said to be.
+    dependency edges say which elements reference this one, or the component
+    that goes with it, and which declared relations name either; removing them
+    under those would either dangle the references or silently take objects
+    the architect never picked. Both are refused here, with the dependents
+    named, so the answer is a fact about the building rather than a failure
+    inside the record. An element that names this one in ``references.voids``
+    is cut by it, and is said to be.
     """
 
     record = projection.record
@@ -667,19 +673,29 @@ def delete_element_proposal(
             "names the element a pick resolved to, and this record declares "
             f"{_listed(sorted(item.entity_id for item in record.entities_of('Element@1')))}.",
         )
+    component_id = str(entity.fields.get("component_id") or entity.parent_id or "")
+    held = {
+        item.entity_id for item in record.entities
+        if item.parent_id == component_id
+        or (item.schema == "Element@1" and (item.fields.get("component_id") or item.parent_id) == component_id)
+    }
+    owned = (held == {element_id}
+             and any(item.entity_id == component_id for item in record.entities_of("Component@1")))
+    removed = {element_id, component_id} if owned else {element_id}
+    refs = {f"entity:{identifier}" for identifier in removed}
     dependents = [
         (edge.downstream_ref[len("entity:"):], edge.relation)
         for edge in record.dependency_edges()
-        if edge.upstream_ref == f"entity:{element_id}"
+        if edge.upstream_ref in refs
         and edge.downstream_ref.startswith("entity:")
-        and edge.downstream_ref != f"entity:{element_id}"
+        and edge.downstream_ref not in refs
     ]
     # A host names its cutters in references.voids (#419): it is cut by this element, not standing on it.
     cut = sorted({dependent for dependent, relation in dependents if relation == "voids"})
     standing = sorted({dependent for dependent, relation in dependents if relation != "voids"})
     named_by = sorted({
         relation.relation_id for relation in record.relations
-        if element_id in (relation.subject, relation.object)
+        if {relation.subject, relation.object} & removed
     })
     if cut or standing or named_by:
         raise StudioError(
@@ -694,7 +710,6 @@ def delete_element_proposal(
             + ". Change or remove what depends on it first; deleting one object never removes "
             "objects nobody picked. Nothing was run.",
         )
-    component_id = str(entity.fields.get("component_id") or entity.parent_id or "")
     said = summary or f"delete {element_id}"
     return component_edit_proposal(
         projection,
@@ -703,7 +718,7 @@ def delete_element_proposal(
             "entities": [],
             "parameters": [],
             "relations": [],
-            "removeEntityIds": [element_id],
+            "removeEntityIds": sorted(removed),
             "removeParameterKeys": [],
             "removeRelationIds": [],
             "protected": [],
@@ -821,7 +836,17 @@ def component_edit_proposal(
             }:
                 raise ValueError("a parameter edit contains undeclared fields")
             previous = current_parameters.get(payload.get("key"))
+            if (previous is not None and previous.expr and "expr" not in payload and "value" in payload
+                    and payload["value"] != previous.value):
+                # Its expression gives its value back, so the value alone would change nothing.
+                raise ValueError(
+                    f"parameter {previous.key} is derived: {previous.expr} (now {previous.value}), so a value alone "
+                    "changes nothing; change what it is derived from, send expr with a new expression, or send "
+                    "expr null to fix it at the value")
             value = {**({} if previous is None else previous.to_dict()), **payload}
+            if "expr" in payload and payload["expr"] is None and "epistemic_status" not in payload \
+                    and value.get("epistemic_status") == "derived":
+                value["epistemic_status"] = "declared"
             value["inputs"] = ref_set(value.get("inputs", ()), "parameter inputs")
             parameters.append(Parameter.from_dict(value))
         relations = []

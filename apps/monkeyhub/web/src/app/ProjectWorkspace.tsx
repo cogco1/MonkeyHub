@@ -64,6 +64,11 @@ export interface ProjectWorkspaceProps {
   onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
   /** Where a chat message lands (#285): the position the Stage chip states, as it states it. */
   onPositionChange?: (position: WorkspacePosition | null) => void;
+  /**
+   * The attention shell embeds the Board and the model in its center tabs (G1): their bars keep the command tree's
+   * front commands, the rest being in its advanced tools and Ctrl K. Other surfaces show as they are.
+   */
+  embedded?: boolean;
 }
 
 /** What the Stage chip says about the editing position, for the chat composer's target label (#285). */
@@ -78,7 +83,7 @@ export interface WorkspacePosition {
 
 /** One mounted project: the Board, its page editor and the same local model draft. */
 export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, candidateFollowsHead = false, treeFocus = null, active = true, refreshKey = 0, documentRequest = null,
-  comparisonRequest = null, onComparisonClose, onWorkspaceChange, onChatRequest, onRenderChatRequest, onDesignContextChange, onPositionChange }: ProjectWorkspaceProps) {
+  comparisonRequest = null, onComparisonClose, onWorkspaceChange, onChatRequest, onRenderChatRequest, onDesignContextChange, onPositionChange, embedded = false }: ProjectWorkspaceProps) {
   const renderReader = useRef<(() => RenderView | null) | null>(null);
   const registerRenderReader = useCallback((reader: (() => RenderView | null) | null) => { renderReader.current = reader; }, []);
   const readRenderView = useCallback(() => renderReader.current?.() ?? null, []);
@@ -106,6 +111,12 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   const [renderVisited, setRenderVisited] = useState(workspace === "render");
   const [boardRefresh, setBoardRefresh] = useState(0);
   const [boardPage, setBoardPage] = useState<BoardPageRequest | null>(null);
+  // ADR-014 B5: a drawing or render result goes to the Board or into the layout from its page, which then opens with it there.
+  const [layoutPlace, setLayoutPlace] = useState<{ source: PageSource; requestId: string } | null>(null);
+  const toBoard = (source: PageSource) => {
+    setVisit(null); setBoardPage({ source, requestId: crypto.randomUUID() }); setBoardRefresh((value) => value + 1); onWorkspaceChange("board");
+  };
+  const toLayout = (source: PageSource) => { setLayoutPlace({ source, requestId: crypto.randomUUID() }); onWorkspaceChange("publish"); };
   const pageOpen = workspace === "board" && visit !== null;
   const modelVisible = workspace === "arch" || pageOpen;
   useEffect(() => { if (modelVisible) setArchVisited(true); }, [modelVisible]);
@@ -280,7 +291,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
 
   if (server.status === "failed") return <div className="project-workspace"><div className="refusal" role="alert">
     <ErrorPanel error={server.error} what="GET /api/protocol" />
-    <button type="button" onClick={() => setAttempt((value) => value + 1)}>Retry</button>
+    <button data-command="view.notice.retry" data-command-arg="project_runtime" type="button" onClick={() => setAttempt((value) => value + 1)}>Retry</button>
   </div></div>;
   if (server.status !== "ready") return <div className="project-workspace"><LoadingOverlay mode="boot" status="Project Runtime" /></div>;
   // What is on screen: the comparison covers the surface it was opened over, which stays mounted.
@@ -290,7 +301,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     {/* #337: one bar over every surface. The surface on screen puts its menus on the left; the project's
         position stays at the right end, where the Stage chip opens the Design Tree. #300: Board and its
         Layout mode share one rail entry, and this switch moves between the two mounted surfaces. */}
-    <ProjectBar label={t("workspace.surfaceBar")}
+    <ProjectBar label={t("workspace.surfaceBar")} frontOnly={embedded && (shown === "arch" || (shown === "board" && !pageOpen))}
       lead={((shown === "board" && !pageOpen) || shown === "publish") && <BoardModeSwitch mode={workspace === "publish" ? "layout" : "board"}
         onChange={(mode) => onWorkspaceChange(mode === "layout" ? "publish" : "board")} />}
       position={designTree.available && <DesignTreeBar data={designTree} seen={seenCandidates.seen} open={shown === "tree"} viewing={viewing}
@@ -308,12 +319,14 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
           active={active && modelShown} refreshKey={refreshKey + attempt + headMoves} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
           onDesignContextChange={designContextChanged} onRenderReader={registerRenderReader} cameraRequest={cameraRequest}
           onView={(view) => viewRun({ ...view, back: false }, true)} onRecorder={registerRecorder}
-          onOpenTree={designTree.available ? () => onWorkspaceChange("tree") : undefined} treeMove={designTree.headMove} />
+          onOpenTree={designTree.available ? () => onWorkspaceChange("tree") : undefined} treeMove={designTree.headMove}
+          onBoard={(source) => { setVisit(null); setBoardPage({ source, requestId: crypto.randomUUID() }); setBoardRefresh((value) => value + 1); onWorkspaceChange("board"); }} />
       </div>}
       {(publishVisited || workspace === "publish") && <div data-project-surface="publish" hidden={shown !== "publish"} inert={!active || shown !== "publish"}
         style={{ height: "100%", minHeight: 0, display: shown === "publish" ? "block" : "none" }}>
         <Suspense fallback={<LoadingOverlay mode="boot" status="Publish" />}>
-          <Publish projectId={boundProjectId.current!} active={active && shown === "publish"} refreshKey={refreshKey + attempt} boardRequest={publishRequest} />
+          <Publish projectId={boundProjectId.current!} active={active && shown === "publish"} refreshKey={refreshKey + attempt} boardRequest={publishRequest}
+            placeRequest={layoutPlace} />
         </Suspense>
       </div>}
       {(renderVisited || workspace === "render") && <div data-project-surface="render" hidden={shown !== "render"} inert={!active || shown !== "render"}
@@ -321,14 +334,14 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
         <Suspense fallback={<LoadingOverlay mode="boot" status="Render" />}>
           <Render readModelView={readRenderView} onModeling={() => onWorkspaceChange("arch")} onShowInModeling={showInModeling}
             projectId={boundProjectId.current!} active={active && shown === "render"} refreshKey={refreshKey + attempt}
-            onBoard={(source) => { setVisit(null); setBoardPage({ source, requestId: crypto.randomUUID() }); setBoardRefresh((value) => value + 1); onWorkspaceChange("board"); }} />
+            onBoard={toBoard} onLayout={toLayout} />
         </Suspense>
       </div>}
       {(drawingVisited || workspace === "drawing") && <div data-project-surface="drawing" hidden={shown !== "drawing"} inert={!active || shown !== "drawing"}
         style={{ height: "100%", minHeight: 0, display: shown === "drawing" ? "block" : "none" }}>
         {/* #337: the Drawing puts its recipe transfer in its own menus, and a file to confirm in its row. */}
         <Suspense fallback={<LoadingOverlay mode="boot" status="Drawing" />}>
-          <Drawing projectId={boundProjectId.current!} active={active && shown === "drawing"} refreshKey={refreshKey + attempt} />
+          <Drawing projectId={boundProjectId.current!} active={active && shown === "drawing"} refreshKey={refreshKey + attempt} onBoard={toBoard} onLayout={toLayout} />
         </Suspense>
       </div>}
       {(boardVisited || workspace === "board") && <div data-project-surface="board" hidden={shown !== "board" || pageOpen} inert={!active || shown !== "board" || pageOpen}

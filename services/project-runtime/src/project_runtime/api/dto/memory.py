@@ -98,13 +98,14 @@ class RecipeValueDto(_Frozen):
     """Which library skill a task follows, by one exact version; the steps stay in the skill.
 
     A chat names the skill as the agent sees it and the Hub fills the exact
-    version from the configured library.
+    code from the installed skill (S-1).
     """
 
     task: str = Field(min_length=1, max_length=200,
                       description="the task in the user's words, e.g. 出平面图前检查填充")
-    skill: str = Field(min_length=1, max_length=90, pattern=r"^skill:[a-z0-9]+(-[a-z0-9]+)*@[1-9][0-9]{0,8}$",
-                       description="skill:<name>@<version>, one exact version of a library skill")
+    skill: str = Field(min_length=1, max_length=90, pattern=r"^skill:[a-z0-9]+(-[a-z0-9]+)*@(?:[0-9a-f]{12}|[1-9][0-9]{0,8})$",
+                       description="skill:<name>@<code>, the first 12 hex digits of the installed skill's code; "
+                                   "skill:<name>@<version> from before S-1 is still read")
     note: str | None = Field(default=None, max_length=500)
 
 

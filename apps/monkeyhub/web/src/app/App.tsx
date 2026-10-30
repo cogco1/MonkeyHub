@@ -276,7 +276,7 @@ const FOLLOW_WORDS: Readonly<Record<FollowNotice["state"], MessageKey>> = {
   "moved-on": "stage.follow.undoMoved", unsynced: "stage.follow.undoUnsynced", failed: "stage.follow.undoFailed",
 };
 
-export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader, cameraRequest = null, onView, onRecorder, onOpenTree, treeMove = null }: {
+export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onBoard, onChatRequest, onDesignContextChange, onRenderReader, cameraRequest = null, onView, onRecorder, onOpenTree, treeMove = null }: {
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;
   /**
    * The last move of the Working Head the project's Design Tree made, a Continue or its Undo (#575). The tree's toast
@@ -316,6 +316,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   active?: boolean;
   refreshKey?: number;
   onOpenBoard?: () => void;
+  /** Open the Board on one registered page, placing it there if it is not yet (a live section's drawing, G5). */
+  onBoard?: (source: PageSource) => void;
   onChatRequest?: () => void;
   onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
 }) {
@@ -3654,20 +3656,20 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           {developerMode && sourceRunId !== null && <p className="mono">{sourceRunId}</p>}
           {error && <ErrorPanel error={error} what={error === documentIntentError ? "MonkeyBoard" : undefined} />}
           {baseNotice && <p className="refusal__lead" role="alert">{baseNotice}</p>}
-          <button type="button" className="btn" disabled={changingBase}
+          <button data-command="view.notice.retry" data-command-arg="model_open" type="button" className="btn" disabled={changingBase}
             onClick={() => { if (missingChosenModel) void loadArtifacts(); else void reload(); }}>
             {t("stage.base.retry")}
           </button>
-          <button type="button" className="btn" disabled={changingBase}
+          <button data-command="design.go_to_step.default_base" type="button" className="btn" disabled={changingBase}
             onClick={() => void changeBaseFromRow(null)}>
             {t("stage.base.default")}
           </button>
-          {binding && documentView.mounted && <button type="button" className="btn"
+          {binding && documentView.mounted && <button data-command="view.drawings" type="button" className="btn"
             onClick={() => setDocumentView((current) => ({ ...current, open: true }))}>
             {t("workspace.monkeydiagram")}
           </button>}
-          {returnToBoard && <button type="button" className="btn" onClick={returnToBoard}>
-            {t("workspace.monkeyboard")}
+          {returnToBoard && <button data-command="view.tab.board" type="button" className="btn" onClick={returnToBoard}>
+            {t("workspace.returnToBoard")}
           </button>}
         </div>
       </div>
@@ -3800,6 +3802,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             key={binding?.projectId ?? "unbound"}
             active={active}
             onOpenBoard={onOpenBoard}
+            onBoard={onBoard}
             onChatRequest={onChatRequest}
             onOpenTree={onOpenTree}
             hasModel={sourceLabel !== null || hasLocalGeometry}
@@ -4044,7 +4047,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           <span key={followNotice.id} role="status" data-follow-notice={followNotice.state} title={followNotice.reason ?? t(FOLLOW_WORDS[followNotice.state])}
             style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{t(FOLLOW_WORDS[followNotice.state])}</span>
           {followNotice.undo && (followNotice.state === "moved" || followNotice.state === "undoing") &&
-            <MenuCommand data-action="follow-undo" disabled={followNotice.state === "undoing"} title={t("stage.follow.undoTitle")}
+            <MenuCommand data-command="design.undo_last" data-action="follow-undo" disabled={followNotice.state === "undoing"} title={t("stage.follow.undoTitle")}
               onClick={undoFollowed}>{t(followNotice.state === "undoing" ? "stage.follow.undoing" : "stage.follow.undo")}</MenuCommand>}
         </> : null} />
     </>

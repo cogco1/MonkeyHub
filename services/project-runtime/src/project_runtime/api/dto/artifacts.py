@@ -24,6 +24,7 @@ from ...application.artifacts import (
     ModelSource,
     SourceDocument,
     ViewportCapture,
+    view_recipe_with_frame,
 )
 from .project import ProjectVersionDto
 
@@ -436,7 +437,7 @@ def document_dto(document: SourceDocument) -> SourceDocumentDto:
         model_source=model_source_dto(document.model_source),
         model_source_binding_ref=document.model_source_binding_ref,
         drawing_id=document.drawing_id, revision_ref=document.revision_ref,
-        source_stage_ref=document.source_stage_ref, view_recipe=document.view_recipe,
+        source_stage_ref=document.source_stage_ref, view_recipe=view_recipe_with_frame(document.view_recipe),
         generated_at=document.generated_at,
         replaces_pages=[DocumentPageReplacementDto(
             run_id=page.run_id, asset_sha256=page.asset_sha256, revision_ref=page.revision_ref,

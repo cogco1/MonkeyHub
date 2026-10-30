@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
 from ..discovery import Discovery, discover_local_cad
-from .meshes import ConversionError, FORMATS, VERSION, ThreeDM, encode_mesh, validate_mesh
+from .meshes import ConversionError, FORMATS, TARGET_FORMATS, VERSION, ThreeDM, encode_mesh, validate_mesh
 
 NO_EXECUTOR = "当前没有配置可用的执行器"
 ExecutionMode = Literal["local desktop", "headless", "cloud", "SDK"]
@@ -60,13 +60,14 @@ class ConversionProvider(Protocol):
 class InProcessMeshProvider:
     name = "InProcessMeshProvider"
     version = VERSION
-    input_formats = output_formats = ("3dm", "glb")
+    input_formats = ("3dm", "glb")
+    output_formats = ("3dm", "glb", "stl", "obj", "fbx")
     execution_mode = "headless"
     execution_host = "in-process"
 
     def capability(self, source, target):
         if source not in self.input_formats or target not in self.output_formats:
-            return Capability(False, False, "unsupported-semantics", "This provider implements only bounded 3DM/GLB mesh interchange.")
+            return Capability(False, False, "unsupported-semantics", "This provider implements only bounded 3DM/GLB mesh interchange, STL print meshes and OBJ/FBX meshes.")
         if "3dm" in (source, target):
             try:
                 ThreeDM()
@@ -76,6 +77,26 @@ class InProcessMeshProvider:
 
     def convert(self, data, source, target):
         output, details = encode_mesh(data, source, target)
+        if target == "stl":
+            details["losses"] = {
+                "units": "Millimetres at full size, Z up; scale and cut it for a printer in the print step.",
+                "layers": "None: one triangle soup.", "materials": "None.", "structure": "Objects and instances are merged.",
+                "geometry": ("Triangles only; saved BREP and extrusion render meshes approximate exact surfaces. Curves, "
+                             "text, hatches and solids without a render mesh are left out and counted in omitted."),
+            }
+            return ConvertedFile(output, details)
+        if target in ("obj", "fbx"):
+            details["losses"] = {
+                "units": ("Metres, Y up as glTF: the model's north is -Z." if target == "obj" else
+                          "Centimetres declared in the file (UnitScaleFactor 1), Y up as glTF: the model's north is -Z."),
+                "layers": "Flattened: one object per model object.",
+                "materials": ("Each object names its material (usemtl); no .mtl, so no colour." if target == "obj" else
+                              "Each object keeps its material's base colour (DiffuseColor, linear) and opacity."),
+                "structure": "Hierarchy, instances and CAD metadata are not transferred.",
+                "geometry": ("Triangle meshes with vertex normals; no UVs. Saved BREP render meshes approximate exact "
+                             "surfaces; no solids reconstructed."),
+            }
+            return ConvertedFile(output, details)
         details["losses"] = ({"units": "unchanged", "layers": "unchanged", "materials": "unchanged",
                               "structure": "unchanged", "geometry": "unchanged"} if source == target else {
             "units": "Normalized to meters; scale and placement checked by readback.",
@@ -201,7 +222,7 @@ class ConversionCoordinator:
     def capabilities(self):
         rows = []
         for source in FORMATS:
-            for target in FORMATS:
+            for target in TARGET_FORMATS:
                 if source == target:
                     continue
                 observations = self.inspect(source, target)
@@ -217,8 +238,8 @@ class ConversionCoordinator:
         return rows
 
     def convert(self, data, source, target):
-        if source not in FORMATS or target not in FORMATS:
-            raise ConversionError("Choose a 3DM, SKP, GLB or DWG format.")
+        if source not in FORMATS or target not in TARGET_FORMATS:
+            raise ConversionError("Choose a 3DM, SKP, GLB or DWG source and a 3DM, SKP, GLB, DWG or STL target.")
         observations = self.inspect(source, target)
         eligible = self._eligible(observations, source, target)
         report = {"sourceFormat": source, "targetFormat": target,

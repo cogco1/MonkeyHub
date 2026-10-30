@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 import rhino3dm from "rhino3dm";
+import { cmd, commandProblems } from "./commandLocator.mjs";
 
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repoRoot = path.resolve(webRoot, "../../..");
@@ -322,9 +323,8 @@ async function wait(predicate,label,timeout=15000) {
   while(Date.now()<end){state=await snap();if(predicate(state))return state;await delay(100);}
   throw new Error(`${label}: ${JSON.stringify(state)}`);
 }
-const button=name=>page.getByRole('button',{name,exact:true});
 // #302: Record coming or going moves no tool; Select stands for the fixed tools.
-const toolAt=async()=>{const box=await button('Select').boundingBox();assert.ok(box,'Select is not on screen');return {x:box.x,y:box.y};};
+const toolAt=async()=>{const box=await cmd(page,'draft.tools.select').boundingBox();assert.ok(box,'Select is not on screen');return {x:box.x,y:box.y};};
 async function steadyTools(before,label){
   // A layout change lands within a frame or two; give it the chance to show.
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
@@ -337,7 +337,7 @@ async function narrowRecord(narrowBefore){
   await page.locator('.model-tools__sync--above').waitFor();
   await steadyTools(narrowBefore,'Record above the tools');
   assert.equal((await toolAt()).y,narrowBefore.y,'Record above the tools moved them down or up');
-  const record=await button('Record').boundingBox(),tools=await page.locator('.model-tools button.model-tool-button:not([data-tool-icon="sync"])').evaluateAll(nodes=>
+  const record=await cmd(page,'draft.record.save').boundingBox(),tools=await page.locator('.model-tools button.model-tool-button:not([data-tool-icon="sync"])').evaluateAll(nodes=>
     nodes.map(node=>node.getBoundingClientRect()).filter(box=>box.width>0).map(({x,y,width,height})=>({x,y,width,height})));
   assert.ok(record&&record.x>=0&&record.x+record.width<=page.viewportSize().width,'Record stays on screen at a narrow width');
   for(const box of tools)assert.ok(record.x+record.width<=box.x||box.x+box.width<=record.x||record.y+record.height<=box.y||box.y+box.height<=record.y,
@@ -363,10 +363,10 @@ async function openSeed(label){
   await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&!s.busy,label,120000);
 }
 const localTimings=[];
-async function deselect(){await button('Select').click();await page.locator('body').click({position:{x:5,y:5}});}
+async function deselect(){await cmd(page,'draft.tools.select').click();await page.locator('body').click({position:{x:5,y:5}});}
 async function blank(){await deselect();const p=await page.evaluate(()=>window.__view.blank());assert.ok(p,'no usable ground-plane point');return p;}
 async function rectangle(side=2,height=1,from=null) {
-  const before=await snap(),p=from??await blank(); await button('Rectangle').click();await page.mouse.click(p.x,p.y);
+  const before=await snap(),p=from??await blank(); await cmd(page,'draft.tools.rectangle').click();await page.mouse.click(p.x,p.y);
   const input=page.locator('.sketch-entry input');await input.fill(String(side));await input.press('Enter');await input.fill(String(height));
   const start=performance.now();await input.press('Enter');
   const state=await wait(s=>s.view.drafts.some(o=>o.id===s.picked&&!before.view.drafts.some(old=>old.id===o.id)),'rectangle not retained');
@@ -375,7 +375,7 @@ async function rectangle(side=2,height=1,from=null) {
   assert.equal(state.picked,obj.id);assert.ok(state.view.highlighted>0,'new drawing must be highlighted');await deselect();return obj.id;
 }
 async function line(){
-  const before=await snap(),p=await blank();await button('Line').click();await page.mouse.click(p.x,p.y);await page.mouse.click(p.x+75,p.y+30);await page.keyboard.press('Enter');
+  const before=await snap(),p=await blank();await cmd(page,'draft.tools.line').click();await page.mouse.click(p.x,p.y);await page.mouse.click(p.x+75,p.y+30);await page.keyboard.press('Enter');
   const state=await wait(s=>s.view.drafts.length===before.view.drafts.length+1,'line not retained');await deselect();return state.view.drafts.find(o=>!before.view.drafts.some(old=>old.id===o.id)).id;
 }
 async function pick(id,top=false){
@@ -412,7 +412,7 @@ if (autosaveOnly) {
   const firstSaveReleased=new Promise(resolve=>releaseFirstSave=resolve),firstSaveHeld=new Promise(resolve=>firstSaveSent=resolve);
   await page.route('**/api/working-draft/local',async route=>{firstSaveSent();await firstSaveReleased;await route.continue();},{times:1});
   const object=await rectangle(2,1.25);
-  await button('Record').waitFor();await steadyTools(steady,'Record appearing');
+  await cmd(page,'draft.record.save').waitFor();await steadyTools(steady,'Record appearing');
   await within(firstSaveHeld,15000,'the first autosave was never written');
   assert.equal(await reason(),'unsaved','an autosave still being written leaves its edits unsaved');
   assert.equal(await page.evaluate(()=>window.__workspaceDesignContext.designContext),null);
@@ -446,13 +446,13 @@ if (autosaveOnly) {
   await deselect();await page.keyboard.press('Control+z');
   await wait(s=>!s.dirty&&!s.view.drafts.some(row=>row.id===object),'Undo did not return to the original model');
   await savedDraft(d=>d.localDraft===null,'Undo to baseline did not clear recovery');
-  await button('Record').waitFor({state:'detached'});await steadyTools(steady,'Record leaving with Undo');
+  await cmd(page,'draft.record.save').waitFor({state:'detached'});await steadyTools(steady,'Record leaving with Undo');
   await page.keyboard.press('Control+y');
   await wait(s=>s.dirty&&s.view.drafts.some(row=>row.id===object),'Redo did not recover the local object');
   await savedDraft(d=>d.localDraft?.commands.length===1,'Redo was not retained');
   // SS-5: with its edits autosaved, Record is back with its status line.
   await page.locator('.model-tools__sync-status').filter({hasText:'Unrecorded edits · saved automatically'}).waitFor();
-  assert.equal(await button('Record').isEnabled(),true);await steadyTools(steady,'Record returning with Redo');
+  assert.equal(await cmd(page,'draft.record.save').isEnabled(),true);await steadyTools(steady,'Record returning with Redo');
 
   let delayedClear=false;
   const delayClear=async route=>{
@@ -462,7 +462,7 @@ if (autosaveOnly) {
     await route.continue();
   };
   await page.route('**/api/working-draft/local',delayClear);
-  await button('Record').evaluate(node=>{node.click();node.click();});
+  await cmd(page,'draft.record.save').evaluate(node=>{node.click();node.click();});
   const completed=await wait(s=>!s.syncBusy&&!s.dirty&&s.candidates.length===1&&
     s.loaded===s.candidates[0]&&s.base===s.candidates[0],'quiet Sync did not adopt the completed candidate',120000);
   assert.equal(candidateCalls().length,1,'repeated Sync clicks must reuse one candidate request');
@@ -472,18 +472,18 @@ if (autosaveOnly) {
   await page.unroute('**/api/working-draft/local',delayClear);
   assert.ok((await exported(current)).has('obj-'+object),'retained candidate must contain the restored geometry');
 
-  await page.locator('.stage__versions-toggle').click();
+  await cmd(page,'design.go_to_step.versions').click();
   // #302: this runtime has a Design Tree, so Versions keeps the working draft, recovery and files
   // while its design history is one link to the tree, like the footer's.
   await page.locator('.versions [data-design-tree-link]').waitFor();
   assert.equal(await page.locator('.versions [data-design-stage], .versions [data-preview-candidate]').count(),0,'no second list of Stages or candidates beside the Design Tree');
   assert.equal(await page.locator('.stage__versions-current, .stage__versions-new').count(),0,'the footer leaves position and new options to the Stage chip');
-  assert.equal(await page.getByRole('button',{name:'Open in Design tree',exact:true}).count(),2,'the footer and Versions each offer the one link');
-  const recovery=page.locator('.versions details').filter({has:page.locator('summary').filter({hasText:'Automatic recovery points'})});
+  assert.equal(await cmd(page,'view.design_tree.open').count(),2,'the footer and Versions each offer the one link');
+  const recovery=page.locator('.versions details').filter({has:cmd(page,'view.disclosure.toggle',{arg:'recovery_points',includeHidden:true})});
   assert.equal(await recovery.evaluate(node=>node.open),false,'automatic recovery starts collapsed');
   assert.equal(await page.locator('[data-working-draft]:visible').count(),1,'only current is expanded before saving a milestone');
   await page.getByRole('textbox',{name:'Milestone name',exact:true}).fill('Autosave milestone');
-  await page.getByRole('button',{name:'Save milestone',exact:true}).click();
+  await cmd(page,'design.go_to_step.save_milestone').click();
   await savedDraft(d=>d.saved.some(row=>row.runId===current&&row.label==='Autosave milestone'),'manual milestone was not saved');
   await page.getByText('Autosave milestone',{exact:true}).waitFor();
   assert.equal(await page.locator('[data-working-draft]:visible').count(),2,'current and the explicit milestone stay visible');
@@ -498,7 +498,7 @@ if (autosaveOnly) {
     baseRevisionSha256:beforeInvalid.revisionSha256,draft:invalid});
   await page.reload();
   await wait(s=>s.status==='ready'&&s.loaded===current&&!s.busy,'source for incompatible recovery',30000);
-  await page.locator('.stage__versions-toggle').click();
+  await cmd(page,'design.go_to_step.versions').click();
   await page.getByRole('alert').filter({hasText:'The draft could not be restored; its saved record is kept'}).waitFor();
   await delay(700);
   assert.deepEqual((await readDraft()).localDraft?.commands,invalid.commands,'failed replay must not clear retained recovery');
@@ -515,11 +515,11 @@ if (autosaveOnly) {
   assert.equal(authoredContext.designContext.sourceRunId,null,'authored context must not invent a retained run');
   assert.equal(authoredContext.designContext.stateDigest,initial.stateDigest);
   assert.equal(initial.view.hasBaseModel,false);assert.equal(initial.view.drafts.length,0);
-  assert.equal(await button('Record').count(),0,'an empty project offers no Record');
+  assert.equal(await cmd(page,'draft.record.save').count(),0,'an empty project offers no Record');
   const steady=await toolAt();
   console.log('0 · authored-only project: first local drawing, selection, delete/undo, then one explicit Sync');
   const first=await rectangle(2,1.25);
-  await button('Record').waitFor();await steadyTools(steady,'Record appearing');
+  await cmd(page,'draft.record.save').waitFor();await steadyTools(steady,'Record appearing');
   // Authored fixture primitives become visible with the first local snapshot;
   // they are not drawings created by these gestures.
   const authoredPrimitives=(await snap()).view.drafts.filter(object=>object.id!==first).length;
@@ -529,6 +529,7 @@ if (autosaveOnly) {
   let state=await snap();assert.equal(state.loaded,undefined);assert.equal(state.sourceRunId,null);assert.equal(state.view.hasBaseModel,false);
   assert.equal(await page.locator('.stage-empty').count(),0,'a retained local object must replace the empty-canvas message');
   assert.equal(await page.locator('.viewport-state').count(),0,'a local model must not be covered by the idle overlay');
+  assert.deepEqual(await commandProblems(page.locator('.stage')),[],'every visible Modeling control names its command');
   assert.equal(await page.locator('canvas').first().evaluate(canvas=>getComputedStyle(canvas).opacity),'1');
   await pick(first,true);assert.equal((await snap()).pickedStatus,'local');
   const second=await rectangle(1,.75);
@@ -547,7 +548,7 @@ if (autosaveOnly) {
     const response=await route.fetch();assert.equal(response.status(),201);firstReady();await releasedFirst;await route.fulfill({response});
   },{times:1});
   const beforeSyncRequests=requests.length;
-  const syncStart=Date.now();await button('Record').click();
+  const syncStart=Date.now();await cmd(page,'draft.record.save').click();
   if(authoredInput){
     await within(firstHeld,15000,'first authored-only proposal was not held');const whileHeld=sent.length;
     assert.equal((await snap()).syncBusy,true);assert.equal((await snap()).busy,false);
@@ -575,7 +576,7 @@ if (autosaveOnly) {
       window.__workspaceDesignContext?.unavailableReason===null);
     assert.equal(await page.evaluate(()=>window.__workspaceDesignContext.designContext.sourceRunId),state.base,
       'only a completed Sync adopted as the editing base updates chat context');
-    await button('Record').waitFor({state:'detached'});await steadyTools(steady,'Record leaving');
+    await cmd(page,'draft.record.save').waitFor({state:'detached'});await steadyTools(steady,'Record leaving');
   }else{
     assert.equal(await page.evaluate(()=>window.__workspaceDesignContext.designContext),null,'edits during Sync remain unsaved context');
   }
@@ -631,7 +632,7 @@ if (autosaveOnly) {
   }
   async function arm(expected,mode='uniform',keyboard=false) {
     await deselect();await pick(id);const before=await snap();
-    if(keyboard)await page.keyboard.press('s');else await button('Scale').click();
+    if(keyboard)await page.keyboard.press('s');else await cmd(page,'draft.tools.scale').click();
     await page.locator('.stage-scale[data-phase="reference"]').waitFor({state:'visible'});
     if(mode!=='uniform')await page.getByLabel('Scale axes',{exact:true}).selectOption(mode);
     const g=(await snap()).gesture.scale,pivot=center(expected);
@@ -687,7 +688,7 @@ if (autosaveOnly) {
   console.log('S4 · frozen Sync saves the first two scales while later local Y scaling survives');
   let release,ready;const released=new Promise(resolve=>release=resolve),held=new Promise(resolve=>ready=resolve);
   await page.route('**/api/proposals/transform',async route=>{const response=await route.fetch();assert.equal(response.status(),201);ready();await released;await route.fulfill({response});},{times:1});
-  await button('Record').click();await within(held,15000,'Scale Sync transform held');const heldWrites=sent.length;
+  await cmd(page,'draft.record.save').click();await within(held,15000,'Scale Sync transform held');const heldWrites=sent.length;
   assert.equal((await snap()).syncBusy,true);assert.equal((await snap()).busy,false);
   const late=await arm(secondResult,'y'),lateResult=scaled(secondResult,late.pivot,[1,1.2,1]);
   const latePoint=await aim(target(late,1.2));await page.mouse.click(latePoint.x,latePoint.y);
@@ -730,7 +731,7 @@ if (autosaveOnly) {
   }
   async function arm(expected,axis='z',keyboard=false) {
     await deselect();await pick(id);const before=await snap();
-    if(keyboard)await page.keyboard.press('q');else await button('Rotate').click();
+    if(keyboard)await page.keyboard.press('q');else await cmd(page,'draft.tools.rotate').click();
     await page.locator('.stage-rotate[data-phase="reference"]').waitFor({state:'visible'});
     if(axis!=='z')await page.getByLabel('Rotation axis',{exact:true}).selectOption(axis);
     const gesture=(await snap()).gesture.rotate,pivot=center(expected),normal=axes[axis];
@@ -791,7 +792,7 @@ if (autosaveOnly) {
   console.log('R4 · frozen Sync saves both rotations once while a later X rotation remains local');
   let release,ready;const released=new Promise(resolve=>release=resolve),held=new Promise(resolve=>ready=resolve);
   await page.route('**/api/proposals/transform',async route=>{const response=await route.fetch();assert.equal(response.status(),201);ready();await released;await route.fulfill({response});},{times:1});
-  await button('Record').click();await within(held,15000,'Rotate Sync transform was not held');
+  await cmd(page,'draft.record.save').click();await within(held,15000,'Rotate Sync transform was not held');
   const heldWrites=sent.length;assert.equal((await snap()).syncBusy,true);assert.equal((await snap()).busy,false);
   const late=await arm(secondResult,'x'),lateAngle=19,lateResult=rotated(secondResult,late.pivot,late.normal,lateAngle);
   const latePoint=await aim(rotated([late.reference],late.pivot,late.normal,lateAngle)[0]);await page.mouse.click(latePoint.x,latePoint.y);
@@ -819,7 +820,7 @@ if (autosaveOnly) {
   const frames=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   async function arm(id,tool,keyboard=false,top=true) {
     await deselect();const face=await pick(id,top),before=await snap();
-    if(keyboard)await page.keyboard.press('m');else await button(tool==='copy'?'Copy':'Move').click();
+    if(keyboard)await page.keyboard.press('m');else await cmd(page,tool==='copy'?'draft.tools.copy':'draft.tools.move').click();
     await page.locator('.stage-move[data-phase="anchor"]').waitFor({state:'visible'});
     await page.mouse.move(face.x+20,face.y+15);await frames();
     let state=await snap();assert.equal(state.index,before.index);sameBox(boxOf(state,id),boxOf(before,id),'arming cannot move the object');
@@ -925,7 +926,7 @@ if (autosaveOnly) {
   console.log('M4 · Sync freezes both objects; a later pointer Move survives while one real candidate is produced');
   const frozen=await snap();let release,ready;const released=new Promise(resolve=>release=resolve),held=new Promise(resolve=>ready=resolve);
   await page.route('**/api/proposals/sketch',async route=>{const response=await route.fetch();assert.equal(response.status(),201);ready();await released;await route.fulfill({response});},{times:1});
-  await button('Record').click();await within(held,15000,'Move/Copy Sync proposal was not held');
+  await cmd(page,'draft.record.save').click();await within(held,15000,'Move/Copy Sync proposal was not held');
   const heldWrites=sent.length;assert.equal((await snap()).syncBusy,true);assert.equal((await snap()).busy,false);
   const late=await arm(block,'move',false,false),lateDelta=[0,-2,1];const latePoint=await movePointer(late.anchor,lateDelta);await page.mouse.click(latePoint.x,latePoint.y);
   state=await wait(s=>s.index===late.before.index+1&&!s.gesture.move,'Move during Sync did not finish');
@@ -962,15 +963,15 @@ await page.locator('.project-workspace').evaluate(node=>{node.parentElement.styl
 releaseBoot();await opening;
 const originalRuns=await runIds(), beforeWrites=sent.length;
 // SS-5: Record is offered, by name, only while there is something to record.
-assert.equal(await button('Record').count(),0,'no dead Record icon before any edit');
+assert.equal(await cmd(page,'draft.record.save').count(),0,'no dead Record icon before any edit');
 const steady=await toolAt(),narrowSteady=await narrowToolAt();
 // NA-4: a tool's shortcut is announced, not only shown in its hover tooltip.
-for(const [name,keys] of [['Select','Space'],['Rectangle','R'],['Push/Pull','P'],['Undo model','Control+Z'],['Redo model','Control+Shift+Z']])
-  assert.equal(await button(name).getAttribute('aria-keyshortcuts'),keys,`${name} announces ${keys}`);
+for(const [name,id,keys] of [['Select','draft.tools.select','Space'],['Rectangle','draft.tools.rectangle','R'],['Push/Pull','draft.tools.push_pull','P'],['Undo model','draft.tools.undo','Control+Z'],['Redo model','draft.tools.redo','Control+Shift+Z']])
+  assert.equal(await cmd(page,id).getAttribute('aria-keyshortcuts'),keys,`${name} announces ${keys}`);
 console.log('1 · completed rectangles/lines stay local and independently pickable');
 const block=await rectangle(2,1), curve=await line();
-await button('Record').waitFor();assert.equal(await button('Record').isEnabled(),true);
-assert.equal(await button('Record').locator('.model-tool-button__label').innerText(),'Record','Record carries its name beside the icon');
+await cmd(page,'draft.record.save').waitFor();assert.equal(await cmd(page,'draft.record.save').isEnabled(),true);
+assert.equal(await cmd(page,'draft.record.save').locator('.model-tool-button__label').innerText(),'Record','Record carries its name beside the icon');
 await steadyTools(steady,'Record appearing');
 // Clear the selection as before the drawing: a narrow footer wraps its selection chip and lifts the tools.
 await page.keyboard.press('Escape');await wait(s=>!s.picked&&!s.selection,'Esc did not clear the drawing before the narrow toolbar check');
@@ -979,10 +980,10 @@ let state=await snap();assert.equal(state.view.drafts.find(o=>o.id===curve).spec
 assert.deepEqual(state.view.drafts.find(o=>o.id===curve).visible,[true,false,false]);
 await pick(block,true);assert.equal((await snap()).pickedStatus,'local');
 console.log('2 · two successive P gestures re-pick the moved face, with latest-pointer and numeric override');
-await button('Push/Pull').click();await wait(s=>s.gesture.pushPull,'P did not start');
+await cmd(page,'draft.tools.push_pull').click();await wait(s=>s.gesture.pushPull,'P did not start');
 const pushPullForm=page.getByRole('form',{name:'Push/Pull P',exact:true});
-assert.equal(await pushPullForm.getByRole('button',{name:'Apply',exact:true}).getAttribute('aria-keyshortcuts'),'Enter');
-assert.equal(await pushPullForm.getByRole('button',{name:'Close tool',exact:true}).getAttribute('aria-keyshortcuts'),'Escape','Esc is announced by its key name');
+assert.equal(await cmd(pushPullForm,'draft.tools.apply').getAttribute('aria-keyshortcuts'),'Enter');
+assert.equal(await cmd(pushPullForm,'draft.tools.close').getAttribute('aria-keyshortcuts'),'Escape','Esc is announced by its key name');
 const first=await snap(),g=first.gesture.pushPull,original=first.view.drafts.find(o=>o.id===block);
 const end=await page.evaluate(p=>window.__view.project(p),g.face.origin.map((v,i)=>v+g.face.normal[i]*.625));
 const pStart=performance.now();await page.evaluate(({x,y})=>{
@@ -1021,10 +1022,10 @@ state=await snap();assert.equal(state.picked,block);assert.equal(state.selection
 await page.mouse.move(empty.x,empty.y);await page.mouse.down();await page.mouse.move(empty.x+40,empty.y+25,{steps:8});await page.mouse.up();
 state=await snap();assert.notDeepEqual(state.view.camera,selected.view.camera);assert.equal(state.picked,block);
 // Reframe through the current view menu; the primary Fit button was retired.
-await page.locator('button[aria-controls="stage-more-menu"]').click();
-await page.locator('#stage-more-menu').getByRole('button',{name:'Isometric',exact:true}).click();
-await page.locator('button[aria-controls="stage-more-menu"]').click();
-const typing=await blank();await button('Rectangle').click();await page.mouse.click(typing.x,typing.y);
+await cmd(page,'view.menu.toggle', { arg: 'modeling_more' }).click();
+await cmd(page.locator('#stage-more-menu'),'view.model_camera.iso').click();
+await cmd(page,'view.menu.toggle', { arg: 'modeling_more' }).click();
+const typing=await blank();await cmd(page,'draft.tools.rectangle').click();await page.mouse.click(typing.x,typing.y);
 const textEntry=page.locator('.sketch-entry input'),beforeText=(await snap()).index;
 await textEntry.fill('12');await textEntry.press('Delete');await textEntry.press('Backspace');await textEntry.press('Control+z');
 assert.equal((await snap()).index,beforeText);await page.keyboard.press('Escape');await deselect();
@@ -1038,8 +1039,8 @@ assert.equal(sent.length,beforeWrites);assert.deepEqual(await runIds(),originalR
 console.log('4 · one delayed Sync captures its snapshot while later local edits remain usable');
 let release,heldResolve,heldAt;const released=new Promise(resolve=>release=resolve),held=new Promise(resolve=>heldResolve=resolve);
 const hold=async route=>{const response=await route.fetch();assert.equal(response.status(),201);heldAt=performance.now();heldResolve();await released;await route.fulfill({response});};
-await page.route('**/api/proposals/sketch',hold,{times:1});const syncStart=performance.now(),heldSyncWall=Date.now();await button('Record').click();await within(held,15000,'sketch response was not held');
-state=await snap();assert.equal(state.syncBusy,true);assert.equal(state.busy,false);assert.equal(await button('Record').isDisabled(),true);
+await page.route('**/api/proposals/sketch',hold,{times:1});const syncStart=performance.now(),heldSyncWall=Date.now();await cmd(page,'draft.record.save').click();await within(held,15000,'sketch response was not held');
+state=await snap();assert.equal(state.syncBusy,true);assert.equal(state.busy,false);assert.equal(await cmd(page,'draft.record.save').isDisabled(),true);
 const later=await rectangle(1.1,.8);await pick(later);await page.keyboard.press('Delete');await wait(s=>!s.view.drafts.some(o=>o.id===later),'delete during Sync');
 await page.keyboard.press('Control+z');await wait(s=>s.view.drafts.some(o=>o.id===later),'undo during Sync');
 const artificialHoldMs=performance.now()-heldAt;release();await wait(s=>!s.syncBusy&&s.candidates.length===1,'first Sync did not finish',120000);
@@ -1050,11 +1051,11 @@ assert.equal(candidateCalls().length,1);const saved=await exported(state.candida
 assert.ok(saved.has('obj-'+block));assert.ok(saved.has('obj-'+curve));assert.ok(!saved.has('obj-'+later),'late object leaked into frozen Sync');
 assert.equal(saved.get('obj-'+block).z,2);
 console.log('5 · without further input Sync shows its completed candidate automatically');
-const quietSyncStart=performance.now(),quietSyncWall=Date.now();await button('Record').click();await wait(s=>!s.syncBusy&&!s.dirty&&s.candidates.length===2&&s.loaded===s.candidates[1]&&s.base===s.candidates[1],
+const quietSyncStart=performance.now(),quietSyncWall=Date.now();await cmd(page,'draft.record.save').click();await wait(s=>!s.syncBusy&&!s.dirty&&s.candidates.length===2&&s.loaded===s.candidates[1]&&s.base===s.candidates[1],
   'second Sync did not show the completed model',120000);
 console.log('TIMING quiet Sync click → visible candidate',Math.round(performance.now()-quietSyncStart),'ms (no artificial hold)');
 await stages(quietSyncWall,'quiet auto display');
-await button('Record').waitFor({state:'detached'});await steadyTools(steady,'Record leaving');
+await cmd(page,'draft.record.save').waitFor({state:'detached'});await steadyTools(steady,'Record leaving');
 state=await snap();assert.equal(candidateCalls().length,2);assert.ok((await exported(state.candidates[1])).has('obj-'+later));
 assert.equal(state.view.drafts.length,0,'the completed batch must not overlap its saved model');
 // #275 (GH-234): the saved base takes the batch first; only then is the fully synced recovery cleared.
@@ -1070,22 +1071,22 @@ await page.route('**/api/proposals/sketch',async route=>{
   failureReady();await failureReleased;
   await route.fulfill({status:422,contentType:'application/json',body:JSON.stringify({code:'INVALID_SKETCH',detail:'Fixture rejected the captured drawing.'})});
 },{times:1});
-await button('Record').click();await within(failureHeld,15000,'failure was not held');await page.keyboard.press('Control+z');
+await cmd(page,'draft.record.save').click();await within(failureHeld,15000,'failure was not held');await page.keyboard.press('Control+z');
 await wait(s=>!s.view.drafts.some(o=>o.id===failedObject),'Undo while rejected request is held');releaseFailure();
 await wait(s=>!s.syncBusy&&Boolean(s.error),'422 did not release Sync');
 await page.locator('.model-tools__sync [role="alert"]').waitFor();await steadyTools(steady,'a refused Record and its error line');
 assert.equal(candidateCalls().length,2,'a refused snapshot cannot start a candidate');
-const corrected=await rectangle(1.2,.7);await button('Record').click();
+const corrected=await rectangle(1.2,.7);await cmd(page,'draft.record.save').click();
 await wait(s=>!s.syncBusy&&s.candidates.length===3&&s.loaded===s.candidates[2]&&s.base===s.candidates[2],'corrected Sync did not finish',120000);
 state=await snap();const correctedExport=await exported(state.candidates[2]);
 assert.ok(correctedExport.has('obj-'+corrected));assert.ok(!correctedExport.has('obj-'+failedObject));
 assert.notEqual(state.base,failedBase);assert.equal(candidateCalls().length,3);
 console.log('7 · annotation and document keys cannot act on the local model');
 const inkObject=await rectangle(.8,.6);await pick(inkObject);const inkModelIndex=(await snap()).index;
-const moreTools=page.locator('button[aria-controls="model-tools-more"]'),annotate=page.locator('button[aria-controls="annotation-tools"]');await moreTools.click();await annotate.click();
-assert.deepEqual(await page.getByRole('group',{name:'Annotation colour',exact:true}).getByRole('button').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label'))),
+const moreTools=cmd(page,'view.menu.toggle', { arg: 'model_tools_more' }),annotate=cmd(page,'view.markup_tools.tracing_paper');await moreTools.click();await annotate.click();
+assert.deepEqual(await cmd(page.getByRole('group',{name:'Annotation colour',exact:true}),'view.markup_tools.colour').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label'))),
   ['Red','Blue','Yellow','White'],'annotation swatches announce colour names, not hex codes');
-const inkTool=page.locator('#annotation-tools').getByRole('button',{name:'╱ Line',exact:true});await inkTool.click();
+const inkTool=cmd(page.locator('#annotation-tools'),'view.markup_tools.line');await inkTool.click();
 const inkBox=await page.locator('canvas.annotate[data-armed="true"]').boundingBox();assert.ok(inkBox);
 await page.mouse.move(inkBox.x+inkBox.width*.4,inkBox.y+inkBox.height*.55);await page.mouse.down();
 await page.mouse.move(inkBox.x+inkBox.width*.6,inkBox.y+inkBox.height*.55,{steps:8});await page.mouse.up();
@@ -1104,11 +1105,11 @@ await page.route('**/api/artifacts/*/bytes',async route=>{
   const response=await route.fetch();assert.equal(response.status(),200);downloadReady();await downloadReleased;
   await route.fulfill({response});downloadDone();
 },{times:1});
-await button('Record').click();await within(downloadHeld,120000,'background download did not start');
+await cmd(page,'draft.record.save').click();await within(downloadHeld,120000,'background download did not start');
 state=await snap();assert.equal(state.loaded,beforeDownload.loaded);assert.equal(state.status,'ready');assert.equal(state.busy,false);
 await page.evaluate(()=>document.activeElement?.blur());const bodyKeyEpoch=(await snap()).interactionEpoch;await page.keyboard.press('l');
 assert.equal((await snap()).interactionEpoch,bodyKeyEpoch+1,'global shortcut after Sync lost focus must invalidate background adoption');
-const nextStart=await blank();await button('Line').click();await page.mouse.click(nextStart.x,nextStart.y);
+const nextStart=await blank();await cmd(page,'draft.tools.line').click();await page.mouse.click(nextStart.x,nextStart.y);
 await wait(s=>s.gesture.phase==='profile','new gesture while background download is held');releaseDownload();await downloadDelivered;await delay(400);
 state=await snap();assert.equal(state.loaded,beforeDownload.loaded);assert.equal(state.base,beforeDownload.base);assert.equal(state.gesture.phase,'profile');
 await page.mouse.click(nextStart.x+65,nextStart.y+25);await page.keyboard.press('Enter');
@@ -1119,12 +1120,12 @@ let failedReads=0;
 await page.route('**/api/jobs/*',async route=>{
   failedReads++;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({code:'TEMPORARY_READ_FAILURE',detail:'Fixture job status is temporarily unavailable.'})});
 });
-await button('Record').click();await wait(s=>!s.syncBusy&&Boolean(s.error),'job-read failure did not release Sync',60000);
+await cmd(page,'draft.record.save').click();await wait(s=>!s.syncBusy&&Boolean(s.error),'job-read failure did not release Sync',60000);
 assert.ok(failedReads>=3);assert.equal(candidateCalls().length,5);const retryCalls=sent.length;
-await page.unroute('**/api/jobs/*');await button('Record').click();await wait(s=>!s.syncBusy&&!s.error,'job reconnect did not settle',60000);
+await page.unroute('**/api/jobs/*');await cmd(page,'draft.record.save').click();await wait(s=>!s.syncBusy&&!s.error,'job reconnect did not settle',60000);
 assert.equal(candidateCalls().length,5);assert.equal(sent.length,retryCalls,'job reconnect wrote another proposal/candidate');
 console.log('TIMING local actions (automation observation, 100 ms polling maximum)',JSON.stringify(localTimings));
-const qa=path.join(root,'qa');await mkdir(qa,{recursive:true});await deselect();await button('Line').hover();await delay(400);
+const qa=path.join(root,'qa');await mkdir(qa,{recursive:true});await deselect();await cmd(page,'draft.tools.line').hover();await delay(400);
 await page.screenshot({path:path.join(qa,'manual-sync-toolbar.png')});
 console.log('PASS manual Sync: local draw/P/delete/undo/redo zero writes; delayed Sync permits continued editing; one candidate per snapshot; exact OCCT export');
 }

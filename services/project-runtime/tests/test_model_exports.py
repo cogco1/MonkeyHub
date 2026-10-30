@@ -110,9 +110,27 @@ class ExportJobTests(unittest.TestCase):
         self.assertEqual(result['previewArtifacts'], [])
         self.assertEqual(self.repository.layout.resolve_relative(result['sourceArtifact']['relative_path']).read_bytes(), data)
 
+    def test_an_stl_print_mesh_is_delivered_with_its_losses(self):
+        result = self.finish(self.submit("stl"))
+        self.assertEqual(result["status"], "succeeded", result.get("failureReason"))
+        self.assertEqual(result["fileName"], "model.stl")
+        self.assertIn("Millimetres", result["losses"]["units"])
+        data = self.client.get(result["downloadPath"]).content
+        self.assertEqual(struct.unpack_from("<I", data, 80)[0], 1)
+
+    def test_an_obj_and_an_fbx_for_a_game_engine_are_delivered(self):
+        # Gap 35: the UE plugin imports only FBX and OBJ.
+        for target, start in (("obj", b"# MonkeyHub OBJ"), ("fbx", b"; FBX 7.4.0 project file")):
+            with self.subTest(target=target):
+                result = self.finish(self.submit(target))
+                self.assertEqual(result["status"], "succeeded", result.get("failureReason"))
+                self.assertEqual((result["fileName"], result["outputValidation"]["status"]), (f"model.{target}", "passed"))
+                self.assertIn("Y up", result["losses"]["units"])
+                self.assertTrue(self.client.get(result["downloadPath"]).content.startswith(start))
+
     def test_capability_endpoint_does_not_enable_detected_software(self):
         rows = self.client.get('/api/exports/capabilities').json()
-        self.assertEqual(len(rows), 12)
+        self.assertEqual(len(rows), 24, 'four sources, each to the three others and to an STL print mesh, an OBJ and an FBX')
         for row in rows:
             if 'skp' in (row['sourceFormat'], row['targetFormat']) or 'dwg' in (row['sourceFormat'], row['targetFormat']):
                 self.assertFalse(row['available'])

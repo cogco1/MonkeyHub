@@ -12,6 +12,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 import { workspaceFixture } from "./workspaceFixture.mjs";
+import { cmd } from "./commandLocator.mjs";
 
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repoRoot = path.resolve(webRoot, "../../..");
@@ -151,16 +152,16 @@ print(json.dumps({"png": base64.b64encode(data.getvalue()).decode()}))
   page.on("pageerror", error => errors.push(error.message));
   const toolbar = () => page.getByRole("toolbar", { name: "Page annotation tools", exact: true });
   const tracing = () => page.getByRole("region", { name: "Trace to 3D", exact: true });
-  const generate = () => page.getByRole("button", { name: "Generate 3D candidate", exact: true });
+  const generate = () => cmd(tracing(), "sketch.to_model.send");
   const saved = async () => { await page.locator(".document-save-state").filter({ hasText: /^Saved$/ }).waitFor(); return annotations(); };
   const point = async ([u, v]) => { const box = await page.locator(".document-page").boundingBox(); return [box.x + u * box.width, box.y + v * box.height]; };
   async function line(from, to) {
-    await toolbar().getByRole("button", { name: "Line", exact: true }).click();
+    await cmd(toolbar(), "view.markup_tools.line").click();
     await page.mouse.move(...await point(from)); await page.mouse.down();
     await page.mouse.move(...await point(to), { steps: 8 }); await page.mouse.up();
   }
   async function drag(from, to) {
-    await toolbar().getByRole("button", { name: "Edit line", exact: true }).click();
+    await cmd(toolbar(), "view.markup_tools.select").click();
     await page.mouse.move(...await point(from)); await page.mouse.down();
     await page.mouse.move(...await point(to), { steps: 12 }); await page.mouse.up();
   }
@@ -189,10 +190,10 @@ print(json.dumps({"png": base64.b64encode(data.getvalue()).decode()}))
   await page.mouse.dblclick(...centre); await editor();
   console.log("tracing: original PNG opened from Board");
   await line([0.15, 0.8], [0.75, 0.6]);
-  await toolbar().getByRole("button", { name: "Outline", exact: true }).click();
+  await cmd(toolbar(), "view.markup_tools.polyline").click();
   for (const vertex of [[0.15, 0.8], [0.75, 0.6], [0.64, 0.25], [0.4, 0.25], [0.4, 0.43], [0.2, 0.35]])
     await page.mouse.click(...await point(vertex));
-  await toolbar().getByRole("button", { name: "Close outline", exact: true }).click();
+  await cmd(toolbar(), "view.markup_tools.close_outline").click();
   const initial = await saved();
   assert.equal(initial.annotations.length, 2);
   const outlineId = initial.annotations.find(mark => mark.closed).id;
@@ -202,13 +203,13 @@ print(json.dumps({"png": base64.b64encode(data.getvalue()).decode()}))
   await drag(outline.points[2], [0.68, 0.22]);
   const moved = await saved();
   assert.notDeepEqual(moved.annotations.find(mark => mark.id === outlineId).points, outline.points);
-  await toolbar().getByRole("button", { name: "Undo", exact: true }).click();
+  await cmd(toolbar(), "view.markup_tools.undo").click();
   assert.deepEqual((await saved()).annotations.find(mark => mark.id === outlineId), outline, "Undo restores corrected path identity and all vertices");
-  await toolbar().getByRole("button", { name: "Redo", exact: true }).click();
+  await cmd(toolbar(), "view.markup_tools.redo").click();
   assert.deepEqual((await saved()).annotations, moved.annotations);
   await page.getByRole("combobox", { name: /^Scale and direction line/ }).selectOption({ label: "Line 1" });
   await page.getByLabel("Known length (m)", { exact: true }).fill("6");
-  await page.getByRole("button", { name: "Set scale and direction", exact: true }).click();
+  await cmd(page, "sketch.to_model.calibrate").click();
   await page.getByLabel("Mass height (m)", { exact: true }).fill("2.4");
   const calibrated = await saved();
   assert.equal(calibrated.tracingCalibration.distance, 6);
@@ -217,14 +218,14 @@ print(json.dumps({"png": base64.b64encode(data.getvalue()).decode()}))
   await page.getByRole("checkbox", { name: "Outline 2 · mass", exact: true }).check();
 
   // Saved control points and calibration survive leaving and a fresh document-editor mount.
-  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await cmd(page, "view.tab.board").click();
   await page.locator(".monkeyboard-context").waitFor();
   assert.equal(await page.locator(".excalidraw .reset-zoom-button").innerText(), zoom);
   assert.match(await page.locator(".monkeyboard-footer").innerText(), /original-concept\.png/);
   assert.equal(await page.evaluate(() => window.__tracingBoardCanvas === document.querySelector(".monkeyboard-canvas canvas")), true);
   assert.deepEqual(activeImages(await board()).map(row => [row.id, row.x, row.y, row.customData]),
     activeImages(placed).map(row => [row.id, row.x, row.y, row.customData]));
-  await page.locator(".monkeyboard-context button:not([disabled])").filter({ hasText: /^Edit this page$/ }).click();
+  await cmd(page.locator(".monkeyboard-context"), "view.open_document.page").click();
   await editor();
   assert.deepEqual(await annotations(), calibrated);
   await page.locator(".document-calibration").waitFor();
@@ -300,7 +301,7 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
   await tracing().getByText("Viewing only.", { exact: false }).waitFor();
   assert.equal(await generate().isEnabled(), false, "Tracing does not build on a candidate that is only being viewed");
   // The recovery step is offered where the refusal is read, and the page stays open.
-  await tracing().getByRole("button", { name: "Continue from here", exact: true }).click();
+  await cmd(tracing(), "design.go_to_step.continue").click();
   await until(() => generate().isEnabled(), Boolean, "Tracing stayed blocked after continuing from the candidate");
   await editor();
   const pageIdentity = await page.locator(".document-viewport").getAttribute("aria-label");
@@ -318,7 +319,7 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
   assert.equal(await page.locator(".document-viewport").getAttribute("aria-label"), pageIdentity);
   faults.save = false;
   // GH-302: a refused autosave keeps the edit and waits for Retry, never retrying in a loop.
-  await page.locator(".document-error").getByRole("button", { name: "Retry saving", exact: true }).click();
+  await cmd(page.locator(".document-error"), "view.notice.retry", { arg: "document_save" }).click();
   const secondPage = await saved();
   assert.notEqual(secondPage.revisionSha256, calibrated.revisionSha256);
   assert.deepEqual(secondPage.tracingCalibration, calibrated.tracingCalibration);
@@ -363,13 +364,13 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
   // the view-only reason until the architect continues from it explicitly.
   await tracing().getByText("Viewing only.", { exact: false }).waitFor();
   assert.equal(await generate().isEnabled(), false, "Tracing does not build on the regenerated candidate before Continue");
-  await tracing().getByRole("button", { name: "Continue from here", exact: true }).click();
+  await cmd(tracing(), "design.go_to_step.continue").click();
   await until(() => generate().isEnabled(), Boolean, "The second candidate left the page busy");
-  await tracing().getByRole("button", { name: "View model and progress", exact: true }).click();
+  await cmd(tracing(), "view.background.open").click();
   await page.locator(".stage-model").waitFor({ state: "visible" });
   assert.equal(await page.locator(".stage-model").getAttribute("aria-hidden"), "false");
   if (process.env.BOARD_SCREENSHOT) await page.screenshot({ path: process.env.BOARD_SCREENSHOT.replace(/\.png$/, "-model.png") });
-  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await cmd(page, "view.tab.board").click();
   await page.locator(".monkeyboard-context").waitFor();
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });

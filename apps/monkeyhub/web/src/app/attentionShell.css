@@ -1,0 +1,127 @@
+/* The attention shell (2-3a). Tokens and the interface styles' hooks only, each with its own default, so every
+   style draws it; Critique Table (board) turns --shell-gap and --pane-* into separate rounded blocks. */
+.attention-shell{--left-width:248px;--panel-width:360px;--rail-width:76px;--top-height:44px;position:relative;height:100dvh;min-height:460px;box-sizing:border-box;
+  display:grid;grid-template-columns:var(--left-width) minmax(0,1fr) auto;grid-template-rows:var(--top-height) minmax(0,1fr);
+  gap:var(--shell-gap,0px);padding:var(--shell-gap,0px);background:var(--ground);color:var(--ink);overflow:hidden}
+.attention-shell__top,.attention-shell__left,.attention-shell__side{background:var(--panel);border-radius:var(--pane-radius,0px);box-shadow:var(--pane-ring,none)}
+.attention-shell__top{grid-column:1/-1;display:flex;align-items:center;gap:4px;min-width:0;padding:0 8px;border-bottom:1px solid var(--pane-edge,var(--line))}
+.attention-shell__left-toggle{display:none}
+.attention-shell__search{display:flex;flex:0 1 420px;align-items:center;gap:8px;min-width:0;min-height:30px;margin-left:8px;padding:0 10px;border:1px solid var(--line);
+  border-radius:var(--control-radius,var(--radius-sm));background:var(--ground);color:var(--muted);font:inherit;font-size:var(--text-ui);cursor:pointer}
+.attention-shell__search svg{width:16px;height:16px;flex:none}
+.attention-shell__search span{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attention-shell__search kbd{flex:none;padding:0 6px;border:1px solid var(--line);border-radius:4px;font:var(--text-caption)/1.6 var(--font-mono)}
+.attention-shell__search:hover{color:var(--ink);border-color:var(--rule)}
+
+.attention-shell__left{display:flex;flex-direction:column;min-height:0;padding:10px 8px;overflow:auto;border-right:1px solid var(--pane-edge,var(--line))}
+.attention-shell__row{display:flex;align-items:center;gap:8px;width:100%;min-height:38px;padding:6px 10px;border:0;border-radius:var(--radius-sm);background:transparent;
+  color:var(--ink);font:inherit;font-size:var(--text-ui);text-align:left;cursor:pointer}
+.attention-shell__row svg{width:18px;height:18px;flex:none;color:var(--muted)}
+.attention-shell__row>span:not(.attention-shell__count):not(.attention-shell__working){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attention-shell__row:hover{background:var(--surface-hover)}
+.attention-shell__row[aria-current]{background:var(--nav-on-bg,var(--panel-2));color:var(--nav-on-ink,var(--ink));font-weight:600}
+.attention-shell__row[aria-current] svg{color:var(--nav-on-icon,var(--muted))}
+.attention-shell__row--attention{font-weight:600}
+.attention-shell__count{flex:none;min-width:20px;height:20px;padding:0 6px;box-sizing:border-box;border-radius:10px;background:var(--accent);color:var(--accent-ink);
+  font-size:var(--text-caption);font-weight:600;line-height:20px;text-align:center}
+.attention-shell__working{flex:none;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.attention-shell__caption{display:flex;align-items:center;justify-content:space-between;margin:10px 2px 2px 10px;color:var(--muted);font-size:var(--text-caption);font-weight:600}
+.attention-shell__caption .chat-icon{width:30px;height:30px}
+.attention-shell__caption .chat-icon[aria-pressed=true]{background:var(--nav-on-bg,var(--panel-2));color:var(--nav-on-ink,var(--ink))}
+.attention-shell__project{display:flex;align-items:center;gap:2px}
+.attention-shell__project .attention-shell__row{flex:1;min-width:0}
+.attention-shell__new{flex:none;width:30px;height:30px;opacity:.7}
+.attention-shell__project:hover .attention-shell__new,.attention-shell__new:focus-visible{opacity:1}
+.attention-shell__projects,.attention-shell__recent{margin:0;padding:0;list-style:none}
+.attention-shell__projects>li+li{margin-top:4px}
+.attention-shell__recent{margin:2px 0 6px}
+.attention-shell__recent .chat-thread{min-height:32px;padding:4px 10px 4px 32px}
+.attention-shell__left-foot{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px;margin-top:auto;padding-top:10px;border-top:1px solid var(--line-2)}
+.attention-shell__usage{color:var(--muted)}
+.attention-shell__empty{margin:8px 10px;color:var(--muted);font-size:var(--text-caption)}
+
+.attention-shell__center{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--ground);border-radius:var(--pane-radius,0px);box-shadow:var(--pane-ring,none);overflow:hidden}
+.attention-shell__tabs{gap:12px}
+.attention-shell__tabs .menu-tab[aria-disabled=true]{color:var(--faint);cursor:default}
+.attention-shell__tool{color:var(--ink);font-weight:600}
+.attention-shell__body{position:relative;flex:1;min-height:0}
+.attention-shell__queue{height:100%;box-sizing:border-box;padding:28px 24px;overflow:auto}
+.attention-shell__queue h2{margin:0 0 8px;font-size:var(--text-heading);font-weight:600}
+.attention-shell__queue p{max-width:60ch;margin:0;color:var(--muted)}
+/* A surface's own fixed layers (its loading screen) stay within the center instead of covering the shell. */
+.attention-shell__surfaces{position:absolute;inset:0;display:flex;flex-direction:column;contain:layout paint}
+.attention-shell__surfaces[hidden],.attention-shell__queue[hidden]{display:none}
+.attention-shell__bottom{flex:none;display:flex;flex-direction:column;min-height:0;border-top:1px solid var(--line)}
+.attention-shell__status{border-top:0}
+.attention-shell__status-actions{display:flex;gap:12px}
+.attention-shell__drawer{display:flex;flex-direction:column;max-height:min(45dvh,440px);min-height:0;border-bottom:1px solid var(--line-2)}
+.attention-shell__drawer[hidden]{display:none}
+.attention-shell__drawer .chat-messages{flex:1;min-height:0;overflow:auto}
+/* Over the Board or the model the drawer lies on the surface instead of pushing it up, and the composer keeps to one line
+   until it is focused or holds something (max-height, because the composer sizes its field inline to the text). */
+.attention-shell:not([data-view=attention]) .attention-shell__bottom{position:relative}
+.attention-shell:not([data-view=attention]) .attention-shell__drawer{position:absolute;left:0;right:0;bottom:100%;z-index:20;border-bottom:0;
+  border-top:1px solid var(--line);background:var(--panel);box-shadow:var(--shadow)}
+.attention-shell:not([data-view=attention]) .chat-composer-wrap{padding-bottom:8px}
+.attention-shell:not([data-view=attention]) .chat-composer-wrap:has(.chat-composer:not(:focus-within)) .chat-composer-note:empty{display:none}
+.attention-shell:not([data-view=attention]) .chat-composer:not(:focus-within):has(textarea:placeholder-shown):not(:has(.chat-attachments,.chat-render-context,.chat-topic,.chat-topic-refusal)){
+  display:flex;align-items:center;gap:8px;padding:6px 8px 6px 16px}
+.attention-shell:not([data-view=attention]) .chat-composer:not(:focus-within):has(textarea:placeholder-shown):not(:has(.chat-attachments,.chat-render-context,.chat-topic,.chat-topic-refusal)) :is(.chat-composer__context,.chat-connection){display:none}
+.attention-shell:not([data-view=attention]) .chat-composer:not(:focus-within):has(textarea:placeholder-shown):not(:has(.chat-attachments,.chat-render-context,.chat-topic,.chat-topic-refusal)) textarea{
+  flex:1;min-width:0;min-height:0;max-height:28px;padding:2px 4px;overflow:hidden;white-space:nowrap}
+.attention-shell:not([data-view=attention]) .chat-composer:not(:focus-within):has(textarea:placeholder-shown):not(:has(.chat-attachments,.chat-render-context,.chat-topic,.chat-topic-refusal)) .chat-composer__bottom{
+  flex:none;margin-top:0}
+
+.attention-shell__side{display:flex;min-height:0;border-left:1px solid var(--pane-edge,var(--line))}
+.attention-shell__panel{display:flex;flex-direction:column;width:var(--panel-width);min-height:0;border-right:1px solid var(--line-2)}
+.attention-shell__panel-head{display:flex;align-items:flex-start;gap:8px;min-height:44px;padding:0 8px 0 14px;border-bottom:1px solid var(--line)}
+.attention-shell__panel-head>.chat-icon{margin-top:6px}
+/* Five pages in 360 px: the row wraps rather than cutting the last name off, in every style and language. */
+.attention-shell__side-tabs{flex:1;flex-wrap:wrap;align-content:center;min-width:0;gap:4px var(--tab-gap,12px);padding-block:4px}
+.attention-shell__side-tabs .menu-tab{font-size:var(--side-tab-size,var(--text-ui))}
+.attention-shell__panel-body{flex:1;min-height:0;padding:10px 12px;overflow:auto}
+.attention-shell__tasks{margin:0;padding:0;list-style:none}
+.attention-shell__rail{display:flex;flex-direction:column;gap:2px;width:var(--rail-width);padding:8px 6px;box-sizing:border-box}
+.attention-shell__rail-item{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;min-height:56px;padding:6px 2px;border:0;border-radius:var(--radius-sm);
+  background:transparent;color:var(--muted);font:inherit;font-size:var(--text-caption);cursor:pointer}
+.attention-shell__rail-item svg{width:20px;height:20px}
+.attention-shell__rail-item:hover{background:var(--surface-hover);color:var(--ink)}
+.attention-shell__rail-item[aria-pressed=true]{background:var(--nav-on-bg,var(--panel-2));color:var(--nav-on-ink,var(--ink))}
+.attention-shell__rail-item .attention-shell__count{position:absolute;top:4px;right:6px}
+.attention-shell__scrim{display:none}
+
+.advanced-tools__group+.advanced-tools__group{margin-top:16px}
+.advanced-tools__group h3{margin:0 0 6px;color:var(--muted);font-size:var(--text-caption);font-weight:600}
+.advanced-tools__group ul{margin:0;padding:0;list-style:none}
+.advanced-tools__command{display:flex;align-items:center;gap:10px;width:100%;min-height:34px;padding:4px 8px;border:0;border-radius:var(--radius-sm);background:transparent;
+  color:var(--ink);font:inherit;font-size:var(--text-ui);text-align:left;cursor:pointer}
+.advanced-tools__command>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.advanced-tools__command small{flex:none;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:var(--text-caption)}
+.advanced-tools__command kbd{flex:none;padding:0 6px;border:1px solid var(--line);border-radius:4px;color:var(--muted);font:var(--text-caption)/1.6 var(--font-mono)}
+.advanced-tools__command:hover{background:var(--surface-hover)}
+.advanced-tools__command[aria-disabled=true]{color:var(--faint);cursor:default}
+
+/* Below 900 px the side panel lies over the center; at phone width the projects column does too. */
+@media(max-width:900px){
+  .attention-shell{grid-template-columns:var(--left-width) minmax(0,1fr)}
+  .attention-shell__side{position:absolute;top:calc(var(--top-height) + 2 * var(--shell-gap,0px));right:var(--shell-gap,0px);bottom:var(--shell-gap,0px);z-index:30;
+    border-left:0;box-shadow:var(--shadow)}
+  .attention-shell[data-side=closed] .attention-shell__side{display:none}
+  .attention-shell__rail{display:none}
+  .attention-shell__panel{width:min(var(--panel-width),calc(100vw - 2 * var(--shell-gap,0px)));border-right:0}
+  .attention-shell:not([data-side=closed]) .attention-shell__scrim--side{display:block;position:absolute;inset:0;z-index:29;border:0;background:var(--scrim,#0006)}
+}
+/* 2-3a: where the next message goes, above what it changes. */
+.attention-shell .chat-target__to{overflow:hidden;color:var(--ink);font-weight:600;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:720px){
+  .attention-shell{--top-height:48px;grid-template-columns:minmax(0,1fr)}
+  .attention-shell__left-toggle{display:inline-flex}
+  .attention-shell__left{position:absolute;top:calc(var(--top-height) + 2 * var(--shell-gap,0px));left:var(--shell-gap,0px);bottom:var(--shell-gap,0px);z-index:30;
+    width:min(300px,calc(100vw - 48px));box-sizing:border-box;border-right:0;box-shadow:var(--shadow)}
+  .attention-shell[data-left=closed] .attention-shell__left{display:none}
+  .attention-shell[data-left=open] .attention-shell__scrim--left{display:block;position:absolute;inset:0;z-index:29;border:0;background:var(--scrim,#0006)}
+  .attention-shell__row,.attention-shell__rail-item,.advanced-tools__command{min-height:44px}
+  .attention-shell__new,.attention-shell__caption .chat-icon,.attention-shell__recent .chat-thread-action{width:44px;min-width:44px;height:44px}
+  .attention-shell__search kbd{display:none}
+  .attention-shell__drawer{max-height:50dvh}
+}

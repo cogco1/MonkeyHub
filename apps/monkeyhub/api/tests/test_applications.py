@@ -33,7 +33,7 @@ from project_runtime.settings import StudioSettings
 from project_runtime.render_adapters.gemini import adapter_from_settings
 from monkeyhub_api.runtime.applications import Applications
 from monkeyhub_api.models import HubFailure
-from monkeyhub_api.settings.models import ApplicationSettingsDto
+from monkeyhub_api.settings.models import DESIGN_LOOP_DEFAULT, ApplicationSettingsDto
 
 
 class StudioChildEnvironmentTests(unittest.TestCase):
@@ -74,6 +74,7 @@ class StudioChildEnvironmentTests(unittest.TestCase):
             "ARCHFLOW_STUDIO_MODE": "local",
             "ARCHFLOW_STUDIO_PROJECT_DIR": str(self.project),
             "ARCHFLOW_STUDIO_CAD_EXPORT": "occt",
+            "ARCHFLOW_STUDIO_DESIGN_LOOP": DESIGN_LOOP_DEFAULT,
             "ARCHFLOW_STUDIO_INTENT_PROVIDER": "deterministic",
         })
         self.assertEqual(
@@ -176,6 +177,16 @@ PROCESS_STARTERS = {
 # child, and why that child can never wait on the pipe the desktop holds.
 # Empty: every process the Hub starts names a stdin of its own.
 INHERITS_HUB_STDIN: dict[str, str] = {}
+
+STUDIO_PACKAGE = ROOT / "services/project-runtime/src/project_runtime"
+# The same for a Studio, whose stdin is the pipe the Hub holds (gap 29). A
+# starter kept as a plain value is a default runner: every call through it
+# names a stdin, which the syntax tree cannot follow.
+INHERITS_STUDIO_STDIN: dict[str, str] = {
+    "application/skill_runs.py:submit_skill_run": "the default runner; _pip_python, _ensure_packages and _run_once "
+                                                   "call it with stdin=subprocess.DEVNULL",
+    "application/live_rhino.py:_cli": "the default runner; its one call passes stdin=subprocess.DEVNULL",
+}
 
 
 def process_starts(source: str) -> list[tuple[str, int, bool]]:
@@ -284,6 +295,20 @@ class HubChildStdinTests(unittest.TestCase):
         self.assertEqual(unnamed, [], "pass stdin=subprocess.DEVNULL or a pipe the Hub owns, "
                                       "or say in INHERITS_HUB_STDIN why this child may read the Hub's own stdin")
         self.assertEqual(sorted(set(INHERITS_HUB_STDIN) - set(starts)), [], "a justification for a start that is gone")
+
+    def test_every_process_a_studio_starts_names_its_stdin(self):
+        # Gap 29: a skill run that inherited the Studio's stdin never started.
+        starts: dict[str, list[tuple[int, bool]]] = {}
+        for path in sorted(STUDIO_PACKAGE.rglob("*.py")):
+            for scope, line, named in process_starts(path.read_text(encoding="utf-8")):
+                starts.setdefault(f"{path.relative_to(STUDIO_PACKAGE).as_posix()}:{scope}", []).append((line, named))
+        self.assertLessEqual({"main.py:_source_revision", "application/skill_runs.py:submit_skill_run",
+                              "application/projections.py:SubprocessRenderer._start"}, set(starts))
+        unnamed = [f"{site} (line {line})" for site, rows in starts.items() if site not in INHERITS_STUDIO_STDIN
+                   for line, named in rows if not named]
+        self.assertEqual(unnamed, [], "pass stdin=subprocess.DEVNULL or a pipe the Studio owns, "
+                                      "or say in INHERITS_STUDIO_STDIN why this child may read the Studio's own stdin")
+        self.assertEqual(sorted(set(INHERITS_STUDIO_STDIN) - set(starts)), [], "a justification for a start that is gone")
 
     @unittest.skipUnless(os.name == "nt", "a pending synchronous pipe read holds up the children that inherit it on Windows")
     def test_the_checkout_revision_is_read_while_the_hub_stdin_is_waited_on(self):

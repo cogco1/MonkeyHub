@@ -34,3 +34,26 @@ export function openChat(chatId: string, projectDir: string): void {
     window.location.assign(url.toString());
   }, OPEN_CHAT_WAIT_MS);
 }
+
+export const OPEN_CARD_EVENT = "monkeyhub:open-attention";
+
+export interface OpenCardDetail {
+  cardId: string;
+}
+
+/**
+ * Opening a card from its notice (1-4). The attention shell answers `monkeyhub:open-attention` by showing the
+ * card in its queue and calling `event.preventDefault()`; elsewhere the conversation the card came from opens,
+ * or, for a card that came from none, the attention shell.
+ */
+export function openCard(cardId: string, chatId: string, projectDir: string): void {
+  const event = new CustomEvent<OpenCardDetail>(OPEN_CARD_EVENT, { detail: { cardId }, cancelable: true });
+  window.dispatchEvent(event);
+  if (event.defaultPrevented) return;
+  if (chatId) { openChat(chatId, projectDir); return; }
+  // Nothing here shows the queue and the card came from no conversation: the attention shell does.
+  const url = new URL(window.location.href);
+  for (const name of ["chatId", "runtimeId", "view"]) url.searchParams.delete(name);
+  url.searchParams.set("shell", "attention");
+  window.location.assign(url.toString());
+}

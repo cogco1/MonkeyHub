@@ -137,6 +137,8 @@ SOURCE_PATHS = (
     "services/project-runtime",
     "apps/monkeyhub", FAB_SOURCE, "packages/web-shared", "OPEN_MONKEYHUB.cmd",
     "README.md", "SECURITY.md", "pyproject.toml", *BUNDLED_TOOLS, "governance/module_registry.json",
+    # How each command is said, beside the registry: the agent's capability index reads it (08 提速).
+    "governance/command_phrases.json",
 )
 
 
@@ -308,6 +310,10 @@ def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) 
                         ignore=shutil.ignore_patterns("__pycache__", "tests", "test_*", "third-party"))
     shutil.copytree(source / FAB_SOURCE, bundle / FAB_BUNDLE,
                     ignore=shutil.ignore_patterns("__pycache__", "tests", "test_*", "third-party"))
+    # The skills a project can import; project_runtime.skill_library reads
+    # them at the same path in the bundle as in the checkout.
+    shutil.copytree(source / "apps/monkeyhub/skills", bundle / "apps/monkeyhub/skills",
+                    ignore=shutil.ignore_patterns("__pycache__"))
     # Keep upstream license text and source labels, but shorten its distribution
     # paths so the installer does not depend on Windows long-path opt-in.
     notices = source / "apps/monkeyhub/installer/third-party"
@@ -356,7 +362,7 @@ def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) 
                      "apps/monkeyhub/launch-hub.ps1", "OPEN_MONKEYHUB.cmd", "pyproject.toml",
                      # The security-reporting route travels with the distributed bundle,
                      # not only with a checkout of the public repository.
-                     "governance/module_registry.json", "SECURITY.md",
+                     "governance/module_registry.json", "governance/command_phrases.json", "SECURITY.md",
                      # Both tools put a checkout's source roots first through source_roots;
                      # the bundle ships no architecture policy, so there it does nothing.
                      *BUNDLED_TOOLS):

@@ -157,7 +157,8 @@ class PackageAdapterTests(unittest.TestCase):
             "apps/monkeyhub/installer/INSTALL_MONKEYHUB.cmd",
             "apps/monkeyhub/run.py", "apps/monkeyhub/assets/monkeyarch.ico",
             "apps/monkeyhub/launch-hub.ps1", "OPEN_MONKEYHUB.cmd", "pyproject.toml",
-            "governance/module_registry.json", "tools/project/create_project.py", "tools/project/run_project.py",
+            "governance/module_registry.json", "governance/command_phrases.json",
+            "tools/project/create_project.py", "tools/project/run_project.py",
             "tools/dev/source_roots.py", "tools/dev/__init__.py", "tools/project/__init__.py", "SECURITY.md",
             "packages/monkeyfab/src/monkeyfab/__main__.py", "packages/monkeyfab/pyproject.toml",
             "packages/monkeyfab/tests/test_cli.py",
@@ -179,6 +180,9 @@ class PackageAdapterTests(unittest.TestCase):
             (web / "dist").mkdir(parents=True)
             (web / "dist/index.html").write_text("fixture", encoding="utf-8")
             (web / "package-lock.json").write_text('{"packages": {}}', encoding="utf-8")
+        (self.source / "apps/monkeyhub/skills/site-palette/scripts/__pycache__").mkdir(parents=True)
+        (self.source / "apps/monkeyhub/skills/site-palette/skill.json").write_text("{}", encoding="utf-8")
+        (self.source / "apps/monkeyhub/skills/site-palette/scripts/__pycache__/run.cpython-313.pyc").write_bytes(b"\x00")
         self.hub = self.source / "apps/monkeyhub"
         self.adapter_relative = "node_modules/@agentclientprotocol/codex-acp"
         for relative, name, version in (
@@ -250,6 +254,11 @@ class PackageAdapterTests(unittest.TestCase):
                          (self.hub / self.adapter_relative / "dist/index.js").read_bytes())
         self.assertEqual((self.bundle / "governance/module_registry.json").read_text(), "fixture")
         self.assertIn("governance/module_registry.json", builder.SOURCE_PATHS)
+        # Ctrl K and the agent's capability search read how people say each command.
+        self.assertEqual((self.bundle / "governance/command_phrases.json").read_text(), "fixture")
+        # The skill packages a project can import travel beside the application.
+        self.assertEqual((self.bundle / "apps/monkeyhub/skills/site-palette/skill.json").read_text(), "{}")
+        self.assertFalse((self.bundle / "apps/monkeyhub/skills/site-palette/scripts/__pycache__").exists())
         # The installed Hub imports monkeycontrol to expose its computer-use
         # routes, and that package is nothing without its PowerShell hosts.
         self.assertEqual((self.bundle / "monkeycontrol/__init__.py").read_text(), "fixture")

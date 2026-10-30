@@ -1492,6 +1492,8 @@ def produce_stair(row: ElementRow, context: ProductionContext) -> ProducedElemen
 
     p = row.params
     base_datum, base_offset = _base(row, context)
+    # A flight a construction script places at an offset above its base states it, as a drawn solid does.
+    base_offset += _finite(p.get("elevation", 0.0), f"{row.element_id} elevation")
     start, end = _plan_point(row, context, "from"), _plan_point(row, context, "to")
     count = int(p["count"])
     if count < 1:
@@ -1544,6 +1546,59 @@ def produce_stair(row: ElementRow, context: ProductionContext) -> ProducedElemen
     top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + count * rise, row.basis_refs)
     context.published[top.datum_id] = top
     return ProducedElement(produced.operations, produced.bindings, (top,), produced.relations, None)
+
+
+def produce_railing(row: ElementRow, context: ProductionContext) -> ProducedElement:
+    """Posts and a rail along an open polyline (gap 34): ``obj-<id>-post-<k>`` and ``obj-<id>-rail-<k>``.
+
+    ``points`` are (x, y, z) with y above the base (plus ``elevation``), where the railing stands at each point:
+    on a floor, a flight's nosings or a landing. A post ``post`` square stands at every point and between them at
+    most ``spacing`` apart, rising to the rail; each segment carries a rail ``rail`` square whose top runs
+    ``height`` above the line, laid along the segment so it follows a flight's slope. A vertical segment, a
+    polyline of fewer than two points, or a height no greater than the rail is refused. It publishes no top.
+    """
+
+    p = row.params
+    base_datum, base_offset = _base(row, context)
+    base_offset += _finite(p.get("elevation", 0.0), f"{row.element_id} elevation")
+    raw = p.get("points")
+    if not isinstance(raw, (list, tuple)) or len(raw) < 2:
+        raise ElementProducerError(f"{row.element_id}: a railing runs along two or more points")
+    points = [tuple(_finite(c, f"{row.element_id} point") for c in point) for point in raw]
+    if any(len(point) != 3 for point in points):
+        raise ElementProducerError(f"{row.element_id}: every railing point is (x, y, z)")
+    height = _positive(p.get("height", 1.0), f"{row.element_id} height")
+    post = _positive(p.get("post", 0.05), f"{row.element_id} post")
+    spacing = _positive(p.get("spacing", 1.2), f"{row.element_id} spacing")
+    rail = _positive(p.get("rail", 0.05), f"{row.element_id} rail")
+    if height <= rail:
+        raise ElementProducerError(f"{row.element_id}: a railing {height} m high must be higher than its rail {rail} m")
+    stations: list[tuple[float, float, float]] = []
+    ops, bindings = [], []
+    for k, (a, b) in enumerate(zip(points, points[1:])):
+        run = math.hypot(b[0] - a[0], b[2] - a[2])
+        if run < 1e-6:
+            raise ElementProducerError(f"{row.element_id}: railing segment {k} is vertical")
+        steps = max(1, math.ceil(run / spacing - 1e-9))
+        stations += [tuple(a[i] + (b[i] - a[i]) * j / steps for i in range(3)) for j in range(steps)]
+        length = math.dist(a, b)
+        d = tuple((b[i] - a[i]) / length for i in range(3))
+        u = (-d[2] / math.hypot(d[0], d[2]), 0.0, d[0] / math.hypot(d[0], d[2]))  # level, across the segment
+        v = (u[1] * d[2] - u[2] * d[1], u[2] * d[0] - u[0] * d[2], u[0] * d[1] - u[1] * d[0])  # up, across the rail
+        centre = (a[0], a[1] + height - rail / 2.0, a[2])
+        corners = [tuple(centre[i] + su * u[i] * rail / 2.0 + sv * v[i] * rail / 2.0 for i in range(3))
+                   for su, sv in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+        op_id = f"{row.element_id}-rail-{k}"
+        ops.append(_extrusion(op_id, corners, length, row.binding_id, context.frame_id,
+                              base_offset + min(c[1] for c in corners), normal=d))
+        bindings.append(_bind(op_id, base_datum))
+    stations.append(points[-1])
+    for k, (x, y, z) in enumerate(stations):
+        op_id = f"{row.element_id}-post-{k}"
+        ops.append(_extrusion(op_id, _rect(x, z, post / 2.0, post / 2.0), height - rail / 2.0, row.binding_id,
+                              context.frame_id, base_offset + y))
+        bindings.append(_bind(op_id, base_datum))
+    return ProducedElement(tuple(ops), tuple(bindings), ())
 
 
 def _rise_sense(ux: float, uz: float, across: bool) -> str:
@@ -1680,7 +1735,7 @@ def produce_declined(row: ElementRow, context: ProductionContext) -> ProducedEle
 PRODUCERS: dict[str, Callable[[ElementRow, ProductionContext], ProducedElement]] = {
     "column-array": produce_column_array, "capitals": produce_capitals, "beam": produce_beam, "pediment": produce_pediment, "wall": produce_wall,
     "prism": produce_prism, "planar-surface": produce_planar_surface, "curve": produce_curve, "ring": produce_ring, "loft": produce_loft, "dome-cap": produce_dome_cap,
-    "stair": produce_stair, "wedge": produce_wedge, "shell": produce_shell, "declined": produce_declined,
+    "stair": produce_stair, "railing": produce_railing, "wedge": produce_wedge, "shell": produce_shell, "declined": produce_declined,
 }
 
 

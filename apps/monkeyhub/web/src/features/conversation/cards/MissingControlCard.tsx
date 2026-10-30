@@ -7,7 +7,7 @@
  * answer from the person reading this, and the difference is the whole card:
  * there is no input box, no question and no accepted forms, because asking
  * again is exactly the loop this outcome exists to end. The internal control
- * draft remains available in technical details, not as a form to fill in.
+ * draft remains available in developer mode's technical details, not as a form to fill in.
  *
  * `UNSUPPORTED` — no action this server has can express the request, or the
  * clarification stopped advancing. Same shape, no draft.
@@ -16,6 +16,7 @@
 import { MISSING_EDITABLE_CONTROL, type StudioApiError } from "../../../api/project-runtime/client";
 import { BilingualText } from "../../../i18n/BilingualText";
 import { useT } from "../../../i18n/useT";
+import { DeveloperOnly } from "../../settings/preferences";
 
 export function MissingControlCard({ error }: { error: StudioApiError }) {
   const t = useT();
@@ -32,9 +33,9 @@ export function MissingControlCard({ error }: { error: StudioApiError }) {
           <BilingualText source={error.detail} />
         </p>
       </div>
-      {(pending || draft) && (
+      {(pending || draft) && <DeveloperOnly>
         <details className="card__row card__details">
-          <summary>{t("common.technicalDetails")}</summary>
+          <summary data-command="view.disclosure.toggle" data-command-arg="technical_details">{t("common.technicalDetails")}</summary>
           {pending && (
             <p className="quiet mono">
               {t("terminal.identity", {
@@ -89,7 +90,7 @@ export function MissingControlCard({ error }: { error: StudioApiError }) {
             </p>
           )}
         </details>
-      )}
+      </DeveloperOnly>}
     </article>
   );
 }

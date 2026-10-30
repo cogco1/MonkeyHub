@@ -30,6 +30,7 @@ import secrets
 import re
 
 from fastapi import APIRouter, Query
+from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
 from archflow.project.repository import ProjectRepositoryError
@@ -37,6 +38,7 @@ from archflow.project.repository import ProjectRepositoryError
 from ...binding import ProjectBinding, bound_project
 from ...application.candidate import CandidateRun, describe, execute_candidate, prepare_combined_candidate, run_operator
 from ...application.compare import compare_runs, shapes_of
+from ...application.validation import candidate_obligations
 from ...jobs import FAILED, QUEUED, RUNNING, SUCCEEDED, Job, JobRegistry
 from ...monitoring import projection_source_ref
 from ...application.projection import (
@@ -47,6 +49,7 @@ from ...application.projection import (
 from ...application.proposals import read_refs_of, sentences_of, write_refs_of, Proposal
 from ...settings import StudioSettings
 from ..dto.candidate import (
+    obligation_problems_dto,
     CandidateAcceptedDto,
     CombineCandidatesRequestDto,
     CandidateDto,
@@ -178,7 +181,7 @@ def read_candidate(request: Request, candidate_id: str) -> CandidateDto:
         related_event_id=f"studio:candidate:{project_id}:{candidate_id}", details={"blocking": True}) as interval:
         result = _read_candidate(request, candidate_id)
         interval["details"]["success"] = result.status == SUCCEEDED and result.object_readback_error is None
-        return result
+        return loop_shaped(request.app.state.settings, result, LOOP_FIELDS)
 
 
 def _read_candidate(request: Request, candidate_id: str) -> CandidateDto:
@@ -241,19 +244,37 @@ def _read_candidate(request: Request, candidate_id: str) -> CandidateDto:
     )
 
 
+# What a candidate read adds while the design loop checks conditions (#185); in legacy the read is as before.
+LOOP_FIELDS = frozenset({"relationProblems", "obligationProblems"})
+
+
+def loop_shaped(settings: StudioSettings, dto, fields: frozenset[str]):
+    """The DTO as the route answers it: whole while the design loop checks conditions, without ``fields`` in legacy."""
+
+    if settings.design_loop_checks:
+        return dto
+    return JSONResponse(dto.model_dump(mode="json", by_alias=True, exclude={
+        name for name, field in type(dto).model_fields.items() if (field.alias or name) in fields}))
+
+
 def _candidate_with_objects(binding: ProjectBinding, candidate: CandidateRun) -> CandidateDto:
     if candidate.status != SUCCEEDED:
         return candidate_dto(candidate, object_readback_error=f"Candidate is {candidate.status}; retained object inspection is unavailable.")
+    enforced = binding.settings.design_loop_checks
     try:
         shapes = shapes_of(binding, candidate.candidate_id)
     except StudioError as exc:
-        return candidate_dto(candidate, object_readback_error=f"{exc.code}: {exc.detail}")
+        obligations = obligation_problems_dto(candidate_obligations(binding, candidate)) if enforced else None
+        return candidate_dto(candidate, object_readback_error=f"{exc.code}: {exc.detail}", obligation_problems=obligations)
     except ProjectRepositoryError as exc:
-        return candidate_dto(candidate, object_readback_error=str(exc))
+        obligations = obligation_problems_dto(candidate_obligations(binding, candidate)) if enforced else None
+        return candidate_dto(candidate, object_readback_error=str(exc), obligation_problems=obligations)
+    obligations = obligation_problems_dto(candidate_obligations(binding, candidate, shapes=shapes)) if enforced else None
     missing = [seat.seat_id for seat in candidate.seat_results if not (seat.cad or {}).get("inspection_ref")]
     return candidate_dto(
         candidate, shapes=shapes,
         object_readback_error=f"No retained object inspection for seats: {', '.join(missing)}." if missing else None,
+        obligation_problems=obligations,
     )
 
 
@@ -354,7 +375,7 @@ def admitted_candidate_id(request: Request, generated: str) -> str:
         return generated
     instance_id = getattr(request.app.state, "managed_instance_id", None)
     if (not instance_id or request.headers.get("x-monkey-worker") != instance_id
-            or re.fullmatch(r"hub-cand-[0-9a-f]{32}", candidate_id) is None):
+            or re.fullmatch(r"hub-cand-(?:[0-9a-f]{16}|[0-9a-f]{32})", candidate_id) is None):
         raise StudioError(409, "CANDIDATE_ADMISSION_MISMATCH", "The candidate admission is not bound to this managed Studio instance.")
     binding = bound_project(request.app.state)
     if candidate_id in binding.run_ids():

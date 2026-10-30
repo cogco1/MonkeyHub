@@ -19,9 +19,10 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from uuid import UUID, uuid4
 
 from .. import projects
-from . import judgments, media, preparation, studio_tool, transport, visual_review
+from . import design_loop, judgments, media, preparation, studio_tool, transport, visual_review
 
 from ..models import ChatPresentationRequest, HubFailure
+from ..runtime.workers import project_key
 
 
 # The proposal routes that answer a Proposal the client has just authored; its
@@ -47,6 +48,8 @@ _TOOL_ARGUMENTS = {
 _FINISHABLE = "/api/capabilities/candidate.modify_existing/run"
 _CHECKPOINT = re.compile(r"^/api/proposals/[A-Za-z0-9_-]+/candidate$")
 _AWAIT_MAX_S = 180
+# How long the chat waits for POST /api/revisions: a little past the Hub's own wait for it.
+_REVISION_WAIT_S = 440
 _POLL_S = 0.4
 
 
@@ -117,7 +120,7 @@ def _finish(base: str, started: Mapping, submitted: Mapping, deadline: float) ->
         "candidate": {
             key: candidate.get(key) for key in
             ("candidateId", "stateDigest", "changedVsProjection", "seatExecutionComplete",
-             "relationChecks", "harness", "honesty")
+             "relationChecks", "relationProblems", "obligationProblems", "harness", "honesty")
             if key in candidate
         },
         # What the run saved, by the fields that say whether it is really there.
@@ -171,6 +174,112 @@ def _finish(base: str, started: Mapping, submitted: Mapping, deadline: float) ->
     return result
 
 
+_SKILL_RUN = re.compile(r"/api/skills/([A-Za-z0-9:_.-]+)/run")
+_ACCESS_ITEMS = ("programs", "ssh", "write", "packages")
+_PERMISSION_WAIT_S = 50
+
+
+def _access_words(access: Mapping, broad: Mapping | None = None) -> list[str]:
+    """What a run needs allowed, in the words the person reads above the buttons."""
+
+    words = []
+    if access.get("programs"):
+        words.append("运行程序 / run: " + ", ".join(access["programs"]))
+    if access.get("network"):
+        words.append("联网 / use the network")
+    if access.get("ssh"):
+        words.append("用 ssh 连接 / connect by ssh to: " + ", ".join(access["ssh"]))
+    if access.get("write"):
+        words.append("写入 / write to: " + ", ".join(access["write"]))
+    if access.get("packages"):
+        words.append("安装 Python 包 / install packages: " + ", ".join(access["packages"]))
+    if broad:
+        words.append("其中 " + "、".join(item for items in broad.values() for item in items)
+                     + " 等于能做任何事，只给这个 skill / these allow anything, so they are allowed for this skill only")
+    return words
+
+
+def _carry_approvals(hub: str, base: str, project_id: str) -> None:
+    """The project's version approvals from before S-1, carried over by the Hub once each (S-1).
+
+    Carrying them over saves the person a question; when it cannot be done now
+    the run goes on and asks for what is missing.
+    """
+
+    try:
+        rows = transport._request_json(base, "/api/skills/approvals").get("approvals") or []
+        kept = [row for row in rows if row.get("status") == "active" and row.get("scope", "version") == "version"]
+        if kept:
+            transport._request_json(hub, "/api/settings/skill-grants/carry", "POST",
+                                    {"projectId": project_id, "approvals": kept})
+    except HubFailure:
+        return
+
+
+def _agent_skill_run(hub: str, chat_id: str, base: str, path: str, body: dict, wait: float) -> dict:
+    """An Agent's skill run, after the person's say where it needs something no one allowed yet (S-1).
+
+    The skill is the installed one of that name, in every project. What it
+    declares is read against what a person allowed on this machine: the
+    Runtime answers what a run would still need (GET /api/skills/{id}/needs),
+    after the project's approvals from before S-1 are carried over. Nothing
+    missing: it runs. Otherwise the Hub setting skillAgentRuns decides, as
+    Claude Code and Codex do before a tool runs: "ask" (the default) puts what
+    is missing to the person in this chat as one question - always allow, only
+    this time, no - and the Hub keeps the grant the answer gives; "granted"
+    asks nothing and refuses; "never" refuses any skill that declares access,
+    allowed or not. While the design loop is enforced (#185) the setting reads
+    as "never". The Agent never grants and never names a grant: the Hub writes
+    it from the button the person pressed.
+    """
+
+    from ..settings.store import read_user_settings
+
+    skill_id = _SKILL_RUN.fullmatch(path).group(1)
+    permission_id = body.pop("permissionId", None)
+    body.pop("grantId", None)
+    body = {**body, "agentRun": True}
+    _carry_approvals(hub, base, body["projectId"])
+    report = transport._request_json(base, f"/api/skills/{skill_id}/needs")
+    declared, needs, broad = report.get("access") or {}, report.get("needs") or {}, report.get("broad") or {}
+    declares = bool(declared.get("network")) or any(declared.get(key) for key in _ACCESS_ITEMS)
+    setting = "never" if studio_tool.design_loop_enforced(hub) else read_user_settings().skill_agent_runs or "ask"
+    if declares and setting == "never":
+        raise HubFailure(403, "SKILL_AGENT_RUN_REFUSED",
+                         f"{skill_id} declares access and the Hub setting lets only a person start such a skill.")
+    if not needs:
+        return body
+    if setting != "ask":
+        raise HubFailure(403, "SKILL_AGENT_RUN_REFUSED",
+                         f"{skill_id} needs what no one allowed yet ({', '.join(_access_words(needs))}), and the Hub "
+                         "setting does not ask in the chat. A person allows it when they start the skill themselves.")
+    chat = projects._identifier(chat_id)
+    if permission_id is None:
+        name = (report.get("skill") or {}).get("name") or skill_id
+        title = "\n".join([f"AI 要运行 skill「{name}」，需要你允许 / The AI wants to run the skill {name}, which needs:",
+                            *_access_words(needs, broad),
+                            "允许以后，所有项目、所有 skill 都不再问这几项 / Once allowed, no project or skill asks for "
+                            "these again" if not broad else "允许以后，这个 skill 不再问 / Once allowed, this skill "
+                            "does not ask again"])
+        ask = {"access": needs, "broad": broad, "skill": report["skill"], "projectId": report["projectId"],
+               "codeSha256": report["codeSha256"]}
+        permission_id = transport._request_json(hub, f"/api/chat/sessions/{chat}/skill-permissions", "POST",
+                                                {"title": title, "ask": ask})["permissionId"]
+    answer = transport._request_json(
+        hub, f"/api/chat/sessions/{chat}/skill-permissions/{projects._identifier(str(permission_id))}?"
+        + urlencode({"wait": wait}), timeout=wait + 30)
+    if answer["status"] == "waiting":
+        raise HubFailure(409, "SKILL_PERMISSION_WAITING",
+                         f"The person has been asked in this chat to allow what {skill_id} needs and has not answered "
+                         f"yet. Call the same run again with \"permissionId\": \"{permission_id}\" in the body to "
+                         "keep waiting; do not start it another way.")
+    if answer["status"] == "withdrawn":
+        raise HubFailure(409, "SKILL_PERMISSION_WITHDRAWN", "The question was withdrawn before anyone answered.")
+    if answer["optionId"] not in ("allow_once", "allow_always"):
+        raise HubFailure(403, "SKILL_PERMISSION_DENIED", f"The person did not allow what {skill_id} needs.")
+    return {**body, "grantId": answer["grantId"]} if answer["optionId"] == "allow_once" else body
+
+
 def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     token = transport._trace_headers.set({})
     try:
@@ -205,6 +314,9 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         # refusal code belong to the route, so the CLI reads what an HTTP
         # caller reads. This conversation's project is not involved.
         return computer_tools.call(hub, name, arguments)
+    if name in design_loop.TOOLS:
+        # The design loop's tools (#185) answer through studio_request below, one call at a time.
+        return design_loop.call(hub, chat_id, name, arguments)
     if name == "visual_review":
         # A tool of its own rather than a studio_request path: Hub holds the
         # allowance, so the route is on no request allow-list to go around it.
@@ -215,15 +327,19 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if "feedbackQuote" in arguments and (name != "studio_request" or not judgments._binds_words(method, parsed.path)
                                          or not isinstance(arguments["feedbackQuote"], str)):
         raise HubFailure(422, "CHAT_FEEDBACK_QUOTE", "feedbackQuote only selects the user's words for feedback, an admission or a Continue.")
-    if "taskClass" in arguments and (name, method, parsed.path) != ("studio_request", "POST", "/api/admissions"):
+    revisions_offered = studio_tool.design_loop_offered()
+    if "taskClass" in arguments and not (name == "studio_request" and method == "POST" and parsed.path in (
+            ("/api/admissions", studio_tool.REVISIONS) if revisions_offered else ("/api/admissions",))):
+        # The legacy words stay as they were; only an enforced conversation is told about POST /api/revisions.
         raise HubFailure(422, "CHAT_TOOL_INVALID", "taskClass beside method/path names the loop POST /api/admissions "
-                         "closes; visual_review takes its own.")
+                         + ("or POST /api/revisions closes; " if revisions_offered else "closes; ")
+                         + "visual_review takes its own.")
     if "continue" in arguments and ((name, method, parsed.path) != ("studio_request", "POST", "/api/admissions")
                                     or not isinstance(arguments["continue"], bool)):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "continue: true beside method/path lands the one result POST "
                          "/api/admissions admits; a Continue on its own is PUT /api/working-draft.")
     if "operationId" in arguments and (name != "studio_request" or method == "GET" or (
-            method == "POST" and parsed.path in {"/api/board/export", "/api/drawings/plans/status"})):
+            method == "POST" and parsed.path in {"/api/board/export", "/api/board/view", "/api/drawings/plans/status"})):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "operationId identifies a Studio mutation request.")
     if "awaitSeconds" in arguments and name != "studio_request":
         # Only one tool can wait for anything. Quietly dropping the option here
@@ -252,7 +368,8 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if name == "studio_schema" and not path:
         # A malformed question is refused before a runtime is prepared for it.
         studio_tool._discovery(arguments)
-        return studio_tool._discover_actions(preparation._bound_studio(hub, chat_id)[0], arguments)
+        return studio_tool._discover_actions(preparation._bound_studio(hub, chat_id)[0], arguments,
+                                             tier=studio_tool.design_loop_tier())
     if any(key in arguments for key in ("pathPrefix", "offset", "limit")):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "pathPrefix, offset and limit belong to studio_schema action discovery; omit path.")
     # Asking what a documented action takes is not calling it. The path is
@@ -262,7 +379,18 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     # the Studio is resolved, so a refused request never starts a runtime.
     if parsed.scheme or parsed.netloc or parsed.fragment or method not in allowed:
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "This action is not exposed to the chat.")
-    permitted = studio_tool._schema_allowed(method, parsed.path) if name == "studio_schema" else allowed[method].fullmatch(parsed.path)
+    revising = method == "POST" and parsed.path == studio_tool.REVISIONS
+    looping = (method, parsed.path) in studio_tool.LOOP_ACTIONS
+    # A conversation started in legacy is refused a loop action as main refuses any path it does not expose, and
+    # the Hub's setting is not read for it.
+    legacy = looping and studio_tool.design_loop_tier() == studio_tool.DESIGN_LOOP_LEGACY
+    setting = studio_tool.design_loop_setting(hub) if looping and not legacy else studio_tool.DESIGN_LOOP_LEGACY
+    if looping and not legacy and not studio_tool.loop_action_offered(method, parsed.path, setting):
+        needed = "enforced" if (method, parsed.path) == studio_tool.REVISION_ACTION else "advisory or enforced"
+        raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", f"{method} {parsed.path} is offered to the chat only while this "
+                         f"Hub's design loop is {needed}, and it is {setting}. Nothing was executed.")
+    permitted = not legacy and (studio_tool._schema_allowed(method, parsed.path, tier=setting) if name == "studio_schema"
+                                else allowed[method].fullmatch(parsed.path))
     if not permitted:
         replacement = studio_tool._REPLACED_ACTIONS.get((method, parsed.path))
         if replacement is not None:
@@ -276,6 +404,11 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if name == "studio_request" and method == "POST" and parsed.path == "/api/proposals":
         # Checked, like the path, before the Studio is resolved.
         refusal = studio_tool._semantic_edit_refusal(arguments.get("body"))
+        if refusal is not None:
+            raise refusal
+    if name == "studio_request" and revising:
+        # The change inside a revision is held to what its own route allows the chat.
+        refusal = studio_tool._revision_refusal(arguments.get("body"))
         if refusal is not None:
             raise refusal
     if name == "studio_request" and method == "POST" and parsed.path == "/api/proposals/elevation":
@@ -312,6 +445,16 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                 "type": "string", "format": "uuid",
                 "description": "Exact attachment ID from this conversation. Choose this OR projectRevision OR sourceArtifactId; Hub transfers the bytes.",
             }
+        if method == "POST" and parsed.path == "/api/documents":
+            # Gap 37: a chat registers one attachment it was given; the Hub moves the bytes.
+            reference = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+            schema = document["components"]["schemas"][reference.rsplit("/", 1)[-1]]
+            schema["properties"] = {"attachmentId": {
+                "type": "string", "format": "uuid",
+                "description": "Exact attachment ID from this conversation: a PNG, JPEG or PDF. Hub transfers the bytes "
+                               "and registers it as a project document, which a Board image can then name.",
+            }}
+            schema["required"] = ["attachmentId"]
         if method == "POST" and judgments._is_feedback(parsed.path):
             # Expose the Runtime's real schema, narrowed to the chat capability;
             # provenance is supplied by this adapter, never by the provider.
@@ -339,7 +482,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             hidden = {"messageSource", "rawLanguage"}
             schema["properties"] = {key: value for key, value in schema["properties"].items() if key not in hidden}
             schema["required"] = [key for key in schema.get("required", []) if key not in hidden]
-            if method == "POST":
+            if parsed.path == "/api/admissions":
                 task = document["components"]["schemas"]["AdmissionTaskDto"]["properties"]
                 task["kind"] = {**task["kind"], "enum": ["hub-chat"]}
         return studio_tool._request_contract(document, template, method, operation)
@@ -374,8 +517,10 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         body = dict(body)
         if body.get("projectId", session["projectId"]) != session["projectId"]:
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "A tool cannot select another project.")
-        if parsed.path in {"/api/proposals", "/api/board/export", "/api/project/modeling", "/api/render/jobs"}:
+        if parsed.path in {"/api/proposals", "/api/board/export", "/api/board/view", "/api/project/modeling", "/api/render/jobs"}:
             body["projectId"] = session["projectId"]
+        if method == "POST" and _SKILL_RUN.fullmatch(parsed.path):
+            body = _agent_skill_run(hub, chat_id, base, parsed.path, body, _PERMISSION_WAIT_S)
         if method == "POST" and parsed.path == "/api/drawings/plans":
             # A cut plan the Agent asks for is its reading of what the user
             # said, so its revision says so (05 §5). Only a person's own
@@ -386,6 +531,13 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                 raise HubFailure(422, "CHAT_TOOL_INVALID", "The chat marks your cut-plan requests sourceKind=agent; "
                                  "only a person's own request in Drawings is human. Send it without sourceKind.")
             body["sourceKind"] = "agent"
+    if method == "POST" and parsed.path == "/api/documents":
+        if not isinstance(body, dict) or set(body) - {"projectId"} != {"attachmentId"}:
+            raise HubFailure(422, "CHAT_DOCUMENT_INVALID", "Register a document by its attachmentId alone: a PNG, JPEG or "
+                             "PDF from this conversation. The Hub transfers the bytes; send no file content.")
+        source = transport._request_json(hub, f"/api/chat/sessions/{projects._identifier(chat_id)}/attachments/"
+                                              f"{projects._identifier(body['attachmentId'])}/document-source")
+        body = {"projectId": session["projectId"], **source}
     if method == "POST" and parsed.path == "/api/exports" and isinstance(body, dict):
         attachment_id = body.pop("attachmentId", None)
         if attachment_id is not None:
@@ -401,16 +553,27 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if (method, parsed.path) in judgments._BOUND_WORDS:
         if parsed.query or not isinstance(body, dict):
             raise HubFailure(422, "CHAT_TOOL_INVALID", f"{method} {parsed.path} takes its whole request in the body, without query parameters.")
-        bind = judgments._admission_body if method == "POST" else judgments._continue_body
+        bind = {"/api/admissions": judgments._admission_body, "/api/working-draft": judgments._continue_body,
+                studio_tool.REVISIONS: judgments._revision_body}[parsed.path]
         body = bind(chat_id, session, body, arguments.get("feedbackQuote"))
-        if method == "POST":
+        if parsed.path == "/api/admissions":
             landing = _landing(chat_id, session, body, arguments) if arguments.get("continue") else None
             # A loop is admitted once it has finished, its declared look first (#294).
             visual_review._require_look(chat_id, body, arguments.get("taskClass"))
+        if revising and not body.get("buildOnly"):
+            # Landing or admitting is the loop's admission (#294): a spatial or formal loop lands only a result it
+            # looked at, or a repair whose supersedes names an attempt it looked at; buildOnly builds one to look at.
+            visual_review._require_look(chat_id, {"messageSource": body["messageSource"], "results": [{
+                "runId": body.get("candidateId") or "(this change)", "outcome": "admitted",
+                "supersedes": list(body.get("supersedes") or ())}]}, arguments.get("taskClass"))
     if method == "POST" and parsed.path == "/api/board/export":
         if parsed.query:
             raise HubFailure(422, "CHAT_TOOL_INVALID", "The registered page read takes its source in the body, without query parameters.")
         return studio_tool._read_drawing_page(base, body)
+    if method == "POST" and parsed.path == "/api/board/view":
+        if parsed.query:
+            raise HubFailure(422, "CHAT_TOOL_INVALID", "The Board read takes its frame or region in the body, without query parameters.")
+        return studio_tool._read_board_view(base, body)
     if method == "POST" and parsed.path == "/api/render/jobs":
         # Before admission: a provider this Runtime does not offer takes nothing.
         studio_tool._render_provider_available(base, body)
@@ -419,13 +582,15 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         comparison = {"sourceRunId": proposal.get("sourceRunId")}
     if method in {"POST", "PUT"} and parsed.path not in studio_tool._POST_READS:
         from uuid import uuid5, NAMESPACE_URL
-        runtime_id = str(uuid5(NAMESPACE_URL, f"{session['projectId']}:{os.path.normcase(str(Path(session['projectDir']).resolve()))}"))
+        runtime_id = str(uuid5(NAMESPACE_URL, f"{session['projectId']}:{project_key(session['projectDir'])}"))
         operation_id = arguments.get("operationId") or str(uuid4())
         try:
             operation_id = str(UUID(operation_id))
         except (ValueError, AttributeError, TypeError) as exc:
             raise HubFailure(422, "OPERATION_ID_INVALID", "operationId must be a UUID.") from exc
+        # A revision answers only once its change is built, read back and checked (#185).
         started = transport._request_json(hub, f"/api/runtime/projects/{runtime_id}/studio{path}", method, body,
+                                          timeout=_REVISION_WAIT_S if revising else 180,
                                           headers={"Idempotency-Key": operation_id, "X-Monkey-Chat": chat_id})
     else:
         started = transport._request_json(base, path, method, body)

@@ -425,6 +425,36 @@ export type ArtifactListDto = {
 };
 
 /**
+ * AttributesOp
+ */
+export type AttributesOp = {
+    /**
+     * Op
+     */
+    op: 'attributes';
+    /**
+     * Ids
+     */
+    ids: Array<string>;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Layer
+     */
+    layer?: string | null;
+    /**
+     * Usertext
+     *
+     * extra user text on each created object
+     */
+    userText?: {
+        [key: string]: string;
+    } | null;
+};
+
+/**
  * AuthoredControlDraftDto
  *
  * A control somebody would have to author, and where it was read from.
@@ -621,6 +651,30 @@ export type BoardExportRequestDto = {
 };
 
 /**
+ * BoardRegionDto
+ *
+ * A rectangle of the board in scene coordinates.
+ */
+export type BoardRegionDto = {
+    /**
+     * X
+     */
+    x: number;
+    /**
+     * Y
+     */
+    y: number;
+    /**
+     * Width
+     */
+    width: number;
+    /**
+     * Height
+     */
+    height: number;
+};
+
+/**
  * BoardRequestDto
  */
 export type BoardRequestDto = {
@@ -649,11 +703,175 @@ export type BoardRequestDto = {
 };
 
 /**
+ * BoardViewDto
+ *
+ * A region of the board as drawn (pages under marks) and every mark in it, with where it lies on each page.
+ */
+export type BoardViewDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string | null;
+    /**
+     * Frame
+     */
+    frame: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Frames
+     *
+     * Every frame on the board: id, name and box.
+     */
+    frames: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Region
+     *
+     * The drawn region: x, y, width, height in scene coordinates.
+     */
+    region: {
+        [key: string]: number;
+    };
+    /**
+     * Scale
+     *
+     * Image pixels per scene unit.
+     */
+    scale: number;
+    image: BoardViewImageDto;
+    /**
+     * Pages
+     *
+     * Registered pages in the region; tracingPaper marks a tracing-paper snapshot.
+     */
+    pages: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Annotations
+     *
+     * Marks in the region in scene order: type, colours, box, updatedAt, frameId, text, and onPages (each page it lies over, the shared part as page fractions x0..x1, y0..y1 from the top left).
+     */
+    annotations: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Annotationcount
+     *
+     * All marks in the region; at most 2,000 are listed.
+     */
+    annotationCount: number;
+};
+
+/**
+ * BoardViewImageDto
+ */
+export type BoardViewImageDto = {
+    /**
+     * Mimetype
+     */
+    mimeType: 'image/png';
+    /**
+     * Width
+     */
+    width: number;
+    /**
+     * Height
+     */
+    height: number;
+    /**
+     * Sha256
+     */
+    sha256: string;
+    /**
+     * Data
+     *
+     * The PNG, base64.
+     */
+    data: string;
+};
+
+/**
+ * BoardViewRequestDto
+ *
+ * One frame (by element id) or region of the board to draw and list; neither is the whole scene.
+ */
+export type BoardViewRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Frameid
+     */
+    frameId?: string | null;
+    region?: BoardRegionDto | null;
+    /**
+     * Maxedge
+     */
+    maxEdge?: number;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256?: string | null;
+};
+
+/**
  * BoxDto
  *
  * Inspected bounds in the export's Z-up CAD frame: [x, z, y] of the modeling frame (+y up) writes use.
  */
 export type BoxDto = {
+    /**
+     * Min
+     */
+    min: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Max
+     */
+    max: [
+        number,
+        number,
+        number
+    ];
+};
+
+/**
+ * BoxOp
+ */
+export type BoxOp = {
+    /**
+     * Layer
+     *
+     * full layer path, created when missing, e.g. HUB::Site::Streets
+     */
+    layer: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Usertext
+     *
+     * extra user text on each created object
+     */
+    userText?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Op
+     */
+    op: 'box';
     /**
      * Min
      */
@@ -714,6 +932,112 @@ export type CameraDto = {
      * Zoom
      */
     zoom?: number | null;
+};
+
+/**
+ * CameraPassCameraDto
+ *
+ * A pinhole camera in the model's frame and length unit.
+ */
+export type CameraPassCameraDto = {
+    /**
+     * Position
+     */
+    position: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Target
+     */
+    target: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Up
+     */
+    up?: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Fovdeg
+     *
+     * vertical field of view
+     */
+    fovDeg?: number;
+};
+
+/**
+ * CameraPassRequestDto
+ *
+ * Draw an ID, a line and a depth image of one exact model through a perspective camera (#19).
+ *
+ * Name ``view`` (a saved model view, which brings its own model) or
+ * ``camera`` with ``size`` and one model: ``modelSource``, or ``sourceAsset``
+ * as the drawing routes take an imported or snapshot model.
+ */
+export type CameraPassRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    view?: CameraPassViewDto | null;
+    camera?: CameraPassCameraDto | null;
+    /**
+     * Size
+     *
+     * the camera's view in pixels; its aspect is kept
+     */
+    size?: [
+        number,
+        number
+    ] | null;
+    /**
+     * Longedge
+     */
+    longEdge?: number;
+    /**
+     * Idby
+     */
+    idBy?: 'object' | 'layer' | 'material';
+    modelSource?: ModelSourceDto | null;
+    /**
+     * Sourceasset
+     *
+     * {runId, assetSha256} of an imported or snapshot model
+     */
+    sourceAsset?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Cut the model at a live section plane first, as the Modeling viewport does; a saved view's own cut applies when none is given. Its outline is drawn as lines; its cut faces are not filled.
+     */
+    clip?: SectionClipDto | null;
+};
+
+/**
+ * CameraPassViewDto
+ *
+ * A saved perspective model view: the document ``POST /api/render/views`` registered.
+ */
+export type CameraPassViewDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
 };
 
 /**
@@ -842,6 +1166,18 @@ export type CandidateDto = {
      */
     seatResults: Array<CandidateSeatResultDto>;
     relationChecks: RelationChecksDto;
+    /**
+     * Relationproblems
+     *
+     * the violated relations, then the unchecked ones (at most 20), from the reports relationChecks counts
+     */
+    relationProblems?: Array<RelationProblemDto>;
+    /**
+     * Obligationproblems
+     *
+     * the record's obligations that are violated or unchecked on this candidate (at most 20); null when not read
+     */
+    obligationProblems?: Array<ObligationProblemDto> | null;
     /**
      * Artifacts
      */
@@ -2074,13 +2410,25 @@ export type ConstructionEntityDto = {
     /**
      * Openings
      *
-     * the doors and windows it hosts, when it is one part
+     * the doors and windows its parts host
      */
     openings: Array<ConstructionOpeningDto>;
     /**
      * where the along of a door or window on it is measured, when its capabilities include hosted-opening and its shape can take one; null otherwise
      */
     alongLine: ConstructionLineDto | null;
+    /**
+     * Madefrom
+     *
+     * the declared parameters its parts are made from, through any derived ones
+     */
+    madeFrom?: Array<string>;
+    /**
+     * Notscripteditable
+     *
+     * its parts a script cannot edit: change them through madeFrom
+     */
+    notScriptEditable?: Array<string>;
 };
 
 /**
@@ -2188,6 +2536,12 @@ export type ConstructionModelDto = {
      */
     parameters: Array<ConstructionParameterValueDto>;
     /**
+     * Declaredparameters
+     *
+     * the parameters a change sets; every other one is derived from these, and a value alone does not change it
+     */
+    declaredParameters?: Array<string>;
+    /**
      * Entities
      */
     entities: Array<ConstructionEntityDto>;
@@ -2235,6 +2589,20 @@ export type ConstructionOpeningDto = {
      * metres from the host's base up to its top; null when stated another way
      */
     head: number | null;
+    /**
+     * Parameters
+     *
+     * the parameter each of along, width, sill and head is read from, when one states it: change the opening through it
+     */
+    parameters?: {
+        [key: string]: string;
+    };
+    /**
+     * Part
+     *
+     * the part that hosts it, when the geometry id has several; a door or window is added only to a geometry id of one part
+     */
+    part?: string | null;
 };
 
 /**
@@ -2786,6 +3154,70 @@ export type ContextPackRequestDto = {
 };
 
 /**
+ * ContinueMoveDto
+ *
+ * One move of the Working Head onto a run, newest first.
+ */
+export type ContinueMoveDto = {
+    /**
+     * Occurredat
+     */
+    occurredAt: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Previousrunid
+     *
+     * The run the Working Head stood on before this move; null when no run did (a fresh project's first Continue). Going back to it is the same Continue onto this run id.
+     */
+    previousRunId: string | null;
+    /**
+     * Actorid
+     */
+    actorId: string;
+    /**
+     * Origin
+     *
+     * The surface the move came through, as the design.continued event names it.
+     */
+    origin: string;
+    /**
+     * Messagesessionid
+     *
+     * The Hub conversation whose user's words asked for it.
+     */
+    messageSessionId?: string | null;
+    /**
+     * Messageid
+     */
+    messageId?: string | null;
+};
+
+/**
+ * ContinueMovesDto
+ */
+export type ContinueMovesDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Moves
+     *
+     * The moves that brought the Working Head where it stands, newest first, back to the project's first head or a return to the default (a Continue onto no run leaves no event).
+     */
+    moves: Array<ContinueMoveDto>;
+    /**
+     * Warnings
+     *
+     * Where the walk back could not read further.
+     */
+    warnings?: Array<string>;
+};
+
+/**
  * CountsDto
  *
  * How much the record declares, before anyone asks what it means.
@@ -3241,6 +3673,20 @@ export type DeleteElementRequestDto = {
 };
 
 /**
+ * DeleteOp
+ */
+export type DeleteOp = {
+    /**
+     * Op
+     */
+    op: 'delete';
+    /**
+     * Ids
+     */
+    ids: Array<string>;
+};
+
+/**
  * DependencyEdgeDto
  *
  * One kernel dependency edge, with the refs still prefixed.
@@ -3540,6 +3986,52 @@ export type DesignStudyDto = {
      * Source
      */
     source: 'declared' | 'admission' | 'working-copy';
+};
+
+/**
+ * DiagramRequestDto
+ *
+ * A diagram drawn from data (gap 38): a network, a section schematic or a timeline; no model.
+ */
+export type DiagramRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Drawingid
+     *
+     * names the diagram's revisions: the same id with a changed spec registers a new document and keeps the earlier one; the same request again returns the same document
+     */
+    drawingId: string;
+    /**
+     * Kind
+     *
+     * network: nodes at stated places joined by edges, such as a plan's zones and routes; section: spans, shapes and moves at one scale in x and height; timeline: lanes across a time axis with segments and events
+     */
+    kind: 'network' | 'section' | 'timeline';
+    /**
+     * Spec
+     *
+     * network: {nodes: [{id, label, sublabel?, group?, at: [x, y] (the centre, y down the page), size?: [w, h], shape?: box|ellipse, ref?}], groups?: [{id, label, tone: grey|lavender|sand|sage|rose|sky|white}], edges?: [{from, to (a node id or a point [x, y]), line?: main|loop|return|branch, style?: solid|dashed|dotted, arrow?: end|both|none, label?, mark? (short text in a circle), via?: [[x, y], ...], route?: orthogonal|straight}], lines?: {main|loop|return|branch: legend label}, notes?: [{at, text, tone?}], north?: degrees, scale?: {length, label}}; leave every node's at out and the nodes are laid out in columns along the edges, groups together, every edge then joining two nodes, with no via, notes or scale. section: {axis: {x: [min, max], y: [min, max], ticks?: {x?, y?}, unit?, xLabel?}, ground?: {y, label?}, spans: [{id, label?, x0, x1, y0, y1, tone?, floors?: [y, ...], floorStyle?: solid|dashed, labelAt?: inside|above|below, ref?}], shapes?: [{kind: polygon (points) | ellipse (at, size) | marker (at), tone?, line?}], moves?: [{from, to, line?, style?, arrow?, label?}], notes?}, y up. timeline: {axis: {start, end, step?, unit?}, lanes: [{id, label}], segments?: [{lane, start, end, label?, colour? (a tone or #rrggbb)}], events?: [{lane, at, label?, mark?: diamond|circle|tick, colour?}]}. Places are in the author's own units, scaled to the sheet
+     */
+    spec: {
+        [key: string]: unknown;
+    };
+    /**
+     * Styleid
+     *
+     * diagram-colour: low-saturation group tones and lines coloured by kind; diagram-mono: black lines, no fills, for print
+     */
+    styleId?: 'diagram-colour' | 'diagram-mono';
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Subtitle
+     */
+    subtitle?: string | null;
 };
 
 /**
@@ -4160,6 +4652,44 @@ export type DocumentWorkCopyRequestDto = {
      * Revisionref
      */
     revisionRef?: string | null;
+};
+
+/**
+ * DotOp
+ */
+export type DotOp = {
+    /**
+     * Layer
+     *
+     * full layer path, created when missing, e.g. HUB::Site::Streets
+     */
+    layer: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Usertext
+     *
+     * extra user text on each created object
+     */
+    userText?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Op
+     */
+    op: 'dot';
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Point
+     *
+     * [x, y] or [x, y, z] in document units
+     */
+    point: Array<number>;
 };
 
 /**
@@ -5046,6 +5576,48 @@ export type ExportTimingDto = {
 };
 
 /**
+ * ExtrusionOp
+ *
+ * A closed planar outline at height z, extruded vertically into a capped solid.
+ */
+export type ExtrusionOp = {
+    /**
+     * Layer
+     *
+     * full layer path, created when missing, e.g. HUB::Site::Streets
+     */
+    layer: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Usertext
+     *
+     * extra user text on each created object
+     */
+    userText?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Op
+     */
+    op: 'extrusion';
+    /**
+     * Outline
+     */
+    outline: Array<Array<number>>;
+    /**
+     * Z
+     */
+    z?: number;
+    /**
+     * Height
+     */
+    height: number;
+};
+
+/**
  * FacetTargetDto
  *
  * Facets to set or remove on one geometry id (a component), or on one of its parts.
@@ -5378,9 +5950,29 @@ export type HttpValidationError = {
 };
 
 /**
+ * HeadEntryDto
+ *
+ * A working-position entry: an exact run, on the line it was named on.
+ */
+export type HeadEntryDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Branchid
+     */
+    branchId?: string | null;
+};
+
+/**
  * HostedOpeningRequestDto
  *
  * A door or a window on geometry whose meaning is architectural.role = wall, against one exact state.
+ *
+ * Without ``opening`` it makes a new one and needs kind, along, width, sill and head. With ``opening``, the id of
+ * one the host has (the model view lists a host's openings), it changes that one: the fields sent replace its
+ * own, the rest stay. With ``opening`` and ``remove: true`` and nothing else, that opening and its family go.
  */
 export type HostedOpeningRequestDto = {
     /**
@@ -5430,33 +6022,45 @@ export type HostedOpeningRequestDto = {
      */
     host: string;
     /**
+     * Opening
+     *
+     * an opening the host has, by the id the model view lists, to change or remove; left out, a new opening is made
+     */
+    opening?: string | null;
+    /**
+     * Remove
+     *
+     * with opening and nothing else: remove that opening and its family
+     */
+    remove?: boolean;
+    /**
      * Kind
      */
-    kind: 'door' | 'window';
+    kind?: 'door' | 'window' | null;
     /**
      * Along
      *
      * metres from the host's alongLine.start toward its alongLine.end (as the model view gives them) to the centre of the opening
      */
-    along: number;
+    along?: number | null;
     /**
      * Width
      *
      * metres across the opening
      */
-    width: number;
+    width?: number | null;
     /**
      * Sill
      *
      * metres from the host's base up to the bottom of the opening; 0 for a door
      */
-    sill: number;
+    sill?: number | null;
     /**
      * Head
      *
      * metres from the host's base up to the top of the opening
      */
-    head: number;
+    head?: number | null;
     /**
      * Shape
      *
@@ -5472,7 +6076,7 @@ export type HostedOpeningRequestDto = {
     /**
      * Family
      *
-     * the family that fills the opening, in metres: a window takes frame_width, frame_depth, frame_projection, glazing_thickness and glazing_offset; a door takes frame_width, frame_depth, frame_projection, leaf_thickness, leaf_offset, leaf_count (1 or 2), leaf_gap, clearance_bottom and clearance_top. Left out, the opening is an empty passage with no frame or leaf
+     * the family that fills the opening, in metres: a window takes frame_width, frame_depth and glazing_thickness (each > 0); a door takes frame_width, frame_depth, leaf_thickness (each > 0) and leaf_count (1 or 2). frame_projection, glazing_offset, leaf_offset, leaf_gap, clearance_bottom and clearance_top are 0 when left out: flush with the host's face, no gap. Left out, the opening is an empty passage with no frame or leaf
      */
     family?: {
         [key: string]: number | number;
@@ -5536,6 +6140,60 @@ export type ImpactLockDto = {
      * Authority
      */
     authority: string;
+};
+
+/**
+ * ImportOp
+ *
+ * Every object of a .3dm on this machine, scaled about the origin then moved.
+ */
+export type ImportOp = {
+    /**
+     * Layer
+     *
+     * full layer path, created when missing, e.g. HUB::Site::Streets
+     */
+    layer: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Usertext
+     *
+     * extra user text on each created object
+     */
+    userText?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Op
+     */
+    op: 'import';
+    /**
+     * Path
+     *
+     * absolute path of an existing .3dm
+     */
+    path: string;
+    /**
+     * Scale
+     */
+    scale?: number;
+    /**
+     * Translate
+     */
+    translate?: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Keeplayers
+     *
+     * put each object under layer::<its source layer>
+     */
+    keepLayers?: boolean;
 };
 
 /**
@@ -5937,6 +6595,26 @@ export type JobDto = {
 };
 
 /**
+ * JobStepDto
+ *
+ * One of a job's four steps, as its work last reported it.
+ */
+export type JobStepDto = {
+    /**
+     * Name
+     */
+    name: 'generate' | 'check' | 'repair' | 'save';
+    /**
+     * State
+     */
+    state: 'pending' | 'running' | 'done' | 'skipped' | 'failed';
+    /**
+     * Text
+     */
+    text?: string | null;
+};
+
+/**
  * KeepScopeDto
  */
 export type KeepScopeDto = {
@@ -5952,6 +6630,30 @@ export type KeepScopeDto = {
      * Note
      */
     note: string;
+};
+
+/**
+ * LayerOp
+ */
+export type LayerOp = {
+    /**
+     * Op
+     */
+    op: 'layer';
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Color
+     *
+     * [r, g, b] for a new layer
+     */
+    color?: [
+        number,
+        number,
+        number
+    ] | null;
 };
 
 /**
@@ -6042,6 +6744,282 @@ export type LineStepDto = {
      * When the working position last listed or moved onto it.
      */
     updatedAt: string | null;
+};
+
+/**
+ * LiveRhinoCreatedDto
+ */
+export type LiveRhinoCreatedDto = {
+    /**
+     * Operation
+     *
+     * index of the operation in the request
+     */
+    operation: number;
+    /**
+     * Id
+     *
+     * the new object's id
+     */
+    id: string;
+    /**
+     * Op
+     */
+    op: string;
+    [key: string]: unknown;
+};
+
+/**
+ * LiveRhinoDocumentSummaryDto
+ *
+ * The open document as Rhino holds it now.
+ */
+export type LiveRhinoDocumentSummaryDto = {
+    /**
+     * Title
+     */
+    title?: string | null;
+    /**
+     * Path
+     */
+    path?: string | null;
+    /**
+     * Units
+     *
+     * Rhino's model unit system, e.g. Feet
+     */
+    units: string;
+    /**
+     * Tolerance
+     */
+    tolerance: number;
+    /**
+     * Modified
+     *
+     * unsaved changes; a write and its Undo leave it true
+     */
+    modified: boolean;
+    /**
+     * Objectcount
+     *
+     * the objects in the document, hidden and locked included
+     */
+    objectCount: number;
+    [key: string]: unknown;
+};
+
+/**
+ * LiveRhinoInstanceDto
+ *
+ * One running Rhino with its script server on.
+ */
+export type LiveRhinoInstanceDto = {
+    /**
+     * Rhinoid
+     *
+     * pass as rhinoId when more than one Rhino runs
+     */
+    rhinoId: string;
+    /**
+     * Processid
+     */
+    processId: number;
+    /**
+     * Version
+     */
+    version?: string | null;
+    /**
+     * Documenttitle
+     */
+    documentTitle?: string | null;
+    /**
+     * Documentpath
+     *
+     * empty for an unsaved document
+     */
+    documentPath?: string | null;
+    /**
+     * Activeviewport
+     */
+    activeViewport?: string | null;
+    [key: string]: unknown;
+};
+
+/**
+ * LiveRhinoInstancesDto
+ */
+export type LiveRhinoInstancesDto = {
+    /**
+     * Instances
+     */
+    instances: Array<LiveRhinoInstanceDto>;
+    /**
+     * Note
+     */
+    note: string;
+    [key: string]: unknown;
+};
+
+/**
+ * LiveRhinoSnapshotDto
+ *
+ * The copy of the open document registered as an external model asset.
+ */
+export type LiveRhinoSnapshotDto = {
+    rhino: LiveRhinoInstanceDto;
+    document: LiveRhinoDocumentSummaryDto;
+    /**
+     * Meshedobjects
+     */
+    meshedObjects: number;
+    /**
+     * Writtenobjects
+     */
+    writtenObjects: number;
+    /**
+     * Omitted
+     *
+     * object type -> count left out with drawableOnly, e.g. TextDot, Hatch
+     */
+    omitted: {
+        [key: string]: number;
+    };
+    /**
+     * pass {runId, assetSha256} to a drawing route as sourceAsset
+     */
+    artifact: ProjectArtifactDto;
+    undrawable: LiveRhinoUndrawableDto;
+    [key: string]: unknown;
+};
+
+/**
+ * LiveRhinoSnapshotRequest
+ *
+ * Which open document to copy into the project as a model asset to draw from.
+ */
+export type LiveRhinoSnapshotRequest = {
+    /**
+     * Rhinoid
+     */
+    rhinoId?: string | null;
+    /**
+     * Documentpath
+     */
+    documentPath?: string | null;
+    /**
+     * Filename
+     */
+    fileName?: string | null;
+    /**
+     * Drawableonly
+     *
+     * write only what the drawing routes project (Breps, extrusions, meshes, curves, blocks); text dots, hatches, annotations and the like are left out and counted
+     */
+    drawableOnly?: boolean;
+    /**
+     * Layerprefixes
+     *
+     * only objects on these layers or below them
+     */
+    layerPrefixes?: Array<string> | null;
+};
+
+/**
+ * LiveRhinoUndrawableDto
+ *
+ * Which objects of the copy the drawing routes cannot project.
+ */
+export type LiveRhinoUndrawableDto = {
+    /**
+     * Checked
+     */
+    checked: boolean;
+    /**
+     * Drawable
+     */
+    drawable: number;
+    /**
+     * Objects
+     *
+     * {id, reason} of each object the drawing routes would skip
+     */
+    objects: Array<{
+        [key: string]: unknown;
+    }>;
+    [key: string]: unknown;
+};
+
+/**
+ * LiveRhinoWriteDto
+ *
+ * What one write did: one Rhino command, undone with one Undo.
+ */
+export type LiveRhinoWriteDto = {
+    rhino: LiveRhinoInstanceDto;
+    /**
+     * Writeid
+     *
+     * stamped on every created object as monkeyhub.write
+     */
+    writeId: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Created
+     */
+    created: Array<LiveRhinoCreatedDto>;
+    /**
+     * Changed
+     */
+    changed: Array<unknown>;
+    /**
+     * Deleted
+     */
+    deleted: Array<unknown>;
+    /**
+     * Imported
+     */
+    imported: Array<unknown>;
+    document: LiveRhinoDocumentSummaryDto;
+    [key: string]: unknown;
+};
+
+/**
+ * LiveRhinoWriteRequest
+ *
+ * One write: all operations land as one Rhino command, undone with one Undo.
+ */
+export type LiveRhinoWriteRequest = {
+    /**
+     * Rhinoid
+     *
+     * from GET /api/live-rhino/instances; omit when one Rhino runs
+     */
+    rhinoId?: string | null;
+    /**
+     * Documentpath
+     *
+     * the open document this write is meant for
+     */
+    documentPath?: string | null;
+    /**
+     * Label
+     *
+     * what this write does, shown in Rhino's undo list
+     */
+    label: string;
+    /**
+     * Operations
+     */
+    operations: Array<LayerOp | PolylineOp | ExtrusionOp | BoxOp | MeshOp | DotOp | ImportOp | TransformOp | DeleteOp | AttributesOp>;
+    /**
+     * Allowuserobjects
+     *
+     * transform, delete and attributes may touch objects the architect made only when they asked for it
+     */
+    allowUserObjects?: boolean;
 };
 
 /**
@@ -6664,6 +7642,46 @@ export type MemoryRevisionRequestDto = {
 };
 
 /**
+ * MeshOp
+ */
+export type MeshOp = {
+    /**
+     * Layer
+     *
+     * full layer path, created when missing, e.g. HUB::Site::Streets
+     */
+    layer: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Usertext
+     *
+     * extra user text on each created object
+     */
+    userText?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Op
+     */
+    op: 'mesh';
+    /**
+     * Vertices
+     */
+    vertices: Array<[
+        number,
+        number,
+        number
+    ]>;
+    /**
+     * Faces
+     */
+    faces: Array<Array<number>>;
+};
+
+/**
  * MessageSourceDto
  *
  * Which chat message a decision's words came from, as the caller states it.
@@ -6763,7 +7781,7 @@ export type ModelExportRequest = {
     /**
      * Targetformat
      */
-    targetFormat: '3dm' | 'skp' | 'glb' | 'dwg';
+    targetFormat: '3dm' | 'skp' | 'glb' | 'dwg' | 'stl' | 'obj' | 'fbx';
     projectRevision?: ProjectRevision | null;
     /**
      * Sourceartifactid
@@ -7310,6 +8328,38 @@ export type ObjectBindingDto = {
      * bound, MODEL_VISIBLE_CATALOG_MISSING, AMBIGUOUS or UNKNOWN_COMPONENT
      */
     status: string;
+    /**
+     * Detail
+     */
+    detail: string;
+};
+
+/**
+ * ObligationProblemDto
+ *
+ * One obligation the candidate does not show held: violated, or with no check that could run.
+ */
+export type ObligationProblemDto = {
+    /**
+     * Obligationid
+     */
+    obligationId: string;
+    /**
+     * Validatorref
+     */
+    validatorRef: string | null;
+    /**
+     * Status
+     *
+     * violated | unchecked
+     */
+    status: string;
+    /**
+     * New
+     *
+     * violated here and not on the run the candidate was made from; only a new violation blocks review readiness
+     */
+    new: boolean;
     /**
      * Detail
      */
@@ -7999,6 +9049,12 @@ export type PlanDrawingDto = {
      */
     follow?: 'live' | 'frozen' | null;
     /**
+     * Board
+     *
+     * on-request: the Board does not place this drawing by itself, only when a person asks (the Modeling viewport's live section draws so). Omitted keeps the previous revision's; a new drawing is automatic.
+     */
+    board?: 'automatic' | 'on-request' | null;
+    /**
      * Reason
      *
      * Why this revision is asked for, in the asker's own words, such as the correction an agent was given; omit it for a direct edit. Retained with the revision beside who asked, never in its recipe.
@@ -8318,6 +9374,12 @@ export type PlanRequestDto = {
      */
     follow?: 'live' | 'frozen' | null;
     /**
+     * Board
+     *
+     * on-request: the Board does not place this drawing by itself, only when a person asks (the Modeling viewport's live section draws so). Omitted keeps the previous revision's; a new drawing is automatic.
+     */
+    board?: 'automatic' | 'on-request' | null;
+    /**
      * Reason
      *
      * Why this revision is asked for, in the asker's own words, such as the correction an agent was given; omit it for a direct edit. Retained with the revision beside who asked, never in its recipe.
@@ -8434,6 +9496,42 @@ export type PlanVectorDto = {
     cleanup?: {
         [key: string]: unknown;
     } | null;
+};
+
+/**
+ * PolylineOp
+ */
+export type PolylineOp = {
+    /**
+     * Layer
+     *
+     * full layer path, created when missing, e.g. HUB::Site::Streets
+     */
+    layer: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Usertext
+     *
+     * extra user text on each created object
+     */
+    userText?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Op
+     */
+    op: 'polyline';
+    /**
+     * Points
+     */
+    points: Array<Array<number>>;
+    /**
+     * Closed
+     */
+    closed?: boolean;
 };
 
 /**
@@ -9642,6 +10740,35 @@ export type PushPullRequestDto = {
 };
 
 /**
+ * QuantitiesRequestDto
+ *
+ * One exact model, as the drawing routes select it, and whether the answer is JSON or CSV.
+ */
+export type QuantitiesRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    modelSource?: ModelSourceDto | null;
+    /**
+     * Sourceasset
+     *
+     * {runId, assetSha256} of an imported or snapshot model
+     */
+    sourceAsset?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Format
+     */
+    format?: 'json' | 'csv';
+};
+
+/**
  * RecipeBindingRequestDto
  *
  * The project recipe: paper-space values a new drawing starts from.
@@ -9859,7 +10986,7 @@ export type RecipeSuggestionDto = {
  * Which library skill a task follows, by one exact version; the steps stay in the skill.
  *
  * A chat names the skill as the agent sees it and the Hub fills the exact
- * version from the configured library.
+ * code from the installed skill (S-1).
  */
 export type RecipeValueDto = {
     /**
@@ -9871,7 +10998,7 @@ export type RecipeValueDto = {
     /**
      * Skill
      *
-     * skill:<name>@<version>, one exact version of a library skill
+     * skill:<name>@<code>, the first 12 hex digits of the installed skill's code; skill:<name>@<version> from before S-1 is still read
      */
     skill: string;
     /**
@@ -9950,6 +11077,34 @@ export type RelationChecksDto = {
      * every declared relation was actually checked
      */
     fullyChecked: boolean;
+};
+
+/**
+ * RelationProblemDto
+ *
+ * One declared relation the run did not find held, in its report's own words.
+ */
+export type RelationProblemDto = {
+    /**
+     * Relationid
+     */
+    relationId: string;
+    /**
+     * Kind
+     *
+     * the check kind that measured it
+     */
+    kind: string;
+    /**
+     * Status
+     *
+     * violated | unchecked
+     */
+    status: string;
+    /**
+     * Detail
+     */
+    detail: string;
 };
 
 /**
@@ -10273,6 +11428,10 @@ export type RenderViewSourceRequestDto = {
      * Pngbase64
      */
     pngBase64: string;
+    /**
+     * The live section the view was cut at, kept in its recipe so a camera pass of it is cut the same way.
+     */
+    clip?: SectionClipDto | null;
 };
 
 /**
@@ -10419,6 +11578,234 @@ export type RevisionAttributionDto = {
 };
 
 /**
+ * RevisionConditionDto
+ */
+export type RevisionConditionDto = {
+    /**
+     * Obligationid
+     */
+    obligationId: string;
+    /**
+     * Statement
+     */
+    statement: string;
+    /**
+     * Checkable
+     */
+    checkable: boolean;
+    /**
+     * Validatorref
+     */
+    validatorRef: string | null;
+};
+
+/**
+ * RevisionOutcomeDto
+ *
+ * Exactly one outcome: landed, admitted, built, problems, needs_question or refused.
+ */
+export type RevisionOutcomeDto = {
+    /**
+     * Outcome
+     */
+    outcome: 'landed' | 'admitted' | 'built' | 'problems' | 'needs_question' | 'refused';
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Detail
+     */
+    detail: string;
+    /**
+     * Proposalid
+     */
+    proposalId: string | null;
+    /**
+     * Candidateid
+     */
+    candidateId: string | null;
+    /**
+     * Statedigest
+     *
+     * The built candidate's state, when one was built.
+     */
+    stateDigest: string | null;
+    /**
+     * Problems
+     */
+    problems: Array<RevisionProblemDto>;
+    /**
+     * Questionrefs
+     *
+     * What the architect is asked about, when the outcome is needs_question.
+     */
+    questionRefs: Array<string>;
+    /**
+     * Conditions
+     *
+     * The conditions in the change's reach.
+     */
+    conditions: Array<RevisionConditionDto>;
+    /**
+     * Compare
+     *
+     * The built model against the design it was made from: counts and the objects that changed, with their boxes before and after.
+     */
+    compare: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Where the working design stands after the call.
+     */
+    working: RevisionWorkingDto | null;
+    /**
+     * Seconds
+     */
+    seconds: {
+        [key: string]: number;
+    };
+};
+
+/**
+ * RevisionProblemDto
+ */
+export type RevisionProblemDto = {
+    /**
+     * Source
+     *
+     * Where it came from: proposal, build, readback, relation:<id>, obligation:<id>, a review clause, or admission
+     */
+    source: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Detail
+     */
+    detail: string;
+};
+
+/**
+ * RevisionRequestDto
+ *
+ * One change against the exact working design, carried through every check to the working design.
+ */
+export type RevisionRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Sourcerunid
+     *
+     * The working design's run, as it was read; null only while the project has no working run yet.
+     */
+    sourceRunId?: string | null;
+    /**
+     * Statedigest
+     *
+     * The working design's stateDigest, as it was read.
+     */
+    stateDigest: string;
+    /**
+     * Kind
+     *
+     * Which proposal route the change is: POST /api/proposals/construction, /facets, /hosted-opening, /elevation, or POST /api/proposals for a semanticEdit.
+     */
+    kind?: 'construction' | 'facets' | 'hosted-opening' | 'elevation' | 'proposal' | null;
+    /**
+     * Proposal
+     *
+     * That route's body without projectId, stateDigest, sourceRunId, keep and summary, which this request supplies.
+     */
+    proposal?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Candidateid
+     *
+     * Instead of kind and proposal: a candidate already built from the working design (one this call built with buildOnly, an option, a program or a combination), checked again and landed.
+     */
+    candidateId?: string | null;
+    /**
+     * Buildonly
+     *
+     * Build and check the change but admit nothing: the answer is built, and the candidate is landed later by naming it as candidateId, after a look.
+     */
+    buildOnly?: boolean;
+    /**
+     * Summary
+     *
+     * The change in words; its run keeps them.
+     */
+    summary: string;
+    /**
+     * Keep
+     *
+     * Refs to keep beside the project's keep decisions, which are always kept.
+     */
+    keep?: Array<string>;
+    /**
+     * Confirmed
+     *
+     * obligation:<id> refs no check can verify that the architect's own words in this message confirm the change keeps. A kept target or a rejected option is changed by revising that decision first.
+     */
+    confirmed?: Array<string>;
+    /**
+     * Supersedes
+     *
+     * Earlier attempts of this same change that this result replaces.
+     */
+    supersedes?: Array<string>;
+    /**
+     * Land
+     *
+     * false admits the result as a candidate to compare and leaves the working design where it is.
+     */
+    land?: boolean;
+    /**
+     * Label
+     */
+    label?: string | null;
+    /**
+     * Waitseconds
+     *
+     * How long to wait for the build before answering RUN_TIMEOUT.
+     */
+    waitSeconds?: number;
+    /**
+     * The chat message this change answers, as the Hub binds it; provenance, never a credential.
+     */
+    messageSource?: MessageSourceDto | null;
+    /**
+     * Rawlanguage
+     *
+     * The user's own words the change answers, as the Hub binds them.
+     */
+    rawLanguage?: string | null;
+};
+
+/**
+ * RevisionWorkingDto
+ */
+export type RevisionWorkingDto = {
+    /**
+     * Runid
+     */
+    runId: string | null;
+    /**
+     * Statedigest
+     */
+    stateDigest: string | null;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string | null;
+};
+
+/**
  * RhinoWorkExportRequestDto
  *
  * Which run's export is being made editable.
@@ -10432,6 +11819,32 @@ export type RhinoWorkExportRequestDto = {
      * Runid
      */
     runId: string;
+};
+
+/**
+ * Rotation
+ */
+export type Rotation = {
+    /**
+     * Angledeg
+     */
+    angleDeg: number;
+    /**
+     * Center
+     */
+    center?: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Axis
+     */
+    axis?: [
+        number,
+        number,
+        number
+    ];
 };
 
 /**
@@ -10555,6 +11968,24 @@ export type SaveStudyRequestDto = {
 };
 
 /**
+ * Scaling
+ */
+export type Scaling = {
+    /**
+     * Factor
+     */
+    factor: number;
+    /**
+     * Center
+     */
+    center?: [
+        number,
+        number,
+        number
+    ];
+};
+
+/**
  * ScopeOptionDto
  *
  * One reading of how far a change reaches, and exactly what it covers.
@@ -10645,6 +12076,30 @@ export type SectionCameraDto = {
      * Default eye only: height above the lowest cut point, in the source model unit (default 1.6 m).
      */
     eyeHeight?: number | null;
+};
+
+/**
+ * SectionClipDto
+ *
+ * A live section plane (G5): a point on it and the normal toward the side that stays drawn, in the model's frame.
+ */
+export type SectionClipDto = {
+    /**
+     * Origin
+     */
+    origin: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Normal
+     */
+    normal: [
+        number,
+        number,
+        number
+    ];
 };
 
 /**
@@ -11376,6 +12831,99 @@ export type SketchPrismRequestDto = {
 };
 
 /**
+ * SkillAccessDto
+ *
+ * What a runnable version needs beyond its own folders: what a person allows in the Hub before it runs.
+ */
+export type SkillAccessDto = {
+    /**
+     * Programs
+     *
+     * programs it starts, e.g. blender, rhino; * for any
+     */
+    programs?: Array<string>;
+    /**
+     * Network
+     *
+     * whether it connects to other hosts
+     */
+    network?: boolean;
+    /**
+     * Ssh
+     *
+     * ssh/scp hosts, e.g. vast-gpu; * for any
+     */
+    ssh?: Array<string>;
+    /**
+     * Read
+     *
+     * absolute folders it reads; * for any
+     */
+    read?: Array<string>;
+    /**
+     * Write
+     *
+     * absolute folders it writes outside its run; * for any
+     */
+    write?: Array<string>;
+    /**
+     * Packages
+     *
+     * Python requirements installed into the skill's own folder
+     */
+    packages?: Array<string>;
+};
+
+/**
+ * SkillApprovalDto
+ */
+export type SkillApprovalDto = {
+    /**
+     * Approvalid
+     */
+    approvalId?: string | null;
+    /**
+     * Skillid
+     */
+    skillId: string;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Codesha256
+     */
+    codeSha256: string;
+    /**
+     * Scope
+     */
+    scope?: string;
+    /**
+     * Access
+     */
+    access?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Method
+     */
+    method: string;
+    /**
+     * Approvedat
+     */
+    approvedAt: string;
+    approvedBy: SkillAttributionDto;
+    /**
+     * Status
+     */
+    status?: string | null;
+    /**
+     * Revokedat
+     */
+    revokedAt?: string | null;
+};
+
+/**
  * SkillAttributionDto
  */
 export type SkillAttributionDto = {
@@ -11433,6 +12981,32 @@ export type SkillDto = {
      */
     createdAt: string;
     attribution: SkillAttributionDto;
+    /**
+     * Entry
+     */
+    entry?: string | null;
+    /**
+     * Files
+     */
+    files?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Codesha256
+     */
+    codeSha256: string;
+    /**
+     * Approvals
+     *
+     * this version's approvals from before S-1, kept as records
+     */
+    approvals: Array<SkillApprovalDto>;
+    /**
+     * Access
+     */
+    access?: {
+        [key: string]: unknown;
+    } | null;
 };
 
 /**
@@ -11471,6 +13045,55 @@ export type SkillIndexRowDto = {
      * Description
      */
     description: string;
+    /**
+     * Codesha256
+     */
+    codeSha256: string;
+    /**
+     * Runnable
+     */
+    runnable: boolean;
+    /**
+     * Access
+     */
+    access?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
+ * SkillInputRefDto
+ *
+ * A registered document (runId, assetSha256), a 3dm model asset (modelSha256), or a drawing
+ * (kind "drawing" with runId, assetSha256 and revisionRef: its SVG and registration are given).
+ */
+export type SkillInputRefDto = {
+    /**
+     * Kind
+     */
+    kind?: 'document' | 'model' | 'drawing' | 'file' | null;
+    /**
+     * Path
+     *
+     * kind "file": an absolute path of a file on this machine
+     */
+    path?: string | null;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Runid
+     */
+    runId?: string | null;
+    /**
+     * Assetsha256
+     */
+    assetSha256?: string | null;
+    /**
+     * Modelsha256
+     */
+    modelSha256?: string | null;
 };
 
 /**
@@ -11520,6 +13143,66 @@ export type SkillRequestDto = {
      * Supersedesversion
      */
     supersedesVersion?: number | null;
+    /**
+     * Files
+     *
+     * script files by relative path, e.g. scripts/run.py; text only
+     */
+    files?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Entry
+     *
+     * the file to run; makes the version runnable
+     */
+    entry?: string | null;
+    /**
+     * what the version needs; part of its codeSha256
+     */
+    access?: SkillAccessDto | null;
+};
+
+/**
+ * SkillRunRequestDto
+ *
+ * Run the installed skill: its inputs are registered documents, its parameters one JSON object.
+ */
+export type SkillRunRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Version
+     *
+     * the project's version the caller read; refused when the folder now differs
+     */
+    version?: number | null;
+    /**
+     * Inputs
+     */
+    inputs?: {
+        [key: string]: SkillInputRefDto;
+    };
+    /**
+     * Parameters
+     */
+    parameters?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Agentrun
+     *
+     * set by the Hub for a chat's run
+     */
+    agentRun?: boolean;
+    /**
+     * Grantid
+     *
+     * set by the Hub: the one-run grant a person gave for this run
+     */
+    grantId?: string | null;
 };
 
 /**
@@ -11736,6 +13419,33 @@ export type StageContextChangesDto = {
 };
 
 /**
+ * StateFileExportRequest
+ */
+export type StateFileExportRequest = {
+    projectRevision: ProjectRevision;
+    /**
+     * Parentfilesha256
+     *
+     * The state file this revision was opened from.
+     */
+    parentFileSha256?: string | null;
+};
+
+/**
+ * StateFileRequest
+ */
+export type StateFileRequest = {
+    /**
+     * Filename
+     */
+    fileName: string;
+    /**
+     * Contentbase64
+     */
+    contentBase64: string;
+};
+
+/**
  * StateProjectionDto
  *
  * The wire form of ``GET /api/state``.
@@ -11841,7 +13551,7 @@ export type StudioEventDto = {
     /**
      * Type
      *
-     * candidate.queued | candidate.running | candidate.succeeded | candidate.failed | validation.computed | model_asset.registered | working_copy.option_added
+     * candidate.queued | candidate.running | candidate.succeeded | candidate.failed | candidate.waiting | job.step | validation.computed | model_asset.registered | working_copy.option_added
      */
     type: string;
     /**
@@ -11868,6 +13578,52 @@ export type StudioEventDto = {
      * Error
      */
     error?: string | null;
+    /**
+     * Lane
+     *
+     * on a job's events, the queue lane it runs in: parallel or exclusive
+     */
+    lane?: string | null;
+    /**
+     * Waitingfor
+     *
+     * on a queued job's events, the run it waits for; null when it waits only for a free worker
+     */
+    waitingFor?: string | null;
+    /**
+     * Waitingreason
+     */
+    waitingReason?: string | null;
+    /**
+     * Title
+     *
+     * on a job's events, what a person calls the job, when it says
+     */
+    title?: string | null;
+    /**
+     * Steps
+     *
+     * on a job's events, its four steps (generate, check, repair, save) once its work reported one, an empty list until then; null on an event that is not a job's
+     */
+    steps?: Array<JobStepDto> | null;
+    /**
+     * Step
+     *
+     * on job.step, the step that changed
+     */
+    step?: 'generate' | 'check' | 'repair' | 'save' | null;
+    /**
+     * Stepstate
+     *
+     * on job.step, that step's state
+     */
+    stepState?: 'pending' | 'running' | 'done' | 'skipped' | 'failed' | null;
+    /**
+     * Steptext
+     *
+     * on job.step, a sentence a person can read
+     */
+    stepText?: string | null;
     /**
      * Reviewready
      *
@@ -12304,6 +14060,28 @@ export type StudyViewDto = {
 };
 
 /**
+ * SwitchUndoDto
+ */
+export type SwitchUndoDto = {
+    /**
+     * The Current this Switch replaced, which POST /api/working-design/undo puts back; null when no working-position entry named it (the line's accepted Stage or the reference run answered for the head), so there is no exact Undo.
+     */
+    previous: HeadEntryDto | null;
+    /**
+     * Continued
+     *
+     * The run this Switch moved Current onto; Undo holds only while Current is still there.
+     */
+    continued: string;
+    /**
+     * Revisionafter
+     *
+     * The working position's revision this Switch wrote.
+     */
+    revisionAfter: string | null;
+};
+
+/**
  * SynchronizationDto
  */
 export type SynchronizationDto = {
@@ -12596,6 +14374,32 @@ export type TransformElementRequestDto = {
 };
 
 /**
+ * TransformOp
+ *
+ * Scale, then rotate, then translate the named objects.
+ */
+export type TransformOp = {
+    /**
+     * Op
+     */
+    op: 'transform';
+    /**
+     * Ids
+     */
+    ids: Array<string>;
+    /**
+     * Translate
+     */
+    translate?: [
+        number,
+        number,
+        number
+    ] | null;
+    rotate?: Rotation | null;
+    scale?: Scaling | null;
+};
+
+/**
  * TrashEntryDto
  *
  * One run in the project trash: what moved, why, what superseded it, and until when it can be restored.
@@ -12745,6 +14549,18 @@ export type ValidationDto = {
      * the candidate's own three states, copied not recomputed
      */
     relationChecks: RelationChecksDto;
+    /**
+     * Obligationproblems
+     *
+     * obligations violated or unchecked on this candidate, while the design loop checks them; new marks a violation the run it was made from did not have. They block no review clause
+     */
+    obligationProblems?: Array<ObligationProblemDto>;
+    /**
+     * Obligationschecked
+     *
+     * how many of the record's live obligations an executable check reported held or violated
+     */
+    obligationsChecked?: number;
     /**
      * Seatexecutioncomplete
      */
@@ -13399,6 +15215,67 @@ export type WorkingCopySelectionRequestDto = {
 };
 
 /**
+ * WorkingDesignSwitchDto
+ */
+export type WorkingDesignSwitchDto = {
+    position: WorkingDraftDto;
+    undo: SwitchUndoDto;
+};
+
+/**
+ * WorkingDesignSwitchRequestDto
+ *
+ * Switch: the Continue onto one run, answered with its Undo (#300, 2-6).
+ */
+export type WorkingDesignSwitchRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Baserevisionsha256
+     */
+    baseRevisionSha256: string | null;
+    /**
+     * Runid
+     *
+     * The run the Working Head moves onto; returning to the default stays PUT /api/working-draft with none.
+     */
+    runId: string;
+    /**
+     * Branchid
+     */
+    branchId?: string | null;
+    /**
+     * The chat message the Hub Agent continued on, as the Hub binds it; provenance, never a credential. Only a Hub-managed Runtime takes it, and the architect's own Continue has none.
+     */
+    messageSource?: MessageSourceDto | null;
+    /**
+     * Rawlanguage
+     *
+     * The user's own words in that message that ask for this Continue; required with messageSource. The retained design.continued event names the message by id, not these words.
+     */
+    rawLanguage?: string | null;
+};
+
+/**
+ * WorkingDesignUndoRequestDto
+ *
+ * Undo one Switch: its ``undo`` as the Switch answered it.
+ */
+export type WorkingDesignUndoRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    previous: HeadEntryDto;
+    /**
+     * Continued
+     */
+    continued: string;
+};
+
+/**
  * WorkingDraftDto
  */
 export type WorkingDraftDto = {
@@ -13770,6 +15647,12 @@ export type WorktreeLineDto = {
      * The Study that verdict grouped the run into, if any.
      */
     studyId: string | null;
+    /**
+     * Review
+     *
+     * The architect's retained review of this run as a Candidate (POST /api/candidate-reviews): archived and rejected results are put away, and restoring an archived one returns it to what it was before. Only an admitted Candidate can be reviewed; running work and a run nobody admitted are unreviewed. unknown on every finished line while the reviews cannot be read (the graph's warnings say why).
+     */
+    review?: 'unreviewed' | 'rejected' | 'archived' | 'unknown';
     /**
      * Supersededby
      *
@@ -15172,6 +17055,72 @@ export type CreateExportApiExportsPostResponses = {
     202: unknown;
 };
 
+export type ExportStateFileApiStateFilesExportPostData = {
+    body: StateFileExportRequest;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/state-files/export';
+};
+
+export type ExportStateFileApiStateFilesExportPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExportStateFileApiStateFilesExportPostError = ExportStateFileApiStateFilesExportPostErrors[keyof ExportStateFileApiStateFilesExportPostErrors];
+
+export type ExportStateFileApiStateFilesExportPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: unknown;
+};
+
+export type InspectStateFileApiStateFilesInspectPostData = {
+    body: StateFileRequest;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/state-files/inspect';
+};
+
+export type InspectStateFileApiStateFilesInspectPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InspectStateFileApiStateFilesInspectPostError = InspectStateFileApiStateFilesInspectPostErrors[keyof InspectStateFileApiStateFilesInspectPostErrors];
+
+export type InspectStateFileApiStateFilesInspectPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type ReadExportApiExportsExportIdGetData = {
     body?: never;
     headers?: {
@@ -15282,6 +17231,89 @@ export type RetainRenderViewApiRenderViewsPostResponses = {
 };
 
 export type RetainRenderViewApiRenderViewsPostResponse = RetainRenderViewApiRenderViewsPostResponses[keyof RetainRenderViewApiRenderViewsPostResponses];
+
+export type CreateCameraPassesApiRenderViewsPassesPostData = {
+    body: CameraPassRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/render/views/passes';
+};
+
+export type CreateCameraPassesApiRenderViewsPassesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateCameraPassesApiRenderViewsPassesPostError = CreateCameraPassesApiRenderViewsPassesPostErrors[keyof CreateCameraPassesApiRenderViewsPassesPostErrors];
+
+export type CreateCameraPassesApiRenderViewsPassesPostResponses = {
+    /**
+     * Response Create Camera Passes Api Render Views Passes Post
+     *
+     * Successful Response
+     */
+    202: {
+        [key: string]: unknown;
+    };
+};
+
+export type CreateCameraPassesApiRenderViewsPassesPostResponse = CreateCameraPassesApiRenderViewsPassesPostResponses[keyof CreateCameraPassesApiRenderViewsPassesPostResponses];
+
+export type ReadCameraPassesApiRenderViewsPassesPassIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Pass Id
+         */
+        pass_id: string;
+    };
+    query?: never;
+    url: '/api/render/views/passes/{pass_id}';
+};
+
+export type ReadCameraPassesApiRenderViewsPassesPassIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadCameraPassesApiRenderViewsPassesPassIdGetError = ReadCameraPassesApiRenderViewsPassesPassIdGetErrors[keyof ReadCameraPassesApiRenderViewsPassesPassIdGetErrors];
+
+export type ReadCameraPassesApiRenderViewsPassesPassIdGetResponses = {
+    /**
+     * Response Read Camera Passes Api Render Views Passes  Pass Id  Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadCameraPassesApiRenderViewsPassesPassIdGetResponse = ReadCameraPassesApiRenderViewsPassesPassIdGetResponses[keyof ReadCameraPassesApiRenderViewsPassesPassIdGetResponses];
 
 export type RenderCapabilitiesApiRenderCapabilitiesGetData = {
     body?: never;
@@ -15640,6 +17672,41 @@ export type UpdateBoardApiBoardPutResponses = {
 };
 
 export type UpdateBoardApiBoardPutResponse = UpdateBoardApiBoardPutResponses[keyof UpdateBoardApiBoardPutResponses];
+
+export type ViewBoardApiBoardViewPostData = {
+    body: BoardViewRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/board/view';
+};
+
+export type ViewBoardApiBoardViewPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ViewBoardApiBoardViewPostError = ViewBoardApiBoardViewPostErrors[keyof ViewBoardApiBoardViewPostErrors];
+
+export type ViewBoardApiBoardViewPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: BoardViewDto;
+};
+
+export type ViewBoardApiBoardViewPostResponse = ViewBoardApiBoardViewPostResponses[keyof ViewBoardApiBoardViewPostResponses];
 
 export type ExportBoardApiBoardExportPostData = {
     body: BoardExportRequestDto;
@@ -16376,6 +18443,41 @@ export type ReadDrawingStylesApiDrawingsStylesGetResponses = {
 };
 
 export type ReadDrawingStylesApiDrawingsStylesGetResponse = ReadDrawingStylesApiDrawingsStylesGetResponses[keyof ReadDrawingStylesApiDrawingsStylesGetResponses];
+
+export type CreateDiagramApiDrawingsDiagramsPostData = {
+    body: DiagramRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/drawings/diagrams';
+};
+
+export type CreateDiagramApiDrawingsDiagramsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateDiagramApiDrawingsDiagramsPostError = CreateDiagramApiDrawingsDiagramsPostErrors[keyof CreateDiagramApiDrawingsDiagramsPostErrors];
+
+export type CreateDiagramApiDrawingsDiagramsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SourceDocumentDto;
+};
+
+export type CreateDiagramApiDrawingsDiagramsPostResponse = CreateDiagramApiDrawingsDiagramsPostResponses[keyof CreateDiagramApiDrawingsDiagramsPostResponses];
 
 export type CreateSheetApiDrawingsSheetsPostData = {
     body: SheetRequestDto;
@@ -17181,6 +19283,39 @@ export type ReadConstructionModelApiConstructionModelGetResponses = {
 
 export type ReadConstructionModelApiConstructionModelGetResponse = ReadConstructionModelApiConstructionModelGetResponses[keyof ReadConstructionModelApiConstructionModelGetResponses];
 
+export type ReadQuantitiesApiQuantitiesPostData = {
+    body: QuantitiesRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/quantities';
+};
+
+export type ReadQuantitiesApiQuantitiesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadQuantitiesApiQuantitiesPostError = ReadQuantitiesApiQuantitiesPostErrors[keyof ReadQuantitiesApiQuantitiesPostErrors];
+
+export type ReadQuantitiesApiQuantitiesPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type CreateConstructionProposalApiProposalsConstructionPostData = {
     body: ConstructionRequestDto;
     headers?: {
@@ -17269,6 +19404,10 @@ export type CreateHostedOpeningProposalApiProposalsHostedOpeningPostData = {
 };
 
 export type CreateHostedOpeningProposalApiProposalsHostedOpeningPostErrors = {
+    /**
+     * OPENING_UNKNOWN: the host has no opening by that id; the sentence names the ones it has
+     */
+    404: ConstructionRefusalDto;
     /**
      * ENRICHMENT_REQUIRED names the facet to add first; STALE_BASE a request made against another state
      */
@@ -17622,6 +19761,241 @@ export type ReviewVisualSourcesApiVisualReviewsPostResponses = {
 };
 
 export type ReviewVisualSourcesApiVisualReviewsPostResponse = ReviewVisualSourcesApiVisualReviewsPostResponses[keyof ReviewVisualSourcesApiVisualReviewsPostResponses];
+
+export type ReadLiveRhinoInstancesApiLiveRhinoInstancesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/live-rhino/instances';
+};
+
+export type ReadLiveRhinoInstancesApiLiveRhinoInstancesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadLiveRhinoInstancesApiLiveRhinoInstancesGetError = ReadLiveRhinoInstancesApiLiveRhinoInstancesGetErrors[keyof ReadLiveRhinoInstancesApiLiveRhinoInstancesGetErrors];
+
+export type ReadLiveRhinoInstancesApiLiveRhinoInstancesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: LiveRhinoInstancesDto;
+};
+
+export type ReadLiveRhinoInstancesApiLiveRhinoInstancesGetResponse = ReadLiveRhinoInstancesApiLiveRhinoInstancesGetResponses[keyof ReadLiveRhinoInstancesApiLiveRhinoInstancesGetResponses];
+
+export type ReadLiveRhinoDocumentApiLiveRhinoDocumentGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Rhinoid
+         */
+        rhinoId?: string | null;
+        /**
+         * Documentpath
+         */
+        documentPath?: string | null;
+        /**
+         * Layerprefix
+         *
+         * only objects on this layer or below it
+         */
+        layerPrefix?: string | null;
+        /**
+         * Ids
+         *
+         * comma-separated object ids
+         */
+        ids?: string | null;
+        /**
+         * Includegeometry
+         *
+         * points, vertices and text
+         */
+        includeGeometry?: boolean;
+        /**
+         * Offset
+         */
+        offset?: number;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/live-rhino/document';
+};
+
+export type ReadLiveRhinoDocumentApiLiveRhinoDocumentGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadLiveRhinoDocumentApiLiveRhinoDocumentGetError = ReadLiveRhinoDocumentApiLiveRhinoDocumentGetErrors[keyof ReadLiveRhinoDocumentApiLiveRhinoDocumentGetErrors];
+
+export type ReadLiveRhinoDocumentApiLiveRhinoDocumentGetResponses = {
+    /**
+     * Response Read Live Rhino Document Api Live Rhino Document Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadLiveRhinoDocumentApiLiveRhinoDocumentGetResponse = ReadLiveRhinoDocumentApiLiveRhinoDocumentGetResponses[keyof ReadLiveRhinoDocumentApiLiveRhinoDocumentGetResponses];
+
+export type WriteLiveRhinoDocumentApiLiveRhinoWritePostData = {
+    body: LiveRhinoWriteRequest;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/live-rhino/write';
+};
+
+export type WriteLiveRhinoDocumentApiLiveRhinoWritePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type WriteLiveRhinoDocumentApiLiveRhinoWritePostError = WriteLiveRhinoDocumentApiLiveRhinoWritePostErrors[keyof WriteLiveRhinoDocumentApiLiveRhinoWritePostErrors];
+
+export type WriteLiveRhinoDocumentApiLiveRhinoWritePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LiveRhinoWriteDto;
+};
+
+export type WriteLiveRhinoDocumentApiLiveRhinoWritePostResponse = WriteLiveRhinoDocumentApiLiveRhinoWritePostResponses[keyof WriteLiveRhinoDocumentApiLiveRhinoWritePostResponses];
+
+export type SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostData = {
+    body: LiveRhinoSnapshotRequest;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/live-rhino/snapshot';
+};
+
+export type SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostError = SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostErrors[keyof SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostErrors];
+
+export type SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: LiveRhinoSnapshotDto;
+};
+
+export type SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostResponse = SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostResponses[keyof SnapshotLiveRhinoDocumentApiLiveRhinoSnapshotPostResponses];
+
+export type CaptureLiveRhinoViewApiLiveRhinoCaptureGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Rhinoid
+         */
+        rhinoId?: string | null;
+        /**
+         * Documentpath
+         */
+        documentPath?: string | null;
+        /**
+         * View
+         *
+         * a view name; the active view when omitted
+         */
+        view?: string | null;
+        /**
+         * Width
+         */
+        width?: number;
+        /**
+         * Height
+         */
+        height?: number;
+    };
+    url: '/api/live-rhino/capture';
+};
+
+export type CaptureLiveRhinoViewApiLiveRhinoCaptureGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CaptureLiveRhinoViewApiLiveRhinoCaptureGetError = CaptureLiveRhinoViewApiLiveRhinoCaptureGetErrors[keyof CaptureLiveRhinoViewApiLiveRhinoCaptureGetErrors];
+
+export type CaptureLiveRhinoViewApiLiveRhinoCaptureGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
 
 export type ReadOptionsApiOptionsGetData = {
     body?: never;
@@ -18315,6 +20689,80 @@ export type AdmitCandidateResultsApiAdmissionsPostResponses = {
 };
 
 export type AdmitCandidateResultsApiAdmissionsPostResponse = AdmitCandidateResultsApiAdmissionsPostResponses[keyof AdmitCandidateResultsApiAdmissionsPostResponses];
+
+export type ReviseWorkingDesignApiRevisionsPostData = {
+    body: RevisionRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/revisions';
+};
+
+export type ReviseWorkingDesignApiRevisionsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReviseWorkingDesignApiRevisionsPostError = ReviseWorkingDesignApiRevisionsPostErrors[keyof ReviseWorkingDesignApiRevisionsPostErrors];
+
+export type ReviseWorkingDesignApiRevisionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: RevisionOutcomeDto;
+};
+
+export type ReviseWorkingDesignApiRevisionsPostResponse = ReviseWorkingDesignApiRevisionsPostResponses[keyof ReviseWorkingDesignApiRevisionsPostResponses];
+
+export type ReadRevisionContextApiRevisionsContextGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/revisions/context';
+};
+
+export type ReadRevisionContextApiRevisionsContextGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadRevisionContextApiRevisionsContextGetError = ReadRevisionContextApiRevisionsContextGetErrors[keyof ReadRevisionContextApiRevisionsContextGetErrors];
+
+export type ReadRevisionContextApiRevisionsContextGetResponses = {
+    /**
+     * Response Read Revision Context Api Revisions Context Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadRevisionContextApiRevisionsContextGetResponse = ReadRevisionContextApiRevisionsContextGetResponses[keyof ReadRevisionContextApiRevisionsContextGetResponses];
 
 export type ForkCommittedDesignApiDesignBranchesPostData = {
     body: ForkDesignBranchRequestDto;
@@ -19239,6 +21687,116 @@ export type ReadRepresentationStatusApiRepresentationStatusGetResponses = {
 
 export type ReadRepresentationStatusApiRepresentationStatusGetResponse = ReadRepresentationStatusApiRepresentationStatusGetResponses[keyof ReadRepresentationStatusApiRepresentationStatusGetResponses];
 
+export type ReadWorkingDesignMovesApiWorkingDesignMovesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/working-design/moves';
+};
+
+export type ReadWorkingDesignMovesApiWorkingDesignMovesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadWorkingDesignMovesApiWorkingDesignMovesGetError = ReadWorkingDesignMovesApiWorkingDesignMovesGetErrors[keyof ReadWorkingDesignMovesApiWorkingDesignMovesGetErrors];
+
+export type ReadWorkingDesignMovesApiWorkingDesignMovesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ContinueMovesDto;
+};
+
+export type ReadWorkingDesignMovesApiWorkingDesignMovesGetResponse = ReadWorkingDesignMovesApiWorkingDesignMovesGetResponses[keyof ReadWorkingDesignMovesApiWorkingDesignMovesGetResponses];
+
+export type SwitchWorkingDesignRouteApiWorkingDesignSwitchPostData = {
+    body: WorkingDesignSwitchRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/working-design/switch';
+};
+
+export type SwitchWorkingDesignRouteApiWorkingDesignSwitchPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SwitchWorkingDesignRouteApiWorkingDesignSwitchPostError = SwitchWorkingDesignRouteApiWorkingDesignSwitchPostErrors[keyof SwitchWorkingDesignRouteApiWorkingDesignSwitchPostErrors];
+
+export type SwitchWorkingDesignRouteApiWorkingDesignSwitchPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkingDesignSwitchDto;
+};
+
+export type SwitchWorkingDesignRouteApiWorkingDesignSwitchPostResponse = SwitchWorkingDesignRouteApiWorkingDesignSwitchPostResponses[keyof SwitchWorkingDesignRouteApiWorkingDesignSwitchPostResponses];
+
+export type UndoWorkingDesignRouteApiWorkingDesignUndoPostData = {
+    body: WorkingDesignUndoRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/working-design/undo';
+};
+
+export type UndoWorkingDesignRouteApiWorkingDesignUndoPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UndoWorkingDesignRouteApiWorkingDesignUndoPostError = UndoWorkingDesignRouteApiWorkingDesignUndoPostErrors[keyof UndoWorkingDesignRouteApiWorkingDesignUndoPostErrors];
+
+export type UndoWorkingDesignRouteApiWorkingDesignUndoPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkingDraftDto;
+};
+
+export type UndoWorkingDesignRouteApiWorkingDesignUndoPostResponse = UndoWorkingDesignRouteApiWorkingDesignUndoPostResponses[keyof UndoWorkingDesignRouteApiWorkingDesignUndoPostResponses];
+
 export type ReadMemoryApiMemoryGetData = {
     body?: never;
     headers?: {
@@ -19667,6 +22225,170 @@ export type ReadProjectionApiProjectionsKeyGetResponses = {
 
 export type ReadProjectionApiProjectionsKeyGetResponse = ReadProjectionApiProjectionsKeyGetResponses[keyof ReadProjectionApiProjectionsKeyGetResponses];
 
+export type ReadSkillLibraryApiSkillsLibraryGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/skills/library';
+};
+
+export type ReadSkillLibraryApiSkillsLibraryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillLibraryApiSkillsLibraryGetError = ReadSkillLibraryApiSkillsLibraryGetErrors[keyof ReadSkillLibraryApiSkillsLibraryGetErrors];
+
+export type ReadSkillLibraryApiSkillsLibraryGetResponses = {
+    /**
+     * Response Read Skill Library Api Skills Library Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadSkillLibraryApiSkillsLibraryGetResponse = ReadSkillLibraryApiSkillsLibraryGetResponses[keyof ReadSkillLibraryApiSkillsLibraryGetResponses];
+
+export type ReadSkillGrantsApiSkillsApprovalsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/skills/approvals';
+};
+
+export type ReadSkillGrantsApiSkillsApprovalsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillGrantsApiSkillsApprovalsGetError = ReadSkillGrantsApiSkillsApprovalsGetErrors[keyof ReadSkillGrantsApiSkillsApprovalsGetErrors];
+
+export type ReadSkillGrantsApiSkillsApprovalsGetResponses = {
+    /**
+     * Response Read Skill Grants Api Skills Approvals Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadSkillGrantsApiSkillsApprovalsGetResponse = ReadSkillGrantsApiSkillsApprovalsGetResponses[keyof ReadSkillGrantsApiSkillsApprovalsGetResponses];
+
+export type ReadSkillRunApiSkillsRunsRunIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/api/skills/runs/{run_id}';
+};
+
+export type ReadSkillRunApiSkillsRunsRunIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillRunApiSkillsRunsRunIdGetError = ReadSkillRunApiSkillsRunsRunIdGetErrors[keyof ReadSkillRunApiSkillsRunsRunIdGetErrors];
+
+export type ReadSkillRunApiSkillsRunsRunIdGetResponses = {
+    /**
+     * Response Read Skill Run Api Skills Runs  Run Id  Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadSkillRunApiSkillsRunsRunIdGetResponse = ReadSkillRunApiSkillsRunsRunIdGetResponses[keyof ReadSkillRunApiSkillsRunsRunIdGetResponses];
+
+export type ReadSkillRunOutputApiSkillsRunsRunIdOutputsNameGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/skills/runs/{run_id}/outputs/{name}';
+};
+
+export type ReadSkillRunOutputApiSkillsRunsRunIdOutputsNameGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillRunOutputApiSkillsRunsRunIdOutputsNameGetError = ReadSkillRunOutputApiSkillsRunsRunIdOutputsNameGetErrors[keyof ReadSkillRunOutputApiSkillsRunsRunIdOutputsNameGetErrors];
+
+export type ReadSkillRunOutputApiSkillsRunsRunIdOutputsNameGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type ReadSkillIndexApiSkillsGetData = {
     body?: never;
     headers?: {
@@ -19781,3 +22503,135 @@ export type ReadSkillApiSkillsSkillIdGetResponses = {
 };
 
 export type ReadSkillApiSkillsSkillIdGetResponse = ReadSkillApiSkillsSkillIdGetResponses[keyof ReadSkillApiSkillsSkillIdGetResponses];
+
+export type RunSkillApiSkillsSkillIdRunPostData = {
+    body: SkillRunRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: never;
+    url: '/api/skills/{skill_id}/run';
+};
+
+export type RunSkillApiSkillsSkillIdRunPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RunSkillApiSkillsSkillIdRunPostError = RunSkillApiSkillsSkillIdRunPostErrors[keyof RunSkillApiSkillsSkillIdRunPostErrors];
+
+export type RunSkillApiSkillsSkillIdRunPostResponses = {
+    /**
+     * Response Run Skill Api Skills  Skill Id  Run Post
+     *
+     * Successful Response
+     */
+    202: {
+        [key: string]: unknown;
+    };
+};
+
+export type RunSkillApiSkillsSkillIdRunPostResponse = RunSkillApiSkillsSkillIdRunPostResponses[keyof RunSkillApiSkillsSkillIdRunPostResponses];
+
+export type ReadSkillNeedsApiSkillsSkillIdNeedsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: never;
+    url: '/api/skills/{skill_id}/needs';
+};
+
+export type ReadSkillNeedsApiSkillsSkillIdNeedsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillNeedsApiSkillsSkillIdNeedsGetError = ReadSkillNeedsApiSkillsSkillIdNeedsGetErrors[keyof ReadSkillNeedsApiSkillsSkillIdNeedsGetErrors];
+
+export type ReadSkillNeedsApiSkillsSkillIdNeedsGetResponses = {
+    /**
+     * Response Read Skill Needs Api Skills  Skill Id  Needs Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadSkillNeedsApiSkillsSkillIdNeedsGetResponse = ReadSkillNeedsApiSkillsSkillIdNeedsGetResponses[keyof ReadSkillNeedsApiSkillsSkillIdNeedsGetResponses];
+
+export type ReadSkillRunsApiSkillsSkillIdRunsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: never;
+    url: '/api/skills/{skill_id}/runs';
+};
+
+export type ReadSkillRunsApiSkillsSkillIdRunsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillRunsApiSkillsSkillIdRunsGetError = ReadSkillRunsApiSkillsSkillIdRunsGetErrors[keyof ReadSkillRunsApiSkillsSkillIdRunsGetErrors];
+
+export type ReadSkillRunsApiSkillsSkillIdRunsGetResponses = {
+    /**
+     * Response Read Skill Runs Api Skills  Skill Id  Runs Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadSkillRunsApiSkillsSkillIdRunsGetResponse = ReadSkillRunsApiSkillsSkillIdRunsGetResponses[keyof ReadSkillRunsApiSkillsSkillIdRunsGetResponses];

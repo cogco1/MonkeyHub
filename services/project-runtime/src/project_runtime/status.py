@@ -29,6 +29,7 @@ from .application.design_history import (
     admission_index,
     admission_store,
     read_acceptance,
+    review_judgements,
 )
 from .jobs import FAILED, QUEUED, RUNNING, RUN, Job, JobRegistry
 from .application.representation_dependencies import (
@@ -249,6 +250,9 @@ class WorktreeLine:
     # admitted | rejected | superseded | none, from retained admission facts (#294)
     admission: str = "none"
     study_id: str | None = None
+    # unreviewed | rejected | archived: the architect's retained candidate review (#300);
+    # unknown while the reviews cannot be read
+    review: str = "unreviewed"
     # For a superseded draft: the step of the head's line that replaced it (#575).
     superseded_by: str | None = None
 
@@ -718,6 +722,30 @@ def _admissions(binding: ProjectBinding, warnings: list[str],
     return index
 
 
+def _reviews(binding: ProjectBinding, warnings: list[str]) -> dict[str, str] | None:
+    """Each Candidate's retained review disposition, read once for the whole graph; None when they cannot be read."""
+
+    try:
+        judgements = review_judgements(binding)
+    except (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError) as exc:
+        warnings.append(f"Candidate reviews could not be read: {getattr(exc, 'detail', exc)}")
+        return None
+    return {ref: judgement.disposition for (kind, ref), judgement in judgements.items() if kind == "candidate"}
+
+
+def _with_reviews(lines: list[WorktreeLine], reviews: Mapping[str, str] | None) -> list[WorktreeLine]:
+    """Each finished line's review: a result the architect archived or rejected says so.
+
+    Reviews that cannot be read leave every finished line's review unknown,
+    never unreviewed: an archived result is not offered again because one
+    review record is broken.
+    """
+
+    return [replace(line, review="unknown" if reviews is None else reviews[line.run_id])
+            if line.kind != "running" and (reviews is None or line.run_id in reviews) else line
+            for line in lines]
+
+
 def _with_admissions(lines: list[WorktreeLine], index: Mapping[str, tuple[str, str | None]]) -> list[WorktreeLine]:
     """Each finished line's retained verdict and Study; running work has none yet."""
 
@@ -853,7 +881,7 @@ def _worktree_graph(binding: ProjectBinding, jobs: JobRegistry | None, render_jo
     results = _result_lines(reads, value, head, line, admissions, warnings)
     lines.extend(results)
     later = _later_line(reads, head, value, results, words, warnings)
-    lines = _with_admissions(lines, admissions)
+    lines = _with_reviews(_with_admissions(lines, admissions), _reviews(binding, warnings))
     representations = _representations(binding, render_jobs, warnings, working,
                                        None if rows is None else rows.documents)
     return WorktreeGraph(binding.project_id, head, resolved.revision_sha256, tuple(lines),

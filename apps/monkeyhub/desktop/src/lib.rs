@@ -17,6 +17,8 @@ pub mod updates;
 pub mod single_instance;
 
 pub const SOURCE_REVISION: &str = env!("ARCHFLOW_SOURCE_REVISION");
+/// The port a workshop-mode desktop asks for first, so a restart keeps the page's address (#668).
+pub const WORKSHOP_PORT: u16 = 8790;
 
 #[derive(Clone, Debug)]
 pub struct LaunchConfig {
@@ -26,6 +28,8 @@ pub struct LaunchConfig {
     pub port: u16,
     pub startup_timeout: Duration,
     pub source_revision: String,
+    /// 工作坊模式 (#668): one desktop per account and the same port on every launch.
+    pub workshop: bool,
 }
 
 impl LaunchConfig {
@@ -113,8 +117,13 @@ impl LaunchConfig {
         }
         fs::create_dir_all(&runtime_root)
             .map_err(|e| format!("Cannot create runtime directory: {e}"))?;
+        let workshop = workshop_mode();
         if port == 0 {
-            port = available_port()?;
+            port = if workshop {
+                preferred_port(WORKSHOP_PORT)?
+            } else {
+                available_port()?
+            };
         }
         Ok(Self {
             source_root,
@@ -123,6 +132,7 @@ impl LaunchConfig {
             port,
             startup_timeout: Duration::from_secs(timeout),
             source_revision,
+            workshop,
         })
     }
 
@@ -197,6 +207,33 @@ pub fn read_source_revision(root: &Path) -> Result<String, String> {
         return Err("Invalid source-version.txt; expected a full Git commit".into());
     }
     Ok(value)
+}
+
+/// Whether the account's settings turn 工作坊模式 on (#668). They are the file every installed
+/// Hub version shares, `%APPDATA%\MonkeyArch\settings.json`; a missing or unreadable file, or
+/// anything but `"workshopMode": true`, is off.
+pub fn workshop_mode() -> bool {
+    env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .filter(|appdata| appdata.is_absolute())
+        .is_some_and(|appdata| workshop_mode_in(&appdata.join("MonkeyArch").join("settings.json")))
+}
+
+pub fn workshop_mode_in(settings: &Path) -> bool {
+    let Ok(bytes) = fs::read(settings) else {
+        return false;
+    };
+    let text = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
+    serde_json::from_slice::<serde_json::Value>(text)
+        .is_ok_and(|value| value.get("workshopMode") == Some(&serde_json::Value::Bool(true)))
+}
+
+/// `port` when it is free on the loopback address, else any free port.
+pub fn preferred_port(port: u16) -> Result<u16, String> {
+    match TcpListener::bind((Ipv4Addr::LOCALHOST, port)) {
+        Ok(_) => Ok(port),
+        Err(_) => available_port(),
+    }
 }
 
 pub fn available_port() -> Result<u16, String> {
@@ -487,6 +524,28 @@ impl OwnedRuntime {
     pub fn try_wait(&mut self) -> Result<Option<ExitStatus>, String> {
         self.child.try_wait().map_err(|e| e.to_string())
     }
+    /// Ends the Hub and every process it started, at once (gap 24). Only a
+    /// person's confirmed second close calls this: work still running is lost.
+    pub fn force_stop(&mut self) {
+        let pid = self.child.id();
+        self.log.write(&format!("event=force-stop pid={pid}"));
+        #[cfg(windows)]
+        {
+            let taskkill = env::var_os("SystemRoot")
+                .map(|root| PathBuf::from(root).join("System32").join("taskkill.exe"))
+                .unwrap_or_else(|| PathBuf::from("taskkill.exe"));
+            let mut command = Command::new(taskkill);
+            hide_console(&mut command);
+            let status = command
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            self.log.write(&format!("event=force-stop-tree pid={pid} result={status:?}"));
+        }
+        let _ = self.child.kill();
+    }
     pub fn request_stop(&mut self) {
         // Taking and closing the sole writer also delivers EOF after a failed write.
         if let Some(mut stdin) = self.child.stdin.take() {
@@ -502,6 +561,52 @@ impl Drop for OwnedRuntime {
     fn drop(&mut self) {
         self.request_stop();
     }
+}
+
+/// The projects a closing Hub (the process ``process_id``) last noted it is
+/// still waiting for, each with whether it is computing (gap 24). A note from
+/// another process, or none, is no list.
+pub fn closing_projects(runtime_root: &Path, process_id: u32) -> Vec<(String, bool)> {
+    let Ok(text) = fs::read_to_string(runtime_root.join("runtime/closing.json")) else {
+        return Vec::new();
+    };
+    let Ok(note) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return Vec::new();
+    };
+    if note.get("processId").and_then(|value| value.as_u64()) != Some(u64::from(process_id)) {
+        return Vec::new();
+    }
+    let Some(rows) = note.get("waiting").and_then(|value| value.as_array()) else {
+        return Vec::new();
+    };
+    rows.iter()
+        .filter_map(|row| {
+            let name = row
+                .get("projectId")
+                .and_then(|value| value.as_str())
+                .or_else(|| row.get("service").and_then(|value| value.as_str()))?;
+            let busy = row.get("busy").and_then(|value| value.as_bool()).unwrap_or(false);
+            Some((name.to_owned(), busy))
+        })
+        .collect()
+}
+
+/// One sentence naming what a closing Hub still waits for, for the window and the force-close dialog.
+pub fn waiting_text(waiting: &[(String, bool)]) -> String {
+    if waiting.is_empty() {
+        return "MonkeyHub 还在等它的服务停下。".into();
+    }
+    let names: Vec<String> = waiting
+        .iter()
+        .map(|(name, busy)| {
+            if *busy {
+                format!("「{name}」（正在计算）")
+            } else {
+                format!("「{name}」")
+            }
+        })
+        .collect();
+    format!("MonkeyHub 还在等这些项目的服务停下：{}。", names.join("、"))
 }
 
 pub fn is_status_url(url: &Url) -> bool {

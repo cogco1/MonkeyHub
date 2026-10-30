@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from archflow.project.record_kinds import STUDIO_SKILL, require_registered
 from archflow.project.repository import FilesystemProjectRepository
-from project_runtime.application.skills import MAX_BODY_BYTES, SKILLS_RUN_ID
+from project_runtime.application.skills import MAX_BODY_BYTES, SKILLS_RUN_ID, code_sha256
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 
@@ -62,7 +62,8 @@ class SkillRoutesTest(unittest.TestCase):
         index = self.client.get("/api/skills").json()
         self.assertEqual(index, {"projectId": PROJECT_ID, "skills": [{
             "id": "skill:hatch-review", "version": 1, "name": "hatch-review",
-            "description": "Review a plan's hatching against the project recipe."}]})
+            "description": "Review a plan's hatching against the project recipe.",
+            "codeSha256": code_sha256(BODY, None, {}), "runnable": False, "access": None}]})
 
         second = self.add(skill(description="Review hatching and poché against the recipe.",
                                 body=BODY + "3. Check poché.\n", supersedesVersion=1))

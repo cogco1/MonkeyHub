@@ -567,7 +567,7 @@ def _source_revision(root: Path = REPOSITORY_ROOT) -> str | None:
     try:
         result = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
-            capture_output=True, text=True, check=True, timeout=5,
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True, timeout=5,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except (OSError, subprocess.SubprocessError):
@@ -593,10 +593,60 @@ def _hold_project(settings: StudioSettings) -> WriterLease | None:
     return hold_writer_lease(root)
 
 
+def _owner_lines(stream: TextIO, interval: float = 0.2):
+    """The owner's lines, read without a read left waiting on the owner's pipe.
+
+    On Windows a read left waiting on an anonymous pipe holds every other use of
+    that pipe, and the drawing workers (``drawing_pool``) start sharing it as
+    their standard input: each one stalled loading NumPy until the owner wrote,
+    so no drawing came back. There the pipe is asked how much it holds, and a
+    line is read only once one is there; a closed pipe ends the lines as EOF does.
+    Any other stream is read as it is.
+    """
+
+    handle = _pipe_handle(stream)
+    if handle is None:
+        yield from stream
+        return
+    import ctypes
+    from ctypes import wintypes
+    peek = ctypes.WinDLL("kernel32", use_last_error=True).PeekNamedPipe
+    peek.argtypes = (wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD, wintypes.LPVOID, ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID)
+    peek.restype = wintypes.BOOL
+    waiting, pending, descriptor = wintypes.DWORD(), b"", stream.fileno()
+    while peek(handle, None, 0, None, ctypes.byref(waiting), None):
+        if not waiting.value:
+            threading.Event().wait(interval)
+            continue
+        data = os.read(descriptor, waiting.value)
+        if not data:
+            break
+        pending += data
+        while b"\n" in pending:
+            line, pending = pending.split(b"\n", 1)
+            yield line.decode("utf-8", "replace") + "\n"
+    if pending:
+        yield pending.decode("utf-8", "replace")
+
+
+def _pipe_handle(stream: TextIO):
+    if os.name != "nt":
+        return None
+    try:
+        import msvcrt
+        handle = msvcrt.get_osfhandle(stream.fileno())
+    except (AttributeError, OSError, ValueError):
+        return None
+    import ctypes
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetFileType.argtypes = (ctypes.c_void_p,)
+    return handle if kernel32.GetFileType(ctypes.c_void_p(handle)) == 3 else None  # FILE_TYPE_PIPE
+
+
 def _watch_managed_stdin(server: uvicorn.Server, jobs: JobRegistry, stream: TextIO, render_jobs=None) -> None:
     """Only the owning parent's pipe requests a managed shutdown."""
 
-    for line in stream:
+    for line in _owner_lines(stream):
         if line.strip() == "stop":
             break
     jobs.stop_accepting()
@@ -750,6 +800,17 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _serve(args: argparse.Namespace, settings: StudioSettings) -> None:
+    from .application import drawing_pool
+
+    # The serving process solves its drawings in worker processes (#300); a test's app does not.
+    drawing_pool.start(warm=True)
+    try:
+        _serve_app(args, settings)
+    finally:
+        drawing_pool.stop()
+
+
+def _serve_app(args: argparse.Namespace, settings: StudioSettings) -> None:
     app = create_app(settings)
     app.state.server_version = SERVER_VERSION
     app.state.process_id = os.getpid()

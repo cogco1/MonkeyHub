@@ -4,6 +4,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import threading
 import time
@@ -71,6 +72,16 @@ def stop():
     (args.runtime_root / "operation-finished").write_text("retained")
     server.shutdown()
 
+
+if options.get("child_heartbeat"):
+    # A process the Hub started, as a Studio is: a forced close ends it too.
+    subprocess.Popen([sys.executable, "-c",
+                      "import pathlib, sys, time\n"
+                      "beat = pathlib.Path(sys.argv[1])\n"
+                      "while True:\n"
+                      "    beat.write_text(str(time.monotonic()))\n"
+                      "    time.sleep(0.1)\n",
+                      str(args.runtime_root / "child-heartbeat")], stdin=subprocess.DEVNULL)
 
 threading.Thread(target=stop, daemon=True).start()
 server.serve_forever(poll_interval=0.05)

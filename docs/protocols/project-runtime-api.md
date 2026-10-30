@@ -124,7 +124,10 @@ tolerate it.
 | GET | `/api/working-draft/revision` | `{projectId, revisionSha256}` of the working position alone, for polling whether the head may have moved; no local draft and no project guard | reads the working position | provisional |
 | PUT | `/api/working-draft` | Continue: the working position, and so the Working Head, moves onto `runId`, or back to the default with `null`, under the `baseRevisionSha256` compare-and-swap; a move onto a run retains who made it as `AuditEvent@1` `design.continued` beside that run (§4.1). `messageSource` with `rawLanguage` marks the Hub Agent continuing on the user's bound words. In the project's own Runtime a move onto a run then cleans what the line now moves past into the project trash, on a thread of its own (§4.1) | **writes the working position + that run's review** | provisional |
 | GET | `/api/representation-status?runId=&assetSha256=&revisionRef=&pageIndex=` | one exact registered page's representation status (§4.1) in the projection's own words: `{projectId, state, reason}`, `state` one of `current`, `outdated`, `frozen`, `unavailable`. A page that cannot be read, or whose replacements loop, is `unavailable`; nothing is stored | reads the working position + shared + design refs | provisional |
-| GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, the head's `line` of steps oldest first with their retained `label`, `request`, `summary` and `stageRef` (#575), after a return to an earlier step the `later` steps it moved back past, other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), a draft the line superseded as `relation: superseded` with `supersededBy`, each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5), and drawing/render `current`/`stale`/`frozen`/`running`/`unavailable` states, a drawing's as the Drawing tool reads it (§4.1). Nothing is merged, started, moved or deleted | reads the working position + shared + design refs + the admissions review + each result's Continue events + server memory | provisional |
+| GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, the head's `line` of steps oldest first with their retained `label`, `request`, `summary` and `stageRef` (#575), after a return to an earlier step the `later` steps it moved back past, other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), a draft the line superseded as `relation: superseded` with `supersededBy`, each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5) and its candidate `review` (`unreviewed`, `rejected`, `archived`, from `POST /api/candidate-reviews`; `unknown` while the reviews cannot be read), and drawing/render `current`/`stale`/`frozen`/`running`/`unavailable` states, a drawing's as the Drawing tool reads it (§4.1). Nothing is merged, started, moved or deleted | reads the working position + shared + design refs + the admissions review + the candidate reviews + each result's Continue events + server memory | provisional |
+| GET | `/api/working-design/moves?limit=` | the moves that brought the Working Head where it stands, newest first (default 50, at most 500): `{occurredAt, runId, previousRunId, actorId, origin, messageSessionId, messageId}` from the `design.continued` event beside each run (§4.1), walked back from the working position's run along each move's previous run; it stops at the project's first head or a return to the default (a Continue onto no run leaves no event), and `warnings` say where a run could not be read. Going back to a step is `PUT /api/working-draft` onto its `previousRunId` | reads the Continue events of about `limit` runs | provisional |
+| POST | `/api/working-design/switch` | Switch (#300, 2-6): `{projectId, runId, baseRevisionSha256, branchId?, messageSource?, rawLanguage?}` is Continue onto `runId` (the same design.continued event, design-loop rule and project-trash cleaning as `PUT /api/working-draft`), refused with `409 DESIGN_TREE_UNSYNCED_EDITS` while Modeling holds edits not yet recorded on the current source. It answers `{position, undo: {previous: {runId, branchId} \| null, continued, revisionAfter}}`; `previous` is null when no working-position entry named the head it replaced, so there is no exact Undo |
+| POST | `/api/working-design/undo` | `{projectId, previous: {runId, branchId}, continued}`, a Switch's `undo`: writes `previous` back while Current still stands on `continued`, against the position as read. Current already on `previous` (a retried Undo) answers the position unchanged; Current moved elsewhere answers `409 DESIGN_TREE_UNDO_MOVED` with `currentRunId`; unrecorded Modeling edits answer `409 DESIGN_TREE_UNSYNCED_EDITS` |
 | GET | `/api/trash` | the project trash (#575, §4.1): `retentionDays` (30) and each entry oldest first, `runId`, `trashedAt`, `expiresAt`, `rule` (`superseded`, `replaced-attempt`, `failed-attempt`), `reason`, `supersededBy`, `baseRunId`, `label` and `stateDigest`. Answered conditionally (ETag) like the tree's other views | reads `trash/entries/` | provisional |
 | POST | `/api/trash/restore` | `{projectId, runId}`: moves that trashed run back into `runs/` exactly as it left, with its working-draft row and every trashed run it names (what it was made from); answers `restored` and the trash as it now is. A restored run is never cleaned again. `TRASH_ENTRY_NOT_FOUND` (404), `TRASH_RESTORE_REFUSED` (409, its place in `runs/` is taken or it could not be moved whole) | **moves runs back + writes the working position + the retention run's review** | provisional |
 | POST | `/api/drawings/elevations` → 201 | exact-model elevation document with drawing/revision/Stage/view references | writes shared drawing artifacts and document registration | provisional |
@@ -384,7 +387,11 @@ One chain, and each arrow is a route.
    and the grammar types them). Either way the answer is the *record's* proposal: a typed
    `DecisionOperator` with the change, the closure it propagates through, and the conflicts it
    reaches. Nothing has run. `POST /api/intents` ends in exactly one of four outcomes (§5.1),
-   and only the first is a proposal.
+   and only the first is a proposal. A parameter row that gives a derived parameter (one with an
+   `expr`) a new value without `expr` is refused (`422 SEMANTIC_EDIT_INVALID`, naming the
+   expression and its value), since the expression would give the old value back: `expr` with a new
+   expression keeps it derived, `expr: null` fixes it at the value and makes it declared. An element a
+   construction script cannot edit, such as a column array, is refused with the parameters it is made from.
 
 For drawn faces and prisms, state element rows also expose optional `drawnShape`:
 `profile`, `height`, `workPlane` in building-world Y-up metres, and
@@ -413,8 +420,8 @@ drawn prisms and faces.
 
 Write vectors (`translation`, `axis`, `scale`, `origin`, push/pull `normal`, work-plane axes,
 loft sections) are the building-local modeling frame `[x, y, z]` with +y up; plan points are
-`[x, z]`. Candidate object and compare boxes are the export's Z-up CAD frame, `[x, z, y]` of
-the same point. A direct action's proposal summary states its vector and which way it goes
+`[x, z]` with +z north. Candidate object and compare boxes are the export's Z-up CAD frame, `[x, z, y]` of
+the same point, so the plan's +z is the 3DM's +Y and an exported GLB's -Z. A direct action's proposal summary states its vector and which way it goes
 (up or down, or horizontal along plan x or z) before anything runs.
 
 A modeling write whose `stateDigest` is not the selected source's is refused
@@ -613,7 +620,7 @@ neighbouring element whose field shares a name is named there only to be refused
    The Worktree Graph names the run's line step by them.
 4. **Follow it.** `GET /api/jobs/{jobId}`, or the event stream.
 5. **Read review readiness.** `GET /api/candidates/{id}/validation` returns the kernel's
-   validation receipt unedited, and beside it the server's `reviewReady`, a fixed conjunction of five named
+   validation receipt unedited, and beside it the server's `reviewReady`, a fixed conjunction of six named
    clauses with `blockedBy[]` naming every clause that refused. Three-state law, verbatim:
    *held / violated / unchecked are distinct; unchecked is never green; the server reports
    candidate review readiness.* A client renders the server's boolean and computes no readiness
@@ -621,6 +628,23 @@ neighbouring element whose field shares a name is named there only to be refused
    or advance a stage.
 
 Review readiness is memoised per (candidate, published version): reading it twice is one result.
+
+**Conditions the design must keep are checked (#659)** while the design loop checks them (`advisory` or
+`enforced`). A `DesignObligation` names its check in `validatorRef` as `validator:<kind>/<arguments>`; the kinds
+are `state_record.OBLIGATION_CHECKS`. Validation checks every live obligation on the candidate's exact record and
+its inspected object boxes, and again on the run it was made from. Each one is `held`, `violated` or
+`unchecked`; an obligation with no check, an unknown kind, a value nothing states, or a model read back without
+a part where the check looks (the flight's plan for headroom, the strip ahead of each stair end for a landing),
+or without one the record does not place, is `unchecked`, never held. Headroom does not count a railing:
+material no thicker than 60 mm across the flight within 100 mm of a side edge that stands on the tread or starts
+no more than 1.2 m above it. What a part is called changes nothing. The results are reported, never a clause of
+review readiness: no tier makes a condition block a person's or the Agent's admission or a Stage acceptance.
+In `enforced`, `POST /api/revisions` refuses a new violation itself. `obligationProblems[]` (on the validation and on
+`GET /api/candidates/{id}`) lists the violated ones, new first, then the unchecked ones, at most 20, each with
+`obligationId`, `validatorRef`, `status`, `new` and `detail`; `obligationsChecked` counts those a check
+reported held or violated. `relationProblems[]` on the candidate names the violated relations, then the
+unchecked ones (a check that left a pair unmeasured is unchecked), at most 20, with `relationId`, `kind`,
+`status` and `detail`.
 
 **Declared materials reach the candidate's model.** `POST /api/proposals/facets` sets a
 component's `material.name` (the architect's words) and, when the design states it,
@@ -1075,6 +1099,123 @@ recovery rows, chat candidate ids, pins and newest files prove nothing, so a pro
 runs and none of these facts lists no Candidate. Creating an Exploration (`POST
 /api/working-copies`) is retired; retained Explorations stay readable and selectable.
 
+### 5.6 One revision in one call (#185)
+
+`POST /api/revisions` carries one change onto the working design, running the steps above in a fixed
+order. It takes `{projectId, sourceRunId, stateDigest, kind, proposal, summary, keep?, confirmed?,
+supersedes?, land?, buildOnly?, label?, waitSeconds?, messageSource?, rawLanguage?}`, or `candidateId` in place
+of `kind` and `proposal` to land a candidate already built from the working design (one built with `buildOnly`,
+an option, a program or a combination), which is checked again from step 3 on. `sourceRunId` and `stateDigest`
+are the working design's, bound when the call starts (`sourceRunId` is null while the project has no working
+run, and the change starts from its default design); `kind` is `construction`, `facets`, `hosted-opening`,
+`elevation` or `proposal` (a `semanticEdit` or an utterance), and `proposal` is that route's body without the
+fields this request supplies. It takes the `accept` grant, and the change itself the `propose` grant. In order:
+
+1. a base that is not the working design is `refused` with `STALE_BASE`, and nothing is proposed;
+2. the change becomes a proposal through its own route, every applicable `keep` decision passed as a
+   protected ref, except a keep that live conditions with executable checks state in the decision's own
+   words (compared as lower-case letters and digits): that keep is those conditions, checked on the built
+   change at step 7; a refused proposal is `problems`;
+3. a keep conflict is `needs_question` (`KEEP_CONFLICT`), quoting the decision's words;
+4. a change that edits the target of an applicable `reject` or `avoid` decision is `needs_question`
+   (`REJECTED_OPTION`): it changes the target's own row or the row of a part of it, adds a part under it or
+   removes one, changes the row of a whole that holds it, or changes the parameter the decision names. A target
+   the change only carries along through parameter bindings, its own row unchanged, is not edited by it (a
+   larger rotunda rebuilds its oculus ring and does not glaze it). An `avoid` asks that its target not change at
+   all: any change reaching it, a part of it or the whole it belongs to, parameter bindings included, asks. What the
+   build added is read on the built record too;
+5. a live condition in the change's reach (its direct references and their downstream closure) that names
+   no executable check is `needs_question` (`UNCHECKED_CONDITION`), unless `confirmed` names it as
+   `obligation:<id>` and the request carries the architect's words; nothing is built for a question. In
+   step 5 the reach is what the change changes: a part a relation reaches only to have it checked again
+   (`requires_revalidation`, such as a support it stands on) does not change;
+6. the candidate is built and waited for (`waitSeconds`, default 240, at most 300); a build that does not
+   finish is `problems` with `RUN_TIMEOUT` and keeps building. What the build changed against the base, where
+   its proposal's impact did not name it, meets steps 3 to 5 again (`KEEP_CONFLICT`, `REJECTED_OPTION`,
+   `UNCHECKED_CONDITION`), before anything is admitted;
+7. a built change that breaks the condition of a keep it reaches (its target, a part of it or the whole it
+   belongs to) is `needs_question` (`KEEP_CONFLICT`), naming the condition and what it measured; one that drops
+   or rewrites one of the base's live conditions, or leaves one in reach, a reached keep's included, that the
+   built model still cannot check, is `needs_question` (`CONDITION_CHANGED`, `UNCHECKED_CONDITION`);
+8. the built model is read back: no object, a readback error, a comparison that fails while the base has a
+   model (`COMPARE_UNAVAILABLE`), or a construction or hosted opening that changed nothing against the base
+   (`NO_VISIBLE_CHANGE`) is `problems`, and so is a change whose proposal and build both leave the design
+   record as it was (`NO_CHANGE`), whatever the model comparison counts. Only a base that never exported a
+   model is excused from the comparison, and `compare.unavailable` with `baseHasNoModel` says so;
+9. validation runs: a violated or unchecked relation, a condition violated where the base did not violate it,
+   or a failing review clause is `problems`, each one named by its `source` (`relation:<id>`,
+   `obligation:<id>`, the clause);
+10. with `buildOnly` the answer is `built` and nothing is admitted; the candidate lands later by its
+    `candidateId`;
+11. if the working design moved while the change was built, nothing is admitted (`WORKING_DESIGN_MOVED`);
+    otherwise the result is admitted (`hub-chat` with the bound `messageSource`, else `ui`) and continued onto
+    the working design: `landed`. With `land: false` it is admitted as a candidate to compare and the working
+    design stays: `admitted`. A Continue that fails is answered with where the working design actually stands:
+    `CONTINUE_REFUSED` (it did not move), `LANDED_UNRECORDED` (it moved, but who continued could not be
+    retained) or `CONTINUE_UNKNOWN`.
+
+Every decision about a condition reads its whole result, never the shortened `obligationProblems` list. The
+answer is `{outcome, code, detail, proposalId, candidateId, stateDigest, problems: [{source, kind,
+detail}], questionRefs, conditions: [{obligationId, statement, checkable, validatorRef}], compare,
+working: {runId, stateDigest, revisionSha256}, seconds}`. Nothing moves on `problems`, `needs_question`
+or `refused`. A kept target no checked condition states, or a rejected option, changes only after its
+decision is revised. When a change reaches a keep a checked condition states, the answer's `detail` and the
+admission's `reason` say which conditions were checked on the built model and what each measured.
+
+`GET /api/revisions/context` is what a change is written from: `working` (runId, stateDigest, revisionSha256, label), `outside` (every change made outside MonkeyHub that a state file brought, newest file first: its words with the part and amount, `subjects` and `fileSha256`; none is in the design, each waits for the architect's answer and asks when a change reaches it), `keep` and `rejected` (each decision's ref, target and the architect's words), `conditions` (each live condition's ref, statement, subjects, `validatorRef`, `checkable` and how it stands on the working design: `onWorkingDesign` held, violated or unchecked, with `detail`), `lastChange` (the working design's own landed change: its summary, the words it answered and its objects before and after against its parent, so that undoing it is an ordinary change), `tried` (results the architect rejected, with their words) and `honesty`. Each list holds at most 40 rows and says how many it left out.
+
+**The design-loop setting.** The Hub's application setting `designLoop` reaches the Runtime as
+`ARCHFLOW_STUDIO_DESIGN_LOOP`, in three tiers; the default, and a Runtime started by hand, is `legacy`. A
+saved `off`, the setting's value before it had tiers, reads as `legacy`.
+
+- `legacy`: every route main has answers byte for byte as main does (`tests/test_legacy_answers.py` compares a
+  scenario's answers with main's). No condition is checked; validation and candidate reads leave out
+  `obligationProblems`, `obligationsChecked` and `relationProblems` and keep their old notes; the chat keeps its
+  old guide and error words. Of the two new routes, `POST /api/revisions` answers `409 DESIGN_LOOP_NOT_ENFORCED`.
+- `advisory`: conditions are checked and the problem lists appear on validation and candidate reads, blocking
+  nothing; every way onto the working design is as before, and `POST /api/revisions` still answers
+  `409 DESIGN_LOOP_NOT_ENFORCED`. The chat may read `GET /api/revisions/context`, and its guide says what the
+  two lists are.
+- `enforced`: as `advisory`, and the Agent's own way onto the working design is refused with `409
+  DESIGN_LOOP_REQUIRED`: `POST /api/admissions` of an `admitted` result, and `PUT /api/working-draft` onto a run.
+  `POST /api/revisions` admits and continues the result itself; from the Agent it must name its own chat's message
+  and never carries `confirmed` (`422 REVISION_INVALID`).
+
+The Runtime tells the Agent from a person by `X-Monkey-Agent`, which the managing Hub adds (with its
+`X-Monkey-Worker` identity) to every request it forwards for a chat; nothing in a request body counts. A
+person's admission and Continue, and the Agent's rejections and withdrawals, are never affected. The Hub's chat
+offers `POST /api/revisions` only while the setting is `enforced` (`GET /api/revisions/context` also in
+`advisory`), binds the user's message and words to it, and takes the loop's `taskClass` beside it as for an
+admission (a `spatial_formal` or `polish` loop lands only a result it looked at, or a repair superseding a
+looked-at attempt; `buildOnly` builds one to look at).
+
+**The Agent never confirms.** A condition no check can verify, a kept target or a rejected option in reach makes a
+revision answer `needs_question` with `questionRefs`, and the Agent asks. Nothing in a chat stands for the
+architect's answer, whatever its words: the chat refuses `confirmed` (`422 CHAT_REVISION_INVALID`) and the Runtime
+refuses it from the Agent (`422 REVISION_INVALID`). A person's own request may carry `confirmed` with their words;
+the Hub page has no control for it yet. These questions stop a change only while the design loop is `enforced`:
+in `legacy` and `advisory` a condition no check can verify blocks nothing, and the reviser is only told about it.
+
+**What enforced closes, and what it does not.** In `enforced` the Hub's Claude chat runs without Bash or
+PowerShell, so the Agent reaches the design only through this Hub, which vouches for it. A Codex chat (exec or ACP) keeps the shell
+of its workspace sandbox, and computer-use tools stay approved where this machine's policy enables them; neither
+is taken away in `enforced`. The Runtime does not verify identity
+otherwise: a local process that calls the Runtime's port or the Hub's forwarding route directly, without the
+chat header, is taken as a person.
+
+**The design-loop tools.** While the design loop is enforced, the Hub's tool server also answers four tools
+over the chat's own bindings: `design_read` (`GET /api/revisions/context` and the construction model, or the
+construction vocabulary), `design_submit` (`POST /api/revisions` with the user's message and words bound),
+`design_ask` and `design_report_limitation`. The Hub counts, per answered user message, the changes that came
+back with `problems`; past the repair limit (`MONKEYHUB_REPAIR_BUDGET`, default 3) a submission is refused with
+`409 REPAIR_BUDGET_EXHAUSTED` before anything is sent, and earlier attempts on the same base are superseded by
+the result that lands. Started with `--design-loop`, the tool server lists only these four; for an external host
+it binds itself at the first call and publishes the request named by `MONKEYHUB_DESIGN_REQUEST_FILE` as the
+user's message. With `MONKEYHUB_DESIGN_LOOP_STATE` naming a file outside any project, each outcome is written
+there, and `design_loop.py stop-hook --state <file>`, run as the CLI's Stop hook, holds the turn open until a
+change landed, the architect was asked or a limitation was reported, at most three times.
+`design_loop.cli_profile` gives the system prompt, settings, environment and allowed tools of such a turn.
+
 ## 6. Pick and gesture resolution
 
 A pick sends what the object on screen claims about itself — its `archflow:*` user strings, the
@@ -1104,6 +1245,14 @@ as a sequence replays everything rather than silently skipping ahead.
 `?limit=N` is the other way to read it: a catch-up that sends at most N events, replay included,
 and closes as soon as the backlog drains — so a bounded read always terminates, even on a quiet
 process. Without `limit` the connection is held open and carries live events.
+
+A job's events (`candidate.queued` … `candidate.failed`, `candidate.waiting`, an export's
+`export.*`) carry its `lane`, while it is queued `waitingFor` and `waitingReason`, its `title`
+when its work gave one, and its `steps`: the four steps a person follows it by — `generate`,
+`check`, `repair`, `save` — each `pending`, `running`, `done`, `skipped` or `failed` with an
+optional sentence, empty until its work reports one. Each report is a `job.step` event naming
+the `step`, its `stepState` and `stepText`; a step still running when the work ends ends with
+it, `done` or `failed`. The steps live in this process's memory, like the job itself (#300).
 
 **Reserved.** The browser's `EventSource` cannot send an `Authorization` header, so an
 authenticated stream (§10.1) has no answer in v2. A minor version will name one — a bearer
@@ -1868,8 +2017,12 @@ The optional fields are `language` (`en` or `zh-CN`), `theme`
 `intentModel`, positive finite `intentTimeoutS`, `renderProvider` (`off`, `gemini`), a nonempty
 `renderModel` of at most 160 characters, `renderTimeoutS` from 1 to 300, `chatProvider`
 (`codex`, `claude`, `coding-plan`), a nonempty `chatModel`, an http(s) `codingPlanBaseUrl`,
-boolean `autoUpdate`, and boolean `sidebarPinned` (#283: the projects list kept open beside a
-project workspace; the Hub page writes it only while pinned). Other fields are refused.
+boolean `autoUpdate`, boolean `sidebarPinned` (#283: the projects list kept open beside a
+project workspace; the Hub page writes it only while pinned), and boolean `workshopMode` (#668:
+no update is checked for, downloaded or switched in at quit, and from its next launch the desktop
+runs once per account and asks for port 8790 first; written only while on, through
+`PUT /api/updates/settings {"workshopMode": true}`, which then refuses `POST /api/updates/check` and
+`{"autoUpdate": …}` with 409 `UPDATE_WORKSHOP_MODE`). Other fields are refused.
 Both routes return saved fields only; nulls are
 omitted. PUT replaces the file, so a client preserves any saved fields it is not editing. A
 malformed file answers 422 `USER_SETTINGS_INVALID` and can be replaced by an explicit valid PUT.
@@ -1961,6 +2114,41 @@ unfinished jobs after a Runtime restart report `interrupted` and are not replaye
 These operations use existing jobs and P036 noncanonical export runs, leaving
 project HEAD and the authoritative model unchanged.
 
+**A 3DM that carries its state (#657).** State files are the design loop's: their two routes answer only while
+it is `enforced` (`409 DESIGN_LOOP_NOT_ENFORCED` otherwise), and `POST /api/exports` takes no state field in any
+tier. `POST /api/state-files/export` takes `{projectRevision, parentFileSha256?}` and is read back like any
+export (`GET /api/exports/{id}`, then its bytes). The 3DM also holds, as the document strings `archflow:state`
+and `archflow:binding`, that run's State Record, the project's active design decisions as portable rows
+(`disposition`, `targetRef`, `rawLanguage`, `strength`, `extent`) and a seal: digests of the record, the decisions
+and each row, each named object's box, geometry digest and where its mesh, Brep or extrusion vertices sit inside
+that box (their mean and spread), how many top-level objects have no name, the optional `parentFileSha256`, and a
+copy of the record and decisions it vouches for, which its digests must match. The report adds `withState`,
+`stateRecordDigest`, `decisionsCarried` and `parentFileSha256`.
+
+`POST /api/state-files/inspect` takes `{fileName, contentBase64}` and retains nothing. It answers `fileSha256`,
+`sealed`, `sealKeepsRecord`, `parentFileSha256`, the `record` and `decisions` the seal keeps (what the file states
+when the seal keeps none), `outOfBand` (each difference from the seal: `row_added`, `row_changed` (with
+`changes`, each value's `path` in the row, `before` as sealed and `after` as the file states it, when the seal
+keeps its record), `row_removed`, `decisions_changed` with the rows `added` and `removed`, `object_added`, `object_removed`, `object_duplicate`,
+`object_moved` (one offset beyond 2 mm), `object_transformed` (a box turned, mirrored or resized),
+`object_reshaped` (its vertices sit elsewhere inside an unchanged box by more than 5 mm), `object_unnamed`,
+`unsealed`, `seal_broken` (a seal removed, unreadable or not matching its own digests, read as none), or
+`state_replaced` (the record string removed or unreadable, read from the copy a sound seal keeps)), `reencoded`
+(objects whose mesh was only re-encoded) and `conditions`: for each part a change made outside MonkeyHub touched,
+one open `DesignObligation` with no check, awaiting the architect, which a revision reaching that part or a part
+of it asks about. When no seal vouches for the file (none, a broken one, or one that keeps no copy of the design),
+one is on the whole design, subject `project:<projectId>`, which every change reaches, and one is on what each
+decision the file states names: those decisions are not recorded as the architect's. A record removed from beside
+a sound seal asks nothing; the seal keeps the design. Whoever builds a project from the file builds it from the
+record and decisions the seal keeps, or, with no seal that vouches for them, from the record the file states
+without its decisions, and adds these questions, so that the one-call revision asks before changing anything
+changed outside. A file whose state cannot be read is `422 STATE_FILE_<code>`; a seal whose kept copy does not
+match its own digests is `STATE_FILE_BINDING_CORRUPT`.
+
+The seal has no key. It tells a change made by anyone who leaves the seal as it is; someone who rewrites the
+kept copy and recomputes its digests, which anyone running code on the file can do, makes a file that reads as
+sealed and unchanged.
+
 The current provider supports bounded 3DM/GLB triangle-mesh interchange and
 validated same-format delivery. It does not reconstruct exact CAD solids or
 transfer materials, textures or hierarchy. SKP/DWG routes report no configured
@@ -1994,6 +2182,25 @@ provider is called and no design changes. A capture retained before `target` and
 keeps its recipe and identity; a client standing in it infers a target on its view
 line. Sending a retained camera again with the current `modelSource` captures the same
 view on the current model as a new source; the earlier source and its results stay.
+
+`POST /api/render/views/passes` (202; #19) draws three aligned images of one exact model through a
+perspective camera: an object-ID image (each key one flat sRGB colour, exact in every pixel the key's nearest surface
+covers, on white), the visible feature edges in black on white, and a 16-bit grey depth image (65535 at the nearest
+visible surface, 1 at the farthest, linear in distance along the view axis between them, 0 where no surface is). Name
+`view` (`{runId, assetSha256}` of a saved model view: its camera and its own model) or `camera` (`position`, `target`,
+`up`, vertical `fovDeg`, in the model's frame and length unit) with `size` and one model (`modelSource`, or
+`sourceAsset` as the drawing routes take an imported or live-Rhino snapshot model). `longEdge` (16 to 4096, default
+2048) is the output's longer side; the view's aspect is kept. `idBy` groups the ID colours by `object`, `layer` or
+`material` (from the model asset's own index; an object it does not name once is "unknown"). The images come from one
+depth buffer over the model's triangles (meshed at about 0.75 pixel at the model's middle distance; triangles crossing
+the near plane are cut), so they line up pixel for pixel. The work runs as a background job in its own P036 run
+`camera-pass-<id>` (`StudioCameraPass@1`); `GET /api/render/views/passes/{passId}` reads it, and on success names the
+three documents, registered beside the model with `viewRecipe.kind` "camera-pass", `pass`, the camera, size, `idBy`,
+`legend` (`{key, color, objects, pixels}`) on the ID image and `depth` (`near`, `far`, `unit`, `measure`) on the depth
+image. They can be render sources or references like any registered image. Not yet drawn: materials' textures,
+transparency, lights or shadows; the camera's own near and far planes are not used.
+
+A live section (G5) travels with a view: `POST /api/render/views` takes an optional `clip` (`{origin, normal}`, a point on the plane and the normal toward the side that stays drawn, in the model's frame) and keeps it in the saved view's recipe, and `POST /api/render/views/passes` takes one too (a saved view's own `clip` applies when none is given). A pass cut so drops or cuts the triangles and feature edges beyond the plane before projecting, draws the cut's outline in the line image, and names `clip` in its record and its three recipes; the cut faces are not filled in these images (the Modeling viewport fills those of closed members).
 
 Each request creates its own `render-<UUID hex>` P036 run. Repeating identical
 parameters with that UUID returns the same job; different parameters return 409.
@@ -2125,3 +2332,116 @@ uses the existing CAD/SDK/projection executors and their saved-output checks.
 `ready` and `checkedAt` describe the last qualification in this Hub session,
 not an authorization or guarantee for a later execution. See
 [Integration packs](integration-packs.md) for the contract and Revit design case.
+
+## Live Rhino and skill runs
+
+**Live Rhino** (`project_runtime.live_rhino`, local runtimes only). `GET /api/live-rhino/instances` lists running
+Rhinos reachable through Rhino 8's RhinoCode CLI; a Rhino is listed after `StartScriptServer` has been typed in it once.
+`GET /api/live-rhino/document` reads the open document as it is now, unsaved edits included (layers, objects,
+optional geometry). `POST /api/live-rhino/write` adds or changes objects as one `_-RunPythonScript` command, so one
+Undo removes it; created objects carry `monkeyhub.owner=agent` user text, and transform, delete and attributes refuse
+the architect's own objects unless `allowUserObjects` is true. `GET /api/live-rhino/capture` returns a PNG of one view. `POST /api/live-rhino/snapshot` writes a copy of the open
+document as it is now (unsaved edits included; `drawableOnly` leaves out text dots, hatches and annotations the
+drawing routes refuse, `layerPrefixes` keeps some layers) and registers it as an external model asset, so plans,
+elevations and section perspectives can draw it as `sourceAsset`; its `undrawable` lists any object the drawing
+routes will leave out of that copy, with the reason. Nothing here saves the document. The answers are typed in the
+schema: instances `LiveRhinoInstancesDto`; write `LiveRhinoWriteDto` (`writeId`, `created` `{operation, id, op}`,
+`changed`, `deleted`, `imported`, `document`); snapshot `LiveRhinoSnapshotDto` (`rhino`, `document`,
+`writtenObjects`, `meshedObjects`, `omitted` by object type, `artifact` with `runId`/`sha256` to pass as
+`sourceAsset {runId, assetSha256}`, `undrawable` `{checked, drawable, objects}`). A document's `objectCount` counts the
+objects in it, not those Rhino keeps for Undo; `modified` stays true after a write and its Undo. The model view
+(`GET /api/drawings/model-view`) does not take a snapshot, which has no runner receipt; draw one with a plan, an
+elevation or a section perspective.
+
+**Skill runs** (`project_runtime.skills`, `project_runtime.skill_runs`). A skill version may carry `files`, an
+`entry` and `access`: the programs it starts, whether it uses the network, ssh hosts, folders it reads and writes,
+and Python packages. Its `codeSha256` covers body, entry, files and access. A person grants a version on the Hub
+page (`POST /api/skills/{id}/approvals`, `scope` "once" for one run or "version" until revoked); every grant and
+its status is at `GET /api/skills/approvals`, and `POST /api/skills/approvals/{approvalId}/revoke` withdraws one.
+The chat's tools reach neither. `POST /api/skills/{id}/run` refuses an ungranted version (`SKILL_NOT_APPROVED`), code
+that no longer matches its grant (`SKILL_CODE_CHANGED`) or a version without an entry (`SKILL_NOT_RUNNABLE`), then
+answers 202 with a `statusPath` (`GET /api/skills/runs/{runId}`): the run is a background job in its own P036 run
+`skill-run-<id>`. An Agent's run is marked by the Hub (`agentRun`). The Hub setting `skillAgentRuns` decides it, as
+Claude Code and Codex ask before a tool runs. Every run needs a person's grant, and a version a person always allowed
+runs. Otherwise "ask" (the default) puts the run and its access to the person in the chat with three buttons (allow
+once, always allow this version, deny); on allow the Hub writes the grant with `method` "hub-chat" and starts the run
+with that grant (`grantId` names a once grant, which only that Agent run may use). The Agent's tool call waits up to
+50 s per call and answers `SKILL_PERMISSION_WAITING` with a `permissionId` to call again with; `SKILL_PERMISSION_DENIED`
+and `SKILL_PERMISSION_WITHDRAWN` (the turn ended first) run nothing. "granted" runs only always-allowed versions and
+asks nothing; "never" asks nothing and also refuses an Agent any skill that declares access. While the Hub's designLoop
+is "enforced" (#185) the setting reads as "never".
+
+Skill packages. `GET /api/skills/library` lists the packages shipped with MonkeyHub (`apps/monkeyhub/skills/`,
+the same path in the release, source "bundled") and the user's own (`%LOCALAPPDATA%\MonkeyHub\skill-packages`, or the folder
+`MONKEYHUB_SKILL_PACKAGES` names; source "user"), each with the version the project holds and `upToDate`.
+`POST /api/skills/import` (`source`, `name`: the package folder) registers one as a version of the project's skill
+and answers `imported: false` with the current version when the package says what it says. A package is
+`skill.json` (name, description, entry, manifest, access), `SKILL.md` and its other UTF-8 text files. Importing
+grants nothing; the chat may list and import.
+
+A run is not isolated. It starts `python -B -X utf8 <bootstrap> <entry> --inputs <dir> --params <file> --outputs <dir>`
+with the runtime's Python and the user's own environment variables; declared packages are installed once into the
+skill's own folder (under `%LOCALAPPDATA%\MonkeyHub\skill-envs`) with a local pip. An input is a registered
+document, a 3dm model asset (`modelSha256`), a drawing (`kind: "drawing"`, its SVG and registration) or any local
+file (`kind: "file"`, `path`). PDF/PNG/JPEG outputs become documents, 3dm outputs model assets with an `undrawable`
+report, small text stays in the record, and any other file is a P036 object, downloadable at
+`GET /api/skills/runs/{runId}/outputs/{name}`. A drawing input's `<name>.json` gives its view under
+`viewRecipe.frame` for every kind: a cut plan's record keeps it there, while an elevation's record keeps origin, right,
+up, look, crop_uv, scale and the rest flat on `viewRecipe` (they are the receipt the drawing is checked against), so for
+an elevation the same values are given flat and again under `frame`. The documents list itself is unchanged. The run's
+own folder (`monkeyhub-skill-*` in the system temp folder: copies of the inputs, the package and the outputs) is
+removed when the run ends, after its outputs are registered in the project; the run's record is written from what
+was registered, so nothing a run produced lives only there. A failed run registers no outputs: its record keeps the
+exit code, the ends of stdout and stderr, and what it needed. Inside its own folder a run writes only under
+`--outputs` or beside its own code, and no write climbs out of `--outputs` with `..`, whatever it was granted: a
+refused write fails the run as `SKILL_OUTPUT_INVALID` (the run's control files, inputs and audit log stay as they
+were), even when the skill caught the refusal.
+
+What a run is never given. Its environment is the user's own less the runtime's settings (every
+`ARCHFLOW_STUDIO_*`, `MONKEYHUB_*` and `MONKEYMONITOR_*` variable, among them the render key the Hub hands the runtime
+and a team project's sync token) and less every variable named as a credential (a `KEY`, `TOKEN`, `SECRET`,
+`PASSWORD`, `CREDENTIAL`, `AUTH`, `PAT` or `COOKIE` part, or `API_KEY`, `ACCESS_KEY`, `PRIVATE_KEY`); `SSH_AUTH_SOCK`
+stays only for a version granted ssh hosts. The bootstrap refuses a lookup of Windows Credential Manager's
+`CredRead*`/`CredEnumerate*` functions, where the Hub keeps the keys saved in Settings: no grant allows it, and the run
+fails with `SKILL_CREDENTIALS_REFUSED`. A skill that needs a provider (an image model, say) asks the Hub to call it;
+the key never leaves the Hub. Programs a granted program starts, and native code that reads another process's memory,
+are outside what this can stop.
+
+What the grant holds and what it does not. The bootstrap installs a Python audit hook before the entry runs:
+starting a program (subprocess, os.system, exec/spawn, startfile), ssh/scp/sftp/rsync to a host, connecting to a
+host other than this machine, and writing, removing or renaming outside the run's folders, the system temp folder
+and the skill's package folder are each checked against the granted access, refused when not granted, and
+recorded. The run record names the grant (who gave it, when, once or for the version, what it allows), the
+programs started, hosts reached, writes outside its folders, and in `needed` what the code tried that was not
+granted (the run then fails with `SKILL_PERMISSION_NEEDED`; the person can widen the declaration and grant again).
+A refused step is not offered to the person mid-run; the run ends and says what it needed. Reading files is not
+checked. Native code, ctypes and the programs a granted program starts are outside the hook. Any local process that
+can reach the Hub's forwarded URL can also send a grant; `approvedBy` names who the runtime saw, not proof that a
+person pressed the button. With a grant, a skill can do what the user's account can do as far as the grant reaches,
+and the button on the Hub page is the only gate.
+
+## Board view, quantities and the live section (branch claude/hub-capabilities, 2026-10-21)
+
+`POST /api/board/view` (a read; gap 28) draws one frame (`frameId`, a frame element's id) or `region` (`{x, y,
+width, height}` in scene coordinates) of a Board scene revision as the Board shows it, its exact registered pages
+(tracing-paper snapshots included) under the person's strokes, lines, shapes and text, at most 2048 px (`maxEdge`
+64-2048) and 4 MiB, as base64 PNG with its SHA-256. Beside it: every frame on the board, the pages in the region
+(file name, `tracingPaper`, exact source), and every mark (type, colours, stroke width, opacity, box, `updatedAt`
+from Excalidraw's `updated`, `frameId`, `groupIds`, text, point count, and `onPages`: each page under it with the
+shared part as page fractions from the top left). It approximates Excalidraw's drawing and writes nothing.
+
+`PUT /api/board` refuses a newly added `seenDocuments` id that names a drawing revision by its asset
+(`BOARD_SEEN_KEY_INVALID`): a received drawing is the JSON text of `[runId, revisionRef]`, and `[runId,
+assetSha256]` only for a document without a revision. Ids already saved are not read again.
+
+`POST /api/quantities` (a read; G4) takes the model a drawing route would select (`modelSource`, `sourceAsset`
+or `sourceStageRef`) and answers one row per physical member: closed, solid count, volume (a closed member's
+only) as its CAD receipt recorded of the cold read (an imported model's receipt keeps only bounds, so its
+members are measured on the same exact shapes; `measuredFrom` says which), area measured on that shape, in the
+model unit and in metres, and role and material from the facets of the geometry id it belongs to by the one
+naming rule (`obj-<id>`, `obj-<id>-...`), else the model asset's own material. `summary` sums closed members by
+material and role; open members are counted apart and add only area. `format: "csv"` answers the same as CSV.
+
+A cut plan or vertical section asked with `board: "on-request"` is not placed on the Board by itself, only when
+a person asks (`BoardPageRequest`); its later revisions keep that, as they keep `follow`. The Modeling viewport's
+live section draws so, and offers Put on Board for what it drew.

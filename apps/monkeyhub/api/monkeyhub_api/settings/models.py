@@ -7,6 +7,10 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
+# What a Hub nobody configured does with the Agent's design changes (#185).
+DESIGN_LOOP_DEFAULT = "legacy"
+
+
 class UserSettingsDto(BaseModel):
     """PUT replaces the saved preferences; omitted or null fields use defaults."""
 
@@ -39,6 +43,13 @@ class UserSettingsDto(BaseModel):
     chat_provider: Literal["codex", "claude", "coding-plan"] | None = Field(
         default=None, alias="chatProvider",
     )
+    # How a chat's Agent starts a skill, as Claude Code and Codex ask before a
+    # tool runs. ask: a version a person always allowed runs; any other is put
+    # to the person in the chat (allow once, always allow this version, deny).
+    # granted: only an always-allowed version runs; no question is asked.
+    # never: as granted, and an Agent starts no skill that declares access.
+    # Unset is ask. While designLoop is enforced (#185) the Hub reads it as never.
+    skill_agent_runs: Literal["ask", "granted", "never"] | None = Field(default=None, alias="skillAgentRuns")
     chat_model: str | None = Field(
         default=None, alias="chatModel", min_length=1, pattern=r"^[^\x00-\x1f\x7f]+$",
     )
@@ -51,6 +62,12 @@ class UserSettingsDto(BaseModel):
     # MonkeyHub's automatic desktop updates; absent means on. The Hub reads
     # and writes it; the Project Runtime ignores it.
     auto_update: bool | None = Field(default=None, alias="autoUpdate")
+    # 工作坊模式 (#668), for a machine that must keep one version for days: no
+    # update is checked for, downloaded or switched in, the desktop runs once
+    # per account and asks for the same port on every launch. The desktop host
+    # reads it from this file before the Hub starts. Absent means off, and only
+    # on is written, so older versions read the file while it is off.
+    workshop_mode: bool | None = Field(default=None, alias="workshopMode")
     # The projects list kept open beside a project workspace (#283); absent,
     # it folds to its icons while one is open. The Hub page writes it only
     # while pinned, so versions older than this field still read the file
@@ -80,8 +97,19 @@ class ApplicationSettingsDto(BaseModel):
     library_dir: str | None = Field(default=None, alias="libraryDir", min_length=1)
     reference_run: str | None = Field(default=None, alias="referenceRun", min_length=1)
     cad_export: Literal["occt", "rhino", "off"] = Field(default="occt", alias="cadExport")
+    # The design loop (#185): legacy answers as before; advisory checks the conditions a
+    # design must keep and lists the problems; enforced also makes POST /api/revisions,
+    # which checks, builds, reads back and validates a change, the Agent's only way onto
+    # the working design.
+    design_loop: Literal["legacy", "advisory", "enforced"] = Field(default=DESIGN_LOOP_DEFAULT, alias="designLoop")
     studio_port: int = Field(default=8789, alias="studioPort", ge=1024, le=65535)
     monitor_port: int = Field(default=8788, alias="monitorPort", ge=1024, le=65535)
+
+    @field_validator("design_loop", mode="before")
+    @classmethod
+    def _design_loop_was_off(cls, value: object) -> object:
+        # "off", saved before the setting had three tiers, is legacy.
+        return "legacy" if value == "off" else value
 
     @field_validator("project_dir", "workspace_dir", "library_dir")
     @classmethod

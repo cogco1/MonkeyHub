@@ -1,6 +1,7 @@
 import { useContext, useEffect, useState } from "react";
 import { asStudioApiError } from "../../api/project-runtime/client";
 import { useT } from "../../i18n/useT";
+import { InlineDecision } from "../../notifications/cards/InlineDecision";
 import type { DocumentAnnotationsHandle } from "./useDocumentAnnotations";
 import { DocumentTracingContext } from "./DocumentTracingContext";
 
@@ -84,7 +85,7 @@ export function DocumentTracingPanel({ draft, disabled, onSendingChange }: {
       <label>{t("document.trace.distance")}
         <input type="number" step="any" min="0" value={distance} disabled={locked} onChange={event => setDistance(event.target.value)} />
       </label>
-      <button type="submit" className="btn" disabled={locked || !lineId}>{t("document.trace.calibrate")}</button>
+      <button data-command="sketch.to_model.calibrate" type="submit" className="btn" disabled={locked || !lineId}>{t("document.trace.calibrate")}</button>
     </form>
     <p>{t(draft.tracingCalibration ? "document.trace.calibrated" : "document.trace.noScale",
       { distance: draft.tracingCalibration?.distance ?? "" })}</p>
@@ -106,15 +107,17 @@ export function DocumentTracingPanel({ draft, disabled, onSendingChange }: {
         {modeling.levels.map(level => <option key={level.levelId} value={level.levelId}>{level.role} · {level.elevation} m</option>)}
       </select>
     </label>}
-    {modeling.blockedReason && <p role="status">{modeling.blockedReason}</p>}
-    {modeling.blockedReason && modeling.continueViewed && <button type="button" className="btn" disabled={disabled || continuing}
-      onClick={() => void continueViewed()}>{t(continuing ? "document.modelSource.continuing" : "stage.base.continue")}</button>}
-    {modeling.blockedReason && modeling.recordEdits && <button type="button" className="btn" disabled={locked || recording}
-      onClick={() => void recordEdits()}>{t(recording ? "stage.record.busy" : "stage.record.continue")}</button>}
-    <button type="button" className="btn btn--accent" disabled={locked || !!modeling.blockedReason || !draft.tracingCalibration || selected.length === 0}
+    {modeling.blockedReason && <InlineDecision className="document-tracing__decision" live label={modeling.blockedReason}
+      title={modeling.blockedReason} choices={[
+        modeling.continueViewed && { command: "design.go_to_step.continue", primary: true, disabled: disabled || continuing,
+          label: t(continuing ? "document.modelSource.continuing" : "stage.base.continue"), onSelect: () => void continueViewed() },
+        modeling.recordEdits && { command: "draft.record.continue", primary: !modeling.continueViewed, disabled: locked || recording,
+          label: t(recording ? "stage.record.busy" : "stage.record.continue"), onSelect: () => void recordEdits() },
+      ]} />}
+    <button data-command="sketch.to_model.send" type="button" className="btn btn--accent" disabled={locked || !!modeling.blockedReason || !draft.tracingCalibration || selected.length === 0}
       onClick={() => void generate()}>{t(disabled ? "document.trace.generating" : "document.trace.generate")}</button>
     {submitted && <p role="status">{t("document.trace.submitted")}</p>}
-    {submitted && <button type="button" className="btn" onClick={modeling.showModel}>{t("document.trace.showModel")}</button>}
+    {submitted && <button data-command="view.background.open" type="button" className="btn" onClick={modeling.showModel}>{t("document.trace.showModel")}</button>}
     {error && <p role="alert">{error}</p>}
   </section>;
 }

@@ -17,7 +17,7 @@ from archflow.project.refs import ProjectRecordRef, require_identifier
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecord
 
-from .models import HubFailure
+from .models import HubFailure, plain_spelling
 
 
 def _identifier(value: str) -> str:
@@ -39,7 +39,7 @@ def _project(path: str) -> tuple[str, str]:
         repository.read_head()
     except (OSError, ValueError, RuntimeError) as exc:
         raise HubFailure(422, "CHAT_PROJECT_INVALID", "The selected folder is not a readable ArchFlow project.") from exc
-    return repository.layout.project_id, str(repository.layout.root)
+    return repository.layout.project_id, plain_spelling(str(repository.layout.root))
 
 
 def _position(root: str) -> tuple[int | None, str | None]:

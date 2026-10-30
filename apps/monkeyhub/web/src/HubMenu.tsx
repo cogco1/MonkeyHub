@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 
 /** #337: one entry of a Hub menu. A menu is short words; the few choices that are states carry a mark. */
+/** `command` is the command-tree id the entry runs, so its use is counted with the palette's. */
 export type HubMenuItem =
-  | { kind: "command"; id: string; label: string; onSelect: () => void; disabled?: boolean; hint?: string }
-  | { kind: "check"; id: string; label: string; checked: boolean; onSelect: () => void }
-  | { kind: "choice"; id: string; label: string; checked: boolean; onSelect: () => void }
+  | { kind: "command"; id: string; label: string; onSelect: () => void; disabled?: boolean; hint?: string; command?: string }
+  | { kind: "check"; id: string; label: string; checked: boolean; onSelect: () => void; command?: string }
+  | { kind: "choice"; id: string; label: string; checked: boolean; onSelect: () => void; command?: string }
   | { kind: "heading"; id: string; label: string }
   | { kind: "separator"; id: string };
 export type HubMenu = { id: string; label: string; items: readonly HubMenuItem[] };
@@ -90,7 +91,7 @@ export function HubMenuBar({ label, menus, before }: { label: string; menus: rea
           onKeyDown={(event) => onListKey(event, index)}>
           {menu.items.map((item) => item.kind === "separator" ? <div key={item.id} className="hub-menu__separator" role="separator" />
             : item.kind === "heading" ? <div key={item.id} className="hub-menu__heading" role="presentation">{item.label}</div>
-            : <button key={item.id} type="button" className="hub-menu__item" tabIndex={-1} data-actionable={actionable(item)}
+            : <button key={item.id} type="button" className="hub-menu__item" tabIndex={-1} data-actionable={actionable(item)} data-command={item.command}
               role={item.kind === "choice" ? "menuitemradio" : item.kind === "check" ? "menuitemcheckbox" : "menuitem"}
               aria-checked={item.kind === "choice" || item.kind === "check" ? item.checked : undefined}
               aria-disabled={item.kind === "command" && item.disabled ? true : undefined} onClick={() => pick(item)}>

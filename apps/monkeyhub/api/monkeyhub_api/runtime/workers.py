@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from functools import partial
-from http.client import HTTPConnection
+from http.client import HTTPConnection, HTTPException
 import json
 import os
 from pathlib import Path
@@ -14,6 +14,8 @@ from typing import Callable, Literal
 from urllib.error import URLError
 from urllib.request import HTTPHandler, ProxyHandler, build_opener
 from uuid import uuid4
+
+from archflow.project.repository import project_root_key
 
 from ..models import HubError, HubFailure
 
@@ -30,8 +32,20 @@ _ACTIVE_PROBE_S = 1.0
 _STABLE_PROBE_S = 5.0
 # How long a verified service may miss probes before it is ``unavailable``.
 _UNAVAILABLE_AFTER_S = 5.0
+# The same for a service with work in progress (gap 25): its job may hold the
+# interpreter in native code (reading or meshing a large model) for minutes, and
+# its probes time out while the work goes on. Its process exiting is still seen
+# at once; only missed probes are given this long.
+_BUSY_UNAVAILABLE_AFTER_S = 600.0
 # How long a probe waits for the answer once its connection is open.
 _PROBE_TIMEOUT_S = 1.0
+# How long a launch that is alive may take to answer its first probe. Opening a
+# large project reads its index and first views before the port listens; 0925,
+# with 51 attached models, took longer than the 30 s this once was when the Hub
+# restarted and opened several projects at once, and was stopped while it worked
+# (10-24). A launch that is truly stuck is stopped after this and started again
+# by the repair table.
+_START_LIMIT_S = 180.0
 # How long a probe of a launch that has not answered yet waits for its port to
 # accept (#449). Nothing listens there until the service has imported its
 # application, and Windows refuses a loopback connection to such a port only
@@ -41,10 +55,22 @@ _PROBE_TIMEOUT_S = 1.0
 _STARTING_CONNECT_S = 0.03
 
 
-def _connect_within(limit: float, address, timeout, source_address=None) -> socket.socket:
-    """Connect within ``limit``; the exchange then has the request's own timeout."""
+def _connect_within(limit: float | None, address, timeout, source_address=None) -> socket.socket:
+    """Connect within ``limit`` (the request's own timeout when None); the exchange then has that timeout.
 
-    connection = socket.create_connection(address, limit, source_address)
+    A connection to a port nobody listens on yet can, on Windows, come back
+    connected to itself: the source port it was given is the port it dialled,
+    and the probe would read its own request as the answer (BadStatusLine,
+    0925 on 10-24). That is a port not listening yet, said as such.
+    """
+
+    connection = socket.create_connection(address, timeout if limit is None else limit, source_address)
+    try:
+        if connection.getsockname() == connection.getpeername():
+            raise ConnectionRefusedError(f"{address[0]}:{address[1]} answered from itself; nothing listens there yet")
+    except OSError:
+        connection.close()
+        raise
     connection.settimeout(timeout)
     return connection
 
@@ -59,13 +85,30 @@ class _ProbeHandler(HTTPHandler):
 
     def _connection(self, host, **kwargs) -> HTTPConnection:
         connection = HTTPConnection(host, **kwargs)
-        if self.connect_limit is not None:
-            connection._create_connection = partial(_connect_within, self.connect_limit)
+        connection._create_connection = partial(_connect_within, self.connect_limit)
         return connection
 
 
 def project_key(project_dir: str | None) -> str:
-    return os.path.normcase(str(Path(project_dir).resolve())) if project_dir is not None else ""
+    """The one key the Hub files a project folder under, however it is spelled (gap 26).
+
+    Case folded, resolved and without an extended-length prefix, as the project
+    library keys its roots: a folder opened by either spelling has one runtime,
+    one Studio and one operation journal.
+    """
+
+    return project_root_key(project_dir) if project_dir is not None else ""
+
+
+def earlier_project_keys(project_dir: str) -> tuple[str, ...]:
+    """The other key an earlier Hub may have filed this folder under: its prefixed spelling (gap 26)."""
+
+    key = project_key(project_dir)
+    if key[1:3] == ":\\":
+        return ("\\\\?\\" + key,)
+    if key.startswith("\\\\"):
+        return ("\\\\?\\unc\\" + key[2:],)
+    return ()
 
 
 @dataclass(frozen=True)
@@ -264,7 +307,7 @@ class WorkerSupervisor:
         return child.state, child.healthy, child.error, child.service_pid, child.desired_state
 
     def _watch(self, child: _Child) -> None:
-        deadline = time.monotonic() + 30
+        deadline = time.monotonic() + _START_LIMIT_S
         unavailable_since = None
         probe = _ProbeHandler()
         opener = build_opener(ProxyHandler({}), probe)
@@ -310,7 +353,9 @@ class WorkerSupervisor:
                                 if health.get("sourceRevision") != child.launch.source_revision:
                                     detail += " Its source version differs from the running Hub. Restart MonkeyHub after changing the source version before opening its tools."
                                 self._reject(child, "SERVICE_IDENTITY_MISMATCH", detail)
-                except (OSError, URLError, ValueError):
+                except (OSError, URLError, ValueError, HTTPException):
+                    # HTTPException: an answer that is not HTTP (BadStatusLine) is a failed probe like any other; the
+                    # watcher goes on, or the launch would stay starting until its limit and then be stopped.
                     with self._lock:
                         if child.desired_state == "running":
                             if child.service_pid is not None:
@@ -318,7 +363,8 @@ class WorkerSupervisor:
                                 # losing its verified launch or usable page.
                                 if unavailable_since is None:
                                     unavailable_since = time.monotonic()
-                                if time.monotonic() - unavailable_since >= _UNAVAILABLE_AFTER_S:
+                                limit = _BUSY_UNAVAILABLE_AFTER_S if child.busy else _UNAVAILABLE_AFTER_S
+                                if time.monotonic() - unavailable_since >= limit:
                                     child.healthy = False
                                     child.state = "unavailable"
                                     child.error = HubError(code="SERVICE_UNAVAILABLE", detail="The owned service is not answering its health and project binding checks.")
@@ -383,7 +429,23 @@ class WorkerSupervisor:
             for worker_id in self._children:
                 self.stop(worker_id)
 
-    def shutdown(self) -> None:
+    def shutdown(self, on_wait: Callable[[list[dict]], None] | None = None) -> None:
+        """Stop every child and wait for each to finish the work it accepted.
+
+        The wait has no limit of its own: only the person, through the desktop,
+        ends work that is still running (gap 24). Until then ``on_wait`` is told
+        about once a second which children are still running.
+        """
+
         self.begin_shutdown()
-        for child in tuple(self._children.values()):
-            child.process.wait()
+        while True:
+            running = [child for child in tuple(self._children.values()) if child.process.poll() is None]
+            if on_wait is not None:
+                on_wait([{"service": child.launch.service_id, "projectId": child.launch.project_id,
+                          "projectDir": child.launch.project_dir, "busy": child.busy} for child in running])
+            if not running:
+                return
+            try:
+                running[0].process.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                pass

@@ -31,7 +31,9 @@ Two honesty rules travel with every answer:
 from __future__ import annotations
 
 import json
+import math
 import re
+import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -52,6 +54,9 @@ if TYPE_CHECKING:  # pragma: no cover - imported for types only
 # it uses them.
 
 REGISTRY_RELATIVE = Path("governance") / "module_registry.json"
+# How people say they want each command, written ahead of time beside the registry (08 提速); the command tree the
+# web searches carries the same phrasings.
+PHRASES_NAME = "command_phrases.json"
 REGISTRY_SCHEMA = "ArchFlowModuleRegistry@1"
 
 # How many refs a describe answer lists before it says how many more there are:
@@ -66,6 +71,11 @@ NO_MATCH = (
     "capabilities; it is not the list of everything the system does. Read GET /api/capabilities for "
     "the whole index, and the existing API actions, before concluding that nothing here does this."
 )
+
+
+# A word or two an entry shares with a sentence it was not written for is not evidence. Kept are the entries
+# scoring at least this share of the best one, whose evidence also covers at least this share of the sentence.
+EVIDENCE_SHARE = 0.25
 
 
 class CapabilityIndexUnavailable(StudioError):
@@ -96,16 +106,29 @@ def registry_path(start: Path | None = None) -> Path | None:
     return None
 
 
+# The same table also holds what the Hub itself performs (``host: "hub"``): opening a
+# project, settings, updates, and the interface-only arrangements of the window
+# (``kind: "shell"``). Those are found through the Hub and the command palette; an agent
+# working in a project reaches only this Runtime's routes, so this index leaves them out.
+RUNTIME_HOST = "runtime"
+
+
+def hosted_here(entry: Mapping[str, Any]) -> bool:
+    """Whether this Runtime performs the capability: an entry names no host, or this one."""
+
+    return entry.get("host", RUNTIME_HOST) == RUNTIME_HOST
+
+
 @lru_cache(maxsize=1)
 def _read(path: str, stamp: tuple[int, int]) -> tuple[dict[str, Any], ...]:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if data.get("schema") != REGISTRY_SCHEMA:
         return ()
-    return tuple(data.get("capabilities", ()))
+    return tuple(entry for entry in data.get("capabilities", ()) if hosted_here(entry))
 
 
 def capability_index() -> tuple[dict[str, Any], ...]:
-    """Every registered capability entry, read from the registry beside us."""
+    """Every registered capability this Runtime performs, read from the registry beside us."""
 
     path = registry_path()
     if path is None:
@@ -134,6 +157,9 @@ _STOPWORDS = frozenset({
     "的", "了", "把", "个", "这", "那", "和", "与", "请", "帮", "我", "在", "是", "要", "给", "它",
 })
 
+# Two-character words as common as those: asking how, how much, a little. The web's command search drops the same.
+_STOP_PAIRS = frozenset({"怎么", "什么", "怎样", "如何", "一下", "一点", "一个", "一张", "可以", "哪个", "这样", "那样", "看看", "能否"})
+
 # A Latin token has to be this long to count on its own; a CJK term is counted
 # as a two-character run, which is the shortest unit that carries a word there.
 _MIN_LATIN = 3
@@ -161,95 +187,158 @@ def _cjk_runs(text: str) -> list[str]:
     return runs
 
 
-def _cjk_terms(text: str) -> set[str]:
-    """Two-character terms of every CJK run, minus the ones that say nothing."""
+def _terms(text: str) -> list[str]:
+    """The terms of a text, repeats kept: Latin words and Chinese character pairs, stopwords left out."""
 
-    terms: set[str] = set()
-    for run in _cjk_runs(text):
-        for index in range(len(run) - 1):
-            pair = run[index:index + 2]
-            if pair[0] not in _STOPWORDS and pair[1] not in _STOPWORDS:
-                terms.add(pair)
-    return terms
+    folded = unicodedata.normalize("NFKC", text).casefold()
+    out = [token for token in _LATIN.findall(folded) if len(token) >= _MIN_LATIN and token not in _STOPWORDS]
+    for run in _cjk_runs(folded):
+        out += [run[index:index + 2] for index in range(len(run) - 1)
+                if run[index] not in _STOPWORDS and run[index + 1] not in _STOPWORDS and run[index:index + 2] not in _STOP_PAIRS]
+    return out
 
 
-def entry_terms(entry: Mapping[str, Any]) -> set[str]:
-    """The words this capability is written down under: its goals and aliases.
+@lru_cache(maxsize=1)
+def _phrases_at(path: str, stamp: tuple[int, int]) -> dict[str, Any]:
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    commands = data.get("commands") if isinstance(data, dict) else None
+    return commands if isinstance(commands, dict) else {}
+
+
+def command_phrases() -> dict[str, Any]:
+    """The phrasings and aliases written for each command, from beside the registry; none where it is absent."""
+
+    registry = registry_path()
+    path = registry.parent / PHRASES_NAME if registry is not None else None
+    if path is None or not path.is_file():
+        return {}
+    info = path.stat()
+    return _phrases_at(str(path), (info.st_mtime_ns, info.st_size))
+
+
+# How much each written-down text counts, and the BM25 constants: the same as the web's command search (search.ts).
+# A capability's own goals and its commands' names count most; how its commands are said, least.
+_GOAL, _LABEL, _ALIAS, _PHRASE = 3.0, 3.0, 2.5, 1.5
+_K1, _B = 1.2, 0.75
+_VERBATIM = 10.0
+
+
+def _written(entry: Mapping[str, Any], phrases: Mapping[str, Any]) -> list[tuple[str, float]]:
+    """What a capability is written down under, each text with its weight.
 
     Deliberately not the purpose sentence: a purpose is prose written for a
     reader, and searching it would match on incidental words and turn the
     index into something that answers almost anything.
     """
 
-    written = [str(value) for value in
-               (*entry.get("goals", ()), *entry.get("aliases", ()), str(entry.get("capability_id", "")))]
-    text = " ".join(written)
-    return _latin_tokens(text) | _cjk_terms(text)
-
-
-def query_terms(query: str) -> set[str]:
-    return _latin_tokens(query) | _cjk_terms(query)
-
-
-def relevance(entry: Mapping[str, Any], query: str) -> tuple[float, tuple[str, ...]]:
-    """How relevant one entry is to a sentence, and which of its words matched.
-
-    The score is the matched written-down text length: a longer agreed term is
-    stronger evidence than a short one, and an exact id or a whole registered
-    goal appearing verbatim outranks any number of loose words.
-    """
-
-    asked = query.strip().casefold()
-    if not asked:
-        return 0.0, ()
-    if str(entry.get("capability_id", "")).casefold() == asked:
-        return 1000.0, (str(entry.get("capability_id")),)
-    matched = sorted(term for term in entry_terms(entry) if term in asked)
-    score = float(sum(len(term) for term in matched))
-    for phrase in (*entry.get("goals", ()), *entry.get("aliases", ())):
-        written = str(phrase).casefold()
-        if written and (written in asked or (len(asked) >= 4 and asked in written)):
-            score += 10.0 + len(written)
-            if written not in matched:
-                matched.append(written)
-    return score, tuple(matched)
+    texts = [(str(value), _GOAL) for value in (*entry.get("goals", ()), *entry.get("aliases", ()))]
+    for command in (entry.get("ui") or {}).get("commands") or ():
+        if not isinstance(command, Mapping):
+            continue
+        texts += [(str(command[key]), _LABEL) for key in ("label", "label_zh") if command.get(key)]
+        texts += [(str(value), _ALIAS) for value in command.get("aliases", ())]
+        said = phrases.get(str(command.get("id")))
+        if isinstance(said, Mapping):
+            texts += [(str(value), _ALIAS) for value in (*said.get("aliases_zh", ()), *said.get("aliases_en", ()))]
+            texts += [(str(value), _PHRASE) for value in (*said.get("zh", ()), *said.get("en", ()))]
+    return texts
 
 
 def match_capabilities(
-    entries: Sequence[Mapping[str, Any]], query: str | None
+    entries: Sequence[Mapping[str, Any]], query: str | None, phrases: Mapping[str, Any] | None = None,
 ) -> tuple[tuple[dict[str, Any], ...], tuple[tuple[float, tuple[str, ...]], ...], str | None]:
     """Rank registered entries against what someone said they want to do.
 
-    Returns the entries in relevance order with the evidence for each, and the
-    sentence to answer with when nothing was relevant. The caller pages and
-    renders; this is the only place the rule itself lives, so the CLI and the
-    served index cannot disagree about what matches.
+    BM25 over each entry's written-down texts (_written) and the phrasings its
+    commands were indexed under, with a bonus for a whole goal, name or
+    phrasing said verbatim. Returns the entries in relevance order with the
+    evidence for each, and the sentence to answer with when nothing was
+    relevant. An entry that shares only a common word with the sentence
+    ("change", "图纸") is not returned beside the entry the sentence was written
+    for (EVIDENCE_SHARE). The caller pages and renders; this is the only place
+    the rule itself lives, so the CLI and the served index cannot disagree
+    about what matches, and the web's command search keeps the same rule.
     """
 
     rows = [dict(entry) for entry in entries]
     if query is None or not query.strip():
         return tuple(rows), tuple((0.0, ()) for _ in rows), None
-    scored = [(entry, relevance(entry, query)) for entry in rows]
-    hits = sorted(
-        (pair for pair in scored if pair[1][0] > 0),
-        key=lambda pair: (-pair[1][0], str(pair[0].get("capability_id", ""))),
-    )
-    if not hits:
+    phrases = phrases or {}
+    said = " ".join(unicodedata.normalize("NFKC", query).casefold().split())
+    asked = list(dict.fromkeys(_terms(query)))
+    documents = []
+    for entry in rows:
+        weights: dict[str, float] = {}
+        length = 0.0
+        whole = []
+        for text, weight in _written(entry, phrases):
+            for term in _terms(text):
+                weights[term] = weights.get(term, 0.0) + weight
+                length += weight
+            folded = " ".join(unicodedata.normalize("NFKC", text).casefold().split())
+            if len(folded) >= 2:
+                whole.append(folded)
+        documents.append((entry, weights, length, whole))
+    frequency: dict[str, int] = {}
+    for _, weights, _, _ in documents:
+        for term in weights:
+            frequency[term] = frequency.get(term, 0) + 1
+    count = len(documents)
+    average = sum(length for _, _, length, _ in documents) / max(count, 1)
+
+    def idf(term: str) -> float:
+        df = frequency.get(term, 0)
+        return math.log(1 + (count - df + 0.5) / (df + 0.5))
+
+    # Coverage weighs each word of the sentence by how rare it is: matching only common words is little evidence.
+    # A word no entry was written with counts as if one were: rare in a large index, ordinary in a small one.
+    def rarity(term: str) -> float:
+        df = max(frequency.get(term, 0), 1)
+        return math.log(1 + (count - df + 0.5) / (df + 0.5))
+
+    total = sum(rarity(term) for term in asked)
+    scored = []
+    for entry, weights, length, whole in documents:
+        if str(entry.get("capability_id", "")).casefold() == said:
+            scored.append((entry, 1000.0, 1.0, (str(entry.get("capability_id")),)))
+            continue
+        score, matched, covered = 0.0, [], 0.0
+        for term in asked:
+            weight = weights.get(term)
+            if not weight:
+                continue
+            matched.append(term)
+            covered += rarity(term)
+            score += idf(term) * weight * (_K1 + 1) / (weight + _K1 * (1 - _B + _B * length / max(average, 1e-9)))
+        # Said verbatim: the whole sentence is the text, a text of two terms or more is in it, or it is in a text.
+        verbatim = [text for text in whole if text == said or (text in said and len(_terms(text)) >= 2)
+                    or (len(said) >= 4 and said in text)]
+        if verbatim:
+            score += _VERBATIM
+            matched += [text for text in verbatim[:3] if text not in matched]
+        coverage = covered / total if total else (1.0 if verbatim else 0.0)
+        if score > 0 and (verbatim or coverage >= EVIDENCE_SHARE):
+            scored.append((entry, score, coverage, tuple(matched)))
+    scored.sort(key=lambda row: (-row[1], str(row[0].get("capability_id", ""))))
+    if scored:
+        floor = scored[0][1] * EVIDENCE_SHARE
+        scored = [row for row in scored if row[1] >= floor]
+    if not scored:
         return (), (), NO_MATCH.format(query=query, count=len(rows))
-    return tuple(entry for entry, _ in hits), tuple(evidence for _, evidence in hits), None
+    return tuple(entry for entry, *_ in scored), tuple((score, matched) for _, score, _, matched in scored), None
 
 
 def find_capabilities(goal: str | None) -> tuple[tuple[dict[str, Any], ...], str | None]:
     """The registered entries relevant to a goal, most relevant first."""
 
-    matched, _, note = match_capabilities(capability_index(), goal)
+    matched, _, note = match_capabilities(capability_index(), goal, command_phrases())
     return matched, note
 
 
 def find_with_evidence(goal: str | None):
     """The same search, keeping why each entry was returned."""
 
-    return match_capabilities(capability_index(), goal)
+    return match_capabilities(capability_index(), goal, command_phrases())
 
 
 def capability(capability_id: str) -> dict[str, Any]:

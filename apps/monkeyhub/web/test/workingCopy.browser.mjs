@@ -16,6 +16,7 @@ import { createServer } from "vite";
 import react from "@vitejs/plugin-react";
 import { workspaceFixture } from "./workspaceFixture.mjs";
 import { createRetainedModelFixture } from "./retainedModelFixture.mjs";
+import { cmd } from "./commandLocator.mjs";
 
 const fixture = await createRetainedModelFixture({ name: "working-copy" });
 const { project, group, sources: { A, B }, document, webRoot, projectRoot, getJson } = fixture;
@@ -28,7 +29,7 @@ const sourceKey = (source) => JSON.stringify([source.runId, source.stateDigest, 
 const state = () => page.evaluate(() => window.__retainedModel);
 const inkCanvas = () => page.locator('.stage-model canvas.annotate[aria-hidden="true"]');
 const activeCanvas = () => page.locator(".stage-model canvas.annotate[data-armed]");
-const undo = () => page.locator("#annotation-tools").getByRole("button", { name: "Undo mark", exact: true });
+const undo = () => cmd(page.locator("#annotation-tools"), "view.markup_tools.undo");
 async function until(read, accepts, message, timeout = 30000) {
   const deadline = Date.now() + timeout;
   let value;
@@ -42,7 +43,9 @@ async function until(read, accepts, message, timeout = 30000) {
 }
 async function step(name, action) { phase = name; await action(); passed.push(name); console.log(`PASS ${name}`); }
 const annotationWrites = () => requests.filter((row) => row.path === "/api/model-annotations" && row.method === "PUT" && row.response);
-const positionWrites = () => requests.filter((row) => row.path === "/api/working-draft" && row.method === "PUT" && row.response);
+// The working position moves through PUT /api/working-draft, or the Design Tree's Continue through the Runtime's Switch (2-6).
+const positionWrites = () => requests.filter((row) => ((row.path === "/api/working-draft" && row.method === "PUT")
+  || (row.path === "/api/working-design/switch" && row.method === "POST")) && row.response);
 async function ready(source, readStart = 0) {
   await until(state, (value) => value?.status === "ready" && value.annotationsReady && value.loadingSha === null && sourceKey(value.loadedModelSource ?? {}) === sourceKey(source),
     `Exact ${source.runId}/${source.assetSha256} model did not load`, 60000);
@@ -53,18 +56,18 @@ async function ready(source, readStart = 0) {
 }
 async function openTracing() {
   if (await page.locator("#annotation-tools").isVisible()) return;
-  const more = page.locator('button[aria-controls="model-tools-more"]');
+  const more = cmd(page, "view.menu.toggle", { arg: "model_tools_more", includeHidden: true });
   if (await more.getAttribute("aria-expanded") !== "true") await more.click();
-  await page.getByRole("button", { name: "Tracing paper", exact: true }).click();
+  await cmd(page, "view.markup_tools.tracing_paper").click();
   await page.locator("#annotation-tools").waitFor();
 }
 async function view(source) {
   await page.getByTestId("workspace-tree").click();
   const tree = page.locator('[data-project-surface="tree"]');
-  if (!await tree.getByRole("tree").isVisible()) await page.getByRole("button", { name: "List", exact: true }).click();
+  if (!await tree.getByRole("tree").isVisible()) await cmd(page, "view.design_tree.list").click();
   const id = source.runId === A.runId ? `stage:${fixture.stage.stageRef}` : `candidate:${B.runId}`;
-  await tree.locator(`[role="treeitem"][data-node=${JSON.stringify(id)}]`).click();
-  await tree.locator(`.design-tree-inspector[data-node=${JSON.stringify(id)}]`).getByRole("button", { name: "View", exact: true }).click();
+  await cmd(tree, "view.design_tree.select_row", { arg: id }).click();
+  await cmd(tree.locator(`.design-tree-inspector[data-node=${JSON.stringify(id)}]`), "candidate.compare.view").click();
   await ready(source);
   await openTracing();
   await equalCanvas();
@@ -92,7 +95,7 @@ async function drawLine(source, baseline, y) {
   allowedMutation = { method: "PUT", path: "/api/model-annotations", source, revision: baseline.revisionSha256 };
   await openTracing();
   await equalCanvas();
-  await page.locator("#annotation-tools").getByTitle("Draw a straight annotation line", { exact: true }).click();
+  await cmd(page.locator("#annotation-tools"), "view.markup_tools.line").click();
   await until(() => activeCanvas().getAttribute("data-armed"), (value) => value === "true", "Line tool did not arm");
   const box = await activeCanvas().boundingBox();
   assert.ok(box && box.width > 200 && box.height > 200);
@@ -113,7 +116,7 @@ async function drawLine(source, baseline, y) {
   })));
   await until(() => undo().isEnabled(), Boolean, "The source's new stroke must be undoable");
   // Disarm without changing the stroke or its retained view.
-  await page.locator("#annotation-tools").getByTitle("Draw a straight annotation line", { exact: true }).click();
+  await cmd(page.locator("#annotation-tools"), "view.markup_tools.line").click();
   return { ...write, line, image: await inkImage() };
 }
 async function documentSnapshot() {
@@ -230,13 +233,13 @@ try {
   await page.goto(`${origin}/?view=board&lang=en`, { waitUntil: "domcontentloaded" });
   await page.locator(".monkeyboard-canvas canvas").first().waitFor();
   await until(() => getJson("/api/board"), (value) => value.elements.some((element) => element.type === "image" && !element.isDeleted), "The exact drawing must reach Board");
-  await page.locator(".monkeyboard-actions > summary").click();
-  await page.getByRole("button", { name: "Fit board", exact: true }).click();
-  await page.locator(".monkeyboard-actions > summary").click();
+  await cmd(page.locator(".monkeyboard-actions"), "view.menu.toggle", { arg: "board_more" }).click();
+  await cmd(page.locator(".monkeyboard-actions"), "view.canvas.fit").click();
+  await cmd(page.locator(".monkeyboard-actions"), "view.menu.toggle", { arg: "board_more" }).click();
   const box = await page.locator(".monkeyboard-canvas").boundingBox();
   assert.ok(box);
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-  await page.locator(".monkeyboard-context").getByRole("button", { name: "Edit this page", exact: true }).click();
+  await cmd(page.locator(".monkeyboard-context"), "view.open_document.page").click();
   await page.locator('.document-viewport[data-ready="true"]').waitFor();
   let savedA, savedB;
   await step("selected B is read without moving runtime authority or the exact Board page", async () => {
@@ -283,8 +286,8 @@ try {
   });
   await step("only explicit Continue persists B as the runtime working position", async () => {
     const before = await getJson("/api/working-draft");
-    allowedMutation = { method: "PUT", path: "/api/working-draft", revision: before.revisionSha256 };
-    await page.locator('.stage-chip__viewing [data-action="continue"]').click();
+    allowedMutation = { method: "POST", path: "/api/working-design/switch", revision: before.revisionSha256 };
+    await cmd(page.locator(".stage-chip__viewing"), "design.go_to_step.continue").click();
     await until(() => positionWrites().length, (count) => count === 1, "Continue must persist exactly one working position");
     await until(() => getJson("/api/working-draft"), (value) => value.current?.runId === B.runId, "Continue did not retain B");
     await ready(B);

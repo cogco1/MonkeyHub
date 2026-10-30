@@ -36,6 +36,7 @@ class WorkLookupTests(unittest.TestCase):
             (source_root / "governance" / "architecture_policy.json").read_bytes()
         )
         (self.root / "docs" / "architecture").mkdir(parents=True)
+        (self.root / "apps/monkeyhub/web/src/features/commands").mkdir(parents=True)
         for relative in ("docs/architecture/system-map.md", "docs/architecture/semantic-registry.md"):
             (self.root / relative).write_text(UNRENDERED, encoding="utf-8")
         self.lanes = [
@@ -55,6 +56,7 @@ class WorkLookupTests(unittest.TestCase):
             ("ROOT", self.root), ("REGISTRY_PATH", self.registry_path),
             ("SYSTEM_MAP", self.root / "docs/architecture/system-map.md"),
             ("SEMANTIC_REGISTRY", self.root / "docs/architecture/semantic-registry.md"),
+            ("COMMAND_TREE", self.root / "apps/monkeyhub/web/src/features/commands/tree.generated.ts"),
         ):
             patcher = patch.object(devctl, field, value)
             patcher.start()
@@ -266,6 +268,8 @@ class WorkLookupTests(unittest.TestCase):
             self.assertNotEqual((self.root / relative).read_text(encoding="utf-8"), UNRENDERED, relative)
         self.assertEqual(sorted(path.name for path in (self.root / "docs" / "architecture").iterdir()),
                          ["semantic-registry.md", "system-map.md"])
+        tree = (self.root / "apps/monkeyhub/web/src/features/commands/tree.generated.ts").read_text(encoding="utf-8")
+        self.assertIn("export const COMMAND_TREE", tree)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,9 @@ PNG, retained together and registered as its PDF.
 from __future__ import annotations
 
 import base64
+from contextlib import ExitStack, contextmanager
+from contextvars import ContextVar
+from functools import wraps
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 import hashlib
@@ -58,6 +61,7 @@ from ..binding import ProjectBinding
 from ..monitoring import StudioMonitor
 from .projection import StateProjection, project_state, require_readable
 from .projections import DOCUMENT_PAGE, ELEVATION, SECTION_PERSPECTIVE, SHEET, ProjectionQueue, on_demand_spec
+from . import drawing_pool
 from ..errors import StudioError
 
 
@@ -104,7 +108,7 @@ def is_vertical_section(recipe) -> bool:
 
 #: The kinds of drawing a drawing id can name, as a refusal says them.
 DRAWING_KINDS = {CUT_PLAN_KIND: "cut plan", ELEVATION_KIND: "elevation", SECTION_PERSPECTIVE_KIND: "section perspective",
-                 "review-sheet": "review sheet", "view-sheet": "view sheet"}
+                 "review-sheet": "review sheet", "view-sheet": "view sheet", "diagram": "diagram"}
 
 
 def refuse_other_kind(binding: ProjectBinding, drawing_id: str, kind: str, what: str) -> None:
@@ -178,7 +182,7 @@ def _readable_model_source(
 
 def _complete_source(
     binding: ProjectBinding, model: ModelSource | DrawingAssetSource, stage_ref: ProjectRecordRef | None,
-    *, read_only: bool = False, loaded: list | None = None,
+    *, read_only: bool = False, loaded: list | None = None, geometry: bool = True,
 ) -> tuple[ElevationSource | NativeModelSource, dict[str, Any]]:
     """The exact complete model ``model`` names and its CAD receipt.
 
@@ -186,7 +190,12 @@ def _complete_source(
     projection cache): the run may stand on an older canonical base. Anything
     that builds on the model keeps the default, which requires current HEAD.
     A native model is read to find its receipt; ``loaded`` then receives what
-    was read, so a caller that draws it does not read it again.
+    was read, so a caller that draws it does not read it again. Without
+    ``loaded``, a running drawing pool reads it in a worker (#300). A caller that
+    needs only the length unit passes ``geometry=False``: the unit comes from
+    the registration, which was checked against the decoded model when it was
+    registered, and the shapes are not decoded again (#12: listing a large
+    composed model's dimension choices decoded every object each time).
     """
 
     if isinstance(model, DrawingAssetSource):
@@ -202,8 +211,12 @@ def _complete_source(
     if artifact.representation in {"composed", "external"}:
         registered = binding.repository.load_json(cad_ref)
         native = NativeModelSource(model.run_id, cad_ref, ProjectArtifactRef(**registered["artifact"]))
+        if not geometry and isinstance(registered.get("lengthUnit"), str):
+            return native, {"identity": {"length_unit": registered["lengthUnit"]}}
+        pool = drawing_pool.drawer() if loaded is None else None
         try:
-            verified = read_elevation_source(binding.repository, native)
+            verified = (read_elevation_source(binding.repository, native) if pool is None
+                        else pool.source(str(binding.repository.layout.root), native))
         except DrawingElevationError as exc:
             raise StudioError(422, "DRAWING_NATIVE_GEOMETRY_UNSUPPORTED", str(exc)) from exc
         if loaded is not None:
@@ -524,6 +537,20 @@ def draw_model_view(
     return draw_loaded_view(load_model_view(binding, model_source), view=view, size_px=size_px, png_text=png_text)
 
 
+def drawn_object_ids(verified: VerifiedElevationSource) -> tuple[str, ...]:
+    """The objects a model view draws: every physical object but those the source saved hidden.
+
+    A cut's tool and an opening's aperture volume stay in the model hidden, as
+    evidence of what was removed; the cut plans and elevations already leave
+    them out, and a view that drew them showed a hole as the box that made it
+    (gap 42). Hidden as the exports read it (gap 31): what the source marks
+    not visible.
+    """
+
+    hidden = inspection_witness_ids(verified.receipt)
+    return tuple(object_id for object_id in verified.physical_object_ids if object_id not in hidden)
+
+
 def _draw_view(binding, source, receipt, view, *, size_px, png_text, started, verified=None,
                fills=None) -> ModelViewDrawing:
     """Draw one view: the axonometric, or any view given ``fills``, from the mesh; the elevations by the exact solve.
@@ -537,7 +564,8 @@ def _draw_view(binding, source, receipt, view, *, size_px, png_text, started, ve
     try:
         if verified is None:
             verified = read_elevation_source(binding.repository, source)
-        recipe = _elevation_view(receipt, view, hidden_lines=False, scale_denominator=1)
+        drawn_ids = drawn_object_ids(verified)
+        recipe = _elevation_view(receipt, view, hidden_lines=False, scale_denominator=1, object_ids=drawn_ids)
         loaded = perf_counter()
         if view == "axon" or fills is not None:
             meshes, recipe = _view_meshes(verified, receipt, recipe, size_px)
@@ -552,7 +580,7 @@ def _draw_view(binding, source, receipt, view, *, size_px, png_text, started, ve
         scale = max(1, ceil(max(u1 - u0, v1 - v0) * mm_per_unit * 150 / (25.4 * (size_px - 1))))
         recipe = replace(recipe, scale_denominator=scale, linear_deflection=0.1 / mm_per_unit)
         projected = project_model_axis_elevation(
-            verified.entries, object_ids=verified.physical_object_ids, view=recipe, unit=verified.length_unit,
+            verified.entries, object_ids=drawn_ids, view=recipe, unit=verified.length_unit,
         )
     except (DrawingElevationError, MeshViewError) as exc:
         raise StudioError(409, "DRAWING_SOURCE_INVALID", str(exc)) from exc
@@ -570,7 +598,7 @@ def _view_meshes(verified: VerifiedElevationSource, receipt, recipe: ElevationVi
     again at the narrower frame's pixel size.
     """
 
-    meshes, skipped = triangulate(verified.entries, verified.physical_object_ids,
+    meshes, skipped = triangulate(verified.entries, drawn_object_ids(verified),
                                   linear_deflection=pixel_size(recipe.crop_uv, size_px) * AXON_CHORD_PX)
     if not meshes:
         raise MeshViewError("the model has no surfaces to draw")
@@ -639,7 +667,7 @@ def material_view(binding: ProjectBinding, *, model_source: ModelSource, view: s
         verified = kept[0] if kept else read_elevation_source(binding.repository, source)
     except DrawingElevationError as exc:
         raise StudioError(409, "DRAWING_SOURCE_INVALID", str(exc)) from exc
-    worn = _worn_materials(binding, model_source, source, verified.physical_object_ids)
+    worn = _worn_materials(binding, model_source, source, drawn_object_ids(verified))
     fills = {object_id: None if material["color"] is None else tuple(bytes.fromhex(material["color"][1:]))
              for object_id, material in worn.items()}
     drawn = _draw_view(binding, source, receipt, view, size_px=MODEL_VIEW_MAX_EDGE, png_text=None, started=started,
@@ -660,6 +688,66 @@ def material_view(binding: ProjectBinding, *, model_source: ModelSource, view: s
     legend = {"materials": [materials[group] for group in sorted(materials)],
               "undeclared": undeclared[0], "undeclaredVisible": undeclared[1]}
     return _keep_model_view(key, MaterialView(drawn.png, drawn.width, drawn.height, legend))
+
+
+def select_drawing_source(binding: ProjectBinding, *, model_source: ModelSource | None = None,
+                          source_asset: dict[str, str] | None = None, source_stage_ref: str | None = None):
+    """The model version or imported asset a drawing route would draw, checked by its records alone."""
+
+    return _selected_source(binding, source_stage_ref, model_source, source_asset)
+
+
+def load_drawing_source(binding: ProjectBinding, *, model_source: ModelSource | None = None,
+                        source_asset: dict[str, str] | None = None, source_stage_ref: str | None = None):
+    """The exact model a drawing route would draw, verified and read once; nothing is written.
+
+    Answers ``(selected, source, receipt, verified)``: the model version or
+    imported asset (``sourceAsset``) selected as the drawing routes select it,
+    its exact source and CAD receipt, and its read shapes.
+    """
+
+    selected, stage_ref = _selected_source(binding, source_stage_ref, model_source, source_asset)
+    kept: list = []
+    source, receipt = _complete_source(binding, selected, stage_ref, read_only=True, loaded=kept)
+    try:
+        verified = kept[0] if kept else read_elevation_source(binding.repository, source)
+    except DrawingElevationError as exc:
+        raise StudioError(409, "DRAWING_SOURCE_INVALID", str(exc)) from exc
+    return selected, source, receipt, verified
+
+
+def object_groups(binding: ProjectBinding, selected, source, object_ids, by: str) -> dict[str, str]:
+    """Each drawn object's layer path or material name, as the exact model asset's own index names it.
+
+    A block member (a path of GUIDs) is looked up by its own GUID, then by its
+    instance's; an object the index does not name exactly once is grouped as
+    "unknown" rather than given a guessed layer or material.
+    """
+
+    if by not in ("layer", "material"):
+        raise StudioError(422, "CAMERA_PASS_INVALID", "Group the ID image by object, layer or material.")
+    _, data = artifact_bytes(binding, selected.asset_sha256, run_id=selected.run_id)
+    try:
+        rows = inspect_three_dm_index(data)["objects"]
+    except ThreeDmInspectionError as exc:
+        raise StudioError(422, "MODEL_INDEX_UNAVAILABLE", exc.message) from exc
+    native = isinstance(source, NativeModelSource)
+    named: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        named.setdefault(row["object_id"] if native else row["name"], []).append(row)
+    groups = {}
+    for object_id in object_ids:
+        parts = object_id.split("/") if native else [object_id]
+        candidates = [parts[-1], parts[0]] if native else parts
+        row = next((named[key.lower() if native else key][0] for key in candidates
+                    if len(named.get(key.lower() if native else key, ())) == 1), None)
+        if row is None:
+            groups[object_id] = "unknown"
+        elif by == "layer":
+            groups[object_id] = row.get("layer_path") or "unknown"
+        else:
+            groups[object_id] = (row.get("material") or {}).get("name") or "no material"
+    return groups
 
 
 def _worn_materials(binding, model_source: ModelSource, source, object_ids) -> dict[str, dict[str, Any]]:
@@ -691,6 +779,53 @@ def _worn_materials(binding, model_source: ModelSource, source, object_ids) -> d
     return worn
 
 
+_HELD_GUARD: ContextVar[tuple[ProjectBinding, ExitStack] | None] = ContextVar("drawing_write_guard", default=None)
+
+
+def drawing_sources(operation):
+    """``retained_sources`` for a drawing (#300): the write guard is given back while its view is solved.
+
+    The guard is held while the source is checked and again, from the moment
+    the freeze retains (``_retaining``, which checks the source again under
+    it), until the drawing is registered; so the check and the retained write
+    stay atomic with cleanup, and neither writes nor other drawings wait for a
+    solve.
+    """
+
+    @wraps(operation)
+    def guarded(binding: ProjectBinding, *args, **kwargs):
+        with ExitStack() as held:
+            held.enter_context(binding.repository.working_draft_guard())
+            token = _HELD_GUARD.set((binding, held))
+            try:
+                return operation(binding, *args, **kwargs)
+            finally:
+                _HELD_GUARD.reset(token)
+    return guarded
+
+
+def _solving() -> None:
+    """Give this drawing's write guard back before its view is solved."""
+
+    held = _HELD_GUARD.get()
+    if held is not None:
+        held[1].close()
+
+
+def _retaining(binding: ProjectBinding, model_source, stage_ref):
+    """What a freeze enters before it retains: the write guard again, kept until registration, and the source checked."""
+
+    @contextmanager
+    def retaining():
+        held = _HELD_GUARD.get()
+        if held is not None:
+            held[1].enter_context(binding.repository.working_draft_guard())
+        _complete_source(binding, model_source, stage_ref)
+        yield
+
+    return retaining
+
+
 def _registered_drawing(
     binding: ProjectBinding, monitor: StudioMonitor, operation: dict[str, Any], *, model_source: ModelSource | DrawingAssetSource,
     stage_ref: ProjectRecordRef | None, drawing_id: str, kind: str, what: str, same_recipe, freeze,
@@ -698,8 +833,9 @@ def _registered_drawing(
     """A drawing request's registered revision: the exact registered one read back, or a new one retained and registered.
 
     ``same_recipe(document)`` says whether a registered document answers this
-    request's view; ``freeze(observe)`` retains a new drawing, reporting its
-    stages to ``observe`` and raising ``StudioError`` when refused.  Every
+    request's view; ``freeze(observe, retaining)`` retains a new drawing,
+    reporting its stages to ``observe``, entering ``retaining`` before it
+    writes, and raising ``StudioError`` when refused.  Every
     retained drawing view shares this cache, monitoring and documents-list
     registration.
     """
@@ -720,6 +856,8 @@ def _registered_drawing(
             details["emitted_object_ids"] = observed["emitted_object_ids"]
         observer(event)
 
+    # The documents lock is held only to look for a registered revision and to register a new one, and
+    # the project's write guard is given back while the view is solved (drawing_sources).
     with _document_source_lock:
         closest, closest_checks = None, {}
         for document in list_documents(binding, model_source.run_id):
@@ -763,28 +901,35 @@ def _registered_drawing(
             cache_checks={"drawing_id": "missing"} if closest is None else closest_checks,
             comparison_refs=[] if closest is None else [closest.revision_ref], execution_path="full_projection",
         )
-        drawing = freeze(observe)
-        details["executed_stages"].append("drawing.register")
-        with monitor.measure("drawing.register", project_id=binding.project_id, run_id=model_source.run_id,
-                             source_ref=operation["source_ref"], details={"input_identity": details["input_identity"]}) as registration:
-            run = binding.load_run(model_source.run_id)
-            pages = _document_pages(drawing.png, "image/png")
-            ref = binding.repository.put_json(
-                run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
-                record_kind=STUDIO_SOURCE_DOCUMENT,
-                payload={
-                    "schema": "StudioSourceDocument@1", "project_id": binding.project_id, "run_id": run.run_id,
-                    "asset_sha256": drawing.png_ref.sha256, "file_name": f"{drawing_id}.png", "mime_type": "image/png",
-                    "size_bytes": len(drawing.png), "pages": [asdict(page) for page in pages],
-                    "modelSource": None if isinstance(model_source, DrawingAssetSource) else model_source.to_dict(), "sourceStageRef": selected_stage,
-                    "drawingId": drawing_id, "revisionRef": drawing.receipt_ref.uri, "viewRecipe": drawing.receipt["view"],
-                    "generatedAt": datetime.now(timezone.utc).isoformat(),
-                },
-            )
-            document, _ = document_bytes(binding, run.run_id, drawing.png_ref.sha256, drawing.receipt_ref.uri)
-            registration["details"]["output_refs"] = [ref.uri]
-        details["output_refs"] = [drawing.receipt_ref.uri, drawing.svg_ref.uri, drawing.png_ref.uri, ref.uri]
-        return document
+    _solving()
+    drawing = freeze(observe, _retaining(binding, model_source, stage_ref))
+    details["executed_stages"].append("drawing.register")
+    with monitor.measure("drawing.register", project_id=binding.project_id, run_id=model_source.run_id,
+                         source_ref=operation["source_ref"], details={"input_identity": details["input_identity"]}) as registration, \
+            _document_source_lock:
+        for document in list_documents(binding, model_source.run_id):
+            if (document.drawing_id == drawing_id and document.source_stage_ref == selected_stage
+                    and _document_source(document) == model_source and same_recipe(document)):
+                # The same request registered it while this one was solved: that revision answers both.
+                return document
+        run = binding.load_run(model_source.run_id)
+        pages = _document_pages(drawing.png, "image/png")
+        ref = binding.repository.put_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+            record_kind=STUDIO_SOURCE_DOCUMENT,
+            payload={
+                "schema": "StudioSourceDocument@1", "project_id": binding.project_id, "run_id": run.run_id,
+                "asset_sha256": drawing.png_ref.sha256, "file_name": f"{drawing_id}.png", "mime_type": "image/png",
+                "size_bytes": len(drawing.png), "pages": [asdict(page) for page in pages],
+                "modelSource": None if isinstance(model_source, DrawingAssetSource) else model_source.to_dict(), "sourceStageRef": selected_stage,
+                "drawingId": drawing_id, "revisionRef": drawing.receipt_ref.uri, "viewRecipe": drawing.receipt["view"],
+                "generatedAt": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        document, _ = document_bytes(binding, run.run_id, drawing.png_ref.sha256, drawing.receipt_ref.uri)
+        registration["details"]["output_refs"] = [ref.uri]
+    details["output_refs"] = [drawing.receipt_ref.uri, drawing.svg_ref.uri, drawing.png_ref.uri, ref.uri]
+    return document
 
 
 def _parallel_frame(view: str, direction) -> tuple | None:
@@ -800,7 +945,7 @@ def _parallel_frame(view: str, direction) -> tuple | None:
         raise StudioError(422, "DRAWING_VIEW_INVALID", str(exc)) from exc
 
 
-@retained_sources
+@drawing_sources
 def generate_elevation(
     binding: ProjectBinding, *, source_stage_ref: str | None, model_source: ModelSource | None,
     view: str, drawing_id: str | None = None, hidden_lines: bool = False, scale_denominator: int = 100,
@@ -851,11 +996,13 @@ def generate_elevation(
         cache = _through_projections(projections, ELEVATION, model_source, lambda verified: {
             "view": recipe.to_dict(), "content": _drawn_content(source, verified)})
 
-        def freeze(observe):
+        def freeze(observe, retaining):
+            pool = drawing_pool.drawer()
             try:
                 return freeze_model_axis_elevation(
                     binding.repository, source=source, view=recipe, drawing_run_id=f"studio-drawing-{uuid4().hex}",
                     operation_observer=observe, parent_event_id=operation["event_id"], cache=cache,
+                    drawer=pool, verified=None if pool is None else pool.verified(source), retaining=retaining,
                 )
             except DrawingElevationError as exc:
                 raise StudioError(409, "DRAWING_GENERATION_FAILED", str(exc)) from exc
@@ -866,7 +1013,7 @@ def generate_elevation(
                                    same_recipe=lambda document: document.view_recipe == document_recipe, freeze=freeze)
 
 
-@retained_sources
+@drawing_sources
 def generate_section_perspective(
     binding: ProjectBinding, *, source_stage_ref: str | None, model_source: ModelSource | None,
     section: dict[str, Any], camera: dict[str, Any] | None = None, depth: float | None = None,
@@ -922,11 +1069,13 @@ def generate_section_perspective(
         cache = _through_projections(projections, SECTION_PERSPECTIVE, model_source, lambda verified: {
             "view": request, "content": _drawn_content(source, verified)})
 
-        def freeze(observe):
+        def freeze(observe, retaining):
+            pool = drawing_pool.drawer()
             try:
                 return freeze_section_perspective(
                     binding.repository, source=source, view=view, drawing_run_id=f"studio-drawing-{uuid4().hex}",
                     operation_observer=observe, parent_event_id=operation["event_id"], cache=cache,
+                    drawer=pool, verified=None if pool is None else pool.verified(source), retaining=retaining,
                 )
             except SectionPerspectiveError as exc:
                 raise StudioError(422, exc.code, str(exc)) from exc
@@ -972,7 +1121,7 @@ def _drawn_sheet(binding, monitor, run_id, verified, frames, selected, layout, r
 SHEET_FILES = (("pdf", "application/pdf"), ("dxf", "application/dxf"), ("svg", SVG_MEDIA_TYPE), ("png", PNG_MEDIA_TYPE))
 #: The PDF metadata naming the digests of the sheet's DXF, SVG and PNG.
 SHEET_FILE_DIGESTS = "/ArchFlowSheetFiles"
-SHEET_KINDS = ("review-sheet", "view-sheet")
+SHEET_KINDS = ("review-sheet", "view-sheet", "diagram")  # a diagram's files are kept as a sheet's (gap 38)
 
 
 def _sheet_files(canvas, recipe_json: str) -> dict[str, bytes]:

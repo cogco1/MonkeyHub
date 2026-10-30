@@ -16,6 +16,7 @@ from monkeydiagram.rendering.svg import (
     drawing_svg,
     dimension_placement_fits,
     render_svg_png,
+    svg_object_marks,
     svg_objects,
     svg_paper_marks,
 )
@@ -379,6 +380,22 @@ class CutPlanSvgTests(unittest.TestCase):
                                                "value": 4, "label": "4000", "offsetMm": -6},))
         with self.assertRaises(DrawingSvgError):
             svg_paper_marks(dimensioned)
+
+    def test_object_marks_read_a_dimensioned_drawing_and_carry_each_component(self):
+        dimensioned = self.render(dimensions=({"id": "w", "status": "resolved", "start": [0, 0], "end": [4, 0],
+                                               "value": 4, "label": "4000", "offsetMm": -6},))
+        size, marks = svg_object_marks(dimensioned)
+        self.assertEqual(size, (60.0, 60.0))
+        self.assertEqual({mark.object_id for mark in marks}, {"wall"})
+        self.assertEqual({mark.group for mark in marks}, {"section", "section-hatch"})
+        self.assertTrue(all(mark.component is None for mark in marks), "a drawing without semantics names no component")
+        named = drawing_svg((_line("wall", "visible", (0, 0), (4, 0)), _line("post", "visible", (2, 1), (2, 3))),
+                            crop_uv=(-1, -1, 5, 5), unit="meter", scale_denominator=100, hidden_lines=False,
+                            title="named", semantics={"wall": {"component": "wall-north"}})
+        _, marks = svg_object_marks(named)
+        self.assertEqual({(mark.object_id, mark.component) for mark in marks}, {("wall", "wall-north"), ("post", None)})
+        # The same marks, in the same paper millimetres, as the sheet composer reads them.
+        self.assertEqual(marks, svg_paper_marks(named)[1])
 
     def test_resolved_dimension_text_and_marks_are_drawn_from_the_svg_and_unresolved_are_not(self):
         from PIL import Image

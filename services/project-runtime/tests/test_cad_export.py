@@ -46,6 +46,7 @@ from monkeycad.backends.occt.kernel import occt_available
 from monkeycad.backends.occt.measure import ShapeMeasure, classify_program_point, measure_shape
 from monkeycad.backends.occt.step import StepEntry, read_step
 from monkeycad.execution import CadCapabilityError
+from monkeycad.formats.meshes import GLB
 from monkeycad.formats.three_dm_compose import rewrite_composed_materials
 from monkeycad.formats.three_dm_inspector import inspect_three_dm
 from archflow.state.geometry_program import load_compiled_geometry_program
@@ -1097,6 +1098,19 @@ class WholeAssemblyCandidateTests(OcctCandidateTestCase):
                 checks[check["relation_id"]] = check
         return checks
 
+    def exported_glb(self, client: TestClient, run_id: str, state_digest: str) -> tuple[dict, bytes]:
+        """``POST /api/exports`` of the run's model to GLB, finished: its report and the downloaded bytes."""
+
+        started = client.post("/api/exports", json={
+            "targetFormat": "glb", "projectRevision": {"runId": run_id, "stateDigest": state_digest}})
+        self.assertEqual(started.status_code, 202, started.text)
+        self.finished(client, started.json()["jobId"])
+        report = client.get(started.json()["statusPath"]).json()
+        self.assertEqual(report["status"], "succeeded", report)
+        download = client.get(report["downloadPath"])
+        self.assertEqual(download.status_code, 200, download.text)
+        return report, download.content
+
     def state_of(self, client: TestClient, run_id: str) -> tuple[dict, dict[str, dict], dict[str, dict]]:
         """``GET /api/state?run=`` and its elements and parameters by id."""
 
@@ -1400,6 +1414,20 @@ class WholeAssemblyCandidateTests(OcctCandidateTestCase):
             self.client, first, stair_width=1.4, window_width=1.2, label="a"
         )
         self.assertTrue(candidate_a["changedVsProjection"])
+        # Gap 31: exported to GLB, A keeps the wall and the window's frame and glass; the window's
+        # aperture, saved hidden as opening evidence, does not fill the opening.
+        report, glb = self.exported_glb(self.client, first, candidate_a["stateDigest"])
+        self.assertEqual(sorted(mesh.name for mesh in GLB().read(glb).meshes), sorted(set(ASSEMBLY_OBJECTS) - {APERTURE}))
+        self.assertEqual(report["omitted"], {"hidden object": 1})
+        # Gap 42: the model view, and so a review's frames, leaves that aperture out too, as the cut plans and
+        # elevations already do: the legend counts every object but it.
+        model = next(row["modelSource"] for row in candidate_a["artifacts"] if row.get("modelSource"))
+        for view in ("axon", "front"):
+            answer = self.client.get("/api/drawings/model-view", params={**model, "view": view, "display": "material"})
+            self.assertEqual(answer.status_code, 200, answer.text)
+            legend = answer.json()["legend"]
+            self.assertEqual(sum(row["objects"] for row in legend["materials"]) + legend["undeclared"],
+                             len(set(ASSEMBLY_OBJECTS) - {APERTURE}), view)
 
         # Restart. Reading A back runs no CAD at all, and A is an exact base to continue from.
         with no_cad_at_all(), no_process():

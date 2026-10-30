@@ -41,7 +41,10 @@ from ..models import HubError, HubFailure
 from .models import HubRuntimeDto, OperationRecord, ProjectRuntimeDto, WorkerStatus
 from .operations import _ACTIVE, _CANDIDATE_REQUEST, _PROPOSAL_CANDIDATE, OperationManager
 from .worker_http import HttpResult, _WorkerEvents, request_http
-from .workers import project_key
+from .workers import earlier_project_keys, project_key
+
+# How long a request waits for a project's Studio it started itself (gap 18).
+_STUDIO_START_WAIT_S = 45.0
 
 
 _IDLE_RETAINED_REFRESH_S = 30
@@ -73,6 +76,8 @@ _WORK_COPY_CHECK_S = _IDLE_RETAINED_REFRESH_S
 _STUDIO_REPLAY = 200
 # Forwarded POSTs that read and never change the project, so no operation is
 # admitted for them: a body names what to read, or the project is read again.
+# How long the Hub waits for POST /api/revisions: its build wait (at most 300 s) and its checks.
+REVISION_TIMEOUT_S = 420
 _READ_POSTS = frozenset({"/api/state/closure", "/api/pick/resolve", "/api/project/refresh"})
 # Reading the project again (ADR-012): the Hub reads it again too, whole.
 _REFRESH_PATH = "/api/project/refresh"
@@ -358,8 +363,13 @@ class ProjectRuntimeManager:
             runtime = self._projects.get(runtime_id)
             if runtime is None:
                 binding = ProjectBinding.unconfigured(Path(actual_dir), project_id=actual_id)
+                journals = self.applications.runtime_root / "runtime/operations"
                 operations = OperationManager(actual_id, project_dir=actual_dir,
-                    journal_path=self.applications.runtime_root / "runtime/operations" / f"{runtime_id}.json")
+                    journal_path=journals / f"{runtime_id}.json")
+                # Gap 26: the journal an earlier Hub kept under this folder's
+                # prefixed spelling joins this one, instead of being left behind.
+                operations.merge(journals / f"{uuid5(NAMESPACE_URL, f'{actual_id}:{earlier}')}.json"
+                                 for earlier in earlier_project_keys(actual_dir))
                 runtime = ProjectRuntime(runtime_id, actual_id, actual_dir, operations, binding)
                 self._projects[runtime_id] = runtime
             runtime.binding_signature = signature
@@ -916,12 +926,45 @@ class ProjectRuntimeManager:
         if runtime.state != "open":
             raise HubFailure(409, "RUNTIME_CLOSED", "This project runtime is closed.")
         worker = next(iter(self.applications.worker_snapshots(project_dir=runtime.project_dir)), None)
+        if worker is None:
+            # Gap 18: nothing has started this open project's Studio since the
+            # Hub started (after a restart, the first request is often a page's):
+            # start it now and wait a bounded time, rather than refuse as if it
+            # had crashed.
+            worker = self._start_studio(runtime)
+        if (worker is not None and worker.state == "unavailable" and worker.desired_state == "running"
+                and worker.process_id is not None and worker.url and worker.error is not None
+                and worker.error.code == "SERVICE_UNAVAILABLE"):
+            # Gap 25: a verified, running Studio that only misses its health
+            # probes (busy in native code) is asked anyway; the forward keeps
+            # its own time limit and nothing is replayed.
+            return worker
         if worker is None or worker.state not in {"ready", "busy"} or not worker.healthy or not worker.url:
-            raise HubFailure(503, "WORKER_UNAVAILABLE", "The project's Studio is not ready. Recover a crashed worker explicitly before continuing.")
+            if worker is not None and worker.state == "crashed":
+                detail = "The project's Studio stopped unexpectedly. Recover it explicitly before continuing."
+            elif worker is None or worker.state in {"starting", "recovering"}:
+                detail = "The project's Studio is starting. Try again in a moment."
+            else:
+                detail = "The project's Studio is not ready. Recover a crashed worker explicitly before continuing."
+            raise HubFailure(503, "WORKER_UNAVAILABLE", detail)
         return worker
 
+    def _start_studio(self, runtime: ProjectRuntime, wait_s: float = _STUDIO_START_WAIT_S):
+        """Start an open project's Studio that no one has started, and wait up to ``wait_s`` for it."""
+
+        try:
+            self.applications.start("monkeyarch", project_dir=runtime.project_dir)
+        except HubFailure:
+            return None
+        deadline = time.monotonic() + wait_s
+        while True:
+            worker = next(iter(self.applications.worker_snapshots(project_dir=runtime.project_dir)), None)
+            if worker is None or worker.state in {"ready", "busy", "crashed"} or time.monotonic() >= deadline:
+                return worker
+            time.sleep(0.2)
+
     def forward(self, runtime: ProjectRuntime, path: str, method: str, body: bytes,
-                headers: dict[str, str]) -> HttpResult:
+                headers: dict[str, str], *, source: str | None = None) -> HttpResult:
         parsed = urlsplit(path)
         if parsed.scheme or parsed.netloc or parsed.fragment or not (parsed.path.startswith("/api/") or parsed.path == "/openapi.json") or ".." in parsed.path.split("/"):
             raise HubFailure(422, "STUDIO_PATH_INVALID", "Only the bound Studio API can be called.")
@@ -955,7 +998,7 @@ class ProjectRuntimeManager:
                         raise HubFailure(409, "CANDIDATE_NOT_THIS_CHATS", "The Agent withdraws only a result it made in this chat: "
                                          + ", ".join(map(str, foreign)) + " was not. Only the architect's words can reject another result.")
             admission, fresh = runtime.operations.admit(operation_id, method, path, body,
-                retained=runtime.retained, source="chat" if session_id else "studio", session_id=session_id)
+                retained=runtime.retained, source="chat" if session_id else source or "studio", session_id=session_id)
             if not fresh:
                 if not admission.finished.wait(10):
                     raise HubFailure(409, "OPERATION_RUNNING", "The same operation is still running. Read its runtime status; it has not been submitted again.")
@@ -969,6 +1012,11 @@ class ProjectRuntimeManager:
             forwarded = {key: value for key, value in headers.items()
                          if key in {"content-type", "x-monkey-operation", "x-monkey-parent", "if-none-match",
                                     "x-monkey-turn-id", "x-monkey-parent-span-id"}}
+            if admission and admission.record.sessionId:
+                # The chat this request comes from, vouched for by this Hub (#185): the Runtime
+                # tells the Agent from a person by this, never by what a request body says.
+                forwarded["X-Monkey-Agent"] = admission.record.sessionId
+                forwarded["X-Monkey-Worker"] = worker.instance_id
             if admission and method == "POST" and _CANDIDATE_REQUEST.fullmatch(parsed.path):
                 candidate_id = admission.record.candidateId
                 # A Hub restart can reconstruct this deterministic run identity.
@@ -990,7 +1038,9 @@ class ProjectRuntimeManager:
                 base = runtime.binding.load_run(source_run).base if source_run else runtime.binding.head()
                 runtime.operations.bind_proposal(admission, proposal, base.version)
             dispatched = True
-            result = request_http(worker.url, path, method, body or None, forwarded, timeout=180)
+            # A revision waits for its own build, read-back and validation (#185).
+            timeout = REVISION_TIMEOUT_S if parsed.path == "/api/revisions" else 180
+            result = request_http(worker.url, path, method, body or None, forwarded, timeout=timeout)
             if admission:
                 result.headers["X-Monkey-Operation-Id"] = admission.record.operationId
                 runtime.operations.replied(admission, result)

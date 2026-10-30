@@ -5,10 +5,16 @@ from dataclasses import dataclass, field, replace
 import base64
 import json
 import math
+import re
 import struct
 from uuid import UUID
 
 FORMATS = ("3dm", "skp", "glb", "dwg")
+# Written, never read as a source: a print mesh carries no layers, materials or
+# objects to bring back, and an OBJ or FBX for a game engine is read back only to
+# validate what was written.
+OUTPUT_ONLY_FORMATS = ("stl", "obj", "fbx")
+TARGET_FORMATS = FORMATS + OUTPUT_ONLY_FORMATS
 VERSION = "monkeyhub-mesh/1"
 # Display colour of a mesh whose source carried no material: a light neutral
 # grey, not the black a new 3DM layer and object would otherwise draw with.
@@ -47,6 +53,9 @@ class Scene:
     units: str
     warnings: list[str]
     display: dict = field(default_factory=dict)
+    # What a read left out: the objects the file hides, and by entity type what
+    # a tolerant read could not use.
+    omitted: dict = field(default_factory=dict)
 
     def metrics(self):
         points = [p for m in self.meshes for p in m.vertices]
@@ -212,8 +221,18 @@ class ThreeDM:
         self.r = rhino3dm
         self.version = "rhino3dm/" + rhino3dm.__version__
 
-    def read(self, data):
+    def read(self, data, *, omit_unsupported=False):
+        """Every mesh, and every Brep or extrusion by its saved render mesh, that the file shows.
+
+        An object saved hidden, or on a layer that is hidden itself or under a
+        hidden parent, is left out and counted in ``scene.omitted``, as the
+        model view hides it: an opening's cutter is saved hidden on its wall's
+        layer. A strict read refuses anything else. ``omit_unsupported`` (print
+        meshes) leaves curves, text, hatches and render-meshless solids out and
+        counts them in ``scene.omitted`` instead.
+        """
         r = self.r
+        omitted = {}
         if not data.startswith(b"3D Geometry File Format"):
             raise ConversionError("Invalid 3DM signature.")
         model = r.File3dm.FromByteArray(data)
@@ -224,15 +243,28 @@ class ThreeDM:
             raise ConversionError("3DM units are unspecified; set model units before conversion.")
         scale = r.UnitSystem.UnitScale(units, r.UnitSystem.Meters)
         meshes, warnings = [], []
+        hidden_layers = self._hidden_layers(model)
         for item in model.Objects:
+            if not item.Attributes.Visible or item.Attributes.LayerIndex in hidden_layers:
+                omitted["hidden object"] = omitted.get("hidden object", 0) + 1
+                continue
             geometry = item.Geometry
             if isinstance(geometry, r.Mesh):
                 pieces = [geometry]
-            elif isinstance(geometry, r.Brep):
-                pieces = [face.GetMesh(r.MeshType.Render) for face in geometry.Faces]
+            elif isinstance(geometry, (r.Brep, r.Extrusion)):
+                pieces = ([face.GetMesh(r.MeshType.Render) for face in geometry.Faces] if isinstance(geometry, r.Brep)
+                          else [geometry.GetMesh(r.MeshType.Render)])
                 if not pieces or any(p is None for p in pieces):
+                    if omit_unsupported:
+                        key = type(geometry).__name__ + " without render mesh"
+                        omitted[key] = omitted.get(key, 0) + 1
+                        continue
                     raise ConversionError("A BREP has no saved render mesh; a real tessellation runtime is required.")
                 warnings.append("Exact BREP geometry is approximated by its saved render mesh.")
+            elif omit_unsupported:
+                key = type(geometry).__name__
+                omitted[key] = omitted.get(key, 0) + 1
+                continue
             else:
                 raise ConversionError("Unsupported 3DM entity: " + type(geometry).__name__ + ". No entities were silently dropped.")
             vertices, triangles, normals, colors = [], [], [], []
@@ -253,9 +285,28 @@ class ThreeDM:
             meshes.append(Mesh(item.Attributes.Name or "Mesh", vertices, triangles, layer.Name if layer else "Default",
                                str(item.Attributes.Id), normals, colors, self._material(model, item.Attributes, layer)))
         warnings.append("Materials, textures, custom normals, CAD metadata and layer hierarchy are not preserved; layers are flattened into the default layer in GLB.")
-        scene = Scene(meshes, str(units), list(dict.fromkeys(warnings)))
+        if omitted:
+            where = "the print mesh" if omit_unsupported else "the export"
+            warnings.append(f"Left out of {where}: " + ", ".join(f"{count} {kind}" for kind, count in sorted(omitted.items())) + ".")
+        scene = Scene(meshes, str(units), list(dict.fromkeys(warnings)), omitted=omitted)
         scene.metrics()
         return scene
+
+    @staticmethod
+    def _hidden_layers(model):
+        """Indices of the layers the file hides: hidden themselves or under a hidden parent."""
+        layers = list(model.Layers)
+        by_id = {str(layer.Id): layer for layer in layers}
+        hidden = set()
+        for index, layer in enumerate(layers):
+            current, seen = layer, set()
+            while current is not None and str(current.Id) not in seen:
+                if not current.Visible:
+                    hidden.add(index)
+                    break
+                seen.add(str(current.Id))
+                current = by_id.get(str(current.ParentLayerId))
+        return hidden
 
     def _material(self, model, attributes, layer):
         r = self.r
@@ -469,15 +520,234 @@ class GLB:
         return struct.pack("<4sII", b"glTF", 2, 28+len(encoded)+len(binary)) + struct.pack("<I4s", len(encoded), b"JSON") + encoded + struct.pack("<I4s", len(binary), b"BIN\x00") + binary
 
 
+class STL:
+    """Binary STL in millimetres at full size, Z up: one triangle soup for printing.
+
+    Scaling to a model scale and cutting into parts belong to the print step
+    (MonkeyFab), which knows the printer; this file is printer-independent.
+    """
+
+    version = "monkeyhub-stl/1"
+    HEADER = b"MonkeyHub STL: millimetres at full size, Z up"
+
+    def write(self, scene):
+        triangles = [(mesh.vertices[a], mesh.vertices[b], mesh.vertices[c])
+                     for mesh in scene.meshes for a, b, c in mesh.triangles]
+        out = bytearray(self.HEADER.ljust(80, b" ")[:80])
+        out += struct.pack("<I", len(triangles))
+        for corners in triangles:
+            millimetres = [tuple(v * 1000.0 for v in point) for point in corners]
+            normal = _unit(_cross(tuple(millimetres[1][i] - millimetres[0][i] for i in range(3)),
+                                  tuple(millimetres[2][i] - millimetres[0][i] for i in range(3)))) or (0.0, 0.0, 0.0)
+            out += struct.pack("<3f", *normal)
+            for point in millimetres:
+                out += struct.pack("<3f", *point)
+            out += b"\x00\x00"
+        return bytes(out)
+
+    def read(self, data):
+        if len(data) < 84:
+            raise ConversionError("Invalid STL: shorter than its header.")
+        count = struct.unpack_from("<I", data, 80)[0]
+        if len(data) != 84 + 50 * count:
+            raise ConversionError("Invalid STL: the triangle count does not match the file size.")
+        vertices, triangles = [], []
+        for n in range(count):
+            values = struct.unpack_from("<12f", data, 84 + 50 * n)
+            for k in range(3):
+                vertices.append(tuple(values[3 + 3 * k + i] / 1000.0 for i in range(3)))
+            triangles.append((3 * n, 3 * n + 1, 3 * n + 2))
+        scene = Scene([Mesh("STL", vertices, triangles)], "Millimeters", [])
+        scene.metrics()
+        return scene
+
+
+def _num(value):
+    """A coordinate as its shortest round-trip text, a whole number without ``.0`` and never ``-0``."""
+    text = repr(float(value) + 0.0)
+    return text[:-2] if text.endswith(".0") else text
+
+
+def _y_up(point):
+    """The model's Z-up (x, y, z) as glTF's Y-up: its north (+Y) becomes -Z, a turn and never a mirror."""
+    x, y, z = point
+    return (x, z, -y)
+
+
+def _label(name, quote=False):
+    """A name on one line; in FBX's quoted names also without quotes or the ``::`` its class prefix uses."""
+    text = " ".join(str(name).split()) or "Mesh"
+    return text.replace('"', "'").replace("::", ":") if quote else text
+
+
+class OBJ:
+    """Wavefront OBJ in metres, Y up as glTF: one object per mesh with its normals, written, never a source.
+
+    Each object names its material with ``usemtl``; no ``.mtl`` travels with the one file, so an importer
+    makes a slot per material name and no colour.
+    """
+
+    version = "monkeyhub-obj/1"
+    HEADER = "# MonkeyHub OBJ: metres, Y up (the model's north is -Z)"
+
+    def write(self, scene):
+        prepared = display_scene(scene)
+        scene.warnings[:], scene.display = prepared.warnings, prepared.display
+        lines, offset = [self.HEADER], 0
+        for mesh in prepared.meshes:
+            lines.append("o " + _label(mesh.name))
+            lines.append("usemtl " + _label(mesh.material.name))
+            lines.extend("v " + " ".join(map(_num, _y_up(point))) for point in mesh.vertices)
+            lines.extend("vn " + " ".join(map(_num, _y_up(normal))) for normal in mesh.normals)
+            lines.extend("f " + " ".join(f"{offset + i + 1}//{offset + i + 1}" for i in triangle)
+                         for triangle in mesh.triangles)
+            offset += len(mesh.vertices)
+        return ("\n".join(lines) + "\n").encode("utf-8")
+
+    def read(self, data):
+        """Read back what ``write`` wrote, for validation: objects, positions (to Z-up) and triangles."""
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ConversionError("Invalid OBJ: not UTF-8 text.") from exc
+        if not text.startswith(self.HEADER):
+            raise ConversionError("Only MonkeyHub's own OBJ is read back.")
+        meshes, count, start = [], 0, 0
+        for line in text.splitlines()[1:]:
+            head, _, rest = line.partition(" ")
+            if head == "o":
+                meshes.append(Mesh(rest, [], []))
+                start = count
+            elif head == "v" and meshes:
+                x, y, z = map(float, rest.split())
+                meshes[-1].vertices.append((x, -z, y))
+                count += 1
+            elif head == "f" and meshes:
+                corners = [int(corner.split("/")[0]) - 1 - start for corner in rest.split()]
+                if len(corners) != 3:
+                    raise ConversionError("Invalid OBJ: a face is not a triangle.")
+                meshes[-1].triangles.append(tuple(corners))
+        scene = Scene(meshes, "Meters", [])
+        scene.metrics()
+        return scene
+
+
+class FBX:
+    """ASCII FBX 7.4 in centimetres (UnitScaleFactor 1) and Y up as glTF: per mesh a model, its geometry with
+    normals, and its material's base colour. Written, never a source.
+
+    Centimetres because a game engine's importer without a scene-unit conversion (the UE plugin's import_file) reads
+    the numbers as centimetres: a model in metres declared by UnitScaleFactor 100 came in a hundred times small.
+    """
+
+    version = "monkeyhub-fbx/1"
+    HEADER = "; FBX 7.4.0 project file"
+    _GEOMETRY = re.compile(r'\tGeometry: \d+, "Geometry::(.*?)", "Mesh" \{\n\t\tVertices: \*(\d+) \{\n\t\t\ta: ([^\n]*)\n'
+                           r'\t\t\}\n\t\tPolygonVertexIndex: \*(\d+) \{\n\t\t\ta: ([^\n]*)\n')
+
+    @staticmethod
+    def _array(name, values, depth):
+        tabs = "\t" * depth
+        return [f"{tabs}{name}: *{len(values)} {{", f"{tabs}\ta: " + ",".join(map(_num, values)), f"{tabs}}}"]
+
+    def write(self, scene):
+        prepared = display_scene(scene)
+        scene.warnings[:], scene.display = prepared.warnings, prepared.display
+        ids, materials, objects, connections = iter(range(1_000_000, 10_000_000)), {}, [], []
+        for mesh in prepared.meshes:
+            model, geometry, name = next(ids), next(ids), _label(mesh.name, quote=True)
+            material = materials.setdefault(mesh.material, next(ids))
+            indices = [-i - 1 if k == 2 else i for triangle in mesh.triangles for k, i in enumerate(triangle)]
+            objects += [f'\tGeometry: {geometry}, "Geometry::{name}", "Mesh" {{',
+                        *self._array("Vertices", [c * 100.0 for point in mesh.vertices for c in _y_up(point)], 2),
+                        *self._array("PolygonVertexIndex", indices, 2),
+                        "\t\tGeometryVersion: 124",
+                        "\t\tLayerElementNormal: 0 {", "\t\t\tVersion: 101", '\t\t\tName: ""',
+                        '\t\t\tMappingInformationType: "ByVertice"', '\t\t\tReferenceInformationType: "Direct"',
+                        *self._array("Normals", [c for normal in mesh.normals for c in _y_up(normal)], 3), "\t\t}",
+                        "\t\tLayerElementMaterial: 0 {", "\t\t\tVersion: 101", '\t\t\tName: ""',
+                        '\t\t\tMappingInformationType: "AllSame"', '\t\t\tReferenceInformationType: "IndexToDirect"',
+                        *self._array("Materials", [0], 3), "\t\t}",
+                        "\t\tLayer: 0 {", "\t\t\tVersion: 100",
+                        "\t\t\tLayerElement:  {", '\t\t\t\tType: "LayerElementNormal"', "\t\t\t\tTypedIndex: 0", "\t\t\t}",
+                        "\t\t\tLayerElement:  {", '\t\t\t\tType: "LayerElementMaterial"', "\t\t\t\tTypedIndex: 0", "\t\t\t}",
+                        "\t\t}", "\t}",
+                        f'\tModel: {model}, "Model::{name}", "Mesh" {{', "\t\tVersion: 232", "\t\tProperties70:  {",
+                        '\t\t\tP: "DefaultAttributeIndex", "int", "Integer", "",0', "\t\t}",
+                        "\t\tShading: T", '\t\tCulling: "CullingOff"', "\t}"]
+            connections += [f'\tC: "OO",{model},0', f'\tC: "OO",{geometry},{model}', f'\tC: "OO",{material},{model}']
+        for item, identifier in materials.items():
+            red, green, blue = (_num(round(_linear(channel), 6)) for channel in item.color[:3])
+            objects += [f'\tMaterial: {identifier}, "Material::{_label(item.name, quote=True)}", "" {{', "\t\tVersion: 102",
+                        '\t\tShadingModel: "phong"', "\t\tMultiLayer: 0", "\t\tProperties70:  {",
+                        f'\t\t\tP: "DiffuseColor", "Color", "", "A",{red},{green},{blue}',
+                        f'\t\t\tP: "Opacity", "double", "Number", "",{_num(round(1.0 - item.transparency, 6))}',
+                        "\t\t}", "\t}"]
+        count = len(prepared.meshes)
+        definitions = [("GlobalSettings", 1), ("Model", count), ("Geometry", count), ("Material", len(materials))]
+        settings = [("UpAxis", 1), ("UpAxisSign", 1), ("FrontAxis", 2), ("FrontAxisSign", 1), ("CoordAxis", 0),
+                    ("CoordAxisSign", 1), ("OriginalUpAxis", 1), ("OriginalUpAxisSign", 1)]
+        lines = [self.HEADER, "; MonkeyHub: centimetres, Y up (the model's north is -Z)",
+                 "FBXHeaderExtension:  {", "\tFBXHeaderVersion: 1003", "\tFBXVersion: 7400", '\tCreator: "MonkeyHub"', "}",
+                 "GlobalSettings:  {", "\tVersion: 1000", "\tProperties70:  {",
+                 *(f'\t\tP: "{key}", "int", "Integer", "",{value}' for key, value in settings),
+                 '\t\tP: "UnitScaleFactor", "double", "Number", "",1',
+                 '\t\tP: "OriginalUnitScaleFactor", "double", "Number", "",1', "\t}", "}",
+                 "Definitions:  {", "\tVersion: 100", f"\tCount: {sum(n for _, n in definitions)}",
+                 *(line for kind, n in definitions for line in (f'\tObjectType: "{kind}" {{', f"\t\tCount: {n}", "\t}")),
+                 "}", "Objects:  {", *objects, "}", "Connections:  {", *connections, "}"]
+        return ("\n".join(lines) + "\n").encode("utf-8")
+
+    def read(self, data):
+        """Read back what ``write`` wrote, for validation: each geometry's positions (to Z-up) and triangles."""
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ConversionError("Invalid FBX: not UTF-8 text.") from exc
+        if not text.startswith(self.HEADER) or 'P: "UnitScaleFactor", "double", "Number", "",1\n' not in text \
+                or 'P: "UpAxis", "int", "Integer", "",1' not in text:
+            raise ConversionError("Only MonkeyHub's own FBX, in centimetres and Y up, is read back.")
+        meshes = []
+        for name, vertex_count, vertices, index_count, indices in self._GEOMETRY.findall(text):
+            values = [float(v) for v in vertices.split(",")]
+            corners = [int(i) for i in indices.split(",")]
+            if len(values) != int(vertex_count) or len(corners) != int(index_count) or len(corners) % 3 \
+                    or any((k == 2) != (i < 0) for n, i in enumerate(corners) for k in [n % 3]):
+                raise ConversionError("Invalid FBX: a geometry's arrays or triangles do not add up.")
+            points = [(values[i] / 100.0, -values[i + 2] / 100.0, values[i + 1] / 100.0)
+                      for i in range(0, len(values), 3)]
+            flat = [-i - 1 if i < 0 else i for i in corners]
+            meshes.append(Mesh(name, points, [tuple(flat[i:i + 3]) for i in range(0, len(flat), 3)]))
+        scene = Scene(meshes, "Meters", [])
+        scene.metrics()
+        return scene
+
+
+def _linear(channel):
+    """An 8-bit sRGB channel as the linear value FBX colours carry."""
+    value = channel / 255
+    return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+
+def _reader_for(source, target):
+    reader = {"3dm": ThreeDM, "glb": GLB}[source]()
+    if source == "3dm" and target == "stl":
+        return reader, lambda data: reader.read(data, omit_unsupported=True)
+    return reader, reader.read
+
+
 def encode_mesh(data, source, target):
     """Produce mesh bytes; the provider's separate validate step must approve them."""
-    adapters = {"3dm": ThreeDM, "glb": GLB}
-    reader, writer = adapters[source](), adapters[target]()
-    scene = reader.read(data)
+    adapters = {"3dm": ThreeDM, "glb": GLB, "stl": STL, "obj": OBJ, "fbx": FBX}
+    reader, read = _reader_for(source, target)
+    writer = adapters[target]()
+    scene = read(data)
     output = data if source == target else writer.write(scene)
     details = {"converter": [reader.version, writer.version],
                "warnings": [] if source == target else scene.warnings,
                "converted": source != target}
+    if scene.omitted:
+        details["omitted"] = dict(scene.omitted)
     if scene.display and source != target:
         details["display"] = scene.display
     return output, details
@@ -485,13 +755,18 @@ def encode_mesh(data, source, target):
 
 def validate_mesh(data, source, target, output):
     """Reopen both original and output; never validate metrics supplied by a writer."""
-    adapters = {"3dm": ThreeDM, "glb": GLB}
-    original, reopened = adapters[source]().read(data), adapters[target]().read(output)
+    adapters = {"3dm": ThreeDM, "glb": GLB, "stl": STL, "obj": OBJ, "fbx": FBX}
+    _, read = _reader_for(source, target)
+    original, reopened = read(data), adapters[target]().read(output)
     before, after = original.metrics(), reopened.metrics()
-    if before["objectCount"] != after["objectCount"] or before["triangleCount"] != after["triangleCount"]:
+    # A print mesh is one triangle soup: its object count is not kept, and its
+    # coordinates are 32-bit floats in millimetres.
+    objects_kept = target != "stl"
+    if (objects_kept and before["objectCount"] != after["objectCount"]) or before["triangleCount"] != after["triangleCount"]:
         raise ConversionError("Output validation changed mesh or triangle counts.")
+    rel, absolute = (2e-6, 1e-6) if objects_kept else (1e-6, 1e-5)
     for a, b in zip(sum(before["boundsMetersZUp"], []), sum(after["boundsMetersZUp"], [])):
-        if not math.isclose(a, b, rel_tol=2e-6, abs_tol=1e-6):
+        if not math.isclose(a, b, rel_tol=rel, abs_tol=absolute):
             raise ConversionError("Output validation changed model scale or placement.")
     if target == "3dm" and source != target:
         # A shaded viewer draws a mesh without normals or material dark.

@@ -1,0 +1,4 @@
+/* ADR-014 B5: a result's three actions sit together in the result's own tool group, after a line. */
+.result-actions { display: inline-flex; align-items: center; gap: 4px; }
+.result-actions::before { content: ""; flex: none; width: 1px; height: 18px; margin: 0 4px; background: var(--line); }
+.result-actions > :is(a, button) { white-space: nowrap; }

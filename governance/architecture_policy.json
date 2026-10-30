@@ -202,6 +202,7 @@
     "docs/protocols/project-runtime-api.md",
     "governance/architecture_policy.json",
     "docs/architecture/system-map.md",
+    "apps/monkeyhub/web/src/features/commands/tree.generated.ts",
     "docs/architecture/semantic-registry.md"
   ],
   "unclaimed_write_scope": [
@@ -242,6 +243,52 @@
   ],
   "allowed_write_sites": [
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/runtime/applications.py",
+      "function": "_remember_studio",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "replace"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Atomically notes which projects' Studios this Hub runs (projectId and folder only) at runtime/studios.json under the nonproject Hub runtime root, so the next start brings them back (gap 18). No project data is written."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/runtime/applications.py",
+      "function": "_note_closing",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "replace"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Atomically notes, while the Hub closes, which of its children are still running (service, projectId, folder, busy) and its process id at runtime/closing.json under the nonproject Hub runtime root, for the desktop to name what a forced close would end (gap 24). No project data is written."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/app/locator.py",
+      "function": "write",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "replace"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Atomically notes where the running Hub listens (its local URL, process id, managed instance id and start time) at runtime/hub.json under the nonproject Hub runtime root, so a process the Hub did not start finds it after a restart on a new port (gap 44). No project data is written."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/app/locator.py",
+      "function": "remove",
+      "operations": [
+        "unlink"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Removes runtime/hub.json under the nonproject Hub runtime root when the Hub that wrote it quits normally, and only a file whose process id is its own (gap 44)."
+    },
+    {
       "path": "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
       "function": "_save",
       "operations": [
@@ -253,6 +300,29 @@
       "kind": "application_operations",
       "owner": "hub.shell",
       "reason": "Atomically saves only request signatures, exact project binding and recovery observations at runtime/operations/<runtimeId>.json under the caller-supplied nonproject Hub runtime root. No request body or canonical result is stored; P036 alone proves project outcomes."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/attention/store.py",
+      "function": "_save",
+      "operations": [
+        "mkdir",
+        "open_write",
+        "replace",
+        "unlink"
+      ],
+      "kind": "application_attention",
+      "owner": "hub.shell",
+      "reason": "Atomically saves one project's attention cards (what a person was asked to look at and how they handled it) at attention/<runtimeId>.json under the caller-supplied nonproject Hub runtime root. A card names project facts by reference and never writes them; P036 alone holds design outcomes."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
+      "function": "merge",
+      "operations": [
+        "replace"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Renames an operation journal an earlier Hub kept under a folder's long-path spelling to <name>.merged-into-<runtimeId> once _save has taken its entries in (gap 26), under the nonproject Hub runtime root. Nothing is deleted and no project data is written."
     },
     {
       "path": "apps/monkeyhub/api/monkeyhub_api/settings/store.py",
@@ -583,6 +653,60 @@
       "reason": "Writes the response schema and transient document PNGs into the same TemporaryDirectory handed to codex exec; the directory is cleaned after the call and nothing under the project is touched."
     },
     {
+      "path": "services/project-runtime/src/project_runtime/application/live_rhino.py",
+      "function": "run_in_rhino",
+      "operations": [
+        "write_text"
+      ],
+      "kind": "provider_tempdir",
+      "owner": "project_runtime.live_rhino",
+      "reason": "Writes the request JSON and the generated Rhino script into its own mkdtemp directory for RhinoCode, removed after the answer is read; nothing under the project is touched."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/skill_runs.py",
+      "function": "_write_skill",
+      "operations": [
+        "write_text",
+        "mkdir"
+      ],
+      "kind": "provider_tempdir",
+      "owner": "project_runtime.skill_runs",
+      "reason": "Writes the skill's files, the input documents, params.json and the outputs folder into its own TemporaryDirectory for one run; the folder is removed after the outputs are read, and results enter the project only through P036."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/skill_runs.py",
+      "function": "_write_inputs",
+      "operations": [
+        "write_bytes",
+        "write_text"
+      ],
+      "kind": "provider_tempdir",
+      "owner": "project_runtime.skill_runs",
+      "reason": "Writes the skill's files, the input documents, params.json and the outputs folder into its own TemporaryDirectory for one run; the folder is removed after the outputs are read, and results enter the project only through P036."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/skill_runs.py",
+      "function": "_run_once",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "provider_tempdir",
+      "owner": "project_runtime.skill_runs",
+      "reason": "Writes the bootstrap, access, params and audit files and the run's folders into its own TemporaryDirectory for one run; the folder is removed after the outputs are read, and results enter the project only through P036."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/skill_runs.py",
+      "function": "_ensure_packages",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "skill_environment",
+      "owner": "project_runtime.skill_runs",
+      "reason": "Creates one skill's own package folder under the user's MonkeyHub skill-envs (outside every project) for the requirements its granted access declares, and writes its marker after pip succeeds; the folder is reused by later runs."
+    },
+    {
       "path": "packages/archflow/src/archflow/project/inputs.py",
       "function": "write_program_sheet_file",
       "operations": [
@@ -625,6 +749,17 @@
       "kind": "diagnostics",
       "owner": "monkeymonitor",
       "reason": "Create the caller-selected diagnostics directory and shared Hub/Runtime journal lock file; no project authority."
+    },
+    {
+      "path": "packages/monkeymonitor/src/monkeymonitor/__main__.py",
+      "function": "_write_report",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "diagnostics",
+      "owner": "monkeymonitor",
+      "reason": "Write one content-free UsageEvent@1 report into the output directory the caller names on the report command line; never a default location or project state."
     },
     {
       "path": "packages/monkeycontrol/src/monkeycontrol/store.py",
@@ -1018,6 +1153,100 @@
       "kind": "projection_cache",
       "owner": "project_runtime.documents",
       "reason": "The projection cache (ADR-008, #367): PNG blobs named by their own sha256 under the project's Hub cache directory, never the project folder; written to a temp file then renamed, and removed by the reachability collector after a grace window. Derived, deletable and never cited as evidence."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/design_loop.py",
+      "function": "_write_state",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "replace"
+      ],
+      "kind": "turn_scratch",
+      "owner": "hub.shell",
+      "reason": "Atomically replaces one turn's design-loop state (each design_submit outcome, a question asked, a limitation reported) at the file the CLI's launcher names in MONKEYHUB_DESIGN_LOOP_STATE, outside any project, for the turn's Stop hook to read. Unset, nothing is written. It holds no project state; P036 alone proves outcomes."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/design_loop.py",
+      "function": "_stop_hook",
+      "operations": [
+        "write_text"
+      ],
+      "kind": "turn_scratch",
+      "owner": "hub.shell",
+      "reason": "The Stop hook keeps its own count of how often it held the turn open, beside the loop state the launcher named (<state>.stop.json); nothing else is written and no project is read."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/state_files.py",
+      "function": "seal_model",
+      "operations": [
+        "write_bytes"
+      ],
+      "kind": "projection_cache",
+      "owner": "project_runtime.documents",
+      "reason": "Writes a scratch copy of one 3DM in a temporary directory under the project's Hub cache (<cache>/state-files, ADR-008: derived and deletable, never inside the project) so that the state-file reader and sealer, which read and write paths, can work on it; the directory is deleted on return. The sealed export is retained only by the export route through P036."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/state_files.py",
+      "function": "inspect_state_file",
+      "operations": [
+        "write_bytes"
+      ],
+      "kind": "projection_cache",
+      "owner": "project_runtime.documents",
+      "reason": "Writes a scratch copy of one 3DM in a temporary directory under the project's Hub cache (<cache>/state-files, ADR-008: derived and deletable, never inside the project) so that the state-file reader and sealer, which read and write paths, can work on it; the directory is deleted on return. The sealed export is retained only by the export route through P036."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/application/state_files.py",
+      "function": "__enter__",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "projection_cache",
+      "owner": "project_runtime.documents",
+      "reason": "Writes a scratch copy of one 3DM in a temporary directory under the project's Hub cache (<cache>/state-files, ADR-008: derived and deletable, never inside the project) so that the state-file reader and sealer, which read and write paths, can work on it; the directory is deleted on return. The sealed export is retained only by the export route through P036."
+    },
+    {
+      "path": "tools/project/state_file.py",
+      "function": "export_model",
+      "operations": [
+        "mkdir",
+        "write_bytes"
+      ],
+      "kind": "cli_workspace",
+      "owner": "tools.project.state_file",
+      "reason": "Writes only where its caller points it: the sealed or plain 3DM a Runtime export answered, at a new --out path or under the --candidates directory (an existing file is refused), and opened.json, the project directory and the runs it held when opened, beside the project in the caller's --work-root. The project itself is written only by the project tools and the Runtime it starts."
+    },
+    {
+      "path": "tools/project/state_file.py",
+      "function": "_write_opened",
+      "operations": [
+        "write_text"
+      ],
+      "kind": "cli_workspace",
+      "owner": "tools.project.state_file",
+      "reason": "Writes only where its caller points it: the sealed or plain 3DM a Runtime export answered, at a new --out path or under the --candidates directory (an existing file is refused), and opened.json, the project directory and the runs it held when opened, beside the project in the caller's --work-root. The project itself is written only by the project tools and the Runtime it starts."
+    },
+    {
+      "path": "tools/project/state_file.py",
+      "function": "save",
+      "operations": [
+        "write_text"
+      ],
+      "kind": "cli_workspace",
+      "owner": "tools.project.state_file",
+      "reason": "Writes the hop's events, one JSON line each, at the new --events path its caller names (an existing file is refused); the project itself is read through its Runtime and never written here."
+    },
+    {
+      "path": "tools/project/state_file.py",
+      "function": "build_project",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "cli_workspace",
+      "owner": "tools.project.state_file",
+      "reason": "Creates the caller's --work-root and writes workflow.json there, the one-stage workflow handed to freeze_project_stage_workflow.py; the project's own files are written by the repository and the project tools."
     }
   ],
   "forbidden_layer_imports": [
@@ -1416,9 +1645,10 @@
         "project_runtime.application.artifacts.DocumentWorkCopy",
         "project_runtime.application.artifacts.WORK_COPY_WORKSPACE",
         "project_runtime.application.boards.export_board_pages",
-        "project_runtime.application.boards.BoardExportPage"
+        "project_runtime.application.boards.BoardExportPage",
+        "project_runtime.application.skill_library.installed"
       ],
-      "reason": "MonkeyHub starts the Runtime (main), shares its refusals (errors) and embeds its wire shapes (api.dto); it reads a project in process only through the Runtime's declared read API (#519): ProjectBinding and ReadToken, the event log, the runtime status, the document and work-copy readers and the Board page export. Everything else in project_runtime is reached over the Hub's forwarding path, so the Runtime can change its insides without the Hub following them."
+      "reason": "MonkeyHub starts the Runtime (main), shares its refusals (errors) and embeds its wire shapes (api.dto); it reads a project in process only through the Runtime's declared read API (#519): ProjectBinding and ReadToken, the event log, the runtime status, the document and work-copy readers and the Board page export. Everything else in project_runtime is reached over the Hub's forwarding path, so the Runtime can change its insides without the Hub following them. The skills installed on this machine (skill_library.installed, S-1) are read the same way: the skill folders and what a person allowed are this machine's, not a project's, and listing them reads those folders only and touches no project."
     },
     {
       "source": "services/project-runtime/src/project_runtime/binding",
@@ -1457,5 +1687,43 @@
       "symbol": "FilesystemProjectRepository",
       "owner": "P036"
     }
-  ]
+  ],
+  "ui_entries": {
+    "source_roots": [
+      "apps/monkeyhub/web/src"
+    ],
+    "wrappers": [
+      "MenuCommand",
+      "ModelToolButton"
+    ],
+    "view_rows": [
+      "apps/monkeyhub/web/src/app/AdvancedTools.tsx",
+      "apps/monkeyhub/web/src/features/commands/",
+      "apps/monkeyhub/web/src/notifications/cards/"
+    ],
+    "budgets": {
+      "project_bar": 4,
+      "project_bar_state": 1,
+      "tool_group": 9,
+      "menu": 8,
+      "rail": 6,
+      "sidebar_top": 3,
+      "panel": 10,
+      "left_column": 6,
+      "center_tabs": 3,
+      "side_panel": 6,
+      "card": 4,
+      "status_line": 2,
+      "composer": 3
+    },
+    "baseline": {
+      "apps/monkeyhub/web/src/ChatShell.tsx": 3,
+      "apps/monkeyhub/web/src/HubMenu.tsx": 1,
+      "apps/monkeyhub/web/src/app/AttentionShell.tsx": 12,
+      "apps/monkeyhub/web/src/features/skills/SkillPermissions.tsx": 3,
+      "apps/monkeyhub/web/src/features/skills/SkillsPanel.tsx": 2,
+      "apps/monkeyhub/web/src/i18n/BilingualText.tsx": 1,
+      "apps/monkeyhub/web/src/main.tsx": 1
+    }
+  }
 }

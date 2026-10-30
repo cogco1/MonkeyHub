@@ -28,13 +28,14 @@ from fastapi.testclient import TestClient
 
 from archflow.project.repository import FilesystemProjectRepository
 from monkeyhub_api import projects
+from monkeyhub_api.runtime.workers import project_key
 from monkeyhub_api.chat import (
     activity, guides, judgments, mcp_server, preparation, providers, skill_plugins, store as chat, studio_tool,
     tool_calls, transport, turn_context, visual_review,
 )
 from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import (
-    AppStatus, ChatCreateRequest, ChatDesignContext, ChatMessage, ChatPostRequest, HubFailure,
+    AppStatus, ChatCreateRequest, ChatDesignContext, ChatMessage, ChatPostRequest, ChatSummary, HubFailure,
 )
 from monkeyhub_api.settings.models import ApplicationSettingsDto
 
@@ -1263,8 +1264,10 @@ class ChatTests(unittest.TestCase):
         """ADR-012: the agent's design changes go studio_request -> Hub -> runtime, never into the folder.
 
         One Edit path rule denies every built-in tool that writes a file in the
-        bound project, Write included. Reading it stays as it was, scratch and
-        a source checkout stay writable, and nothing else in the command moves.
+        bound project, Write included, and the same rules follow for the Hub's
+        own configuration and records (test_agent_write_paths). Reading stays as
+        it was, scratch and a source checkout stay writable, and nothing else in
+        the command moves.
         """
         for source in (None, providers._source_checkout()):
             with self.subTest(source=source), patch.object(providers, "_source_checkout", return_value=source):
@@ -1280,18 +1283,39 @@ class ChatTests(unittest.TestCase):
                         if os.name == "nt" else f"Edit(/{project}/**)")
                 self.assertEqual(command.count("--disallowedTools"), 1)
                 at = command.index("--disallowedTools")
-                self.assertEqual(command[at + 1], rule)
-                self.assertTrue(command[at + 2].startswith("--"), "the project's rule is the only one denied")
-                # Scratch is the agent's own place to write: outside the project, and still added.
+                end = next(index for index in range(at + 1, len(command)) if command[index].startswith("--"))
+                denied = command[at + 1:end]
+                self.assertEqual(denied[0], rule, "the project's rule comes first")
+                self.assertEqual(tuple(denied), providers._claude_denied(project, self.runtime),
+                                 "then the Hub's own places, as the chat's runtime root names them")
+                # Scratch is the agent's own place to write: outside the project, still added, and no rule reaches it.
                 scratch = str(self.runtime / "chats" / session.id / "scratch")
                 self.assertFalse(Path(scratch).resolve().is_relative_to(Path(project).resolve()))
+                self.assertFalse([item for item in denied if "scratch" in item or item.endswith("/chats/**)")])
                 added = [command[index + 1] for index, value in enumerate(command) if value == "--add-dir"]
                 self.assertEqual(added, ([project] if source is not None else []) + [scratch])
                 approved = command[command.index("--allowedTools") + 1].split(",")
                 for name in ("Read", "Write", "Edit", "Bash"):
                     self.assertIn(name, approved, name)
                 # Nothing else moves: the same tools, directories, mode and session.
-                self.assertEqual(command[:at] + command[at + 2:], undenied)
+                self.assertEqual(command[:at] + command[end:], undenied)
+
+    def test_with_the_design_loop_enforced_claude_has_no_shell_and_nothing_else_moves(self):
+        """#185: a shell could reach the Runtime's port and act as a person; enforced takes it away, legacy does not."""
+        from monkeyhub_api.settings.store import read_application_settings, save_application_settings
+
+        session = self.create(provider="claude")
+        with self.store._lock:
+            saved = self.store._sessions[session.id]
+            legacy, _ = self.store._command(saved)
+        settings = read_application_settings(self.runtime)
+        save_application_settings(self.runtime, settings.model_copy(update={"design_loop": "enforced"}))
+        with self.store._lock:
+            enforced, _ = self.store._command(saved)
+        at = legacy.index("--disallowedTools")
+        end = next(index for index in range(at + 1, len(legacy)) if legacy[index].startswith("--"))
+        self.assertEqual(enforced[at + 1:end + 2], [*legacy[at + 1:end], "Bash", "PowerShell"])
+        self.assertEqual(enforced[:end] + enforced[end + 2:], legacy, "the shells are the only thing taken away")
 
     def test_codex_is_not_given_the_project_as_a_writable_root(self):
         """ADR-012 for Codex: the Hub names no writable place in the project.
@@ -1369,7 +1393,7 @@ class ChatTests(unittest.TestCase):
 
         if method in {"POST", "PUT"} and not path.startswith("/api/fab/"):
             self.assertEqual(base, self.store.hub_url)
-            runtime_id = uuid5(NAMESPACE_URL, f"{session.projectId}:{os.path.normcase(str(Path(session.projectDir).resolve()))}")
+            runtime_id = uuid5(NAMESPACE_URL, f"{session.projectId}:{project_key(session.projectDir)}")
             prefix = f"/api/runtime/projects/{runtime_id}/studio"
             self.assertTrue(path.startswith(prefix + "/api/"), path)
             self.assertEqual(set(headers or {}), {"Idempotency-Key", "X-Monkey-Chat"})
@@ -1490,24 +1514,25 @@ class ChatTests(unittest.TestCase):
                 patch.object(transport, "_request_json", side_effect=lambda *a, **k: json.loads(json.dumps(document))):
             first = tool_calls.call_tool(self.store.hub_url, session.id, "studio_schema", {"limit": 2})
             second = tool_calls.call_tool(self.store.hub_url, session.id, "studio_schema", {"offset": 2, "limit": 2})
-            self.assertEqual((first["total"], second["total"]), (3, 3))
+            # A document is registered from a chat attachment (gap 37), so its POST is allowed too.
+            self.assertEqual((first["total"], second["total"]), (4, 4))
             self.assertEqual(len(first["actions"]), 2)
-            self.assertEqual(len(second["actions"]), 1)
+            self.assertEqual(len(second["actions"]), 2)
             self.assertTrue(first.get("next"))
             self.assertFalse(second.get("next"))
             actions = {(row["method"], row["path"]) for row in first["actions"] + second["actions"]}
-            self.assertEqual(actions, {("GET", "/api/documents"), ("GET", "/api/drawings/model-view"),
-                                       ("POST", "/api/drawings/sheets")})
+            self.assertEqual(actions, {("GET", "/api/documents"), ("POST", "/api/documents"),
+                                       ("GET", "/api/drawings/model-view"), ("POST", "/api/drawings/sheets")})
             writes = tool_calls.call_tool(self.store.hub_url, session.id, "studio_schema", {"method": "POST"})
             self.assertEqual([(row["method"], row["path"]) for row in writes["actions"]],
-                             [("POST", "/api/drawings/sheets")])
+                             [("POST", "/api/documents"), ("POST", "/api/drawings/sheets")])
             # A route absent from this Runtime must not be advertised merely
             # because Hub permits it. Once Runtime supplies it, no second
             # hand-maintained capability list is needed.
             document["paths"]["/api/drawings/elevations"] = {"post": {"summary": "Make elevations"}}
             updated = tool_calls.call_tool(self.store.hub_url, session.id, "studio_schema", {"method": "POST"})
             self.assertEqual({row["path"] for row in updated["actions"]},
-                             {"/api/drawings/sheets", "/api/drawings/elevations"})
+                             {"/api/documents", "/api/drawings/sheets", "/api/drawings/elevations"})
             empty = tool_calls.call_tool(self.store.hub_url, session.id, "studio_schema", {"offset": 100})
             self.assertEqual(empty["actions"], [])
             self.assertFalse(empty.get("next"))
@@ -1556,11 +1581,14 @@ class ChatTests(unittest.TestCase):
                     self.assertEqual(failure.exception.error.code, "CHAT_ACTION_UNKNOWN")
                     self.assertIn("studio_schema", failure.exception.error.detail)
                     self.assertIn("/api/drawings/sheets", failure.exception.error.detail)
-                for path in ("/api/documents", "/api/visual-reviews"):
-                    with self.subTest(name=name, path=path), self.assertRaises(HubFailure) as failure:
-                        tool_calls.call_tool(self.store.hub_url, session.id, name, {"method": "POST", "path": path})
-                    self.assertEqual(failure.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
-                    self.assertIn("studio_schema", failure.exception.error.detail)
+                with self.subTest(name=name, path="/api/visual-reviews"), self.assertRaises(HubFailure) as failure:
+                    tool_calls.call_tool(self.store.hub_url, session.id, name, {"method": "POST", "path": "/api/visual-reviews"})
+                self.assertEqual(failure.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
+                self.assertIn("studio_schema", failure.exception.error.detail)
+            # A document is registered only from a chat attachment (gap 37): never from content the agent sends.
+            with self.assertRaises(HubFailure) as unattached:
+                tool_calls.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "POST", "path": "/api/documents"})
+            self.assertEqual(unattached.exception.error.code, "CHAT_DOCUMENT_INVALID")
             with self.assertRaises(HubFailure) as absent:
                 tool_calls.call_tool(self.store.hub_url, session.id, "studio_schema",
                                {"method": "POST", "path": "/api/drawings/section-perspectives"})
@@ -1805,7 +1833,8 @@ class ChatTests(unittest.TestCase):
             self.assertEqual(schema["summary"], "list drawings")
             # The visual review route is reached only through its own tool, which
             # holds the allowance; a request or schema path would go around it.
-            for method, path in (("POST", "/api/documents"), ("GET", "/api/documents/asset-1/bytes"),
+            # POST /api/documents takes a chat attachment only (gap 37; test_document_upload_chat).
+            for method, path in (("GET", "/api/documents/asset-1/bytes"),
                                  ("POST", "/api/drawings/plans/dimension-proposal"), ("POST", "/api/visual-reviews")):
                 for tool in ("studio_request", "studio_schema"):
                     with self.subTest(tool=tool, path=path), self.assertRaises(HubFailure) as refused:
@@ -2454,9 +2483,12 @@ class ChatTests(unittest.TestCase):
     def test_a_tool_call_before_the_first_turn_is_not_told_the_chat_stopped(self):
         """#404 F12: CHAT_NOT_RUNNING said "no longer running" to a chat that had not started."""
 
+        # An external source is told the one call that starts its turn, in full, and that nothing ran.
         for messages, external, words in (([], False, "has not started a turn yet"),
-                                          ([], True, "chat_present kind=user"),
-                                          ([{"role": "user", "content": "hi"}], False, "turn has ended")):
+                                          ([], True, "chat_present kind=user, a new UUID turnId and messageId"),
+                                          ([], True, "Nothing was called"),
+                                          ([{"role": "user", "content": "hi"}], False, "turn has ended"),
+                                          ([{"role": "user", "content": "hi"}], True, "For a new request: Publish")):
             with self.subTest(messages=messages, external=external):
                 session = {"status": "idle", "messages": messages, "sourceSessionId": "source" if external else None}
                 failure = preparation._not_running(session)
@@ -2746,7 +2778,7 @@ class ChatTests(unittest.TestCase):
         """
 
         state = {"opens": 0, "starts": 0, "reads": 0, "running": False}
-        runtime_id = str(uuid5(NAMESPACE_URL, f"{session.projectId}:{os.path.normcase(str(Path(session.projectDir).resolve()))}"))
+        runtime_id = str(uuid5(NAMESPACE_URL, f"{session.projectId}:{project_key(session.projectDir)}"))
         guard = threading.Lock()
 
         def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
@@ -3360,6 +3392,19 @@ class ChatTests(unittest.TestCase):
         # An unreadable project is reported as unknown rather than as a version.
         self.assertEqual(projects._position(str(self.root / "missing")), (None, None))
 
+    @unittest.skipUnless(sys.platform == "win32", "the extended-length spelling is a Windows one")
+    def test_a_project_reached_by_its_long_path_spelling_is_listed_once(self):
+        # Gap 26: a conversation saved under ``\\?\`` and a current project chosen
+        # under it are the same folder as the plain spelling, listed once.
+        session = self.create()
+        prefixed = "\\\\?\\" + str(self.project)
+        self.assertEqual(ChatSummary.model_validate({**session.model_dump(), "projectDir": prefixed}).projectDir,
+                         str(self.project))
+        current = ApplicationSettingsDto(projectDir=prefixed)
+        with patch("monkeyhub_api.chat.store.read_application_settings", return_value=current):
+            listed = [row for row in self.store.projects() if row.projectId == session.projectId]
+        self.assertEqual([(row.projectDir, row.chatCount) for row in listed], [(str(self.project), 1)])
+
     def test_the_chat_list_never_waits_for_the_project_list_and_an_unchanged_project_is_not_read_again(self):
         # #449: the Hub asks for both together on every refresh.
         session = self.create()
@@ -3826,6 +3871,79 @@ class ChatTests(unittest.TestCase):
         self.assertEqual({p: p.read_bytes() for p in project.rglob("*") if p.is_file()}, before)
         self.assertFalse((self.runtime / "operations").exists())
 
+    def test_what_is_drawn_on_a_board_frame_reaches_mcp_as_image_and_list(self):
+        # Gap 28: the person's marks over a page, which the clean page read leaves out.
+        import io
+        from PIL import Image
+        from project_runtime.main import create_app as studio_app
+        from project_runtime.settings import StudioSettings
+
+        project = self.root / "chat-project"
+        FilesystemProjectRepository.initialize(project, project_id="chat-project", initial_state={"project_id": "chat-project", "version": 0})
+        session = self.create(project=project)
+        self.store._sessions[session.id].status = "running"
+        client = TestClient(studio_app(StudioSettings(project_dir=project, cad_export="off")))
+        self.addCleanup(client.close)
+        page = io.BytesIO()
+        Image.new("RGB", (200, 100), (255, 255, 0)).save(page, format="PNG")
+        document = client.post("/api/documents", json={"projectId": session.projectId, "fileName": "plan.png",
+            "mimeType": "image/png", "contentBase64": base64.b64encode(page.getvalue()).decode()}).json()
+        saved = client.put("/api/board", json={"projectId": session.projectId, "baseRevisionSha256": None,
+            "title": "Board", "seenDocuments": [], "elements": [
+                {"id": "frame", "type": "frame", "x": 0, "y": 0, "width": 200, "height": 100, "name": "Plan notes"},
+                {"id": "page", "type": "image", "fileId": "page-file", "x": 0, "y": 0, "width": 200, "height": 100,
+                 "scale": [1, 1], "customData": {"sourceDocument": {"runId": document["runId"],
+                 "assetSha256": document["assetSha256"], "revisionRef": None, "pageIndex": 0}}},
+                {"id": "stroke", "type": "freedraw", "x": 50, "y": 50, "width": 100, "height": 0,
+                 "points": [[0, 0], [100, 0]], "strokeColor": "#e03131", "strokeWidth": 4, "frameId": "frame"}]})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        before = {p: p.read_bytes() for p in project.rglob("*") if p.is_file()}
+        forwarded = []
+
+        def request(base, path, method="GET", body=None, **kwargs):
+            if path == "/api/board/view":
+                forwarded.append(body)
+                reply = client.post(path, json=body)
+                if reply.status_code >= 400:
+                    raise HubFailure(reply.status_code, reply.json()["code"], reply.json()["detail"])
+                return reply.json()
+            return self.studio(session, [])(base, path, method, body, **kwargs)
+
+        class Stream(io.StringIO):
+            def reconfigure(self, **kwargs):
+                pass
+
+        calls = [{"method": "POST", "path": "/api/board/view", "body": {"frameId": "frame", "maxEdge": 400}},
+                 {"method": "POST", "path": "/api/board/view", "body": {"frameId": "frame", "pages": []}}]
+        lines = [{"jsonrpc": "2.0", "id": index, "method": "tools/call", "params": {
+            "name": "studio_request", "arguments": arg}} for index, arg in enumerate(calls, 1)]
+        writer = Stream()
+        with patch.object(transport, "_request_json", side_effect=request), \
+             patch.object(mcp_server.sys, "stdin", Stream("\n".join(json.dumps(line) for line in lines) + "\n")), \
+             patch.object(mcp_server.sys, "stdout", writer):
+            mcp_server._mcp(self.store.hub_url, session.id)
+        success, refused = [json.loads(line)["result"] for line in writer.getvalue().splitlines()]
+        self.assertNotIn("isError", success)
+        text, image = success["content"]
+        metadata = json.loads(text["text"])
+        self.assertTrue(metadata["annotationsIncluded"])
+        self.assertEqual(metadata["representation"], "board-region")
+        self.assertEqual(metadata["frame"], {"id": "frame", "name": "Plan notes"})
+        self.assertEqual([(row["id"], row["onPages"][0]["at"]) for row in metadata["annotations"]],
+                         [("stroke", {"x0": 0.25, "y0": 0.5, "x1": 0.75, "y1": 0.5})])
+        self.assertNotIn("data", metadata)
+        self.assertEqual((image["type"], image["mimeType"]), ("image", "image/png"))
+        with Image.open(io.BytesIO(base64.b64decode(image["data"]))) as picture:
+            self.assertEqual(picture.size, (400, 200))
+            red = picture.convert("RGB").getpixel((200, 100))
+            self.assertTrue(red[0] > 180 and red[1] < 110, red)
+        self.assertTrue(refused["isError"])
+        self.assertEqual(json.loads(refused["content"][0]["text"])["code"], "CHAT_TOOL_INVALID")
+        self.assertEqual(forwarded, [{"frameId": "frame", "maxEdge": 400, "projectId": session.projectId}],
+                         "the Hub fills the project and refuses a field the read does not take before asking")
+        self.assertEqual({p: p.read_bytes() for p in project.rglob("*") if p.is_file()}, before)
+        self.assertFalse((self.runtime / "operations").exists(), "a read is never admitted")
+
     def test_drawing_page_tool_rejects_unbound_and_non_image_requests_before_export(self):
         body = {"projectId": "chat-project", "pages": [{"runId": "run-001", "assetSha256": "a" * 64,
                 "revisionRef": None, "pageIndex": 0}], "format": "png", "zip": False}
@@ -4237,28 +4355,28 @@ class ChatTests(unittest.TestCase):
         self.assertTrue(judgments._binds_words("POST", "/api/memory"))
         self.assertIn("POST /api/memory/about", guides._GUIDES["/api/memory"])
 
-    # ---- a recipe says which library skill to load, and whether its version is current (#252 3c)
+    # ---- a recipe says which installed skill to load, and whether it still has the pinned code (#252 3c, S-1)
 
+    CODE = "3f2a9c41d07b"
     RECIPE = {"memory": {"memoryId": "mem-hatch", "kind": "recipe",
-                         "value": {"task": "出平面图前检查填充", "skill": "skill:hatch-review@1", "note": None}},
+                         "value": {"task": "出平面图前检查填充", "skill": "skill:hatch-review@3f2a9c41d07b", "note": None}},
               "status": "current", "staleReason": None, "matchedTerms": ["平面", "填充"]}
 
-    def library(self, *versions):
-        """The configured library's current index, as the Hub reads it through the library Runtime."""
-        rows = [{"id": "skill:hatch-review", "version": version, "name": "hatch-review",
-                 "description": "Review a plan's hatching."} for version in versions]
-        return skill_plugins.Library({"projectId": "skill-library", "skills": rows},
-                                     lambda skill_id, version: {**rows[-1], "body": "ZX7.\n"})
+    def library(self, *codes):
+        """The installed skills, as the Hub reads them from the skill folders."""
+        rows = tuple({"id": "skill:hatch-review", "name": "hatch-review", "description": "Review a plan's hatching.",
+                      "code": code, "source": "user", "body": "ZX7.\n"} for code in codes)
+        return skill_plugins.Library(rows)
 
     def recipe_turn(self, session, words, memory, library):
         reads, packs = [], []
 
-        def configured(runtime_root, hub_url):
-            reads.append(hub_url)
+        def configured():
+            reads.append("folders")
             return library
 
         with patch.object(transport, "_request_json", side_effect=self.studio(session, packs, memory=memory)), \
-                patch.object(skill_plugins, "configured_library", side_effect=configured):
+                patch.object(skill_plugins, "installed_library", side_effect=configured):
             self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content=words))
             finished = self.finished(session)
         self.assertEqual(finished.status, "idle", finished.error)
@@ -4270,41 +4388,47 @@ class ChatTests(unittest.TestCase):
 
     def test_a_turn_about_its_task_carries_the_recipe_with_the_skill_to_load(self):
         session = self.create(provider="claude")
-        call, reads = self.recipe_turn(session, "帮我出平面图，检查一下填充", [self.RECIPE], self.library(1))
+        call, reads = self.recipe_turn(session, "帮我出平面图，检查一下填充", [self.RECIPE], self.library(self.CODE))
         [recipe] = self.carried(call["prompt"])
         self.assertEqual(recipe["skill"], {
-            "load": "monkeyhub-library:hatch-review", "pinned": "skill:hatch-review@1", "libraryVersion": 1,
-            "note": "pinned 1 is the library's current version."})
-        # One read of the library serves the recipe and the plugin the CLI loads.
+            "load": "monkeyhub-library:hatch-review", "pinned": "skill:hatch-review@3f2a9c41d07b",
+            "current": self.CODE, "note": "the installed skill has the pinned code."})
+        # One read of the skill folders serves the recipe and the plugin the CLI loads.
         self.assertEqual(len(reads), 1)
         plugin = Path(call["args"][call["args"].index("--plugin-dir") + 1])
         self.assertTrue((plugin / "skills/hatch-review/SKILL.md").is_file())
         self.assertIn("load its skill", turn_context._MEMORY_NOTE)
 
         # Words about something else carry no recipe.
-        call, _ = self.recipe_turn(session, "把檐口压低一点", [], self.library(1))
+        call, _ = self.recipe_turn(session, "把檐口压低一点", [], self.library(self.CODE))
         self.assertNotIn("hatch-review", call["prompt"])
         self.assertNotIn(turn_context._MEMORY_NOTE, call["prompt"])
 
-    def test_a_recipe_says_when_the_library_moved_or_lost_its_skill(self):
+    def test_a_recipe_says_when_its_skill_changed_or_is_gone(self):
         session = self.create(provider="claude")
-        call, _ = self.recipe_turn(session, "出平面图", [self.RECIPE], self.library(2))
+        call, _ = self.recipe_turn(session, "出平面图", [self.RECIPE], self.library("0123456789ab"))
         [moved] = self.carried(call["prompt"])
-        self.assertEqual((moved["skill"]["pinned"], moved["skill"]["libraryVersion"]), ("skill:hatch-review@1", 2))
-        self.assertTrue(moved["skill"]["note"].startswith("pinned 1, library now 2"))
-        # Nothing is swapped: the stored recipe still pins 1.
-        self.assertEqual(moved["memory"]["value"]["skill"], "skill:hatch-review@1")
+        self.assertEqual((moved["skill"]["pinned"], moved["skill"]["current"]),
+                         ("skill:hatch-review@3f2a9c41d07b", "0123456789ab"))
+        self.assertTrue(moved["skill"]["note"].startswith("pinned code 3f2a9c41d07b, installed now 0123456789ab"))
+        # Nothing is swapped: the stored recipe still pins the code it was saved with.
+        self.assertEqual(moved["memory"]["value"]["skill"], "skill:hatch-review@3f2a9c41d07b")
 
-        call, _ = self.recipe_turn(session, "出平面图", [self.RECIPE], self.library())
+        before = {**self.RECIPE, "memory": {**self.RECIPE["memory"], "value": {
+            "task": "出平面图前检查填充", "skill": "skill:hatch-review@1", "note": None}}}
+        call, _ = self.recipe_turn(session, "出平面图", [before], self.library(self.CODE))
+        [old] = self.carried(call["prompt"])
+        self.assertTrue(old["skill"]["note"].startswith("saved before skills came from the skill folder"))
+
+        call, _ = self.recipe_turn(session, "出平面图", [self.RECIPE], skill_plugins.Library(()))
         [gone] = self.carried(call["prompt"])
-        self.assertEqual((gone["skill"]["load"], gone["skill"]["libraryVersion"]),
-                         ("monkeyhub-library:hatch-review", None))
-        self.assertTrue(gone["skill"]["note"].startswith("not in the library"))
-        self.assertNotIn("--plugin-dir", self.calls()[-1]["args"], "an empty library has nothing to load")
+        self.assertEqual((gone["skill"]["load"], gone["skill"]["current"]), ("monkeyhub-library:hatch-review", None))
+        self.assertTrue(gone["skill"]["note"].startswith("not installed"))
+        self.assertNotIn("--plugin-dir", self.calls()[-1]["args"], "no skill installed has nothing to load")
 
         call, _ = self.recipe_turn(session, "出平面图", [self.RECIPE], None)
         [unset] = self.carried(call["prompt"])
-        self.assertTrue(unset["skill"]["note"].startswith("not in the library (no skill library is set)"))
+        self.assertTrue(unset["skill"]["note"].startswith("not installed (no skill is installed)"))
 
     def test_a_library_chat_learns_its_leftover_skills_and_turns_them_off_next_turn(self):
         for provider in ("claude", "coding-plan"):
@@ -4320,14 +4444,14 @@ class ChatTests(unittest.TestCase):
                     return json.loads(call["args"][call["args"].index("--settings") + 1])["skillOverrides"]
 
                 with self.assertLogs(skill_plugins.__name__, "WARNING") as logged:
-                    call, _ = self.recipe_turn(session, "把檐口压低一点", [], self.library(1))
+                    call, _ = self.recipe_turn(session, "把檐口压低一点", [], self.library(self.CODE))
                 self.assertEqual(overrides(call), {"design": "off", "doctor": "off"})
                 # The library's own skill and a skill already off are not leftovers.
                 self.assertEqual(json.loads(leftovers.read_text(encoding="utf-8")), {"9.9.9": ["newthing"]})
                 self.assertEqual(len(logged.records), 1)
                 self.assertIn("'newthing'", logged.output[0])
 
-                call, _ = self.recipe_turn(session, "把檐口压低一点", [], self.library(1))
+                call, _ = self.recipe_turn(session, "把檐口压低一点", [], self.library(self.CODE))
                 self.assertEqual(overrides(call), {"design": "off", "doctor": "off", "newthing": "off"})
                 self.assertEqual(json.loads(leftovers.read_text(encoding="utf-8")), {"9.9.9": ["newthing"]})
 
@@ -4336,22 +4460,22 @@ class ChatTests(unittest.TestCase):
                 self.assertIn("--disable-slash-commands", call["args"])
                 self.assertNotIn("--settings", call["args"])
 
-    def test_an_unreadable_library_is_said_on_the_recipe_and_a_codex_turn_still_runs(self):
+    def test_unreadable_skills_are_said_on_the_recipe_and_a_codex_turn_still_runs(self):
         session = self.create()
         refused = HubFailure(503, "CHAT_SKILL_LIBRARY_UNAVAILABLE", "The skill library could not be read: Not ready.")
         packs = []
         with patch.object(transport, "_request_json", side_effect=self.studio(session, packs, memory=[self.RECIPE])), \
-                patch.object(skill_plugins, "configured_library", side_effect=refused):
+                patch.object(skill_plugins, "installed_library", side_effect=refused):
             self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="出平面图"))
             finished = self.finished(session)
         self.assertEqual(finished.status, "idle", finished.error)
         [recipe] = self.carried(self.calls()[-1]["prompt"])
         self.assertEqual(recipe["skill"]["note"], "The skill library could not be read: Not ready. Tell the user.")
         # A provider the plugin is not handed to is told it cannot load the skill.
-        call, _ = self.recipe_turn(session, "出平面图", [self.RECIPE], self.library(1))
+        call, _ = self.recipe_turn(session, "出平面图", [self.RECIPE], self.library(self.CODE))
         [recipe] = self.carried(call["prompt"])
         self.assertIsNone(recipe["skill"]["load"])
-        self.assertIn("loads no library skills", recipe["skill"]["note"])
+        self.assertIn("loads no installed skills", recipe["skill"]["note"])
 
     def test_a_refused_preparation_ends_the_turn_in_its_own_words_and_starts_no_cli(self):
         session = self.create()

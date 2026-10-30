@@ -88,6 +88,7 @@ import {
   type SemanticHighlightTarget,
 } from "./modelDisplay";
 import { fitDistance } from "./fitCamera";
+import { buildSectionCaps, disposeSectionCaps, syncSectionCaps, type SectionCaps } from "./sectionCaps";
 import { captureNormalDrag, type NormalDragController } from "./normalDrag";
 import {
   configureOrthographicAspect,
@@ -224,6 +225,12 @@ export interface ViewBounds {
   max: Vec3;
 }
 
+/** A live cutting plane (G5): through ``origin``; ``normal`` points to the side that stays drawn. */
+export interface SectionPlane {
+  origin: Vec3;
+  normal: Vec3;
+}
+
 export interface ViewportLoadOptions {
   /** Parse a possible replacement while the current model remains interactive. */
   readonly background?: boolean;
@@ -317,6 +324,12 @@ export interface ViewportController {
   elevationGuide(elevation: number | null): void;
   translationGizmo(spec: TranslationGizmoSpec | null): void;
   translationPointer(kind: "hover" | "start" | "move" | "end", clientX: number, clientY: number): TranslationSample | null;
+  /**
+   * Cut the model at a plane while it is turned (G5), or draw it whole again
+   * with null. A look, never an edit: nothing is saved, and a pick on the
+   * cut-away side hits nothing. The exact section stays the drawing routes'.
+   */
+  section(plane: SectionPlane | null): void;
   fitView(): void;
   /** Frame the resolved current selection through the active camera. */
   fitSelection(): boolean;
@@ -449,6 +462,14 @@ interface ViewportRuntime {
   presentationCamera: CameraSnapshot | null;
   /** Hands the component what Presentation's legend says now: null outside Presentation or without a model. */
   presented: (legend: PresentationLegend | null) => void;
+  /** The live cut, or null; ``sectionPlanes`` is the one array every clipped material holds. */
+  section: Plane | null;
+  sectionPlanes: Plane[];
+  /** Whether materials still carry the cut, so turning it off clears them once. */
+  sectionApplied: boolean;
+  /** The fills of the cut closed members, and what they were built for: rebuilt when the model or its look changes. */
+  sectionCaps: SectionCaps | null;
+  sectionCapsKey: string | null;
   render: () => void;
 }
 
@@ -537,6 +558,44 @@ function undeclaredObject(runtime: ViewportRuntime, object: Object3D): boolean {
  * point; it is not part of the model, so nothing picks, snaps to or frames it.
  * Outside Presentation, or with nothing loaded, there is no ground.
  */
+/**
+ * Give every material of the model, its comparison, ghost, outline and edge overlay the live cut, or take it off.
+ * Run before each frame: the display styles and highlights swap materials, and a material already holding the
+ * cut is left as it is, so its shader is not rebuilt.
+ */
+function clipModel(runtime: ViewportRuntime): void {
+  const planes = runtime.section ? runtime.sectionPlanes : null;
+  if (!planes && !runtime.sectionApplied) return;
+  for (const root of [runtime.model, runtime.secondary, runtime.ghost, runtime.outline, runtime.styleEdges?.group ?? null]) {
+    root?.traverse((object) => {
+      const material = (object as Mesh | Line).material as Material | Material[] | undefined;
+      if (!material) return;
+      for (const own of Array.isArray(material) ? material : [material]) {
+        if (own.clippingPlanes !== planes) {
+          own.clippingPlanes = planes;
+          own.needsUpdate = true;
+        }
+      }
+    });
+  }
+  runtime.sectionApplied = planes !== null;
+}
+
+/** The fills of a live section's cut closed members (G5, step 2): built for the model and its look, laid on the plane each frame. */
+function capSection(runtime: ViewportRuntime): void {
+  const key = runtime.section && runtime.model ? `${runtime.model.uuid}:${runtime.style}` : null;
+  if (key !== runtime.sectionCapsKey) {
+    if (runtime.sectionCaps) disposeSectionCaps(runtime.sectionCaps);
+    runtime.sectionCaps = key && runtime.model
+      ? buildSectionCaps(runtime.model, runtime.sectionPlanes, Math.max(1, (runtime.modelBounds?.radius ?? 1) * 4)) : null;
+    if (runtime.sectionCaps) runtime.scene.add(runtime.sectionCaps.group);
+    runtime.sectionCapsKey = key;
+  }
+  if (runtime.sectionCaps && runtime.section) {
+    syncSectionCaps(runtime.sectionCaps, runtime.section, runtime.modelBounds?.center ?? new Vector3());
+  }
+}
+
 function placeSun(runtime: ViewportRuntime): void {
   const { sun, shadowGround } = runtime;
   const box = runtime.style === "presentation" && runtime.model ? new Box3().setFromObject(runtime.model) : null;
@@ -2009,8 +2068,11 @@ export const ThreeDmViewport = forwardRef<
         intersections.push(...(object instanceof Line ? raycastCurve(object, raycaster)
           : raycaster.intersectObject(object, false)));
       });
+      const cut = runtime.section ?? null;
       const hit = intersections.sort((a, b) => a.distance - b.distance).find((intersection) => {
         if (!isDisplayed(intersection.object)) return false;
+        // What a live section cuts away is not drawn, so it is not picked either.
+        if (cut && cut.distanceToPoint(intersection.point) < 0) return false;
         if (!(intersection.object instanceof Line)) return true;
         const screen = intersection.point.clone().project(runtime.camera);
         return screen.z >= -1 && screen.z <= 1 && Math.hypot(
@@ -2330,8 +2392,11 @@ export const ThreeDmViewport = forwardRef<
       renderView: () => {
         const runtime = runtimeRef.current;
         if (!runtime || (!runtime.model && !runtime.draftObjects.size)) return null;
-        return captureRenderView(runtime.scene, runtime.camera, runtime.controls.target,
+        const view = captureRenderView(runtime.scene, runtime.camera, runtime.controls.target,
           runtime.perspectiveCamera.fov, runtime.renderer.toneMappingExposure, runtime.renderer.shadowMap.enabled);
+        const cut = runtime.section;
+        // A capture keeps the live section it was cut at, so a camera pass of it is cut the same way (G5).
+        return cut ? { ...view, clip: { origin: cut.coplanarPoint(new Vector3()).toArray() as Vec3, normal: cut.normal.toArray() as Vec3 } } : view;
       },
       camera: cameraState,
       unprojectOnPlane,
@@ -2385,6 +2450,21 @@ export const ThreeDmViewport = forwardRef<
       applyCamera,
       originalOutline,
       setOutlineVisible,
+      section: (plane) => {
+        const runtime = runtimeRef.current;
+        if (!runtime) return;
+        if (plane === null) {
+          runtime.section = null;
+        } else {
+          const normal = new Vector3(...plane.normal);
+          if (normal.lengthSq() === 0) return;
+          // The one plane every clipped material already holds moves in place: no shader is rebuilt as it is dragged.
+          const cut = runtime.sectionPlanes[0];
+          cut.setFromNormalAndCoplanarPoint(normal.normalize(), new Vector3(...plane.origin));
+          runtime.section = cut;
+        }
+        runtime.render();
+      },
       bounds: () => {
         const runtime = runtimeRef.current;
         const box = runtime ? boundsForRuntime(runtime) : null;
@@ -2444,6 +2524,8 @@ export const ThreeDmViewport = forwardRef<
 
     const renderer = new WebGLRenderer({
       antialias: true,
+      // A live section fills its cut closed members through the stencil buffer (G5).
+      stencil: true,
       powerPreference: "high-performance",
       // The screenshot encoder runs asynchronously; retain the last explicit
       // render so the browser cannot serialize a cleared WebGL buffer.
@@ -2452,6 +2534,8 @@ export const ThreeDmViewport = forwardRef<
     renderer.outputColorSpace = SRGBColorSpace;
     renderer.toneMapping = ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
+    // A live section clips the model's own materials only, never the grid or the gizmos (G5).
+    renderer.localClippingEnabled = true;
     // Filtered (soft) shadow maps; paintStage turns them on for Presentation alone.
     renderer.shadowMap.type = PCFShadowMap;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -2511,6 +2595,8 @@ export const ThreeDmViewport = forwardRef<
         syncFeatureEdgeOverlay(runtime.styleEdges, new Set(runtime.highlighted),
           runtime.secondary && runtime.blendT !== null ? 1 - runtime.blendT : 1);
       }
+      clipModel(runtime);
+      capSection(runtime);
       renderer.render(scene, runtime.camera);
     };
 
@@ -2595,6 +2681,11 @@ export const ThreeDmViewport = forwardRef<
       shadowGround,
       presentationCamera: null,
       presented: setLegend,
+      section: null,
+      sectionPlanes: [new Plane()],
+      sectionApplied: false,
+      sectionCaps: null,
+      sectionCapsKey: null,
       render,
     };
     runtimeRef.current = runtime;
@@ -2652,6 +2743,8 @@ export const ThreeDmViewport = forwardRef<
       restoreHighlight(runtime);
       resetDisplayStyle(runtime);
       clearDraftPreview(runtime);
+      // The section fills share the model's geometry: taken off before the model is disposed.
+      if (runtime.sectionCaps) disposeSectionCaps(runtime.sectionCaps);
       if (runtime.model) disposeScene(runtime.model);
       if (runtime.ghost) disposeGhost(runtime.ghost);
       if (runtime.sketch) disposeScene(runtime.sketch);
@@ -2733,7 +2826,7 @@ export const ThreeDmViewport = forwardRef<
           {visualStatus === "idle" && idle ? idle : <>
             <p aria-live="polite">{visualMessage}</p>
             {!readOnly && (visualStatus === "idle" || visualStatus === "error") && (
-              <button className="button" type="button" onClick={onRequestFile}>
+              <button data-command="model.import_asset.open_file" className="button" type="button" onClick={onRequestFile}>
                 Open a local .3dm or .skp
               </button>
             )}
@@ -2752,7 +2845,7 @@ export const ThreeDmViewport = forwardRef<
       {legend && <div data-presentation style={{ position: "absolute", top: 12, right: 12, zIndex: 5, display: "grid", justifyItems: "end",
         gap: 6, maxWidth: "min(300px, calc(100% - 24px))", pointerEvents: "none" }}>
         <div className="viewtools" role="group" aria-label={t("stage.presentation.views")} style={{ pointerEvents: "auto" }}>
-          {PRESENTATION_VIEWS.map(([view, standard]) => <button type="button" key={view} data-presentation-view={view}
+          {PRESENTATION_VIEWS.map(([view, standard]) => <button data-command={`view.model_camera.${standard}`} type="button" key={view} data-presentation-view={view}
             title={t(`stage.presentation.${view}Title`)} onClick={() => {
               const runtime = runtimeRef.current;
               if (runtime) standardRuntime(runtime, standard);
@@ -2761,7 +2854,7 @@ export const ThreeDmViewport = forwardRef<
         {/* Folded by default, so the picture stays clear; the line still says how many objects are hatched. */}
         <details data-presentation-legend style={{ maxWidth: "100%", padding: "5px 9px", border: "1px solid var(--line)", borderRadius: "var(--radius-lg)",
           background: "var(--overlay)", color: "var(--ink-2)", fontSize: "calc(11px * var(--font-scale, 1))", pointerEvents: "auto" }}>
-          <summary style={{ cursor: "pointer", whiteSpace: "nowrap" }}>
+          <summary data-command="view.model_display.materials" style={{ cursor: "pointer", whiteSpace: "nowrap" }}>
             {t("stage.presentation.legendSummary", { count: legend.materials.length })}
             {legend.undeclared > 0 && <span title={t("stage.presentation.undeclared", { count: legend.undeclared })}
               style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 8 }}>

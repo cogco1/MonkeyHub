@@ -1,5 +1,6 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AppearancePreferences } from "../../../../../../packages/web-shared/src/appearance.js";
+import { developerPreferences, type DeveloperPreferences } from "./developer";
 export type { Language, ThemePreference, FontScale } from "../../../../../../packages/web-shared/src/appearance.js";
 
 export interface UserPreferences extends AppearancePreferences {
@@ -112,6 +113,18 @@ function writeChoice(serverBaseUrl: string, projectId: string, choice: EditingBa
   return persistEditingBases(stored, next);
 }
 
+/** Saved beside the editing choices; a record that cannot be read is left as it is, and the switch lasts only this session. */
+function persistDeveloper(value: DeveloperPreferences): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const stored = readStoredPreferences(true);
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...stored, version: STORAGE_VERSION, developer: value }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The same preference record owns these pointers; clearing site data clears them too. */
 export const editingBasePreferences = {
   read(serverBaseUrl: string, projectId: string): string | null {
@@ -126,20 +139,38 @@ export const editingBasePreferences = {
   },
 };
 
-/** Hub owns appearance; diagnostics here last only for this mounted session. */
+/** Hub owns appearance; developer mode and its event stream are this browser's, kept across reloads. */
 export function UserPreferencesProvider({ appearance, children }: {
   appearance: AppearancePreferences;
   children: ReactNode;
 }) {
-  const [eventStreamVisible, setEventStreamVisible] = useState(true);
-  const [developerMode, setDeveloperMode] = useState(false);
+  const [developer, setDeveloper] = useState(() => developerPreferences(readStoredPreferences()));
+  const current = useRef(developer);
+  const change = useCallback((patch: Partial<DeveloperPreferences>) => {
+    const next = { ...current.current, ...patch };
+    current.current = next;
+    persistDeveloper(next);
+    setDeveloper(next);
+  }, []);
   const value = useMemo<UserPreferencesContextValue>(() => ({
     language: appearance.language,
     theme: appearance.theme,
     fontScale: appearance.fontScale,
-    eventStreamVisible, developerMode, setEventStreamVisible, setDeveloperMode,
-  }), [appearance.language, appearance.theme, appearance.fontScale, eventStreamVisible, developerMode]);
+    eventStreamVisible: developer.eventStream, developerMode: developer.mode,
+    setEventStreamVisible: (visible: boolean) => change({ eventStream: visible }),
+    setDeveloperMode: (enabled: boolean) => change({ mode: enabled }),
+  }), [appearance.language, appearance.theme, appearance.fontScale, developer, change]);
   return <UserPreferencesContext.Provider value={value}>{children}</UserPreferencesContext.Provider>;
+}
+
+/** Developer mode where a component may render outside the provider too (a framed tool page): off there. */
+export function useDeveloperMode(): boolean {
+  return useContext(UserPreferencesContext)?.developerMode ?? false;
+}
+
+/** Technical details, ports and service controls: shown only in developer mode. */
+export function DeveloperOnly({ children }: { children: ReactNode }) {
+  return useDeveloperMode() ? <>{children}</> : null;
 }
 
 export function usePreferences(): UserPreferencesContextValue {

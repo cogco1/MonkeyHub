@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from tools.dev import source_roots  # noqa: E402 - needs this tree on sys.path first
-from tools.governance.archcheck import REGISTRY_SCHEMA  # noqa: E402
+from tools.governance.archcheck import COMMAND_TREE as COMMAND_TREE_PATH, REGISTRY_SCHEMA, load_command_phrases, render_command_tree  # noqa: E402
 
 source_roots.put_first(ROOT)
 
@@ -28,6 +28,7 @@ REGISTRY_PATH = ROOT / "governance" / "work_registry.json"
 MODULE_REGISTRY = ROOT / "governance" / "module_registry.json"
 SYSTEM_MAP = ROOT / "docs" / "architecture" / "system-map.md"
 SEMANTIC_REGISTRY = ROOT / "docs" / "architecture" / "semantic-registry.md"
+COMMAND_TREE = ROOT / COMMAND_TREE_PATH
 ISSUES = "https://github.com/cogco1/MonkeyHub/issues/"
 MODULE_SECTIONS = (
     "owns", "does_not_own", "public_api", "depends_on", "source_paths", "tests",
@@ -104,7 +105,7 @@ def _capability_lookup(query: str, *, section: str | None, limit: int, offset: i
         return result
     result["matched"] = list(evidence[0][1])
     entry = matches[0]
-    detail = {k: entry[k] for k in ("capability_id", "owner", "execution_owner", "kind", "status",
+    detail = {k: entry[k] for k in ("capability_id", "owner", "execution_owner", "host", "kind", "status",
                                     "purpose", "purpose_zh", "inputs_ref", "estimated_cost",
                                     "status_note") if k in entry}
     omitted = {}
@@ -418,7 +419,7 @@ def render_semantic_registry() -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("render-map", help="render docs/architecture/system-map.md and semantic-registry.md from their registries")
+    sub.add_parser("render-map", help="render system-map.md, semantic-registry.md and the web command tree from their registries")
     work_parser = sub.add_parser(
         "work", help="read the live GitHub Issue claims: lanes, bases, handoffs and scope conflicts")
     work_parser.add_argument("query", nargs="?", help="exact claim id, e.g. GH-355 or GH-355/browser-suites")
@@ -464,9 +465,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if result["findings"] or (args.query is not None and not result["items"]) else 0
     system_map = render_system_map()
     SEMANTIC_REGISTRY.write_text(render_semantic_registry(), encoding="utf-8", newline="\n")
+    rendered = [SEMANTIC_REGISTRY]
     if system_map is not None:
         SYSTEM_MAP.write_text(system_map, encoding="utf-8", newline="\n")
-    print(f"rendered {SEMANTIC_REGISTRY.relative_to(ROOT)}" + (f" and {SYSTEM_MAP.relative_to(ROOT)}" if system_map else ""))
+        COMMAND_TREE.write_text(render_command_tree(load_module_registry(), load_command_phrases(ROOT)), encoding="utf-8", newline="\n")
+        rendered += [SYSTEM_MAP, COMMAND_TREE]
+    print("rendered " + ", ".join(str(path.relative_to(ROOT)) for path in rendered))
     return 0
 
 

@@ -12,6 +12,7 @@ import type { AgentReadingDto, ProposalDto } from "../../../api/project-runtime/
 import type { EvidenceTab } from "../../../app/evidence";
 import { BilingualText } from "../../../i18n/BilingualText";
 import { useT } from "../../../i18n/useT";
+import { DeveloperOnly } from "../../settings/preferences";
 import { Verbatim } from "./Verbatim";
 
 /** A release is sent this long after the last move, so a drag is one request. */
@@ -100,11 +101,24 @@ export function ProposalCard({
           </p>
         )}
       </div>
-      {(change.kind !== "edit_components" || change.kept.length > 0) && <div className="card__row">
+      {(change.kind !== "edit_components" || change.changes.length > 0 || change.kept.length > 0) && <div className="card__row">
         <dl className="kv kv--review">
           {change.kind === "edit_components" ? (
-            change.kept.length > 0 && (
-              <>
+            <>
+              {change.changes.length > 0 && <>
+                <dt>{t("proposal.change")}</dt>
+                <dd>
+                  <ul className="reflist">
+                    {change.changes.map((item, index) => (
+                      <li key={`${item.entityId}:${index}`}>
+                        <BilingualText source={item.label} />
+                        {" · "}<BilingualText source={item.description} />
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </>}
+              {change.kept.length > 0 && <>
                 <dt>{t("proposal.keep")}</dt>
                 <dd>
                   <ul className="reflist">
@@ -113,8 +127,8 @@ export function ProposalCard({
                     ))}
                   </ul>
                 </dd>
-              </>
-            )
+              </>}
+            </>
           ) : (
             <>
               <dt>{t("proposal.change")}</dt>
@@ -129,8 +143,15 @@ export function ProposalCard({
           )}
         </dl>
       </div>}
-      <details className="card__row card__details">
-        <summary>{t("common.technicalDetails")}</summary>
+      {/* What else moves and what could not be checked, in a sentence; the refs and the reason are in developer mode. */}
+      {(impact.propagated.length > 0 || impact.unknownCoverage.count > 0) && <p className="card__row quiet" data-impact>
+        {impact.propagated.length > 0 && t("proposal.impact", { count: impact.propagated.length })}
+        {impact.propagated.length > 0 && impact.unknownCoverage.count > 0 && " "}
+        {impact.unknownCoverage.count > 0 && t("proposal.impactUnchecked", { count: impact.unknownCoverage.count })}
+      </p>}
+      {/* The ids, the reader's own words and the raw edits are for developer mode; the card above says what changes. */}
+      <DeveloperOnly><details className="card__row card__details">
+        <summary data-command="view.disclosure.toggle" data-command-arg="technical_details">{t("common.technicalDetails")}</summary>
         <p className="card__title">
           <span className="mono">{subject}</span>
           {target.elementId && (
@@ -171,7 +192,7 @@ export function ProposalCard({
                 · {t("proposal.unknownCoverage", {
                   count: impact.unknownCoverage.count,
                 })}{" "}
-                <button
+                <button data-command="view.evidence.open"
                   type="button"
                   className="btn btn--link"
                   onClick={() => onEvidence("honesty")}
@@ -197,20 +218,8 @@ export function ProposalCard({
           </dd>
         </dl>
         <Verbatim lines={impact.honesty} />
-        {change.kind === "edit_components" && (
-          <>
-            <ul className="reflist">
-              {change.changes.map((item, index) => (
-                <li key={`${item.entityId}:${index}`}>
-                  <BilingualText source={item.label} />
-                  {" · "}<BilingualText source={item.description} />
-                </li>
-              ))}
-            </ul>
-            <pre>{JSON.stringify(change.edits, null, 2)}</pre>
-          </>
-        )}
-      </details>
+        {change.kind === "edit_components" && <pre>{JSON.stringify(change.edits, null, 2)}</pre>}
+      </details></DeveloperOnly>
       {proposal.status === "conflict" && (
         <div className="card__row">
           <p className="card__conflict">
@@ -226,7 +235,7 @@ export function ProposalCard({
         typeof change.new === "number" &&
         change.old > 0 && (
           <details className="card__row card__details">
-            <summary>{t("proposal.refine.ariaLabel")}</summary>
+            <summary data-command="candidate.modify_existing.refine">{t("proposal.refine.ariaLabel")}</summary>
             <Refine
               fieldKey={target.key}
               old={change.old}
@@ -250,7 +259,7 @@ export function ProposalCard({
         </div>
       )}
       <div className="card__row actions">
-        <button
+        <button data-command="candidate.modify_existing.apply"
           type="button"
           className="btn btn--primary"
           disabled={busy || inactive || proposal.status === "conflict"}
@@ -258,7 +267,7 @@ export function ProposalCard({
         >
           {t("common.apply")}
         </button>
-        <button
+        <button data-command="candidate.modify_existing.adjust"
           type="button"
           className="btn"
           onClick={() => onAdjust(compiled)}
@@ -353,7 +362,7 @@ function Refine({
         <span className="quiet refine__meta">{status}</span>
       </div>
       <div className="refine__row">
-        <button
+        <button data-command="candidate.modify_existing.refine_less"
           type="button"
           className="btn btn--small"
           aria-label={t("proposal.refine.less")}
@@ -371,7 +380,7 @@ function Refine({
           aria-label={t("proposal.refine.sliderAria")}
           onChange={(event) => send(Number(event.currentTarget.value))}
         />
-        <button
+        <button data-command="candidate.modify_existing.refine_more"
           type="button"
           className="btn btn--small"
           aria-label={t("proposal.refine.more")}

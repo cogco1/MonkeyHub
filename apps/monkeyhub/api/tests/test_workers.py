@@ -17,6 +17,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from test_monkeyhub_lifecycle import ROOT, LocalHubCase, free_ports, http_json, port_open, project_fixture, wait_for
+from monkeyhub_api.runtime import workers as workers_module
 from monkeyhub_api.runtime.applications import Applications
 from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import HubFailure
@@ -78,9 +79,14 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(result).encode())
 
+time.sleep(float(os.environ.get("START_DELAY", "0")))  # a project still reading itself before it listens
 server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
 def stop():
     sys.stdin.readline()
+    # A job that is still running when the stop arrives finishes first.
+    drain = Path(os.environ["OUTAGE_FILE"]).with_suffix(".drain")
+    while drain.exists():
+        time.sleep(0.05)
     server.shutdown()
 threading.Thread(target=stop, daemon=True).start()
 server.serve_forever(poll_interval=0.05)
@@ -170,6 +176,30 @@ class WorkerSupervisorTests(unittest.TestCase):
             self.supervisor.start(a)
         self.assertEqual(raised.exception.error.code, "HUB_STOPPING")
 
+    def test_a_closing_hub_waits_for_running_work_and_says_what_it_waits_for(self):
+        # Gap 24: the wait has no limit of its own; the desktop reads the note
+        # to say what a forced close would end.
+        launch = self.launch("project")
+        self.supervisor.start(launch)
+        self.wait_state(launch.worker_id, "ready")
+        self.supervisor.set_busy(launch.worker_id, True)
+        drain = Path(launch.project_dir) / "outage.drain"
+        drain.write_text("a job is running", encoding="utf-8")
+        applications = Applications(ROOT, self.root / "hub", free_ports(1)[0])
+        applications.supervisor = self.supervisor
+        timer = threading.Timer(2.5, drain.unlink)
+        timer.start()
+        self.addCleanup(timer.cancel)
+        started = time.monotonic()
+        with patch.object(applications, "_note_closing", wraps=applications._note_closing) as noted:
+            applications.shutdown()
+        self.assertGreaterEqual(time.monotonic() - started, 2.4, "the Hub stopped waiting before the job finished")
+        busy = {"service": "studio", "projectId": "project", "projectDir": launch.project_dir, "busy": True}
+        self.assertEqual([call.args[0] for call in noted.call_args_list], [[busy], []], "each change is noted once")
+        self.assertEqual(json.loads((self.root / "hub/runtime/closing.json").read_text(encoding="utf-8")),
+                         {"processId": os.getpid(), "waiting": []})
+        self.assertEqual(self.supervisor._children[launch.worker_id].process.returncode, 0)
+
     def test_recovery_refuses_foreign_listener_and_does_not_adopt_it(self):
         launch = self.launch("project")
         self.supervisor.start(launch)
@@ -238,6 +268,23 @@ class WorkerSupervisorTests(unittest.TestCase):
         ready = self.wait_state(launch.worker_id, "ready")
         self.assertEqual(ready.instance_id, original.instance_id)
         self.assertIsNone(ready.error)
+
+    def test_a_busy_worker_that_misses_probes_stays_busy(self):
+        # Gap 25: a job holding the interpreter in native code makes probes
+        # time out for minutes; the worker is alive and its job finishes.
+        launch = self.launch("busy-outage")
+        self.supervisor.start(launch)
+        original = self.wait_state(launch.worker_id, "ready")
+        self.supervisor.set_busy(launch.worker_id, True)
+        outage = Path(launch.environment["OUTAGE_FILE"])
+        outage.touch()
+        time.sleep(_UNAVAILABLE_AFTER_S + 2 * _ACTIVE_PROBE_S + 2)
+        current = self.supervisor.snapshot(launch.worker_id)
+        self.assertEqual((current.state, current.healthy, current.error), ("busy", True, None))
+        self.assertEqual(current.instance_id, original.instance_id)
+        outage.unlink()
+        self.supervisor.set_busy(launch.worker_id, False)
+        self.assertEqual(self.wait_state(launch.worker_id, "ready").instance_id, original.instance_id)
 
     def test_slow_project_summary_is_not_polled_and_still_rejects_changed_identity(self):
         launch = self.launch("slow-binding")
@@ -339,6 +386,73 @@ class WorkerSupervisorTests(unittest.TestCase):
                  "The watcher did not record the exit", timeout=_STABLE_PROBE_S)
         self.assertLess(min(when for when in changes if when >= killed) - killed, 1.0)
         self.assertEqual(child.error.code, "PROCESS_EXITED")
+
+    def test_a_slow_start_is_waited_for_and_only_a_stuck_one_is_stopped(self):
+        """0925 (10-24): a launch that is alive and still reading its project before it listens is not stopped."""
+
+        self.assertGreaterEqual(workers_module._START_LIMIT_S, 120.0, "a large project on a busy machine starts slowly")
+        slow = self.launch("slow")
+        slow = replace(slow, environment={**slow.environment, "START_DELAY": "2"})
+        with patch.object(workers_module, "_START_LIMIT_S", 0.5):
+            self.supervisor.start(slow)
+            stuck = self.wait_state(slow.worker_id, "unavailable")
+        self.assertEqual(stuck.error.code, "START_TIMEOUT")
+        waited = self.launch("waited")
+        waited = replace(waited, environment={**waited.environment, "START_DELAY": "2"})
+        with patch.object(workers_module, "_START_LIMIT_S", 10.0):
+            self.supervisor.start(waited)
+            self.assertIsNone(self.wait_state(waited.worker_id, "ready", timeout=15).error)
+
+    def test_a_probe_that_connects_to_itself_reads_as_a_port_not_listening(self):
+        """0925 (10-24): on Windows a connection to a port nobody listens on can come back connected to itself."""
+
+        class Looped:
+            closed = False
+
+            def getsockname(self):
+                return ("127.0.0.1", 50410)
+
+            def getpeername(self):
+                return ("127.0.0.1", 50410)
+
+            def close(self):
+                self.closed = True
+
+        looped = Looped()
+        with patch("monkeyhub_api.runtime.workers.socket.create_connection", return_value=looped):
+            with self.assertRaises(ConnectionRefusedError):
+                workers_module._connect_within(0.03, ("127.0.0.1", 50410), 1.0)
+        self.assertTrue(looped.closed, "the looped connection is let go, so the service can take its port")
+
+    def test_an_answer_that_is_not_http_leaves_the_watcher_probing(self):
+        """BadStatusLine used to end the watcher: the launch stayed starting until its limit and was then stopped."""
+
+        from http.client import BadStatusLine
+
+        launch = self.launch("garbled")
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", launch.port))
+        listener.listen(16)
+        self.addCleanup(listener.close)
+        exited = threading.Event()
+        process = SimpleNamespace(pid=4321, stdin=None, poll=lambda: 1 if exited.is_set() else None)
+        child = _Child(launch, process, "instance", self.root / "worker.log")
+        answered = []
+
+        def garbled(*args, **kwargs):
+            answered.append(time.monotonic())
+            raise BadStatusLine("GET /api/health HTTP/1.1")
+
+        with patch.object(workers_module.HTTPConnection, "getresponse", side_effect=garbled):
+            watcher = threading.Thread(target=self.supervisor._watch, args=(child,), daemon=True)
+            watcher.start()
+            time.sleep(1.0)
+            self.assertTrue(watcher.is_alive(), "the watcher ended on an answer that was not HTTP")
+            exited.set()
+            child.signal.set()
+            watcher.join(5)
+        self.assertGreaterEqual(len(answered), 3)
+        self.assertIsNone(child.service_pid)
 
     def test_a_starting_launch_is_asked_again_while_its_port_does_not_listen_yet(self):
         """#449: a port nobody listens on fails a starting probe at once, not after the probe's timeout.

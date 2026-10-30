@@ -6,9 +6,11 @@ from starlette.requests import Request
 
 from ...application import boards
 from ...binding import bound_project
-from ..dto.boards import BoardDto, BoardExportPageDto, BoardExportRequestDto, BoardRequestDto, board_dto
+from ..dto.boards import (BoardDto, BoardExportPageDto, BoardExportRequestDto, BoardRequestDto, BoardViewDto,
+                          BoardViewRequestDto, board_dto, board_view_dto)
 from ...errors import StudioError
 from .artifacts import _content_disposition
+from .projections import ready_projections
 
 router = APIRouter(tags=["board"])
 
@@ -25,6 +27,20 @@ def update_board(request: Request, payload: BoardRequestDto) -> BoardDto:
         raise StudioError(403, "PROJECT_MISMATCH", "The board names another project.")
     return board_dto(boards.save_board(binding, payload.base_revision_sha256, payload.title,
                                       payload.elements, payload.seen_documents))
+
+
+@router.post("/board/view", response_model=BoardViewDto, response_model_by_alias=True)
+def view_board(request: Request, payload: BoardViewRequestDto) -> BoardViewDto:
+    """Draw one frame or region of the board with what is drawn on its pages, and list those marks (a read)."""
+
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The board view names another project.")
+    region = None if payload.region is None else (payload.region.x, payload.region.y,
+                                                  payload.region.width, payload.region.height)
+    view = boards.view_board(binding, ready_projections(request.app.state), frame_id=payload.frame_id, region=region,
+                             max_edge=payload.max_edge, revision_sha256=payload.revision_sha256)
+    return board_view_dto(binding.project_id, view)
 
 
 @router.post("/board/export", response_class=Response)

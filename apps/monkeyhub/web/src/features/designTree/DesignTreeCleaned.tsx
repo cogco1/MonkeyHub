@@ -41,7 +41,7 @@ export function CleanedDrafts({ drafts, words, busy, canRestore, restoring, refu
           <span>{remaining >= DAY_MS ? t("designTree.cleaned.when", { when, days: Math.ceil(remaining / DAY_MS) })
             : t("designTree.cleaned.lastDay", { when })}</span>
         </div>
-        <button type="button" className="btn btn--small" data-action="restore" disabled={busy || !canRestore}
+        <button data-command="candidate.restore.draft" type="button" className="btn btn--small" data-action="restore" disabled={busy || !canRestore}
           onClick={() => onRestore(draft.runId)}>
           {restoring === draft.runId ? t("designTree.action.restoringDraft") : t("designTree.action.restoreDraft")}</button>
         {refused?.runId === draft.runId && <p className="design-tree-inspector__refusal" role="alert">{refusalWords(t, language, refused.error)}</p>}

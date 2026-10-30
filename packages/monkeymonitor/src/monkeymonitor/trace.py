@@ -7,6 +7,7 @@ from decimal import Decimal
 import re
 
 from .pricing import RateCard, match_rate, quote
+from .sources import AGENT_SOURCES, token_authority
 from .usage import TokenUsage
 
 
@@ -94,6 +95,8 @@ def _lane(row):
         return "client"
     if phase in {"step_readback", "preview_readback", "tessellation", "element_production"} or phase.startswith(("geometry", "cad", "occt")):
         return "cad"
+    if row["source"] in AGENT_SOURCES:
+        return "agent"
     return "hub" if row["source"] == "hub" else "studio"
 
 
@@ -106,7 +109,7 @@ def _groups(rows, now, warnings):
             continue
         matches = [root for root in roots if row.get("turn_id") and row["turn_id"] == root.get("turn_id")
                    and row.get("project_id") == root.get("project_id")]
-        if not matches and row["source"] == "codex" and row.get("session_id"):
+        if not matches and _native(row) and row.get("session_id"):
             candidates = [root for root in roots if root.get("session_id") == row["session_id"]
                           and (not row.get("project_id") or root.get("project_id") == row.get("project_id"))]
             native = [root for root in candidates if row.get("turn_id") and
@@ -153,16 +156,23 @@ def _groups(rows, now, warnings):
     return result
 
 
+def _native(row):
+    """A row of an agent source that is its sessions' token authority (sources.AGENT_SOURCES)."""
+    return token_authority(row["source"]) == "agent"
+
+
 def _usage(rows):
-    # Codex JSONL is the sole token authority for Hub Codex rounds. The Hub
-    # records agent activity intervals, which are not additional model calls.
-    native = [row for row in rows if row["source"] == "codex" and row.get("model_call") is True]
-    sessions = {row.get("session_id") for row in native if row.get("session_id")}
+    # An agent source that declares itself the token authority (Codex) replaces
+    # the Hub's usage rows of that session in its trace: the Hub records agent
+    # activity intervals, which are not additional model calls, and the timeline
+    # still draws them. A call the Hub counted itself has already left a ``host``
+    # source's rows in the snapshot (sources.defer_to_hub). Studio's own provider
+    # calls are separate calls and always count.
+    calls = [row for row in rows if row.get("model_call") is True]
+    native = {row.get("session_id") for row in calls if _native(row) and row.get("session_id")}
     measured, excluded = [], []
-    for row in rows:
-        if row.get("model_call") is not True:
-            continue
-        if row["source"] == "hub" and row.get("session_id") in sessions:
+    for row in calls:
+        if row["source"] == "hub" and row.get("session_id") in native:
             excluded.append(row["event_id"])
         else:
             measured.append(row)

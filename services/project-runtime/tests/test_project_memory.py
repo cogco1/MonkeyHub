@@ -262,7 +262,7 @@ RECIPE_WORDS = "以后出平面图前都按事务所的填充标准检查一下"
 
 
 class RecipeTests(MemoryFixture):
-    """A recipe names the library skill a task follows by one exact version; its steps stay in the skill."""
+    """A recipe names the skill a task follows by its exact code (a library version before S-1); its steps stay in the skill."""
 
     def recipe(self, expect: int = 201, *, value: dict | None = None, domains=("drawing",), **overrides) -> dict:
         body = {"kind": "recipe", "rawLanguage": RECIPE_WORDS, "messageSource": message(4), "sourceKind": "agent",
@@ -301,6 +301,8 @@ class RecipeTests(MemoryFixture):
                           {"value": {"task": "出平面图", "skill": "monkeyhub-library:hatch-review@1"}},
                           {"value": {"task": "出平面图", "skill": "skill:Hatch_Review@1"}},
                           {"value": {"task": "出平面图", "skill": "skill:hatch-review@0"}},
+                          {"value": {"task": "出平面图", "skill": "skill:hatch-review@3F2A9C41D07B"}},
+                          {"value": {"task": "出平面图", "skill": "skill:hatch-review@3f2a9c"}},
                           {"value": {"task": " ", "skill": "skill:hatch-review@1"}},
                           {"value": {"task": "出平面图", "skill": "skill:hatch-review@1", "steps": ["check"]}},
                           {"value": policy_value()},
@@ -318,7 +320,12 @@ class RecipeTests(MemoryFixture):
                        "value": {"task": "出平面图前检查填充", "skill": "skill:hatch-review@2"}}
         moved = self.revise(saved, action="supersede", replacement=replacement)
         self.assertEqual((moved["version"], moved["value"]["skill"]), (2, "skill:hatch-review@2"))
-        self.revise(moved, action="revoke", reason="不用了")
+        # Since S-1 a recipe names the skill's code, the first 12 hex digits of its codeSha256.
+        pinned = self.revise(moved, action="supersede", replacement={
+            **replacement, "messageSource": message(7),
+            "value": {"task": "出平面图前检查填充", "skill": "skill:hatch-review@3f2a9c41d07b"}})
+        self.assertEqual((pinned["version"], pinned["value"]["skill"]), (3, "skill:hatch-review@3f2a9c41d07b"))
+        self.revise(pinned, action="revoke", reason="不用了")
         self.assertEqual(self.handed("帮我出平面图", self.new_client()), [])
 
 

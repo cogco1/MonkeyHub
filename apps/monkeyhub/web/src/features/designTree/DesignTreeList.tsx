@@ -59,7 +59,7 @@ export function DesignTreeList({ tree, words, selected, onSelect }: {
         const node = tree.nodes.get(row.id)!;
         // An option's checks, in the inspector's words: what its status bar shows on the canvas.
         const status = [words.status(node), node.kind === "candidate" ? words.check(node) : null].filter(Boolean).join(" · ");
-        return <li key={row.id} role="treeitem" aria-level={row.depth + 1} aria-selected={selected === row.id} tabIndex={active === row.id ? 0 : -1}
+        return <li data-command="view.design_tree.select_row" data-command-arg={row.id} key={row.id} role="treeitem" aria-level={row.depth + 1} aria-selected={selected === row.id} tabIndex={active === row.id ? 0 : -1}
           ref={(element) => { if (element) items.current.set(row.id, element); else items.current.delete(row.id); }}
           data-node={row.id} data-group={row.group} data-kind={node.kind} style={{ paddingInlineStart: `${10 + row.depth * 22}px` }}
           onClick={() => { setFocus(row.id); onSelect(row.id); }} onKeyDown={(event) => move(event, row.id)}>
