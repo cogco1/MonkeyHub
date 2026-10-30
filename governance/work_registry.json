@@ -1,4 +1,34 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-648",
+      "status": "active",
+      "branch": "codex/648-explain-bounds",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-648-explain-bounds",
+      "base_ref": "826d547580569cb72d58f12b4aac22a00e78d863",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": "Option 1 of #648: the size bounds stay; the kernel's refusals name the bound, the count and the section or component (so a candidate over the component bound fails saying so), and elementIds states its limit and the alternative.",
+      "modules": [
+        "archflow.state.state_record",
+        "archflow.state.geometry_program",
+        "project_runtime.intent"
+      ],
+      "write_scope": [
+        "packages/archflow/src/archflow/state/state_record.py",
+        "packages/archflow/src/archflow/state/geometry_program.py",
+        "packages/monkeyarch/tests/test_geometry_program.py",
+        "packages/monkeyarch/tests/test_state_record.py",
+        "services/project-runtime/src/project_runtime/api/dto/intent.py",
+        "services/project-runtime/tests/test_proposals.py",
+        "services/project-runtime/tests/test_intent_context.py",
+        "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
+        "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
+        "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
+        "docs/protocols/project-runtime-api.md"
+      ],
+      "depends_on": []
+    }
+  ]
 }
