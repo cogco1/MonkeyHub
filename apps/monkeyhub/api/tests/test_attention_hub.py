@@ -286,7 +286,7 @@ class AttentionHubTests(unittest.TestCase):
         def unreadable():
             raise SettingsError("APPDATA must name the local account's absolute settings directory.")
 
-        hub = AttentionHub(self.store, self.runtimes, self.chats, user_settings=unreadable)
+        hub = AttentionHub(self.store, self.runtimes, self.chats, clock=lambda: NOW, user_settings=unreadable)
         self.runtimes.graph = {"head": {"runId": "run-v16"}, "lines": [result_line("run-a"), result_line("run-b")]}
         hub.refresh(self.runtimes.runtime.runtime_id)
         card = next(item for item in self.store.items() if item.kind == "ab")
