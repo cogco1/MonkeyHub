@@ -51,24 +51,6 @@
             "docs/architecture/system-map.md"
           ],
           "depends_on": []
-        },
-        {
-          "id": "lost-run-clock",
-          "status": "active",
-          "branch": "claude/srv-lost-run-clock",
-          "worktree": "C:\\Users\\Public\\renou\\dev\\wt\\s68-lostrun",
-          "base_ref": "895f5a5d",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": "The lost-run timing test sets its start on the admission itself; patching time.monotonic never reached working_at's default_factory. Released by the branch's last commit.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/api/tests/test_runtime_operations.py",
-            "governance/work_registry.json"
-          ],
-          "depends_on": []
         }
       ]
     }
