@@ -235,6 +235,7 @@ async function hubApi(request, response, url, body, origin) {
   if (name === "/api/chat/workspace") return json({ workspaceDir: "D:\\fixture", configured: true, projects: [PROJECT] });
   if (name === "/api/chat/projects") return json(hub.projects);
   if (name === "/api/chat/sessions") return json([]);
+  if (request.method === "GET" && name === "/api/chat/mcp-servers") return json({ fromClaude: false, servers: [], claudeProblem: null });
   if (name === "/api/runtime") return json(hubRuntime(origin));
   if (name === "/api/runtime/projects/open") {
     assert.equal(body.projectId, PROJECT);
