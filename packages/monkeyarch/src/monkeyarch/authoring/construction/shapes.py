@@ -1572,6 +1572,12 @@ class World:
         else:
             raise ShapeError(f"{short(identifier)} is {entity.schema} in this project, not geometry")
         producer = self.resolved(element_id).get("producer")
+        if producer == "imported":
+            # #300 item 22 B: its shape is the model file's, so a script has nothing to build it from.
+            raise ShapeError(f"{short(element_id)} is an imported object, shaped by its model file: to remove it, "
+                             "send removeEntityIds with its id in a semantic edit; to move or turn it, set its "
+                             "params.move [X, Y-up, Z] metres or params.turn degrees there; a new shape is drawn "
+                             "with a script")
         if producer not in EDITABLE_PRODUCERS:
             made_of = sorted(set(re.findall(r'"@(\w+)"', json.dumps(self.entities[element_id].fields))))
             raise ShapeError(f"{short(element_id)} ({producer}) is not editable by a construction script"

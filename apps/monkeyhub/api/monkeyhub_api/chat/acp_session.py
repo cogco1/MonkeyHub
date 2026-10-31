@@ -297,6 +297,9 @@ class CodexAcpSession:
             "sessionId": session_id,
             "toolCall": tool_call.model_dump(by_alias=True, exclude_none=True),
             "options": [option.model_dump(by_alias=True, exclude_none=True) for option in options],
+            # The ACP library hands the request's own _meta over as keyword arguments. It is where the adapter says
+            # which approval this is ("Run command?", "Allow network access?", an MCP tool approval): never dropped.
+            **({"_meta": dict(kwargs)} if kwargs else {}),
         })
         self._permissions.add(future)
         try:

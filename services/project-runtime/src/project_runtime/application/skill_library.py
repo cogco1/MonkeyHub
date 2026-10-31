@@ -138,16 +138,89 @@ def read_package(folder: Path) -> dict[str, Any]:
             "entry": spec.get("entry"), "manifest": spec.get("manifest"), "access": spec.get("access")}
 
 
+# A path in SKILL.md that names a file the package should carry: under one of the folders a skill keeps
+# its helpers in, written out in full. A path with a placeholder (params/<style>.json) names no one file.
+_MENTIONED_FILE = re.compile(
+    r"(?<![\w/.<{-])((?:scripts|params|assets|references|templates|data)/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*"
+    r"\.[A-Za-z0-9]+)(?![\w<{*])")
+
+
+def package_problem(package: dict[str, Any]) -> dict[str, Any] | None:
+    """What is wrong with a readable package that would only show when a run starts, or None.
+
+    The entry script must compile, and every file SKILL.md names by its full path under scripts/, params/,
+    assets/, references/, templates/ or data/ must be in the package. ``kind`` is one of ``entry_syntax``
+    (``file`` and ``line``) or ``missing_file`` (``file``); ``detail`` says it in one line.
+    """
+
+    entry, files = package.get("entry"), package.get("files") or {}
+    if entry is not None and entry in files:
+        try:
+            # A script saved by a Windows editor starts with a byte order mark: Python runs the file, so it is no
+            # reason to refuse the package. Only the check drops it; the file and its digest stay as they are.
+            compile(files[entry].removeprefix("\ufeff"), entry, "exec", dont_inherit=True)
+        except SyntaxError as failure:
+            return {"kind": "entry_syntax", "file": entry, "line": failure.lineno,
+                    "detail": f"{entry} does not compile: line {failure.lineno}, {failure.msg}."}
+    for mentioned in dict.fromkeys(match.group(1) for match in _MENTIONED_FILE.finditer(str(package["body"]))):
+        if mentioned not in files:
+            return {"kind": "missing_file", "file": mentioned,
+                    "detail": f"SKILL.md names {mentioned}, which the package does not carry."}
+    return None
+
+
+def write_package(package: dict[str, Any], *, root: Path | None = None) -> Path:
+    """Write one skill as a package in the user's folder (S23: a chat's script a person kept); the folder it is in.
+
+    ``package`` is what ``read_package`` reads back: name, description, body, files, entry, manifest, access. It is
+    checked as an installed package is, and refused rather than written when it would be listed with an error. A
+    name the folder already holds is refused: nobody's skill is replaced. The package is written beside its place
+    and renamed into it, so no reader sees half of it.
+    """
+
+    skill_id, _ = skills.skill_content(**package)
+    name = skill_id.removeprefix(skills.SKILL_ID_PREFIX)
+    problem = package_problem(package)
+    if problem is not None:
+        raise StudioError(422, "SKILL_PACKAGE_INVALID", f"{name}: {problem['detail']}")
+    root = root or user_root()
+    target = root / name
+    if target.exists():
+        raise StudioError(409, "SKILL_EXISTS", f"The skill folder already holds {name}.")
+    staging = root / f".{name}-{os.getpid()}-{id(package):x}"
+    staging.mkdir(parents=True)
+    spec = {key: package[key] for key in ("name", "description", "entry", "manifest", "access")
+            if package.get(key) is not None}
+    (staging / "skill.json").write_text(json.dumps(spec, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (staging / "SKILL.md").write_text(package["body"], encoding="utf-8")
+    for relative, text in (package.get("files") or {}).items():
+        path = staging.joinpath(*relative.split("/"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    try:
+        staging.rename(target)
+    except OSError as failure:
+        # A folder whose name starts with a dot is never listed, so what is left of it here is never read.
+        raise StudioError(409, "SKILL_EXISTS", f"{name} could not be put in the skill folder ({failure}).") from failure
+    return target
+
+
 def _read(source: str, folder: Path) -> InstalledSkill:
     try:
         package = read_package(folder)
         skill_id, content = skills.skill_content(**package)
     except StudioError as error:
-        return InstalledSkill(folder.name, source, folder, None, None, {"code": error.code, "detail": error.detail})
+        return InstalledSkill(folder.name, source, folder, None, None,
+                              {"code": error.code, "detail": error.detail, "kind": "unreadable"})
     name = skill_id.removeprefix(skills.SKILL_ID_PREFIX)
     if name != folder.name:
         return InstalledSkill(folder.name, source, folder, None, None, {
-            "code": "SKILL_PACKAGE_INVALID", "detail": f"{folder.name}: skill.json names it {name}; the folder is its name."})
+            "code": "SKILL_PACKAGE_INVALID", "kind": "name_differs", "name": name,
+            "detail": f"{folder.name}: skill.json names it {name}; the folder is its name."})
+    problem = package_problem(package)
+    if problem is not None:
+        return InstalledSkill(name, source, folder, None, None, {
+            "code": "SKILL_PACKAGE_INVALID", **problem, "detail": f"{name}: {problem['detail']}"})
     return InstalledSkill(name, source, folder, package, content, None)
 
 

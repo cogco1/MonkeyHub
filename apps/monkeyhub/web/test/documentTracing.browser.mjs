@@ -312,7 +312,8 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
   await page.locator(".document-error").waitFor();
   const localPath = await strokePath(), proposalsBeforeSaveFailure = proposalPosts().length;
   await generate().click();
-  await tracing().getByRole("alert").filter({ hasText: "Injected save failure" }).waitFor();
+  await tracing().getByRole("alert").filter({ hasText: "The project service ran into a problem" }).waitFor();
+  assert.equal(await page.getByText("Injected save failure").count(), 0, "the service's own words stay off the screen");
   assert.equal(proposalPosts().length, proposalsBeforeSaveFailure, "Failed ink save cannot create a proposal");
   assert.deepEqual(await annotations(), retainedBeforeFailure);
   assert.equal(await strokePath(), localPath, "Unsaved vertex correction remains visible after save refusal");
@@ -328,7 +329,8 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
     faults[boundary] = true;
     const candidatesBefore = candidatePosts().length;
     await generate().click();
-    await tracing().getByRole("alert").filter({ hasText: `Injected ${boundary} failure` }).waitFor();
+    await tracing().getByRole("alert").filter({ hasText: "The project service ran into a problem" }).waitFor();
+    assert.equal(await page.getByText(`Injected ${boundary} failure`).count(), 0, "the service's own words stay off the screen");
     if (boundary === "proposal") assert.equal(candidatePosts().length, candidatesBefore, "A refused proposal never starts a candidate");
     assert.equal(await strokePath(), localPath, `${boundary} refusal preserves the corrected path`);
     assert.deepEqual(await annotations(), secondPage, `${boundary} refusal preserves the saved revision and calibration`);

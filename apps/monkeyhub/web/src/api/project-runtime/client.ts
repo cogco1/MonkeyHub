@@ -61,6 +61,7 @@ import {
   acceptCommittedDesignApiCandidatesCandidateIdAcceptPost,
   forkCommittedDesignApiDesignBranchesPost,
   associateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePost,
+  changeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePut,
   chooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPut,
   compileIntentApiIntentsPost,
   createDocumentApiDocumentsPost,
@@ -83,10 +84,13 @@ import {
   readJobApiJobsJobIdGet,
   readRuntimeApiRuntimeGet,
   readSavedModelAnnotationsApiModelAnnotationsGet,
+  readSavedModelAnnotationHistoryApiModelAnnotationsHistoryGet,
   readWorkingCopiesApiWorkingCopiesGet,
   readProjectApiProjectGet,
   readProjectsApiProjectsGet,
   createDeleteProposalApiProposalsDeletePost,
+  proposeDesignFromModelAssetApiModelAssetsDesignPost,
+  listAttachedModelsApiModelAssetsAttachedGet,
   createSketchProposalApiProposalsSketchPost,
   prepareModelingApiProjectModelingPost,
   createTransformProposalApiProposalsTransformPost,
@@ -142,6 +146,7 @@ import type {
   ProjectArtifactDto,
   ProjectListDto,
   ProposalDto,
+  AttachedModelDto,
   ModelingInitializeDto,
   SketchBatchRequestDto,
   DocumentTracingRequestDto,
@@ -500,8 +505,15 @@ export const createStudioClient = (connection: ServerConnection) => ({
     }));
   },
 
-  modelAnnotations(modelSource: ModelSourceDto): Promise<ModelAnnotationsDto> {
-    return call("GET /api/model-annotations", readSavedModelAnnotationsApiModelAnnotationsGet({ client: connection.client, query: modelSource }));
+  modelAnnotations(modelSource: ModelSourceDto, revisionSha256?: string): Promise<ModelAnnotationsDto> {
+    return call("GET /api/model-annotations", readSavedModelAnnotationsApiModelAnnotationsGet({ client: connection.client,
+      query: revisionSha256 === undefined ? modelSource : { ...modelSource, revisionSha256 } }));
+  },
+
+  modelAnnotationHistory(modelSource: ModelSourceDto): Promise<ModelAnnotationsDto[]> {
+    return call("GET /api/model-annotations/history", readSavedModelAnnotationHistoryApiModelAnnotationsHistoryGet({
+      client: connection.client, query: modelSource,
+    }));
   },
 
   saveModelAnnotations(body: ModelAnnotationsRequestDto): Promise<ModelAnnotationsDto> {
@@ -510,6 +522,12 @@ export const createStudioClient = (connection: ServerConnection) => ({
 
   bindDocumentModelSource(projectId: string, runId: string, assetSha256: string, modelSource: ModelSourceDto): Promise<SourceDocumentDto> {
     return call(`POST /api/documents/${assetSha256}/model-source`, associateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePost({ client: connection.client,
+      path: { asset_sha256: assetSha256 }, body: { projectId, runId, modelSource },
+    }));
+  },
+  /** Link an uploaded or imported document to another model. The link it had stays in the document's modelSourceHistory. */
+  changeDocumentModelSource(projectId: string, runId: string, assetSha256: string, modelSource: ModelSourceDto): Promise<SourceDocumentDto> {
+    return call(`PUT /api/documents/${assetSha256}/model-source`, changeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePut({ client: connection.client,
       path: { asset_sha256: assetSha256 }, body: { projectId, runId, modelSource },
     }));
   },
@@ -849,6 +867,17 @@ export const createStudioClient = (connection: ServerConnection) => ({
 
   removeElement(body: DeleteElementRequestDto): Promise<ProposalDto> {
     return call("POST /api/proposals/delete", createDeleteProposalApiProposalsDeletePost({ client: connection.client, body }));
+  },
+
+  /** The models attached from outside the project, the last attached first. */
+  attachedModels(): Promise<AttachedModelDto[]> {
+    return call("GET /api/model-assets/attached", listAttachedModelsApiModelAssetsAttachedGet({ client: connection.client }));
+  },
+
+  /** The proposal that makes an attached model (a Live Rhino snapshot, an uploaded 3dm) a design that can be changed; none names the one attached last. */
+  designFromModelAsset(assetSha256: string | null): Promise<ProposalDto> {
+    return call("POST /api/model-assets/design",
+      proposeDesignFromModelAssetApiModelAssetsDesignPost({ client: connection.client, body: assetSha256 ? { assetSha256 } : {} }));
   },
 
   editElevation(body: ElevationEditRequestDto): Promise<ProposalDto> {

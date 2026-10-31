@@ -26,21 +26,24 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Callable, Literal, Mapping
+from typing import Callable, Literal, Mapping, Sequence
 from urllib.parse import urlencode
 from uuid import uuid4
 
 from pydantic import Field
 
-from .. import projects
+from .. import projects, recycle
 from ..runtime.workers import project_key
-from . import activity, guides, mcp_server, media, providers, skill_plugins, studio_tool, transport, turn_context
+from . import (acp_grants, activity, claude_grants, guides, hub_tools, mcp_server, media, notes, origins, providers,
+               skill_cards, skill_plugins, studio_tool, transport, turn_context)
+from . import mcp_servers as external_mcp
 from ..settings.store import read_application_settings
 
 from ..models import (
-    ChatAttachment, ChatAttention, ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
+    ChatAttachment, ChatAttention, ChatChangeListApproval, ChatCreateRequest, ChatDesignContext, ChatDetail,
+    ChatMarkupContext, ChatMessage, ChatMessageOrigin, ChatPostRequest, ChatProject,
     ChatDocument, ChatDocumentRef, ChatPresentationBindRequest, ChatPresentationBinding, ChatPresentationRequest,
-    ChatPermission, ChatPermissionOption, ChatPermissionRequest, ChatSuggestion,
+    ChatPermission, ChatPermissionOption, ChatPermissionRequest, ChatSkillKeepRequest, ChatSkillRun, ChatSuggestion,
     ChatProjectRequest, ChatProvider, ChatSummary, ChatUsageSource, ChatWorkspace, HubError, HubFailure,
 )
 from .turn_trace import HubTurnObserver
@@ -106,6 +109,8 @@ class _SavedChat(ChatDetail):
     acpDefaultModel: str | None = None
     # Read from the transcript on every summary (#300); a record never stores it.
     attention: ChatAttention | None = Field(default=None, exclude=True)
+    # The user message whose turn a Hub restart already resumed once; a second cut-off waits for the person.
+    resumedTurn: str | None = None
 
 
 # A summary is these fields of the record, plus its attention read fresh.
@@ -150,6 +155,9 @@ class _Running:
     # The registered images this turn's message discusses, already bound to
     # its project with the roles the user chose (#253); this turn only.
     render: tuple[ChatDocument, ...] = ()
+    # The marks this turn's message is about, and the change list items it runs (#300 3-3); this turn only.
+    markup: ChatMarkupContext | None = None
+    approval: ChatChangeListApproval | None = None
     # #301. The user messages this turn has handed to the Agent, first to last:
     # a call opened under one of them keeps its row when it finishes later.
     turns: list[str] = field(default_factory=list)
@@ -169,6 +177,29 @@ class _Running:
     # The ACP prompt is with the adapter; steering is offered only then.
     prompting: bool = False
     steering: threading.Lock = field(default_factory=threading.Lock)
+    # When the CLI last reported anything; the turn is stopped only after timeout_s of nothing.
+    active_at: float = 0.0
+    # Hub is closing and this turn was cut off to be resumed when Hub starts again.
+    suspended: bool = False
+
+
+def _default_mode(kind: str, provider: str) -> str:
+    """A new conversation's level, which is what each already did before there were levels: a folder asks; a
+    project's Claude turn may do everything (its project is read-only to it anyway); Codex asks, as it always has."""
+    return "ask" if kind == "folder" or provider == "codex" else "open"
+
+
+def _duration(seconds: float | None) -> str:
+    seconds = int(seconds or 0)
+    return f"{seconds // 60} min" if seconds >= 120 else f"{seconds} s"
+
+
+# What a turn cut off by a Hub restart is resumed with, on its own native session.
+_RESUME_NOTE = ("MonkeyHub restarted while you were working on the user's last request, and your previous step was cut "
+                "off. Continue that request from where you stopped: first check what was already done (files, tool "
+                "results, candidates) and do not repeat completed changes.")
+# How long a closing Hub lets running turns finish before it cuts them off for resuming.
+_SHUTDOWN_GRACE_S = 10.0
 
 
 def _presented_id(value: str, field: str) -> str:
@@ -187,7 +218,8 @@ def _presented_id(value: str, field: str) -> str:
 
 
 class ChatStore:
-    def __init__(self, runtime_root: Path, hub_url: str, *, applications=None, commands=None, acp_command=None, timeout_s: float = 900):
+    def __init__(self, runtime_root: Path, hub_url: str, *, applications=None, commands=None, acp_command=None,
+                 timeout_s: float = 900, max_turn_s: float | None = None, resume: bool = False):
         self.root = runtime_root / "chats"
         self.runtime_root = runtime_root
         self.usage_log = UsageLog(runtime_root / "diagnostics" / "monkeymonitor")
@@ -204,7 +236,17 @@ class ChatStore:
         self._skill_questions: dict[tuple[str, str], Future] = {}
         # What each skill question would allow (S-1), kept by the Hub until the person answers it.
         self._skill_asks: dict[tuple[str, str], Mapping] = {}
+        # What a permission card's "always allow in this project" would allow, and the adapter option it is answered
+        # with (A4); kept until the person answers.
+        self._tool_asks: dict[tuple[str, str], dict[str, str]] = {}
+        # A Claude turn's open can_use_tool questions (gap 4), by its request id: the card that shows each.
+        self._claude_requests: dict[tuple[str, str], str] = {}
+        # timeout_s is how long a turn may report nothing before it is stopped,
+        # not how long it may take; max_turn_s is an optional total. resume:
+        # a turn a Hub restart cut off continues by itself on the next start.
         self.timeout_s = timeout_s
+        self.max_turn_s = max_turn_s
+        self.resume = resume
         self._lock = threading.RLock()
         self._sessions: dict[str, _SavedChat] = {}
         self._running: dict[str, _Running] = {}
@@ -227,6 +269,7 @@ class ChatStore:
     def _load(self) -> None:
         if self._loaded:
             return
+        resumable: list[str] = []
         for path in sorted(self.root.glob("*.json")):
             try:
                 session = _SavedChat.model_validate_json(path.read_text(encoding="utf-8"))
@@ -236,7 +279,9 @@ class ChatStore:
             except (ValueError, OSError, HubFailure) as exc:
                 raise HubFailure(503, "CHAT_RECORD_INVALID", "A saved chat record could not be read.") from exc
             self._sessions[session.id] = session
-            if session.status == "running":
+            if session.status == "running" and self._resumable(session):
+                resumable.append(session.id)
+            elif session.status == "running":
                 session.status = "interrupted"
                 session.error = HubError(code="CHAT_INTERRUPTED", detail="Hub closed before this turn finished. You can continue this conversation.")
                 for message in session.messages:
@@ -250,6 +295,57 @@ class ChatStore:
                 # Archived before this Hub started: its scratch was temporary computation (#404 item 6).
                 self._clear_scratch(session.id)
         self._loaded = True
+        for session_id in resumable:
+            self._resume(session_id)
+
+    def _resumable(self, session: _SavedChat) -> bool:
+        """Whether a turn a Hub restart cut off can go on by itself: once per user message, on its own native session."""
+        if not self.resume or self._closing or session.sourceSessionId or session.archived:
+            return False
+        native = session.acpSessionId if session.transport == "acp" else session.nativeSessionId
+        return bool(native) and session.resumedTurn != _turn_id(session)
+
+    def _resume(self, session_id: str) -> None:
+        """Continue a cut-off turn on the same native session; the lock is held, the store loaded.
+
+        What it had shown stays; what was still streaming is marked cut off. A
+        message sent during it that the Agent never read goes with the resume.
+        If its connection is gone, the chat is left interrupted as before.
+        """
+        session = self._sessions[session_id]
+        session.resumedTurn = _turn_id(session)
+        waiting = []
+        for message in session.messages:
+            if message.status == "streaming":
+                message.status = "interrupted"
+            message.permission = None
+            if message.interjection == "pending":
+                waiting.append((message.id, message.content))
+        try:
+            provider = next(row for row in self.providers() if row.id == session.provider)
+            available = provider.available or (session.provider == "codex" and session.transport == "cli"
+                                               and provider.installed)
+        except Exception:  # noqa: BLE001 - a connection that cannot be checked is not resumed
+            available = False
+        if not available:
+            for message in session.messages:
+                if message.interjection == "pending":
+                    message.interjection = "undelivered"
+            session.status = "interrupted"
+            session.error = HubError(code="CHAT_INTERRUPTED", detail="Hub closed before this turn finished. You can continue this conversation.")
+            self._save(session)
+            return
+        session.status, session.error, session.updatedAt = "running", None, _now()
+        self._save(session)
+        content = _RESUME_NOTE + "".join("\n\n" + text for _, text in waiting)
+        running = _Running(trace=HubTurnObserver(self.usage_log, _turn_id(session), session.projectId,
+                                                 session.provider, session.model))
+        self._start(session_id, running, content, carried=tuple(identifier for identifier, _ in waiting))
+
+    def _waiting_on_person(self, session_id: str) -> bool:
+        """A question of this chat's is waiting for the person: the turn is not silent, it is waiting."""
+        with self._lock:
+            return any(key[0] == session_id and not future.done() for key, future in self._permissions.items())
 
     def _attachment_path(self, session_id: str, attachment: ChatAttachment) -> Path:
         suffix = Path(attachment.name).suffix.lower()
@@ -261,8 +357,13 @@ class ChatStore:
         return self.root / projects._identifier(session_id) / "scratch"
 
     def _clear_scratch(self, session_id: str) -> None:
-        """Remove a chat's scratch: temporary computation, never a project record or an attachment."""
-        shutil.rmtree(self._scratch_path(session_id), ignore_errors=True)
+        """Put a chat's scratch away: temporary computation, never a project record or an attachment.
+
+        Never deleted for good: it is renamed into the runtime root's quarantine
+        at once and then goes to the Recycle Bin when the bin can keep it whole
+        (``recycle``); what the bin cannot take stays in quarantine for the person.
+        """
+        recycle.discard(self._scratch_path(session_id), self.runtime_root, f"chat-{session_id}-scratch")
 
     def attachment(self, session_id: str, attachment_id: str) -> tuple[ChatAttachment, Path]:
         with self._lock:
@@ -456,6 +557,111 @@ class ChatStore:
             self._save(session)
             return self.get(session_id)
 
+    @staticmethod
+    def _permission_mode(session: _SavedChat) -> str:
+        """What this conversation's turns may do unasked; a record from before levels keeps what it had."""
+        return session.permissionMode or _default_mode(session.kind, session.provider)
+
+    def set_permission_mode(self, session_id: str, mode: str) -> ChatDetail:
+        """What this conversation's next turns may do unasked; a running turn keeps the level it started with."""
+        with self._lock:
+            session = self._session(session_id)
+            if session_id in self._running:
+                raise HubFailure(409, "CHAT_RUNNING", "Wait for this reply to finish before changing what it may do.")
+            if mode not in providers.PERMISSION_MODES:
+                raise HubFailure(422, "CHAT_PERMISSION_MODE_INVALID", "Choose read, ask or open.")
+            if session.sourceSessionId:
+                raise HubFailure(409, "CHAT_EXTERNAL_SOURCE", "An external conversation's permissions are its source's.")
+            client = None
+            if session.permissionMode != mode:
+                session.permissionMode = mode
+                session.updatedAt = _now()
+                self._save(session)
+                # A Codex adapter's mode is set when it starts: the next turn loads this session on a new one.
+                client = self._acp_sessions.pop(session_id, None)
+            detail = self.get(session_id)
+        if client is not None:
+            client.close()
+        return detail
+
+    def _claude_permission(self, session: _SavedChat, event: Mapping) -> None:
+        """Show one can_use_tool question of a Claude turn at the "ask" level as a card; the lock is held.
+
+        The answer goes back on the turn's stdin. An "always" given earlier for this kind here answers at once,
+        and the conversation says so; a turn that is ending is answered no.
+        """
+        request = event.get("request") if isinstance(event.get("request"), Mapping) else {}
+        request_id = event.get("request_id")
+        running = self._running.get(session.id)
+        if not isinstance(request_id, str):
+            return
+        if request.get("subtype") != "can_use_tool":
+            # Anything else the CLI asks a host is answered at once, so it never waits on a question nobody sees.
+            if running is not None and running.stdin is not None:
+                running.stdin.put(json.dumps({"type": "control_response", "response": {
+                    "subtype": "error", "request_id": request_id,
+                    "error": "MonkeyHub answers only permission questions."}}) + "\n")
+            return
+        tool = str(request.get("tool_name") or "tool")
+        arguments = request.get("input") if isinstance(request.get("input"), Mapping) else {}
+
+        def answer(allow: bool, message: str | None = None) -> None:
+            channel = running.stdin if running is not None else None
+            if channel is not None:
+                channel.put(claude_grants.response(request_id, arguments, allow, message))
+
+        if running is None or running.stop.is_set() or self._closing:
+            answer(False, "This turn is ending.")
+            return
+        action = claude_grants.action_of(tool, folder=session.kind == "folder")
+        if action in ("run", "network") and self._design_loop_enforced():
+            action = None
+        title = providers._redact(" · ".join(part for part in (
+            str(request.get("display_name") or tool), claude_grants.preview(tool, arguments)) if part))
+        if action is not None:
+            from ..settings import tool_grants
+
+            if tool_grants.covers(self.runtime_root, session.projectId, action):
+                session.messages.append(ChatMessage(
+                    id=f"{self._answering(session)}:permission:{uuid4()}", role="tool", createdAt=_now(), status="complete",
+                    content=title + " · allowed by your earlier answer here"))
+                session.updatedAt = _now()
+                answer(True)
+                return
+        always = {"run": "这里的命令一直允许 / Always allow commands here",
+                  "network": "这里联网一直允许 / Always allow going online here",
+                  "hub": "这里 MonkeyHub 自己的工具一直允许 / Always allow MonkeyHub's own tools here",
+                  "edit": "这个文件夹里改文件一直允许 / Always allow edits in this folder"}
+        options = [ChatPermissionOption(optionId="allow_once", name="只这一次 / Only this time", kind="allow_once"),
+                   *([ChatPermissionOption(optionId=acp_grants.HUB_PROJECT, kind="allow_always", name=always[action])]
+                     if action is not None else []),
+                   ChatPermissionOption(optionId="reject_once", name="不 / No", kind="reject_once")]
+        permission = ChatPermission(id=str(uuid4()), title=title, options=options)
+        session.messages.append(ChatMessage(
+            id=f"{self._answering(session)}:permission:{permission.id}", role="tool", content=permission.title,
+            createdAt=_now(), status="streaming", permission=permission))
+        session.updatedAt = _now()
+        future = Future()
+        self._permissions[(session.id, permission.id)] = future
+        self._claude_requests[(session.id, request_id)] = permission.id
+        if action is not None:
+            self._tool_asks[(session.id, permission.id)] = {"action": action, "allow": "allow_once"}
+        future.add_done_callback(lambda done: answer(done.result() == "allow_once"))
+        if running.trace:
+            running.trace.permission(permission.id)
+
+    def _claude_withdrawn(self, session: _SavedChat, event: Mapping) -> None:
+        """The CLI took back a question it asked (its step was interrupted): the card says so; the lock is held."""
+        permission_id = self._claude_requests.pop((session.id, str(event.get("request_id"))), None)
+        future = self._permissions.pop((session.id, permission_id), None) if permission_id else None
+        self._tool_asks.pop((session.id, permission_id), None)
+        if future is not None:
+            with suppress(InvalidStateError):
+                future.set_result(None)
+        for message in session.messages:
+            if message.permission is not None and message.permission.id == permission_id:
+                message.permission, message.status = None, "interrupted"
+
     def projects(self) -> list[ChatProject]:
         # Only the conversations are read under the store's lock; the projects'
         # own files are read outside it, so the chat list polled beside this
@@ -475,9 +681,14 @@ class ChatStore:
             folded[key] = (spelling, total + count)
         listed: dict[tuple[str, str], ChatProject] = {}
         for key, (spelling, count) in folded.items():
+            if projects.is_folder_id(key[0]):
+                # A plain folder has no version, Stage or step to read.
+                listed[key] = ChatProject(projectId=key[0], projectDir=spelling, name=Path(spelling).name or spelling,
+                                          chatCount=count, kind="folder")
+                continue
             version, stage = projects._listed_project(spelling)[1]
             listed[key] = ChatProject(projectId=key[0], projectDir=spelling, name=key[0],
-                                        chatCount=count, version=version, stage=stage)
+                                        chatCount=count, version=version, stage=stage, step=projects.current_step(spelling))
         workspace = self.workspace()
         workspace_root = Path(workspace.workspaceDir).resolve()
         discovered = []
@@ -498,7 +709,7 @@ class ChatStore:
                 if (project_id, project_key(project_dir)) not in listed:
                     listed[(project_id, project_key(project_dir))] = ChatProject(
                         projectId=project_id, projectDir=project_dir, name=project_id,
-                        chatCount=0, version=version, stage=stage,
+                        chatCount=0, version=version, stage=stage, step=projects.current_step(project_dir),
                     )
         return sorted(listed.values(), key=lambda row: (row.name, row.projectDir))
 
@@ -687,7 +898,7 @@ class ChatStore:
             if self._closing or session.archived:
                 raise HubFailure(409, "CHAT_UNAVAILABLE", "Restore the conversation or reconnect after Hub restarts.")
             if (request.projectId != session.projectId or request.sourceSessionId != (session.sourceSessionId or f"hub:{session_id}")
-                    or projects._project(session.projectDir) != (session.projectId, session.projectDir)):
+                    or projects._bound(session.projectId, session.projectDir) != (session.projectId, session.projectDir)):
                 raise HubFailure(409, "CHAT_PRESENTATION_MISMATCH", "The presentation belongs to a different project or source session.")
             _presented_id(request.messageId, "messageId")
             _presented_id(request.turnId, "turnId")
@@ -831,10 +1042,22 @@ class ChatStore:
             provider = next(row for row in self.providers() if row.id == request.provider)
             if not provider.available:
                 raise HubFailure(503, "CHAT_PROVIDER_UNAVAILABLE", provider.detail)
-            project_id, project_dir = projects._project(request.projectDir)
+            kind = request.kind
+            if kind == "auto":
+                # The one "open a folder" the architect sees: a MonkeyHub project opens as one, any other folder as itself.
+                try:
+                    project_id, project_dir = projects._project(request.projectDir)
+                    kind = "project"
+                except HubFailure:
+                    kind = "folder"
+            if kind == "folder":
+                project_id, project_dir = projects._folder(request.projectDir)
+            elif request.kind != "auto":
+                project_id, project_dir = projects._project(request.projectDir)
             now = _now()
             session = _SavedChat(
-                id=str(uuid4()), projectId=project_id, projectDir=project_dir,
+                id=str(uuid4()), projectId=project_id, projectDir=project_dir, kind=kind,
+                permissionMode=request.permissionMode or _default_mode(kind, request.provider),
                 title=request.title or "New chat", provider=request.provider, model=request.model,
                 createdAt=now, updatedAt=now,
                 transport="acp" if self._use_acp and request.provider == "codex" else "cli",
@@ -848,7 +1071,8 @@ class ChatStore:
         """Hold the same lock across configuration changes and turn admission."""
         with self._lock:
             target = project_key(project_dir) if project_dir else None
-            if any(project_key(self._sessions[key].projectDir) != target for key in self._running):
+            if any(project_key(self._sessions[key].projectDir) != target for key in self._running
+                   if self._sessions[key].kind == "project"):
                 raise HubFailure(409, "CHAT_PROJECT_BUSY", "Stop the running chat before switching the active project.")
             yield
 
@@ -858,7 +1082,8 @@ class ChatStore:
             if app_id in {"monkeyarch", "monkeyboard"} and stopping:
                 configured = project_dir if project_dir is not None else read_application_settings(self.runtime_root).project_dir
                 target = project_key(configured) if configured else None
-                if any(target is not None and project_key(self._sessions[key].projectDir) == target for key in self._running):
+                if any(target is not None and self._sessions[key].kind == "project"
+                       and project_key(self._sessions[key].projectDir) == target for key in self._running):
                     raise HubFailure(409, "CHAT_RUNNING", "Stop the running chat before closing its design tools.")
             yield
 
@@ -871,7 +1096,8 @@ class ChatStore:
         if session.archived:
             raise HubFailure(409, "CHAT_ARCHIVED", "Restore this archived chat before sending another message.")
 
-    def post(self, session_id: str, request: ChatPostRequest) -> ChatDetail:
+    def post(self, session_id: str, request: ChatPostRequest, *, origin: ChatMessageOrigin | None = None) -> ChatDetail:
+        """``origin``: a wake-up or another conversation sent this, not a person typing here (hub_tools)."""
         images: list[ChatDocument] = []
         if request.renderContext is not None:
             with self._lock:
@@ -880,6 +1106,9 @@ class ChatStore:
                 self._takes_messages(bound)
                 if request.projectId != bound.projectId:
                     raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "This message belongs to a different project.")
+                if bound.kind == "folder":
+                    raise HubFailure(409, "CHAT_FOLDER_NO_DESIGN", "A conversation in a folder has no registered images; "
+                                     "attach the files instead.")
                 project = bound.projectId, bound.projectDir
             # Outside the lock: checking the pages reads the project's documents,
             # and a refused page leaves nothing kept and nothing started.
@@ -887,8 +1116,13 @@ class ChatStore:
         with self._lock:
             session = self._session(session_id).model_copy(deep=True)
             self._takes_messages(session)
-            if request.projectId != session.projectId or projects._project(session.projectDir) != (session.projectId, session.projectDir):
+            if (request.projectId != session.projectId
+                    or projects._bound(session.projectId, session.projectDir) != (session.projectId, session.projectDir)):
                 raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "This message belongs to a different project.")
+            if session.kind == "folder" and (request.designContext is not None or request.markupContext is not None
+                                             or request.changeListApproval is not None):
+                raise HubFailure(409, "CHAT_FOLDER_NO_DESIGN", "A conversation in a folder has no design to point at; "
+                                 "open a MonkeyHub project for design work.")
             if request.suggestionSelection is not None:
                 selection = request.suggestionSelection
                 if any(row.role == "user" and row.suggestionSelection == selection for row in session.messages):
@@ -909,7 +1143,7 @@ class ChatStore:
                 # Context remains native continuation, with no client source override.
                 request = request.model_copy(update={"content": card.suggestion.prompt})
             if session_id in self._running:
-                return self._interject(session_id, request)
+                return self._interject(session_id, request, origin)
             provider = next(row for row in self.providers() if row.id == session.provider)
             legacy_codex = session.provider == "codex" and session.transport == "cli" and provider.installed
             if not provider.available and not legacy_codex:
@@ -934,17 +1168,19 @@ class ChatStore:
                                                 contextMode="continue" if request.contextMode == "stage" else request.contextMode,
                                                 suggestionSelection=request.suggestionSelection,
                                                 attachments=[attachment for attachment, _ in attachments],
-                                                documents=images))
+                                                documents=images, markup=request.markupContext,
+                                                changeListApproval=request.changeListApproval, origin=origin))
             session.status, session.error, session.updatedAt = "running", None, _now()
             self._save(session, tuple(attachments))
             self._sessions[session_id] = session
             self._progress_rows.pop(session_id, None)
             running = _Running(design_context=request.designContext, context_mode=request.contextMode,
                                attachments=tuple((attachment, self._attachment_path(session.id, attachment))
-                                                 for attachment, _ in attachments), render=tuple(images), trace=HubTurnObserver(
+                                                 for attachment, _ in attachments), render=tuple(images),
+                               markup=request.markupContext, approval=request.changeListApproval, trace=HubTurnObserver(
                 self.usage_log, _turn_id(session), session.projectId, session.provider, session.model,
             ))
-            self._start(session_id, running, content)
+            self._start(session_id, running, origins.turn_text(origin, content))
             return self.get(session_id)
 
     def _start(self, session_id: str, running: _Running, content: str, carried: tuple[str, ...] = (),
@@ -964,7 +1200,8 @@ class ChatStore:
                                           daemon=True, name=f"hub-chat-{session_id[:8]}")
         running.thread.start()
 
-    def _interject(self, session_id: str, request: ChatPostRequest) -> ChatDetail:
+    def _interject(self, session_id: str, request: ChatPostRequest,
+                   origin: ChatMessageOrigin | None = None) -> ChatDetail:
         """Take a message sent while this chat's turn runs (#301); the lock is held.
 
         It is kept like any other message and marked as an interjection. Claude
@@ -980,13 +1217,20 @@ class ChatStore:
         if request.renderContext is not None:
             # The running turn was bound to its own images; new ones start a turn of their own.
             raise HubFailure(409, "CHAT_INTERJECTION_IMAGES", "Send the selected images after this reply finishes, or stop it first.")
+        if request.markupContext is not None or request.changeListApproval is not None:
+            # Marks and a change list each answer a turn of their own, as images do.
+            raise HubFailure(409, "CHAT_INTERJECTION_MARKS", "Send the marks or run the change list after this reply "
+                                                             "finishes, or stop it first.")
         content = providers._redact(request.content.strip(), providers._claude_env())
         if not content:
             raise HubFailure(422, "CHAT_MESSAGE_EMPTY", "Enter a message or attach a file.")
         # The running turn holds this same record and saves it as it goes, so
         # the message joins it in place rather than through a replacement copy.
         session = self._sessions[session_id]
-        message = ChatMessage(id=str(uuid4()), role="user", content=content, createdAt=_now(), interjection="pending")
+        message = ChatMessage(id=str(uuid4()), role="user", content=content, createdAt=_now(), interjection="pending",
+                              origin=origin)
+        # What the Agent reads says who sent it when no person did; the transcript keeps the words as sent.
+        content = origins.turn_text(origin, content)
         session.messages.append(message)
         session.updatedAt = _now()
         try:
@@ -1173,10 +1417,23 @@ class ChatStore:
 
     def _tool_connection(self, session: _SavedChat) -> dict:
         return {"command": sys.executable, "args": [str(Path(mcp_server.__file__).resolve()), "--mcp",
-                "--hub-url", self.hub_url, "--chat-id", session.id]}
+                "--hub-url", self.hub_url, "--chat-id", session.id, "--scratch", str(self._scratch_path(session.id)),
+                *(("--folder",) if session.kind == "folder" else ())]}
 
-    def _codex_mcp(self, session: _SavedChat, command, environment) -> dict:
-        """Keep the same project-only MCP configuration for both native transports."""
+    @staticmethod
+    def _workdir(session: _SavedChat) -> str:
+        """Where a turn starts: a folder conversation's own folder; a project's, this Hub's source checkout or the project."""
+        if session.kind == "folder":
+            return session.projectDir
+        source = providers._source_checkout()
+        return str(source) if source is not None else session.projectDir
+
+    def _codex_mcp(self, session: _SavedChat, command, environment, *, private: bool = False) -> dict:
+        """Keep the same MCP configuration for both native transports: MonkeyHub's own and the person's chosen.
+
+        ``private`` says the configuration travels in the adapter's environment rather than on a command line,
+        so a server whose environment or headers hold values can be given; on a command line it is left out.
+        """
         mcp = self._tool_connection(session)
         listing = subprocess.run(
             [*command, "-C", session.projectDir, "mcp", "list", "--json"],
@@ -1202,8 +1459,17 @@ class ChatStore:
             raise HubFailure(503, "CHAT_CONFIG_INVALID", "The installed Codex MCP configuration could not be read.") from exc
         from .. import computer_tools
 
+        chosen = external_mcp.effective(self.runtime_root, session.projectDir)
+        providers.remember_secrets(external_mcp.secrets(chosen))
+        for name, row in chosen.items():
+            if not private and (row.get("env") or row.get("headers")):
+                continue
+            entry = ({"command": row["command"], "args": row["args"], **({"env": row["env"]} if row.get("env") else {})}
+                     if row["type"] == "stdio" else
+                     {"url": row["url"], **({"http_headers": row["headers"]} if row.get("headers") else {})})
+            mcp_servers[name] = {**entry, "enabled": True, "required": False}
         tool_names = ("studio_schema", "studio_request", "visual_review", "fab_request", "attachment_read",
-                      "chat_present", *computer_tools.TOOL_NAMES)
+                      "chat_present", *hub_tools.TOOL_NAMES, *computer_tools.TOOL_NAMES)
         mcp_servers["monkeyhub"] = {
             **mcp, "enabled": True, "required": True,
             "env_vars": ["MONKEYHUB_PRESENTATION_TOKEN", studio_tool.DESIGN_LOOP_ENV],
@@ -1237,8 +1503,7 @@ class ChatStore:
         # it is a checkout, with the bound project readable beside it. A
         # candidate is produced through the Hub, which writes the project
         # (ADR-012), and the code that produced it can be fixed here.
-        source = providers._source_checkout()
-        workdir = str(source) if source is not None else session.projectDir
+        workdir = self._workdir(session)
         if kind == "codex":
             # Let Codex read its native profile, provider and credentials.
             # Its table overrides merge, so disable the effective MCP names
@@ -1247,7 +1512,8 @@ class ChatStore:
             # (ADR-012); an installed Hub's workspace is the project itself.
             mcp_servers = self._codex_mcp(session, commands[kind], environment)
             command = [*commands[kind], "exec", "--json", "--skip-git-repo-check",
-                       "-C", workdir, "-s", "workspace-write", "--color", "never",
+                       "-C", workdir, "-s", "read-only" if self._permission_mode(session) == "read" else "workspace-write",
+                       "--color", "never",
                        "-c", f"mcp_servers={providers._toml_value(mcp_servers)}"]
             if model:
                 command += ["-m", model]
@@ -1277,13 +1543,24 @@ class ChatStore:
                 only_library = (*(("--plugin-dir", str(skills)) if skills is not None else ()),
                                 "--setting-sources", "project,local", "--settings",
                                 skill_plugins.claude_settings(self.runtime_root, providers._claude_user_settings()))
-            denied = providers._claude_denied(session.projectDir, self.runtime_root)
+            # A folder conversation writes its folder; only the Hub's own places stay closed to it.
+            denied = providers._claude_denied(None if session.kind == "folder" else session.projectDir, self.runtime_root)
+            mode = self._permission_mode(session)
+            # The person's other MCP servers (gap 3): from a file under the Hub's guarded config folder, so their
+            # keys are never on a command line, and redacted wherever the Hub keeps text.
+            chosen = external_mcp.effective(self.runtime_root, session.projectDir) if mode != "read" else {}
+            providers.remember_secrets(external_mcp.secrets(chosen))
+            others = (str(external_mcp.write_turn_config(self.runtime_root, session.id, chosen)),) if chosen else ()
+            approved = providers._claude_tools(self.runtime_root, mode, external=tuple(chosen), scratch=scratch)
+            # "ask": the CLI asks this Hub over stdio, and the conversation shows the question (claude_grants).
+            asking = (("--permission-mode", "manual", "--permission-prompts", "host", "--permission-prompt-tool", "stdio")
+                      if mode == "ask" else ("--permission-mode", "dontAsk", "--permission-prompts", "none"))
             if environment.get(studio_tool.DESIGN_LOOP_ENV) == studio_tool.DESIGN_LOOP_ENFORCED:
                 # Enforced (#185): no shell, so the Agent reaches the design only through this Hub, which vouches
                 # for it; a shell could reach the Runtime's port and act as a person.
                 denied = (*denied, "Bash", "PowerShell")
             command = [*commands[kind], "-p", "--output-format", "stream-json", "--verbose",
-                       "--include-partial-messages", "--permission-mode", "dontAsk", "--permission-prompts", "none",
+                       "--include-partial-messages", *asking,
                        # Two different questions, and both have to be answered.
                        # `--tools` is what exists; `--allowedTools` is what is
                        # approved without anybody to ask, which is the whole of
@@ -1293,14 +1570,15 @@ class ChatStore:
                        # `--disallowedTools` then takes Write and Edit back in
                        # the bound project, which is read here and changed only
                        # through the Hub (ADR-012).
-                       "--tools", "default", "--allowedTools", ",".join(providers._claude_approved(self.runtime_root)),
+                       "--tools", "default", "--allowedTools", ",".join(approved),
                        *(("--disallowedTools", *denied) if denied else ()),
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
                        *only_library,
                        "--add-dir", str(scratch),
                        # alwaysLoad: the CLI otherwise defers every MCP tool behind
                        # a ToolSearch round trip, one model call before any design work.
-                       "--strict-mcp-config", "--mcp-config", json.dumps({"mcpServers": {"monkeyhub": {**mcp, "alwaysLoad": True}}})]
+                       "--strict-mcp-config", "--mcp-config", json.dumps({"mcpServers": {"monkeyhub": {**mcp, "alwaysLoad": True}}}),
+                       *others]
             command += ["--resume", session.nativeSessionId] if session.nativeSessionId else ["--session-id", session.cliStartId or session.id]
             # Every turn reads stream-json from stdin, so a message sent while
             # it runs reaches it at its next step (#301). Each one read is
@@ -1360,10 +1638,51 @@ class ChatStore:
                     or request.get("sessionId") != session.acpSessionId):
                 future.set_result(None)
                 return future
-            permission = ChatPermission(
-                id=str(uuid4()), title=providers._redact(str(request.get("toolCall", {}).get("title") or "Permission requested")),
-                options=[ChatPermissionOption.model_validate(item) for item in request["options"]],
-            )
+            calls = self._acp_tools.get(session_id)
+            title = providers._redact(acp_grants.call_title(request, calls) or "Permission requested")
+            options = [ChatPermissionOption.model_validate(item) for item in request["options"]]
+            reject_any = acp_grants.option_id(request["options"], "reject_once", "reject_always")
+            if self._permission_mode(session) == "read" and reject_any is not None:
+                # A read-only conversation changes nothing: the Hub answers no, and the conversation says so.
+                session.messages.append(ChatMessage(
+                    id=f"{self._answering(session)}:permission:{uuid4()}", role="tool", createdAt=_now(), status="complete",
+                    content=" · ".join(part for part in (title, providers._redact(acp_grants.preview(request, calls)),
+                                                         "refused: this conversation is read only") if part)))
+                session.updatedAt = _now()
+                self._save(session)
+                future.set_result(reject_any)
+                return future
+            # A command, going online or a call to the Hub's own tools can be allowed once for the whole project
+            # (A4). Not a command or going online while the design loop is enforced: Claude has no shell then, and
+            # Codex gets no more than Claude.
+            action = acp_grants.action_of(request, calls)
+            if action in ("run", "network") and self._design_loop_enforced():
+                action = None
+            allow = acp_grants.option_id(request["options"], "allow_once")
+            reject = acp_grants.option_id(request["options"], "reject_once", "reject_always")
+            what = providers._redact(acp_grants.preview(request, calls))
+            if action is not None and allow is not None and reject is not None:
+                from ..settings import tool_grants
+
+                if tool_grants.covers(self.runtime_root, session.projectId, action):
+                    # The person already answered for this project: the Hub answers, and the conversation says so.
+                    session.messages.append(ChatMessage(
+                        id=f"{self._answering(session)}:permission:{uuid4()}", role="tool", createdAt=_now(), status="complete",
+                        content=" · ".join(part for part in (title, what, "allowed by your earlier answer for this project") if part)))
+                    session.updatedAt = _now()
+                    self._save(session)
+                    future.set_result(allow)
+                    return future
+                always = {"run": "这个项目里的命令一直允许 / Always allow commands in this project",
+                          "network": "这个项目里联网一直允许 / Always allow going online in this project",
+                          "hub": "这个项目里 MonkeyHub 自己的工具一直允许 / Always allow MonkeyHub's own tools in this project"}
+                options = [
+                    ChatPermissionOption(optionId=allow, name="只这一次 / Only this time", kind="allow_once"),
+                    ChatPermissionOption(optionId=acp_grants.HUB_PROJECT, kind="allow_always", name=always[action]),
+                    ChatPermissionOption(optionId=reject, name="不 / No", kind="reject_once"),
+                ]
+                title = " · ".join(part for part in (title, what) if part)
+            permission = ChatPermission(id=str(uuid4()), title=title, options=options)
             session.messages.append(ChatMessage(
                 id=f"{self._answering(session)}:permission:{permission.id}", role="tool", content=permission.title,
                 createdAt=_now(), status="streaming", permission=permission,
@@ -1372,23 +1691,33 @@ class ChatStore:
             # two moments in the summary, never one.
             session.updatedAt = _now()
             self._permissions[(session_id, permission.id)] = future
+            if action is not None and allow is not None and reject is not None:
+                self._tool_asks[(session_id, permission.id)] = {"action": action, "allow": allow}
             if running.trace:
                 running.trace.permission(permission.id)
             self._save(session)
         return future
 
-    def request_skill_permission(self, session_id: str, title: str, ask: Mapping | None = None) -> str:
-        """Put what a skill run needs to the person in the running chat, as a question with three buttons.
+    def _design_loop_enforced(self) -> bool:
+        return read_application_settings(self.runtime_root).design_loop == studio_tool.DESIGN_LOOP_ENFORCED
+
+    def request_skill_permission(self, session_id: str, title: str, ask: Mapping | None = None, *,
+                                 choices: Sequence[str] = ("allow_always", "allow_once", "reject")) -> str:
+        """Put what a skill run needs to the person in the running chat, as a question with its buttons.
 
         ``ask`` is what the answer would allow (S-1): ``access``, the ``skill``
         it is for, the ``projectId`` and ``codeSha256`` of this run, and the
         ``broad`` part of the access, which is allowed only for that skill.
         The Hub keeps it, and writes the grant itself when the person answers.
+        ``choices`` are the buttons (S23): what is asked before every run has
+        no "from now on", and a run that needs no grant has no ``ask``.
         """
 
         broad = bool(ask and ask.get("broad"))
-        always = ("总是允许这个 skill / Always allow for this skill" if broad
-                  else "总是允许 / Always allow")
+        names = {"allow_always": ("以后这个 skill 都允许 / Always allow for this skill" if broad
+                                  else "以后都允许这类 / Always allow this kind"),
+                 "allow_once": "允许这一次 / Only this time", "reject": "不 / No"}
+        kinds = {"allow_always": "allow_always", "allow_once": "allow_once", "reject": "reject_once"}
         future = Future()
         with self._lock:
             session = self._session(session_id)
@@ -1396,10 +1725,8 @@ class ChatStore:
             if self._closing or running is None or running.stop.is_set():
                 raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is not running, so no one can be asked.")
             permission = ChatPermission(id=str(uuid4()), title=title, options=[
-                ChatPermissionOption(optionId="allow_always", name=always, kind="allow_always"),
-                ChatPermissionOption(optionId="allow_once", name="只这一次 / Only this time", kind="allow_once"),
-                ChatPermissionOption(optionId="reject", name="不 / No", kind="reject_once"),
-            ])
+                ChatPermissionOption(optionId=choice, name=names[choice], kind=kinds[choice])
+                for choice in ("allow_always", "allow_once", "reject") if choice in choices])
             session.messages.append(ChatMessage(
                 id=f"{self._answering(session)}:permission:{permission.id}", role="tool", content=permission.title,
                 createdAt=_now(), status="streaming", permission=permission,
@@ -1454,10 +1781,68 @@ class ChatStore:
             once={"projectId": str(ask["projectId"]), "codeSha256": str(ask["codeSha256"])} if once else None)
         return row.grant_id
 
+    def record_skill_run(self, session_id: str, run: ChatSkillRun) -> dict:
+        """Show a run an Agent started in this chat as its own card, under the turn that started it (S23)."""
+
+        with self._lock:
+            session = self._session(session_id)
+            if any(row.skillRun is not None and row.skillRun.runId == run.runId for row in session.messages):
+                return {"runId": run.runId}
+            session.messages.append(ChatMessage(
+                id=f"{self._answering(session)}:skill-run:{run.runId}", role="tool", content=skill_cards.card_text(run),
+                createdAt=_now(), status="complete", skillRun=run))
+            session.updatedAt = _now()
+            self._save(session)
+        return {"runId": run.runId}
+
+    def update_skill_run(self, session_id: str, run_id: str, report: Mapping) -> dict:
+        """What a run came to, read from its record: its status, the sentence for a failure, its outputs."""
+
+        with self._lock:
+            session = self._session(session_id)
+            message = self._skill_run_message(session, run_id)
+            run = message.skillRun
+            status = report.get("status")
+            if status not in ("queued", "running", "succeeded", "failed") or (run.status in ("succeeded", "failed")):
+                return {"runId": run_id, "status": run.status}
+            outputs = [str(row.get("name")) for row in report.get("outputs") or () if isinstance(row, Mapping)][:20]
+            words = report.get("failureWords") if status == "failed" else None
+            message.skillRun = run.model_copy(update={"status": status, "outputs": outputs,
+                                                      "words": str(words)[:400] if words else None})
+            message.content = skill_cards.card_text(message.skillRun)
+            session.updatedAt = _now()
+            self._save(session)
+            return {"runId": run_id, "status": status}
+
+    def keep_skill_run(self, session_id: str, run_id: str, request: ChatSkillKeepRequest) -> ChatDetail:
+        """Keep a chat's script as the person's own skill: written to their skill folder, every project has it."""
+
+        with self._lock:
+            session = self._session(session_id)
+            if request.projectId != session.projectId:
+                raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "This script belongs to a different project.")
+            message = self._skill_run_message(session, run_id)
+            if message.skillRun.keptAs is not None:
+                raise HubFailure(409, "SKILL_KEEP_DONE", f"已经留下为 skill「{message.skillRun.keptAs}」了。")
+            skill_cards.keep(message.skillRun, request.name, project_id=session.projectId)
+            message.skillRun = message.skillRun.model_copy(update={"keptAs": request.name, "keptAt": _now()})
+            message.content = skill_cards.card_text(message.skillRun)
+            session.updatedAt = _now()
+            self._save(session)
+        return self.get(session_id)
+
+    @staticmethod
+    def _skill_run_message(session: _SavedChat, run_id: str) -> ChatMessage:
+        message = next((row for row in session.messages if row.skillRun is not None and row.skillRun.runId == run_id), None)
+        if message is None:
+            raise HubFailure(404, "CHAT_SKILL_RUN_NOT_FOUND", "This chat ran no such skill or script.")
+        return message
+
     def resolve_permission(self, session_id: str, permission_id: str, request: ChatPermissionRequest) -> ChatDetail:
         with self._lock:
             session = self._session(session_id)
-            if request.projectId != session.projectId or projects._project(session.projectDir) != (session.projectId, session.projectDir):
+            if (request.projectId != session.projectId
+                    or projects._bound(session.projectId, session.projectDir) != (session.projectId, session.projectDir)):
                 raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "This permission belongs to a different project.")
             future = self._permissions.get((session_id, permission_id))
             message = next((row for row in session.messages if row.permission and row.permission.id == permission_id), None)
@@ -1466,15 +1851,31 @@ class ChatStore:
             option = next((item for item in message.permission.options if item.optionId == request.optionId), None)
             if request.optionId is not None and option is None:
                 raise HubFailure(422, "CHAT_PERMISSION_OPTION_INVALID", "Choose an option from this permission request.")
+            chosen = request.optionId
+            ask = self._tool_asks.get((session_id, permission_id))
+            if ask is not None and chosen == acp_grants.HUB_PROJECT:
+                # "Always allow in this project": the Hub keeps that, and the adapter is told only "allow once".
+                from ..settings import tool_grants
+
+                tool_grants.allow(self.runtime_root, session.projectId, ask["action"], ref=permission_id,
+                                  place=session.projectDir if session.kind == "folder" else None)
+                chosen = ask["allow"]
+            self._tool_asks.pop((session_id, permission_id), None)
             try:
-                future.set_result(request.optionId)
+                future.set_result(chosen)
             except InvalidStateError:
                 message.permission, message.status = None, "interrupted"
                 session.updatedAt = _now()
                 self._permissions.pop((session_id, permission_id), None)
                 self._save(session)
                 raise HubFailure(409, "CHAT_PERMISSION_EXPIRED", "This permission request is no longer waiting for a decision.") from None
-            message.content += " · " + (option.name if option else "Cancelled")
+            if (session_id, permission_id) in self._skill_questions:
+                # A skill's question stays where it was asked and says what the answer was (S23).
+                message.permissionOutcome = {"allow_once": "allowed_once", "allow_always": "allowed_always",
+                                             None: "cancelled"}.get(chosen, "refused")
+                message.content += " · " + skill_cards.OUTCOME_WORDS[message.permissionOutcome]
+            else:
+                message.content += " · " + (option.name if option else "Cancelled")
             active = self._running[session_id]
             if active.trace:
                 active.trace.permission(permission_id, completed=True)
@@ -1485,9 +1886,12 @@ class ChatStore:
             return self.get(session_id)
 
     def _clear_permissions(self, session_id: str) -> None:
+        for key in [key for key in self._claude_requests if key[0] == session_id]:
+            self._claude_requests.pop(key)
         for key, future in list(self._permissions.items()):
             if key[0] == session_id:
                 self._permissions.pop(key)
+                self._tool_asks.pop(key, None)
                 with suppress(InvalidStateError):
                     future.set_result(None)
         for message in self._sessions[session_id].messages:
@@ -1555,12 +1959,15 @@ class ChatStore:
                 # That sandbox writes the folder it starts in and the roots
                 # added to it. The Hub adds none (ADR-012); an installed Hub
                 # starts it in the project, which it can therefore still write.
-                environment["INITIAL_AGENT_MODE"] = "read-only"
+                # The level (gap 4): "open" lets the adapter approve what it judges safe itself (its agent mode,
+                # the same workspace sandbox); "read" and "ask" keep its ask-for-approval mode, and at "read" the
+                # Hub answers every question no (_acp_permission). The adapter has no read-only sandbox to start.
+                environment["INITIAL_AGENT_MODE"] = "agent" if self._permission_mode(session) == "open" else "read-only"
                 environment["CODEX_CONFIG"] = json.dumps({
-                    "mcp_servers": self._codex_mcp(session, commands["codex"], environment),
+                    "mcp_servers": self._codex_mcp(session, commands["codex"], environment, private=True),
                 })
                 client = CodexAcpSession(
-                    command=self._acp_command, cwd=str(providers._source_checkout() or session.projectDir),
+                    command=self._acp_command, cwd=self._workdir(session),
                     environment=environment,
                     # Nonempty ACP mcpServers would replace the disabled entries
                     # above. This per-chat adapter already has the exact binding.
@@ -1597,7 +2004,7 @@ class ChatStore:
                     running.prompting = False
             return None
         except AcpCancelled:
-            if not running.redirected:
+            if not (running.redirected or running.suspended):
                 running.stop.set()
             return None
         except Exception as exc:
@@ -1673,16 +2080,17 @@ class ChatStore:
         retained: dict | None = None
         stderr: list[str] = []
         completed_turn = False
-        # When this turn's own limit is spent. Preparing a named source is bound
-        # by it and cancellable within it, and the CLI transport — which holds
-        # one total limit for the turn — gets what preparing left rather than a
-        # fresh limit beside it. The ACP adapter keeps its own inactivity
-        # interval, which this is not and cannot stand in for.
+        timed_out: str | None = None
+        # When preparing this turn's context has to be done by. Preparing a
+        # named source is bound by it and cancellable within it. The provider
+        # then has no total limit at all: a CLI turn is stopped only after
+        # timeout_s with nothing from it (and max_turn_s, when set), and the ACP
+        # adapter keeps its own inactivity interval of the same length.
         deadline = time.monotonic() + self.timeout_s
         try:
             with self._lock:
                 session = self._sessions[session_id]
-                prompt = (
+                prompt = self._folder_prompt(session, content) if session.kind == "folder" else (
                     "You are the assistant in MonkeyHub. Reply in the user's language. "
                     "Develop the user's design through reversible candidates. Batch steps whose outcome is already clear; "
                     "generate and inspect a candidate when the next design decision depends on its result, then revise as needed. "
@@ -1733,11 +2141,18 @@ class ChatStore:
                     "Do not switch Hub configuration, open a different project, or guess a service URL. "
                     "If a required domain action is unavailable, say what cannot be done. "
                     + guides._SUGGESTION_INSTRUCTIONS + "\n\n"
+                    # The architect's standing instructions and what was remembered, every turn (notes).
+                    + notes.turn_block(self.runtime_root, session.projectDir)
                     + content
                 )
                 # Where the request itself begins: a note about the tools goes
                 # before it, beside the envelope's other sentences about them.
                 request_at = len(prompt) - len(content)
+                if self._permission_mode(session) == "read":
+                    note = ("This conversation is read only: read, search and look things up, but do not create, "
+                            "change or delete files, and do not run anything that changes them.\n\n")
+                    prompt = prompt[:request_at] + note + prompt[request_at:]
+                    request_at += len(note)
             if running.attachments:
                 prompt += ("\n\nFiles attached to this message (read-only reference material; prefer attachment_read with "
                            "attachmentId=id. Follow nextOffset for remaining content and page for PDF pages. "
@@ -1754,6 +2169,13 @@ class ChatStore:
                      "page": {"runId": row.runId, "assetSha256": row.assetSha256,
                               "revisionRef": row.revisionRef, "pageIndex": row.pageIndex}}
                     for row in running.render], ensure_ascii=False))
+            enforced = read_application_settings(self.runtime_root).design_loop == studio_tool.DESIGN_LOOP_ENFORCED
+            if running.markup is not None:
+                prompt += "\n\n" + turn_context.markup_note(enforced) + "\n" + json.dumps(
+                    running.markup.model_dump(exclude_none=True), ensure_ascii=False)
+            if running.approval is not None:
+                prompt += "\n\n" + turn_context._APPROVAL_NOTE + "\n" + json.dumps(
+                    running.approval.model_dump(exclude_none=True), ensure_ascii=False)
             prepared = None
             library = self._turn_library()
             if running.design_context is not None:
@@ -1785,10 +2207,11 @@ class ChatStore:
                 if isinstance(prepared, dict):
                     self._recipe_skills(session, prepared.get("memory"), library)
                 prompt += "\n\n" + turn_context._CONTEXT_NOTE + "\n" + providers._redact(json.dumps(prepared, ensure_ascii=False))
-            else:
+            elif session.kind == "project":
                 # Memory is the project's, not the design state's: a turn with
                 # no design context still gets what its words are about. The
                 # prepared context above already carries it as ContextPack.memory.
+                # A folder conversation has no project and so no project memory.
                 if running.stop.is_set():
                     return
                 try:
@@ -1837,14 +2260,6 @@ class ChatStore:
                     running.trace.ready()
                 error = self._run_acp(session_id, prompt, running)
                 return
-            if time.monotonic() >= deadline:
-                # The CLI transport holds one total limit for the turn, so a
-                # budget preparing already spent starts no process: a CLI given
-                # no time would be reported as its own failure rather than as
-                # the limit it actually ran into.
-                error = HubError(code="CHAT_TIMEOUT", detail="This turn's time limit was spent before "
-                                 "the CLI could be started.")
-                return
             command, environment = self._command(session, running.attachments, library)
             running.library_skills = "--setting-sources" in command and "--disable-slash-commands" not in command
             if running.trace:
@@ -1863,7 +2278,7 @@ class ChatStore:
                 prompt_input = json.dumps({"type": "user", "session_id": session.nativeSessionId or session.cliStartId or session.id,
                     "parent_tool_use_id": None, "message": {"role": "user", "content": blocks}}, ensure_ascii=False) + "\n"
             kwargs = {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {"start_new_session": True}
-            process = subprocess.Popen(command, cwd=providers._source_checkout() or session.projectDir, env=environment, stdin=subprocess.PIPE,
+            process = subprocess.Popen(command, cwd=self._workdir(session), env=environment, stdin=subprocess.PIPE,
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
                                        errors="replace", shell=False, **kwargs)
             with self._lock:
@@ -1923,20 +2338,36 @@ class ChatStore:
             feeder.start()
             reader.start()
             errors.start()
-            timer = threading.Timer(max(0.0, deadline - time.monotonic()),
-                                    lambda: providers._stop_process(process) if process.poll() is None else None)
-            timer.daemon = True
-            timer.start()
             last_save = 0.0
             failure_deadline = None
+            # No total limit: the turn runs as long as the CLI keeps reporting.
+            # It is stopped only after timeout_s of silence, and a question
+            # waiting for the person is not silence. max_turn_s, when set, is a
+            # total the person chose.
+            hard_deadline = time.monotonic() + self.max_turn_s if self.max_turn_s else None
+            running.active_at = time.monotonic()
             try:
-                while time.monotonic() < (failure_deadline or deadline):
-                    try:
-                        line = output.get(timeout=max(0.0, (failure_deadline or deadline) - time.monotonic()))
-                    except queue.Empty:
+                while True:
+                    now = time.monotonic()
+                    if failure_deadline is not None and now >= failure_deadline:
                         break
+                    if hard_deadline is not None and now >= hard_deadline:
+                        timed_out = "total"
+                        break
+                    if self._waiting_on_person(session_id):
+                        running.active_at = now
+                    quiet_left = running.active_at + self.timeout_s - now
+                    if quiet_left <= 0:
+                        timed_out = "quiet"
+                        break
+                    try:
+                        line = output.get(timeout=max(0.0, min(1.0, quiet_left, *(
+                            [failure_deadline - now] if failure_deadline is not None else []))))
+                    except queue.Empty:
+                        continue
                     if line is None:
                         break
+                    running.active_at = time.monotonic()
                     try:
                         event = json.loads(line)
                     except ValueError:
@@ -1963,18 +2394,20 @@ class ChatStore:
                             if event_error and failure_deadline is None:
                                 # Bounded drain: keep a following failed result,
                                 # but never wait indefinitely for inherited pipes.
-                                failure_deadline = min(deadline, time.monotonic() + 2.0)
+                                failure_deadline = time.monotonic() + 2.0
                         if time.monotonic() - last_save >= 0.3:
                             self._save(session)
                             last_save = time.monotonic()
-                try:
-                    process.wait(timeout=max(0.0, (failure_deadline or deadline) - time.monotonic()))
-                except subprocess.TimeoutExpired:
-                    providers._stop_process(process)
+                if timed_out is None:
+                    try:
+                        # Its output has ended; the CLI exits on its own right after.
+                        process.wait(timeout=max(0.0, (failure_deadline - time.monotonic()) if failure_deadline
+                                                 else min(self.timeout_s, 30.0)))
+                    except subprocess.TimeoutExpired:
+                        providers._stop_process(process)
             finally:
                 with self._lock:
                     self._close_input(running)
-                timer.cancel()
                 if process.poll() is None:
                     providers._stop_process(process)
                 process.wait(timeout=10)
@@ -1984,9 +2417,12 @@ class ChatStore:
                     thread.join(timeout=max(0.0, joined_until - time.monotonic()))
                 # Each daemon owns/closes its pipe. A descendant retaining a
                 # pipe can outlive the CLI, but cannot hold this turn's outcome.
-            if not (running.stop.is_set() or running.redirected):
-                if time.monotonic() >= deadline and error is None:
-                    error = HubError(code="CHAT_TIMEOUT", detail="The CLI did not finish within this turn's time limit.")
+            if not (running.stop.is_set() or running.redirected or running.suspended):
+                if timed_out == "quiet" and error is None:
+                    error = HubError(code="CHAT_TIMEOUT", detail=f"The CLI reported nothing for {_duration(self.timeout_s)}, "
+                                     "so this turn was stopped. Send a message to continue it.")
+                elif timed_out == "total" and error is None:
+                    error = HubError(code="CHAT_TIMEOUT", detail=f"This turn reached its limit of {_duration(self.max_turn_s)}.")
                 elif process.returncode and error is None:
                     detail = "".join(stderr).strip()[-1000:] or f"The CLI exited with code {process.returncode}."
                     error = HubError(code="CHAT_PROCESS_FAILED", detail=detail)
@@ -1999,7 +2435,11 @@ class ChatStore:
             with self._lock:
                 session = self._sessions[session_id]
                 stopped = running.stop.is_set()
-                halted = stopped or running.redirected
+                # Cut off by a closing Hub: the record stays "running" for the next start to resume.
+                suspended = running.suspended and not stopped
+                if suspended:
+                    error = None
+                halted = stopped or running.redirected or suspended
                 self._clear_permissions(session_id)
                 # What Claude read without echoing it back still reached it when
                 # its turn finished normally; a stopped or failed turn read none.
@@ -2017,11 +2457,12 @@ class ChatStore:
                 # finishes late; one handed over is left for that steer to settle.
                 running.waiting = [row for row in running.waiting if row[0] in handed]
                 for message in session.messages:
-                    if message.interjection == "pending" and message.id not in following:
+                    if message.interjection == "pending" and message.id not in following and not suspended:
                         message.interjection = "undelivered"
                 if not follow:
                     self._acp_tools.pop(session_id, None)
-                session.status = "running" if follow else "interrupted" if stopped else "failed" if error else "idle"
+                session.status = ("running" if follow or suspended else "interrupted" if stopped
+                                  else "failed" if error else "idle")
                 session.error = HubError(code="CHAT_STOPPED", detail="The response was stopped.") if stopped else error
                 for message in session.messages:
                     if message.status == "streaming":
@@ -2048,6 +2489,25 @@ class ChatStore:
                 # Closing hands work to the adapter's own thread and waits for
                 # it; that never happens while this store's lock is held.
                 abandoned.close()
+
+    def _folder_prompt(self, session: _SavedChat, content: str) -> str:
+        """The envelope of a turn in a plain folder: ordinary work on the person's files, no design tools."""
+        scratch = self._scratch_path(session.id)
+        return (
+            "You are the assistant in MonkeyHub, working in the folder " + session.projectDir + " on this computer. "
+            "Reply in the user's language. This conversation is not bound to a MonkeyHub project, so it has no "
+            "design tools; read, write and run in this folder as the user asks, within what this conversation is "
+            "allowed to do. Files you no longer need go to the Recycle Bin or a quarantine folder; never delete "
+            "the user's files permanently. "
+            + (f"Temporary calculation scripts can go in this chat's scratch directory at {scratch}; it is put away "
+               "when the chat is archived, so save anything the user keeps in their folder. "
+               if session.provider != "codex" else "")
+            + "Do not change MonkeyHub's own configuration or records. "
+            "If something the user asks cannot be done here, say what and why.\n\n"
+            # The architect's standing instructions and notes, the folder's own scope standing for a project's (notes).
+            + notes.turn_block(self.runtime_root, session.projectDir, place="folder")
+            + content
+        )
 
     def _close_input(self, running: _Running) -> None:
         """Close Claude's stdin once its turn has a result. The lock is held."""
@@ -2089,6 +2549,9 @@ class ChatStore:
             message.content, message.status = content, outcome
         if candidate:
             message.candidateId = candidate
+        if item.get("parent"):
+            # A subagent's call: the row of the call that started it, so the conversation can fold it there.
+            message.parentCallId = self._call_row(session, str(item["parent"]))
         active = self._running.get(session.id)
         if active and active.trace:
             active.trace.tool(str(item.get("id") or "tool"), item.get("tool"), item.get("arguments"),
@@ -2127,6 +2590,17 @@ class ChatStore:
                 return None, False
             if kind != "item.started" and item.get("type") == "agent_message":
                 text, message_id = item.get("text", ""), str(item.get("id", "answer"))
+        elif kind == "stream_event" and event.get("parent_tool_use_id"):
+            # A subagent's own words as they stream: its result comes back as its call's result (gap 5).
+            return None, False
+        elif kind == "assistant" and event.get("parent_tool_use_id"):
+            # A subagent's step: its calls are rows of their own under the call that started it; its words are
+            # not this turn's answer.
+            for row in event.get("message", {}).get("content", []) or []:
+                if isinstance(row, dict) and row.get("type") == "tool_use":
+                    self._tool_message(session, activity._claude_call(row, None, event["parent_tool_use_id"]),
+                                       "item.started", environment)
+            return None, False
         elif kind == "stream_event":
             inner = event.get("event", {})
             if inner.get("type") == "content_block_delta" and inner.get("delta", {}).get("type") == "text_delta":
@@ -2145,6 +2619,13 @@ class ChatStore:
             if isinstance(event.get("uuid"), str):
                 self._delivered(session, event["uuid"])
             return None, False
+        elif kind == "control_request":
+            # A question the CLI asks this Hub at the "ask" level (gap 4).
+            self._claude_permission(session, event)
+            return None, False
+        elif kind == "control_cancel_request":
+            self._claude_withdrawn(session, event)
+            return None, False
         elif kind == "command_lifecycle":
             if event.get("state") == "started" and isinstance(event.get("command_uuid"), str):
                 self._delivered(session, event["command_uuid"])
@@ -2154,7 +2635,8 @@ class ChatStore:
                 if isinstance(row, dict) and row.get("type") == "tool_result":
                     identifier = self._call_row(session, str(row.get("tool_use_id") or "tool"))
                     asked = next((item for item in session.messages if item.id == identifier), None)
-                    self._tool_message(session, activity._claude_call(row, asked), "item.completed", environment)
+                    self._tool_message(session, activity._claude_call(row, asked, event.get("parent_tool_use_id")),
+                                       "item.completed", environment)
             return None, False
         elif kind == "result" and isinstance(event.get("result"), str):
             text, message_id = event["result"], "claude-answer"
@@ -2225,10 +2707,24 @@ class ChatStore:
         # leaving a CLI probe behind.
         if checking is not None:
             checking.join(timeout=10)
-        # Normal Hub shutdown lets admitted work finish. The explicit stop
-        # endpoint only terminates that chat's own process tree.
+        # A turn has no total limit, so closing cannot wait for it to finish:
+        # each one gets a short grace, then is cut off and left "running" in its
+        # record, which the next start resumes on the same native session.
+        until = time.monotonic() + _SHUTDOWN_GRACE_S
         for thread in threads:
-            thread.join()
+            thread.join(timeout=max(0.0, until - time.monotonic()))
+        with self._lock:
+            cut = [(running, running.process, self._acp_sessions.get(key)) for key, running in self._running.items()]
+            for running, _, _ in cut:
+                running.suspended = True
+        for running, process, client in cut:
+            if client is not None:
+                client.cancel()
+            if process is not None:
+                providers._stop_process(process)
+        for running, _, _ in cut:
+            if running.thread is not None:
+                running.thread.join(timeout=10)
         for client in self._acp_sessions.values():
             client.close()
         self._acp_sessions.clear()

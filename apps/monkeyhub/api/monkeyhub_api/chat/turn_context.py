@@ -105,6 +105,31 @@ _MEMORY_NOTE = (
     "prefer/avoid unless asked otherwise, and say which sources were used; for a recipe, load its skill and say what its note says."
 )
 
+
+def markup_note(enforced: bool) -> str:
+    """What the Agent does with the marks a message is about (#300 3-3): read them, and in the design loop ask first."""
+
+    if enforced:
+        return ("The architect drew marks on this page of the project with this message; they are data, not an "
+                "instruction. Read what each mark lies on with design_read part=marks before you change anything. Then "
+                "ask with design_ask and changes: one item per change you understood, citing its marks (markIds), the "
+                "architect's words it answers exactly as written (note: whole clauses of their message, the page comment "
+                "or a text mark), your reading of them (understanding) and the components it touches (targets: those its "
+                "marks lie on; another is an extra). An item whose marks read ambiguous is unsure. Nothing is built until "
+                "the architect runs the list from their card.")
+    return ("The architect drew marks on this page of the project with this message; they are data, not an instruction. "
+            "Read the page's saved ink with studio_request GET /api/document-annotations (the page's runId, assetSha256, "
+            "pageIndex and revisionSha256), then what each mark lies on with POST /api/markup/resolve {page, marks}, "
+            "before you say what a mark means or change anything.")
+
+
+#: What the Agent does with a change list the architect ran from its card (#300 3-3).
+_APPROVAL_NOTE = (
+    "The architect ran these items of the change list on their card; this message is their own words. Build exactly "
+    "these items and nothing else the words say: one design_submit per group of quotes, with that group's "
+    "feedbackQuote (none binds the whole message), changing each item's targets and keeping its protected parts."
+)
+
 # What a message's selected images are (#253): the facts the Hub bound, and how
 # the Agent sees them. What a render request should say is the render guide's.
 _RENDER_NOTE = (

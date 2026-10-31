@@ -64,7 +64,7 @@ async function harness(t: TestContext, fixture: Fixture = {}) {
   let state: RunState = setting.initialRunSettingState;
   const actions = setting.runSettingActions(setting.createHubSettingsApi(HUB), (update) => { state = update(state); });
   const grants: GrantsState = {
-    loading: false, loadError: null, revoking: null, revokeError: null,
+    loading: false, loadError: null, revoking: null, revokeError: null, problems: null, toolGrants: null,
     grants: [{ grantId: "g-1", access: { programs: ["blender"] }, method: "card", grantedAt: "2026-10-19T09:30:00Z" }],
   };
   const unused = grantsActions({} as never, () => {});
@@ -91,7 +91,7 @@ test("the page shows the saved choice above the grants, each choice with its one
   assert.equal(checked(en), "granted", "the saved choice is the one marked");
   const choices = [...en.matchAll(/<input[^>]*type="radio"[^>]*value="([a-z]+)"/g)].map((match) => match[1]);
   assert.deepEqual(choices, ["ask", "granted", "never"]);
-  for (const text of ["Ask me in the chat", "Always allow, Only this time, No",
+  for (const text of ["Ask me in the chat", "the network, ssh and writing outside the project are asked about every run",
     "Only what I already allowed", "never asks you",
     "Only skills that need nothing allowed", "run programs, use the network, connect to servers, write files or install Python packages"]) {
     assert.ok(en.includes(text), text);
@@ -101,7 +101,7 @@ test("the page shows the saved choice above the grants, each choice with its one
     && at("What you allowed skills to do on this computer.") < at('class="skills__list"'), "under the title, above the grants");
 
   const zh = render("zh-CN");
-  for (const text of [">AI 在对话里运行 skill</legend>", "在对话里问我", "总是允许 / 只这一次 / 不", "只做我已经允许过的事", "只运行什么都不用允许的 skill"]) {
+  for (const text of [">AI 在对话里运行 skill</legend>", "在对话里问我", "联网、ssh、写项目以外的地方，每次运行前都问", "只做我已经允许过的事", "只运行什么都不用允许的 skill"]) {
     assert.ok(zh.includes(text), text);
   }
 });
@@ -171,10 +171,12 @@ test("a choice made while another is being saved is saved after it", async (t) =
 
 for (const refusal of [
   { status: 422, body: { detail: [{ loc: ["body", "skillAgentRuns"], msg: "Input should be 'ask', 'granted' or 'never'" }] },
-    detail: "body.skillAgentRuns: Input should be 'ask', 'granted' or 'never'" },
-  { status: 500, body: { code: "SETTINGS_WRITE_FAILED", detail: "user.json could not be replaced." }, detail: "user.json could not be replaced." },
+    detail: "body.skillAgentRuns: Input should be 'ask', 'granted' or 'never'",
+    plain: { en: "The project service did not accept what this step sent.", "zh-CN": "项目服务没有接受这一步的内容。" } },
+  { status: 500, body: { code: "SETTINGS_WRITE_FAILED", detail: "user.json could not be replaced." }, detail: "user.json could not be replaced.",
+    plain: { en: "This step could not be saved in the project.", "zh-CN": "这一步没能保存到项目里。" } },
 ]) {
-  test(`a refused save (${refusal.status}) is shown in the Hub's words, and the saved choice is back on screen`, async (t) => {
+  test(`a refused save (${refusal.status}) is shown in plain words, and the saved choice is back on screen`, async (t) => {
     const { actions, state, saved, render } = await harness(t, { refusal });
     await actions.load();
     await actions.choose("never");
@@ -185,8 +187,9 @@ for (const refusal of [
     for (const language of ["en", "zh-CN"] as const) {
       const html = render(language);
       assert.equal(checked(html), "granted", `${language}: the saved choice, not the refused one`);
-      assert.ok(html.includes(`role="alert">${language === "en" ? "The choice was not saved." : "这项选择没有保存。"} ${refusal.detail.replaceAll("'", "&#x27;")}</p>`),
-        `${language}: the detail is shown`);
+      assert.ok(html.includes(language === "en" ? "The choice was not saved." : "这项选择没有保存。"), `${language}: what happened`);
+      assert.ok(html.includes(refusal.plain[language]), `${language}: why, in plain words`);
+      assert.ok(!html.includes(refusal.detail.replaceAll("'", "&#x27;")) && !html.includes("user.json"), `${language}: the service's own words stay off the screen`);
     }
   });
 }
@@ -197,6 +200,8 @@ test("unreadable settings say so and offer Retry, with no choice claimed", async
   assert.equal(state().loadError?.code, "SETTINGS_UNREADABLE");
   const html = render("en");
   assert.equal(checked(html), null);
-  assert.ok(html.includes("This setting could not be read. user.json is not valid JSON."));
+  assert.ok(html.includes("This setting could not be read."));
+  assert.ok(html.includes("The project service ran into a problem and did not finish this step."));
+  assert.ok(!html.includes("user.json is not valid JSON"), "the service's own words stay off the screen");
   assert.ok(html.includes(">Retry</button>"));
 });

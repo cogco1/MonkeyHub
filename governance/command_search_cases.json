@@ -52,9 +52,14 @@
   },
   {
    "say": "出一张平面图",
-   "command": "drawing.plan.generate",
+   "command": "drawing.quick.plan",
    "route": true,
    "capability": "drawing.orthographic"
+  },
+  {
+   "say": "出一张南立面",
+   "command": "drawing.quick.elevation_south",
+   "route": true
   },
   {
    "say": "生成渲染图",

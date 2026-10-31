@@ -76,6 +76,8 @@ try {
   browser = await chromium.launch({ headless: true, channel: "chrome" });
   for (const initial of ["zh-CN", "en"]) {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    // These passes press each retry themselves: quiet retries (F046) are off for them.
+    await context.addInitScript(() => localStorage.setItem("monkeyhub.quietRetry", "off"));
     await context.addInitScript((language) => {
       localStorage.setItem("archflow-studio.user-preferences", JSON.stringify({ version: 1, language }));
       window.EXCALIDRAW_ASSET_PATH = `${location.origin}/excalidraw/`;
@@ -124,7 +126,9 @@ try {
           { type: "rectangle", id: "unsaved-mark", x: 120, y: 160, width: 80, height: 60, strokeColor: "#e03131", roughness: 0 },
         ], { regenerateIds: false }), captureUpdate: CaptureUpdateAction.IMMEDIATELY });
       });
-      await page.locator(".monkeyboard-alert[role=alert]").filter({ hasText: "Keep this draft unsaved" }).waitFor();
+      // The save was refused with the fixture's own words; the screen says it in plain ones and keeps the words back.
+      await page.locator(".monkeyboard-alert[role=alert]").filter({ hasText: /ran into a problem|项目服务出错/ }).waitFor();
+      equal(await page.getByText("Keep this draft unsaved").count(), 0, `${initial}: the service's own words stay off the screen`);
       await page.evaluate(() => {
         window.__retainedBoardApi = window.__boardApi;
         window.__retainedCanvas = document.querySelector(".monkeyboard-canvas canvas");

@@ -135,6 +135,10 @@ class AttachedModelIndexTests(unittest.TestCase):
         with_state = self.client.get(self.path, params={"runId": self.run, "stateDigest": "0" * 64})
         self.assertEqual(with_state.status_code, 422, with_state.text)
         self.assertEqual(with_state.json()["code"], "MODEL_SOURCE_INVALID")
+        # A Live Rhino snapshot read with its run's own base state, as run.json states it, is read (#300 item 13).
+        base = self.repository.load_run(self.run).base.state_sha256
+        with_base = self.client.get(self.path, params={"runId": self.run, "stateDigest": base})
+        self.assertEqual((with_base.status_code, with_base.json().get("objectCount")), (200, 5), with_base.text)
         design = self.client.get(self.path, params={"runId": REFERENCE_RUN_ID})
         self.assertEqual(design.status_code, 422, design.text)
         self.assertEqual(design.json()["code"], "MODEL_SOURCE_INVALID")
@@ -152,3 +156,55 @@ class AttachedModelIndexTests(unittest.TestCase):
         self.assertIn(f"/api/model-assets/{self.sha}/index?runId={self.run}", body["detail"])
         # The project's own model is still read where no run is named.
         self.assertEqual(self.client.get("/api/construction/model").status_code, 200)
+
+
+class KeptModelIndexTests(unittest.TestCase):
+    """A model's index is read once per content and kept; every later page is a lookup (#300)."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="kept-model-index-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        make_project(self.root)
+        self.app = create_app(StudioSettings(project_dir=self.root / PROJECT_ID, reference_run=REFERENCE_RUN_ID,
+                                             cad_export="off", cache_dir=self.root / "cache"))
+        self.addCleanup(self.app.state.stop_index_events)
+        self.client = TestClient(self.app)
+        self.addCleanup(self.client.close)
+        binding = bound_project(self.app.state)
+        self.addCleanup(binding.close)
+        self.assertIsNotNone(binding.await_index(30), "the index loads")
+        self.addCleanup(lambda: self.app.state.projections and self.app.state.projections.shutdown())
+        artifacts._KEPT_INDEXES.clear()
+        self.addCleanup(artifacts._KEPT_INDEXES.clear)
+        self.data = (Path(__file__).parent / "fixtures/native-source-index.3dm").read_bytes()
+        self.sha = hashlib.sha256(self.data).hexdigest()
+        self.run = f"studio-model-{self.sha}"
+        self.path = f"/api/model-assets/{self.sha}/index"
+
+    def read(self, **params):
+        response = self.client.get(self.path, params={"runId": self.run, **params})
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def test_the_model_is_decoded_once_and_every_page_reads_the_kept_index(self):
+        with patch.object(artifacts, "inspect_three_dm_index", wraps=artifacts.inspect_three_dm_index) as decoded:
+            registered = self.client.post("/api/model-assets", json={
+                "projectId": PROJECT_ID, "fileName": "returned.3dm", "contentBase64": base64.b64encode(self.data).decode()})
+            self.assertEqual(registered.status_code, 201, registered.text)
+            plain = self.read()
+            bounded = self.read(bounds="true")
+            window = next(row["object_id"] for row in plain["objects"] if row["name"] == "Roof")
+            chosen = self.read(objectId=window, bounds="true")
+        self.assertEqual(decoded.call_count, 1, "the model is decoded once, whoever asks first")
+        self.assertEqual(plain["objectCount"], 5)
+        self.assertTrue(all("bounds" not in row for row in plain["objects"]))
+        self.assertEqual(sorted(row["bounds"]["min"] for row in bounded["objects"]),
+                         [[0.0, 0.0, 3000.0], [1000.0, 0.0, 3000.0], [2000.0, 0.0, 3000.0], [3000.0, 0.0, 3000.0],
+                          [4000.0, 0.0, 3000.0]])
+        self.assertEqual([(row["name"], row["bounds"]["min"]) for row in chosen["objects"]], [("Roof", [3000.0, 0.0, 3000.0])])
+
+        artifacts._KEPT_INDEXES.clear()  # a restarted process: the projection cache keeps the index
+        with patch.object(artifacts, "inspect_three_dm_index", wraps=artifacts.inspect_three_dm_index) as again:
+            self.assertEqual(self.read(), plain)
+        self.assertEqual(again.call_count, 0)

@@ -4,6 +4,7 @@ import { usePreferences } from "../../features/settings/preferences";
 
 import type { MessageKey } from "../../i18n/messages.en";
 import { useT } from "../../i18n/useT";
+import { PlainFailure } from "../../app/ErrorPanel";
 import { bulkRecommended, cardsIn, queueSnapshot, subscribeQueue, undoBulk, type QueueFailure, type QueueSnapshot } from "../queue";
 import { AttentionCardView } from "./AttentionCards";
 import { isPending, queueOrder, say } from "./cardText";
@@ -106,7 +107,7 @@ function AllAsRecommended({ cards, projectName }: { cards: readonly AttentionCar
       <span role="status">{t("cards.bulkDone", { count: done.items.length })}{done.skipped.length > 0 && t("cards.bulkSkipped", { count: done.skipped.length })}</span>
       <button type="button" className="menu-command" data-command="attention.queue.bulk_undo" disabled={busy} onClick={() => takeBack(done)}>{t("cards.undo")}</button>
     </> : said && <span role="status">{said}</span>}
-    {failure && <p className="attention-card__failure" role="alert">{failure.detail}</p>}
+    {failure && <p className="attention-card__failure" role="alert"><PlainFailure error={failure} /></p>}
   </div>;
 }
 

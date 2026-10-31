@@ -9,6 +9,7 @@ import {
 import { useDeveloperMode } from "./features/settings/preferences";
 import "./MonitorPage.css";
 import { useRowEndSeparators } from "./surfaceBarRows";
+import { AutoRetry } from "./app/AutoRetry";
 
 type Props = {
   preferences: AppearancePreferences; active: boolean; initialProjectId?: string; openRequest?: number;
@@ -282,7 +283,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
   useRowEndSeparators(root);
   return <div className="monitor-page" ref={root}>
     {/* #337 L2: the page's one bar. Its two views, the scope and Refresh are words; the service's state is at the right end. */}
-    <SurfaceBar label={t.title} end={<span className={`monitor-health${error ? " monitor-health--error" : ""}`}>{loading ? t.connecting : error ? t.failed : t.ready}</span>}>
+    <SurfaceBar label={t.title} end={<span className={`monitor-health${error ? " monitor-health--error" : loading ? " wait-late" : ""}`}>{loading ? t.connecting : error ? t.failed : t.ready}</span>}>
       <MenuTabs label={t.views} value={view} onChange={(next) => setView(next)} options={[{ value: "calls" as const, label: t.viewCalls, command: "view.usage.calls" }, { value: "timeline" as const, label: t.viewTimeline, command: "view.usage.timeline" }]} />
       <MenuSeparator />
       <div className="monitor-scope">
@@ -301,7 +302,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
     <main className="monitor-shell">
       {/* The rail and the Help menu name the page; the heading is for screen readers. */}
       <h1 className="sr-only">{t.title}</h1>
-      {error && <div className="error-message" role="alert"><strong>{t.failed}</strong><p>{error}</p><button data-command="view.notice.retry" data-command-arg="usage" className="btn" type="button" onClick={() => void readAll(true)}>{t.retry}</button></div>}
+      {error && <div className="error-message" role="alert"><strong>{t.failed}</strong><p>{error}</p><AutoRetry failure={error} data-command="view.notice.retry" data-command-arg="usage" className="btn" retry={() => void readAll(true)}>{t.retry}</AutoRetry></div>}
       <section className="monitor-stats" aria-label={t.usage} hidden={view !== "calls"}>
         {[
           [t.calls, summary.calls.toLocaleString(), ""],
@@ -372,7 +373,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
     <StatusLine className="monitor-status" end={<span title={t.usageScope}>{t.usageScope}</span>}>
       MonkeyMonitor{updatedAt && ` · ${t.updated} ${updatedAt.toLocaleTimeString()}`}
       {/* Where a narrow bar leaves no room for the service's state, it is said here until the records are read. */}
-      {(error || (loading && !updatedAt)) && <span className="monitor-status__state"> · {error ? t.failed : t.connecting}</span>}
+      {(error || (loading && !updatedAt)) && <span className={error ? "monitor-status__state" : "monitor-status__state wait-late"}> · {error ? t.failed : t.connecting}</span>}
     </StatusLine>
   </div>;
 }

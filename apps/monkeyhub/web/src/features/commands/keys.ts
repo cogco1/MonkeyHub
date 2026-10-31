@@ -49,6 +49,15 @@ export function normalizeShortcut(written: string): string {
     .filter(Boolean).join("+");
 }
 
+/**
+ * Whether a dialog is open that a key press must leave its keys to: a native one, or a modal a library marks aria-modal.
+ * Excalidraw keeps its colour pickers in the page as modal-marked boxes whenever a shape is selected; they hold no
+ * keyboard of their own, and counting them would turn every shortcut off over the Board.
+ */
+export function dialogOpen(page: Pick<Document, "querySelector"> = document): boolean {
+  return page.querySelector("dialog[open], [aria-modal='true']:not(.color-picker-container)") !== null;
+}
+
 /** Whether focus is somewhere a key press types text. */
 export function typesText(target: unknown): boolean {
   if (!target || typeof target !== "object") return false;

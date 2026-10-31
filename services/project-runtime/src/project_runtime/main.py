@@ -31,6 +31,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Receive, Scope, Send
 import uvicorn
 
+from archflow.contracts.failures import failure_body
 from archflow.project.index import IndexCommit, add_commit_listener
 from archflow.project.repository import ProjectWriterBusy
 from archflow.project.writer_lease import WriterLease, hold_writer_lease
@@ -75,9 +76,10 @@ _BEARER = "Bearer "
 
 
 def _error(status: int, code: str, detail: str, headers=None) -> JSONResponse:
+    # A code the shared failure table registers also says its category and whether a resend can succeed.
     return JSONResponse(
         status_code=status,
-        content={"code": code, "detail": detail},
+        content=failure_body(code, detail),
         headers=headers,
     )
 
@@ -123,8 +125,19 @@ async def _handle_http_exception(
 async def _handle_validation_error(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
+    errors = exc.errors()
+    # A body that may take one of several shapes is reported once per shape: with the shapes it is not, a run of
+    # "Extra inputs are not permitted". Say only what is wrong with the shape it came closest to (the one with the
+    # fewest faults).
+    shapes: dict[str, list] = {}
+    for error in errors:
+        loc = error.get("loc", ())
+        if len(loc) > 1 and loc[0] == "body" and isinstance(loc[1], str) and (loc[1][:1].isupper() or loc[1].startswith("function-")):
+            shapes.setdefault(loc[1], []).append(error)
+    if len(shapes) > 1:
+        errors = min(shapes.values(), key=len)
     parts = []
-    for error in exc.errors():
+    for error in errors:
         location = ".".join(str(piece) for piece in error.get("loc", ()))
         message = str(error.get("msg", "invalid"))
         parts.append(f"{location}: {message}" if location else message)

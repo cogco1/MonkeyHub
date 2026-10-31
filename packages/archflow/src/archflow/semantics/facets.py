@@ -55,6 +55,9 @@ FACETS: Mapping[str, tuple[str, ...] | None] = MappingProxyType({
     # the same one or none (the State Record refuses anything else).
     "material.color": None,
     "fabrication.method": None,
+    # The architect's own short sentence about a component (a block, a room, a wall): what it is or should be,
+    # in their words. Free text, read by the conversation and by the compiler beside the other facets.
+    "description.note": None,
 })
 
 FACET_KEYS: frozenset[str] = frozenset(FACETS)
@@ -66,6 +69,12 @@ FACET_REASONS: Mapping[str, str] = MappingProxyType({
         "material.name names what a material is, not how it looks, and no composition of the "
         "registered keys states a colour; a material's base appearance belongs to the design "
         "state (owner decision on #560, 2026-10-01)"
+    ),
+    "description.note": (
+        "the architect's own words about what a component is or should be (\"shared kitchen\", \"more open here\") "
+        "are neither a role nor a material nor a fabrication method, and the closed sets of architectural.role "
+        "and structural.role cannot hold a sentence; it is stated in the person's words and never inferred "
+        "(2026-10-24, GH-300: the front keeps sketch, mass and a few words of meaning)"
     ),
 })
 

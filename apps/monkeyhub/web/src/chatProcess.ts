@@ -25,7 +25,7 @@ export type StepKey =
 export type Step =
   | { key: StepKey }
   | { key: "prepare"; inner: Step }
-  | { key: "webSearch" | "desktop" | "permission"; detail: string };
+  | { key: "webSearch" | "desktop" | "permission" | "subagent"; detail: string };
 
 export interface ProcessWords {
   steps: Readonly<Record<StepKey, string>>;
@@ -33,6 +33,8 @@ export interface ProcessWords {
   webSearch: (query: string) => string;
   desktop: (target: string) => string;
   permission: (choice: string) => string;
+  /** A subagent the Agent started, by the task it gave it (gap 5). */
+  subagent?: (task: string) => string;
 }
 
 export function stepText(step: Step, words: ProcessWords): string {
@@ -40,6 +42,7 @@ export function stepText(step: Step, words: ProcessWords): string {
   if (step.key === "webSearch") return words.webSearch(step.detail);
   if (step.key === "desktop") return words.desktop(step.detail);
   if (step.key === "permission") return words.permission(step.detail);
+  if (step.key === "subagent") return words.subagent?.(step.detail) ?? step.detail;
   return words.steps[step.key];
 }
 
@@ -138,7 +141,7 @@ export const rawDetail = (message: ChatMessage) => message.content.split("\n").s
 
 /** One saved call, or an operation's `METHOD /path` kind, named in plain words. */
 export function describeCall(line: string): Step {
-  const parts = line.split(" · ").map((part) => part.trim()).filter(Boolean);
+  const parts = line.replace(SUBAGENT_LEAD, "").split(" · ").map((part) => part.trim()).filter(Boolean);
   const request = REQUEST.exec(parts[0] ?? "");
   if (request) return requestStep(null, request[1]!, request[2]!);
   const asked = parts.length > 1 ? REQUEST.exec(parts[1]!) : null;
@@ -147,7 +150,32 @@ export function describeCall(line: string): Step {
   if (desktop) return { key: "desktop", detail: desktop[2]!.trim() };
   const title = (STATUS_WORDS.has(parts.at(-1) ?? "") ? parts.slice(0, -1) : parts).join(" · ");
   if (BOUND[title]) return { key: BOUND[title] };
+  const helper = /^(Agent|Task) · (.+)$/.exec(title);
+  if (helper) return { key: "subagent", detail: helper[2]!.trim().slice(0, 120) };
   return titleStep(title);
+}
+
+/** How the Hub marks a subagent's own call (gap 5); the step is named without it. */
+const SUBAGENT_LEAD = /^\u21b3 /;
+
+/** One step, and the calls of the subagent it started, which fold under it. */
+export interface StepNode {
+  step: ChatMessage;
+  children: ChatMessage[];
+}
+
+/** A turn's steps with each subagent's calls under the call that started it; a call whose parent is not shown stays a step of its own. */
+export function stepTree(steps: readonly ChatMessage[]): StepNode[] {
+  const nodes: StepNode[] = [];
+  const byId = new Map<string, StepNode>();
+  for (const step of steps) {
+    const parent = step.parentCallId ? byId.get(step.parentCallId) : undefined;
+    if (parent) { parent.children.push(step); continue; }
+    const node: StepNode = { step, children: [] };
+    nodes.push(node);
+    byId.set(step.id, node);
+  }
+  return nodes;
 }
 
 /** An operation's kind in plain words: a `METHOD /path` request, or a run the project retained ("candidate"). */
@@ -201,7 +229,7 @@ export interface ProcessTurn {
   user: ChatMessage | null;
   /** The turn's tool calls, folded together. */
   steps: ChatMessage[];
-  /** What stays in the conversation: the Agent's text, public progress and waiting permission prompts. */
+  /** What stays in the conversation: the Agent's text, public progress, waiting permission prompts, skill run cards and answered skill questions. */
   visible: ChatMessage[];
   /** Steps that read back a candidate the architect can open. */
   results: ChatMessage[];
@@ -216,7 +244,7 @@ const time = (value: string | undefined) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-/** A transcript as turns. A permission prompt stays visible only while its turn can still answer it. */
+/** A transcript as turns. A permission prompt stays visible only while its turn can still answer it; a skill's stays, answered. */
 export function turnsOf(messages: readonly ChatMessage[], running: boolean): ProcessTurn[] {
   const turns: ProcessTurn[] = [];
   let current: ProcessTurn | null = null;
@@ -240,7 +268,8 @@ export function turnsOf(messages: readonly ChatMessage[], running: boolean): Pro
     current.steps.push(message);
     if (message.status === "failed") current.failed++;
     if (message.candidateId) current.results.push(message);
-    if (running && message.permission) current.visible.push(message);
+    // A skill's run card, and a skill's question once answered, stay where they are and say what happened (S23).
+    if ((running && message.permission) || message.skillRun || message.permissionOutcome) current.visible.push(message);
   }
   return turns;
 }

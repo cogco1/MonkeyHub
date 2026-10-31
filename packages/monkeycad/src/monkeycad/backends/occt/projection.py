@@ -253,8 +253,112 @@ def project_occt_lines(
     return tuple(sorted(set(lines), key=lambda line: (line.object_id, line.kind, line.points)))
 
 
+def occt_edge_points(entries: Sequence[StepEntry], *, object_ids: Sequence[str], linear_deflection: float,
+                     ) -> dict[str, tuple[tuple[tuple[float, float, float], ...], ...]]:
+    """Each named shape's B-rep edges as 3D polylines within ``linear_deflection``, in the shape's frame and unit.
+
+    What a hidden-line result in a drawing plane no longer says: how far each
+    drawn edge lies from the viewer. Each edge appears once; nothing is written.
+    The shapes are not checked again: these are the ones a solve just accepted.
+    """
+
+    if (isinstance(linear_deflection, bool) or not isinstance(linear_deflection, (int, float))
+            or not math.isfinite(linear_deflection) or linear_deflection <= 0.0):
+        raise OcctBackendError("drawing linear_deflection must be finite and positive in the shape's unit")
+    occ = _occt()
+    by_name = {entry.name: entry for entry in entries if entry.name is not None}
+    edges: dict[str, tuple[tuple[tuple[float, float, float], ...], ...]] = {}
+    for name in sorted(object_ids):
+        entry = by_name.get(name)
+        if entry is None:
+            raise OcctBackendError(f"drawing object {name!r} is unknown")
+        polylines = set()
+        for item in _explore(occ, entry.shape, occ.TopAbs.TopAbs_EDGE):
+            edge = occ.TopoDS.TopoDS.Edge_s(item)
+            if occ.BRep.BRep_Tool.Degenerated_s(edge):
+                continue
+            sample = occ.GCPnts.GCPnts_UniformDeflection(occ.BRepAdaptor.BRepAdaptor_Curve(edge), float(linear_deflection), True)
+            if not sample.IsDone():
+                raise OcctBuildError(f"drawing object {entry.name!r}: edge discretization failed")
+            points = tuple((float(p.X()), float(p.Y()), float(p.Z())) for p in (sample.Value(i) for i in range(1, sample.NbPoints() + 1)))
+            if len(points) > 1:
+                polylines.add(min(points, tuple(reversed(points))))
+        edges[entry.name] = tuple(sorted(polylines))
+    return edges
+
+
+def project_occt_mesh_lines(
+    entries: Sequence[StepEntry], *, object_ids: Sequence[str],
+    origin: Sequence[float], right: Sequence[float], up: Sequence[float],
+    linear_deflection: float, mesh_deflection: float, depth_range: Sequence[float] | None = None,
+) -> tuple[OcctDrawingPolyline, ...]:
+    """``project_occt_lines`` solved on each shape's triangulation (``HLRBRep_PolyAlgo``).
+
+    Same inputs and output, plus ``mesh_deflection``: the chord deviation
+    every face is triangulated with, in the shape's unit. The B-rep edges and
+    outlines are still the ones drawn and tagged visible or hidden, but
+    visibility is decided against the triangles, so a planar (faceted)
+    model draws the same lines as the exact solve, and a curved surface's
+    edges and outline are polygons within ``mesh_deflection``. A face that
+    cannot be triangulated raises ``OcctBuildError``, so the caller can solve
+    the view exactly instead. Each shape's triangulation is replaced.
+    """
+
+    frame = _drawing_frame(origin, right, up, linear_deflection)
+    if (isinstance(mesh_deflection, bool) or not isinstance(mesh_deflection, (int, float))
+            or not math.isfinite(mesh_deflection) or mesh_deflection <= 0.0):
+        raise OcctBackendError("drawing mesh_deflection must be finite and positive in the shape's unit")
+    slab = _drawing_depth_range(depth_range)
+    occ = _occt()
+    selected = _drawing_entries(occ, entries, object_ids)
+    origin, right, _, normal = frame
+    try:
+        participating = []
+        for entry in selected:
+            shape = entry.shape if slab is None else _depth_clipped_shape(occ, entry, frame, slab)
+            if shape is not None:
+                participating.append((entry.name, shape))
+        if not participating:
+            return ()
+        algorithm = occ.HLRBRep.HLRBRep_PolyAlgo()
+        for name, shape in participating:
+            # A mesh left from another drawing would make the lines depend on what was drawn before.
+            occ.BRepTools.BRepTools.Clean_s(shape)
+            occ.BRepMesh.BRepMesh_IncrementalMesh(shape, float(mesh_deflection), False, 0.5, True)
+            # A face left without triangles would hide nothing; the caller solves exactly instead.
+            for item in _explore(occ, shape, occ.TopAbs.TopAbs_FACE):
+                if occ.BRep.BRep_Tool.Triangulation_s(occ.TopoDS.TopoDS.Face_s(item), occ.TopLoc.TopLoc_Location()) is None:
+                    raise OcctBuildError(f"drawing object {name!r}: a face could not be triangulated")
+            algorithm.Load(shape)
+        # The polygonal solve projects from the model origin whatever the projector's origin, so the drawing
+        # origin is taken off its output.
+        axis = occ.gp.gp_Ax2(occ.gp.gp_Pnt(0, 0, 0), occ.gp.gp_Dir(*normal), occ.gp.gp_Dir(*right))
+        algorithm.Projector(occ.HLRAlgo.HLRAlgo_Projector(axis))
+        algorithm.Update()
+        _, right, up, _ = frame
+        du, dv = (sum(o * d for o, d in zip(origin, axis_)) for axis_ in (right, up))
+        extraction = occ.HLRBRep.HLRBRep_PolyHLRToShape()
+        extraction.Update(algorithm)
+        lines = []
+        for name, shape in participating:
+            for kind, methods in (("visible", ("VCompound", "OutLineVCompound")),
+                                  ("hidden", ("HCompound", "OutLineHCompound"))):
+                for method in methods:
+                    for line in _drawing_polylines(occ, getattr(extraction, method)(shape), name, kind,
+                                                   linear_deflection=linear_deflection):
+                        points = tuple((x - du, y - dv) for x, y in line.points)
+                        lines.append(OcctDrawingPolyline(name, kind, min(points, tuple(reversed(points)))))
+    except OcctBackendError:
+        raise
+    except Exception as exc:
+        raise OcctBuildError(f"orthographic projection failed: {exc}") from exc
+    return tuple(sorted(set(lines), key=lambda line: (line.object_id, line.kind, line.points)))
+
+
 __all__ = [
     "OcctDrawingPolyline",
     "OcctDrawingRegion",
     "project_occt_lines",
+    "occt_edge_points",
+    "project_occt_mesh_lines",
 ]

@@ -1,4 +1,5 @@
 import { useConnection, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import { HandToAiBar } from "../handToAi/HandToAiBar";
 import { pageSource, type PageSource } from "../../workspaces/monkeyboard/boardScene";
 /**
  * The model, and the few facts that sit over it.
@@ -12,15 +13,21 @@ import { pageSource, type PageSource } from "../../workspaces/monkeyboard/boardS
 import { createRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent } from "react";
 
 import type { StudioApiError } from "../../api/project-runtime/client";
-import type { DocumentAnnotationRefDto, DocumentVisualInputDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/project-runtime/generated";
+import type { DocumentAnnotationRefDto, DocumentVisualInputDto, GestureDto, ModelSourceDto, ProjectArtifactDto, SourceDocumentDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/project-runtime/generated";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
-import { ErrorPanel } from "../../app/ErrorPanel";
+import { ErrorPanel, PlainFailure, plainFailureText } from "../../app/ErrorPanel";
+import { asStudioApiError } from "../../api/project-runtime/error";
+import { QuickTickets, settleElevations } from "./quickDrawing";
 import { designObjectLabel } from "../../app/format";
 import type { EvidenceTab } from "../../app/evidence";
+import { FailureActions } from "../../app/FailureActions";
 import { LoadingOverlay } from "../../app/LoadingOverlay";
+import { useCommandActions } from "../commands/CommandProvider";
+import { dialogOpen } from "../commands/keys";
 import { useT } from "../../i18n/useT";
 import { InlineDecision } from "../../notifications/cards/InlineDecision";
 import { usePreferences } from "../settings/preferences";
+import { COMMAND_TREE } from "../commands/tree.generated";
 import { useNoticeRegion } from "../../notifications/regions";
 import type { SceneInspection } from "../../workspaces/monkeyarch/viewer/sceneInspection";
 import {
@@ -35,6 +42,12 @@ import {
 /** The live section's directions and the coordinate each cuts (G5). */
 type SectionAxis = "z" | "x" | "y";
 const SECTION_AXES: Record<SectionAxis, 0 | 1 | 2> = { x: 0, y: 1, z: 2 };
+type QuickDrawingKind = "plan" | "section" | "elevations";
+// +Y is north: the front view looks north from the south side (the drawing route's view frames).
+const QUICK_ELEVATIONS = [["front", "stage.quick.south"], ["back", "stage.quick.north"], ["left", "stage.quick.west"], ["right", "stage.quick.east"]] as const;
+// One direction asked for by name ("出一张南立面") draws that one elevation only.
+const QUICK_DIRECTIONS = { south: 0, north: 1, west: 2, east: 3 } as const;
+const QUICK_DIRECTION_OF: Record<string, keyof typeof QUICK_DIRECTIONS> = { front: "south", back: "north", left: "west", right: "east" };
 import { Annotate, GESTURE_TOOLS, type AnnotationStyle, type GestureTool } from "../../workspaces/monkeyarch/Annotate";
 import { VersionsStrip, type VersionGroup, type DesignHistoryControls } from "./VersionsStrip";
 import { DocumentCanvas, type DocumentViewContext } from "../../workspaces/monkeydiagram/DocumentCanvas";
@@ -219,6 +232,8 @@ export function Stage({
   status,
   artifactError,
   picked,
+  importedModel,
+  importChoice,
   versions,
   hasNewVersions = false,
   onVersionsOpen,
@@ -244,13 +259,17 @@ export function Stage({
   canUndoGesture,
   canRedoGesture,
   onEraseGestures,
+  onReplaceGesture,
+  onStartPaper,
   modelAnnotations,
   annotationsReady,
   tracingPaperReview,
+  handToAi,
   documentProjectId,
   documentModelSources,
   editingModelSource,
   viewedModelSource,
+  viewedAsset = null,
   onContinueModelSource,
   onDocumentSubmit,
   documentVisualInputAvailable,
@@ -305,6 +324,14 @@ export function Stage({
   status: ViewportStatus;
   artifactError: StudioApiError | null;
   picked: PickedFacts | null;
+  /**
+   * The model on view was attached from outside the project (a Live Rhino snapshot, an uploaded 3dm): a click
+   * on it names nothing, so it offers to make the model a design that can be changed (#300 item 22 B).
+   */
+  importedModel?: { onConvert(): void; busy: boolean };
+  /** Which attached model to make a design of, when there are several: the last attached chosen first (S21). */
+  importChoice?: { models: readonly { assetSha256: string; label: string }[]; selected: string; busy: boolean;
+    onSelect(assetSha256: string): void; onConvert(): void; onCancel(): void };
   versions: readonly VersionGroup[];
   hasNewVersions?: boolean;
   onVersionsOpen?(): void;
@@ -335,13 +362,19 @@ export function Stage({
   canUndoGesture: boolean;
   canRedoGesture: boolean;
   onEraseGestures(indices: readonly number[]): void;
+  onReplaceGesture?(index: number, gesture: GestureDto): void;
+  onStartPaper?(): boolean;
   modelAnnotations: ModelAnnotationsHandle | null;
   annotationsReady: boolean;
   tracingPaperReview?: { enabled: boolean; busy: boolean; sent: boolean; error: string | null; onSend(): void };
+  /** S08: 「交给 AI」 for the tracing paper's marks and one sentence; absent where no conversation can take them. */
+  handToAi?: { words: string; enabled: boolean; busy: boolean; error: string | null; sent: string | null; onWords(words: string): void; onSend(): void };
   documentProjectId: string | null;
   documentModelSources: readonly { label: string; modelSource: ModelSourceDto }[];
   editingModelSource: ModelSourceDto | null;
   viewedModelSource: ModelSourceDto | null;
+  /** A model brought in as a file, drawn by its own asset when it has no retained model source (S15). */
+  viewedAsset?: { runId: string; assetSha256: string } | null;
   onContinueModelSource(source: ModelSourceDto): Promise<void>;
   onDocumentSubmit(utterance: string, refs: readonly DocumentAnnotationRefDto[], modelSource: ModelSourceDto, visuals: DocumentVisualInputDto[]): Promise<void>;
   documentVisualInputAvailable: boolean;
@@ -435,7 +468,9 @@ export function Stage({
    */
   model?: {
     onInteraction?(): void;
-    sync?: { dirty: boolean; busy: boolean; error: string | null; autosave?: "saved" | "saving"; onSync(): void };
+    sync?: { dirty: boolean; busy: boolean; error: string | null; autosave?: "saved" | "saving"; onSync(): void;
+      /** The edits waiting are a draft restored from an earlier session: Record or discard it (S19). */
+      restored?: boolean; onDiscard?(): void };
     onDelete(): void;
     canDelete: boolean;
     deleting: boolean;
@@ -478,6 +513,7 @@ export function Stage({
   activeRef.current = active;
   const { developerMode, language } = usePreferences();
   const zh = language === "zh-CN";
+  const commandLabel = (id: string) => COMMAND_TREE.commands.find((command) => command.id === id)?.label[language] ?? id;
   const [annotationStyle, setAnnotationStyle] = useState<AnnotationStyle>({ color: "#e5534b", lineWidth: 2 });
   const [annotationCancel, setAnnotationCancel] = useState(0);
   const documentOpen = documentView.open;
@@ -491,6 +527,23 @@ export function Stage({
   const documentRunId = documentView.runId ?? editingBaseRunId;
   const [eraser, setEraser] = useState(false);
   const [annotationToolsOpen, setAnnotationToolsOpen] = useState(false);
+  const commitPendingInk = useRef<(() => void) | null>(null);
+  const paperSourceKey = `${loadedRunId}:${loadedShas.join(":")}`;
+  const [annotationSourceKey, setAnnotationSourceKey] = useState(paperSourceKey);
+  const tracingOpen = annotationSourceKey === paperSourceKey && (annotationToolsOpen || tool !== null || eraser);
+  useLayoutEffect(() => {
+    if (annotationSourceKey === paperSourceKey) return;
+    setAnnotationToolsOpen(false); setEraser(false); onTool(null);
+    setAnnotationSourceKey(paperSourceKey);
+  }, [annotationSourceKey, paperSourceKey, onTool]);
+  const exitTracingPaper = useCallback(() => {
+    commitPendingInk.current?.();
+    setAnnotationCancel((value) => value + 1);
+    setEraser(false);
+    onTool(null);
+    setAnnotationToolsOpen(false);
+    if (modelAnnotations?.ready) void modelAnnotations.save().then(() => modelAnnotations.refreshHistory()).catch(() => undefined);
+  }, [modelAnnotations, onTool]);
   // #352: Export and More in the bar hold what the view tools' panel held; one opens at a time.
   const [barMenu, setBarMenu] = useState<"export" | "more" | null>(null);
   // How this browser shows models: view state, like a pinned panel, not a Hub setting. The
@@ -536,6 +589,53 @@ export function Stage({
       setSectionDrawing({ state: "drawn", page: pageSource(drawn, drawn.pages[0]?.pageIndex ?? 0), fileName: drawn.fileName });
     } catch (error) {
       setSectionDrawing({ state: "failed", detail: error instanceof Error ? error.message : String(error) });
+    }
+  };
+  // S15: plans, sections and elevations in one click from the model on screen, at default places, with no
+  // drawing settings first: a plan 1.2 m above the model's bottom (the drawing route's default), a section
+  // through the middle of the model along its long side, and the four elevations.
+  const [quickDrawing, setQuickDrawing] = useState<{ kind: QuickDrawingKind; state: "busy" }
+    | { kind: QuickDrawingKind; state: "drawn"; pages: { page: PageSource; label: string }[]; failed: { label: string; direction: string; error: unknown }[] }
+    | { kind: QuickDrawingKind; state: "failed"; error: unknown } | null>(null);
+  // An answer that comes back after the model on screen changed is the other model's: it is not shown here (S15).
+  const quickTickets = useRef(new QuickTickets());
+  useEffect(() => { quickTickets.current.expire(); setQuickDrawing(null); }, [viewedModelSource?.runId, viewedModelSource?.assetSha256, viewedAsset?.assetSha256]);
+  const quickSource = documentProjectId === null ? null : viewedModelSource ? { projectId: documentProjectId, modelSource: viewedModelSource }
+    : viewedAsset ? { projectId: documentProjectId, sourceAsset: viewedAsset } : null;
+  const quickDraw = async (kind: QuickDrawingKind, only: keyof typeof QUICK_DIRECTIONS | null = null) => {
+    if (!quickSource || quickDrawing?.state === "busy") return;
+    const ticket = quickTickets.current.issue();
+    setQuickDrawing({ kind, state: "busy" });
+    let failed: { label: string; direction: string; error: unknown }[] = [];
+    try {
+      const pages: { page: PageSource; label: string }[] = [];
+      const keep = (drawn: SourceDocumentDto, label: string) => pages.push({ page: pageSource(drawn, drawn.pages[0]?.pageIndex ?? 0), label });
+      if (kind === "plan") keep(await studio.drawingPlan({ ...quickSource, sourceKind: "human", board: "on-request" }), t("stage.quick.planLabel"));
+      else if (kind === "section") {
+        const bounds = viewportRef.current?.bounds();
+        if (!bounds) throw new Error(t("stage.section.drawUnavailable"));
+        // Along the long side: the plane holds the long axis, its normal the short one.
+        const across = bounds.max[0] - bounds.min[0] >= bounds.max[1] - bounds.min[1] ? 1 : 0;
+        // Two decimals of the model's unit, as the drawing's panel shows its numbers.
+        const middle = (axis: 0 | 1 | 2) => Math.round((bounds.min[axis] + bounds.max[axis]) * 50) / 100;
+        const origin: Vec3 = [middle(0), middle(1), middle(2)];
+        const normal: Vec3 = [0, 0, 0];
+        normal[across] = -1;
+        keep(await studio.drawingPlan({ ...quickSource, sourceKind: "human", board: "on-request", section: { origin, normal } }), t("stage.quick.sectionLabel"));
+      } else {
+        // All four at once: the Runtime's drawing workers solve them side by side.
+        const views = only === null ? QUICK_ELEVATIONS : [QUICK_ELEVATIONS[QUICK_DIRECTIONS[only]]];
+        // Each one drawn is kept; one refused is said on its own, and the others are not lost with it.
+        const results = await Promise.allSettled(views.map(([view]) => studio.elevation({ ...quickSource, view, hiddenLines: true })));
+        const settled = settleElevations(results, views.map(([view, label]) => ({ label: t(label), direction: QUICK_DIRECTION_OF[view] })),
+          (drawn) => pageSource(drawn, drawn.pages[0]?.pageIndex ?? 0));
+        pages.push(...settled.pages);
+        failed = settled.failed;
+        if (pages.length === 0) throw failed[0].error;
+      }
+      if (quickTickets.current.isCurrent(ticket)) setQuickDrawing({ kind, state: "drawn", pages, failed });
+    } catch (error) {
+      if (quickTickets.current.isCurrent(ticket)) setQuickDrawing({ kind, state: "failed", error });
     }
   };
   const chooseSection = (axis: SectionAxis | "off") => {
@@ -1106,19 +1206,85 @@ export function Stage({
     keys.onEditLocked?.();
     return true;
   }, []);
+  // S15: a mass drawn on the ground while the view looks level at it (Front, Right, or a camera turned so)
+  // comes out flat and is refused as no valid shape when it is recorded. Picking a drawing tool there turns
+  // the view to the axonometric one first, and the step line says so.
+  const [turnedForSketch, setTurnedForSketch] = useState(false);
   const chooseDrawingTool = useCallback((next: SketchTool | null) => {
     if (next !== null && refuseLockedEdit()) { setMoreToolsOpen(false); return; }
+    const camera = next !== null && workPlaneName === "xy" ? viewportRef.current?.camera() : null;
+    const look = camera ? camera.target.map((value, axis) => value - camera.position[axis]) : null;
+    const level = look !== null && Math.abs(look[2]) < 0.35 * Math.hypot(look[0], look[1], look[2]);
+    if (level) viewportRef.current?.standardView("iso");
+    setTurnedForSketch(level);
     sketchEpoch.current += 1;
     setMoreToolsOpen(false);
     stopPushPull();
     stopMove();
     stopRotate();
     stopScale();
-    setAnnotationToolsOpen(false); setBarMenu(null); setVersionsOpen(false); setParameterLocksOpen(false);
+    if (tracingOpen) exitTracingPaper();
+    setBarMenu(null); setVersionsOpen(false); setParameterLocksOpen(false);
     onTool(null); setEraser(false); setMeasuring(false); stopMeasuring();
     model?.onTool?.("select");
     showSketch({ ...cancelledSketch(interaction.current.sketch), tool: next });
-  }, [onTool, model?.onTool, refuseLockedEdit, showSketch, stopMeasuring, stopPushPull, stopMove, stopRotate, stopScale]);
+  }, [onTool, model?.onTool, refuseLockedEdit, showSketch, stopMeasuring, stopPushPull, stopMove, stopRotate, stopScale, tracingOpen, exitTracingPaper, workPlaneName, viewportRef]);
+  const paperSourceRef = useRef(modelAnnotations?.save);
+  paperSourceRef.current = modelAnnotations?.save;
+  const openTracingPaper = async () => {
+    chooseDrawingTool(null);
+    // Queued ink belongs to the old paper until its save has succeeded. A failed
+    // save reopens that draft instead of silently throwing it away for a blank.
+    const source = modelAnnotations?.save;
+    if (modelAnnotations?.ready && (modelAnnotations.dirty || modelAnnotations.saving || modelAnnotations.error)) {
+      try { await modelAnnotations.save(); } catch { /* Reopen the unsaved draft. */ }
+      if (paperSourceRef.current !== source || !activeRef.current) return false;
+    }
+    if (onStartPaper) onStartPaper();
+    else modelAnnotations?.startPaper();
+    setAnnotationToolsOpen(true);
+    onTool("freehand");
+    return true;
+  };
+  const clearTracingPaper = () => {
+    // The focused text editor commits on blur. All marks share one undo.
+    setAnnotationCancel((value) => value + 1);
+    onEraseGestures(gestures.map((_, index) => index));
+  };
+  const restoreTracingPaper = async (revision: string) => {
+    if (!modelAnnotations) return;
+    commitPendingInk.current?.();
+    const source = modelAnnotations.save;
+    try {
+      const paper = await modelAnnotations.restorePaper(revision);
+      if (paperSourceRef.current !== source || !activeRef.current) return;
+      const camera = paper.annotations[0]?.camera;
+      if (camera) viewportRef.current?.applyCamera({ ...camera, projection: camera.projection ?? "perspective", zoom: camera.zoom ?? 1 });
+      chooseDrawingTool(null);
+      setAnnotationToolsOpen(true);
+      onTool("freehand");
+    } catch { /* The existing annotation history status shows the failure. */ }
+  };
+  useEffect(() => {
+    if (versionsOpen) void modelAnnotations?.refreshHistory();
+  }, [versionsOpen, modelAnnotations?.refreshHistory]);
+  const tracingAvailable = () => active && !documentOpen && tracingOpen;
+  useCommandActions(active && !documentOpen ? {
+    "view.markup_tools.tracing_paper": { run: openTracingPaper,
+      available: () => !documentOpen && annotationsReady ? true : t("stage.annotations.loading") },
+    "view.markup_tools.cancel": { run: exitTracingPaper,
+      available: () => tracingAvailable() ? true : t("stage.tracingPaper.openFirst") },
+    "markup.clear": { run: clearTracingPaper,
+      available: () => tracingAvailable() && annotationsReady && gestures.length > 0 ? true : t("stage.tracingPaper.openFirst") },
+    "view.markup_tools.undo": { run: () => { setAnnotationCancel((value) => value + 1); onUndoGesture(); },
+      available: () => tracingAvailable() && canUndoGesture ? true : t("stage.tracingPaper.openFirst") },
+    "view.markup_tools.redo": { run: () => { setAnnotationCancel((value) => value + 1); onRedoGesture(); },
+      available: () => tracingAvailable() && canRedoGesture ? true : t("stage.tracingPaper.openFirst") },
+    "view.markup_tools.text": { run: async () => { if (!tracingOpen && !await openTracingPaper()) return; setEraser(false); onTool("text"); },
+      available: () => !documentOpen && annotationsReady ? true : t("stage.annotations.loading") },
+    "view.markup_tools.restore_paper": { run: ({ args }) => typeof args?.revisionSha256 === "string" && restoreTracingPaper(args.revisionSha256),
+      available: () => modelAnnotations?.ready ? true : t("stage.annotations.loading") },
+  } : {});
   const chooseMeasure = useCallback(() => {
     chooseDrawingTool(null);
     setMeasuring(true);
@@ -1216,10 +1382,28 @@ export function Stage({
     // armed, or the eraser. Not that strokes exist — those are undone from the
     // ink's own buttons, and a mark left on the model from an earlier round
     // does not get to take the keyboard away from the model for good.
-    busy: annotationsReady && (tool !== null || eraser),
+    busy: annotationsReady && tracingOpen,
   };
   const documentOpenRef = useRef(documentOpen);
   documentOpenRef.current = documentOpen;
+  // #614: one stable listener exits the whole paper before the model can take
+  // Escape. A paper's own text editor commits first; other editors keep the key.
+  const tracingPaperRef = useRef({ open: tracingOpen, exit: exitTracingPaper });
+  tracingPaperRef.current = { open: tracingOpen, exit: exitTracingPaper };
+  useEffect(() => {
+    const listen = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.isComposing || event.defaultPrevented || !activeRef.current ||
+          documentOpenRef.current || !tracingPaperRef.current.open) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && !target.closest(".annotate__text") && (target.isContentEditable ||
+          target.closest("input, textarea, select, [contenteditable], [role='dialog']"))) return;
+      if (dialogOpen()) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      tracingPaperRef.current.exit();
+    };
+    window.addEventListener("keydown", listen);
+    return () => window.removeEventListener("keydown", listen);
+  }, []);
   const cancelInkRef = useRef(setAnnotationCancel);
   cancelInkRef.current = setAnnotationCancel;
   useEffect(() => {
@@ -1269,10 +1453,11 @@ export function Stage({
       if (!keys || event.defaultPrevented) return;
       const target = event.target;
       if (target instanceof HTMLElement && (target.isContentEditable ||
-          target.closest("input, textarea, select, [contenteditable]") !== null)) {
+          target.closest("input, textarea, select, [contenteditable], [role='dialog']") !== null)) {
         // Someone is writing. Delete, Ctrl+Z and the rest belong to the text.
         return;
       }
+      if (dialogOpen()) return;
       // The drawings workspace owns its own keys while it is open.
       if (documentOpenRef.current) return;
       const control = event.ctrlKey || event.metaKey;
@@ -1347,7 +1532,9 @@ export function Stage({
     editingModelSource.runId === viewedModelSource.runId &&
     editingModelSource.stateDigest === viewedModelSource.stateDigest &&
     editingModelSource.assetSha256 === viewedModelSource.assetSha256;
-  const editingLabel = editingBaseLabel ?? versions.find((group) => group.runId === editingBaseRunId)?.exports[0]?.artifact.fileName ?? t("stage.base.savedSource");
+  // S01: a file name is not what a person calls a version; it shows for developers only.
+  // A model nothing names has no title on the bar (S15); the editing-base row still says it is the chosen version.
+  const editingLabel = editingBaseLabel ?? (developerMode ? versions.find((group) => group.runId === editingBaseRunId)?.exports[0]?.artifact.fileName : null) ?? null;
   const versionCount = designHistory ? designHistory.history?.stages.length ?? 0 : new Set([
     ...versions.flatMap((group) => group.exports.filter(({ artifact }) => artifact.format === "3dm" && artifact.sha256 !== null)
       .map(({ artifact }) => `${group.runId}:${artifact.sha256}`)),
@@ -1368,10 +1555,10 @@ export function Stage({
   </>;
   // #337: which model the next edit starts from. While that is the model on screen it is quiet words on the
   // status line; a different model, a refused act or an unsaved choice asks in one row above the canvas.
-  const baseQuestion = Boolean(baseNotice || baseRecord || baseNotSaved) || (editingBaseRunId !== null && (!sameSource || Boolean(baseError)));
+  const baseQuestion = Boolean(baseNotice || baseRecord || baseNotSaved) || (editingBaseRunId !== null && (Boolean(baseError) || (loadedRunId !== null && !sameSource)));
   const baseWords = editingBaseRunId !== null && <span role="status" aria-live="polite">
-    {changingBase ? t("stage.base.loading") : sameSource ? t("stage.base.sameSource") : t("stage.base.current")}
-    {!sameSource && <strong className="editing-base__name" title={editingLabel ?? undefined}> {editingLabel}</strong>}
+    {changingBase ? <span className="wait-late">{t("stage.base.loading")}</span> : sameSource ? t("stage.base.sameSource") : t("stage.base.current")}
+    {!sameSource && <strong className="editing-base__name" title={editingLabel ?? undefined}> {editingLabel ?? t("stage.base.savedSource")}</strong>}
   </span>;
   const editingStatus = baseQuestion ? (
     <InlineDecision className="editing-base" compact label={t("stage.base.label")}
@@ -1435,23 +1622,28 @@ export function Stage({
   const infoSubject = useMemo<ComponentInfoSubject | null>(() => {
     if (!infoOpen || documentOpen) return null;
     if (picked === null) return infoPending ? { kind: "pending" } : { kind: "unresolved", label: null };
-    if (picked.componentId === null) return { kind: "unresolved", label: designObjectLabel(picked.elementId) };
+    if (picked.componentId === null) return { kind: "unresolved", label: designObjectLabel(picked.elementId, zh) };
     return { kind: "card", card: buildComponentCard({
       componentId: picked.componentId, elementId: picked.elementId,
-      modelLabel: designObjectLabel(picked.componentId) ?? picked.componentId,
+      modelLabel: designObjectLabel(picked.componentId, zh) ?? picked.componentId,
       shown: shownModel, pickMatchesShown: pickMatchesShown(picked, shownModel), board: componentBoard,
       lineage: shownLineage ?? null, lineagePending: shownLineage === undefined, changes: changesSince,
     }, statusWord) };
-  }, [infoOpen, documentOpen, picked, infoPending, shownModel, componentBoard, statusWord, shownLineage, changesSince]);
+  }, [infoOpen, documentOpen, picked, infoPending, shownModel, componentBoard, statusWord, shownLineage, changesSince, zh]);
   const pickedStatus = picked && (
     <span className="picked" title={developerMode ? t("stage.picked.title", {
       status: picked.status, sourceState: picked.sourceState,
-    }) : designObjectLabel(picked.elementId ?? picked.componentId) ?? undefined}>
+    }) : designObjectLabel(picked.elementId ?? picked.componentId, zh) ?? undefined}>
       <span className="label">{t("stage.picked.label")}</span>
       <span className="picked__name">{developerMode
         ? picked.elementId ?? picked.componentId ?? t("stage.picked.none")
-        : designObjectLabel(picked.elementId ?? picked.componentId) ?? t("stage.picked.unresolved")}</span>
+        : designObjectLabel(picked.elementId ?? picked.componentId, zh) ?? t("stage.picked.unresolved")}</span>
       {developerMode && picked.status !== "resolved" && <span className="picked__meta">{picked.status}</span>}
+      {importedModel && picked.componentId === null && picked.elementId === null && <>
+        <span className="picked__meta">{t("stage.picked.imported")}</span>
+        <button type="button" className="picked__action" data-command="design.from_import" disabled={importedModel.busy}
+          onClick={importedModel.onConvert}>{t("stage.picked.convert")}</button>
+      </>}
     </span>
   );
   // #352: the drawing plane sits in the tools' More; while it is not the ground (XY), the status
@@ -1462,9 +1654,9 @@ export function Stage({
   </span>;
   const sessionStatus = <>
     {modelAnnotations && <div className="stage-annotations-status" data-model-annotations-status={modelAnnotations.error ? "error" :
-      !modelAnnotations.ready ? "loading" : modelAnnotations.saving || modelAnnotations.dirty ? "saving" : "saved"}>
-      {!modelAnnotations.error && <span role="status">{t(!modelAnnotations.ready ? "stage.annotations.loading" :
-        modelAnnotations.saving || modelAnnotations.dirty ? "stage.annotations.saving" : "stage.annotations.saved")}</span>}
+      !modelAnnotations.ready ? "loading" : modelAnnotations.saving ? "saving" : modelAnnotations.dirty ? "draft" : "saved"}>
+      {!modelAnnotations.error && <span role="status" className={modelAnnotations.ready ? undefined : "wait-late"}>{t(!modelAnnotations.ready ? "stage.annotations.loading" :
+        modelAnnotations.saving ? "stage.annotations.saving" : modelAnnotations.dirty ? "stage.annotations.draft" : "stage.annotations.saved")}</span>}
       {modelAnnotations.error && <>
         <ErrorPanel error={modelAnnotations.error} what="/api/model-annotations" />
         {/* A conflict reads what is newer; a load or save that failed tries again. */}
@@ -1478,7 +1670,8 @@ export function Stage({
   </>;
   const toggleVersions = () => {
     if (!versionsOpen) onVersionsOpen?.();
-    setVersionsOpen((open) => !open); setAnnotationToolsOpen(false); setBarMenu(null); setParameterLocksOpen(false);
+    if (tracingOpen) exitTracingPaper();
+    setVersionsOpen((open) => !open); setBarMenu(null); setParameterLocksOpen(false);
     setInfoOpen(false);
   };
   // #352: Export and More take the place of the palette's view tools, one open at a time and,
@@ -1488,7 +1681,10 @@ export function Stage({
   const toggleBarMenu = (menu: "export" | "more") => {
     if (barMenu === menu) { setBarMenu(null); return; }
     setBarMenu(menu);
-    setAnnotationToolsOpen(false); setParameterLocksOpen(false); setMoreToolsOpen(false);
+    // More holds the views: turning the model to look again is part of marking it up, so the tracing paper
+    // stays open with its tools (S15; it closed, saved, and had to be opened again). Export still ends it.
+    if (tracingOpen && menu !== "more") exitTracingPaper();
+    setParameterLocksOpen(false); setMoreToolsOpen(false);
     if ((workspaceElement.current?.clientWidth ?? 0) <= 560) setVersionsOpen(false);
   };
   const workModelTitle = workModel && (workModel.refusal === "busy-elsewhere"
@@ -1500,6 +1696,48 @@ export function Stage({
         : workModel.refusal === "nothing-loaded"
           ? t("stage.tools.workModelNothingLoaded")
           : t("stage.tools.workModelTitle", { fileName: workModel.source?.fileName ?? "" }));
+  // Ctrl K runs Screenshot, the editable 3dm and the live section here. Their buttons sit in Export and
+  // More, closed menus that the attention shell's bar leaves out, so pointing at them did nothing.
+  const downloadExport = useRef(false);
+  useCommandActions(active ? {
+    // The draft's Undo, for a failure's "Undo the last edit" as well as the tool button.
+    ...(model?.onUndo ? { "draft.tools.undo": {
+      run: () => model.onUndo(),
+      available: () => model.canUndo && !sketchBusy && !actionInProgress ? true : t("stage.model.undo"),
+    } } : {}),
+    "model.capture": {
+      run: () => { void onCapture(); },
+      available: () => loadedRunId === null ? t("stage.tools.screenshotUnavailable")
+        : blend !== null ? t("stage.tools.screenshotBlendUnavailable")
+          : captureState === "busy" ? t("stage.tools.screenshotBusy") : true,
+    },
+    ...(workModel ? { "model.export_3dm.editable": {
+      run: () => { downloadExport.current = true; workModel.onExport(); },
+      available: () => workModel.source !== null && !workModel.busy ? true : workModelTitle ?? t("stage.tools.workModelNothingLoaded"),
+    } } : {}),
+    "drawing.live_section.draw": {
+      run: () => { void drawSection(); },
+      available: () => section !== null && viewedModelSource ? true : t("stage.section.drawUnavailable"),
+    },
+    ...Object.fromEntries((["plan", "section", "elevations"] as const).map((kind) => [`drawing.quick.${kind}`, {
+      run: () => { void quickDraw(kind); },
+      available: () => !quickSource ? t("stage.quick.unavailable") : quickDrawing?.state === "busy" ? t("stage.section.drawing") : true,
+    }])),
+    ...Object.fromEntries((Object.keys(QUICK_DIRECTIONS) as (keyof typeof QUICK_DIRECTIONS)[]).map((direction) => [`drawing.quick.elevation_${direction}`, {
+      run: () => { void quickDraw("elevations", direction); },
+      available: () => !quickSource ? t("stage.quick.unavailable") : quickDrawing?.state === "busy" ? t("stage.section.drawing") : true,
+    }])),
+  } : {});
+  // An export Ctrl K asked for comes down as a file: the attention shell has no Export menu to save it from.
+  const exportedSha = workModel?.exported?.sha256 ?? null;
+  useEffect(() => {
+    if (!downloadExport.current || exportedSha === null || !workModel?.exported) return;
+    downloadExport.current = false;
+    const link = document.createElement("a");
+    link.href = connection.url(`/api/artifacts/${exportedSha}/bytes`);
+    link.download = workModel.exported.fileName;
+    link.click();
+  }, [exportedSha]);
   // #352: Export, in the bar: the editable copy of the model on screen and, once made, its file.
   const exportMenu = workModel && (bar.shown("model.export_3dm.editable") || bar.shown("model.export_3dm.save")) && <span ref={exportMenuElement} className="stage-menu">
     <MenuCommand data-command="view.menu.toggle" data-command-arg="modeling_export" aria-expanded={barMenu === "export"} aria-controls="stage-export-menu" onClick={() => toggleBarMenu("export")}>
@@ -1569,7 +1807,7 @@ export function Stage({
           {t("stage.section.drawn", { fileName: sectionDrawing.fileName })}
           {onBoard && <button data-command="drawing.live_section.place_on_board" type="button" data-section-board onClick={() => onBoard(sectionDrawing.page)}>{t("stage.section.toBoard")}</button>}
         </p>}
-        {sectionDrawing?.state === "failed" && <p className="stage-menu__note" role="alert">{sectionDrawing.detail}</p>}
+        {sectionDrawing?.state === "failed" && <p className="stage-menu__note" role="alert"><PlainFailure error={{ code: "CLIENT_ERROR", detail: sectionDrawing.detail }} /></p>}
       </>}
       <span className="stage-menu__sep" aria-hidden="true" />
       {/* One button, home: the reference run's exports when it left any, else the export the
@@ -1596,7 +1834,7 @@ export function Stage({
       {/* #337: Modeling's menus, in the project bar while Modeling is on screen: the model the next edit
           starts from, Versions, the Design Tree, the commands on the editing base, then Export and More (#352). */}
       <SurfaceMenus label={t("stage.ariaLabel")} active={active}>
-        {editingBaseRunId !== null && <><span className="stage-bar__model" title={editingLabel ?? undefined}>{editingLabel}</span><MenuSeparator /></>}
+        {editingBaseRunId !== null && editingLabel && <><span className="stage-bar__model" title={editingLabel ?? undefined}>{editingLabel}</span><MenuSeparator /></>}
         {/* Versions and the Design Tree stay over a document page: a drawing comment views and continues Stages (#302).
             Export and More act on the 3D model and wait until the page is closed. */}
         <MenuCommand data-command="design.go_to_step.versions" className="stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel" onClick={toggleVersions}>
@@ -1613,9 +1851,37 @@ export function Stage({
         {!onReturnToBoard && picked && onOpenBoard && <MenuCommand data-command="view.tab.board" onClick={onOpenBoard}>{t("workspace.monkeyboard")}</MenuCommand>}
         {!documentOpen && picked?.componentId && !infoOpen && <MenuCommand data-command="component.inspect.open" aria-controls="stage-component-info" onClick={openInfo}>
           {t("componentInfo.title")}</MenuCommand>}
+        {!documentOpen && (["plan", "section", "elevations"] as const).map((kind) =>
+          <MenuCommand key={kind} data-command={`drawing.quick.${kind}`} disabled={!quickSource || quickDrawing?.state === "busy"}
+            title={quickSource ? t(`stage.quick.${kind}Title`) : t("stage.quick.unavailable")} onClick={() => void quickDraw(kind)}>
+            {quickDrawing?.kind === kind && quickDrawing.state === "busy" ? t("stage.section.drawing") : t(`stage.quick.${kind}`)}</MenuCommand>)}
         {!documentOpen && exportMenu}
         {!documentOpen && moreMenu}
       </SurfaceMenus>
+      {quickDrawing && quickDrawing.state !== "busy" && <div className="stage-quick-drawings" role="status" data-quick-drawing={quickDrawing.state}>
+        {quickDrawing.state === "drawn" ? <>
+          <span>{t("stage.quick.drawn", { names: quickDrawing.pages.map((row) => row.label).join("、") })}</span>
+          {onBoard && <button type="button" data-command="drawing.live_section.place_on_board"
+            onClick={() => { for (const row of quickDrawing.pages) onBoard(row.page); }}>{t("stage.section.toBoard")}</button>}
+          {quickDrawing.failed.map((row) => <span key={row.direction} className="stage-quick-drawings__failed" role="alert" data-quick-failed={row.direction}>
+            {t("stage.quick.oneFailed", { label: row.label, reason: plainFailureText(row.error) })}
+            <button type="button" data-command={`drawing.quick.elevation_${row.direction}`} onClick={() => void quickDraw("elevations", row.direction as keyof typeof QUICK_DIRECTIONS)}>
+              {t("stage.quick.onlyThis", { label: row.label })}</button>
+          </span>)}
+        </> : <PlainFailure error={asStudioApiError(quickDrawing.error)} />}
+        <button type="button" data-command="view.notice.dismiss" className="stage-quick-drawings__close" aria-label={t("stage.quick.close")} onClick={() => setQuickDrawing(null)}>×</button>
+      </div>}
+      {importChoice && <div className="stage-quick-drawings stage-import-choice" role="group" aria-label={t("stage.importChoice.label")}>
+        <span>{t("stage.importChoice.label")}</span>
+        <select aria-label={t("stage.importChoice.label")} value={importChoice.selected} disabled={importChoice.busy}
+          onChange={(event) => importChoice.onSelect(event.target.value)}>
+          {importChoice.models.map((model) => <option key={model.assetSha256} value={model.assetSha256}>{model.label}</option>)}
+        </select>
+        <button type="button" data-command="design.from_import" disabled={importChoice.busy} onClick={importChoice.onConvert}>
+          {t("stage.picked.convert")}</button>
+        <button type="button" data-command="view.notice.dismiss" className="stage-quick-drawings__close"
+          aria-label={t("stage.quick.close")} onClick={importChoice.onCancel}>×</button>
+      </div>}
       {onReturnToBoard && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
         <button data-command="view.tab.board" type="button" onClick={onReturnToBoard}>{t("workspace.returnToBoard")}</button>
       </div>}
@@ -2036,7 +2302,7 @@ export function Stage({
           onDoubleClick={(event) => { event.preventDefault(); interaction.current.sketch.tool === "line" ? finishPath() : closePolygon(); }}
         />
       )}
-      <Annotate
+      {tracingOpen && <Annotate key={paperSourceKey}
         viewportRef={viewportRef}
         tool={annotationsReady ? tool : null}
         gestures={gestures}
@@ -2045,7 +2311,16 @@ export function Stage({
         cancelToken={annotationCancel}
         eraser={annotationsReady && eraser}
         onErase={onEraseGestures}
-      />
+        onReplaceGesture={onReplaceGesture}
+        commitPendingRef={commitPendingInk}
+        onClosePaper={modelAnnotations ? () => { void modelAnnotations.save().catch(() => undefined); } : undefined}
+      />}
+      {modelAnnotations?.error && !versionsOpen && <div className="annotate__note" role="alert">
+        <ErrorPanel error={modelAnnotations.error} what="/api/model-annotations" />
+        <button data-command={modelAnnotations.error.status === 409 ? "view.notice.read_latest" : "view.notice.retry"} data-command-arg="model_marks" type="button"
+          onClick={() => void (modelAnnotations.error?.status === 409 ? modelAnnotations.reload() : modelAnnotations.save()).catch(() => undefined)}>
+          {t(modelAnnotations.error.status === 409 ? "stage.annotations.reload" : "stage.annotations.retry")}</button>
+      </div>}
       {/* The shield preserves the stage's loading boundary while the translucent matte
           backing leaves the previous picture legible as context. */}
       {status === "loading" && <LoadingOverlay mode="stage" status={message} />}
@@ -2124,7 +2399,7 @@ export function Stage({
                   <span className="model-tools__more-sep" aria-hidden="true" />
                 </>}
                 <ModelToolButton data-command="view.markup_tools.tracing_paper" icon="annotate" showLabel label={t("stage.tools.annotate")} aria-expanded={annotationToolsOpen} aria-controls="annotation-tools"
-                  onClick={() => { setAnnotationToolsOpen((open) => !open); setBarMenu(null); setVersionsOpen(false); setParameterLocksOpen(false); setMoreToolsOpen(false); }} />
+                  disabled={!annotationsReady} onClick={() => { if (tracingOpen) exitTracingPaper(); else void openTracingPaper(); }} />
                 {onSketch && <span className="model-tools__more-sep" aria-hidden="true" />}
                 {onSketch && <label className="model-tools__more-plane">
                   <span>{t("stage.sketch.workPlane")}</span>
@@ -2147,27 +2422,30 @@ export function Stage({
               className={`model-tools__group model-tools__sync${recordNamed ? "" : " model-tools__sync--status-only"}${recordAbove ? " model-tools__sync--above" : ""}`}>
               {recordNamed && <ModelToolButton data-command="draft.record.save" icon="sync" label={t("stage.sync.label")} showLabel
                 disabled={model.sync.busy} onClick={model.sync.onSync} />}
+              {recordNamed && model.sync.restored && model.sync.onDiscard && <ModelToolButton data-command="draft.record.discard" icon="close"
+                label={t("stage.sync.discard")} showLabel onClick={model.sync.onDiscard} />}
               <span className="model-tools__sync-status" role={model.sync.error ? "alert" : "status"}>
-                {model.sync.error ?? (model.sync.busy ? t("stage.sync.busy") : model.sync.autosave
+                {model.sync.error ?? (model.sync.busy ? t("stage.sync.busy") : model.sync.restored ? t("stage.sync.restored") : model.sync.autosave
                   ? t(model.sync.autosave === "saved" ? "stage.sync.autosaved" : "stage.sync.autosaving") : t("stage.sync.dirty"))}
+                {model.sync.error && <FailureActions reason={model.sync.error} undo />}
               </span>
             </div>}
           </div>
           {annotationToolsOpen && <div id="annotation-tools" className="viewtools viewtools--panel" role="group" aria-label={t("stage.tools.annotate")}>
             <ModelToolButton data-command="view.markup_tools.eraser" icon="erase" label={t("document.tool.eraser")} aria-pressed={eraser} disabled={!annotationsReady}
-              onClick={() => { const next = !eraser; chooseDrawingTool(null); setAnnotationToolsOpen(true); setAnnotationCancel((value) => value + 1); setEraser(next); }} />
+              onClick={() => { setAnnotationCancel((value) => value + 1); onTool(null); setEraser((value) => !value); }} />
             {/* #577: the whole tracing paper in one undoable step, through the eraser's own path. */}
-            <ModelToolButton data-command="markup.clear" icon="clear" label={t("stage.tools.clear.label")} disabled={!annotationsReady || gestures.length === 0}
-              onClick={() => { setAnnotationCancel((value) => value + 1); setEraser(false); onEraseGestures(gestures.map((_, index) => index)); }} />
+            <ModelToolButton data-command="markup.clear" icon="clear" showLabel shortcut="Ctrl+Shift+X" label={commandLabel("markup.clear")} disabled={!annotationsReady || gestures.length === 0}
+              onClick={clearTracingPaper} />
             <ModelToolButton data-command="view.markup_tools.undo" icon="undo" label={t("stage.tools.undo.label")} disabled={!canUndoGesture} onClick={onUndoGesture} />
             <ModelToolButton data-command="view.markup_tools.redo" icon="redo" label={t("document.redo")} disabled={!canRedoGesture} onClick={onRedoGesture} />
-            {(tool !== null || eraser) && <ModelToolButton data-command="view.markup_tools.cancel" icon="close" label={t("stage.tools.cancel.label")}
-              onClick={() => { setAnnotationCancel((value) => value + 1); setEraser(false); onTool(null); }} />}
+            <ModelToolButton data-command="view.markup_tools.cancel" icon="close" showLabel shortcut="Esc" label={commandLabel("view.markup_tools.cancel")}
+              onClick={exitTracingPaper} />
             {GESTURE_TOOLS.map((item) => (
               <button data-command={`view.markup_tools.${item.kind}`} key={item.kind} type="button" disabled={!annotationsReady} title={t(item.titleKey)}
                 aria-pressed={!eraser && tool === item.kind}
                 onClick={() => { setEraser(false); onTool(!eraser && tool === item.kind ? null : item.kind); }}>
-                {item.glyph} {t(item.labelKey)}
+                {item.glyph} {commandLabel(`view.markup_tools.${item.kind}`)}
               </button>
             ))}
             <span className="viewtools__sep" aria-hidden="true" />
@@ -2182,6 +2460,12 @@ export function Stage({
               ))}
             </span>
             {tool && activeTool && <span className="viewtools__hint quiet">{t("stage.tools.drawingHint", { tool: t(activeTool.labelKey) })}</span>}
+            {handToAi && <>
+              <span className="viewtools__sep" aria-hidden="true" />
+              <HandToAiBar className="model-hand-to-ai" words={handToAi.words} onWords={handToAi.onWords} disabled={!handToAi.enabled}
+                sending={handToAi.busy} error={handToAi.error} onSend={handToAi.onSend} />
+              {handToAi.sent && !handToAi.error && <span className="quiet" role="status">{handToAi.sent}</span>}
+            </>}
             {tracingPaperReview && <>
               <span className="viewtools__sep" aria-hidden="true" />
               <button data-command="markup.hand_to_ai.send_review" type="button" disabled={!tracingPaperReview.enabled || tracingPaperReview.busy}
@@ -2218,6 +2502,7 @@ export function Stage({
                       : sketch.tool === "polygon" ? t("stage.sketch.polygonHint")
                         : !sketch.hasAnchor ? t("stage.sketch.firstCorner") : t("stage.sketch.secondCorner")}
                 {snapNote !== null && <span className="quiet"> · {t("stage.sketch.snapped", { kind: snapNote })}</span>}
+                {turnedForSketch && <span className="quiet" data-turned-for-sketch> · {t("stage.sketch.turnedToAxon")}</span>}
               </span>
               {sketch.hasAnchor && !sketchBusy && (sketch.tool !== "freehand" || sketch.phase === "height") && (
                 <label className="sketch-entry__value">
@@ -2363,6 +2648,19 @@ export function Stage({
           <button data-command="design.go_to_step.close_versions" type="button" className="btn btn--small" onClick={() => setVersionsOpen(false)}>{t("stage.versions.close")}</button>
         </div>
         <div className="stage__versions-session">{sessionStatus}</div>
+        {modelAnnotations && <div className="versions" aria-label={t("stage.tracingPaper.history")}>
+          <strong>{t("stage.tracingPaper.history")}</strong>
+          {modelAnnotations.historyLoading && <p role="status">{t("stage.annotations.loading")}</p>}
+          {modelAnnotations.historyError && <ErrorPanel error={modelAnnotations.historyError} what="/api/model-annotations/history" />}
+          {!modelAnnotations.historyLoading && modelAnnotations.history.length === 0 && <p className="quiet">{t("stage.tracingPaper.emptyHistory")}</p>}
+          {modelAnnotations.history.map((paper) => <div className="vcard" key={paper.revisionSha256}>
+            <span>{paper.annotations.filter((mark) => mark.kind === "text").map((mark) => mark.label).join(" · ") || t("stage.tracingPaper.marks", { count: paper.annotations.length })}</span>
+            <button data-command="view.markup_tools.restore_paper" data-command-arg={paper.revisionSha256} type="button" className="btn btn--small"
+              disabled={!annotationsReady || modelAnnotations.historyLoading} onClick={() => paper.revisionSha256 && void restoreTracingPaper(paper.revisionSha256)}>
+              {commandLabel("view.markup_tools.restore_paper")}
+            </button>
+          </div>)}
+        </div>}
         <VersionsStrip
           design={designHistory} onOpenTree={onOpenTree}
           workingCopies={workingCopies} onOpenWorkingOption={onOpenWorkingOption}

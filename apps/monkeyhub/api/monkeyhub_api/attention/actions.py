@@ -21,10 +21,13 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..models import ChatPermissionRequest, ChatPostRequest, ChatSuggestionSelection, HubFailure
+from ..models import (
+    ChatApprovalQuote, ChatApprovedChange, ChatChangeListApproval, ChatPermissionRequest, ChatPostRequest,
+    ChatSuggestionSelection, HubFailure,
+)
 from .models import (
-    CLOSED, UNSETTLED, Actor, ArgValue, AttentionDraft, AttentionItem, AttentionOption, AttentionSource, CommandRef,
-    Resolution, UndoSpec,
+    CLOSED, DRAFT_FIELDS, UNSETTLED, Actor, ArgValue, AttentionDraft, AttentionItem, AttentionOption, AttentionSource,
+    CommandRef, Resolution, UndoSpec,
 )
 from .store import AttentionStore
 
@@ -49,11 +52,15 @@ class HubPort(Protocol):
 
     def apply_update(self) -> object: ...
 
+    def restart_project(self, project_id: str, project_dir: str) -> object: ...
+
 
 class AttentionResolveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     optionId: str = Field(min_length=1, max_length=40)
     note: str | None = Field(default=None, max_length=400)
+    # On a change_list card: the item numbers the person left ticked; omitted runs the card's own ticks.
+    items: list[int] | None = Field(default=None, max_length=30)
 
 
 class AttentionBulkRequest(BaseModel):
@@ -102,6 +109,8 @@ class _Run:
     # What the person wrote on the card with this answer, and the answer's own words as they read them.
     note: str | None = None
     words: str | None = None
+    # A change list's items the person left ticked, when they said.
+    ticked: tuple[int, ...] | None = None
     # Taking an answer back rather than carrying one out.
     undoing: bool = False
     sent: int = 0
@@ -246,6 +255,65 @@ def _send_message(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
     return _Done({"sessionId": session})
 
 
+def _run_change_list(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
+    """Send the ticked, sure items of a change list to its conversation, in the architect's name and words (#300 3-3).
+
+    The message is only the architect's own passages (``change_list.approval``);
+    what each item means rides in its structured approval, and the Agent builds
+    each group through design_submit with that group's quote. An unsure item
+    stays out until its question is answered.
+    """
+
+    from .change_list import approval
+
+    card = run.item
+    if card.changeList is None or card.source.chatSessionId is None:
+        raise HubFailure(422, "ATTENTION_ACTION_INVALID", "This card carries no change list.")
+    ticked = set(run.ticked) if run.ticked is not None else {item.n for item in card.changeList.items if item.keep}
+    unknown = ticked - {item.n for item in card.changeList.items}
+    if unknown:
+        raise HubFailure(422, "ATTENTION_ACTION_INVALID", f"The list has no item {', '.join(map(str, sorted(unknown)))}.")
+    change_list = card.changeList.model_copy(update={"items": [item.model_copy(update={"keep": item.n in ticked})
+                                                               for item in card.changeList.items]})
+    try:
+        approved = approval(card.id, change_list, card.changeWords)
+    except ValueError as exc:
+        raise HubFailure(409, "CHANGE_LIST_NOT_RUNNABLE", str(exc)) from exc
+    chosen = {item.n: item for item in change_list.items}
+    run.executor.chats.post(card.source.chatSessionId, ChatPostRequest(
+        projectId=card.projectId, content=approved["content"],
+        changeListApproval=ChatChangeListApproval(
+            cardId=card.id,
+            items=[ChatApprovedChange(n=n, understanding=chosen[n].understanding, targets=chosen[n].targets,
+                                      protected=chosen[n].protected) for n in approved["items"]],
+            quotes=[ChatApprovalQuote(**quote) for quote in approved["quotes"]])))
+    # The list was run: a question still open on one of its items no longer has a list to answer into.
+    for item in change_list.items:
+        if item.unsure:
+            run.executor.store.retire(card.projectId, card.projectDir, f"unsure:{card.id}:{item.n}",
+                                      note="Its change list was run without this item.")
+    return _Done({"sessionId": card.source.chatSessionId, "items": [str(n) for n in approved["items"]]})
+
+
+def _choose_target(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
+    """An unsure item's answer: the part the person meant becomes its one target, and it can be run (#300 3-3)."""
+
+    card_id, target, n = _text(args, "cardId"), _text(args, "target"), args.get("n")
+    store = run.executor.store
+    parent = store.get(card_id)
+    if parent.changeList is None or parent.state not in {"open", "review", "later"}:
+        raise HubFailure(409, "CHANGE_LIST_SETTLED", "That change list was already run or set aside.")
+    item = next((row for row in parent.changeList.items if row.n == n), None)
+    if item is None or not item.unsure:
+        raise HubFailure(409, "CHANGE_LIST_SETTLED", f"Item {n} of that list is no longer waiting for this answer.")
+    changed = parent.changeList.model_copy(update={"items": [
+        row.model_copy(update={"targets": [target], "unsure": False}) if row.n == n else row
+        for row in parent.changeList.items]})
+    store.upsert(parent.projectId, parent.projectDir,
+                 AttentionDraft(**{name: getattr(parent, name) for name in DRAFT_FIELDS} | {"changeList": changed}))
+    return _Done({"cardId": card_id, "n": n, "target": target})
+
+
 # Which drawing target a paper value belongs to, as the Drawings page names them (drawingPlan.ts RECIPE_TARGETS).
 _RECIPE_TARGETS = {"cutLineMm": "drawing:lineweight", "visibleLineMm": "drawing:lineweight",
                    "hatchSpacingMm": "drawing:hatch"}
@@ -295,6 +363,12 @@ def _update_apply(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
     return _Done()
 
 
+def _restart_service(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
+    # The card's own project: its Studio is started again, crashed or never ready.
+    run.executor.hub.restart_project(run.item.projectId, run.item.projectDir)
+    return _Done()
+
+
 def _acknowledge(run: _Run, args: Mapping[str, ArgValue]) -> _Done:
     operation = args.get("operationId")
     if isinstance(operation, str) and operation:
@@ -336,6 +410,8 @@ COMMANDS: dict[str, Command] = {
     # without one to the project's attention conversation.
     "chat.composer.send": Command(_send_message, takes=("sessionId", "content")),
     "hub.update_apply": Command(_update_apply),
+    # The card's project's Studio, started again (#300 4-2).
+    "attention.queue.restart_service": Command(_restart_service),
     # A recipe guess: the Drawings page's own "save suggestion", bound to the suggested value and its page.
     "attention.answer_guess.save": Command(_save_recipe, undoable=True,
                                            takes=("field", "value", "runId", "assetSha256", "revisionRef", "pageIndex"),
@@ -344,6 +420,10 @@ COMMANDS: dict[str, Command] = {
                                      needs=("decisionId", "expectedRevisionRef")),
     # With operationId, the operation journal's acknowledge; without, the card is only put away.
     "attention.queue.acknowledge": Command(_acknowledge, takes=("operationId",)),
+    # A change list's ticked items, sent to build; and the part an unsure item meant (#300 3-3).
+    "attention.change_list.execute": Command(_run_change_list),
+    "attention.change_list.choose_target": Command(_choose_target, takes=("cardId", "n", "target"),
+                                                   needs=("cardId", "n", "target")),
 }
 @dataclass(frozen=True)
 class Opening:
@@ -418,7 +498,7 @@ class AttentionExecutor:
             self._busy.discard(item_id)
 
     def resolve(self, item_id: str, option_id: str, *, note: str | None = None, by: Actor = "person",
-                receipt: Mapping[str, ArgValue] | None = None) -> AttentionActionResult:
+                receipt: Mapping[str, ArgValue] | None = None, items: list[int] | None = None) -> AttentionActionResult:
         """Carry out one answer: the card is working meanwhile, done after, and back where it was if it failed."""
 
         self._claim(item_id)
@@ -431,7 +511,8 @@ class AttentionExecutor:
             started = self.store.begin(item_id, option_id, by=by)
             attempt = sum(row.to == "working" for row in started.history)
             words = option.consequence if self.language() == "en" else option.consequenceZh or option.consequence
-            run = _Run(self, started, f"att:{item_id}:{option_id}:{attempt}", note=note, words=words)
+            run = _Run(self, started, f"att:{item_id}:{option_id}:{attempt}", note=note, words=words,
+                       ticked=None if items is None else tuple(items))
             try:
                 done = COMMANDS[option.action.commandId].run(run, option.action.args)
             except HubFailure as exc:
@@ -579,7 +660,7 @@ def action_router(executor: AttentionExecutor) -> APIRouter:
 
     @routes.post("/api/attention/{item_id}/resolve", response_model=AttentionActionResult)
     def attention_resolve(item_id: str, body: AttentionResolveRequest) -> AttentionActionResult:
-        return executor.resolve(item_id, body.optionId, note=body.note)
+        return executor.resolve(item_id, body.optionId, note=body.note, items=body.items)
 
     @routes.post("/api/attention/{item_id}/undo", response_model=AttentionActionResult)
     def attention_undo(item_id: str) -> AttentionActionResult:

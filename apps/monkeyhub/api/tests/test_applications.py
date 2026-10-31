@@ -183,7 +183,7 @@ STUDIO_PACKAGE = ROOT / "services/project-runtime/src/project_runtime"
 # starter kept as a plain value is a default runner: every call through it
 # names a stdin, which the syntax tree cannot follow.
 INHERITS_STUDIO_STDIN: dict[str, str] = {
-    "application/skill_runs.py:submit_skill_run": "the default runner; _pip_python, _ensure_packages and _run_once "
+    "application/skill_runs.py:_submit": "the default runner; _pip_python, _ensure_packages and _run_once "
                                                    "call it with stdin=subprocess.DEVNULL",
     "application/live_rhino.py:_cli": "the default runner; its one call passes stdin=subprocess.DEVNULL",
 }
@@ -302,7 +302,7 @@ class HubChildStdinTests(unittest.TestCase):
         for path in sorted(STUDIO_PACKAGE.rglob("*.py")):
             for scope, line, named in process_starts(path.read_text(encoding="utf-8")):
                 starts.setdefault(f"{path.relative_to(STUDIO_PACKAGE).as_posix()}:{scope}", []).append((line, named))
-        self.assertLessEqual({"main.py:_source_revision", "application/skill_runs.py:submit_skill_run",
+        self.assertLessEqual({"main.py:_source_revision", "application/skill_runs.py:_submit",
                               "application/projections.py:SubprocessRenderer._start"}, set(starts))
         unnamed = [f"{site} (line {line})" for site, rows in starts.items() if site not in INHERITS_STUDIO_STDIN
                    for line, named in rows if not named]

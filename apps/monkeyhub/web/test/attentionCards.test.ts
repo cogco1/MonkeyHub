@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { chosenOption, isPending, needsWords, orderedOptions, pendingFor, queueOrder, say } from "../src/notifications/cards/cardText.ts";
+import { answersKey, cardPictures, chosenOption, comparedRuns, isPending, needsWords, orderedOptions, pendingFor, queueOrder, say } from "../src/notifications/cards/cardText.ts";
 import type { AttentionCard, CardOption } from "../src/notifications/cards/types.ts";
 
 const option = (id: string, recommended = false): CardOption => ({
@@ -10,6 +10,31 @@ const option = (id: string, recommended = false): CardOption => ({
 const card = (id: string, overrides: Partial<AttentionCard> = {}): AttentionCard => ({
   id, projectId: "A", projectDir: "D:\\work\\A", channel: "decide", kind: "choice", state: "open", title: id,
   source: {}, media: [], evidence: [], options: [], opens: [], createdAt: "2026-10-24T10:00:00+00:00", updatedAt: "2026-10-24T10:00:00+00:00", ...overrides,
+});
+
+test("a decision's comparison is bound to the runs it opens and to what each answer does", () => {
+  const adopt = (id: string, runId: string): CardOption => ({ ...option(id), action: { commandId: "design.go_to_step.continue", args: { runId } } });
+  const six = card("study", { options: [adopt("a", "r1"), adopt("b", "r6")], opens: [{ commandId: "chat.open_conversation", args: { sessionId: "s" } },
+    { commandId: "candidate.compare.decide", args: { runIds: ["r1", "r6"] } }] });
+  const seven = card("study", { options: [adopt("a", "r2"), adopt("b", "r7")], opens: [{ commandId: "candidate.compare.decide", args: { runIds: ["r2", "r7"] } }] });
+  assert.deepEqual(comparedRuns(six), ["r1", "r6"]);
+  assert.deepEqual(comparedRuns(seven), ["r2", "r7"]);
+  assert.deepEqual(comparedRuns(card("x")), [], "a card that opens no comparison weighs no pair");
+  assert.notEqual(answersKey(six), answersKey(seven), "Adopt A now adopts another result");
+  assert.equal(answersKey(six), answersKey(card("again", { options: [adopt("a", "r1"), adopt("b", "r6")] })));
+});
+
+test("a decision's pictures are its exact models, A then B, each the answer that chooses it", () => {
+  const model = (run: string) => ({ runId: run, stateDigest: `s-${run}`, assetSha256: `m-${run}` });
+  const decision = card("one", {
+    options: [option("switch"), option("keep")],
+    media: [{ kind: "model_view", runId: "v16", modelSource: model("v16"), optionId: "keep", caption: "A · Current design" },
+      { kind: "model_view", runId: "b", modelSource: model("b"), optionId: "switch", caption: "B · New result" },
+      { kind: "model_view", runId: "old", caption: "a model view without its model is only named" }],
+  });
+  assert.deepEqual(cardPictures(decision).map((row) => [row.media.runId, row.option?.id]), [["v16", "keep"], ["b", "switch"]]);
+  const unanswered = card("two", { media: [{ kind: "model_view", runId: "b", modelSource: model("b"), optionId: "gone" }] });
+  assert.equal(cardPictures(unanswered)[0]?.option, null, "a picture whose answer the card does not offer is only shown");
 });
 
 test("a card reads in Chinese where its writer gave Chinese, and in English otherwise", () => {

@@ -119,6 +119,8 @@ try {
     currentCase = scenario;
     history.branches[0].headStageRef = headStageRef;
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    // These passes press each retry themselves: quiet retries (F046) are off for them.
+    await context.addInitScript(() => localStorage.setItem("monkeyhub.quietRetry", "off"));
     const request = structuredClone(handoff);
     if (scenario === "wrong-project") request.projectId = "other-project";
     await context.addInitScript((request) => { window.__boardRequest = request; }, request);
@@ -149,6 +151,8 @@ try {
           if (/^\/api\/model-assets\/[0-9a-f]{64}\/preview$/.test(url.pathname)) return await json(null);
           // #549: Modeling reads the Board for component information cards; this board has none.
           if (url.pathname === "/api/board") return await json({ projectId, title: "MonkeyBoard", elements: [], seenDocuments: [], revisionSha256: null });
+          // S08: the Board reads the layout once to decide whether Board | Layout shows; this one is empty.
+          if (url.pathname === "/api/publication") return await json({ projectId, revisionSha256: null, title: "Layout", spec: { width: 1280, height: 720, template: "hero" }, sources: [], pages: [] });
           const model = artifacts.find((row) => url.pathname === `/api/artifacts/${row.sha256}/bytes`);
           if (model) {
             modelReads.push(model.sha256);

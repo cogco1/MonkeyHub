@@ -39,7 +39,8 @@ is the person's judgement of the code, and the record is what they can read.
 from __future__ import annotations
 
 import base64
-from dataclasses import asdict
+from contextlib import suppress
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import hashlib
 from io import BytesIO
@@ -90,6 +91,191 @@ ENVIRONMENT_ROOT_ENV = "MONKEYHUB_SKILL_ENVS"
 PIP_PYTHON_ENV = "MONKEYHUB_SKILL_PIP_PYTHON"
 
 Runner = Callable[..., subprocess.CompletedProcess]
+
+# What whoever reads a failure does next, by its code: change the request ("fix_input"), tell the person what only they
+# can give or allow ("ask_person"), or stop and say what happened ("stop"). A refusal says it after its own words; a
+# failed run's record carries it as failureNext and failureNextWords.
+NEXT_STEPS = {
+    "SKILL_INPUT_MISSING": ("fix_input", "Give the input named above and run it again; do not run it again as it was."),
+    "SKILL_RUN_INVALID": ("fix_input", "Change the request as the message says and run it again."),
+    "SKILL_INPUT_TOO_LARGE": ("fix_input", "Give a smaller input and run it again."),
+    "SKILL_OUTPUT_INVALID": ("fix_input", "Strip path separators and '..' from any name taken from the parameters and run it again."),
+    "SKILL_RUN_FAILED": ("fix_input", "Change the input or parameter the message points to and run it again; the same request is not run a third time."),
+    "SKILL_CHANGED": ("fix_input", "Read the skill again, then run it."),
+    "SKILL_PERMISSION_NEEDED": ("ask_person", "Tell the person what it tried; a person allows it in the Hub, or the skill's access is corrected. Do not run it again."),
+    "SKILL_ACCESS_NEEDED": ("ask_person", "A person allows what it needs; ask once for all of it. Do not run it again until they have."),
+    "SKILL_PACKAGES_FAILED": ("ask_person", "Tell the person which package could not be installed; do not run it again."),
+    "SKILL_PACKAGES_UNAVAILABLE": ("ask_person", "Tell the person a Python with pip is needed; do not run it again."),
+    "SKILL_PACKAGES_TIMEOUT": ("ask_person", "Tell the person the packages did not install in time; do not run it again."),
+    "SKILL_NOT_INSTALLED": ("ask_person", "Tell the person the skill folder is missing; the skill is installed by putting its folder in the skill folder."),
+    "SKILL_PACKAGE_INVALID": ("ask_person", "Tell the person what is wrong with the skill's folder; it runs again once they fix it."),
+    "SKILL_INVALID": ("ask_person", "Tell the person what is wrong with the skill's folder; it runs again once they fix it."),
+    "SKILL_NOT_RUNNABLE": ("stop", "This skill has no script to run; follow its instructions by hand instead."),
+    "SKILL_CREDENTIALS_REFUSED": ("stop", "No grant allows this. Do not run it again; a skill that needs a provider asks the Hub to call it."),
+    "SKILL_OUTPUT_MISSING": ("stop", "The skill produced nothing. Do not run it again as it was; tell the person which skill and what it printed."),
+    "SKILL_RUN_TIMEOUT": ("stop", "Do not run it again as it was; tell the person it took too long."),
+    "SKILL_REPEATED_FAILURE": ("stop", "Change the input or parameters, or tell the person; do not run this exact request again."),
+}
+DEFAULT_NEXT = ("stop", "Do not run it again as it was; tell the person what failed.")
+# The same request that failed twice in a row is not run a third time by an Agent within this long.
+REPEAT_WINDOW_S = 30 * 60.0
+REPEATED_FAILURES = 2
+
+
+def next_step(code: str) -> tuple[str, str]:
+    """What to do after a failure with this code: (fix_input | ask_person | stop, in words)."""
+
+    return NEXT_STEPS.get(code, DEFAULT_NEXT)
+
+
+def _with_next(refusal: StudioError) -> StudioError:
+    """A refusal that says, after its own words, what to do next."""
+
+    step, words = next_step(refusal.code)
+    if "Next:" not in refusal.detail:
+        refusal.detail = f"{refusal.detail} Next ({step}): {words}"
+    return refusal
+
+
+def _failure_fields(code: str) -> dict[str, str]:
+    step, words = next_step(code)
+    return {"failureNext": step, "failureNextWords": words}
+
+
+# What a person reads when a run was stopped for doing what it had not said it would (S23), one sentence each.
+DENIED_WORDS = {
+    "outputs": "已拦下：这个脚本想把文件写到自己的输出以外（{detail}），没让它写。",
+    "write": "已拦下：这个脚本想写项目以外的地方（{detail}），它没说要写那里，所以没让它写。",
+    "read": "已拦下：这个脚本想读项目以外的文件（{detail}），它没说要读那里，所以没让它读。",
+    "network": "已拦下：这个脚本想联网（{detail}），它没说要联网，所以没让它连。",
+    "programs": "已拦下：这个脚本想运行别的程序（{detail}），它没说要运行，所以没让它运行。",
+    "ssh": "已拦下：这个脚本想用 ssh 连接 {detail}，它没说要连，所以没让它连。",
+    "loopback": "已拦下：这个脚本想连本机的 Hub 接口（{detail}），低风险档不允许；要用请换成需要批准的方式。",
+    "credentials": "已拦下：这个脚本想读 Hub 保存的密钥，这一项谁都不能允许。",
+}
+FAILURE_WORDS = {
+    "SKILL_RUN_TIMEOUT": "这个脚本跑得太久，停下了，没有结果。",
+    "SKILL_OUTPUT_MISSING": "这个脚本跑完了，但一个文件也没写出来。",
+    "SKILL_INPUT_MISSING": "这个脚本缺一个输入，没跑成。",
+    "SKILL_PACKAGES_FAILED": "这个脚本要的 Python 包装不上，没跑。",
+    "SKILL_OUTPUT_TOO_LARGE": "这个脚本写出的文件太大，没收下。",
+}
+
+
+def failure_words(code: str, denied) -> str:
+    """One sentence in Chinese on why a run failed: what was stopped, or what went wrong."""
+
+    for item in denied:
+        words = DENIED_WORDS.get(str(item.get("category")))
+        if words is not None:
+            return words.format(detail=str(item.get("detail") or "")[:200])
+    return FAILURE_WORDS.get(code, "这个脚本出错停下了，没有结果。")
+
+
+def declared_inputs(manifest: Mapping[str, Any] | None) -> dict[str, str]:
+    """The inputs a skill's manifest names, by input name, each with its description.
+
+    A manifest line reads "name: what it is"; a name may be followed by a note in brackets before the colon.
+    ``params`` is not an input.
+    """
+
+    found: dict[str, str] = {}
+    for item in (manifest or {}).get("inputs") or ():
+        named = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*)[^:：]*[:：](.*)", str(item), re.S)
+        if named and named.group(1) != "params":
+            found.setdefault(named.group(1), named.group(2).strip())
+    return found
+
+
+def declared_outputs(manifest: Mapping[str, Any] | None) -> list[str]:
+    """The file names a skill's manifest says every run writes: a line "name.ext: what it is" with no placeholder in the name."""
+
+    names = []
+    for item in (manifest or {}).get("outputs") or ():
+        head = re.split(r"[:：]", str(item), maxsplit=1)[0].strip()
+        if OUTPUT_PART.fullmatch(head) and "." in head:
+            names.append(head)
+    return list(dict.fromkeys(names))
+
+
+def verify_outputs(manifest: Mapping[str, Any] | None, written: list[str]) -> dict[str, Any]:
+    """Whether the files a run wrote are the ones its manifest says it writes: passed, failed or inconclusive.
+
+    Inconclusive when the manifest names no file without a placeholder. The run's own status does not change: its
+    outputs are kept, and the record says which declared file is not among them.
+    """
+
+    declared = declared_outputs(manifest)
+    if not declared:
+        return {"status": "inconclusive", "declared": [], "missing": []}
+    have = set(written) | {name.rsplit("/", 1)[-1] for name in written}
+    missing = [name for name in declared if name not in have]
+    return {"status": "failed" if missing else "passed", "declared": declared, "missing": missing}
+
+
+def missing_required(manifest: Mapping[str, Any] | None, given: Mapping[str, Any]) -> list[str]:
+    """The required inputs (``requiredInputs``) a request did not give: each entry, written as it is (``model|mesh``)."""
+
+    return [group for group in (manifest or {}).get(skills.REQUIRED_INPUTS) or ()
+            if not any(name in given for name in str(group).split("|"))]
+
+
+def required_words(skill: skill_library.InstalledSkill, lacking: list[str], given: Mapping[str, Any]) -> str:
+    """What a refused request lacks, in a sentence: each missing input with what its manifest says it is."""
+
+    described = declared_inputs(skill.content.get("manifest") if skill.content else None)
+    parts = []
+    for group in lacking:
+        names = [f"{name} ({described[name]})" if described.get(name) else name for name in group.split("|")]
+        parts.append(" or ".join(names))
+    return (f"{skill.name} cannot run yet: it needs {'; and '.join(parts)}. "
+            f"This request gave {', '.join(sorted(given)) or 'no inputs'}.")
+
+
+def _missing_input(manifest: Mapping[str, Any] | None, given: Mapping[str, Any], stderr: str) -> tuple[str, str] | None:
+    """The input a failed run needed and was not given, when its error names it (KeyError: 'image'), else None."""
+
+    for name, description in declared_inputs(manifest).items():
+        if name not in given and re.search(rf"KeyError: ['\"]{re.escape(name)}['\"]", stderr):
+            return name, description
+    return None
+
+
+def request_digest(skill: skill_library.InstalledSkill, inputs: Mapping[str, Mapping[str, Any]],
+                   parameters: Mapping[str, Any]) -> str:
+    """One request's identity: the skill's code, its inputs and its parameters; a local file counts by its size and time."""
+
+    given = {}
+    for name, ref in sorted(inputs.items()):
+        ref = dict(ref)
+        if ref.get("kind") == "file":
+            try:
+                status = os.stat(str(ref.get("path") or ""))
+                ref |= {"size": status.st_size, "modified": status.st_mtime_ns}
+            except OSError:
+                pass
+        given[name] = ref
+    return hashlib.sha256(json.dumps({"skillId": skill.skill_id, "code": skill.code_sha256, "inputs": given,
+                                      "parameters": dict(parameters)}, sort_keys=True, ensure_ascii=False,
+                                     default=str).encode("utf-8")).hexdigest()
+
+
+def _refuse_repeat(binding: ProjectBinding, skill_id: str, digest: str, now: datetime) -> None:
+    """Refuse an Agent's run of the exact request that has just failed twice in a row."""
+
+    same = [row for row in list_skill_runs(binding, skill_id) if row.get("requestDigest") == digest]
+    last = same[-REPEATED_FAILURES:]
+    if len(last) < REPEATED_FAILURES or any(row.get("status") != "failed" for row in last):
+        return
+    try:
+        newest = datetime.fromisoformat(str(last[-1].get("updatedAt")))
+    except ValueError:
+        return
+    if (now - newest).total_seconds() > REPEAT_WINDOW_S:
+        return
+    codes = ", ".join(dict.fromkeys(str(row.get("failureCode")) for row in last))
+    raise StudioError(409, "SKILL_REPEATED_FAILURE",
+                      f"{skill_id} has just failed twice with exactly this request ({codes}); it is not run a third time.")
 
 
 def _invalid(message: str) -> StudioError:
@@ -457,7 +643,7 @@ def allowed(binding: ProjectBinding, skill: skill_library.InstalledSkill, *, gra
     used = [grant for grant in grants if grant.active and grant.once is None and grant.applies_to(ref)
             and skill_access.access_added(declared, skill_access.lasting([grant], ref), resolve=resolve) != asked]
     record = {"source": skill.source, "codeSha256": skill.code_sha256, "access": declared,
-              "grants": [_snapshot(grant) for grant in used], "onceGrantId": None}
+              "tier": skill_access.tier(declared), "grants": [_snapshot(grant) for grant in used], "onceGrantId": None}
     needs = skill_access.needed(declared, grants, ref, resolve=resolve)
     if not needs:
         return record
@@ -513,7 +699,12 @@ def run_needs(binding: ProjectBinding, skill_id: str) -> dict:
     person as one question; ``needs`` is empty when it may go ahead.
     """
 
-    skill = _installed(skill_id)
+    return _needs_report(binding, _installed(skill_id))
+
+
+def _needs_report(binding: ProjectBinding, skill) -> dict:
+    """What a run would need allowed now, its tier, and which of it only a grant for this one run allows (S23)."""
+
     try:
         allowed(binding, skill, grant_id=None)
         needs: Mapping[str, Any] = {}
@@ -521,7 +712,8 @@ def run_needs(binding: ProjectBinding, skill_id: str) -> dict:
         needs = refusal.needs
     return {"projectId": binding.project_id, "skillId": skill.skill_id,
             "skill": {"name": skill.name, "source": skill.source}, "codeSha256": skill.code_sha256,
-            "access": skill.access, "needs": dict(needs), "broad": skill_access.broad(needs) if needs else {}}
+            "access": skill.access, "tier": skill_access.tier(skill.access), "needs": dict(needs),
+            "broad": skill_access.broad(needs) if needs else {}, "eachTime": skill_access.each_time(needs)}
 
 
 def submit_skill_run(binding: ProjectBinding, jobs, skill_id: str, *, version: int | None,
@@ -536,19 +728,146 @@ def submit_skill_run(binding: ProjectBinding, jobs, skill_id: str, *, version: i
     than running code the caller did not read.
     """
 
+    try:
+        skill = _installed(skill_id)
+        current = skills.latest_version(binding, skill.skill_id)
+        if version is not None and (current is None or current.version != version
+                                    or not skills.same_content(current, skill.content)):
+            raise StudioError(409, "SKILL_CHANGED",
+                              f"{skill_id} in the {skill.source} skill folder is not version {version} of this project any more. "
+                              "Read it again before running it.")
+    except StudioError as refusal:
+        raise _with_next(refusal)
+    return _submit(binding, jobs, skill, lambda: skill_library.retain(binding, skill, attribution=attribution),
+                   inputs=inputs, parameters=parameters, attribution=attribution, agent=agent, grant_id=grant_id,
+                   python=python, runner=runner, timeout_s=timeout_s, now=now)
+
+
+# ---- a script an Agent wrote in a chat (S23) -------------------------------------
+
+SCRATCH_PREFIX = "scratch:"
+SCRATCH_SOURCE = "scratch"
+# A script written in a chat is small: its code is kept in its run's record.
+MAX_SCRATCH_BYTES = 256 * 1024
+SCRATCH_ENTRY = "main.py"
+# A script written in a chat answers a question while the person waits; one that runs longer is stopped (S23: the
+# first script a chat wrote searched whole folders and ran on until the Hub stopped).
+SCRATCH_TIMEOUT_S = 15 * 60.0
+
+
+@dataclass(frozen=True, slots=True)
+class ScratchSkill:
+    """A script an Agent wrote in a chat and runs as a skill nobody has kept yet (S23).
+
+    It is named by its code (``scratch:<first 12 hex digits of codeSha256>``), comes from no folder, and is
+    retained only in the record of each run of it. ``suggested`` is the name it would be kept under.
+    """
+
+    content: Mapping[str, Any]
+    suggested: str | None
+
+    @property
+    def name(self) -> str:
+        return "scratch-" + self.code_sha256[:12]
+
+    @property
+    def source(self) -> str:
+        return SCRATCH_SOURCE
+
+    @property
+    def skill_id(self) -> str:
+        return SCRATCH_PREFIX + self.code_sha256[:12]
+
+    @property
+    def code_sha256(self) -> str:
+        return str(self.content["codeSha256"])
+
+    @property
+    def access(self) -> Mapping[str, Any] | None:
+        return self.content.get("access")
+
+
+def scratch_skill(*, description: str, code: str | None = None, files: Mapping[str, str] | None = None,
+                  entry: str | None = None, access: Mapping[str, Any] | None = None,
+                  manifest: Mapping[str, Any] | None = None, name: str | None = None) -> ScratchSkill:
+    """A chat's script in the checked form a skill version has, or the refusal that says what is wrong.
+
+    ``code`` is one Python file (``main.py``); ``files`` with ``entry`` is several. ``access`` says what it needs
+    beyond reading the project and writing its outputs; none means it needs nothing.
+    """
+
+    try:
+        if (code is None) == (files is None):
+            raise _invalid("A script gives its code, or its files and entry: one of the two.")
+        if code is not None:
+            files, entry = {SCRATCH_ENTRY: code}, entry or SCRATCH_ENTRY
+        if sum(len(str(text).encode("utf-8")) for text in (files or {}).values()) > MAX_SCRATCH_BYTES:
+            raise StudioError(413, "SKILL_TOO_LARGE",
+                              f"A script run from a chat is at most {MAX_SCRATCH_BYTES // 1024} KiB of code; keep a larger "
+                              "one as a skill package.")
+        if name is not None and not (isinstance(name, str) and skills.SKILL_NAME.fullmatch(name)
+                                     and len(name) <= skills.MAX_NAME_LENGTH):
+            raise _invalid("name is the skill name it would be kept under: lowercase words joined by hyphens.")
+        description = skills._single_line(description, "description", 300)
+        _, content = skills.skill_content(
+            name=name or "scratch", description=description,
+            body=f"A script written in a chat: {description}\n", manifest=manifest, files=files, entry=entry,
+            access=access)
+        if content.get("entry") is None:
+            raise _invalid("A script names its entry, one of its .py files.")
+        problem = skill_library.package_problem(content)
+        if problem is not None and problem["kind"] == "entry_syntax":
+            raise _invalid(problem["detail"])
+    except StudioError as refusal:
+        raise _with_next(refusal)
+    return ScratchSkill(content, name)
+
+
+def scratch_needs(binding: ProjectBinding, skill: ScratchSkill) -> dict:
+    """What a run of this script would need a person to allow now, and its tier; nothing runs."""
+
+    return _needs_report(binding, skill)
+
+
+def submit_scratch_run(binding: ProjectBinding, jobs, skill: ScratchSkill, *,
+                       inputs: Mapping[str, Mapping[str, Any]], parameters: Mapping[str, Any],
+                       attribution: ActorAttribution, agent: bool = False, grant_id: str | None = None,
+                       python: str | None = None, runner: Runner | None = None,
+                       timeout_s: float = SCRATCH_TIMEOUT_S, now: datetime | None = None) -> dict:
+    """Run a chat's script as a background job, its code, access and tier kept in the run's own record."""
+
+    content = skill.content
+    kept = {"name": skill.suggested, "description": content["description"], "entry": content["entry"],
+            "files": dict(content["files"]), "access": content.get("access"), "manifest": content.get("manifest")}
+
+    def version() -> skills.SkillVersion:
+        return skills.SkillVersion(None, {"skillId": skill.skill_id, "version": 0, **content})
+
+    return _submit(binding, jobs, skill, version, inputs=inputs, parameters=parameters, attribution=attribution,
+                   agent=agent, grant_id=grant_id, python=python, runner=runner, timeout_s=timeout_s, now=now,
+                   extra={"scratch": kept})
+
+
+def _submit(binding: ProjectBinding, jobs, skill, version: Callable[[], skills.SkillVersion], *,
+            inputs: Mapping[str, Mapping[str, Any]], parameters: Mapping[str, Any], attribution: ActorAttribution,
+            agent: bool, grant_id: str | None, python: str | None, runner: Runner | None, timeout_s: float,
+            now: datetime | None, extra: Mapping[str, Any] | None = None) -> dict:
     run_command = subprocess.run if runner is None else runner
-    skill = _installed(skill_id)
-    current = skills.latest_version(binding, skill.skill_id)
-    if version is not None and (current is None or current.version != version
-                                or not skills.same_content(current, skill.content)):
-        raise StudioError(409, "SKILL_CHANGED",
-                          f"{skill_id} in the {skill.source} skill folder is not version {version} of this project any more. "
-                          "Read it again before running it.")
-    grant = allowed(binding, skill, grant_id=grant_id, now=now)
-    row = skill_library.retain(binding, skill, attribution=attribution)
-    parameters_text = json.dumps(dict(parameters), ensure_ascii=False, sort_keys=True)
-    if len(parameters_text.encode("utf-8")) > MAX_PARAMETERS_BYTES:
-        raise _invalid(f"Parameters are at most {MAX_PARAMETERS_BYTES // 1024} KiB of JSON.")
+    try:
+        # Before anyone is asked to allow anything: a run that cannot happen asks for nothing.
+        lacking = missing_required(skill.content.get("manifest"), inputs)
+        if lacking:
+            raise StudioError(422, "SKILL_INPUT_MISSING", required_words(skill, lacking, inputs))
+        grant = allowed(binding, skill, grant_id=grant_id, now=now)
+        parameters_text = json.dumps(dict(parameters), ensure_ascii=False, sort_keys=True)
+        if len(parameters_text.encode("utf-8")) > MAX_PARAMETERS_BYTES:
+            raise _invalid(f"Parameters are at most {MAX_PARAMETERS_BYTES // 1024} KiB of JSON.")
+        digest = request_digest(skill, inputs, parameters)
+        if agent:
+            _refuse_repeat(binding, skill.skill_id, digest, now or datetime.now(timezone.utc))
+    except StudioError as refusal:
+        raise _with_next(refusal)
+    row = version()
     run_id = RUN_PREFIX + uuid.uuid4().hex[:12]
     try:
         run = binding.repository.create_run(run_id)
@@ -557,7 +876,8 @@ def submit_skill_run(binding: ProjectBinding, jobs, skill_id: str, *, version: i
     queued = {
         "schema": RUN_SCHEMA, "projectId": binding.project_id, "runId": run_id, "status": "queued",
         "skillId": row.skill_id, "version": row.version, "skillVersionRef": row.ref, "codeSha256": row.code_sha256,
-        "entry": row.entry, "access": row.access, "grant": grant, "parameters": json.loads(parameters_text),
+        "entry": row.entry, "access": row.access, "tier": grant["tier"], "grant": grant,
+        "parameters": json.loads(parameters_text), "requestDigest": digest, **(extra or {}),
         "requestedBy": {"actorId": attribution.actor_id, "authenticated": attribution.authenticated,
                         "origin": attribution.origin, "agent": agent},
         "submittedAt": _now(), "updatedAt": _now(), "statusPath": f"/api/skills/runs/{run_id}",
@@ -571,14 +891,21 @@ def submit_skill_run(binding: ProjectBinding, jobs, skill_id: str, *, version: i
         jobs.submit(candidate_id=run_id, proposal_id=run_id, work=work, kind="skill-run")
     except Exception as exc:
         _retain(binding, run, queued | {"status": "failed", "updatedAt": _now(), "failureCode": "SKILL_RUN_NOT_STARTED",
-                                        "failureReason": str(exc)[:500]})
+                                        "failureReason": str(exc)[:500], **_failure_fields("SKILL_RUN_NOT_STARTED")})
         raise
-    return {"runId": run_id, "status": "queued", "statusPath": queued["statusPath"], "grant": queued["grant"]}
+    return {"runId": run_id, "status": "queued", "statusPath": queued["statusPath"], "skillId": row.skill_id,
+            "codeSha256": row.code_sha256, "tier": queued["tier"], "grant": queued["grant"]}
 
 
 @retained_sources
 def _retain(binding: ProjectBinding, run, payload: dict) -> None:
     _save(binding, run, payload)
+
+
+def _named(row: skills.SkillVersion) -> str:
+    """How a failure names what ran: a skill and its version, or a chat's script by its code."""
+
+    return f"the script {row.skill_id}" if row.skill_id.startswith(SCRATCH_PREFIX) else f"{row.skill_id} version {row.version}"
 
 
 def _execute(binding: ProjectBinding, run, row: skills.SkillVersion, queued: dict,
@@ -588,13 +915,17 @@ def _execute(binding: ProjectBinding, run, row: skills.SkillVersion, queued: dic
     try:
         result = _run_once(binding, run, row, current, inputs, python=python, runner=runner, timeout_s=timeout_s)
     except StudioError as exc:
-        failed = current | {"status": "failed", "updatedAt": _now(), "failureCode": exc.code, "failureReason": exc.detail}
+        failed = current | {"status": "failed", "updatedAt": _now(), "failureCode": exc.code, "failureReason": exc.detail,
+                            **_failure_fields(exc.code)}
         failed |= getattr(exc, "run_details", {})
+        failed["failureWords"] = failure_words(exc.code, failed.get("needed") or ())
         _retain(binding, run, failed)
         raise
     except Exception as exc:
         _retain(binding, run, current | {"status": "failed", "updatedAt": _now(), "failureCode": "SKILL_RUN_FAILED",
-                                         "failureReason": f"{type(exc).__name__}: {exc}"[:1500]})
+                                         "failureReason": f"{type(exc).__name__}: {exc}"[:1500],
+                                         "failureWords": failure_words("SKILL_RUN_FAILED", ()),
+                                         **_failure_fields("SKILL_RUN_FAILED")})
         raise
     _retain(binding, run, current | result | {"status": "succeeded", "updatedAt": _now()})
 
@@ -612,16 +943,23 @@ def _run_once(binding: ProjectBinding, run, row: skills.SkillVersion, current: d
         params_path, access_path, audit_path, bootstrap = (root / "params.json", root / "access.json",
                                                            root / "audit.jsonl", root / "bootstrap.py")
         params_path.write_text(json.dumps(current["parameters"], ensure_ascii=False), encoding="utf-8")
+        # Matplotlib keeps its font cache where every run finds it again, not in the user's home, which a run may not write.
+        plots = _environment_root() / "matplotlib"
+        with suppress(OSError):
+            plots.mkdir(parents=True, exist_ok=True)
         access_path.write_text(json.dumps({
-            "access": row.access or {}, "roots": [str(root), tempfile.gettempdir(),
+            "access": row.access or {}, "roots": [str(root), tempfile.gettempdir(), str(plots),
                                                   *([environment["path"]] if environment else [])],
+            # What a run reads besides its own folders and its Python (S23): the project, and what its access names.
+            "reads": [str(binding.project_dir)],
             "run": str(root), "outputs": str(outputs_dir), "skill": str(skill_dir),
         }, ensure_ascii=False), encoding="utf-8")
         bootstrap.write_text(BOOTSTRAP_SOURCE, encoding="utf-8")
         env = skill_environment(os.environ, ssh=bool((row.access or {}).get("ssh")))
         env |= {"PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1",
                 "MONKEYHUB_SKILL_RUN": run.run_id, "MONKEYHUB_PROJECT_ID": binding.project_id,
-                "MONKEYHUB_SKILL_ACCESS": str(access_path), "MONKEYHUB_SKILL_AUDIT": str(audit_path)}
+                "MONKEYHUB_SKILL_ACCESS": str(access_path), "MONKEYHUB_SKILL_AUDIT": str(audit_path),
+                "MPLCONFIGDIR": str(plots), "MPLBACKEND": "Agg"}
         if environment:
             # The runtime's embedded Python ignores PYTHONPATH; the bootstrap puts these on sys.path itself.
             env["MONKEYHUB_SKILL_PATHS"] = environment["path"]
@@ -639,7 +977,7 @@ def _run_once(binding: ProjectBinding, run, row: skills.SkillVersion, current: d
                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except subprocess.TimeoutExpired as exc:
             raise StudioError(504, "SKILL_RUN_TIMEOUT",
-                              f"{row.skill_id} version {row.version} did not finish within {int(timeout_s)} s.") from exc
+                              f"{_named(row)} did not finish within {int(timeout_s)} s.") from exc
         duration = round(time.monotonic() - clock, 3)
         observed, denied = _observed(audit_path)
         details = {"inputs": input_rows, "environment": environment, "observed": observed, "needed": denied,
@@ -649,7 +987,7 @@ def _run_once(binding: ProjectBinding, run, row: skills.SkillVersion, current: d
         if strayed:
             # However it exited: a write it was refused may have been an output.
             failure = StudioError(422, "SKILL_OUTPUT_INVALID",
-                                  f"{row.skill_id} version {row.version} wrote outside its outputs folder: "
+                                  f"{_named(row)} wrote outside its outputs folder: "
                                   + "; ".join(str(item.get("detail")) for item in strayed[:3])
                                   + ". A skill writes its results under --outputs by plain file names; a name "
                                   "taken from the parameters needs its path separators and '..' removed first.")
@@ -658,23 +996,35 @@ def _run_once(binding: ProjectBinding, run, row: skills.SkillVersion, current: d
         if finished.returncode != 0:
             if any(item.get("category") == "credentials" for item in denied):
                 failure = StudioError(403, "SKILL_CREDENTIALS_REFUSED",
-                                      f"{row.skill_id} version {row.version} tried to read the credentials the Hub "
+                                      f"{_named(row)} tried to read the credentials the Hub "
                                       "keeps, which no grant allows. A skill that needs a provider asks the Hub to "
                                       "call it.")
             elif denied:
                 failure = StudioError(403, "SKILL_PERMISSION_NEEDED",
-                                      f"{row.skill_id} version {row.version} tried what it was not granted: "
+                                      f"{_named(row)} tried what it was not granted: "
                                       + "; ".join(f"{item.get('category')} {item.get('detail')}" for item in denied[:5])
                                       + ". Declare it in the skill's access, and a person allows it in the Hub.")
+            elif (lacking := _missing_input(row.payload.get("manifest"), inputs, _tail(finished.stderr))) is not None:
+                failure = StudioError(422, "SKILL_INPUT_MISSING",
+                                      f"{_named(row)} needs the input '{lacking[0]}' ({lacking[1][:160]}), "
+                                      f"and this request gave {', '.join(sorted(inputs)) or 'no inputs'}.")
             else:
                 failure = StudioError(422, "SKILL_RUN_FAILED",
-                                      f"{row.skill_id} version {row.version} exited with {finished.returncode}: "
+                                      f"{_named(row)} exited with {finished.returncode}: "
                                       + (_tail(finished.stderr).strip()[-1500:] or "no message"))
             failure.run_details = details
             raise failure
         # Registered while the run's folder still exists: it is removed only
         # after every output is in the project.
-        return details | {"outputs": _retain_outputs(binding, run, _read_outputs(outputs_dir))}
+        written = _read_outputs(outputs_dir)
+        if not written:
+            failure = StudioError(422, "SKILL_OUTPUT_MISSING",
+                                  f"{_named(row)} finished without writing a single file to its outputs. "
+                                  "Its last words: " + (_tail(finished.stdout).strip()[-400:] or "none") + ".")
+            failure.run_details = details
+            raise failure
+        return details | {"outputs": _retain_outputs(binding, run, written),
+                          "verification": verify_outputs(row.payload.get("manifest"), [name for name, _ in written])}
 
 
 # The program that holds a skill to its grant. It runs in the skill's Python,
@@ -684,6 +1034,7 @@ import os
 import runpy
 import shlex
 import sys
+import weakref
 
 _settings = json.load(open(os.environ["MONKEYHUB_SKILL_ACCESS"], encoding="utf-8"))
 _access = _settings["access"]
@@ -700,6 +1051,61 @@ _outputs = [os.path.normcase(os.path.realpath(_settings["outputs"]))] if _settin
 _kept = _outputs + ([os.path.normcase(os.path.realpath(_settings["skill"]))] if _settings.get("skill") else [])
 _SSH = {"ssh", "scp", "sftp", "rsync"}
 _inside = False
+# Without the network a run reaches no other host and nothing on this machine either: the Hub, the Project Runtime
+# and the Studio listen on loopback, and a script that called them would act as the person (S23). A socket the run
+# bound on loopback itself is the one thing it may connect to there: socket.socketpair and an asyncio loop do that.
+_LOOPBACK = ("localhost", "::1", "0:0:0:0:0:0:0:1")
+_bound = weakref.WeakSet()
+# Native libraries that reach the network past the socket module, and calls that open a pipe or another process.
+_NETWORK_LIBRARIES = ("ws2_32", "wsock32", "mswsock", "winhttp", "wininet", "urlmon", "iphlpapi", "dnsapi", "rpcrt4",
+                      "libcurl", "libssl", "libcrypto")
+_NATIVE_PAST_CHECKS = ("LoadLibrary", "GetProcAddress", "LdrLoadDll", "CreateFile", "NtCreateFile", "CallNamedPipe",
+                       "WaitNamedPipe", "OpenProcess", "CreateProcess", "ShellExecute", "WinExec", "socket", "connect",
+                       "WSA", "dlopen", "dlsym")
+
+
+def _loopback(host):
+    host = str(host).strip("[]").lower()
+    return host in _LOOPBACK or host.startswith("127.") or host.startswith("::ffff:127.")
+
+
+def _own_port(port):
+    for sock in list(_bound):
+        try:
+            if sock.getsockname()[1] == port:
+                return True
+        except (OSError, IndexError, TypeError):
+            continue
+    return False
+
+
+def _address(value):
+    if isinstance(value, tuple) and value:
+        return value[0], (value[1] if len(value) > 1 else None)
+    return value, None
+
+
+def _system_reads():
+    # What any Python program reads to start and to import: its own installation and import path, the operating
+    # system's own folder (fonts, time zones, certificates). Fixed before the entry runs, so it cannot add to them.
+    places = [sys.prefix, sys.base_prefix, sys.exec_prefix, sys.base_exec_prefix, *[path for path in sys.path if path]]
+    if os.name == "nt":
+        places += [os.environ.get("SystemRoot") or os.environ.get("windir") or "C:\\Windows"]
+        if os.environ.get("LOCALAPPDATA"):
+            places.append(os.path.join(os.environ["LOCALAPPDATA"], "Microsoft", "Windows", "Fonts"))
+    else:
+        places += ["/usr", "/lib", "/lib64", "/etc", "/opt", "/proc", "/sys", "/dev", "/System", "/Library"]
+    found = [os.path.normcase(os.path.realpath(path)) for path in places if path]
+    # An import path of a whole drive or the home folder (a PYTHONPATH of C:\) is not a reason to read everything.
+    home = os.path.normcase(os.path.realpath(os.path.expanduser("~")))
+    return [path for path in found if os.path.dirname(path) != path and path != home]
+
+
+# A run reads its own folders, the project, its Python and the system's; any other folder only when its access names
+# it (S23). A file that is not there is not refused: trying to open it shows nothing.
+_read_any = "*" in (_access.get("read") or []) or "reads" not in _settings
+_reads = [os.path.normcase(os.path.realpath(path)) for path in [*(_settings.get("reads") or []), *(_access.get("read") or [])]
+          if path != "*"] + _system_reads()
 
 
 def _emit(event, **data):
@@ -759,6 +1165,18 @@ def _write(path):
         _deny("write", real)
 
 
+def _read(path):
+    if _read_any:
+        return
+    try:
+        real = os.path.realpath(os.fsdecode(os.fspath(path)))
+    except (TypeError, ValueError):
+        return
+    if _under(real, _roots) or _under(real, _reads) or not os.path.exists(real):
+        return
+    _deny("read", real)
+
+
 def _hook(event, args):
     global _inside
     if _inside:
@@ -781,19 +1199,48 @@ def _hook(event, args):
             name = name.decode("ascii", "replace") if isinstance(name, bytes) else str(name)
             if name.startswith(("CredRead", "CredEnumerate", "CredBackup", "CredUnprotect", "CredFind")):
                 _deny("credentials", name)
-        elif event == "socket.connect":
-            address = args[1]
-            host = address[0] if isinstance(address, tuple) and address else str(address)
-            if host not in ("127.0.0.1", "::1", "localhost"):
-                _emit("network", host=str(host), port=address[1] if isinstance(address, tuple) and len(address) > 1 else None)
+            # Loading a library or opening a file or pipe natively goes past the checks above (S23).
+            if not _access.get("network") and name.startswith(_NATIVE_PAST_CHECKS):
+                _deny("network", "native call " + name)
+        elif event == "ctypes.dlopen" and not _access.get("network"):
+            library = os.path.basename(str(args[0] or "")).lower()
+            if library.startswith(_NETWORK_LIBRARIES):
+                _deny("network", "native library " + library)
+        elif event == "socket.bind":
+            host, port = _address(args[1])
+            if _loopback(host):
+                _bound.add(args[0])
+            elif not _access.get("network"):
+                _deny("network", f"listen on {host or '*'}:{port}")
+        elif event in ("socket.connect", "socket.sendto", "socket.sendmsg"):
+            host, port = _address(args[1] if len(args) > 1 else None)
+            if host is None:
+                pass
+            elif not _loopback(host):
+                _emit("network", host=str(host), port=port)
                 if not _access.get("network"):
                     _deny("network", str(host))
+            elif not _access.get("network") and not _own_port(port):
+                _deny("loopback", f"{host}:{port}")
+        elif event == "socket.getaddrinfo" and not _access.get("network"):
+            # A name looked up is a message to a DNS server.
+            if args and args[0] is not None and not _loopback(os.fsdecode(args[0]) if isinstance(args[0], bytes) else args[0]):
+                _deny("network", f"look up {args[0]}")
+        elif event == "_winapi.CreateFile":
+            # A named pipe (\\.\pipe\...) is held as any other path outside the run's folders is.
+            path, desired = (list(args) + [None, 0])[:2]
+            if isinstance(path, (str, bytes, os.PathLike)):
+                _write(path) if (desired or 0) & 0x40000000 else _read(path)
+        elif event == "_winapi.CreateNamedPipe" and not _access.get("network"):
+            _deny("loopback", "named pipe " + str(args[0] if args else ""))
+        elif event == "_winapi.OpenProcess" and "*" not in _programs and not _programs:
+            _deny("programs", f"open process {args[1] if len(args) > 1 else ''}")
         elif event == "open":
             path, mode, flags = (list(args) + [None, None, None])[:3]
             writes = (isinstance(mode, str) and any(c in mode for c in "wax+")) or (
                 isinstance(flags, int) and bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND)))
-            if writes and isinstance(path, (str, bytes, os.PathLike)):
-                _write(path)
+            if isinstance(path, (str, bytes, os.PathLike)):
+                _write(path) if writes else _read(path)
         elif event in ("os.remove", "os.rmdir", "os.mkdir", "os.rename", "os.replace", "shutil.rmtree",
                        "shutil.copyfile", "shutil.move"):
             moves = event in ("os.rename", "os.replace", "shutil.copyfile", "shutil.move") and len(args) > 1

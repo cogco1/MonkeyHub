@@ -10,8 +10,10 @@ import { applicationSettingsApiSettingsAppsGet, chatProviderLoginApiChatProvider
 import "./styles.css";
 import { FabPage } from "./FabPage";
 import { ChatShell, type HubSettings } from "./ChatShell";
+import { McpServersSettings } from "./features/settings/McpServers";
 import { CommandProvider } from "./features/commands/CommandProvider";
 import { chooseShell, useShellLayout } from "./app/shellLayout";
+import { plainFailure } from "./app/ErrorPanel";
 import { AttentionHost } from "./notifications/AttentionHost";
 import { queueChanged } from "./notifications/queue";
 
@@ -60,7 +62,7 @@ const PLAN_PRESETS: readonly { id: string; label: Record<Language, string>; url:
 ];
 const KEY_WORDS = {
   "zh-CN": {
-    renderIntro: "选 Gemini，填好受支持的图像模型和 API 密钥，下次打开项目 Runtime 就能渲染，不用重启 Hub。供应商、模型和超时也从下次打开起生效。",
+    renderIntro: "选 Gemini 并贴上 API 密钥，下次打开项目 Runtime 就能渲染，不用重启 Hub；模型和超时不填就用默认值。供应商、模型和超时也从下次打开起生效。",
     geminiKey: "Gemini API 密钥", getKey: "获取密钥", check: "检查", clear: "清除",
     keyHint: "粘贴后按回车或离开输入框即保存；保存后不再显示。",
     notSet: "未设置。", reading: "正在读取…", fromStore: "已保存在本机的 Windows 凭据管理器，只属于当前账户。",
@@ -76,7 +78,7 @@ const KEY_WORDS = {
     planProvider: "服务商", planCustom: "其他（手动填写）", planUrl: "端点地址", planToken: "令牌", getToken: "获取令牌",
   },
   en: {
-    renderIntro: "Choose Gemini, name a supported image model and enter an API key: the next project Runtime you open can render, with no Hub restart. Provider, model and timeout also apply from the next Runtime.",
+    renderIntro: "Choose Gemini and paste an API key: the next project Runtime you open can render, with no Hub restart. Leave the model and timeout empty to use the defaults. Provider, model and timeout also apply from the next Runtime.",
     geminiKey: "Gemini API key", getKey: "Get a key", check: "Check", clear: "Clear",
     keyHint: "Paste it, then press Enter or leave the field to save. It is not shown again.",
     notSet: "Not set.", reading: "Reading…", fromStore: "Saved in this computer's Windows Credential Manager, for this account only.",
@@ -134,7 +136,7 @@ function ErrorMessage({ issue, language }: { issue: Issue | null; language: Lang
     return () => { cancelled = true; };
   }, [issue?.detail, language]);
   if (!issue) return null;
-  return <div className="error-message" role="alert"><p>{language === "zh-CN" ? knownErrors[issue.code] ?? translated ?? issue.detail : issue.detail}</p>{developer && <details><summary>{copy[language].details}</summary><code>{issue.code}</code><p>{translated ?? issue.detail}</p></details>}</div>;
+  return <div className="error-message" role="alert"><p>{language === "zh-CN" ? knownErrors[issue.code] ?? plainFailure(issue, language).reason : issue.detail}</p>{developer && <details><summary>{copy[language].details}</summary><code>{issue.code}</code><p>{translated ?? issue.detail}</p></details>}</div>;
 }
 
 // Settings save themselves: a choice at once, typed text after this pause.
@@ -222,7 +224,7 @@ function CredentialField({ id, inputId, title, status, language, link, linkLabel
     : status.source === "saved" ? words.fromStore : status.source === "claude-config" ? words.fromClaude
     : status.storeAvailable === false ? words.noStore(variable) : words.notSet;
   return <div className="settings-row settings-row--wide settings-key">
-    <div className="settings-row__text"><label htmlFor={inputId}>{title}</label><p className="settings-row__hint" id={`${inputId}-state`}>{where}</p></div>
+    <div className="settings-row__text"><label htmlFor={inputId}>{title}</label><p className={status ? "settings-row__hint" : "settings-row__hint wait-late"} id={`${inputId}-state`}>{where}</p></div>
     <div className="settings-key__controls">
       <input data-command="preference.secret.key" data-command-arg={id} id={inputId} type="password" autoComplete="off" spellCheck={false} value={draft} disabled={busy || status?.storeAvailable === false}
         placeholder={status?.saved ? words.replace : placeholder} aria-describedby={`${inputId}-state ${inputId}-hint`}
@@ -440,7 +442,8 @@ function App() {
   };
   // #300: every Hub view carries the notices; a view framed in another Hub page leaves them to that page.
   const attention = <AttentionHost language={preferences.language} />;
-  if (fabView) return <><FabPage preferences={preferences} client={hubClient} readResult={responseData} />{attention}</>;
+  // The fab page's own reads retry quietly (AutoRetry) and its cards speak the person's language: both read the preferences.
+  if (fabView) return <UserPreferencesProvider appearance={preferences}><FabPage preferences={preferences} client={hubClient} readResult={responseData} />{attention}</UserPreferencesProvider>;
   // One detection answers both places: what a connection is, and what it lists.
   const connectionWords = (row: ChatProvider) => !row.installed ? t("notInstalled")
     : row.id === "coding-plan" && !row.available ? t("notConfigured")
@@ -466,7 +469,11 @@ function App() {
   const renderInvalid = !appearanceSave.pending && appearanceDirty ? renderProblem(renderDraft) : null;
   const planInvalid = !appearanceSave.pending && appearanceDirty ? planProblem(chatDraft) : null;
   const keyWords = KEY_WORDS[preferences.language];
-  const keyChanged = (row: CredentialStatus) => { setCredentialRows((current) => ({ ...current, [row.id]: row })); setGeminiCheck(null); void readSettings(true); };
+  // A pasted Gemini key is checked at once: the person asked for nothing but to use it.
+  const keyChanged = (row: CredentialStatus) => {
+    setCredentialRows((current) => ({ ...current, [row.id]: row })); setGeminiCheck(null); void readSettings(true);
+    if (row.id === "gemini" && row.configured) void checkGemini();
+  };
   const checkGemini = async () => {
     setGeminiCheck("checking");
     try { setGeminiCheck((await responseData<CredentialCheck>(checkGeminiApiCredentialsGeminiCheckPost({ client: hubClient }))).result); }
@@ -502,6 +509,8 @@ function App() {
         <select data-command="preference.appearance.theme" id="theme" value={preferences.theme} onChange={(event) => changeAppearance({ theme: event.target.value as AppearancePreferences["theme"] })}><option value="system">{t("system")}</option><option value="dark">{t("dark")}</option><option value="light">{t("light")}</option></select></div>
       <div className="settings-row"><label htmlFor="font-scale">{t("size")}</label>
         <select data-command="preference.appearance.size" id="font-scale" value={preferences.fontScale} onChange={(event) => changeAppearance({ fontScale: Number(event.target.value) as AppearancePreferences["fontScale"] })}><option value="0.9">{t("compact")}</option><option value="1">{t("normal")}</option><option value="1.1">{t("large")}</option></select></div>
+      {/* S01: which shell and how it is drawn are for developers; the person has one look. */}
+      <DeveloperOnly>
       <div className="settings-row settings-row--wide" role="radiogroup" aria-labelledby="hub-shell-label" aria-describedby="hub-shell-hint">
         <div className="settings-row__text"><span className="settings-row__title" id="hub-shell-label">{t("shellChoice")}</span>
           <p className="settings-row__hint" id="hub-shell-hint">{t("shellChoiceHint")}</p></div>
@@ -518,6 +527,7 @@ function App() {
           <span className="style-card__name">{words.styles[style]}</span><small className="style-card__note">{words.notes[style]}</small>
         </label>)}</div>
       </div>
+      </DeveloperOnly>
     </section> }, { id: "chat", label: words.chat, icon: "chat", body: <>
       <h2>{t("chatDefaults")}</h2>
       <p className="settings-intro">{t("chatDefaultsHelp")}</p>
@@ -565,6 +575,7 @@ function App() {
       <CredentialField id="coding-plan" inputId="coding-plan-token" title={keyWords.planToken} status={credentialRows["coding-plan"]}
         language={preferences.language} link={planPreset?.link} linkLabel={keyWords.getToken} placeholder="sk-…"
         variable="ANTHROPIC_AUTH_TOKEN" onChanged={keyChanged} />
+      <McpServersSettings language={preferences.language} />
       <div className="settings-row"><div className="settings-row__text"><span className="settings-row__title">{words.connections}</span><p className="settings-row__hint">{words.connectionsHint}</p></div>
         <button data-command="view.notice.retry" data-command-arg="connections" id="recheck-connections" className="btn" type="button" disabled={!connected} onClick={() => void readSettings(true)}>{t("recheck")}</button></div>
     </> }, { id: "render", label: words.render, icon: "render", body: <>
@@ -575,7 +586,7 @@ function App() {
           editDefaults(0); setRenderDraft((value) => ({ ...value, renderProvider: event.target.value as RenderDefaults["renderProvider"] }));
         }}><option value="off">{t("renderOff")}</option><option value="gemini">Gemini</option></select></div>
       <div className="settings-row"><label htmlFor="render-model">{t("renderModel")}</label>
-        <input data-command="preference.render_provider.model" id="render-model" value={renderDraft.renderModel ?? ""} placeholder="gemini-3.1-flash-image" onChange={(event) => {
+        <input data-command="preference.render_provider.model" id="render-model" value={renderDraft.renderModel ?? ""} placeholder={t("renderModelDefault")} onChange={(event) => {
           editDefaults(TYPING_PAUSE_MS); setRenderDraft((value) => ({ ...value, renderModel: event.target.value.trim() || null }));
         }} /></div>
       <div className="settings-row"><label htmlFor="render-timeout">{t("renderTimeout")}</label>
@@ -595,12 +606,13 @@ function App() {
         <input data-command="preference.workspace.projects_folder" id="workspace-dir" value={launchDraft.workspaceDir ?? ""} placeholder={workspace?.workspaceDir ?? ""}
           aria-invalid={launchInvalid?.field === "workspace-dir" ? true : undefined}
           onChange={(event) => changeLaunch({ workspaceDir: event.target.value || null })} /></div>
-      <div className="settings-row settings-row--wide"><div className="settings-row__text"><label htmlFor="library-dir">{t("libraryDir")}</label><p className="settings-row__hint">{t("libraryHelp")}</p></div>
+      {/* S08: the skills library project is developer mode's. */}
+      <DeveloperOnly><div className="settings-row settings-row--wide"><div className="settings-row__text"><label htmlFor="library-dir">{t("libraryDir")}</label><p className="settings-row__hint">{t("libraryHelp")}</p></div>
         <input data-command="preference.workspace.library_project" id="library-dir" value={launchDraft.libraryDir ?? ""} aria-describedby="library-dir-status"
           aria-invalid={libraryIssue ? true : undefined}
           onChange={(event) => changeLaunch({ libraryDir: event.target.value || null })} /></div>
       <ErrorMessage issue={libraryIssue} language={preferences.language} />
-      <p className="help" id="library-dir-status">{t("libraryStatus")}</p>
+      <p className="help" id="library-dir-status">{t("libraryStatus")}</p></DeveloperOnly>
       <details className="advanced"><summary data-command="view.disclosure.toggle" data-command-arg="launch_options">{t("advanced")}</summary>
         <WorkspaceDiagnosticsSettings />
         {/* The Hub starts and stops the project service with the project and keeps its default port: developer mode only. */}

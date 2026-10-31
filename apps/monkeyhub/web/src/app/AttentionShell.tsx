@@ -9,6 +9,7 @@ import { OPEN_CARD_EVENT, type OpenCardDetail } from "../notifications/openChat"
 import { showingQueue } from "../notifications/queue";
 import { useNoticeRegion } from "../notifications/regions";
 import { AdvancedTools } from "./AdvancedTools";
+import { ChatFinder, type ChatSearchHit } from "./ChatFinder";
 import "./attentionShell.css";
 
 /**
@@ -20,12 +21,12 @@ import "./attentionShell.css";
  */
 
 export type CenterView = "attention" | "board" | "model" | "tool";
-export type SidePage = "background" | "history" | "handled" | "ignored" | "tools";
-const SIDE_PAGES: readonly SidePage[] = ["background", "history", "handled", "ignored", "tools"];
+export type SidePage = "background" | "history" | "notes" | "find" | "handled" | "ignored" | "tools";
+const SIDE_PAGES: readonly SidePage[] = ["background", "history", "notes", "find", "handled", "ignored", "tools"];
 /** The command that shows each side page: its rail item and its tab carry it, and Ctrl K finds it. */
 const SIDE_COMMANDS: Readonly<Record<SidePage, string>> = {
-  background: "view.background.toggle", history: "view.design_history.toggle", handled: "view.handled.toggle",
-  ignored: "view.ignored.toggle", tools: "view.advanced_tools.toggle",
+  background: "view.background.toggle", history: "view.design_history.toggle", notes: "view.notes.toggle",
+  find: "view.chat_search.toggle", handled: "view.handled.toggle", ignored: "view.ignored.toggle", tools: "view.advanced_tools.toggle",
 };
 /** How many of a project's conversations stand under its row. */
 export const RECENT_CONVERSATIONS = 3;
@@ -44,11 +45,24 @@ export interface ShellConversation {
 export interface ShellProject {
   readonly projectDir: string;
   readonly name: string;
+  /** The step its working design stands on, named as the history page names it ("V16"); none shown while nothing names it. */
+  readonly step?: string | null;
   readonly current: boolean;
   /** What waits on the architect in this project. */
   readonly needs: number;
   readonly working: boolean;
   readonly recent: readonly ShellConversation[];
+}
+
+/** What just came out, beside the conclusion: a drawing with its picture and the click that opens it, or a finished job. */
+export interface RecentTile {
+  /** The drawing's id, when the tile is a drawing. */
+  readonly id?: string;
+  readonly label: string;
+  readonly title: string;
+  readonly caption: string;
+  readonly picture?: string;
+  readonly onOpen?: () => void;
 }
 
 export interface AttentionShellProps {
@@ -76,6 +90,8 @@ export interface AttentionShellProps {
   usage: { label: string; onOpen(): void } | null;
   /** Agent work running or queued in any project, for the background line and page. */
   background: { running: number; queued: number };
+  /** Beside the conclusion: how long the longest running work has left, and the latest finished result. */
+  overview?: { wait: string | null; recent: RecentTile | null };
   /** True while the conversation is being sent to or answers; the drawer opens for it. */
   conversationActive: boolean;
   notices: ReactNode;
@@ -86,6 +102,10 @@ export interface AttentionShellProps {
   taskItems: ReactNode;
   /** The open project's 修改历史 page (2-6), bound to its runtime by the host; absent without an open project. */
   historyPage?: ReactNode;
+  /** The standing instructions and what was remembered, for every conversation and the open project. */
+  notesPage?: ReactNode;
+  /** Open a conversation Find conversations found, wherever it is listed. */
+  onOpenFound?(hit: ChatSearchHit): void;
   dialogs: ReactNode;
   /** The left column's Attention: no conversation is chosen, so the next message goes to the attention conversation. */
   onAttentionConversation(): void;
@@ -154,10 +174,11 @@ export function AttentionShell(props: AttentionShellProps) {
 
   return <div className="attention-shell" data-view={view} data-side={side ?? "closed"} data-left={leftOpen ? "open" : "closed"}>
     <header className="attention-shell__top">
-      <button type="button" className="chat-icon" aria-label={t("shell.back")} title={t("shell.back")} disabled={!props.history.back}
-        data-command="view.conversation_history.back" onClick={props.history.onBack}><Icon name="back" /></button>
-      <button type="button" className="chat-icon" aria-label={t("shell.forward")} title={t("shell.forward")} disabled={!props.history.forward}
-        data-command="view.conversation_history.forward" onClick={props.history.onForward}><Icon name="forward" /></button>
+      {/* S01: the arrows are there only while there is a conversation to go back or forward to; Ctrl K has them always. */}
+      {props.history.back && <button type="button" className="chat-icon" aria-label={t("shell.back")} title={t("shell.back")}
+        data-command="view.conversation_history.back" onClick={props.history.onBack}><Icon name="back" /></button>}
+      {props.history.forward && <button type="button" className="chat-icon" aria-label={t("shell.forward")} title={t("shell.forward")}
+        data-command="view.conversation_history.forward" onClick={props.history.onForward}><Icon name="forward" /></button>}
       <button type="button" className="chat-icon attention-shell__left-toggle" aria-label={t("shell.projects")} aria-expanded={leftOpen}
         aria-controls="attention-shell-left" data-command="view.left_column.toggle" onClick={() => setLeftOpen(!leftOpen)}><Icon name="sidebar" /></button>
       <button type="button" className="attention-shell__search" onClick={openPalette} aria-keyshortcuts="Control+K">
@@ -173,15 +194,20 @@ export function AttentionShell(props: AttentionShellProps) {
       </button>
       <div className="attention-shell__caption">
         <span>{props.archivedView ? t("shell.archived") : t("shell.projects")}</span>
-        <button type="button" className="chat-icon" aria-pressed={props.archivedView} aria-label={t("shell.archived")} title={t("shell.archived")}
-          onClick={() => props.onArchivedView(!props.archivedView)}><Icon name="archive" /></button>
+        <span className="attention-shell__caption-actions">
+          {props.onOpenFound && <button type="button" className="chat-icon" aria-pressed={side === "find"} aria-label={t("shell.side.find")} title={t("shell.side.find")}
+            data-command="view.chat_search.toggle" onClick={() => open("find")}><Glyph path={SEARCH} /></button>}
+          <button type="button" className="chat-icon" aria-pressed={props.archivedView} aria-label={t("shell.archived")} title={t("shell.archived")}
+            onClick={() => props.onArchivedView(!props.archivedView)}><Icon name="archive" /></button>
+        </span>
       </div>
       {!projects.length && <p className="attention-shell__empty">{t("shell.noProjects")}</p>}
       <ul className="attention-shell__projects">{projects.map((project) => <li key={project.projectDir}>
         <div className="attention-shell__project">
           <button type="button" className="attention-shell__row" aria-current={project.current ? "true" : undefined} title={project.projectDir}
             onClick={() => { props.onSelectProject(project.projectDir); setLeftOpen(false); }}>
-            <Icon name="folder" /><span>{project.name}</span>
+            <Icon name="folder" /><span className="attention-shell__name"><span>{project.name}</span>
+              {project.step ? <small className="attention-shell__version">{t("shell.projectStep", { step: project.step })}</small> : null}</span>
             {needs(project) > 0 ? <span className="attention-shell__count" aria-label={t("shell.needs", { count: needs(project) })}>{needs(project)}</span>
               : project.working ? <span className="attention-shell__working" aria-label={t("shell.working")} /> : null}
           </button>
@@ -206,6 +232,8 @@ export function AttentionShell(props: AttentionShellProps) {
           data-command="project.create.add_existing" onClick={props.onAddProject}><Icon name="folder" /></button>
         {props.usage && <button type="button" className="attention-shell__row attention-shell__usage" data-command="view.usage.open" onClick={props.usage.onOpen}>
           <Icon name="chart" /><span>{props.usage.label}</span></button>}
+        {props.notesPage && <button type="button" className="chat-icon" aria-pressed={side === "notes"} aria-label={t("shell.side.notes")} title={t("shell.side.notes")}
+          data-command="view.notes.toggle" onClick={() => open("notes")}><Icon name="file" /></button>}
         <button type="button" className="chat-icon" aria-label={t("shell.settings")} title={t("shell.settings")}
           data-command="view.settings.open" onClick={props.onSettings}><Icon name="settings" /></button>
       </div>
@@ -226,19 +254,40 @@ export function AttentionShell(props: AttentionShellProps) {
       {props.notices}
       <div className="attention-shell__body">
         <section className="attention-shell__queue" hidden={view !== "attention"} aria-label={t("shell.view.attention")}>
-          <h2>{attentionCount ? t("shell.queueCount", { count: attentionCount }) : t("shell.queueEmpty")}</h2>
-          {queue.available ? <AttentionQueue projectName={projectName} /> : <p>{t("shell.queueHint")}</p>}
+          {/* The conclusion first, what runs and what just came out beside it, the cards below (ADR-011 §8). */}
+          <div className="attention-overview">
+            <div className="attention-overview__hero">
+              <h2>{queue.available === null ? t("shell.queueReading") : attentionCount ? t("shell.queueCount", { count: attentionCount }) : t("shell.queueEmpty")}</h2>
+              {!queue.available && <p>{t("shell.queueHint")}</p>}
+            </div>
+            {backgroundCount > 0 && <button data-command="view.background.toggle" type="button" className="attention-overview__tile" onClick={() => open("background")}>
+              <span>{t("shell.overview.background")}</span>
+              <b>{props.background.running ? t("shell.overview.running", { count: props.background.running }) : t("shell.overview.queued", { count: props.background.queued })}</b>
+              <small>{props.overview?.wait ?? (props.background.running && props.background.queued ? t("shell.overview.queued", { count: props.background.queued }) : "")}</small>
+            </button>}
+            {props.overview?.recent && (() => {
+              const recent = props.overview.recent;
+              const body = <>
+                {recent.picture && <img className="attention-overview__picture" src={recent.picture} alt="" loading="lazy" />}
+                <span>{recent.label}</span><b title={recent.title}>{recent.title}</b><small>{recent.caption}</small>
+              </>;
+              return recent.onOpen ? <button type="button" className="attention-overview__tile attention-overview__tile--picture" data-command="view.recent_drawing.open" data-command-arg={recent.id}
+                aria-label={`${recent.label}：${recent.title}`} onClick={recent.onOpen}>{body}</button>
+                : <div className="attention-overview__tile">{body}</div>;
+            })()}
+          </div>
+          {queue.available && <AttentionQueue projectName={projectName} />}
         </section>
         <div className="attention-shell__surfaces" hidden={view === "attention"}>{props.surfaces}</div>
       </div>
       <div className="attention-shell__bottom" ref={bottomRef}>
         <div className="status-line attention-shell__status">
-          <span className="status-line__start">{backgroundCount
-            ? t("shell.backgroundLine", { running: props.background.running, queued: props.background.queued }) : t("shell.backgroundIdle")}</span>
+          <button type="button" className="status-line__start menu-command attention-shell__status-open" aria-expanded={side === "background"} aria-label={t("shell.openBackground")}
+            title={t("shell.openBackground")} data-command="view.background.toggle" onClick={() => open("background")}>{backgroundCount
+            ? t("shell.backgroundLine", { running: props.background.running, queued: props.background.queued }) : t("shell.backgroundIdle")}</button>
           <span className="status-line__end attention-shell__status-actions">
             <button type="button" className="menu-command" aria-expanded={drawer} aria-controls="attention-shell-drawer" onClick={() => setDrawer(!drawer)}>
               {drawer ? t("shell.hideConversation") : t("shell.showConversation")}</button>
-            <button type="button" className="menu-command" aria-expanded={side === "background"} onClick={() => open("background")}>{t("shell.openBackground")}</button>
           </span>
         </div>
         <section className="attention-shell__drawer" id="attention-shell-drawer" hidden={!drawer} aria-label={t("shell.conversation")}>
@@ -261,18 +310,24 @@ export function AttentionShell(props: AttentionShellProps) {
           {side === "background" ? <ul className="chat-tasks attention-shell__tasks">{props.taskItems}</ul>
             : side === "tools" ? <AdvancedTools />
             : side === "history" && props.historyPage ? props.historyPage
+            : side === "notes" && props.notesPage ? props.notesPage
+            : side === "find" && props.onOpenFound ? <ChatFinder projectName={projectName}
+              onOpen={(hit) => { props.onOpenFound!(hit); setDrawer(true); setSide(null); setLeftOpen(false); }} />
             : queue.available && side === "handled" ? <CardHistory states={["done"]} empty="shell.side.handled.empty" projectName={projectName} />
             : queue.available && side === "ignored" ? <CardHistory states={["dismissed"]} empty="shell.side.ignored.empty" projectName={projectName} />
             : <p className="attention-shell__empty">{t(`shell.side.${side}.empty` as MessageKey)}</p>}
         </div>
       </div>}
-      <div className="attention-shell__rail" role="toolbar" aria-orientation="vertical" aria-label={t("shell.side")}>
-        {SIDE_PAGES.map((page) => <button key={page} type="button" className="attention-shell__rail-item" aria-pressed={side === page}
+      {/* 20 前台只剩草图、体块和少量语义描述: the rail shows the background while there is work in it; the other pages are
+          one Ctrl K away (their commands), and the open panel's own tabs switch between them. Nothing to show, no rail. */}
+      {(Boolean(props.historyPage) || side !== null) && <div className="attention-shell__rail" role="toolbar" aria-orientation="vertical" aria-label={t("shell.side")}>
+        {SIDE_PAGES.filter((page) => side !== null || (page === "history" && Boolean(props.historyPage))).map((page) => <button key={page} type="button" className="attention-shell__rail-item" aria-pressed={side === page}
           data-command={SIDE_COMMANDS[page]} onClick={() => open(page)}>
-          <Icon name={page === "background" ? "tasks" : page === "history" ? "tree" : page === "handled" ? "archive" : page === "ignored" ? "restore" : "display"} />
+          <Icon name={page === "background" ? "tasks" : page === "history" ? "tree" : page === "notes" ? "file" : page === "find" ? "chat"
+            : page === "handled" ? "archive" : page === "ignored" ? "restore" : "display"} />
           <span>{pageLabel(page)}</span>{page === "background" && backgroundCount > 0 && <span className="attention-shell__count">{backgroundCount}</span>}
         </button>)}
-      </div>
+      </div>}
     </aside>
     {side && <button type="button" className="attention-shell__scrim attention-shell__scrim--side" aria-label={t("shell.closeSide")} onClick={() => setSide(null)} />}
     {props.dialogs}

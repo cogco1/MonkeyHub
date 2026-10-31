@@ -14,9 +14,11 @@ from __future__ import annotations
 import base64
 from datetime import datetime, timedelta, timezone
 import hashlib
+import importlib.util
 from io import BytesIO
 import json
 import os
+import socket
 from pathlib import Path
 import subprocess
 import tempfile
@@ -31,7 +33,7 @@ from PIL import Image
 from archflow.project.record_kinds import (STUDIO_SKILL_APPROVAL, STUDIO_SKILL_REVOCATION, STUDIO_SKILL_RUN,
                                            require_registered)
 from archflow.project.repository import FilesystemProjectRepository
-from project_runtime.application import artifacts, skill_access, skill_library, skills
+from project_runtime.application import artifacts, skill_access, skill_library, skill_runs, skills
 from project_runtime.binding import bound_project
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
@@ -94,7 +96,7 @@ class SkillRunTest(unittest.TestCase):
     # ---- the folder, the grants file, a run ----
 
     def install(self, script: str = SCRIPT, *, access: dict | None = None, entry: str | None = "scripts/run.py",
-                root: Path | None = None) -> str:
+                root: Path | None = None, manifest: dict | None = None) -> str:
         """Put the site-palette package in a skill folder, as a person does; its code hash."""
 
         folder = (root or self.user) / "site-palette"
@@ -104,6 +106,8 @@ class SkillRunTest(unittest.TestCase):
             spec["entry"] = entry
         if access is not None:
             spec["access"] = access
+        if manifest is not None:
+            spec["manifest"] = manifest
         (folder / "skill.json").write_text(json.dumps(spec), encoding="utf-8")
         (folder / "SKILL.md").write_text("Run on one registered image.\n", encoding="utf-8")
         (folder / "scripts" / "run.py").write_text(script, encoding="utf-8")
@@ -188,19 +192,23 @@ class SkillRunTest(unittest.TestCase):
         code = self.install(NO_IMAGE, access={"network": True, "programs": ["Blender.exe"], "read": ["C:\\Windows\\Fonts"]})
         refused = self.start(status=403, inputs={})
         self.assertEqual(refused["code"], "SKILL_ACCESS_NEEDED")
-        self.assertEqual((refused["needs"], refused["broad"]), ({"network": True, "programs": ["blender"]}, {}),
-                         "reading is not asked about")
+        self.assertEqual((refused["needs"], refused["broad"]),
+                         ({"network": True, "programs": ["blender"], "read": ["C:\\Windows\\Fonts"]}, {}))
         self.assertEqual((refused["skill"], refused["projectId"], refused["codeSha256"]),
                          ({"name": "site-palette", "source": "user"}, PROJECT_ID, code))
         self.assertEqual((self.skill_runs(), self.retained()), ([], []), "nothing ran and nothing was retained")
-        first = self.allow({"programs": ["blender"]})
+        first = self.allow({"programs": ["blender"], "read": ["C:\\Windows\\Fonts"]})
         self.assertEqual(self.start(status=403, inputs={})["needs"], {"network": True}, "only what is still missing")
-        second = self.allow({"network": True})
-        record = self.run_skill(inputs={})
+        self.allow({"network": True})
+        self.assertEqual(self.start(status=403, inputs={})["needs"], {"network": True},
+                         "the network is asked about before every run: no lasting grant allows it")
+        once = self.allow({"network": True}, skill="site-palette", once={"projectId": PROJECT_ID, "codeSha256": code})
+        record = self.run_skill(inputs={}, grantId=once)
         self.assertEqual(record["status"], "succeeded", record)
-        self.assertEqual([row["grantId"] for row in record["grant"]["grants"]], [first, second])
+        self.assertEqual(([row["grantId"] for row in record["grant"]["grants"]], record["tier"]), ([first, once], "each"))
         self.install(NO_IMAGE + "# a new version\n", access={"programs": ["blender"]})
-        self.assertEqual(self.run_skill(inputs={})["version"], 2, "a new version asking no more is not asked about")
+        later = self.run_skill(inputs={})
+        self.assertEqual((later["version"], later["tier"]), (2, "first"), "a new version asking no more is not asked about")
 
     def test_a_grant_for_one_skill_holds_for_that_skill_only(self):
         self.install(NO_IMAGE, access={"programs": ["blender"]})
@@ -301,6 +309,117 @@ if params.get("network"):
                 record = self.run_skill(inputs={}, parameters=parameters)
                 self.assertEqual((record["status"], record["failureCode"]), ("failed", "SKILL_PERMISSION_NEEDED"), record)
                 self.assertEqual(record["needed"][0]["category"], category)
+                self.assertTrue(record["failureWords"].startswith("已拦下：这个脚本想"), record["failureWords"])
+
+    def test_a_run_reads_the_project_and_nothing_outside_it_that_it_did_not_declare(self):
+        # S23: what runs without asking only reads the project; a folder outside it is read when its access says so.
+        outside = self.outside()
+        (outside / "secret.txt").write_text("not for the skill", encoding="utf-8")
+        script = HEADER + '''import glob
+found = open(glob.glob(os.path.join(params["project"], "project.json"))[0], encoding="utf-8").read()[:1]
+try:
+    open(os.path.join(params["outside"], "missing.txt"))
+except FileNotFoundError:
+    pass
+open(os.path.join(args.outputs, "seen.txt"), "w").write(found + open(os.path.join(params["outside"], "secret.txt")).read())
+'''
+        code = self.install(script)
+        parameters = {"project": str(self.project), "outside": str(outside)}
+        record = self.run_skill(inputs={}, parameters=parameters)
+        self.assertEqual((record["status"], record["failureCode"], record["tier"]),
+                         ("failed", "SKILL_PERMISSION_NEEDED", "low"), record)
+        self.assertEqual([row["category"] for row in record["needed"]], ["read"], "a file that is not there is not refused")
+        self.assertIn(os.path.normcase(str(outside / "secret.txt")), os.path.normcase(record["needed"][0]["detail"]))
+        self.assertTrue(record["failureWords"].startswith("已拦下：这个脚本想读项目以外的文件"), record["failureWords"])
+        code = self.install(script, access={"read": [str(outside)]})
+        self.assertEqual(self.start(status=403, inputs={}, parameters=parameters)["needs"], {"read": [str(outside)]})
+        self.allow({"read": [str(outside)]})
+        record = self.run_skill(inputs={}, parameters=parameters)
+        self.assertEqual((record["status"], record["tier"]), ("succeeded", "first"), record)
+        self.assertEqual(record["outputs"][0]["text"], "{not for the skill")
+
+    def test_a_write_outside_the_run_is_stopped_with_one_sentence_for_the_person(self):
+        outside = self.outside()
+        script = HEADER + '''open(os.path.join(params["outside"], "note.txt"), "w").write("x")
+'''
+        self.install(script)
+        record = self.run_skill(inputs={}, parameters={"outside": str(outside)})
+        self.assertEqual((record["status"], record["failureCode"]), ("failed", "SKILL_PERMISSION_NEEDED"), record)
+        self.assertEqual(record["needed"][0]["category"], "write")
+        self.assertFalse((outside / "note.txt").exists(), "nothing was written")
+        self.assertTrue(record["failureWords"].startswith("已拦下：这个脚本想写项目以外的地方（"), record["failureWords"])
+
+    def test_without_the_network_a_script_cannot_reach_the_hub_on_this_machine(self):
+        # S23: the Hub, the Project Runtime and the Studio listen on loopback; a script that called them would act as the
+        # person. Without the network nothing on loopback is reached; with it, as before.
+        server = socket.socket()
+        server.bind(("127.0.0.1", 0))
+        server.listen()
+        self.addCleanup(server.close)
+        port = server.getsockname()[1]
+        script = HEADER + '''import socket
+socket.create_connection(("127.0.0.1", params["port"]), timeout=5).close()
+open(os.path.join(args.outputs, "reached.txt"), "w").write("yes")
+'''
+        self.install(script)
+        record = self.run_skill(inputs={}, parameters={"port": port})
+        self.assertEqual((record["status"], record["failureCode"], record["tier"]),
+                         ("failed", "SKILL_PERMISSION_NEEDED", "low"), record)
+        self.assertEqual([(row["category"], row["detail"]) for row in record["needed"]], [("loopback", f"127.0.0.1:{port}")])
+        self.assertEqual(record["failureWords"], f"已拦下：这个脚本想连本机的 Hub 接口（127.0.0.1:{port}），低风险档不允许；"
+                                                 "要用请换成需要批准的方式。")
+        code = self.install(script, access={"network": True})
+        once = self.allow({"network": True}, skill="site-palette", once={"projectId": PROJECT_ID, "codeSha256": code})
+        record = self.run_skill(inputs={}, parameters={"port": port}, grantId=once)
+        self.assertEqual((record["status"], record["outputs"][0]["text"]), ("succeeded", "yes"), record)
+
+    def test_without_the_network_a_script_still_uses_the_sockets_it_bound_itself(self):
+        # socket.socketpair and an asyncio loop connect to a loopback socket of their own.
+        script = HEADER + '''import asyncio, socket
+left, right = socket.socketpair()
+left.sendall(b"x")
+assert right.recv(1) == b"x"
+asyncio.run(asyncio.sleep(0))
+open(os.path.join(args.outputs, "done.txt"), "w").write("ok")
+'''
+        self.install(script)
+        record = self.run_skill(inputs={})
+        self.assertEqual((record["status"], record["needed"]), ("succeeded", []), record)
+
+    def test_without_the_network_a_name_is_not_looked_up_nor_a_port_opened_to_others(self):
+        script = HEADER + '''import socket
+if params["how"] == "lookup":
+    socket.getaddrinfo("example.com", 443)
+else:
+    socket.socket().bind(("0.0.0.0", 0))
+'''
+        self.install(script)
+        for how in ("lookup", "listen"):
+            with self.subTest(how=how):
+                record = self.run_skill(inputs={}, parameters={"how": how})
+                self.assertEqual((record["failureCode"], record["needed"][0]["category"]),
+                                 ("SKILL_PERMISSION_NEEDED", "network"), record)
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows sockets library")
+    def test_without_the_network_the_native_sockets_library_is_not_loaded(self):
+        self.install(HEADER + '''import ctypes
+if params["how"] == "load":
+    ctypes.WinDLL("ws2_32")
+else:
+    ctypes.windll.kernel32.LoadLibraryW("ws2_32.dll")
+''')
+        for how in ("load", "through kernel32"):
+            with self.subTest(how=how):
+                record = self.run_skill(inputs={}, parameters={"how": how})
+                self.assertEqual((record["failureCode"], record["needed"][0]["category"]),
+                                 ("SKILL_PERMISSION_NEEDED", "network"), record)
+
+    def outside(self) -> Path:
+        """A folder outside the project and outside the temporary folder every run may use."""
+
+        folder = tempfile.TemporaryDirectory(prefix="skill-outside-", dir=Path.home())
+        self.addCleanup(folder.cleanup)
+        return Path(folder.name)
 
     # Synthetic values only: what the Hub hands the runtime, and credentials the
     # Hub's own environment might carry from the person's shell.
@@ -313,11 +432,13 @@ if params.get("network"):
 '''
 
     def environment_of_a_run(self, access=None) -> tuple[dict, dict]:
-        self.install(self.ENV_SCRIPT, access=access)
+        code = self.install(self.ENV_SCRIPT, access=access)
+        body = {}
         if access:
-            self.allow(access)
+            # ssh is allowed for one run at a time.
+            body["grantId"] = self.allow(access, skill="site-palette", once={"projectId": PROJECT_ID, "codeSha256": code})
         with patch.dict(os.environ, {**self.SECRETS, "SKILL_TEST_KEEP": "kept"}):
-            record = self.run_skill(inputs={})
+            record = self.run_skill(inputs={}, **body)
         self.assertEqual(record["status"], "succeeded", record)
         answer = self.client.get(f"/api/skills/runs/{record['runId']}/outputs/env.json")
         self.assertEqual(answer.status_code, 200, answer.text)
@@ -349,6 +470,89 @@ open(os.path.join(args.outputs, "read.txt"), "w").write("reached")
         record = self.run_skill(inputs={})
         self.assertEqual((record["status"], record["failureCode"]), ("failed", "SKILL_CREDENTIALS_REFUSED"), record)
         self.assertEqual([(row["category"], row["detail"]) for row in record["needed"]], [("credentials", "CredReadW")])
+
+    # ---- a script an Agent wrote in a chat (S23) ----
+
+    def scratch(self, code: str, *, status: int = 202, path: str = "run", **body) -> dict:
+        response = self.client.post(f"/api/skills/scratch/{path}", json={
+            "projectId": PROJECT_ID, "description": "数一下 PDF 里的颜色", "code": code, **body})
+        self.assertEqual(response.status_code, status, response.text)
+        return response.json()
+
+    def test_a_script_that_reads_the_project_and_writes_its_outputs_runs_without_asking(self):
+        record = self.finish(self.scratch(NO_IMAGE, name="done-note", agentRun=True))
+        self.assertEqual(record["status"], "succeeded", record)
+        code = skills.code_sha256("A script written in a chat: 数一下 PDF 里的颜色\n", "main.py", {"main.py": NO_IMAGE})
+        self.assertEqual((record["skillId"], record["version"], record["skillVersionRef"], record["codeSha256"]),
+                         ("scratch:" + code[:12], 0, None, code))
+        self.assertEqual((record["tier"], record["grant"]["source"], record["grant"]["grants"]), ("low", "scratch", []))
+        self.assertEqual(record["scratch"], {"name": "done-note", "description": "数一下 PDF 里的颜色", "entry": "main.py",
+                                             "files": {"main.py": NO_IMAGE}, "access": None, "manifest": None},
+                         "the code is kept in the run's own record")
+        self.assertEqual(record["outputs"][0]["text"], "ok")
+        self.assertIsNone(skills.latest_version(self.binding, "skill:done-note"), "nothing joins the skill library")
+
+    def test_a_script_is_asked_about_as_a_skill_is(self):
+        needs = self.scratch(NO_IMAGE, path="needs", access={"network": True, "programs": ["blender"]}, status=200)
+        self.assertEqual((needs["tier"], needs["needs"], needs["eachTime"], needs["skill"]["source"]),
+                         ("each", {"network": True, "programs": ["blender"]}, {"network": True}, "scratch"))
+        refused = self.scratch(NO_IMAGE, access={"network": True}, status=403)
+        self.assertEqual((refused["code"], refused["skill"]["source"]), ("SKILL_ACCESS_NEEDED", "scratch"))
+        grant = {"grantId": "once-1", "access": {"network": True}, "grantedAt": "2026-10-24T10:00:00+00:00", "method": "card",
+                 "skill": refused["skill"], "once": {"projectId": PROJECT_ID, "codeSha256": refused["codeSha256"],
+                                                     "expiresAt": (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()}}
+        self.grants.append(grant)
+        self.write_grants()
+        record = self.finish(self.scratch(NO_IMAGE, access={"network": True}, grantId="once-1"))
+        self.assertEqual((record["status"], record["tier"], record["grant"]["onceGrantId"]), ("succeeded", "each", "once-1"))
+        self.assertEqual(self.scratch(NO_IMAGE, access={"network": True}, grantId="once-1", status=403)["code"],
+                         "SKILL_ACCESS_NEEDED", "and asked again before the next run")
+
+    def test_a_script_that_cannot_run_is_refused_before_it_starts(self):
+        for body, code in (({"code": "def run(:\n"}, "SKILL_RUN_INVALID"),
+                           ({"code": None, "files": {"a.py": "pass"}}, "SKILL_RUN_INVALID"),
+                           ({"code": "pass", "name": "Not A Name"}, "SKILL_RUN_INVALID"),
+                           ({"code": "x" * (skill_runs.MAX_SCRATCH_BYTES + 1)}, "SKILL_TOO_LARGE")):
+            with self.subTest(code=code, body=str(body)[:40]):
+                response = self.client.post("/api/skills/scratch/run",
+                                            json={"projectId": PROJECT_ID, "description": "x", **body})
+                self.assertEqual(response.json().get("code"), code, response.text)
+        self.assertEqual(self.skill_runs(), [], "nothing ran")
+
+    def test_the_same_failing_script_is_not_run_a_third_time_by_an_agent(self):
+        failing = HEADER + "sys.exit(4)\n"
+        for _ in range(2):
+            self.assertEqual(self.finish(self.scratch(failing, agentRun=True))["failureCode"], "SKILL_RUN_FAILED")
+        self.assertEqual(self.scratch(failing, agentRun=True, status=409)["code"], "SKILL_REPEATED_FAILURE")
+
+    @unittest.skipUnless(all(importlib.util.find_spec(name) for name in ("fitz", "matplotlib")), "PyMuPDF and matplotlib")
+    def test_counting_the_colours_of_a_pdf_into_a_chart_runs_without_asking(self):
+        # The 10-25 street colour chart, as a chat would write it: read one registered PDF, write one PNG.
+        import fitz
+
+        pdf = fitz.open()
+        page = pdf.new_page(width=200, height=100)
+        page.draw_rect(fitz.Rect(0, 0, 120, 100), color=None, fill=(0.8, 0.3, 0.2))
+        page.draw_rect(fitz.Rect(120, 0, 200, 100), color=None, fill=(0.2, 0.4, 0.7))
+        document = artifacts.save_document(self.binding, None, "street.pdf", "application/pdf",
+                                           base64.b64encode(pdf.tobytes()).decode("ascii"))
+        script = HEADER + '''from collections import Counter
+import fitz
+import matplotlib.pyplot as plt
+pixmap = fitz.open(os.path.join(args.inputs, manifest["pdf"]["file"]))[0].get_pixmap(dpi=36)
+colours = Counter(bytes(pixmap.samples[i:i + 3]).hex() for i in range(0, len(pixmap.samples), pixmap.n))
+top = colours.most_common(4)
+plt.bar(range(len(top)), [count for _, count in top], color=["#" + hex for hex, _ in top])
+plt.savefig(os.path.join(args.outputs, "colours.png"))
+json.dump(dict(top), open(os.path.join(args.outputs, "colours.json"), "w"))
+'''
+        record = self.finish(self.scratch(script, agentRun=True,
+                                          inputs={"pdf": {"runId": document.run_id, "assetSha256": document.asset_sha256}}))
+        self.assertEqual((record["status"], record["tier"]), ("succeeded", "low"), record)
+        outputs = {row["name"]: row for row in record["outputs"]}
+        self.assertEqual(outputs["colours.png"]["mimeType"], "image/png", "registered as a project document")
+        self.assertIn("document", outputs["colours.png"])
+        self.assertEqual(len(json.loads(outputs["colours.json"]["text"])), 2)
 
     # ---- inputs and outputs ----
 
@@ -473,6 +677,129 @@ with open(os.path.join(args.outputs, "kept.csv"), "w", encoding="utf-8") as out:
         self.assertEqual((record["status"], record["failureCode"]), ("failed", "SKILL_RUN_FAILED"))
         self.assertIn("the image is too dark", record["failureReason"])
         self.assertEqual(record.get("outputs"), None, "a failed run registers no outputs")
+        self.assertEqual((record["failureNext"], record["failureNextWords"].startswith("Change the input or parameter")),
+                         ("fix_input", True), "a failure says what to do about it")
+
+    # ---- a skill that returns nothing, or not what it says it returns ----
+
+    MANIFEST = {"inputs": ["image: 一张登记过的图片", "params: share，默认 0.5"],
+                "outputs": ["copy.png: 原图的副本", "result.csv: 颜色和占比", "<name>_extra.png: 只有给了 extra 才有",
+                            "run.json: 本次运行的标识"], "permissions": []}
+
+    def test_a_run_that_wrote_no_file_is_a_failure_not_a_success(self):
+        # Before: the script printed, exited 0, and the run counted as succeeded with nothing to use.
+        self.install(HEADER + 'print("all done")\n')
+        record = self.run_skill(inputs={})
+        self.assertEqual((record["status"], record["failureCode"]), ("failed", "SKILL_OUTPUT_MISSING"), record)
+        self.assertIn("all done", record["failureReason"], "the failure carries what the skill last said")
+        self.assertEqual((record["failureNext"], record.get("outputs")), ("stop", None))
+
+    def test_the_files_a_manifest_names_are_checked_without_taking_a_run_away(self):
+        self.install(manifest=self.MANIFEST)
+        passed = self.run_skill()
+        self.assertEqual((passed["status"], passed["verification"]), (
+            "succeeded", {"status": "passed", "declared": ["copy.png", "result.csv", "run.json"], "missing": []}),
+            "a placeholder name (<name>_extra.png) names no one file, so it is not asked for")
+        # The script now forgets result.csv: its other files are still kept, and the record says what is missing.
+        forgetful = SCRIPT.replace('with open(os.path.join(args.outputs, "result.csv"), "w", encoding="utf-8", newline="") as out:\n    out.write("hex,share\\n#6E7565,%s\\n" % params.get("share", 0.5))\n', "")
+        self.assertNotEqual(forgetful, SCRIPT)
+        self.install(forgetful, manifest=self.MANIFEST)
+        partial = self.run_skill()
+        self.assertEqual((partial["status"], partial["verification"]["status"], partial["verification"]["missing"]),
+                         ("succeeded", "failed", ["result.csv"]))
+        self.assertEqual(sorted(row["name"] for row in partial["outputs"]), ["copy.png", "run.json"])
+        # A manifest that names no file by a plain name leaves the check inconclusive, not failed.
+        self.install()
+        self.assertEqual(self.run_skill()["verification"]["status"], "inconclusive")
+
+    def test_a_missing_input_is_named_instead_of_a_bare_key_error(self):
+        self.install(manifest=self.MANIFEST)
+        record = self.run_skill(inputs={})
+        self.assertEqual((record["status"], record["failureCode"], record["failureNext"]),
+                         ("failed", "SKILL_INPUT_MISSING", "fix_input"), record)
+        self.assertIn("needs the input 'image' (一张登记过的图片)", record["failureReason"])
+        self.assertIn("this request gave no inputs", record["failureReason"])
+        # Without a manifest line for it the failure stays the script's own words.
+        self.install()
+        self.assertEqual(self.run_skill(inputs={})["failureCode"], "SKILL_RUN_FAILED")
+
+    def test_the_words_of_a_manifest_line_are_read_the_way_the_shipped_skills_write_them(self):
+        manifest = {"inputs": [
+            "model: 项目内已登记的模型资产（3dm）", "mesh（代替 model）: 本机网格文件 .glb", "params: style 取 params/<style>.json",
+            "<名称>: Hub 视图图纸（kind drawing）", "site: 项目内已登记的场地模型：含地块曲线"],
+            "outputs": ["blender-<style>.png: 渲染结果", "merged.3dm: 单位 Feet", "merge_report.json：变换和数量",
+                        "<pdf_name>: 一个多页 PDF", "summary.json: 每张图的输入"]}
+        self.assertEqual(skill_runs.declared_inputs(manifest), {
+            "model": "项目内已登记的模型资产（3dm）", "mesh": "本机网格文件 .glb", "site": "项目内已登记的场地模型：含地块曲线"})
+        self.assertEqual(skill_runs.declared_outputs(manifest), ["merged.3dm", "merge_report.json", "summary.json"])
+        self.assertEqual(skill_runs.declared_outputs(None), [])
+        self.assertEqual(skill_runs.verify_outputs(manifest, ["sub/summary.json", "merged.3dm"])["missing"], ["merge_report.json"],
+                         "a declared file counts when it is under any subfolder")
+
+    # ---- a request that lacks what the skill needs is refused before anything else ----
+
+    REQUIRES = {"inputs": ["image: 一张登记过的图片", "model: 项目内已登记的模型资产（3dm）", "mesh（代替 model）: 本机网格文件"],
+                "requiredInputs": ["image", "model|mesh"]}
+
+    def test_a_request_without_an_input_the_skill_requires_is_refused_before_anyone_is_asked_for_anything(self):
+        self.install(manifest=self.REQUIRES, access={"programs": ["blender"]})
+        refused = self.start(status=422)
+        self.assertEqual(refused["code"], "SKILL_INPUT_MISSING")
+        self.assertIn("site-palette cannot run yet: it needs model (项目内已登记的模型资产（3dm）) or mesh (本机网格文件).",
+                      refused["detail"])
+        self.assertIn("This request gave image.", refused["detail"])
+        self.assertIn("Next (fix_input)", refused["detail"])
+        self.assertEqual((self.skill_runs(), self.retained()), ([], []), "nothing ran and nothing was retained")
+        # Nothing was allowed either, and the refusal is not a question about allowing: it would be the next answer.
+        self.assertEqual(self.start(status=422, inputs={})["detail"].count("; and "), 1, "everything missing is named at once")
+        source = Path(tempfile.mkdtemp(prefix="skill mesh ")) / "site.stl"
+        source.write_bytes(b"solid x")
+        enough = {"image": {"runId": self.image.run_id, "assetSha256": self.image.asset_sha256},
+                  "mesh": {"kind": "file", "path": str(source)}}
+        self.assertEqual(self.start(status=403, inputs=enough)["code"], "SKILL_ACCESS_NEEDED", "now it asks for permission")
+        self.allow({"programs": ["blender"]})
+        self.assertEqual(self.run_skill(inputs=enough)["status"], "succeeded")
+
+    def test_a_skill_that_requires_nothing_is_not_held_to_inputs(self):
+        self.install(manifest={"inputs": ["image: 一张登记过的图片"]})
+        self.assertEqual(self.run_skill()["status"], "succeeded")
+        self.assertEqual(skill_runs.missing_required({"requiredInputs": ["a", "b|c"]}, {"b": {}}), ["a"])
+        self.assertEqual(skill_runs.missing_required(None, {}), [])
+
+    # ---- what to do after a failure ----
+
+    def test_every_refusal_and_failure_says_what_to_do_next(self):
+        refused = self.start(status=404, inputs={}, parameters={})
+        self.assertEqual(refused["code"], "SKILL_NOT_INSTALLED")
+        self.assertIn("Next (ask_person)", refused["detail"])
+        self.install(access={"programs": ["blender"]})
+        needed = self.start(status=403, inputs={})
+        self.assertEqual(needed["code"], "SKILL_ACCESS_NEEDED")
+        self.assertIn("Next (ask_person)", needed["detail"])
+        self.assertEqual({code: step for code, (step, _) in skill_runs.NEXT_STEPS.items()}["SKILL_REPEATED_FAILURE"], "stop")
+        self.assertEqual(skill_runs.next_step("A_CODE_NOBODY_KNEW")[0], "stop", "an unknown failure stops rather than retries")
+        for code, (step, words) in skill_runs.NEXT_STEPS.items():
+            self.assertIn(step, ("fix_input", "ask_person", "stop"), code)
+            self.assertTrue(words.endswith("."), code)
+
+    def test_an_agent_is_not_given_a_third_run_of_the_request_that_failed_twice(self):
+        self.install()
+        fails = {"parameters": {"fail": True}, "agentRun": True}
+        for _ in range(2):
+            self.assertEqual(self.run_skill(**fails)["status"], "failed")
+        third = self.start(status=409, **fails)
+        self.assertEqual(third["code"], "SKILL_REPEATED_FAILURE")
+        self.assertIn("failed twice with exactly this request (SKILL_RUN_FAILED)", third["detail"])
+        self.assertIn("Next (stop)", third["detail"])
+        self.assertEqual(len(self.skill_runs()), 2, "the refused one made no run")
+        # Another request, a person's own run, changed code, or time passing each allow it again.
+        self.assertEqual(self.run_skill(parameters={"fail": True, "other": 1}, agentRun=True)["status"], "failed")
+        self.assertEqual(self.run_skill(parameters={"fail": True})["status"], "failed", "a person's run is not stopped")
+        with patch.object(skill_runs, "REPEAT_WINDOW_S", 0.0):
+            self.assertEqual(self.run_skill(**fails)["status"], "failed")
+        self.install(SCRIPT + "# the person fixed it\n")
+        self.assertEqual(self.run_skill(agentRun=True, parameters={"fail": True})["status"], "failed")
+        self.assertEqual(self.run_skill(agentRun=True)["status"], "succeeded")
 
 
 if __name__ == "__main__":

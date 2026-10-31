@@ -61,6 +61,8 @@ try {
   browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_EXECUTABLE
     ? { executablePath: process.env.CHROMIUM_EXECUTABLE } : { channel: "chrome" }), args: ["--enable-unsafe-swiftshader", "--no-sandbox"] });
   const context = await browser.newContext({ viewport: { width: 1280, height: 850 }, locale: "en-US" });
+  // These passes press each retry themselves: quiet retries (F046) are off for them.
+  await context.addInitScript(() => localStorage.setItem("monkeyhub.quietRetry", "off"));
   await context.addInitScript(() => {
     // Every worker the page starts, by script: rhino3dm's is a blob the loader builds once.
     const Native = window.Worker;

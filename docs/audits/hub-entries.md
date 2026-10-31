@@ -16,11 +16,11 @@ created: 2026-10-21
 
 ## 合计
 
-711 个入口：动作 294、导航 171、参数控件 145、设置项 52、弹窗收尾 40、开发者模式 9。一直显示在屏幕上的 81 个；收在文件 / 编辑 / 视图 / 帮助、More、溢出菜单和下拉里的 67 个；按状态出现的 563 个。
+712 个入口：动作 295、导航 171、参数控件 145、设置项 52、弹窗收尾 40、开发者模式 9。一直显示在屏幕上的 81 个；收在文件 / 编辑 / 视图 / 帮助、More、溢出菜单和下拉里的 67 个；按状态出现的 563 个。
 
 | 工作面 | 入口 |
 |---|---:|
-| Hub 外壳 | 112 |
+| Hub 外壳 | 113 |
 | Hub 弹窗 | 87 |
 | 项目栏（各工作面共用） | 9 |
 | Modeling | 152 |
@@ -156,6 +156,7 @@ created: 2026-10-21
 | Hub 外壳 | 110 | 右下角通知 | 关闭通知 / Dismiss notification（×） | 弹窗收尾 | 关掉这条通知 | 条件：同上 | 2026-09-25 7ed39808 | 中 | 否 | `notifications/AttentionHost.tsx:375` |  | — | 待登记 |
 | Hub 外壳 | 111 | Windows 系统通知 | <通知文字> · 点击查看 / <通知文字> · Click to view | 导航 | 点系统通知回到 Hub 并打开该对话 | 条件：Hub 不在前台且已允许系统通知 | 2026-09-25 7ed39808 | 低 | 否 | `notifications/useAttention.ts:93` | 首次会请求浏览器通知权限 | — | 后台 |
 | Hub 外壳 | 112 | 工作面卡片内（Verbatim 原文、组件树错误） | 查看原文 / 显示中文 / （无英文版，只在中文界面出现） | 参数控件 | 在机器翻译的中文和英文原文之间切换 | 条件：中文界面、翻译成功、所在卡片开启原文开关 | 2026-09-03 623eb5a7 | 低 | 否 | `i18n/BilingualText.tsx:218` | 按钮名写死中文；实际出现在右侧建模工作面内，不在外壳 | — | 后台 |
+| Hub 外壳 | 113 | 消息卡片/运行卡片（AI 现写的脚本） | 留下成 skill（带名字输入框） / Keep as a skill | 动作 | 把跑成的临时脚本写进用户自己的 skill 文件夹，各项目都能用 | 条件：临时脚本跑完且还没留下 | 2026-10-25 S23 | 中 | 否 | `features/skills/SkillRunCard.tsx:84` | 名字默认用 AI 建议的；同名已有时拒绝，不覆盖；是用户的决定，不交给 AI | chat.conversation | chat.skill_run.keep |
 | Hub 弹窗 | 1 | 图片大图弹窗 · 弹窗标题栏 | 关闭 / Close | 弹窗收尾 | 关闭大图 | 条件：大图弹窗打开 | 2026-09-20 3cf3f806 | 中 | 否 | `ChatMessageContent.tsx:91` | 文字按钮，其它弹窗多用 × | shell.controls | view.dialog.close |
 | Hub 弹窗 | 2 | 图片大图弹窗 · 弹窗底部 | 下载 / Download | 动作 | 下载原图 | 条件：大图弹窗打开 | 2026-09-20 3cf3f806 | 低 | 部分 | `ChatMessageContent.tsx:93` | 与文件行“下载”重复 | shell.pages | view.open_file.download |
 | Hub 弹窗 | 3 | 新建项目弹窗 · 标题栏 | 关闭 / Close（×） | 弹窗收尾 | 关闭弹窗 | 条件：弹窗打开 | 2026-09-11 bdf3bc07 | 低 | 否 | `ChatShell.tsx:2541` | 与底部“取消”重复 | shell.controls | view.dialog.close |
@@ -312,13 +313,13 @@ created: 2026-10-21
 | Modeling | 58 | 工具条…溢出菜单 | 自由曲线 / Freehand | 动作 | 徒手画轮廓 | 条件：…展开 | 2026-09-13 87c9f2de | 低 | 否 | `features/stage/Stage.tsx:2076` | 描图纸也有徒手笔，叫 Pen/画笔 | draft.direct_edit | draft.tools.freehand |
 | Modeling | 59 | 工具条…溢出菜单 | 描图纸 / Tracing paper | 导航 | 打开/收起描图纸（批注）工具行 | 条件：…展开 | 2026-09-08 80309de7 | 中 | 否 | `features/stage/Stage.tsx:2081` |  | markup.draw | view.markup_tools.tracing_paper |
 | Modeling | 60 | 工具条…溢出菜单 | 绘制工作面 / Drawing plane | 设置项 | 下一笔画在哪个平面：XY / XZ / YZ / Face | 条件：…展开 | 2026-09-12 cb729dda | 中 | 部分 | `features/stage/Stage.tsx:2086` | 下拉 4 选项；中文“工作面”与 Hub 把右侧区域叫“工作面”撞词；Face 选项文案写死；非 XY 时状态行显示当前平面 | draft.direct_edit | draft.tools.line |
-| Modeling | 61 | 工具条右侧(或上方一行) | 记录 / Record | 动作 | 把本地未记录修改记录进项目 | 条件：有未记录修改或正在记录 | 2026-09-13 87c9f2de | 高 | 部分 | `features/stage/Stage.tsx:2103` | 旁边状态字“有未记录的修改 / 已自动保存”；与 3 处“记录修改并继续”同义 | design.history | draft.record.save |
+| Modeling | 61 | 工具条右侧(或上方一行) | 记录 / Record | 动作 | 把本地未记录修改记录进项目 | 条件：有未记录修改或正在记录 | 2026-09-13 87c9f2de | 高 | 部分 | `features/stage/Stage.tsx:2103` | 旁边状态字“有未记录的修改 / 已自动保存”；与 3 处“记录修改并继续”同义 | design.history | draft.record.save、draft.record.discard |
 | Modeling | 62 | 描图纸工具行 | 橡皮擦 / Eraser | 动作 | 擦除批注笔画 | 条件：描图纸打开 | 2026-09-13 039c4c65 | 中 | 否 | `features/stage/Stage.tsx:2112` | 文案借用 document.tool.eraser | markup.draw | view.markup_tools.eraser |
 | Modeling | 63 | 描图纸工具行 | 清空批注 / Clear annotations | 动作 | 一步清空全部批注（可撤销） | 条件：描图纸打开；无批注时禁用 | 2026-10-01 780ea434 | 低 | 是 | `features/stage/Stage.tsx:2115` |  | markup.review | markup.clear |
 | Modeling | 64 | 描图纸工具行 | 撤销批注 / Undo mark | 动作 | 撤销一笔批注 | 条件：描图纸打开 | 2026-09-08 80309de7 | 中 | 否 | `features/stage/Stage.tsx:2117` | 拿着批注工具时 Ctrl+Z 也走这里 | markup.draw | view.markup_tools.undo |
 | Modeling | 65 | 描图纸工具行 | 重做 / Redo | 动作 | 重做一笔批注 | 条件：描图纸打开 | 2026-09-08 80309de7 | 低 | 否 | `features/stage/Stage.tsx:2118` | 借用 document.redo，与“撤销批注”不对称（应为“重做批注”） | markup.draw | view.markup_tools.redo |
 | Modeling | 66 | 描图纸工具行 | 取消 / Cancel | 动作 | 放下手上的批注工具或橡皮擦 | 条件：拿着批注工具或橡皮擦 | 2026-09-08 80309de7 | 低 | 否 | `features/stage/Stage.tsx:2119` |  | markup.draw | view.markup_tools.cancel |
-| Modeling | 67 | 描图纸工具行 | 圈选 / 箭头 / 画笔 / 直线 / 标尺 / 圆弧 / 保留 / 移除 / Circle / Arrow / Pen / Line / Ruler / Arc / Keep / Remove | 动作 | 选择批注笔 | 条件：描图纸打开 | 2026-09-03 4846f3bd | 中 | 否 | `features/stage/Stage.tsx:2122` | 8 选项算 1 个；Circle/Line/Arc 与建模工具同名 | markup.draw | view.markup_tools.circle、view.markup_tools.arrow、view.markup_tools.freehand、view.markup_tools.line、view.markup_tools.ruler、view.markup_tools.arc、view.markup_tools.keep、view.markup_tools.remove |
+| Modeling | 67 | 描图纸工具行 | 圈选 / 箭头 / 画笔 / 直线 / 标尺 / 圆弧 / 文字 / 保留 / 移除 / Circle / Arrow / Pen / Line / Ruler / Arc / Text / Keep / Remove | 动作 | 选择批注笔 | 条件：描图纸打开 | 2026-09-03 4846f3bd | 中 | 否 | `features/stage/Stage.tsx:2122` | 9 选项算 1 个；Circle/Line/Arc 与建模工具同名 | markup.draw | view.markup_tools.circle、view.markup_tools.arrow、view.markup_tools.freehand、view.markup_tools.line、view.markup_tools.ruler、view.markup_tools.arc、view.markup_tools.text、view.markup_tools.keep、view.markup_tools.remove |
 | Modeling | 68 | 描图纸工具行 | 批注颜色 / Annotation colour | 设置项 | 红 / 蓝 / 黄 / 白 | 条件：描图纸打开 | 2026-09-08 80309de7 | 低 | 否 | `features/stage/Stage.tsx:2131` | 4 选项；颜色名写死在 Stage.tsx ANNOTATION_COLOURS | markup.draw | view.markup_tools.colour |
 | Modeling | 69 | 描图纸工具行 | 线宽 / Line width | 设置项 | 2 / 4 / 6 px | 条件：描图纸打开 | 2026-09-08 80309de7 | 低 | 否 | `features/stage/Stage.tsx:2136` | 3 选项 | markup.draw | view.markup_tools.line_width |
 | Modeling | 70 | 描图纸工具行 | 将审阅意见发送到画板 / Send review to Board | 动作 | 把描图纸批注作为审阅发到 Board | 条件：描图纸打开；有批注、模型已载入时可点 | 2026-09-16 1fcd35a8 | 中 | 是 | `features/stage/Stage.tsx:2142` |  | markup.review | markup.hand_to_ai.send_review |

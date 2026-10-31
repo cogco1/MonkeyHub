@@ -1,4 +1,5 @@
 import { savedViewCamera, type RenderView } from "../workspaces/monkeyarch/viewer/renderView";
+import { useCommandActions } from "../features/commands/CommandProvider";
 /**
  * The studio shell: one conversation beside one model, and everything the
  * server said one click behind.
@@ -47,6 +48,7 @@ import type {
   CompareDto,
   ModelGestureDto,
   ModelSourceDto,
+  AttachedModelDto,
   WorkingCopyOptionDto,
   PendingIntentDto,
   ProjectArtifactDto,
@@ -81,6 +83,7 @@ import { EvidenceDrawer } from "../features/evidence/EvidenceDrawer";
 import { useStudioEvents } from "../features/events/EventStream";
 import { honestyCount } from "../features/evidence/HonestyTab";
 import { usePreferences } from "../features/settings/preferences";
+import { HAND_TO_AI_WORDS, HandToAiError, handToAiErrorText, marksFile, pngFile, pointMarks, thumbnailOf, useHandToAi } from "../features/handToAi/handToAi";
 import type { DirectModelAction, DirectModelTool } from "../features/stage/ModelEditPanel";
 import type { PushPullTarget } from "../workspaces/monkeyarch/interactionSession";
 import { applyDraftCommand, createModelDraft, currentDraft, drawnShapeFromSpec,
@@ -101,6 +104,8 @@ interface LocalModelSession {
   /** The automatic-save failure `error` shows, so a later successful save clears only that. */
   autosaveError?: string;
   recoverySaved?: DraftSnapshot;
+  /** Edits restored from an earlier session's draft, not made since: they can be recorded or discarded (S19). */
+  restored?: boolean;
 }
 
 /** Local geometry not yet incorporated in a completed candidate. */
@@ -142,7 +147,7 @@ import {
 } from "../workspaces/monkeyarch/viewer/ThreeDmViewport";
 import { semanticObjectNames } from "../workspaces/monkeyarch/viewer/modelDisplay";
 import { AppShell } from "./AppShell";
-import { ErrorPanel } from "./ErrorPanel";
+import { ErrorPanel, plainFailure, plainFailureText } from "./ErrorPanel";
 import { EVIDENCE_PINNED_KEY, type EvidenceTab } from "./evidence";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
 import { LoadingOverlay } from "./LoadingOverlay";
@@ -153,6 +158,7 @@ import { followStep, followsTreeMove, followUndo, headOf, pinStep, undoFollow, v
 import { useTranscript, type SystemTextPart } from "./transcript";
 import { useCandidateRuns } from "./useCandidateRuns";
 import { finishEditTiming, startClientTiming, type ClientTimingSpan, type EditTimingTicket } from "./clientTiming";
+import { AutoRetry } from "./AutoRetry";
 
 /** The three refusing outcomes of an intent, and the two that end an exchange. */
 const TERMINAL_OUTCOMES = [MISSING_EDITABLE_CONTROL, UNSUPPORTED_REQUEST];
@@ -276,7 +282,7 @@ const FOLLOW_WORDS: Readonly<Record<FollowNotice["state"], MessageKey>> = {
   "moved-on": "stage.follow.undoMoved", unsynced: "stage.follow.undoUnsynced", failed: "stage.follow.undoFailed",
 };
 
-export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onBoard, onChatRequest, onDesignContextChange, onRenderReader, cameraRequest = null, onView, onRecorder, onOpenTree, treeMove = null }: {
+export default function App({ server, expectedProjectId, projectStep = null, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onBoard, onChatRequest, onDesignContextChange, onRenderReader, cameraRequest = null, onView, onRecorder, onOpenTree, treeMove = null }: {
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;
   /**
    * The last move of the Working Head the project's Design Tree made, a Continue or its Undo (#575). The tree's toast
@@ -320,12 +326,14 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   onBoard?: (source: PageSource) => void;
   onChatRequest?: () => void;
   onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
+  /** The step the working design stands on, as the left column names it under the project; the model's title when it is that step. */
+  projectStep?: string | null;
 }) {
   const studio = useStudio();
   const t = useT();
   const viewportOpened = useRef(active);
   viewportOpened.current ||= active;
-  const { developerMode } = usePreferences();
+  const { developerMode, language } = usePreferences();
   const transcript = useTranscript();
   const { append, remove: removeEntry, noteJobStatus: noteTranscriptStatus } = transcript;
   const pushNotice = useCallback(
@@ -378,7 +386,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         setDocumentView((current) => ({ ...current, open: false }));
         onReturnToBoard();
       }
-      catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
+      catch (cause) { setHistoryError(plainFailureText(cause)); }
       finally { leavingToBoard.current = false; }
     })();
   }, [onReturnToBoard]);
@@ -397,7 +405,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         if (live) setDocumentView({ open: true, mounted: true, runId: documentSource.runId,
           sourceSha: documentSource.assetSha256, revisionRef: documentSource.revisionRef,
           pageIndex: documentSource.pageIndex });
-      } catch (cause) { if (live) setHistoryError(asStudioApiError(cause).detail); }
+      } catch (cause) { if (live) setHistoryError(plainFailureText(cause)); }
     })();
     return () => { live = false; };
   }, [documentSource]);
@@ -645,7 +653,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     [project?.projectId, projection?.referenceRun.runId, projection?.stateDigest, loadedArtifact?.runId, sourceLabel]);
   const [viewerProjection, setViewerProjection] = useState<StateProjectionDto | null>(null);
   const modelSources = useMemo(() => {
-    const options = workingCopies.flatMap((copy) => copy.options.map((option) => ({
+    const options: { label: string; modelSource: ModelSourceDto; studioFile?: boolean }[] = workingCopies.flatMap((copy) => copy.options.map((option) => ({
       label: `${copy.label} · ${option.label}`, modelSource: option.modelSource,
     })));
     if (artifacts.status === "ready") {
@@ -654,7 +662,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         if (artifact.representation !== "composed" && rows.some((row) => row.runId === artifact.runId && row.representation === "composed")) continue;
         if (!artifact.modelSource || options.some((row) => row.modelSource.runId === artifact.runId &&
           row.modelSource.assetSha256 === artifact.sha256)) continue;
-        options.push({ label: artifact.fileName, modelSource: artifact.modelSource });
+        // A file the person brought keeps the name they gave it; one the Studio wrote names nothing they know.
+        options.push({ label: artifact.fileName, modelSource: artifact.modelSource, studioFile: artifact.representation !== "external" });
       }
     }
     return options;
@@ -739,7 +748,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       const accepted = histories.flatMap((history) => history.stages.map((stage) => stage.modelSource));
       setAcceptedHistory({ history: designHistory, sources: accepted });
     })()
-      .catch((cause) => { if (current) setHistoryError(asStudioApiError(cause).detail); });
+      .catch((cause) => { if (current) setHistoryError(plainFailureText(cause)); });
     return () => { current = false; controller.abort(); };
   }, [designHistoryEnabled, designHistory, project?.projectId]);
   const retainedCandidates = useMemo(() => {
@@ -769,6 +778,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const [tracingPaperSend, setTracingPaperSend] = useState<{ busy: boolean; sent: boolean; error: string | null }>({ busy: false, sent: false, error: null });
   useEffect(() => { setTracingPaperSend({ busy: false, sent: false, error: null }); },
     [loadedModelSource?.runId, loadedModelSource?.stateDigest, loadedModelSource?.assetSha256, tracingPaperSignature]);
+  // S08: 「交给 AI」 on the tracing paper; sending it to the Board is developer mode's (and a bare Modeling's).
+  const handToAi = useHandToAi();
+  const [handModel, setHandModel] = useState<{ words: string; busy: boolean; error: string | null; sent: boolean }>({ words: "", busy: false, error: null, sent: false });
+  const handModelSending = useRef(false);
   const editGestures = (change: (current: readonly ModelGestureDto[]) => readonly ModelGestureDto[]) => {
     modelAnnotations.changeAnnotations(change(gestures));
   };
@@ -934,12 +947,14 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           candidateId: attempt.accepted.candidateId, jobId: attempt.accepted.jobId, status: attempt.accepted.status });
       }
       local.recoverySaved = currentDraft(local.history);
-      local.error = retained?.pending ? t("stage.sync.recovered") : null;
+      // Its own line says what it is and what to do with it (stage.sync.restored).
+      local.restored = true;
+      local.error = null;
       localModels.current.set(draftKey, local);
       refreshLocalModel();
     } catch (cause) {
       recoveryFailure.current = draftKey;
-      setHistoryError(t("stage.sync.recoveryFailed", { reason: asStudioApiError(cause).detail }));
+      setHistoryError(t("stage.sync.recoveryFailed", { reason: plainFailureText(cause) }));
     }
   }, [workingDraft?.localDraft, draftKey, draftSource?.stateDigest, loadedArtifact?.runId, modelLoading, ensureLocalModel, refreshLocalModel, append, t]);
   // Serialize this workspace's recovery writes; every write still uses P036 CAS
@@ -979,7 +994,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   }, [autosaveEnabled, studio, refreshLocalModel, queueWorkingDraftWrite, t]);
   /** Say an automatic save failed on the draft itself; the next successful save takes it back. */
   const autosaveFailed = useCallback((local: LocalModelSession, cause: unknown) => {
-    local.error = local.autosaveError = t("stage.sync.autosaveFailed", { reason: asStudioApiError(cause).detail });
+    local.error = local.autosaveError = t("stage.sync.autosaveFailed", { reason: plainFailureText(cause) });
     refreshLocalModel();
   }, [refreshLocalModel, t]);
   useEffect(() => {
@@ -1066,12 +1081,45 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       append({ kind: "system", text: `Tracing Paper review sent to Board · ${review.fileName}` });
     } catch (cause) {
       if (sameModelSource(currentViewSourceRef.current, modelSource)) {
-        setTracingPaperSend({ busy: false, sent: false, error: asStudioApiError(cause).detail });
+        setTracingPaperSend({ busy: false, sent: false, error: plainFailureText(cause) });
       }
     } finally {
       tracingPaperSending.current = false;
     }
   }, [append, designHistory, gestures, loadedArtifact, loadedModelSource, modelAnnotations, persistentAnnotations, project]);
+
+  /**
+   * S08: the tracing paper's marks over the model as seen, each with the objects it hit, and the person's sentence
+   * on the first circle, handed to the AI in the project's conversation. Once taken, the tracing paper is cleared
+   * (undo brings the marks back); the saved annotation revision, the message and History keep them.
+   */
+  const handTracingPaperToAi = useCallback(async () => {
+    const viewport = viewportRef.current;
+    if (!handToAi || !viewport || handModelSending.current || !project || !loadedModelSource || !persistentAnnotations || !modelAnnotations.ready) return;
+    handModelSending.current = true;
+    setHandModel((current) => ({ ...current, busy: true, error: null, sent: false }));
+    const modelSource = { ...loadedModelSource };
+    try {
+      const words = handModel.words.trim();
+      if (gestures.length === 0) throw new HandToAiError("NOTHING_MARKED", "Nothing marked.");
+      if (!words) throw new HandToAiError("EMPTY", "No words.");
+      const acceptedStage = designHistory?.stages.find((stage) => sameModelSource(stage.modelSource, modelSource));
+      const capture = await captureTracingPaperReview(viewport, gestures, modelAnnotations.save);
+      const png = await renderTracingPaperSnapshotPng(capture.viewportPng, capture.saved.annotations);
+      const marks = pointMarks(capture.saved.annotations.map((gesture, index) => ({ id: String(index), kind: gesture.kind, points: gesture.screen, label: gesture.label })))
+        .map((mark, index) => ({ ...mark, hits: (capture.saved.annotations[index]?.hits ?? []).map((hit) => ({ ...hit })) }));
+      const files = [pngFile(png, "model"), marksFile("model", words, marks, { model: modelSource, stage: acceptedStage?.stageRef ?? null,
+        camera: capture.camera, screenSize: capture.screenSize, marksRevision: capture.saved.revisionSha256 ?? null, coordinates: "screen pixels" })];
+      await handToAi({ projectId: project.projectId, surface: "model", words, marks: gestures.filter((gesture) => gesture.kind !== "text").length,
+        files, thumbnail: await thumbnailOf(png) });
+      modelAnnotations.changeAnnotations([]);
+      setHandModel({ words: "", busy: false, error: null, sent: true });
+    } catch (cause) {
+      setHandModel((current) => ({ ...current, busy: false, error: handToAiErrorText(cause, language) }));
+    } finally {
+      handModelSending.current = false;
+    }
+  }, [handToAi, handModel.words, designHistory, gestures, loadedModelSource, modelAnnotations, persistentAnnotations, project, language]);
 
   const captureViewport = useCallback(async () => {
     const runId = loadedArtifact?.runId;
@@ -1092,8 +1140,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       append({
         kind: "system",
         ...systemText([
-          { kind: "technical", text: error.code },
-          { kind: "prose", text: ` · ${error.detail}` },
+          { kind: "prose", text: plainFailure(error, language).reason },
+          ...(developerMode ? [{ kind: "technical" as const, text: ` · ${error.code}: ${error.detail}` }] : []),
         ]),
       });
     }
@@ -1244,7 +1292,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     versionRefreshHandled.current = versionRefreshRequest;
     void loadArtifacts(true);
     void refreshWorkingCopies().catch(() => { /* The existing choices remain usable. */ });
-    void refreshWorkingDraft().catch((cause) => setHistoryError(asStudioApiError(cause).detail));
+    void refreshWorkingDraft().catch((cause) => setHistoryError(plainFailureText(cause)));
   }, [versionRefreshRequest, session.status, changingBase, artifacts.status, project?.projectId, loadArtifacts, refreshWorkingCopies, refreshWorkingDraft]);
 
 
@@ -1742,7 +1790,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (outcome === "undone") setFollowNudge((value) => value + 1);
       else setFollowNotice({ ...notice, id: ++followNoticeIds.current, state: outcome, undo: null });
     }, (cause) => {
-      setFollowNotice({ ...notice, id: ++followNoticeIds.current, state: "failed", undo: null, reason: asStudioApiError(cause).detail });
+      setFollowNotice({ ...notice, id: ++followNoticeIds.current, state: "failed", undo: null, reason: plainFailureText(cause) });
     }).finally(() => setFollowUndoing(false));
   }, [project?.projectId, studio]);
   useEffect(() => {
@@ -2503,7 +2551,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     if (historyBusy) return;
     setHistoryBusy(true); setHistoryError(null);
     try { await openDesignStage(await operation()); }
-    catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
+    catch (cause) { setHistoryError(plainFailureText(cause)); }
     finally { setHistoryBusy(false); }
   };
   const selectDesignBranch = async (branchId: string) => {
@@ -2513,7 +2561,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       const head = history.branches.find((branch) => branch.branchId === branchId)?.headStageRef;
       const stage = history.stages.find((item) => item.stageRef === head);
       if (stage) await openDesignStage(stage, branchId);
-    } catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
+    } catch (cause) { setHistoryError(plainFailureText(cause)); }
     finally { setHistoryBusy(false); }
   };
   const forkDesignBranch = async (stage: DesignStageDto, branchId: string) => {
@@ -2522,7 +2570,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     try {
       await studio.forkBranch({ projectId: project.projectId, branchId, parentBranch: designHistory.branchId, stageRef: stage.stageRef });
       await openDesignStage(stage, branchId);
-    } catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
+    } catch (cause) { setHistoryError(plainFailureText(cause)); }
     finally { setHistoryBusy(false); }
   };
   const combineDesignCandidates = async (candidateIds: string[]) => {
@@ -2533,7 +2581,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       const result = await studio.combineCandidates({ projectId: project.projectId, candidateIds });
       if (autoShowRef.current === preview) preview.candidateId = result.candidateId;
       append({ kind: "candidate", candidateId: result.candidateId, jobId: result.jobId, proposalId: null, status: result.status });
-    } catch (cause) { if (autoShowRef.current === preview) autoShowRef.current = null; setHistoryError(asStudioApiError(cause).detail); }
+    } catch (cause) { if (autoShowRef.current === preview) autoShowRef.current = null; setHistoryError(plainFailureText(cause)); }
     finally { setHistoryBusy(false); }
   };
 
@@ -2765,6 +2813,38 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     [append, beginCandidatePreview, monitorDiagnostics, project, projection, recoverFromStaleBase, sourceRunId],
   );
 
+  // #300 item 22 B: a model attached from outside the project becomes a design that can be changed. The
+  // proposal is the runtime's one semantic edit at the file's own run; it runs as any proposal does, and its
+  // result is offered like any other, so continuing to it makes it the current design on a line of its own.
+  // Coordinator's decision (S21): the last attached model by default, with the others offered to choose from.
+  const [importChoice, setImportChoice] = useState<{ models: AttachedModelDto[]; selected: string } | null>(null);
+  const convertImportedModel = useCallback(async (chosen?: string) => {
+    // The model on view when it is one attached from outside; else the one chosen; else, when there are several,
+    // ask which (the last attached first) and wait for the answer.
+    let sha = chosen ?? (loadedArtifact?.representation === "external" ? loadedArtifact.sha256 : null);
+    if (proposingRef.current) return;
+    proposingRef.current = true;
+    setProposalBusy(true);
+    try {
+      if (!sha) {
+        const models = await studio.attachedModels();
+        if (models.length > 1) { setImportChoice({ models, selected: models[0]!.assetSha256 }); return; }
+      }
+      setImportChoice(null);
+      const proposal = await studio.designFromModelAsset(sha);
+      append({ kind: "proposal", proposal, agent: null, refinements: 0 });
+      await runCandidate(proposal.proposalId);
+    } catch (cause) {
+      const error = asStudioApiError(cause);
+      setArtifactError(error);
+      append({ kind: "refusal", error, what: "POST /api/model-assets/design" });
+    } finally {
+      proposingRef.current = false;
+      setProposalBusy(false);
+    }
+  }, [append, loadedArtifact, runCandidate]);
+  useCommandActions({ "design.from_import": { run: () => void convertImportedModel(importChoice?.selected) } });
+
   const [tracingLevels, setTracingLevels] = useState<FrameLevelDto[]>([]);
   useEffect(() => {
     let stopped = false;
@@ -2995,7 +3075,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     } catch (cause) {
       if (!stillCurrent()) return;
       const error = asStudioApiError(cause);
-      setParameterLockError(error.detail);
+      setParameterLockError(plainFailureText(error));
       recoverFromStaleBase(error);
       append({ kind: "refusal", error, what: "POST /api/proposals/parameter-locks" });
     } finally { setParameterLockBusy(false); }
@@ -3041,6 +3121,17 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     ]) });
   }, [append, baseUndoTarget, canUndoModel, refuseViewedEdit, showRunAsBase, localModel, refreshLocalModel]);
 
+  /** Put away a restored draft (S19): the model goes back to its recorded base and the saved draft is cleared. */
+  const discardRestoredDraft = useCallback(() => {
+    const session = localModel;
+    if (!draftKey || !session?.restored || session.busy || refuseViewedEdit()) return;
+    // The restored session goes; a new one starts from the recorded base, as if nothing had been drawn.
+    localModels.current.delete(draftKey);
+    const base = ensureLocalModel();
+    refreshLocalModel(); setPicked(null); setSelection(null);
+    void retainLocalModel(base, true).catch((cause) => autosaveFailed(base, cause));
+  }, [draftKey, localModel, refuseViewedEdit, ensureLocalModel, refreshLocalModel, retainLocalModel, autosaveFailed]);
+
   const redoModel = useCallback(async () => {
     if (!canRedoModel || refuseViewedEdit()) return;
     if (localModel) {
@@ -3062,7 +3153,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       commitLocalCommand({ kind: "delete", elementId: deletableElementId });
       setPicked(null); setSelection(null); setDirectError(null);
       viewportRef.current?.highlight(null);
-    } catch (cause) { setDirectError(asStudioApiError(cause).detail); }
+    } catch (cause) { setDirectError(plainFailureText(cause)); }
   }, [canDeleteModel, deletableElementId, commitLocalCommand, refuseViewedEdit]);
 
   const applyDirectModelAction = useCallback((action: DirectModelAction) => {
@@ -3083,7 +3174,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         setSelection({ componentId: picked.componentId, elementId: copyElementId });
       }
       setDirectError(null); setArtifactError(null);
-    } catch (cause) { setDirectError(asStudioApiError(cause).detail); }
+    } catch (cause) { setDirectError(plainFailureText(cause)); }
   }, [canDeleteModel, deletableElementId, pushPullTarget, commitLocalCommand, picked, refuseViewedEdit]);
 
   // The saved base a finished Sync is still writing, per draft: Record edits and
@@ -3105,7 +3196,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     session.pending ??= { snapshot, attempt: createModelDraftSyncAttempt(),
       interactionEpoch: modelInteractionEpoch.current, viewRequest: modelLoadRequest.current };
     const pending = session.pending;
-    session.busy = true; session.error = null;
+    session.busy = true; session.error = null; session.restored = false;
     setModelSyncBusy(true); refreshLocalModel();
     if (pending.attempt.accepted) {
       candidateRuns.refresh(pending.attempt.accepted.candidateId);
@@ -3121,7 +3212,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (!accepted) { session.synced = pending.snapshot; session.pending = null; }
       await retainLocalModel(session, !unsynced(session));
     } catch (cause) {
-      session.error = asStudioApiError(cause).detail;
+      session.error = plainFailureText(cause);
     } finally {
       if (!pending.attempt.accepted) { session.busy = false; setModelSyncBusy(false); }
       refreshLocalModel();
@@ -3174,7 +3265,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         let adopted = false;
         if (quiet) {
           try { adopted = await adopt(); }
-          catch (cause) { session.error = asStudioApiError(cause).detail; refreshLocalModel(); }
+          catch (cause) { session.error = plainFailureText(cause); refreshLocalModel(); }
         }
         try {
           // Not adopted into the view, the batch still becomes the saved base without
@@ -3184,7 +3275,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         } catch (cause) {
           // The saved base could not take the batch: its recovery keeps its exact
           // source and synced commands, so reopening still shows the edits.
-          session.error = t("stage.sync.baseNotSaved", { reason: asStudioApiError(cause).detail });
+          session.error = t("stage.sync.baseNotSaved", { reason: plainFailureText(cause) });
           refreshLocalModel();
           await recovered(retainLocalModel(session));
           return;
@@ -3236,7 +3327,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const recordAndRetry = useCallback(async (retry: () => Promise<unknown>) => {
     setRecordingEdits(true); setBaseNotice(null);
     try { await recordEdits(); }
-    catch (cause) { setBaseNotice(t("stage.record.failed", { reason: asStudioApiError(cause).detail })); return; }
+    catch (cause) { setBaseNotice(t("stage.record.failed", { reason: plainFailureText(cause) })); return; }
     finally { setRecordingEdits(false); }
     setRecordRetry(null);
     await retry();
@@ -3245,7 +3336,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const recordDocumentIntent = useCallback(async () => {
     setRecordingEdits(true); setDocumentIntentNotice(null);
     try { await recordEdits(); }
-    catch (cause) { setDocumentIntentNotice(t("stage.record.failed", { reason: asStudioApiError(cause).detail })); return; }
+    catch (cause) { setDocumentIntentNotice(t("stage.record.failed", { reason: plainFailureText(cause) })); return; }
     finally { setRecordingEdits(false); }
     continueDocumentIntent();
   }, [continueDocumentIntent, recordEdits, t]);
@@ -3584,6 +3675,12 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     [candidateEntries, t, utteranceOf],
   );
   const selectedSentence = sentenceOfCandidate(selectedCandidateId);
+  // S15: the model's title. The working design's step goes by the name the left column gives it under the project;
+  // another model by its option's or the person's own file name, else the words it was asked in; else no title,
+  // never a file name the Studio wrote ("studio-candidate-modeler@….preview.3dm").
+  const editingRow = modelSources.find((row) => sameModelSource(row.modelSource, editingModelSource));
+  const editingBaseName = (projectStep && editingRunId !== null && workingDraft?.current?.runId === editingRunId ? projectStep : null)
+    ?? (editingRow && !editingRow.studioFile ? editingRow.label : null) ?? sentenceOfCandidate(editingRunId);
 
   const evidenceCounts = {
     honesty: honestyCount(projection, selectedCandidate, selectedValidation),
@@ -3656,10 +3753,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           {developerMode && sourceRunId !== null && <p className="mono">{sourceRunId}</p>}
           {error && <ErrorPanel error={error} what={error === documentIntentError ? "MonkeyBoard" : undefined} />}
           {baseNotice && <p className="refusal__lead" role="alert">{baseNotice}</p>}
-          <button data-command="view.notice.retry" data-command-arg="model_open" type="button" className="btn" disabled={changingBase}
-            onClick={() => { if (missingChosenModel) void loadArtifacts(); else void reload(); }}>
+          <AutoRetry failure={error} data-command="view.notice.retry" data-command-arg="model_open" className="btn" disabled={changingBase}
+            retry={() => { if (missingChosenModel) void loadArtifacts(); else void reload(); }}>
             {t("stage.base.retry")}
-          </button>
+          </AutoRetry>
           <button data-command="design.go_to_step.default_base" type="button" className="btn" disabled={changingBase}
             onClick={() => void changeBaseFromRow(null)}>
             {t("stage.base.default")}
@@ -3686,8 +3783,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
               ? t("loading.startingSession")
               : (
                   <>
-                    {t("loading.readingBinding")} ·{" "}
-                    <code lang="en">GET /api/project</code>
+                    {t("loading.readingBinding")}
+                    {developerMode && <> · <code lang="en">GET /api/project</code></>}
                   </>
                 )
           }
@@ -3805,6 +3902,15 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             onBoard={onBoard}
             onChatRequest={onChatRequest}
             onOpenTree={onOpenTree}
+            importedModel={viewingExternalModel ? { onConvert: () => void convertImportedModel(),
+              busy: proposalBusy || candidateBusy || modelRunPending !== null } : undefined}
+            importChoice={importChoice ? {
+              models: importChoice.models.map((model) => ({ assetSha256: model.assetSha256,
+                label: `${model.fileName} · ${new Date(model.attachedAt).toLocaleString(language)}` })),
+              selected: importChoice.selected, busy: proposalBusy || candidateBusy,
+              onSelect: (assetSha256) => setImportChoice((current) => current && { ...current, selected: assetSha256 }),
+              onConvert: () => void convertImportedModel(importChoice.selected), onCancel: () => setImportChoice(null),
+            } : undefined}
             hasModel={sourceLabel !== null || hasLocalGeometry}
             onSketch={runSketch}
             parameterLocks={{ parameters: projection?.parameters ?? [], contextKey, busy: parameterLockBusy || modelRunPending !== null,
@@ -3830,14 +3936,15 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
               onInteraction: () => { modelInteractionEpoch.current += 1; },
               sync: { dirty: !!localModel && unsynced(localModel),
                 autosave: autosaveEnabled ? localModel?.recoverySaved === draftSnapshot ? "saved" : "saving" : undefined,
-                busy: localModel?.busy ?? false, error: localModel?.error ?? null, onSync: () => void syncLocalModel() },
+                busy: localModel?.busy ?? false, error: localModel?.error ?? null, onSync: () => void syncLocalModel(),
+                restored: Boolean(localModel?.restored && unsynced(localModel) && !localModel.busy), onDiscard: discardRestoredDraft },
               pushPullTarget, pushPullReason: pickedShape?.drawnShapeReason,
               onApply: (action) => void applyDirectModelAction(action),
               elevation: elevationObject && draftKey ? { object: elevationObject, objects: elevationObjects,
                 levels: draftSnapshot?.levels ?? draftProjection?.levels ?? [], onApply: command => {
                   if (modelNavigationBusy || refuseViewedEdit()) return false;
                   try { commitLocalCommand(command); setDirectError(null); return true; }
-                  catch (cause) { setDirectError(asStudioApiError(cause).detail); return false; }
+                  catch (cause) { setDirectError(plainFailureText(cause)); return false; }
                 } } : null,
             }}
             viewportRef={viewportRef}
@@ -3848,6 +3955,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             gestures={gestures}
             onTool={setTool}
             onGesture={(gesture) => editGestures((current) => [...current, { ...gesture, id: crypto.randomUUID() }])}
+            onReplaceGesture={(index, gesture) => editGestures((current) => current.map((mark, i) => i === index ? { ...gesture, id: mark.id } : mark))}
+            onStartPaper={modelAnnotations.startPaper}
             onUndoGesture={modelAnnotations.undo}
             onRedoGesture={modelAnnotations.redo}
             canUndoGesture={modelAnnotations.canUndo}
@@ -3855,9 +3964,14 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             modelAnnotations={persistentAnnotations ? modelAnnotations : null}
             annotationsReady={modelAnnotations.ready && !modelLoading &&
               (loadedArtifacts.length > 0 || sourceLabel === LOCAL_SOURCE_LABEL)}
-            tracingPaperReview={{ enabled: persistentAnnotations && modelAnnotations.ready && gestures.length > 0 && !modelLoading && loadedModelSource !== null,
+            handToAi={handToAi ? { words: handModel.words, busy: handModel.busy, error: handModel.error,
+              sent: handModel.sent ? HAND_TO_AI_WORDS[language].sent : null,
+              enabled: persistentAnnotations && modelAnnotations.ready && gestures.length > 0 && !modelLoading && loadedModelSource !== null,
+              onWords: (words: string) => setHandModel((current) => ({ ...current, words, error: null, sent: false })),
+              onSend: () => void handTracingPaperToAi() } : undefined}
+            tracingPaperReview={!handToAi || developerMode ? { enabled: persistentAnnotations && modelAnnotations.ready && gestures.length > 0 && !modelLoading && loadedModelSource !== null,
               busy: tracingPaperSend.busy, sent: tracingPaperSend.sent, error: tracingPaperSend.error,
-              onSend: () => void sendTracingPaperToBoard() }}
+              onSend: () => void sendTracingPaperToBoard() } : undefined}
             onEraseGestures={(indices) => editGestures((current) => current.filter((_, index) => !indices.includes(index)))}
             documentProjectId={binding?.projectId ?? null}
             documentView={documentView}
@@ -3867,11 +3981,13 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             onDocumentView={(next) => {
               void (async () => {
                 try { await documentSaveRef.current?.(); setDocumentView(next); }
-                catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
+                catch (cause) { setHistoryError(plainFailureText(cause)); }
               })();
             }}
             documentModelSources={modelSources}
             viewedModelSource={loadedModelSource}
+            viewedAsset={loadedModelSource === null && viewingExternalModel && loadedArtifact?.sha256
+              ? { runId: loadedArtifact.runId, assetSha256: loadedArtifact.sha256 } : null}
             editingModelSource={editingModelSource}
             onContinueModelSource={async (source) => {
               // The drawing's own Continue shows the refusal in the drawing panel.
@@ -3908,7 +4024,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
                 // The person names this version here, so the save says they did (#575).
                 void studio.workingDraft().then((current) => studio.savePersonsVersion({ projectId: project.projectId,
                   runId, label: label || undefined, baseRevisionSha256: current.revisionSha256 ?? null }))
-                  .then(() => refreshWorkingDraft()).catch((cause) => setHistoryError(asStudioApiError(cause).detail))
+                  .then(() => refreshWorkingDraft()).catch((cause) => setHistoryError(plainFailureText(cause)))
                   .finally(() => setHistoryBusy(false));
               },
               busy: historyBusy || changingBase || selectingWorkingCopy || modelLoading || proposalBusy || candidateBusy ||
@@ -3943,8 +4059,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             loadingSha={artifactLoadingSha}
             loadedShas={loadedShas}
             editingBaseRunId={projection?.referenceRunSource === "none" ? null : projection?.referenceRun.runId ?? null}
-            editingBaseLabel={modelSources.find((row) => sameModelSource(row.modelSource, editingModelSource))?.label ??
-              sentenceOfCandidate(projection?.referenceRun.runId ?? null)}
+            editingBaseLabel={editingBaseName}
             explicitBase={sourceRunId !== null}
             changingBase={changingBase || selectingWorkingCopy}
             baseError={baseError}

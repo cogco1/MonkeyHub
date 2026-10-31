@@ -11,6 +11,8 @@ import { useCommands } from "../commands/CommandProvider";
 import { DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED } from "../designTree/continueUndo";
 import { usePreferences } from "../settings/preferences";
 import { historyRows, type HistoryRow } from "./historyRows";
+import { HAND_OFFS_CHANGED, readHandOffs, type HandOffRecord } from "../handToAi/handOffRecords";
+import { HAND_TO_AI_WORDS } from "../handToAi/handToAi";
 import { HISTORY_WORDS, type HistoryWords } from "./words";
 import "./historyPage.css";
 
@@ -52,6 +54,16 @@ export function HistoryPage({ projectDir, active }: { readonly projectDir: strin
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<Note | null>(null);
   const [naming, setNaming] = useState<{ readonly runId: string; readonly text: string } | null>(null);
+  // S08: what was handed to the AI from this project, the record each hand-over's marks left behind.
+  const [handOffs, setHandOffs] = useState<readonly HandOffRecord[]>(() => readHandOffs(projectDir));
+  useEffect(() => {
+    setHandOffs(readHandOffs(projectDir));
+    const changed = () => setHandOffs(readHandOffs(projectDir));
+    window.addEventListener(HAND_OFFS_CHANGED, changed);
+    window.addEventListener("storage", changed);
+    return () => { window.removeEventListener(HAND_OFFS_CHANGED, changed); window.removeEventListener("storage", changed); };
+  }, [projectDir]);
+  const handWords = HAND_TO_AI_WORDS[language];
 
   const reload = useCallback(async () => {
     const [moves, position, graph] = await Promise.all([studio.workingDesignMoves(), studio.workingDraft(),
@@ -131,7 +143,7 @@ export function HistoryPage({ projectDir, active }: { readonly projectDir: strin
       {note.kind === "moved" && note.undo && <button type="button" className="btn btn--link" data-command="design.undo_last"
         disabled={busy} onClick={() => void undo(note.undo!)}>{words.undo}</button>}
     </p>}
-    {read === null ? <p className="design-history__empty" role="status">{words.loading}</p>
+    {read === null ? <p className="design-history__empty wait-late" role="status">{words.loading}</p>
       : read.rows.length === 0 ? <p className="design-history__empty">{words.empty}</p>
       : <ol className="design-history__rows">
         {read.rows.map((row, index) => <li key={`${row.runId}:${row.occurredAt}:${index}`} className="design-history__row"
@@ -159,5 +171,16 @@ export function HistoryPage({ projectDir, active }: { readonly projectDir: strin
         </li>)}
       </ol>}
     {read && read.warnings.length > 0 && <p className="design-history__empty">{words.unreadable}</p>}
+    {handOffs.length > 0 && <section className="design-history__hand-offs" aria-label={handWords.history}>
+      <h3 className="design-history__subhead">{handWords.history}</h3>
+      <ol className="design-history__rows">{handOffs.map((row) => <li key={row.id} className="design-history__row design-history__hand-off">
+        {row.thumbnail && <img className="design-history__thumb" src={row.thumbnail} alt="" />}
+        <div className="design-history__line"><strong className="design-history__name">{row.words}</strong></div>
+        <p className="design-history__meta">{time(row.at)} · {handWords.surface[row.surface]} · {handWords.marked(row.marks)}</p>
+        <div className="design-history__actions"><button type="button" className="btn btn--link" data-command="chat.open_conversation"
+          onClick={() => window.dispatchEvent(new CustomEvent("monkeyhub:open-chat", { cancelable: true, detail: { chatId: row.chatId, projectDir: row.projectDir } }))}>
+          {handWords.openChat}</button></div>
+      </li>)}</ol>
+    </section>}
   </section>;
 }

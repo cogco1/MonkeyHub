@@ -17,6 +17,8 @@ import { createSkillsApi, packageKey, shortHash, type SkillLibrary, type SkillPa
 import { useT, type TFunction } from "../../i18n/useT";
 import { AccessList } from "./SkillAccess";
 import "./skills.css";
+import { AutoRetry } from "../../app/AutoRetry";
+import { PlainFailure } from "../../app/ErrorPanel";
 
 const SOURCE_KEYS = { bundled: "skills.library.source.bundled", user: "skills.library.source.user" } as const;
 
@@ -56,10 +58,10 @@ export function SkillsView({ library, loading, error, reload, close }: {
       <button type="button" className="btn" onClick={close}>{t("skills.close")}</button>
     </div>
     <p className="chat-muted">{t("skills.intro")}</p>
-    {loading && !library && <p className="chat-muted" role="status">{t("skills.library.loading")}</p>}
+    {loading && !library && <p className="chat-muted wait-late" role="status">{t("skills.library.loading")}</p>}
     {error && <div className="skills__error" role="alert">
-      <p>{t("skills.library.loadFailed")} {error.detail}</p>
-      <button type="button" className="btn" disabled={loading} onClick={reload}>{t("skills.retry")}</button>
+      <p><PlainFailure error={error} lead={t("skills.library.loadFailed")} /></p>
+      <AutoRetry failure={error} place="skills_library" className="btn" disabled={loading} retry={reload}>{t("skills.retry")}</AutoRetry>
     </div>}
     {library && library.packages.length === 0
       && <p className="chat-muted">{t("skills.library.empty", { folder: library.sources.user ?? "" })}</p>}

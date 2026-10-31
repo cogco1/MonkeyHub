@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import re
+import threading
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
@@ -32,7 +33,30 @@ _HEX = frozenset("0123456789abcdef")
 ASSET_URI_PATTERN = r"^(?![Ff][Ii][Ll][Ee]://)[A-Za-z][A-Za-z0-9+.-]*://"
 
 _URI_SCHEME = re.compile(ASSET_URI_PATTERN)
-_MAX_ITEMS = 16_384
+# How many ids or refs one list of a program may hold, among them the objects
+# one component's semantic binding delivers. A refusal names it with the
+# count that crossed it (#648).
+MAX_PROGRAM_IDS = 16_384
+
+# A housing program renders to megabytes of canonical JSON, and one candidate
+# asks its digest several times (GH-300/srv S20). These values are frozen, so
+# the digest of the very same object is kept; the entry holds the object, so
+# its id is not reused while the entry stands.
+_DIGESTS: dict[int, tuple[object, str]] = {}
+_DIGESTS_LOCK = threading.Lock()
+_DIGESTS_KEPT = 6
+
+
+def _memo_digest(owner: object, render) -> str:
+    hit = _DIGESTS.get(id(owner))
+    if hit is not None and hit[0] is owner:
+        return hit[1]
+    digest = canonical_digest(render())
+    with _DIGESTS_LOCK:
+        _DIGESTS[id(owner)] = (owner, digest)
+        while len(_DIGESTS) > _DIGESTS_KEPT:
+            del _DIGESTS[next(iter(_DIGESTS))]
+    return digest
 
 
 class GeometryProgramError(ValueError):
@@ -163,6 +187,14 @@ class DetailMaturity(StrEnum):
 
 
 
+def _count(values: object, field: str, *, allow_empty: bool) -> None:
+    if len(values) > MAX_PROGRAM_IDS:
+        raise GeometryProgramError(f"{field} holds {len(values):,} items; a geometry program allows at most "
+                                   f"{MAX_PROGRAM_IDS:,} per list")
+    if not values and not allow_empty:
+        raise GeometryProgramError(f"{field} must not be empty")
+
+
 def _ids(
     values: object,
     field: str,
@@ -171,8 +203,7 @@ def _ids(
 ) -> tuple[str, ...]:
     if not isinstance(values, tuple):
         raise TypeError(f"{field} must be a tuple")
-    if len(values) > _MAX_ITEMS or (not values and not allow_empty):
-        raise GeometryProgramError(f"{field} has an invalid item count")
+    _count(values, field, allow_empty=allow_empty)
     for value in values:
         require_identifier(value, field)
     if values != tuple(sorted(set(values))):
@@ -193,8 +224,7 @@ def _statements(value: object) -> Mapping[str, str]:
 
     if not isinstance(value, Mapping):
         raise TypeError("statements must be a mapping")
-    if len(value) > _MAX_ITEMS:
-        raise GeometryProgramError("statements has an invalid item count")
+    _count(value, "statements", allow_empty=True)
     normalized: dict[str, str] = {}
     for key in value:
         require_identifier(key, "statement key")
@@ -213,8 +243,7 @@ def _refs(
 ) -> tuple[str, ...]:
     if not isinstance(values, tuple):
         raise TypeError(f"{field} must be a tuple")
-    if len(values) > _MAX_ITEMS or (not values and not allow_empty):
-        raise GeometryProgramError(f"{field} has an invalid item count")
+    _count(values, field, allow_empty=allow_empty)
     for value in values:
         require_logical_ref(value, field)
     if values != tuple(sorted(set(values))):
@@ -451,6 +480,10 @@ class SemanticBinding:
     def __post_init__(self) -> None:
         require_identifier(self.binding_id, "binding_id")
         require_identifier(self.component_id, "component_id")
+        if isinstance(self.object_ids, tuple) and len(self.object_ids) > MAX_PROGRAM_IDS:
+            raise GeometryProgramError(
+                f"component {self.component_id} delivers {len(self.object_ids):,} objects; one component delivers "
+                f"at most {MAX_PROGRAM_IDS:,}: split it into smaller components")
         _ids(self.object_ids, "binding object_ids")
         _refs(
             self.commitment_refs,
@@ -1326,7 +1359,7 @@ class GeometryProgramProposal:
 
     @property
     def proposal_digest(self) -> str:
-        return canonical_digest(self.to_dict())
+        return _memo_digest(self, self.to_dict)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1868,7 +1901,7 @@ class CompiledGeometryProgram:
 
     @property
     def program_digest(self) -> str:
-        return canonical_digest(self.to_dict())
+        return _memo_digest(self, self.to_dict)
 
     def object_digest(self, object_id: str) -> str:
         require_identifier(object_id, "object_id")

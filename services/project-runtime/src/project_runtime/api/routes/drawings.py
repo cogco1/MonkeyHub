@@ -98,7 +98,8 @@ def create_plan(request: Request, payload: PlanRequestDto) -> SourceDocumentDto:
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
     return document_dto(generate_plan(binding, **plan_arguments(payload), **_source(payload),
-                                      attribution=request_attribution(request)))
+                                      attribution=request_attribution(request),
+                                      projections=ready_projections(request.app.state)))
 
 
 @router.get("/drawings/plans/vector", response_model=PlanVectorDto, response_model_by_alias=True)
@@ -148,11 +149,12 @@ def read_plan_dimension_choices(request: Request,
         if not source_asset_run_id or not source_asset_sha256 or any((source_run_id, state_digest, asset_sha256, source_stage_ref)):
             raise StudioError(422, "DRAWING_SOURCE_AMBIGUOUS", "Choose one complete source asset or model binding.")
         return PlanDimensionChoicesDto(**plan_dimension_choices(bound_project(request.app.state),
-            source_asset={"runId": source_asset_run_id, "assetSha256": source_asset_sha256}))
+            source_asset={"runId": source_asset_run_id, "assetSha256": source_asset_sha256}, projections=ready_projections(request.app.state)))
     if not all((source_run_id, state_digest, asset_sha256)):
         raise StudioError(422, "DRAWING_SOURCE_REQUIRED", "Provide an exact model or imported asset.")
     source = model_source_from(ModelSourceDto(run_id=source_run_id, state_digest=state_digest, asset_sha256=asset_sha256))
-    return PlanDimensionChoicesDto(**plan_dimension_choices(bound_project(request.app.state), source, source_stage_ref))
+    return PlanDimensionChoicesDto(**plan_dimension_choices(bound_project(request.app.state), source, source_stage_ref,
+                                                           projections=ready_projections(request.app.state)))
 
 
 @router.post("/drawings/plans/dimension-proposal", response_model=ProposalDto, response_model_by_alias=True, status_code=201)

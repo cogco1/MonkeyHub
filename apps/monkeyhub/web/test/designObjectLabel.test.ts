@@ -13,4 +13,9 @@ test("design mode labels an identified object without displaying its raw id", as
   const { designObjectLabel } = await vite.ssrLoadModule("/src/app/format.ts");
   assert.equal(designObjectLabel("south-east-column-return-finish"), "South East Column Return Finish");
   assert.equal(designObjectLabel(null), null);
+  // A design made from an imported model (#300 item 22 B): its components and objects read as the part they are.
+  assert.equal(designObjectLabel("imported-wall-45", true), "墙 45");
+  assert.equal(designObjectLabel("imported-private-room", true), "个人房间");
+  assert.equal(designObjectLabel("imported-stair-3", false), "Stair 3");
+  assert.equal(designObjectLabel("imported-annex-2"), "Imported Annex 2");
 });

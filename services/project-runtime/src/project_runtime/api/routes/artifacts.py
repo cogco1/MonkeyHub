@@ -6,7 +6,9 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import re
+import threading
 from urllib.parse import quote
+import threading
 from uuid import UUID
 
 from fastapi import APIRouter, Query
@@ -17,6 +19,7 @@ from ...application.artifacts import (
     artifact_bytes,
     export_rhino_work_model,
     bind_document_model_source,
+    rebind_document_model_source,
     DocumentPageReplacement,
     DocumentReplacementTarget,
     document_bytes,
@@ -29,8 +32,12 @@ from ...application.artifacts import (
     read_model_preview,
     require_model_source,
     save_viewport_capture,
+    MODEL_UPLOAD_RUN_PREFIX,
+    warm_model_index,
 )
+from ...authentication import request_attribution
 from ...binding import bound_project
+from .projections import ready_projections
 from ...application.gestures import read_model_annotations
 from ...application.projection import project_state
 from ..dto.artifacts import (
@@ -96,6 +103,7 @@ def read_native_model_index(
     return ModelSourceIndexDto(**read_model_source_index(
         bound_project(request.app.state), run_id, asset_sha256, state_digest,
         object_ids=tuple(str(value) for value in object_ids), offset=offset, limit=limit, bounds=bounds,
+        projections=ready_projections(request.app.state),
     ))
 
 
@@ -104,9 +112,31 @@ def create_model_asset(request: Request, payload: ModelAssetRequestDto) -> Proje
     binding = bound_project(request.app.state)
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The model asset names another project.")
-    return artifact_dto(register_model_asset(binding, payload.run_id, payload.state_digest, payload.file_name,
-                                           payload.content_base64, event_sink=request.app.state.events,
-                                           monitor=request.app.state.monitor))
+    artifact = register_model_asset(binding, payload.run_id, payload.state_digest, payload.file_name,
+                                    payload.content_base64, event_sink=request.app.state.events,
+                                    monitor=request.app.state.monitor)
+    projections = ready_projections(request.app.state)
+    if projections is not None and artifact.format == "3dm" and artifact.sha256 and artifact.run_id.startswith(MODEL_UPLOAD_RUN_PREFIX):
+        # Its index is read now, beside the answer, so the model's first page is a lookup.
+        threading.Thread(target=warm_model_index, args=(binding, projections, artifact.run_id, artifact.sha256),
+                         name="model-index", daemon=True).start()
+    if artifact.representation == "external":
+        read_parts_soon(request, artifact.sha256)
+    return artifact_dto(artifact)
+
+
+def read_parts_soon(request: Request, asset_sha256: str) -> None:
+    """Read a just attached model's parts in the background (#300 item 22): its first circled mark waits for none."""
+
+    from .markup import attached_parts
+
+    def read() -> None:
+        try:
+            attached_parts(request, asset_sha256)
+        except Exception:  # noqa: BLE001 - the first mark reads it then, and says what is wrong
+            pass
+
+    threading.Thread(target=read, name="model-parts", daemon=True).start()
 
 
 @router.post("/documents/{asset_sha256}/model-source", response_model=SourceDocumentDto, response_model_by_alias=True)
@@ -115,6 +145,17 @@ def associate_document_model_source(request: Request, asset_sha256: str, payload
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The source document names another project.")
     return document_dto(bind_document_model_source(binding, payload.run_id, asset_sha256, model_source_from(payload.model_source)))
+
+
+@router.put("/documents/{asset_sha256}/model-source", response_model=SourceDocumentDto, response_model_by_alias=True)
+def change_document_model_source(request: Request, asset_sha256: str, payload: DocumentModelSourceRequestDto) -> SourceDocumentDto:
+    """Link the document to another model. The link it had stays in modelSourceHistory; a drawing made from a model refuses."""
+
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The source document names another project.")
+    return document_dto(rebind_document_model_source(binding, payload.run_id, asset_sha256, model_source_from(payload.model_source),
+                                                     attribution=request_attribution(request)))
 
 
 @router.post("/documents", response_model=SourceDocumentDto, response_model_by_alias=True, status_code=201)

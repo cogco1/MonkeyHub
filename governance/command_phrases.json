@@ -1685,24 +1685,24 @@
   },
   "drawing.plan.generate": {
    "zh": [
-    "出一张平面图",
-    "从模型切个平面",
-    "按这个高度剖平面图"
+    "新建剖切平面",
+    "在图纸设置里调剖切高度",
+    "按这个高度重新剖切"
    ],
    "en": [
-    "generate a floor plan from model",
-    "cut a plan at this height"
+    "new cut plane in the drawing settings",
+    "adjust the cut height in drawing settings"
    ],
    "aliases_zh": [
-    "出平面",
-    "平面图",
-    "剖平面",
-    "切平面"
+    "剖切平面",
+    "调剖切",
+    "图纸设置",
+    "剖切高度"
    ],
    "aliases_en": [
-    "floor plan",
-    "plan cut",
-    "make plan"
+    "cut plane",
+    "cut settings",
+    "plan cut settings"
    ]
   },
   "drawing.plan.hide_object": {
@@ -1787,6 +1787,143 @@
     "save recipe",
     "save style",
     "drawing preset"
+   ]
+  },
+  "drawing.quick.elevation_east": {
+   "zh": [
+    "出一张东立面",
+    "出东立面",
+    "给我东立面图"
+   ],
+   "en": [
+    "draw the east elevation",
+    "make the east elevation"
+   ],
+   "aliases_zh": [
+    "东立面",
+    "东立面图",
+    "出东立面"
+   ],
+   "aliases_en": [
+    "east elevation"
+   ]
+  },
+  "drawing.quick.elevation_north": {
+   "zh": [
+    "出一张北立面",
+    "出北立面",
+    "给我北立面图"
+   ],
+   "en": [
+    "draw the north elevation",
+    "make the north elevation"
+   ],
+   "aliases_zh": [
+    "北立面",
+    "北立面图",
+    "出北立面"
+   ],
+   "aliases_en": [
+    "north elevation"
+   ]
+  },
+  "drawing.quick.elevation_south": {
+   "zh": [
+    "出一张南立面",
+    "出南立面",
+    "给我南立面图"
+   ],
+   "en": [
+    "draw the south elevation",
+    "make the south elevation"
+   ],
+   "aliases_zh": [
+    "南立面",
+    "南立面图",
+    "出南立面"
+   ],
+   "aliases_en": [
+    "south elevation"
+   ]
+  },
+  "drawing.quick.elevation_west": {
+   "zh": [
+    "出一张西立面",
+    "出西立面",
+    "给我西立面图"
+   ],
+   "en": [
+    "draw the west elevation",
+    "make the west elevation"
+   ],
+   "aliases_zh": [
+    "西立面",
+    "西立面图",
+    "出西立面"
+   ],
+   "aliases_en": [
+    "west elevation"
+   ]
+  },
+  "drawing.quick.elevations": {
+   "zh": [
+    "出立面图",
+    "四个立面都出一下",
+    "把四面立面都出了"
+   ],
+   "en": [
+    "draw the elevations",
+    "draw all four elevations"
+   ],
+   "aliases_zh": [
+    "出立面",
+    "出立面图",
+    "立面图",
+    "四个立面"
+   ],
+   "aliases_en": [
+    "elevations",
+    "elevation drawings"
+   ]
+  },
+  "drawing.quick.plan": {
+   "zh": [
+    "出一张平面图",
+    "把模型出个平面图",
+    "给我平面图"
+   ],
+   "en": [
+    "draw a floor plan",
+    "make a plan drawing of this model"
+   ],
+   "aliases_zh": [
+    "出平面",
+    "出平面图",
+    "平面图"
+   ],
+   "aliases_en": [
+    "floor plan",
+    "plan drawing"
+   ]
+  },
+  "drawing.quick.section": {
+   "zh": [
+    "出一张剖面图",
+    "把楼剖开出个剖面图",
+    "给我剖面图"
+   ],
+   "en": [
+    "draw a section",
+    "make a section drawing of this model"
+   ],
+   "aliases_zh": [
+    "出剖面",
+    "出剖面图",
+    "剖面图"
+   ],
+   "aliases_en": [
+    "section drawing",
+    "building section"
    ]
   },
   "drawing.recipe.follow_live": {
@@ -2166,6 +2303,26 @@
     "end crit",
     "leave crit",
     "stop crit"
+   ]
+  },
+  "markup.hand_to_ai.hand_over": {
+   "zh": [
+    "把圈的地方交给 AI",
+    "让 AI 按我圈的改",
+    "这几处圈好了发给 AI"
+   ],
+   "en": [
+    "hand these marks to the AI",
+    "send what I circled to the AI"
+   ],
+   "aliases_zh": [
+    "交给AI",
+    "发给AI",
+    "圈了让AI改"
+   ],
+   "aliases_en": [
+    "hand to AI",
+    "send marks to AI"
    ]
   },
   "markup.hand_to_ai.open": {
@@ -5180,6 +5337,46 @@
    "aliases_en": [
     "usage timeline",
     "time view"
+   ]
+  },
+  "view.notes.toggle": {
+   "zh": [
+    "打开说明与记忆",
+    "看看记住了什么",
+    "改一下给 AI 的规矩"
+   ],
+   "en": [
+    "show my standing instructions",
+    "what did you remember"
+   ],
+   "aliases_zh": [
+    "说明",
+    "记忆",
+    "规矩"
+   ],
+   "aliases_en": [
+    "notes",
+    "memory",
+    "instructions"
+   ]
+  },
+  "view.chat_search.toggle": {
+   "zh": [
+    "查找以前的对话",
+    "搜一下聊过的内容",
+    "找那条对话"
+   ],
+   "en": [
+    "search my conversations",
+    "find an old chat"
+   ],
+   "aliases_zh": [
+    "搜索对话",
+    "历史对话"
+   ],
+   "aliases_en": [
+    "search chats",
+    "find chat"
    ]
   }
  }

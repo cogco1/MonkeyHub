@@ -71,6 +71,41 @@ class SkillLibraryTest(unittest.TestCase):
                                            encoding="utf-8")
         (folder / "SKILL.md").write_text(skill["body"], encoding="utf-8")
 
+    def install_runnable(self, name: str, access: dict | None = None) -> None:
+        """A skill that carries a program: a script, the entry that names it, and what it declares."""
+        folder = self.user / name
+        (folder / "scripts").mkdir(parents=True, exist_ok=True)
+        (folder / "scripts" / "run.py").write_text("print('hello')\n", encoding="utf-8")
+        (folder / "skill.json").write_text(json.dumps({
+            "name": name, "description": "Writes a card and says who ran it.", "entry": "scripts/run.py",
+            **({"access": access} if access else {})}), encoding="utf-8")
+        (folder / "SKILL.md").write_text("Write card.txt, then run whoami.\n", encoding="utf-8")
+
+    def test_a_skill_with_a_program_tells_the_agent_to_start_it_through_the_hub(self):
+        # The plugin holds only SKILL.md: an agent that reads "run whoami" would otherwise do it itself with Bash,
+        # past the question the Hub asks a person (S01, 10-24).
+        self.install(HATCH)
+        cards = str(self.root / "cards")
+        self.install_runnable("s01-needs-tool", {"programs": ["whoami"], "write": [cards]})
+        cache = self.runtime / "cache" / "skill-plugins"
+        built = skill_plugins.materialize(cache, skill_plugins.installed_library())
+        runnable = (built / "skills/s01-needs-tool/SKILL.md").read_text(encoding="utf-8")
+        head, _, body = runnable.partition("\n---\n\n")
+        self.assertTrue(body.startswith("> **This skill is a program MonkeyHub runs for you."), body[:120])
+        self.assertIn("Do not run its scripts or programs yourself, with Bash or any other tool", body)
+        self.assertIn("`POST /api/skills/skill:s01-needs-tool/run`", body)
+        self.assertIn("`studio_request`", body)
+        self.assertIn("the key is `parameters`", body, "the example in a package may still write params")
+        self.assertIn(f"It declares that it will run whoami; write to {cards}.", body)
+        self.assertTrue(body.rstrip().endswith("Write card.txt, then run whoami."), "the author's steps follow, unchanged")
+        # A skill of instructions only is left exactly as its author wrote it.
+        self.assertNotIn("MonkeyHub runs", (built / "skills/hatch-review/SKILL.md").read_text(encoding="utf-8"))
+
+        # A skill that gains a program is another plugin directory.
+        before = skill_plugins.index_digest(skill_plugins.installed_library())
+        self.install_runnable("hatch-review")
+        self.assertNotEqual(skill_plugins.index_digest(skill_plugins.installed_library()), before)
+
     def test_the_plugin_layout_is_built_once_per_state_of_the_folders(self):
         self.install(HATCH)
         self.install(SHEET)
@@ -201,7 +236,7 @@ class SkillLibraryTest(unittest.TestCase):
         commands = {name: (sys.executable, "-c", "pass") for name in ("codex", "claude")}
         store = chat.ChatStore(self.runtime.resolve(), "http://127.0.0.1:8790", commands=commands)
         self.addCleanup(store.shutdown)
-        ask = {"access": {"ssh": ["renou-win"]}, "broad": {}, "skill": {"name": "blender-render", "source": "user"},
+        ask = {"access": {"programs": ["blender"]}, "broad": {}, "skill": {"name": "blender-render", "source": "user"},
                "projectId": "housing-13-units", "codeSha256": "c" * 64}
         once = store._allow_skill(ask, once=True, ref="question-1")
         always = store._allow_skill(ask, once=False, ref="question-2")
@@ -213,10 +248,40 @@ class SkillLibraryTest(unittest.TestCase):
         self.assertIsNone(rows[always].skill, "always allow: every skill and project")
         self.assertEqual(rows[wide].skill.name, "blender-render", "what allows anything: this skill only")
         grants = skill_access.read_grants(skill_grants.grants_path(self.runtime.resolve()))
-        self.assertEqual(skill_access.needed({"ssh": ["renou-win"]}, grants, skill_access.SkillRef("other", "user"),
+        self.assertEqual(skill_access.needed({"programs": ["blender"]}, grants, skill_access.SkillRef("other", "user"),
                                              resolve=str), {})
         self.assertTrue(all(row.method == "card" for row in rows.values()))
         self.assertLessEqual(datetime.fromisoformat(rows[once].granted_at), datetime.now(timezone.utc))
+
+    def test_a_skill_that_cannot_be_used_is_not_given_to_a_chat_and_the_page_says_why(self):
+        self.install(HATCH)
+        broken = self.user / "typo-skill"
+        (broken / "scripts").mkdir(parents=True)
+        (broken / "skill.json").write_text(json.dumps({"name": "typo-skill", "description": "x", "entry": "scripts/run.py"}),
+                                           encoding="utf-8")
+        (broken / "SKILL.md").write_text("Run it.\n", encoding="utf-8")
+        (broken / "scripts" / "run.py").write_text("def run(:\n    pass\n", encoding="utf-8")
+        lost = self.user / "lost-script"
+        lost.mkdir()
+        (lost / "skill.json").write_text(json.dumps({"name": "lost-script", "description": "x"}), encoding="utf-8")
+        (lost / "SKILL.md").write_text("Then check it with scripts/check.py.\n", encoding="utf-8")
+        # Only the sound skill reaches a chat.
+        self.assertEqual([row["name"] for row in skill_plugins.installed_library().skills], ["hatch-review"])
+        app = create_app(HubSettings(runtime_root=self.runtime))
+        with TestClient(app, base_url="http://127.0.0.1:8790") as client:
+            answer = client.get("/api/settings/skill-problems")
+            self.assertEqual(answer.status_code, 200, answer.text)
+            rows = {row["name"]: row for row in answer.json()}
+            self.assertEqual(set(rows), {"typo-skill", "lost-script"})
+            self.assertEqual((rows["typo-skill"]["kind"], rows["typo-skill"]["file"], rows["typo-skill"]["line"],
+                              rows["typo-skill"]["source"]), ("entry_syntax", "scripts/run.py", 1, "user"))
+            self.assertEqual((rows["lost-script"]["kind"], rows["lost-script"]["file"]), ("missing_file", "scripts/check.py"))
+            self.assertTrue(rows["lost-script"]["folder"].endswith("lost-script"))
+            # Mending the folder is enough: the page reads the folders again each time.
+            (lost / "scripts").mkdir()
+            (lost / "scripts" / "check.py").write_text("print(1)\n", encoding="utf-8")
+            self.assertEqual([row["name"] for row in client.get("/api/settings/skill-problems").json()], ["typo-skill"])
+        self.assertEqual(sorted(row["name"] for row in skill_plugins.installed_library().skills), ["hatch-review", "lost-script"])
 
     def test_the_settings_page_lists_and_withdraws_grants_without_a_project(self):
         app = create_app(HubSettings(runtime_root=self.runtime))

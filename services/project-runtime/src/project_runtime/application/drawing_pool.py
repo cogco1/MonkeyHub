@@ -23,7 +23,9 @@ from collections import OrderedDict
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 
-from monkeydiagram.drawing_runs import DrawResult, DrawTask, run_draw_task, verify_draw_source
+from monkeydiagram.drawing_runs import (
+    CameraResult, CameraTask, DrawResult, DrawTask, run_camera_task, run_draw_task, verify_draw_source,
+)
 from monkeydiagram.sources import VerifiedElevationSource
 
 from ..errors import StudioError
@@ -64,6 +66,15 @@ def _end_with(sentinel) -> None:
     os._exit(0)
 
 
+def _read_ahead(project_root: str, source) -> None:
+    # Reading the source leaves it with this worker for its next drawing; a source that does not verify is
+    # refused by the drawing that asks for it, not here.
+    try:
+        verify_draw_source(project_root, source)
+    except Exception:  # noqa: BLE001 - nothing waits for this answer
+        pass
+
+
 def _ready() -> bool:
     # Importing this module in a worker loads the drawing code and OCCT, as its first drawing would.
     return True
@@ -80,8 +91,13 @@ class DrawingPool:
 
     def __call__(self, task: DrawTask) -> DrawResult:
         result = self._solve(run_draw_task, task)
-        self._keep(task.source, result.verified)
+        self.keep(task.source, result.verified)
         return result
+
+    def camera(self, task: CameraTask) -> CameraResult:
+        """A camera's passes, drawn by a worker: reading and meshing the model never hold up other requests."""
+
+        return self._solve(run_camera_task, task)
 
     def source(self, project_root: str, source) -> VerifiedElevationSource:
         """``source`` verified by a worker, without its shapes, or as one verified it before.
@@ -93,14 +109,21 @@ class DrawingPool:
         known = self.verified(source)
         if known is not None:
             return known
-        verified = self._solve(verify_draw_source, project_root, source)
-        self._keep(source, verified)
+        verified = self._solve(verify_draw_source, project_root, source, read_ahead=self.workers - 1)
+        self.keep(source, verified)
         return verified
 
-    def _solve(self, function, *arguments):
+    def _solve(self, function, *arguments, read_ahead: int = 0):
         executor = self._running()
         try:
-            return executor.submit(function, *arguments).result()
+            future = executor.submit(function, *arguments)
+            # S22: the other workers read the same source meanwhile. Drawings of a source just verified come
+            # together (the four elevations at once), and each worker reads a source once and keeps it: on
+            # housing-13-units that read is 13 s, so without this the other three waited for the first read
+            # and then read it again each.
+            for _ in range(read_ahead):
+                executor.submit(_read_ahead, *arguments)
+            return future.result()
         except BrokenProcessPool as exc:
             self._replace(executor)
             raise StudioError(503, "DRAWING_WORKER_LOST", "The drawing worker stopped before the drawing was done; "
@@ -150,7 +173,9 @@ class DrawingPool:
         broken.shutdown(wait=False, cancel_futures=True)
         _LOG.warning("A drawing worker stopped; the next drawing starts a new pool")
 
-    def _keep(self, source, verified: VerifiedElevationSource) -> None:
+    def keep(self, source, verified: VerifiedElevationSource) -> None:
+        """Remember ``source`` as verified, without its shapes, for the next request on it."""
+
         try:
             with self._lock:
                 self._sources[source] = verified

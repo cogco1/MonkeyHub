@@ -11,7 +11,7 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
@@ -34,8 +34,9 @@ from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 from project_runtime.api.dto.runtime import runtime_dto
 from monkeyhub_api.models import HubFailure
-from monkeyhub_api.runtime.manager import ProjectRuntime, ProjectRuntimeManager
-from monkeyhub_api.runtime.operations import OperationManager
+from monkeyhub_api.runtime.manager import ProjectRuntime, ProjectRuntimeManager, _still_there
+from monkeyhub_api.attention import producers
+from monkeyhub_api.runtime.operations import EXECUTING_LIMIT_S, LOST_AFTER_MISSES, RECHECK_LOST_S, OperationManager
 from monkeyhub_api.runtime.workers import earlier_project_keys, project_key
 from monkeyhub_api.runtime.worker_http import HttpResult
 
@@ -662,6 +663,48 @@ class OperationRecoveryTests(unittest.TestCase):
         self.assertEqual(observed.source, "retained")
         self.assertIsNone(observed.admissionSequence, "a receipt without an admission journal cannot invent request order")
 
+    def test_a_refresh_reads_the_recent_runs_in_one_page_and_smaller_ones_only_when_it_does_not_finish(self):
+        # S15: fifty reads of one run each cost a 319-run project 3.3 s a refresh; one page of fifty, 0.08 s.
+        first, first_result = self.candidate()
+        second, second_result = self.candidate()
+        binding = bound_project(self.app.state)
+        snapshot = self.snapshot(live=True)
+        self.manager.reconcile(snapshot, worker_alive=True)
+        runtime = ProjectRuntime("paged-runtime", self.fixture.PROJECT_ID, str(self.settings.project_dir),
+                                 self.manager, binding, retained=snapshot)
+        manager = ProjectRuntimeManager(None, None)
+        worker = SimpleNamespace(url="http://owned-worker/")
+        limits, refuse_above = [], [None]
+
+        def read(_url, path, **_kwargs):
+            limit = int(parse_qs(urlsplit(path).query)["limit"][0])
+            limits.append(limit)
+            if refuse_above[0] is not None and limit > refuse_above[0]:
+                raise TimeoutError("this page does not finish within the budget")
+            response = self.client.get(path)
+            return HttpResult(response.status_code, response.content, dict(response.headers))
+
+        expected = {first_result["candidateId"], second_result["candidateId"]}
+        with patch("monkeyhub_api.runtime.manager.request_http", side_effect=read):
+            paged = manager._read_retained(runtime, worker=worker)
+            self.assertEqual(limits, [50], "the recent window is one request")
+            self.assertEqual({row["candidateId"] for row in paged["candidates"]}, expected)
+            self.assertTrue(all(row["status"] == "completed" for row in paged["candidates"]))
+
+            limits.clear()
+            refuse_above[0] = 10
+            smaller = manager._read_retained(runtime, worker=worker)
+            self.assertEqual(limits[:2], [50, 10], "a page that does not finish is read again in smaller ones")
+            self.assertEqual({row["candidateId"] for row in smaller["candidates"]}, expected)
+            limits.clear()
+            manager._read_retained(runtime, worker=worker)
+            self.assertNotIn(50, limits, "for a while the project starts from the page that finished")
+            runtime.retained_page_until = 0.0
+            limits.clear()
+            refuse_above[0] = None
+            manager._read_retained(runtime, worker=worker)
+            self.assertEqual(limits, [50], "then the largest page is tried again")
+
     def test_runtime_pages_revalidate_completed_and_new_candidates_without_a_full_history_probe(self):
         first, first_result = self.candidate()
         second, second_result = self.candidate()
@@ -981,6 +1024,172 @@ class OperationRecoveryTests(unittest.TestCase):
         self.assertTrue(record.committed)
 
 
+class LostResultTests(unittest.TestCase):
+    """S15: a run is called lost only after several reads find nothing working on it, and found again it completes."""
+
+    def started(self, manager):
+        admission, _ = manager.admit(str(uuid4()), "POST", "/api/proposals/studio-p1/candidate", b"",
+                                     retained=None, source="studio", session_id=None)
+        manager.replied(admission, HttpResult(202, json.dumps({"jobId": "job-1", "candidateId": admission.record.candidateId,
+                                                               "status": "queued"}).encode(), {}))
+        return admission
+
+    @staticmethod
+    def status(manager, admission):
+        return next(row for row in manager.records() if row.operationId == admission.record.operationId).status
+
+    def test_a_job_over_before_its_result_is_read_is_not_lost_and_completes_once_read(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        candidate_id = admission.record.candidateId
+        over = {"jobs": [{"candidateId": candidate_id, "jobId": "job-1", "status": "succeeded"}], "candidates": []}
+        for _ in range(LOST_AFTER_MISSES - 1):
+            manager.reconcile(over, worker_alive=True)
+            self.assertEqual(self.status(manager, admission), "executing")
+        found = {**over, "candidates": [{"candidateId": candidate_id, "status": "completed", "receiptRef": "project://p/r"}]}
+        self.assertTrue(manager.reconcile(found, worker_alive=True), "a read that settles an operation says so")
+        self.assertEqual(self.status(manager, admission), "completed")
+        self.assertFalse(manager.reconcile(found, worker_alive=True), "nothing moved on the next read")
+
+    def test_a_worker_late_with_its_health_check_loses_a_run_only_after_several_reads(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        for _ in range(LOST_AFTER_MISSES - 1):
+            manager.reconcile({"candidates": []}, worker_alive=False, worker_unanswered=True)
+            self.assertEqual(self.status(manager, admission), "executing")
+        manager.reconcile({"candidates": []}, worker_alive=False, worker_unanswered=True)
+        self.assertEqual(self.status(manager, admission), "needs_recovery")
+        # The result read after all: the operation completes and its notice has nothing left to say.
+        manager.reconcile({"candidates": [{"candidateId": admission.record.candidateId, "status": "completed"}]}, worker_alive=True)
+        self.assertEqual(self.status(manager, admission), "completed")
+        self.assertEqual(producers.operations(manager.records()), [])
+
+    def test_a_worker_that_is_gone_loses_its_run_at_once(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        manager.reconcile({"candidates": []}, worker_alive=False)
+        self.assertEqual(self.status(manager, admission), "needs_recovery")
+
+    def test_the_notice_of_a_lost_run_reads_in_chinese(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        manager.reconcile({"candidates": []}, worker_alive=False)
+        [card] = producers.operations(manager.records())
+        self.assertEqual(card.titleZh, "生成方案的结果找不回来了")
+        self.assertRegex(card.summaryZh, r"[一-鿿]")
+        self.assertNotIn("worker", card.summaryZh)
+        self.assertIn("worker", card.summary, "the English record keeps the runner's own sentence")
+
+
+class RecordReliabilityTests(unittest.TestCase):
+    """S19: a record whose result is written completes; a slow Studio loses nothing; executing always ends."""
+
+    started = LostResultTests.started
+    status = staticmethod(LostResultTests.status)
+
+    def test_a_written_result_completes_whatever_page_the_job_was_read_on(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        candidate_id = admission.record.candidateId
+        # The run's row was read on an early page, while it ran; the jobs, on the last page, after it finished.
+        early = {"jobs": [{"candidateId": candidate_id, "jobId": "job-1", "status": "succeeded"}],
+                 "candidates": [{"candidateId": candidate_id, "status": "running"}]}
+        for _ in range(LOST_AFTER_MISSES + 2):
+            manager.reconcile(early, worker_alive=True)
+            self.assertEqual(self.status(manager, admission), "executing")
+        written = {**early, "candidates": [{"candidateId": candidate_id, "status": "completed", "receiptRef": "project://p/r"}]}
+        manager.reconcile(written, worker_alive=True)
+        self.assertEqual(self.status(manager, admission), "completed")
+        self.assertEqual(producers.operations(manager.records()), [])
+
+    def test_a_result_written_after_the_run_was_called_lost_completes_it(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        manager.reconcile({"candidates": []}, worker_alive=False)
+        self.assertEqual(self.status(manager, admission), "needs_recovery")
+        self.assertTrue(manager.awaiting_result(), "a run called lost just now is still looked for")
+        manager.reconcile({"candidates": [{"candidateId": admission.record.candidateId, "status": "completed",
+                                           "receiptRef": "project://p/r"}]}, worker_alive=True)
+        self.assertEqual(self.status(manager, admission), "completed")
+        self.assertFalse(manager.awaiting_result())
+
+    def test_a_studio_slow_to_answer_does_not_lose_the_run_it_builds(self):
+        process = dict(instance_id="w", desired_state="running", process_id=7)
+        self.assertTrue(_still_there(SimpleNamespace(state="unavailable", **process)),
+                        "a Studio that stopped answering while its process runs is still there")
+        self.assertTrue(_still_there(SimpleNamespace(state="busy", **process)))
+        self.assertFalse(_still_there(SimpleNamespace(state="unavailable", instance_id="w", desired_state="stopped", process_id=7)))
+        self.assertFalse(_still_there(SimpleNamespace(state="crashed", instance_id="w", desired_state="running", process_id=None)))
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        # Its process is there and only does not answer: no read in a row of these calls the run lost at once.
+        manager.reconcile({"candidates": [{"candidateId": admission.record.candidateId, "status": "needs_recovery"}]},
+                          worker_alive=False, worker_unanswered=True)
+        self.assertEqual(self.status(manager, admission), "executing")
+
+    def test_a_run_nothing_works_on_does_not_stay_executing(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        # No job (the Studio that ran it started again) and a row that reads neither working nor done.
+        stuck = {"jobs": [], "candidates": [{"candidateId": admission.record.candidateId, "status": "needs_recovery",
+                                             "receiptRef": "project://p/r", "error": "unreadable"}]}
+        for _ in range(LOST_AFTER_MISSES):
+            manager.reconcile(stuck, worker_alive=True)
+        record = next(row for row in manager.records() if row.operationId == admission.record.operationId)
+        self.assertEqual(record.status, "needs_recovery")
+        self.assertTrue(record.recoverable, "its receipt is there, so reading can still resolve it")
+
+    def test_executing_ends_when_no_read_sees_the_run_worked_on(self):
+        manager = OperationManager("p")
+        # A whole-second start keeps the sums below exact: on a runner booted minutes ago,
+        # (t + limit + recheck) - (t + limit) can round to just under the recheck.
+        with patch("monkeyhub_api.runtime.operations.time.monotonic", return_value=1000.0):
+            admission = self.started(manager)
+        now = admission.working_at
+        with patch("monkeyhub_api.runtime.operations.time.monotonic", return_value=now + EXECUTING_LIMIT_S - 1):
+            self.assertFalse(manager.expire())
+        with patch("monkeyhub_api.runtime.operations.time.monotonic", return_value=now + EXECUTING_LIMIT_S):
+            self.assertTrue(manager.expire())
+            self.assertTrue(manager.awaiting_result())
+        self.assertEqual(self.status(manager, admission), "needs_recovery")
+        with patch("monkeyhub_api.runtime.operations.time.monotonic", return_value=now + EXECUTING_LIMIT_S + RECHECK_LOST_S):
+            self.assertFalse(manager.awaiting_result(), "looked for a while, not forever")
+
+    def test_a_run_seen_running_is_not_expired(self):
+        manager = OperationManager("p")
+        admission = self.started(manager)
+        running = {"jobs": [{"candidateId": admission.record.candidateId, "jobId": "job-1", "status": "running"}], "candidates": []}
+        with patch("monkeyhub_api.runtime.operations.time.monotonic", return_value=admission.working_at + EXECUTING_LIMIT_S):
+            manager.reconcile(running, worker_alive=True)
+            self.assertFalse(manager.expire())
+        self.assertEqual(self.status(manager, admission), "executing")
+
+
+class InvalidShapeReasonTests(unittest.TestCase):
+    """S15: a mass drawn while the view looked level at the ground fails in CAD; the person is told why and what to do."""
+
+    def test_the_receipt_s_invalid_shape_is_the_reason_and_the_notice_says_what_to_do(self) -> None:
+        from project_runtime.status import incomplete_reason
+
+        receipt = {"seat_execution_complete": False, "seat_results": [{"seat_id": "modeler", "status": "failed",
+                   "cad": {"failures": [{"code": "cad_execution.step_shape_invalid", "message": "obj-drawn-1a2b is not a valid shape"}]}}]}
+        reason = incomplete_reason(receipt)
+        self.assertIn("obj-drawn-1a2b is not a valid shape", reason)
+        self.assertEqual(incomplete_reason({"seat_results": []}), "The retained runner receipt reports incomplete seat execution.")
+        manager = OperationManager("p")
+        admission, _ = manager.admit(str(uuid4()), "POST", "/api/proposals/studio-p1/candidate", b"",
+                                     retained=None, source="studio", session_id=None)
+        manager.replied(admission, HttpResult(202, json.dumps({"jobId": "job-1", "candidateId": admission.record.candidateId}).encode(), {}))
+        # The job failed without words of its own; its run's reason is kept.
+        manager.reconcile({"jobs": [{"candidateId": admission.record.candidateId, "jobId": "job-1", "status": "failed"}],
+                           "candidates": [{"candidateId": admission.record.candidateId, "status": "running", "error": reason}]}, worker_alive=True)
+        record = next(row for row in manager.records() if row.operationId == admission.record.operationId)
+        self.assertEqual((record.status, record.reason), ("failed", reason))
+        [card] = producers.operations(manager.records())
+        self.assertIn("轴测", card.summaryZh)
+        self.assertNotIn("valid shape", card.summaryZh)
+
+
 class JournalSpellingTests(unittest.TestCase):
     """Gap 26: one folder, one journal, however an earlier Hub spelled it."""
 
@@ -1044,6 +1253,124 @@ class JournalSpellingTests(unittest.TestCase):
         self.assertEqual(manager.records(), [])
         self.assertTrue(broken.is_file() and foreign.is_file())
         self.assertFalse(current.exists(), "nothing was taken in, so nothing was written")
+
+
+
+class ResendTests(unittest.TestCase):
+    """A failure that did nothing passes without the person: the Hub sends the same request again (#300 4-3)."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        self.operations = OperationManager("demo", project_dir=str(root / "demo"), journal_path=root / "operations.json")
+        self.runtime = ProjectRuntime("resend-runtime", "demo", str(root / "demo"), self.operations,
+                                      SimpleNamespace(run_ids=lambda: ()))
+        self.hub = ProjectRuntimeManager(None, None)
+        self.worker = SimpleNamespace(url="http://isolated-worker", instance_id="worker-1")
+        paused = patch("monkeyhub_api.runtime.manager._pause")
+        self.pauses = paused.start()
+        self.addCleanup(paused.stop)
+
+    @staticmethod
+    def answer(status, code=None):
+        body = {"code": code, "detail": code} if code else {"documentId": "d1"}
+        return HttpResult(status, json.dumps(body).encode("utf-8"), {"content-type": "application/json"})
+
+    def draw(self, *answers):
+        with patch.object(self.hub, "service", return_value=self.worker), patch.object(self.hub, "emit"),                 patch("monkeyhub_api.runtime.manager.request_http", side_effect=list(answers)) as sent:
+            result = self.hub.forward(self.runtime, "/api/drawings/elevations", "POST", b"{}",
+                                      {"idempotency-key": str(uuid4())})
+        record, = self.operations.records()
+        return result, record, sent.call_count
+
+    def test_a_drawing_whose_worker_stopped_is_sent_again_and_says_how_often(self):
+        result, record, sends = self.draw(self.answer(503, "DRAWING_WORKER_LOST"), self.answer(503, "DRAWING_WORKER_LOST"),
+                                          self.answer(201))
+        self.assertEqual((result.status, sends, record.status, record.attempts, record.errorCode), (201, 3, "completed", 3, None))
+        self.assertEqual(self.pauses.call_count, 2)
+
+    def test_a_failure_that_keeps_coming_back_ends_the_operation_with_its_code(self):
+        result, record, sends = self.draw(*[self.answer(503, "DRAWING_WORKER_LOST")] * 5)
+        self.assertEqual((result.status, sends, record.status, record.attempts, record.errorCode),
+                         (503, 3, "failed", 3, "DRAWING_WORKER_LOST"))
+
+    def test_a_failure_a_person_answers_is_sent_once(self):
+        result, record, sends = self.draw(self.answer(500, "SEAT_FAILED"), self.answer(201))
+        self.assertEqual((result.status, sends, record.status, record.attempts, record.errorCode),
+                         (500, 1, "failed", 1, "SEAT_FAILED"))
+
+    def test_a_read_waits_for_a_starting_worker(self):
+        starting = HubFailure(503, "WORKER_STARTING", "The project's Studio is starting.")
+        with patch.object(self.hub, "service", side_effect=[starting, starting, self.worker]),                 patch("monkeyhub_api.runtime.manager.request_http", return_value=self.answer(200)):
+            result = self.hub.forward(self.runtime, "/api/documents", "GET", b"", {})
+        self.assertEqual((result.status, self.pauses.call_count), (200, 2))
+
+    def test_a_background_read_answers_at_once_and_is_not_sent_again(self):
+        starting = HubFailure(503, "WORKER_STARTING", "The project's Studio is starting.")
+        with patch.object(self.hub, "service", side_effect=starting), self.assertRaises(HubFailure) as refused:
+            self.hub.forward(self.runtime, "/api/worktrees", "GET", b"", {}, wait=False)
+        self.assertEqual(refused.exception.error.code, "WORKER_STARTING")
+        with patch.object(self.hub, "service", return_value=self.worker),                 patch("monkeyhub_api.runtime.manager.request_http",
+                      return_value=self.answer(503, "INDEX_UNAVAILABLE")) as sent:
+            result = self.hub.forward(self.runtime, "/api/worktrees", "GET", b"", {}, wait=False)
+        self.assertEqual((result.status, sent.call_count, self.pauses.call_count), (503, 1, 0))
+
+
+class StudioRestartTests(unittest.TestCase):
+    """A project's Studio that stopped is started again by the Hub, as often as the repair table allows (#300 4-2)."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        operations = OperationManager("demo", project_dir=str(root / "demo"), journal_path=root / "operations.json")
+        self.runtime = ProjectRuntime("restart-runtime", "demo", str(root / "demo"), operations,
+                                      SimpleNamespace(run_ids=lambda: ()))
+        self.hub = ProjectRuntimeManager(None, None)
+        self.stopped = SimpleNamespace(state="crashed", desired_state="running",
+                                       error=SimpleNamespace(detail="The application exited with code 3221225477."))
+
+    def test_a_stopped_studio_is_restarted_three_times_then_left_for_a_person(self):
+        with patch.object(self.hub, "recover") as recovered, patch.object(self.hub, "emit") as told:
+            for _ in range(5):
+                self.hub._restart_stopped(self.runtime, [self.stopped])
+            self.assertFalse(self.hub._restart_stopped(self.runtime, [SimpleNamespace(state="ready", desired_state="running")]))
+        self.assertEqual(recovered.call_count, 3)
+        self.assertEqual([row.kind for row in self.runtime.repairs],
+                         ["studio-restarted", "studio-restarted", "studio-restarted", "studio-restart-held"])
+        self.assertEqual([call.args for call in told.call_args_list], [("repair/applied", "restart-runtime")] * 4)
+        self.assertIn("3221225477", self.runtime.repairs[0].detail)
+
+    def test_a_studio_stopped_on_purpose_or_in_a_closed_project_is_left_alone(self):
+        with patch.object(self.hub, "recover") as recovered:
+            self.hub._restart_stopped(self.runtime, [SimpleNamespace(state="crashed", desired_state="stopped", error=None)])
+            self.runtime.state = "closed"
+            self.hub._restart_stopped(self.runtime, [self.stopped])
+        self.assertEqual((recovered.call_count, self.runtime.repairs), (0, []))
+
+    def test_a_start_that_timed_out_is_started_again_but_a_rejected_one_is_not(self):
+        def rejected(code):
+            return SimpleNamespace(state="unavailable", desired_state="stopped", process_id=None,
+                                   error=SimpleNamespace(code=code, detail="The application did not become ready."))
+
+        with patch.object(self.hub, "recover") as recovered, patch.object(self.hub, "emit"):
+            self.assertFalse(self.hub._restart_stopped(self.runtime, [rejected("SERVICE_IDENTITY_MISMATCH")]),
+                             "another source version needs the Hub restarted, not the Studio")
+            exiting = rejected("START_TIMEOUT")
+            exiting.process_id = 4242
+            self.assertFalse(self.hub._restart_stopped(self.runtime, [exiting]), "started again once it has exited")
+            self.assertTrue(self.hub._restart_stopped(self.runtime, [rejected("START_TIMEOUT")]))
+        self.assertEqual((recovered.call_count, [row.kind for row in self.runtime.repairs]), (1, ["studio-start-retried"]))
+
+    def test_restarting_a_start_that_timed_out_starts_it_as_a_person_would(self):
+        timed_out = SimpleNamespace(state="unavailable", desired_state="stopped", process_id=None,
+                                    error=SimpleNamespace(code="START_TIMEOUT", detail="not ready"))
+        self.hub.applications = SimpleNamespace(worker_snapshots=lambda **_: [timed_out], start=Mock(), recover=Mock())
+        with patch.object(self.hub, "refresh"), patch.object(self.hub, "emit"),                 patch.object(self.hub, "project_snapshot", return_value="snapshot"):
+            self.assertEqual(self.hub.recover(self.runtime), "snapshot")
+        self.hub.applications.start.assert_called_once_with("monkeyarch", project_dir=self.runtime.project_dir)
+        self.hub.applications.recover.assert_not_called()
 
 
 if __name__ == "__main__":

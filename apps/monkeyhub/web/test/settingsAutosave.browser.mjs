@@ -119,6 +119,17 @@ const openSettings = async (name = "Hub settings") => {
 const PAGES = { Display: "display", Conversations: "chat", "AI Render": "render", Workspace: "workspace", "Software update": "update",
   显示: "display", 对话: "chat", "AI 渲染": "render", 工作区: "workspace", 软件更新: "update" };
 const settingsTab = (name) => cmd(dialog, "view.settings.page", { arg: PAGES[name] });
+// Developer mode sits under the Workspace page's launch options.
+const developerMode = async (on) => {
+  await settingsTab("Workspace").click();
+  const box = page.locator("#developer-mode");
+  const toggle = cmd(dialog, "view.disclosure.toggle", { arg: "launch_options" });
+  const opened = !(await box.isVisible());
+  if (opened) await toggle.click();
+  await (on ? box.check() : box.uncheck());
+  if (opened) await toggle.click();
+  await settingsTab("Display").click();
+};
 const openPage = async (name) => {
   const tab = settingsTab(name);
   assert.equal(await commandLabel(tab), name);
@@ -149,7 +160,10 @@ try {
 
   await step("Settings opens on Display, its pages follow the list, and a style card saves at once", async () => {
     assert.equal(await settingsTab("Display").getAttribute("aria-selected"), "true");
-    assert.deepEqual(await dialog.getByRole("tab").allInnerTexts(), ["Display", "Conversations", "AI Render", "Workspace", "Software update"]);
+    assert.deepEqual(await dialog.getByRole("tab").allInnerTexts(), ["Display", "Conversations", "AI Render", "Workspace", "What the AI may do", "Software update"]);
+    // The look and shell switches are a developer's (S01): they are not on the page until developer mode is on.
+    assert.equal(await cmd(dialog, "preference.appearance.style_titleblock").count(), 0, "the interface styles wait for developer mode");
+    await developerMode(true);
     const before = userWrites.length;
     await cmd(dialog, "preference.appearance.style_titleblock").check();
     await until(() => userWrites.length === before + 1, "choosing a style writes the preferences document");
@@ -169,6 +183,7 @@ try {
     await cmd(dialog, "preference.appearance.style_classic").check();
     await until(() => userWrites.at(-1)?.uiStyle === "classic", "Classic is saved back");
     await status.filter({ hasText: /^Saved$/ }).waitFor();
+    await developerMode(false);
   });
 
   await step("a key goes in once, is never shown again, and the page says where the key in use comes from", async () => {
@@ -181,6 +196,8 @@ try {
     await page.locator("#gemini-key-state").filter({ hasText: "Saved in this computer's Windows Credential Manager, for this account only." }).waitFor();
     assert.equal(await field.inputValue(), "", "the field empties once the key is saved");
     assert.deepEqual(keyWrites, [["gemini", "AIzaSyFixture-settings-key-01"]]);
+    await dialog.getByText("Google accepted this key.", { exact: true }).waitFor();
+    assert.equal(await page.locator("#render-model").getAttribute("placeholder"), "gemini-3.1-flash-image (default)", "the model needs no typing");
     await cmd(dialog, "preference.render_provider.check").click();
     await dialog.getByText("Google accepted this key.", { exact: true }).waitFor();
     await cmd(dialog, "preference.secret.get_link", { arg: "gemini" }).click();
@@ -245,6 +262,7 @@ try {
     await launchOptions.click();
     // The port, the reference run, model export and the service controls are for developer mode.
     assert.equal(await page.locator("#studio-port, #reference-run, #cad-export").count(), 0, "launch internals wait for developer mode");
+    assert.equal(await page.locator("#library-dir").count(), 0, "so does the skills library project (S08)");
     await dialog.screenshot({ path: path.join(screenshots, "settings-launch-ordinary-en.png") });
     await dialog.getByRole("checkbox", { name: "Developer / Research Mode", exact: true }).check();
     await page.locator("#studio-port").waitFor();

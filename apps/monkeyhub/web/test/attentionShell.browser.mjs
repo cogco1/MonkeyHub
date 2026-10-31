@@ -5,6 +5,8 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createProjectWorkspaceFixture } from "./projectWorkspaceFixture.mjs";
+import { cmd } from "./commandLocator.mjs";
+import { assertPlainScreen } from "./plainScreen.mjs";
 
 // The attention shell (?shell=attention) over the real built Hub: the projects column with what
 // waits on the architect, the Attention, Board and Model tabs over the same open surfaces, the
@@ -19,7 +21,7 @@ const root = path.resolve(process.env.MONKEYHUB_WEB_DIST ?? fileURLToPath(new UR
 const shots = process.env.ATTENTION_SHELL_SHOTS ? path.resolve(process.env.ATTENTION_SHELL_SHOTS) : null;
 const now = new Date().toISOString();
 const projects = [
-  { projectId: "A", projectDir: "D:\\fixture\\A", name: "Thi Hemp 墙身节点", chatCount: 2, version: 3, stage: "S2" },
+  { projectId: "A", projectDir: "D:\\fixture\\A", name: "Thi Hemp 墙身节点", chatCount: 2, version: 3, stage: "S2", step: "V16 去掉斜撑" },
   { projectId: "B", projectDir: "D:\\fixture\\B", name: "Housing 13 户", chatCount: 1, version: 0, stage: null },
 ];
 const message = (id, role, content) => ({ id, role, content, status: "complete", createdAt: now });
@@ -81,6 +83,10 @@ const server = createServer(async (request, response) => {
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 origin = `http://127.0.0.1:${server.address().port}`;
 const unexpected = [];
+// A pass swaps the connections the Hub lists (17): Codex not installed, Claude Code signed in.
+let providerRows = null;
+// A 4x3 grey picture, standing in for a drawing's first page.
+const DRAWING_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAE0lEQVR4nGM8ceIEAwwwwVnoHABXVAJetxGYDgAAAABJRU5ErkJggg==", "base64");
 // The theme each pass loads with, as the saved preferences say it.
 let preferredTheme = "light";
 // The projects the Hub lists; one pass empties it to see the Board and the model refuse.
@@ -98,7 +104,7 @@ const seedCards = () => [
     evidence: [{ key: "floor", label: "Floor", labelZh: "楼板", text: "V17 is 40 mm thinner", textZh: "V17 薄 40 mm", status: "ok" }],
     options: [answer("v16", "Keep V16", "留 V16", "V17 归档"), answer("v17", "Keep V17", "留 V17", "V16 归档", { recommended: true, undoable: true })],
     recommendation: { optionId: "v17", reason: "Thinner, and every check passes", reasonZh: "更薄，检查都过了" },
-    opens: [{ commandId: "chat.open_conversation", args: { sessionId: "a1" } }, { commandId: "candidate.compare", args: { runIds: ["v16", "v17"] } }] }),
+    opens: [{ commandId: "chat.open_conversation", args: { sessionId: "a1" } }, { commandId: "candidate.compare.decide", args: { runIds: ["v16", "v17"] } }] }),
   queueCard("guess", "B", { channel: "guess", kind: "ask", title: "Which side for the entrance", titleZh: "入口放在哪边",
     options: [answer("south", "South", "南边", "按南边入口改"), answer("east", "East", "东边", "按东边入口改")] }),
   queueCard("notice", "A", { channel: "notice", kind: "info", title: "The section is ready", titleZh: "剖面图出好了" }),
@@ -106,16 +112,36 @@ const seedCards = () => [
     options: [answer("say", "Say it", "我来说", "把你写的话交给对话", { action: { commandId: "chat.composer.send", args: {} }, undoable: true })] }),
 ];
 let cards = [];
+// How often a comparison read the project's candidates: once each time one opens over a pair.
+let comparisonReads = 0;
 const bulks = new Map();
 // Cards whose undo finds the project moved on: the Hub leaves them handled and asks instead.
 const movedOnUndo = new Set(["att_v11b"]);
 const attentionActions = [], attentionNotes = [], chatPosts = [];
+// The next answer the Hub refuses with its own words, as a record that disagrees with itself does.
+let failNextAnswer = false;
 const route = async (handler) => {
   const request = handler.request(), url = new URL(request.url()), method = request.method();
   if (url.pathname === "/api/runtime/events") return handler.continue();
+  // A drawing's first page, as the project service serves it beside the snapshot's recent drawings.
+  if (url.pathname.endsWith("/api/drawings/d-section/thumbnail.png")) return handler.fulfill({ status: 200, contentType: "image/png", body: DRAWING_PNG });
+  // The page the tile opens on the Board has no comments yet.
+  if (url.pathname.endsWith("/api/document-comments")) return handler.fulfill({ json: { comments: [], kind: "document",
+    runId: url.searchParams.get("runId") ?? "run-v17", revisionRef: url.searchParams.get("revisionRef") } });
+  // The comparison a decision card opens reads the project's candidates; this project has none retained (2-5).
+  if (/\/studio\/api\/runtime$/.test(url.pathname)) { comparisonReads += 1; return handler.fulfill({ json: { projectId: "A", candidates: [] } }); }
   if (await workspace.handle(handler, url)) return;
   const json = (body, status = 200) => handler.fulfill({ json: body, status });
   const data = () => request.postDataJSON();
+  // 一句话直接办: the Hub's meaning search, answered for the sentences this test types; the rest mean nothing listed.
+  if (url.pathname === "/api/commands/meaning" && method === "POST") {
+    const meant = { "后台现在在忙什么呀": "view.background.toggle", "切到另一个项目": "project.open", "切到 Housing 13 户": "project.open" }[data().text] ?? null;
+    // Ctrl K lists what a phrase means below what its words find.
+    if (data().text === "那个东西挪远点") return json({ state: "ready", hits: [{ id: "draft.tools.move", score: 0.71, text: "把物体挪个位置" }], route: null });
+    // A slow answer, so the test can type while the composer waits for it.
+    if (data().text === "先看东立面") await new Promise((done) => setTimeout(done, 600));
+    return json({ state: "ready", hits: meant ? [{ id: meant, score: 0.8, text: meant }] : [], route: meant });
+  }
   if (url.pathname === "/api/settings/user") return json({ language: "zh-CN", theme: preferredTheme, fontScale: 1, sidebarPinned: true });
   if (url.pathname === "/api/settings/apps") return json({ projectDir: "D:\\fixture\\A", referenceRun: null, cadExport: "off", studioPort: 18789, monitorPort: 18790 });
   if (url.pathname === "/api/credentials") return json([]);
@@ -139,7 +165,7 @@ const route = async (handler) => {
   }
   if (url.pathname === "/api/chat/workspace") return json({ workspaceDir: "D:\\fixture", configured: true, projects: listed.map((row) => row.projectId) });
   if (url.pathname === "/api/chat/projects") return json(listed);
-  if (url.pathname === "/api/chat/providers") return json([{ id: "codex", label: "Codex CLI", available: true, detail: "Fixture", installed: true, signedIn: true,
+  if (url.pathname === "/api/chat/providers") return json(providerRows ?? [{ id: "codex", label: "Codex CLI", available: true, detail: "Fixture", installed: true, signedIn: true,
     models: ["fixture-model"], modelCatalog: "ready", modelDetail: "Fixture" }]);
   if (url.pathname === "/api/chat/sessions" && method === "GET") return json(listed !== projects ? []
     : sessions.filter((row) => Boolean(row.archived) === (url.searchParams.get("archived") === "true")).map(summary));
@@ -210,8 +236,12 @@ const route = async (handler) => {
     const act = url.pathname.match(/^\/api\/attention\/([^/]+)\/(resolve|later|dismiss|reopen|undo)$/);
     if (act && method === "POST") {
       const item = cards.find((card) => card.id === act[1]);
+      if (failNextAnswer && act[2] === "resolve") {
+        failNextAnswer = false;
+        return json({ code: "INTERNAL_ERROR", detail: "Traceback (most recent call last): seat 'modeler' owns components with no element" }, 500);
+      }
       const option = act[2] === "resolve" ? item.options.find((row) => row.id === data().optionId) : null;
-      attentionActions.push([act[2], item.id, option?.id ?? null]);
+      attentionActions.push(data()?.items === undefined ? [act[2], item.id, option?.id ?? null] : [act[2], item.id, option?.id ?? null, data().items]);
       if (act[2] === "resolve" && data().note !== undefined) attentionNotes.push(data().note);
       // Taking the stair answer back finds the project moved on: the Hub asks instead, and the card stays handled.
       const followUp = act[2] === "undo" && item.id === "att_ask" ? queueCard("ask_next", "A", { channel: "decide", kind: "choice",
@@ -234,7 +264,17 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 if (shots) await mkdir(shots, { recursive: true });
 const errors = [];
-const shoot = async (page, name) => { if (shots) await page.screenshot({ path: path.join(shots, `${name}.png`) }); };
+/** Every checkpoint of the walkthrough: the screen carries no raw service error, and (when asked) a picture is kept. */
+const shoot = async (page, name) => {
+  await assertPlainScreen(page, name);
+  if (shots) await page.screenshot({ path: path.join(shots, `${name}.png`) });
+};
+const sidePage = async (page, label) => {
+  await page.locator(".attention-shell__search").click();
+  await page.locator("dialog.command-palette[open] input").fill(label);
+  await page.keyboard.press("Enter");
+  await page.locator("dialog.command-palette[open]").waitFor({ state: "detached" });
+};
 const box = (locator) => locator.boundingBox();
 const style = (page, value, family) => page.evaluate(([value, family]) => {
   document.documentElement.dataset.uiStyle = value; document.documentElement.dataset.uiFamily = family; }, [value, family]);
@@ -262,6 +302,8 @@ try {
   await page.locator(".attention-shell__projects .attention-shell__row").filter({ hasText: "Thi Hemp" }).locator(".attention-shell__count").filter({ hasText: "1" }).waitFor();
   assert.deepEqual(await page.locator(".attention-shell__recent").first().locator(".chat-thread__title").allTextContents(), ["楼板再薄一点", "斜撑留不留"],
     "a project's conversations, newest first");
+  assert.deepEqual(await page.locator(".attention-shell__projects .attention-shell__version").allTextContents(), ["当前 V16 去掉斜撑"],
+    "under its name each project says which step its design stands on; a project nothing names says nothing");
   assert.equal(await page.locator(".menu-tab[aria-pressed=true]").textContent(), "关注");
   await page.getByText("现在没有要你处理的").or(page.getByText("1 项需要关注")).first().waitFor();
   assert.ok(await page.locator(".attention-shell__drawer").isHidden(), "the conversation waits in its drawer");
@@ -302,10 +344,10 @@ try {
   assert.equal(await bar.locator(".monkeyboard-title").count(), 0, "and the board's title field");
   await bar.locator('[data-command-arg="board_more"]').click();
   assert.deepEqual(await bar.locator(".monkeyboard-actions-panel [data-command]").evaluateAll((items) => items.map((item) => item.getAttribute("data-command"))),
-    ["view.canvas.fit", "sketch.to_model.new_frame"], "More keeps Fit and New sketch frame");
+    ["view.canvas.fit", "view.board_tools.diamond", "view.board_tools.ellipse", "sketch.to_model.new_frame"],
+    "More keeps Fit, the diamond and ellipse the toolbar left out (S08), and New sketch frame");
   await bar.locator('[data-command-arg="board_more"]').click();
   await shoot(page, "attention-board-desktop-light");
-  await page.locator("body").click({ position: { x: 700, y: 870 } }).catch(() => undefined);
   await page.locator(".attention-shell__top").click({ position: { x: 1200, y: 20 } });
   await page.keyboard.press("Alt+1");
   await page.locator(".attention-shell__queue:not([hidden])").waitFor();
@@ -342,7 +384,7 @@ try {
   await page.waitForFunction(() => document.querySelector(".attention-shell .chat-composer").getBoundingClientRect().height < 60);
 
   // The side panel: background, and the advanced tools that run the command tree.
-  await page.locator(".attention-shell__rail-item").filter({ hasText: "高级工具" }).click();
+  await sidePage(page, "查看高级工具");
   await page.locator(".advanced-tools__group h3").first().waitFor();
   assert.ok((await page.locator(".advanced-tools__group h3").allTextContents()).includes("外壳：文件、视图、对话"));
   await shoot(page, "attention-tools-desktop-light");
@@ -374,8 +416,9 @@ try {
     return stack && rail && stack.right <= rail.left;
   });
   await clear("rail only");
-  await page.locator(".attention-shell__rail-item").filter({ hasText: "后台" }).click();
+  await page.getByRole("button", { name: "展开后台" }).click();
   // Ctrl+K from the top row's search; it opens a side page by its command, as the rail does.
+  // The rail shows what has something in it (the background, while it runs); with a page open it lists them all.
   assert.deepEqual(await page.locator(".attention-shell__rail-item").evaluateAll((items) => items.map((item) => item.getAttribute("data-command"))),
     ["view.background.toggle", "view.design_history.toggle", "view.handled.toggle", "view.ignored.toggle", "view.advanced_tools.toggle"]);
   await page.locator(".attention-shell__search").click();
@@ -409,6 +452,45 @@ try {
   for (let wait = 0; chatPosts.at(-1)?.[1] !== "这个方案怎么样" && wait < 100; wait += 1) await page.waitForTimeout(50);
   assert.equal(chatPosts.at(-1)?.[1], "这个方案怎么样");
   assert.equal(await offer.count(), 0);
+  // What is typed while the meaning search is asked is not in the message that goes, and stays in the composer.
+  await said.fill("先看东立面");
+  await said.press("Enter");
+  await said.pressSequentially(" 再看西立面");
+  for (let wait = 0; chatPosts.at(-1)?.[1] !== "先看东立面" && wait < 100; wait += 1) await page.waitForTimeout(50);
+  assert.equal(chatPosts.at(-1)?.[1], "先看东立面", "the sentence as it was when sent");
+  for (let wait = 0; await said.inputValue() !== "再看西立面" && wait < 40; wait += 1) await page.waitForTimeout(50);
+  assert.equal(await said.inputValue(), "再看西立面", "the words typed while it waited are still there");
+  await said.fill("");
+  // 一句话直接办: a sentence no phrasing says is found by its meaning, and one click does it.
+  const before = chatPosts.length;
+  await said.fill("后台现在在忙什么呀");
+  await said.press("Enter");
+  await offer.getByText("这句话可以直接做：「展开任务列表」").waitFor();
+  await offer.getByRole("button", { name: "直接做" }).click();
+  await page.locator(".attention-shell__side-tabs .menu-tab[aria-selected=true]").filter({ hasText: "后台" }).waitFor();
+  assert.equal(await said.inputValue(), "");
+  await page.getByRole("button", { name: "收起侧栏" }).first().click();
+  // A sentence that names the project needs no question; one that leaves it out is asked that one thing, as buttons.
+  await said.fill("切到 Housing 13 户");
+  await said.press("Enter");
+  await offer.getByRole("button", { name: "直接做" }).waitFor();
+  assert.equal(await offer.getByText("哪个项目？").count(), 0);
+  await offer.getByRole("button", { name: "还是发给 AI" }).click();
+  for (let wait = 0; chatPosts.length === before && wait < 100; wait += 1) await page.waitForTimeout(50);
+  assert.deepEqual(chatPosts.slice(before).map(([, content]) => content), ["切到 Housing 13 户"], "only what was sent as written reached the model");
+  await said.fill("切到另一个项目");
+  await said.press("Enter");
+  await offer.getByText("哪个项目？").waitFor();
+  assert.equal(await offer.getByRole("button", { name: "直接做" }).count(), 0, "the choice is the click that does it");
+  await offer.getByRole("button", { name: "Housing 13 户" }).click();
+  await page.waitForFunction(() => document.querySelector(".attention-shell__projects .attention-shell__row[aria-current]")?.textContent.includes("Housing"));
+  await page.locator(".attention-shell__search").click();
+  await page.locator("dialog.command-palette[open] input").fill("那个东西挪远点");
+  const byMeaning = page.locator("dialog.command-palette[open] .command-palette__heading").filter({ hasText: "按意思" });
+  await byMeaning.waitFor();
+  assert.equal(await page.locator("dialog.command-palette[open] [role=option]").first().locator(".command-palette__label").textContent(), "移动",
+    "what the phrase means comes first when its words find nothing");
+  await page.keyboard.press("Escape");
   // The later passes count what reached the conversations from here on.
   const sent = chatPosts.splice(posted);
   for (const [id] of sent) sessions.find((row) => row.id === id)?.messages.pop();
@@ -491,18 +573,44 @@ try {
   await decide.getByText("更薄，检查都过了").waitFor();
   await decide.getByText("V17 薄 40 mm").waitFor();
   assert.equal(await decide.getByRole("button", { name: "打开对话" }).getAttribute("aria-disabled"), null, "a registered command it opens is offered");
-  assert.equal(await decide.locator(".attention-card__opens button").count(), 1, "one the command tree does not know yet is left out");
+  assert.equal(await decide.getByRole("button", { name: "比较并决定" }).getAttribute("aria-disabled"), null, "its two results can be compared");
   await shoot(queuePage, "attention-queue-desktop-light");
   // Later keeps a card in the queue, put off, and takes it out of the count.
   await queued("入口放在哪边").getByRole("button", { name: "稍后" }).click();
   await queued("入口放在哪边").getByRole("button", { name: "找回" }).waitFor();
   await queuePage.waitForFunction(() => ![...document.querySelectorAll(".attention-shell__projects .attention-shell__row")]
     .find((row) => row.textContent.includes("Housing"))?.querySelector(".attention-shell__count"));
-  // An answer goes to the Hub, which carries it out; the card moves to Handled, where it can be undone.
-  await decide.locator(".attention-card__answer").first().click();
+  // 比较并决定 (2-5): the card opens its two results side by side with itself under them. Answered there, as on
+  // this page, it closes the comparison and the Attention page is back; the answer goes to the Hub, which carries it out.
+  await decide.getByRole("button", { name: "比较并决定" }).click();
+  const comparing = queuePage.locator('[data-project-surface="compare"]');
+  const under = comparing.locator(".model-compare__decide .attention-card");
+  await under.filter({ hasText: "V16 和 V17 留哪个" }).waitFor();
+  assert.equal(await under.locator(".attention-card__opens").count(), 0, "the card under its comparison does not offer it again");
+  await under.getByText("V17 薄 40 mm").waitFor();
+  // A new result in the Study changes the card under the comparison: its answers would now adopt other results, so
+  // the comparison opens again over the pair the card weighs now, and nothing is answered meanwhile.
+  const weighed = cards.find((row) => row.id === "att_decide"), asOpened = JSON.parse(JSON.stringify(weighed));
+  const changed = async (fields, label) => {
+    const reads = comparisonReads, acted = attentionActions.length;
+    Object.assign(weighed, fields, { updatedAt: stamp() });
+    announce("attention/changed");
+    await under.getByRole("button", { name: label }).waitFor();
+    for (let wait = 0; comparisonReads === reads && wait < 100; wait += 1) await queuePage.waitForTimeout(50);
+    assert.ok(comparisonReads > reads, "the comparison opened again over what the card weighs now");
+    assert.equal(attentionActions.length, acted, "and nothing was answered for the person");
+  };
+  await changed({ options: [answer("v16", "Keep V16", "留 V16", "V18 归档"), answer("v18", "Keep V18", "留 V18", "V16 归档", { recommended: true, undoable: true })],
+    recommendation: { optionId: "v18", reason: "Newest", reasonZh: "最新" },
+    opens: [asOpened.opens[0], { commandId: "candidate.compare.decide", args: { runIds: ["v16", "v18"] } }] }, /留 V18/);
+  await changed({ options: asOpened.options, recommendation: asOpened.recommendation, opens: asOpened.opens }, /留 V17/);
+  await under.locator(".attention-card__answer").first().click();
+  await queuePage.waitForFunction(() => document.querySelector(".menu-tab[aria-pressed=true]")?.textContent === "关注");
+  await comparing.waitFor({ state: "detached" });
+  // The card moves to Handled, where it can be undone.
   await decide.waitFor({ state: "detached" });
   assert.deepEqual(attentionActions.slice(0, 2), [["later", "att_guess", null], ["resolve", "att_decide", "v17"]]);
-  await queuePage.locator(".attention-shell__rail-item").filter({ hasText: "已处理" }).click();
+  await sidePage(queuePage, "已处理");
   const handled = queuePage.locator(".attention-shell__panel .attention-card").filter({ hasText: "V16 和 V17 留哪个" });
   await handled.getByText("你选了：留 V17").waitFor();
   await handled.getByRole("button", { name: "撤销" }).click();
@@ -511,7 +619,7 @@ try {
   // Set aside leaves the queue for the set-aside page, which brings it back.
   await queued("剖面图出好了").getByRole("button", { name: "忽略" }).click();
   await queued("剖面图出好了").waitFor({ state: "detached" });
-  await queuePage.locator(".attention-shell__rail-item").filter({ hasText: "已忽略" }).click();
+  await sidePage(queuePage, "查看已忽略的卡");
   await queuePage.locator(".attention-shell__panel .attention-card").filter({ hasText: "剖面图出好了" }).getByRole("button", { name: "找回" }).click();
   await queued("剖面图出好了").waitFor();
   // An answer that sends the architect's own words waits for them.
@@ -522,7 +630,7 @@ try {
   await ask.waitFor({ state: "detached" });
   assert.deepEqual(attentionNotes, ["1.2 米，和走廊一样宽"]);
   // Taking it back after the project moved on: the card the Hub raised instead is shown, with no notice.
-  await queuePage.locator(".attention-shell__rail-item").filter({ hasText: "已处理" }).click();
+  await sidePage(queuePage, "已处理");
   await queuePage.locator(".attention-shell__panel .attention-card").filter({ hasText: "楼梯宽度你想怎么定" }).getByRole("button", { name: "撤销" }).click();
   await queuePage.waitForFunction(() => document.activeElement?.id === "attention-card-att_ask_next");
   assert.equal(await queuePage.locator(".attention-toast").filter({ hasText: "楼梯已经改过了" }).count(), 0, "nor one the undo raised");
@@ -565,10 +673,16 @@ try {
   assert.ok(await queuePage.locator(".attention-shell__drawer").isHidden());
   assert.equal(await queuePage.locator(".attention-shell__recent .chat-thread[aria-current]").count(), 0, "no conversation is chosen");
   assert.equal(await queuePage.locator(".attention-shell .chat-target__to").textContent(), "发到：关注对话");
-  await queuePage.locator(".attention-shell #chat-input").fill("楼板再薄一点");
-  await queuePage.keyboard.press("Enter");
+  // 18: under the empty input, sentences made from this project (its last two versions, what was asked here before);
+  // one click says it, and the sentence goes where any typed one goes.
+  const suggested = queuePage.locator(".attention-shell .chat-suggest");
+  await suggested.getByText("说一句话，会放进三类之一").waitFor();
+  assert.deepEqual(await suggested.locator(".chat-suggest__chip").allTextContents(), ["V2 和 V3 哪个好", "楼板再薄一点", "斜撑留不留", "现在做到哪了"]);
+  assert.deepEqual(chatPosts, [], "nothing was sent before the sentence was chosen");
+  await suggested.getByRole("button", { name: "楼板再薄一点" }).click();
   await queuePage.locator(".attention-shell__drawer").getByText("楼板再薄一点").waitFor();
   assert.deepEqual(chatPosts, [["att-conv-A", "楼板再薄一点"]]);
+  assert.equal(await queuePage.locator(".attention-shell .chat-suggest").count(), 1, "the sentences stay for the next one");
   // A conversation chosen in the column takes the next message, with its drawer closed too; the line above the
   // composer says where it goes.
   const sendTo = queuePage.locator(".attention-shell .chat-target__to");
@@ -595,7 +709,7 @@ try {
   await queuePage.keyboard.press("Alt+3");
   await queuePage.waitForFunction(() => document.querySelector(".menu-tab[aria-pressed=true]")?.textContent === "模型");
   await queuePage.locator(".attention-shell__surfaces .viewtools.model-tools").waitFor();
-  await queuePage.locator(".attention-shell__rail-item").filter({ hasText: "后台" }).click();
+  await queuePage.getByRole("button", { name: "展开后台" }).click();
   cards.push(queueCard("stairs", "B", { channel: "decide", kind: "choice", title: "Move the stair east", titleZh: "要不要把楼梯挪到东侧",
     options: [answer("move", "Move it", "挪", "楼梯挪到东侧"), answer("keep", "Keep it", "不挪", "楼梯不动")], createdAt: stamp(), updatedAt: stamp() }));
   announce("attention/changed");
@@ -629,6 +743,105 @@ try {
   }
   attentionServed = false; cards = [];
 
+  // Waiting (ADR-011 §8): one drawing job seen at 0.5 s, 3 s and 15 s. Under ten seconds the background says only that it
+  // runs; past it, a bar and the time left, measured against this project's earlier jobs in the lane (40 s and 60 s: 50 s).
+  const projectA = runtimes.get(projects[0].projectDir);
+  const jobRow = (jobId, status, wallTimeS, startedAt = null, finishedAt = null) => ({ jobId, status, candidateId: `cand-${jobId}`, proposalId: "p-7", createdAt: now, startedAt,
+    finishedAt, error: null, wallTimeS, lane: "exclusive", waitingFor: null, waitingReason: null });
+  const started = Date.parse("2026-10-24T10:00:00Z");
+  for (const colour of ["light", "dark"]) {
+    preferredTheme = colour;
+    for (const [age, caption] of [[0.5, "进行中"], [3, "进行中"], [15, "约还要 35 秒"]]) {
+      projectA.retained = { projectId: "A", projectDir: projectA.projectDir, published: { version: 3, stateSha256: null }, candidates: [], branches: [], stages: [],
+        errors: [], runsScanned: 3, hasMore: false,
+        jobs: [jobRow("now", "running", null, new Date(started).toISOString()), jobRow("j1", "succeeded", 40, null, "2026-10-24T09:57:00Z"), jobRow("j2", "succeeded", 60, null, "2026-10-24T08:00:00Z")],
+        // At 15 s a section has come out: the tile beside the conclusion shows it instead of the finished job.
+        drawings: age < 10 ? [] : [{ drawingId: "d-section", name: "A-A 剖面.pdf", kind: "cut-plan", runId: "run-v17", sourceStageRef: "S2",
+          generatedAt: "2026-10-24T09:58:00Z", assetSha256: "e".repeat(64), revisionRef: "rev-1", thumbnailPath: "/api/drawings/d-section/thumbnail.png" }] };
+      const wait = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      await wait.clock.setFixedTime(new Date(started + age * 1000));
+      const waitPage = await wait.newPage(); waitPage.setDefaultTimeout(15_000);
+      waitPage.on("pageerror", (error) => errors.push(error.message));
+      await waitPage.route((url) => url.pathname.startsWith("/api/"), route);
+      await open(waitPage);
+      // The Attention page leads with its conclusion; the running job and the latest result sit beside it.
+      const overview = waitPage.locator(".attention-overview");
+      await overview.locator(".attention-overview__tile").filter({ hasText: "1 个在跑" }).filter({ hasText: age < 10 ? "" : caption }).waitFor();
+      const recent = age < 10 ? overview.locator(".attention-overview__tile").filter({ hasText: "最近完成" }).filter({ hasText: "Thi Hemp 墙身节点 · 3 分钟前" })
+        : overview.getByRole("button", { name: "最近出的图：A-A 剖面.pdf" });
+      await recent.waitFor();
+      if (age >= 10) {
+        assert.match(await recent.textContent(), /Thi Hemp 墙身节点 · 2 分钟前/);
+        await recent.locator("img").evaluate((picture) => picture.complete && picture.naturalWidth > 0 || new Promise((resolve) => picture.addEventListener("load", resolve, { once: true })));
+      }
+      await waitPage.getByRole("button", { name: "展开后台" }).click();
+      const row = waitPage.locator(".attention-shell__tasks .chat-task").filter({ hasText: "Thi Hemp" });
+      await row.getByText(caption).waitFor();
+      assert.equal(await row.locator(".chat-task__progress").count(), age < 10 ? 0 : 1, `${age} s: a bar only past ten seconds`);
+      if (age >= 10) assert.equal(await row.locator(".chat-task__progress").getAttribute("aria-valuenow"), "30", "15 s of a 50 s job");
+      await waitPage.locator(".attention-shell__panel").evaluate((panel) => Promise.all(panel.getAnimations({ subtree: true })
+        .filter((animation) => animation.effect?.getTiming().iterations !== Infinity).map((animation) => animation.finished)));
+      await shoot(waitPage, `attention-wait-${String(age).replace(".", "_")}s-${colour}`);
+      if (age >= 10 && colour === "light") {
+        // One click opens the drawing on the Board.
+        await waitPage.getByRole("button", { name: "收起侧栏" }).first().click();
+        await recent.click();
+        await waitPage.waitForFunction(() => document.querySelector(".menu-tab[aria-pressed=true]")?.textContent === "画板");
+      }
+      await wait.close();
+    }
+  }
+  projectA.retained = null;
+
+  // 17: without Codex the composer starts on the signed-in Claude Code and says so in a sentence, not in the CLI's English.
+  providerRows = [
+    { id: "codex", label: "Codex", available: false, detail: "Codex CLI is not installed.", installed: false, signedIn: null, models: [], modelCatalog: "unavailable", modelDetail: "Install this CLI to read the models it offers." },
+    { id: "claude", label: "Claude Code", available: true, detail: "Uses the installed Claude CLI and its saved login or configuration.", installed: true, signedIn: true, models: [], modelCatalog: "unavailable", modelDetail: "" },
+  ];
+  const words = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const wordsPage = await words.newPage(); wordsPage.setDefaultTimeout(15_000);
+  wordsPage.on("pageerror", (error) => errors.push(error.message));
+  await wordsPage.route((url) => url.pathname.startsWith("/api/"), route);
+  await open(wordsPage);
+  await wordsPage.locator("#chat-input").focus();
+  await wordsPage.locator(".chat-composer-note").filter({ hasText: "要用 Codex 得先装，现在用的是 Claude Code" }).waitFor();
+  assert.equal(await wordsPage.getByText("is not installed").count(), 0, "no English from the CLI");
+  await wordsPage.locator(".chat-connection__name").filter({ hasText: "Claude Code" }).waitFor();
+  providerRows = null;
+  await words.close();
+  // 3-4: the changes a set of circled marks was read as arrive on one card; the architect unticks what is wrong, and the
+  // rest runs as one change. An item the agent was unsure of starts unticked.
+  attentionServed = true; preferredTheme = "light";
+  cards = [queueCard("changes", "A", { channel: "annotate", kind: "change_list", state: "review", title: "Read your marks as 3 changes", titleZh: "按你圈的读出 3 处改动",
+    changeWords: ["把楼板薄一点，西墙开个窗"],
+    changeList: { frameId: "f1", runId: "v17", items: [
+      { n: 1, note: "圈在楼板", understanding: "Thin the floor", understandingZh: "楼板减薄", targets: ["floor-1"], protected: ["wall-w"], keep: true },
+      { n: 2, note: "圈在西墙", understanding: "Cut a window in the west wall", understandingZh: "西墙开窗", targets: ["wall-w", "wall-w2"], keep: true },
+      { n: 3, note: "一个箭头", understanding: "Move something east", understandingZh: "往东挪一处", targets: [], unsure: true, keep: true },
+    ] },
+    options: [answer("run", "Run the ticked changes", "执行勾上的改动", "按勾上的几处改，没勾的不动")] })];
+  const changesContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const listedPage = await changesContext.newPage(); listedPage.setDefaultTimeout(15_000);
+  listedPage.on("pageerror", (error) => errors.push(error.message));
+  await listedPage.route((url) => url.pathname.startsWith("/api/"), route);
+  await open(listedPage);
+  const changes = listedPage.locator(".attention-card").filter({ hasText: "按你圈的读出 3 处改动" });
+  await changes.waitFor();
+  await changes.getByText("把楼板薄一点，西墙开个窗").waitFor();
+  const boxes = changes.locator(".attention-card__changes input[type=checkbox]");
+  assert.deepEqual(await boxes.evaluateAll((nodes) => nodes.map((node) => node.checked)), [true, true, false], "the unsure one starts unticked");
+  await changes.getByText("拿不准").waitFor();
+  await changes.getByText("涉及 2 个构件").waitFor();
+  await changes.getByText("保持 1 个不动").waitFor();
+  await boxes.nth(1).uncheck();
+  await boxes.nth(2).check();
+  await changes.getByRole("button", { name: /执行勾上的改动/ }).click();
+  await changes.waitFor({ state: "detached" });
+  assert.deepEqual(attentionActions.at(-1), ["resolve", "att_changes", "run", [1, 3]], "the ticked numbers go with the answer");
+  await boxes.first().waitFor({ state: "detached" }).catch(() => undefined);
+  await changesContext.close();
+  attentionServed = false; cards = [];
+
   // Phone: the projects column and the side panel open over the center.
   for (const colour of ["light", "dark"]) {
     preferredTheme = colour;
@@ -652,6 +865,35 @@ try {
     await shoot(small, `attention-phone-side-${colour}`);
     await phone.close();
   }
+  // A refused answer says it in one plain sentence and offers the next step as a button; the service's words stay off the
+  // screen. Handing it to the AI sends the sentence, in the open conversation. No model is open, so there is no edit to undo.
+  // A page of its own: handing it over opens the conversation, which the queue walkthrough above starts without.
+  attentionServed = true; cards = [queueCard("breaks", "A", { channel: "decide", kind: "choice", title: "An answer that breaks", titleZh: "会出错的回答",
+    options: [answer("go", "Go", "去", "去做")] })];
+  const refusedContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const refusedPage = await refusedContext.newPage(); refusedPage.setDefaultTimeout(15_000);
+  refusedPage.on("pageerror", (error) => errors.push(error.message));
+  await refusedPage.route((url) => url.pathname.startsWith("/api/"), route);
+  await open(refusedPage);
+  const breaks = refusedPage.locator(".attention-shell__queue .attention-card").filter({ hasText: "会出错的回答" });
+  await breaks.waitFor();
+  failNextAnswer = true;
+  await breaks.locator(".attention-card__answer").first().click();
+  const refused = breaks.locator(".attention-card__failure");
+  await refused.getByText("前后不一致").waitFor();
+  const askAi = cmd(refused, "view.notice.ask_ai");
+  await askAi.waitFor();
+  assert.equal(await cmd(refused, "view.notice.undo").count(), 0, "no model is open, so there is no edit to undo");
+  await shoot(refusedPage, "attention-queue-refused-answer");
+  const handedBefore = chatPosts.length;
+  await askAi.click();
+  for (const end = Date.now() + 8000; chatPosts.length === handedBefore && Date.now() < end; await refusedPage.waitForTimeout(50));
+  assert.equal(chatPosts.length, handedBefore + 1, "handing it over sends one message");
+  assert.match(chatPosts.at(-1)[1], /^刚才这一步没有完成：.*前后不一致/s);
+  assert.doesNotMatch(chatPosts.at(-1)[1], /seat '|Traceback/, "the AI is handed the sentence, not the service's words");
+  assert.equal(await askAi.isDisabled(), true, "and once");
+  await refusedContext.close();
+
   assert.deepEqual(errors, [], "page errors");
   console.log(JSON.stringify({ unexpected: [...new Set(unexpected)] }));
   console.log("PASS attention shell: projects column, tabs over the open surfaces, conversation drawer, side panel, phone drawers");

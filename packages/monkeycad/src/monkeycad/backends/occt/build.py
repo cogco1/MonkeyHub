@@ -109,6 +109,7 @@ class OcctProgramBuild:
 
 def build_program_shapes(
     program: CompiledGeometryProgram, *, reusable_shapes: Mapping[str, Any] | None = None,
+    reused_checked: bool = False,
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     observation_parent_id: str | None = None,
     difference_strategy: str = "auto",
@@ -127,6 +128,9 @@ def build_program_shapes(
 
     ``difference_strategy`` chooses how a boolean_difference is realized
     (DIFFERENCE_STRATEGIES); a profile with holes is recorded in ``lowering``.
+
+    ``reused_checked`` says the reusable shapes are ones this executor built
+    and checked itself (and whose STEP read back): they are not checked again.
     """
 
     if not isinstance(program, CompiledGeometryProgram):
@@ -206,7 +210,8 @@ def build_program_shapes(
                 raise
             except Exception as exc:  # OCCT failures surface as Standard_Failure
                 raise OcctBuildError(f"{op_id} ({kind}): {exc}") from exc
-            _require_built_shape(occ, shape, op_id, kind, delivery=declared_delivery(operation))
+            if not (reused and reused_checked):
+                _require_built_shape(occ, shape, op_id, kind, delivery=declared_delivery(operation))
             (reused_ids if reused else recomputed_ids).append(output)
             shapes[output] = shape
             built[output] = OcctObjectBuild(

@@ -758,6 +758,23 @@ def _view_png(canvas) -> tuple[bytes, int, int]:
     raise StudioError(413, "BOARD_VIEW_TOO_LARGE", "This region does not fit a 4 MiB PNG; ask for a smaller region or maxEdge.")
 
 
+def _bound_notes(elements: Sequence[Mapping[str, Any]]) -> dict[str, str]:
+    """The sentence typed inside a shape (or on an arrow), by the id of the shape it is bound to.
+
+    Excalidraw keeps such a sentence as a text element whose ``containerId`` names the shape: the person double-clicks
+    a sketch's rectangle and writes "共享厨房" in it. Said this way the reader is told the sentence belongs to that
+    shape, instead of finding a text mark that merely lies over it.
+    """
+
+    found: dict[str, list[str]] = {}
+    for element in elements:
+        container = element.get("containerId")
+        words = (element.get("text") or "").strip()
+        if element.get("type") == "text" and isinstance(container, str) and words:
+            found.setdefault(container, []).append(words)
+    return {container: " / ".join(parts)[:240] for container, parts in found.items()}
+
+
 def view_board(
     binding: ProjectBinding,
     projections: ProjectionQueue | None = None,
@@ -852,6 +869,7 @@ def view_board(
             canvas.paste(picture, position, picture)
 
     annotations = []
+    notes = _bound_notes(elements)
     for element, box in marks[:MAX_VIEW_ANNOTATIONS]:
         on_pages = []
         area = max((box[2] - box[0]) * (box[3] - box[1]), 1e-9)
@@ -874,6 +892,10 @@ def view_board(
                "frameId": element.get("frameId"), "groupIds": list(element.get("groupIds") or []), "onPages": on_pages}
         if element.get("type") == "text":
             row["text"] = (element.get("text") or "")[:4000]
+            if isinstance(element.get("containerId"), str):
+                row["containerId"] = element["containerId"]
+        elif notes.get(element.get("id")):
+            row["note"] = notes[element["id"]]
         if element.get("type") in _VIEW_LINEAR_TYPES:
             row["pointCount"] = len(element.get("points") or [])
         annotations.append(row)

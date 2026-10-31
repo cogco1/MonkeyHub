@@ -242,10 +242,12 @@ export const COMMAND_TREE: CommandTree = {
       "status": "PRODUCTION",
       "host": "runtime",
       "purpose": {
-        "en": "Hand marks and a note to the AI: send design feedback from the Board, discuss an image or render, run a crit, send the tracing paper review, submit a page note, or clear the marks.",
-        "zh-CN": "把批注和意见交给 AI：从画板发送设计反馈、讨论图片或渲染、进行 Crit、发送描图纸审阅意见、提交本页意见，或清除批注。"
+        "en": "Hand marks and one sentence to the AI from the Board's selection, a document page or the model's tracing paper: the sentence on the first circle, the marked objects and a picture attached, sent into the project's conversation. Developer mode keeps the exact-model design feedback, image discussion, page note and tracing paper review to the Board.",
+        "zh-CN": "把批注和一句话交给 AI：画板选中浮层、文档页、模型描图纸各一个「交给 AI」，原话挂在第一个圈上，圈到的对象和截图作为附件发进项目对话。开发者模式保留精确绑定模型的设计反馈、讨论图片、本页意见和描图纸审阅发画板。"
       },
       "terms": [
+        "hand marks to the AI",
+        "交给 AI",
         "send feedback to the AI",
         "discuss this drawing",
         "submit a page note",
@@ -256,7 +258,6 @@ export const COMMAND_TREE: CommandTree = {
         "清除批注",
         "hand off marks",
         "ask for a change",
-        "交给 AI",
         "评图"
       ]
     },
@@ -2032,6 +2033,24 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
+      "id": "document.model_source.change",
+      "capability": "document.sources",
+      "label": {
+        "en": "Change linked model",
+        "zh-CN": "换一个模型"
+      },
+      "terms": [],
+      "surface": "document",
+      "group": "board",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
       "id": "view.markup_tools.tracing_paper",
       "capability": "markup.draw",
       "label": {
@@ -2433,7 +2452,10 @@ export const COMMAND_TREE: CommandTree = {
         "zh-CN": "文字"
       },
       "terms": [
-        "text size"
+        "text size",
+        "text note",
+        "文字批注",
+        "短话"
       ],
       "surface": "document",
       "group": "document",
@@ -2443,6 +2465,7 @@ export const COMMAND_TREE: CommandTree = {
       "when": [],
       "shortcut": null,
       "entries": [
+        "模67",
         "文14",
         "文20"
       ],
@@ -2615,7 +2638,7 @@ export const COMMAND_TREE: CommandTree = {
       "tier": "basic",
       "place": null,
       "when": [],
-      "shortcut": null,
+      "shortcut": "Ctrl+Z",
       "entries": [
         "模64",
         "文17"
@@ -2650,7 +2673,7 @@ export const COMMAND_TREE: CommandTree = {
       "tier": "basic",
       "place": null,
       "when": [],
-      "shortcut": null,
+      "shortcut": "Ctrl+Shift+Z",
       "entries": [
         "模65",
         "文18"
@@ -2675,17 +2698,21 @@ export const COMMAND_TREE: CommandTree = {
       "id": "view.markup_tools.cancel",
       "capability": "markup.draw",
       "label": {
-        "en": "Cancel tool",
-        "zh-CN": "取消工具"
+        "en": "Exit tracing paper",
+        "zh-CN": "退出描图纸"
       },
-      "terms": [],
+      "terms": [
+        "Escape",
+        "exit tracing paper",
+        "退出描图纸"
+      ],
       "surface": "modeling",
       "group": "document",
       "channel": "front",
       "tier": "basic",
       "place": null,
       "when": [],
-      "shortcut": null,
+      "shortcut": "Esc",
       "entries": [
         "模66"
       ],
@@ -2888,6 +2915,110 @@ export const COMMAND_TREE: CommandTree = {
       ]
     },
     {
+      "id": "view.markup_tools.restore_paper",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Continue this paper",
+        "zh-CN": "继续这张纸"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "document",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "revisionSha256"
+      ],
+      "inPlace": true
+    },
+    {
+      "id": "view.board_tools.diamond",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Diamond",
+        "zh-CN": "菱形"
+      },
+      "terms": [
+        "rhombus",
+        "画菱形"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true
+    },
+    {
+      "id": "view.board_tools.ellipse",
+      "capability": "markup.draw",
+      "label": {
+        "en": "Ellipse",
+        "zh-CN": "椭圆"
+      },
+      "terms": [
+        "oval",
+        "画椭圆",
+        "画圆"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true
+    },
+    {
+      "id": "markup.hand_to_ai.hand_over",
+      "capability": "markup.review",
+      "label": {
+        "en": "Hand to AI",
+        "zh-CN": "交给 AI"
+      },
+      "terms": [
+        "send to AI",
+        "ask AI to change this",
+        "发给 AI",
+        "让 AI 改"
+      ],
+      "surface": "board",
+      "group": "board",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true,
+      "phrases": [
+        "把圈的地方交给 AI",
+        "让 AI 按我圈的改",
+        "这几处圈好了发给 AI",
+        "hand these marks to the AI",
+        "send what I circled to the AI"
+      ],
+      "aliases": [
+        "交给AI",
+        "发给AI",
+        "圈了让AI改",
+        "hand to AI",
+        "send marks to AI"
+      ]
+    },
+    {
       "id": "markup.hand_to_ai.open",
       "capability": "markup.review",
       "label": {
@@ -2898,7 +3029,7 @@ export const COMMAND_TREE: CommandTree = {
       "surface": "board",
       "group": "board",
       "channel": "side",
-      "tier": "basic",
+      "tier": "developer",
       "place": null,
       "when": [],
       "shortcut": null,
@@ -2934,7 +3065,7 @@ export const COMMAND_TREE: CommandTree = {
       "surface": "board",
       "group": "board",
       "channel": "side",
-      "tier": "basic",
+      "tier": "developer",
       "place": null,
       "when": [],
       "shortcut": null,
@@ -2970,7 +3101,7 @@ export const COMMAND_TREE: CommandTree = {
       "surface": "board",
       "group": "board",
       "channel": "side",
-      "tier": "basic",
+      "tier": "developer",
       "place": null,
       "when": [],
       "shortcut": null,
@@ -3006,7 +3137,7 @@ export const COMMAND_TREE: CommandTree = {
       "surface": "board",
       "group": "board",
       "channel": "side",
-      "tier": "basic",
+      "tier": "developer",
       "place": null,
       "when": [],
       "shortcut": null,
@@ -3102,7 +3233,7 @@ export const COMMAND_TREE: CommandTree = {
       "surface": "modeling",
       "group": "board",
       "channel": "side",
-      "tier": "basic",
+      "tier": "developer",
       "place": null,
       "when": [],
       "shortcut": null,
@@ -3136,7 +3267,7 @@ export const COMMAND_TREE: CommandTree = {
       "surface": "document",
       "group": "board",
       "channel": "side",
-      "tier": "basic",
+      "tier": "developer",
       "place": null,
       "when": [],
       "shortcut": null,
@@ -3171,14 +3302,19 @@ export const COMMAND_TREE: CommandTree = {
         "en": "Clear annotations",
         "zh-CN": "清除批注"
       },
-      "terms": [],
+      "terms": [
+        "clear tracing paper",
+        "clear all marks",
+        "清空描图纸",
+        "清空批注"
+      ],
       "surface": "board",
       "group": "board",
       "channel": "side",
       "tier": "basic",
       "place": null,
       "when": [],
-      "shortcut": null,
+      "shortcut": "Ctrl+Shift+X",
       "entries": [
         "模63",
         "板11",
@@ -3210,7 +3346,7 @@ export const COMMAND_TREE: CommandTree = {
         "zh-CN": "生成剖切平面"
       },
       "terms": [
-        "floor plan"
+        "cut plane settings"
       ],
       "surface": "drawings",
       "group": "drawings",
@@ -3240,20 +3376,20 @@ export const COMMAND_TREE: CommandTree = {
       ],
       "args": [],
       "phrases": [
-        "出一张平面图",
-        "从模型切个平面",
-        "按这个高度剖平面图",
-        "generate a floor plan from model",
-        "cut a plan at this height"
+        "新建剖切平面",
+        "在图纸设置里调剖切高度",
+        "按这个高度重新剖切",
+        "new cut plane in the drawing settings",
+        "adjust the cut height in drawing settings"
       ],
       "aliases": [
-        "出平面",
-        "平面图",
-        "剖平面",
-        "切平面",
-        "floor plan",
-        "plan cut",
-        "make plan"
+        "剖切平面",
+        "调剖切",
+        "图纸设置",
+        "剖切高度",
+        "cut plane",
+        "cut settings",
+        "plan cut settings"
       ]
     },
     {
@@ -5935,6 +6071,255 @@ export const COMMAND_TREE: CommandTree = {
       "args": []
     },
     {
+      "id": "drawing.quick.plan",
+      "capability": "model.view",
+      "label": {
+        "en": "Draw a floor plan",
+        "zh-CN": "出平面"
+      },
+      "terms": [
+        "floor plan",
+        "平面图",
+        "出平面图"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "出一张平面图",
+        "把模型出个平面图",
+        "给我平面图",
+        "draw a floor plan",
+        "make a plan drawing of this model"
+      ],
+      "aliases": [
+        "出平面",
+        "出平面图",
+        "平面图",
+        "floor plan",
+        "plan drawing"
+      ]
+    },
+    {
+      "id": "drawing.quick.section",
+      "capability": "model.view",
+      "label": {
+        "en": "Draw a section",
+        "zh-CN": "出剖面"
+      },
+      "terms": [
+        "section drawing",
+        "剖面图",
+        "出剖面图"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "出一张剖面图",
+        "把楼剖开出个剖面图",
+        "给我剖面图",
+        "draw a section",
+        "make a section drawing of this model"
+      ],
+      "aliases": [
+        "出剖面",
+        "出剖面图",
+        "剖面图",
+        "section drawing",
+        "building section"
+      ]
+    },
+    {
+      "id": "drawing.quick.elevations",
+      "capability": "model.view",
+      "label": {
+        "en": "Draw the elevations",
+        "zh-CN": "出立面"
+      },
+      "terms": [
+        "elevations",
+        "立面图",
+        "四个立面"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "出立面图",
+        "四个立面都出一下",
+        "把四面立面都出了",
+        "draw the elevations",
+        "draw all four elevations"
+      ],
+      "aliases": [
+        "出立面",
+        "出立面图",
+        "立面图",
+        "四个立面",
+        "elevations",
+        "elevation drawings"
+      ]
+    },
+    {
+      "id": "drawing.quick.elevation_south",
+      "capability": "model.view",
+      "label": {
+        "en": "Draw the south elevation",
+        "zh-CN": "出南立面"
+      },
+      "terms": [
+        "south elevation",
+        "南立面",
+        "南立面图"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "出一张南立面",
+        "出南立面",
+        "给我南立面图",
+        "draw the south elevation",
+        "make the south elevation"
+      ],
+      "aliases": [
+        "南立面",
+        "南立面图",
+        "出南立面",
+        "south elevation"
+      ]
+    },
+    {
+      "id": "drawing.quick.elevation_north",
+      "capability": "model.view",
+      "label": {
+        "en": "Draw the north elevation",
+        "zh-CN": "出北立面"
+      },
+      "terms": [
+        "north elevation",
+        "北立面",
+        "北立面图"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "出一张北立面",
+        "出北立面",
+        "给我北立面图",
+        "draw the north elevation",
+        "make the north elevation"
+      ],
+      "aliases": [
+        "北立面",
+        "北立面图",
+        "出北立面",
+        "north elevation"
+      ]
+    },
+    {
+      "id": "drawing.quick.elevation_west",
+      "capability": "model.view",
+      "label": {
+        "en": "Draw the west elevation",
+        "zh-CN": "出西立面"
+      },
+      "terms": [
+        "west elevation",
+        "西立面",
+        "西立面图"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "出一张西立面",
+        "出西立面",
+        "给我西立面图",
+        "draw the west elevation",
+        "make the west elevation"
+      ],
+      "aliases": [
+        "西立面",
+        "西立面图",
+        "出西立面",
+        "west elevation"
+      ]
+    },
+    {
+      "id": "drawing.quick.elevation_east",
+      "capability": "model.view",
+      "label": {
+        "en": "Draw the east elevation",
+        "zh-CN": "出东立面"
+      },
+      "terms": [
+        "east elevation",
+        "东立面",
+        "东立面图"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "出一张东立面",
+        "出东立面",
+        "给我东立面图",
+        "draw the east elevation",
+        "make the east elevation"
+      ],
+      "aliases": [
+        "东立面",
+        "东立面图",
+        "出东立面",
+        "east elevation"
+      ]
+    },
+    {
       "id": "view.reference_model.show",
       "capability": "model.view",
       "label": {
@@ -6555,6 +6940,48 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "模61"
       ],
+      "args": []
+    },
+    {
+      "id": "draft.record.discard",
+      "capability": "design.history",
+      "label": {
+        "en": "Discard draft",
+        "zh-CN": "丢掉草稿"
+      },
+      "terms": [],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "模61"
+      ],
+      "args": []
+    },
+    {
+      "id": "design.from_import",
+      "capability": "design.history",
+      "label": {
+        "en": "Make it a design you can change",
+        "zh-CN": "转成能改的设计"
+      },
+      "terms": [
+        "make the imported model editable",
+        "导入的模型转成设计",
+        "快照转成设计"
+      ],
+      "surface": "modeling",
+      "group": "modeling",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
       "args": []
     },
     {
@@ -8053,6 +8480,66 @@ export const COMMAND_TREE: CommandTree = {
       ]
     },
     {
+      "id": "attention.queue.restart_service",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Restart the project service",
+        "zh-CN": "重新启动项目服务"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": []
+    },
+    {
+      "id": "attention.change_list.execute",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Make the ticked changes",
+        "zh-CN": "按勾选的改"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "items"
+      ]
+    },
+    {
+      "id": "attention.change_list.choose_target",
+      "capability": "attention.queue",
+      "label": {
+        "en": "Choose the part an item meant",
+        "zh-CN": "选这条指的构件"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "cardId",
+        "n",
+        "target"
+      ]
+    },
+    {
       "id": "chat.new_conversation",
       "capability": "chat.conversation",
       "label": {
@@ -8348,6 +8835,29 @@ export const COMMAND_TREE: CommandTree = {
       "inPlace": true
     },
     {
+      "id": "chat.skill_run.keep",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Keep a script the AI ran as a skill",
+        "zh-CN": "把 AI 现写的脚本留下成 skill"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [
+        "壳113"
+      ],
+      "args": [
+        "runId"
+      ],
+      "inPlace": true
+    },
+    {
       "id": "chat.permission.cancel",
       "capability": "chat.conversation",
       "label": {
@@ -8507,6 +9017,69 @@ export const COMMAND_TREE: CommandTree = {
         "壳59"
       ],
       "args": [],
+      "inPlace": true
+    },
+    {
+      "id": "chat.note.remove",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Remove a remembered note",
+        "zh-CN": "删除一条记住的事"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "noteId"
+      ],
+      "inPlace": true
+    },
+    {
+      "id": "chat.note.restore",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Put a removed note back",
+        "zh-CN": "撤销删除记住的事"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "noteId"
+      ],
+      "inPlace": true
+    },
+    {
+      "id": "chat.wakeup.cancel",
+      "capability": "chat.conversation",
+      "label": {
+        "en": "Cancel a wake-up",
+        "zh-CN": "取消定时继续"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "front",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "wakeupId"
+      ],
       "inPlace": true
     },
     {
@@ -8703,6 +9276,25 @@ export const COMMAND_TREE: CommandTree = {
       "inPlace": true
     },
     {
+      "id": "project.create.choose_folder",
+      "capability": "project.manage",
+      "label": {
+        "en": "Choose folder",
+        "zh-CN": "选择文件夹"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true
+    },
+    {
       "id": "project.create.add_existing_confirm",
       "capability": "project.manage",
       "label": {
@@ -8721,6 +9313,25 @@ export const COMMAND_TREE: CommandTree = {
         "窗8",
         "窗10"
       ],
+      "args": [],
+      "inPlace": true
+    },
+    {
+      "id": "project.archive.choose_file",
+      "capability": "project.manage",
+      "label": {
+        "en": "Choose archive file",
+        "zh-CN": "选择归档文件"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
       "args": [],
       "inPlace": true
     },
@@ -11475,6 +12086,27 @@ export const COMMAND_TREE: CommandTree = {
       ]
     },
     {
+      "id": "view.recent_drawing.open",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Open the latest drawing",
+        "zh-CN": "打开最近出的图"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "drawingId"
+      ],
+      "inPlace": true
+    },
+    {
       "id": "view.ignored.toggle",
       "capability": "shell.pages",
       "label": {
@@ -11682,6 +12314,70 @@ export const COMMAND_TREE: CommandTree = {
       ],
       "args": [],
       "inPlace": true
+    },
+    {
+      "id": "view.notes.toggle",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Show notes and memory",
+        "zh-CN": "查看说明与记忆"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "打开说明与记忆",
+        "看看记住了什么",
+        "改一下给 AI 的规矩",
+        "show my standing instructions",
+        "what did you remember"
+      ],
+      "aliases": [
+        "说明",
+        "记忆",
+        "规矩",
+        "notes",
+        "memory",
+        "instructions"
+      ]
+    },
+    {
+      "id": "view.chat_search.toggle",
+      "capability": "shell.pages",
+      "label": {
+        "en": "Find conversations",
+        "zh-CN": "查找对话"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "phrases": [
+        "查找以前的对话",
+        "搜一下聊过的内容",
+        "找那条对话",
+        "search my conversations",
+        "find an old chat"
+      ],
+      "aliases": [
+        "搜索对话",
+        "历史对话",
+        "search chats",
+        "find chat"
+      ]
     },
     {
       "id": "preference.appearance.theme_system",
@@ -12158,6 +12854,25 @@ export const COMMAND_TREE: CommandTree = {
       ]
     },
     {
+      "id": "preference.chat_permission.choose",
+      "capability": "preference.settings",
+      "label": {
+        "en": "What this conversation may do",
+        "zh-CN": "这个对话可以做什么"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true
+    },
+    {
       "id": "preference.chat_model.custom_apply",
       "capability": "preference.settings",
       "label": {
@@ -12325,6 +13040,82 @@ export const COMMAND_TREE: CommandTree = {
       "entries": [
         "窗57"
       ],
+      "args": [],
+      "inPlace": true
+    },
+    {
+      "id": "preference.chat_mcp.from_claude",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Use the MCP servers set up in Claude Code",
+        "zh-CN": "用 Claude Code 里配好的 MCP 服务器"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true
+    },
+    {
+      "id": "preference.chat_mcp.server",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Turn one MCP server on or off",
+        "zh-CN": "开关一个 MCP 服务器"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true
+    },
+    {
+      "id": "preference.chat_mcp.add",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Add an MCP server",
+        "zh-CN": "添加 MCP 服务器"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [],
+      "inPlace": true
+    },
+    {
+      "id": "preference.chat_mcp.remove",
+      "capability": "preference.settings",
+      "label": {
+        "en": "Remove an MCP server",
+        "zh-CN": "移除 MCP 服务器"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "settings",
+      "channel": "side",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
       "args": [],
       "inPlace": true
     },
@@ -12974,6 +13765,46 @@ export const COMMAND_TREE: CommandTree = {
         "窗85",
         "栏1"
       ],
+      "args": [
+        "notice"
+      ]
+    },
+    {
+      "id": "view.notice.ask_ai",
+      "capability": "shell.controls",
+      "label": {
+        "en": "Ask the AI to fix it",
+        "zh-CN": "交给 AI 处理"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
+      "args": [
+        "notice"
+      ]
+    },
+    {
+      "id": "view.notice.undo",
+      "capability": "shell.controls",
+      "label": {
+        "en": "Undo the last edit",
+        "zh-CN": "撤销上一步修改"
+      },
+      "terms": [],
+      "surface": "hub",
+      "group": "shell",
+      "channel": "background",
+      "tier": "basic",
+      "place": null,
+      "when": [],
+      "shortcut": null,
+      "entries": [],
       "args": [
         "notice"
       ]

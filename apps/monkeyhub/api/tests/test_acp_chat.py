@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from archflow.project.repository import FilesystemProjectRepository
 from monkeyhub_api.chat import providers, store as chat, turn_context
 from monkeyhub_api.app.composition import HubSettings, create_app
-from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest, ChatDesignContext
+from monkeyhub_api.models import ChatCreateRequest, ChatPermissionRequest, ChatPostRequest, ChatDesignContext
 
 
 HUB_AGENT = FAKE_AGENT.replace("asyncio.run(main())", "") + r'''
@@ -219,6 +219,159 @@ class AcpChatTests(unittest.TestCase):
         self.assertEqual(len([r for r in self.calls() if r["event"] == "load"]), 1)
         self.assertEqual(before, {str(p): p.read_bytes() for p in self.project.rglob("*") if p.is_file()})
 
+    # ---- one answer for a project (A4) ----
+
+    def answer(self, session, option):
+        permission = self.permission(session)
+        self.store.resolve_permission(session.id, permission.id,
+                                      ChatPermissionRequest(projectId=session.projectId, optionId=option))
+        return self.finished(session)
+
+    def adapter_chose(self, text):
+        return [row["outcome"].get("optionId") for row in self.calls() if row["event"] == "permission" and row.get("text") == text]
+
+    def test_a_command_is_allowed_once_for_a_project_and_the_hub_answers_the_rest(self):
+        from monkeyhub_api.settings import tool_grants
+
+        session = self.create()
+        self.post(session, "permission-run")
+        card = self.permission(session)
+        self.assertEqual([(o.optionId, o.kind) for o in card.options],
+                         [("allow", "allow_once"), ("hub-project", "allow_always"), ("reject", "reject_once")])
+        self.assertEqual(card.title, "Run command · git status --short", "the card says what it will run")
+        self.assertIn("这个项目里的命令一直允许", card.options[1].name)
+        self.assertFalse(tool_grants.read(self.runtime).grants)
+        self.answer(session, "hub-project")
+        self.assertEqual(self.adapter_chose("permission-run"), ["allow"], "the adapter is told only 'allow once'")
+        [grant] = tool_grants.read(self.runtime).grants
+        self.assertEqual((grant.project_id, grant.action, grant.revoked_at), (session.projectId, "run", None))
+        # The next command in this project is answered by the Hub: no card, and the conversation says so.
+        self.post(session, "permission-run")
+        done = self.finished(session)
+        self.assertEqual(self.adapter_chose("permission-run"), ["allow", "allow"])
+        self.assertFalse(any(m.permission for m in done.messages))
+        self.assertTrue(any("allowed by your earlier answer for this project" in m.content and "git status --short" in m.content
+                            for m in done.messages))
+        # Going online is another answer, still asked; so is a request in another project.
+        self.post(session, "permission-network")
+        asked = self.permission(session)
+        self.assertEqual(asked.title, "https network access to example.com · https://example.com")
+        self.assertIn("联网", asked.options[1].name)
+        self.answer(session, "allow")
+        self.assertEqual(len(tool_grants.read(self.runtime).grants), 1, "only this time writes no grant")
+        self.assertFalse(tool_grants.covers(self.runtime, "another-project", "run"))
+        # Withdrawing it asks again.
+        tool_grants.revoke(self.runtime, grant.grant_id, by="settings")
+        self.post(session, "permission-run")
+        self.assertEqual(self.permission(session).options[1].optionId, "hub-project")
+        self.answer(session, "reject")
+        self.assertEqual(self.adapter_chose("permission-run")[-1], "reject")
+        self.assertEqual(len([g for g in tool_grants.read(self.runtime).grants if g.revoked_at is None]), 0)
+
+    def test_the_hubs_own_tools_are_one_answer_and_no_other_tool_is_covered(self):
+        from monkeyhub_api.settings import tool_grants
+
+        session = self.create()
+        self.post(session, "permission-hub")
+        card = self.permission(session)
+        self.assertEqual(card.title, "mcp.monkeyhub.studio_request · studio_request POST /api/proposals")
+        self.assertIn("MonkeyHub 自己的工具", card.options[1].name)
+        self.answer(session, "hub-project")
+        self.post(session, "permission-hub")
+        self.finished(session)
+        self.assertEqual(self.adapter_chose("permission-hub"), ["allow", "allow"])
+        self.assertEqual([g.action for g in tool_grants.read(self.runtime).grants], ["hub"])
+        # A tool of another MCP server and an edit are asked every time, with the adapter's own options only.
+        for text in ("permission-other", "permission-edit", *self.NEVER_COVERED):
+            with self.subTest(text=text):
+                self.post(session, text)
+                card = self.permission(session)
+                self.assertEqual([o.optionId for o in card.options], ["allow", "always", "reject"])
+                self.answer(session, "allow")
+                self.post(session, text)
+                self.assertEqual([o.optionId for o in self.permission(session).options], ["allow", "always", "reject"],
+                                 "asked again, not covered by any grant")
+                self.answer(session, "reject")
+        self.assertEqual([g.action for g in tool_grants.read(self.runtime).grants], ["hub"])
+
+    # Real request shapes of the locked adapter that no grant may answer: an MCP tool whose server is not the Hub's or not
+    # known, a URL an MCP server asks to open, more sandbox permissions, a command that asks for more permissions, and
+    # a request that tells nothing of its kind.
+    NEVER_COVERED = ("permission-mcp-unknown", "permission-fetch", "permission-more", "permission-run-more", "permission-bare")
+
+    def test_a_grant_for_commands_answers_nothing_that_is_not_a_plain_command(self):
+        from monkeyhub_api.settings import tool_grants
+
+        for action in ("run", "network", "hub"):
+            tool_grants.allow(self.runtime, "acp-project", action)
+        session = self.create()
+        for text in ("permission-other", "permission-edit", *self.NEVER_COVERED):
+            with self.subTest(text=text):
+                self.post(session, text)
+                card = self.permission(session)
+                self.assertEqual([o.optionId for o in card.options], ["allow", "always", "reject"],
+                                 "asked, with the adapter's own options: no grant for commands, going online or the Hub's tools covers it")
+                self.answer(session, "reject")
+                self.assertEqual(self.adapter_chose(text)[-1], "reject")
+        # What the grants do cover, in the adapter's real shapes: a command, going online, a call to the Hub's own server.
+        for text in ("permission-run", "permission-network", "permission-hub", "permission-mcp-standalone"):
+            with self.subTest(text=text):
+                self.post(session, text)
+                self.finished(session)
+                self.assertEqual(self.adapter_chose(text), ["allow"], "answered by the Hub")
+
+    def test_a_command_grant_is_not_borrowed_by_going_online_or_an_mcp_tool(self):
+        from monkeyhub_api.settings import tool_grants
+
+        tool_grants.allow(self.runtime, "acp-project", "run")
+        session = self.create()
+        for text, action in (("permission-network", "network"), ("permission-hub", "hub")):
+            with self.subTest(text=text):
+                self.post(session, text)
+                card = self.permission(session)
+                self.assertIn("hub-project", [o.optionId for o in card.options], f"asked: only {action} would cover it")
+                self.answer(session, "reject")
+        self.post(session, "permission-run")
+        self.finished(session)
+        self.assertEqual(self.adapter_chose("permission-run"), ["allow"], "the command grant still answers a command")
+
+    def test_with_the_design_loop_enforced_a_command_is_asked_every_time_and_the_hubs_tools_are_not(self):
+        from monkeyhub_api.settings.store import read_application_settings, save_application_settings
+        from monkeyhub_api.settings import tool_grants
+
+        tool_grants.allow(self.runtime, "acp-project", "run")
+        tool_grants.allow(self.runtime, "acp-project", "hub")
+        save_application_settings(self.runtime, read_application_settings(self.runtime).model_copy(
+            update={"design_loop": "enforced"}))
+        session = self.create()
+        self.post(session, "permission-run")
+        card = self.permission(session)
+        self.assertEqual([o.optionId for o in card.options], ["allow", "always", "reject"],
+                         "a grant for commands does not reach a chat that is held to Claude's no-shell rule")
+        self.answer(session, "reject")
+        self.post(session, "permission-hub")
+        self.finished(session)
+        self.assertEqual(self.adapter_chose("permission-hub"), ["allow"], "the Hub's own tools still go through")
+
+    def test_the_tool_grants_file_is_kept_apart_withdrawn_and_never_read_wrongly(self):
+        from monkeyhub_api.models import HubFailure
+        from monkeyhub_api.settings import tool_grants
+
+        first = tool_grants.allow(self.runtime, "p", "network")
+        self.assertEqual(tool_grants.allow(self.runtime, "p", "network").grant_id, first.grant_id, "asking again answers the grant in force")
+        with self.assertRaises(HubFailure) as refused:
+            tool_grants.allow(self.runtime, "p", "edit")
+        self.assertEqual(refused.exception.error.code, "TOOL_GRANT_INVALID", "an edit cannot be allowed for a project")
+        tool_grants.revoke(self.runtime, first.grant_id, by="settings")
+        self.assertFalse(tool_grants.covers(self.runtime, "p", "network"))
+        self.assertEqual(tool_grants.allow(self.runtime, "p", "network").grant_id != first.grant_id, True)
+        with self.assertRaises(HubFailure):
+            tool_grants.revoke(self.runtime, "nobody", by="settings")
+        self.assertEqual(tool_grants.grants_path(self.runtime), self.runtime / "config" / "tool-grants.json")
+        self.assertFalse((self.runtime / "config" / "skill-grants.json").exists(), "skills' grants are another file")
+        tool_grants.grants_path(self.runtime).write_text("{ damaged", encoding="utf-8")
+        self.assertFalse(tool_grants.covers(self.runtime, "p", "network"), "a file that cannot be read allows nothing")
+
     def test_http_permission_requires_current_project_option_and_single_decision(self):
         with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
@@ -267,12 +420,62 @@ class AcpChatTests(unittest.TestCase):
                              {"permissionId": question, "status": "answered", "optionId": "allow_always",
                               "grantId": None})
             self.assertEqual(client.get(f"{ask}/{question}").status_code, 404, "an answer is read once")
+            answered = next(m for m in self.store.get(session.id).messages if m.id.endswith(f":permission:{question}"))
+            self.assertEqual((answered.permission, answered.permissionOutcome), (None, "allowed_always"),
+                             "S23: the question stays where it was asked and says what was allowed")
+            self.assertTrue(answered.content.endswith("已允许，以后这类不再问 / Allowed from now on"), answered.content)
+            each = client.post(ask, json={"title": "联网", "choices": ["allow_once", "reject"]}).json()["permissionId"]
+            shown = next(m.permission for m in self.store.get(session.id).messages
+                         if m.permission and m.permission.id == each)
+            self.assertEqual([(o.optionId, o.name) for o in shown.options],
+                             [("allow_once", "允许这一次 / Only this time"), ("reject", "不 / No")],
+                             "what is asked before every run has no 'from now on'")
+            client.post(f"/api/chat/sessions/{session.id}/permissions/{each}",
+                        json={"projectId": session.projectId, "optionId": "reject"})
+            self.assertEqual(next(m for m in self.store.get(session.id).messages
+                                  if m.id.endswith(f":permission:{each}")).permissionOutcome, "refused")
             unanswered = client.post(ask, json={"title": "Run again"}).json()["permissionId"]
             client.post(f"/api/chat/sessions/{session.id}/permissions/{acp.id}",
                         json={"projectId": session.projectId, "optionId": "allow"})
             self.finished(session)
             self.assertEqual(client.get(f"{ask}/{unanswered}").json()["status"], "withdrawn",
                              "a question the turn left unanswered is withdrawn with it")
+
+    def test_a_script_the_agent_ran_has_its_card_and_one_click_keeps_it_as_a_skill(self):
+        # S23: the card shows what ran and what let it run; keeping it writes a package every project finds.
+        skills = self.root / "my skills"
+        with patch.dict(os.environ, {"MONKEYHUB_SKILL_PACKAGES": str(skills)}), \
+                patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
+            app = create_app(HubSettings(runtime_root=self.runtime))
+            with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
+                session = self.create()
+                runs = f"/api/chat/sessions/{session.id}/skill-runs"
+                card = {"runId": "skill-run-0123abcd0123", "kind": "scratch", "name": "pdf-colours",
+                        "description": "数一下 PDF 里的颜色", "code": "c" * 12, "tier": "low", "asked": "no",
+                        "script": {"files": {"main.py": "print('colours')\n"}, "entry": "main.py", "manifest": None}}
+                self.assertEqual(client.post(runs, json=card).status_code, 201)
+                keep = f"{runs}/{card['runId']}/keep"
+                early = client.post(keep, json={"projectId": session.projectId, "name": "pdf-colours"})
+                self.assertEqual((early.status_code, early.json()["code"]), (409, "SKILL_KEEP_NOT_SUCCEEDED"))
+                client.put(f"{runs}/{card['runId']}", json={"status": "succeeded", "outputs": [{"name": "colours.png"}]})
+                shown = next(m for m in self.store.get(session.id).messages if m.skillRun is not None)
+                self.assertEqual((shown.skillRun.status, shown.skillRun.outputs), ("succeeded", ["colours.png"]))
+                self.assertIn("没问你：只读项目文件、只写自己的输出", shown.content)
+                self.assertEqual(client.post(keep, json={"projectId": "other", "name": "pdf-colours"}).status_code, 409)
+                kept = client.post(keep, json={"projectId": session.projectId, "name": "pdf-colours"})
+                self.assertEqual(kept.status_code, 200, kept.text)
+                card_now = next(m["skillRun"] for m in kept.json()["messages"] if m.get("skillRun"))
+                self.assertEqual(card_now["keptAs"], "pdf-colours")
+                from project_runtime.application import skill_library
+                found = skill_library.installed().find("pdf-colours")
+                self.assertEqual((found.source, found.content["entry"], found.content["files"]),
+                                 ("user", "main.py", {"main.py": "print('colours')\n"}), "every project finds it now")
+                again = client.post(keep, json={"projectId": session.projectId, "name": "pdf-colours"})
+                self.assertEqual(again.json()["code"], "SKILL_KEEP_DONE")
+                client.post(runs, json={**card, "runId": "skill-run-0123abcd0124", "status": "succeeded"})
+                taken = client.post(f"{runs}/skill-run-0123abcd0124/keep", json={"projectId": session.projectId,
+                                                                                  "name": "pdf-colours"})
+                self.assertEqual(taken.json()["code"], "SKILL_KEEP_EXISTS", "nobody's skill is replaced")
 
     def test_project_context_opens_new_acp_session_without_loading_old_transcript(self):
         session = self.create()

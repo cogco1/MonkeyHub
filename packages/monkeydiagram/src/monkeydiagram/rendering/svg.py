@@ -1343,6 +1343,10 @@ def svg_object_marks(svg: bytes) -> tuple[tuple[float, float], tuple[DrawingMark
     return paper_mm, tuple(mark for mark in _paper_marks(root, view_box, paper_mm) if mark.object_id)
 
 
+#: The most pixels a drawing's PNG preview has; a larger sheet is previewed at a lower resolution.
+PNG_PIXEL_LIMIT = 40_000_000
+
+
 def render_svg_png(svg: bytes, *, dots_per_inch: int = 150) -> bytes:
     """Rasterise the SVG's own polylines and poché to a PNG at the SVG's physical size.
 
@@ -1368,8 +1372,17 @@ def render_svg_png(svg: bytes, *, dots_per_inch: int = 150) -> bytes:
     supersample = 3
     pixels_x = max(1, round(width_mm / 25.4 * dots_per_inch))
     pixels_y = max(1, round(height_mm / 25.4 * dots_per_inch))
-    if pixels_x * pixels_y > 40_000_000:
-        raise DrawingSvgError("the requested PNG exceeds 40 megapixels")
+    if pixels_x * pixels_y > PNG_PIXEL_LIMIT:
+        # A sheet too large for the preview at this resolution is drawn at the largest whole resolution that
+        # fits (S15): the SVG keeps every line, and the PNG only previews it. Refusing left the person with
+        # "the drawing was not made" and nothing to change.
+        dots_per_inch = int(dots_per_inch * (PNG_PIXEL_LIMIT / (pixels_x * pixels_y)) ** .5)
+        while dots_per_inch > 1 and round(width_mm / 25.4 * dots_per_inch) * round(height_mm / 25.4 * dots_per_inch) > PNG_PIXEL_LIMIT:
+            dots_per_inch -= 1
+        if dots_per_inch < 1:
+            raise DrawingSvgError("the requested PNG exceeds 40 megapixels")
+        pixels_x = max(1, round(width_mm / 25.4 * dots_per_inch))
+        pixels_y = max(1, round(height_mm / 25.4 * dots_per_inch))
     scale_x = pixels_x * supersample / width
     scale_y = pixels_y * supersample / height
     image = Image.new("L", (pixels_x * supersample, pixels_y * supersample), 255)

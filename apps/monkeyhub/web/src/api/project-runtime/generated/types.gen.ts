@@ -425,6 +425,32 @@ export type ArtifactListDto = {
 };
 
 /**
+ * AttachedModelDto
+ *
+ * One model attached from outside the project, as a design can be made from it.
+ */
+export type AttachedModelDto = {
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Filename
+     */
+    fileName: string;
+    /**
+     * Objectcount
+     */
+    objectCount?: number | null;
+    /**
+     * Attachedat
+     *
+     * When its run was made, UTC ISO 8601.
+     */
+    attachedAt: string;
+};
+
+/**
  * AttributesOp
  */
 export type AttributesOp = {
@@ -3127,6 +3153,8 @@ export type ContextPackRequestDto = {
     sourceStageRef?: string | null;
     /**
      * Elementids
+     *
+     * the Element@1 ids in focus, at most 64; leave it out to ask about the whole design, and the words choose the focus through the same context compiler an intent uses
      */
     elementIds?: Array<string>;
     /**
@@ -3842,6 +3870,18 @@ export type DesignDecisionSourceDto = {
      * Sourcestageref
      */
     sourceStageRef?: string | null;
+};
+
+/**
+ * DesignFromModelRequestDto
+ *
+ * Which attached model to make a design of; none names the one attached last.
+ */
+export type DesignFromModelRequestDto = {
+    /**
+     * Assetsha256
+     */
+    assetSha256?: string | null;
 };
 
 /**
@@ -5636,7 +5676,7 @@ export type FacetTargetDto = {
     /**
      * Set
      *
-     * facet keys and values to add or change: architectural.role, architectural.enclosure, structural.role, material.name, material.color (#RRGGBB, with material.name), fabrication.method
+     * facet keys and values to add or change: architectural.role, architectural.enclosure, structural.role, material.name, material.color (#RRGGBB, with material.name), fabrication.method, description.note: when the person picks a mass and says in a few words what it is or should be ("共享厨房", "这里更开放"), that sentence is not a change request; record it in their own words, at most 120 characters, say so in one line, and never ask which type it is. It is listed with the other facets in GET /api/construction/model and read with them when a change is compiled. Words that ask for a change stay a change request; the note may be recorded beside it
      */
     set?: {
         [key: string]: string;
@@ -5845,7 +5885,7 @@ export type GestureDto = {
     /**
      * Kind
      */
-    kind: 'circle' | 'arrow' | 'keep' | 'remove' | 'freehand' | 'line' | 'ruler' | 'arc';
+    kind: 'circle' | 'arrow' | 'keep' | 'remove' | 'freehand' | 'line' | 'ruler' | 'arc' | 'text';
     /**
      * Screen
      */
@@ -5905,6 +5945,10 @@ export type GestureDto = {
         number,
         number
     ] | null;
+    /**
+     * Fontsize
+     */
+    fontSize?: number | null;
 };
 
 /**
@@ -6859,6 +6903,44 @@ export type LiveRhinoInstancesDto = {
 };
 
 /**
+ * LiveRhinoOpenDto
+ */
+export type LiveRhinoOpenDto = {
+    /**
+     * Rhino
+     *
+     * the Rhino that now answers RhinoCode, as GET /api/live-rhino/instances lists it
+     */
+    rhino: {
+        [key: string]: unknown;
+    };
+    /**
+     * Opened
+     *
+     * false when a Rhino that answers RhinoCode already had the document
+     */
+    opened: boolean;
+};
+
+/**
+ * LiveRhinoOpenRequest
+ */
+export type LiveRhinoOpenRequest = {
+    /**
+     * Confirmed
+     *
+     * true only when the person said yes to MonkeyHub opening Rhino for them
+     */
+    confirmed: boolean;
+    /**
+     * Documentpath
+     *
+     * an existing .3dm file to open; omitted opens Rhino with its usual new model
+     */
+    documentPath?: string | null;
+};
+
+/**
  * LiveRhinoSnapshotDto
  *
  * The copy of the open document registered as an external model asset.
@@ -7147,6 +7229,175 @@ export type LocatorValueRequestDto = {
     } & ArtifactContentRefDto) | ({
         kind: 'board';
     } & BoardContentRefDto) | string;
+};
+
+/**
+ * MarkHitDto
+ *
+ * One component, or one element of it, a mark lies on.
+ */
+export type MarkHitDto = {
+    /**
+     * Componentid
+     */
+    componentId: string;
+    /**
+     * Elementid
+     *
+     * Null when no one row of the component produced it.
+     */
+    elementId: string | null;
+    /**
+     * Objectids
+     */
+    objectIds: Array<string>;
+    /**
+     * Coverage
+     *
+     * How much of all of it on the page lies inside the mark (circled whole is 1).
+     */
+    coverage: number;
+    /**
+     * Share
+     *
+     * How much of what is inside the mark is its own; for an arrow or a model stroke, its share of the weight.
+     */
+    share: number;
+    /**
+     * Central
+     *
+     * It reaches the middle of the mark, not only its rim.
+     */
+    central: boolean;
+    /**
+     * Target
+     *
+     * The mark clearly means it.
+     */
+    target: boolean;
+    /**
+     * Borderline
+     *
+     * It lies in the mark's rim and may be meant.
+     */
+    borderline: boolean;
+};
+
+/**
+ * MarkReadingDto
+ *
+ * One mark's subjects, targets first, and why it goes back to the architect when it does.
+ */
+export type MarkReadingDto = {
+    /**
+     * Markid
+     */
+    markId: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Zone
+     *
+     * area, stroke or point on a page; model for a stroke on the model.
+     */
+    zone: string;
+    /**
+     * Hits
+     */
+    hits: Array<MarkHitDto>;
+    /**
+     * Ambiguous
+     */
+    ambiguous: boolean;
+    /**
+     * Reason
+     *
+     * nothing: nothing is drawn under it; unbound: what is drawn names no component of this record; partial: it only touches several things; borderline: something else lies at its rim. Null: clear.
+     */
+    reason: 'nothing' | 'unbound' | 'partial' | 'borderline' | null;
+};
+
+/**
+ * MarkupPageDto
+ *
+ * The registered page the marks were drawn on, addressed as the documents list names it.
+ */
+export type MarkupPageDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+    /**
+     * Drawingrevisionref
+     *
+     * A view drawing's revisionRef, which reading its marks needs; omitted for any other page.
+     */
+    drawingRevisionRef?: string | null;
+};
+
+/**
+ * MarkupReadingsDto
+ */
+export type MarkupReadingsDto = {
+    /**
+     * Source
+     *
+     * What the marks were read against: a view drawing's lines, a view sheet's placed views, a camera pass's object-ID image, a page that names no object (every mark reads nothing), or the model's own objects.
+     */
+    source: 'drawing' | 'sheet' | 'id-image' | 'page' | 'model';
+    /**
+     * Statedigest
+     *
+     * The record state that answered for what the marks lie on; null when none could.
+     */
+    stateDigest: string | null;
+    /**
+     * Readings
+     */
+    readings: Array<MarkReadingDto>;
+};
+
+/**
+ * MarkupResolveRequestDto
+ *
+ * Marks on one page (``page`` and ``marks``) or strokes on the model (``stateDigest`` and ``strokes``).
+ */
+export type MarkupResolveRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    page?: MarkupPageDto | null;
+    /**
+     * Marks
+     */
+    marks?: Array<DocumentGestureDto>;
+    /**
+     * Statedigest
+     *
+     * For strokes: the stateDigest the model view was loaded with; another state is refused as STALE_BASE.
+     */
+    stateDigest?: string | null;
+    /**
+     * Sourcerunid
+     *
+     * For strokes: the run the model view shows; omitted uses the project's working design.
+     */
+    sourceRunId?: string | null;
+    /**
+     * Strokes
+     */
+    strokes?: Array<ModelGestureDto>;
 };
 
 /**
@@ -7701,6 +7952,26 @@ export type MessageSourceDto = {
 };
 
 /**
+ * ModelAnnotationFacetNoteDto
+ *
+ * The person's text resolved against its saved model, not a StateRecord edit.
+ */
+export type ModelAnnotationFacetNoteDto = {
+    /**
+     * Componentid
+     */
+    componentId: string;
+    /**
+     * Key
+     */
+    key?: 'description.note';
+    /**
+     * Value
+     */
+    value: string;
+};
+
+/**
  * ModelAnnotationsDto
  */
 export type ModelAnnotationsDto = {
@@ -7721,6 +7992,10 @@ export type ModelAnnotationsDto = {
      * Comment
      */
     comment: string;
+    /**
+     * Facetnotes
+     */
+    facetNotes?: Array<ModelAnnotationFacetNoteDto>;
 };
 
 /**
@@ -7773,6 +8048,28 @@ export type ModelAssetRequestDto = {
 };
 
 /**
+ * ModelBoundsDto
+ */
+export type ModelBoundsDto = {
+    /**
+     * Min
+     */
+    min: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Max
+     */
+    max: [
+        number,
+        number,
+        number
+    ];
+};
+
+/**
  * ModelExportRequest
  */
 export type ModelExportRequest = {
@@ -7797,7 +8094,7 @@ export type ModelGestureDto = {
     /**
      * Kind
      */
-    kind: 'circle' | 'arrow' | 'keep' | 'remove' | 'freehand' | 'line' | 'ruler' | 'arc';
+    kind: 'circle' | 'arrow' | 'keep' | 'remove' | 'freehand' | 'line' | 'ruler' | 'arc' | 'text';
     /**
      * Screen
      */
@@ -7857,6 +8154,10 @@ export type ModelGestureDto = {
         number,
         number
     ] | null;
+    /**
+     * Fontsize
+     */
+    fontSize?: number | null;
     /**
      * Id
      */
@@ -7944,6 +8245,31 @@ export type ModelLoadTimingDto = {
      * Status
      */
     status: 'succeeded' | 'failed' | 'cancelled';
+};
+
+/**
+ * ModelSourceBindingDto
+ *
+ * A model a document was linked to earlier, with what its record says of when and by whom.
+ */
+export type ModelSourceBindingDto = {
+    modelSource: ModelSourceDto;
+    /**
+     * Bindingref
+     */
+    bindingRef?: string | null;
+    /**
+     * Boundat
+     *
+     * UTC time the link was made; null for a link made before it was recorded.
+     */
+    boundAt?: string | null;
+    /**
+     * Actorid
+     *
+     * Who made the link; null for a link made before it was recorded.
+     */
+    actorId?: string | null;
 };
 
 /**
@@ -8796,6 +9122,10 @@ export type PlanDimensionChoicesDto = {
      * Lengthunit
      */
     lengthUnit: string;
+    /**
+     * The box around what a drawing of this model draws, in its length unit; null when its retained bounds cannot be read. A new section cuts through its middle by default.
+     */
+    modelBounds?: ModelBoundsDto | null;
     /**
      * Dimensions
      */
@@ -10767,6 +11097,58 @@ export type QuantitiesRequestDto = {
 };
 
 /**
+ * RecentDrawingDto
+ *
+ * One of the project's newest drawings: what it is, which version it was drawn from, when, and its picture.
+ */
+export type RecentDrawingDto = {
+    /**
+     * Drawingid
+     */
+    drawingId: string;
+    /**
+     * Name
+     *
+     * Its file name in the documents list.
+     */
+    name: string;
+    /**
+     * Kind
+     *
+     * Its view kind: cut-plan (a plan or a vertical section), elevation (also an axonometric), section-perspective, review-sheet or view-sheet.
+     */
+    kind: string | null;
+    /**
+     * Runid
+     *
+     * The model version it was drawn from.
+     */
+    runId: string;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef: string | null;
+    /**
+     * Generatedat
+     */
+    generatedAt: string | null;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef: string;
+    /**
+     * Thumbnailpath
+     *
+     * GET path of its first page as a PNG of at most 2048 px (/api/projections/pages), on this runtime.
+     */
+    thumbnailPath: string;
+};
+
+/**
  * RecipeBindingRequestDto
  *
  * The project recipe: paper-space values a new drawing starts from.
@@ -11939,6 +12321,12 @@ export type RuntimeDto = {
      * Hasmore
      */
     hasMore: boolean;
+    /**
+     * Drawings
+     *
+     * The project's newest drawings, newest first, each by its latest revision (at most 8).
+     */
+    drawings?: Array<RecentDrawingDto>;
 };
 
 /**
@@ -12010,6 +12398,128 @@ export type ScopeOptionDto = {
      * the reading as a person reads it
      */
     label: string;
+};
+
+/**
+ * ScratchRunRequestDto
+ *
+ * Run a chat's script on project inputs, as a skill run is (inputs, parameters).
+ */
+export type ScratchRunRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Description
+     *
+     * what it does, in one line, for the person
+     */
+    description: string;
+    /**
+     * Name
+     *
+     * the skill name it would be kept under, e.g. pdf-color-stats
+     */
+    name?: string | null;
+    /**
+     * Code
+     *
+     * the Python script, run as main.py
+     */
+    code?: string | null;
+    /**
+     * Files
+     *
+     * several files by relative path, with entry
+     */
+    files?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Entry
+     *
+     * the file to run among files
+     */
+    entry?: string | null;
+    /**
+     * what it needs beyond reading the project and writing its outputs; leave it out when it needs nothing, and it runs without asking
+     */
+    access?: SkillAccessDto | null;
+    manifest?: SkillManifestDto | null;
+    /**
+     * Inputs
+     */
+    inputs?: {
+        [key: string]: SkillInputRefDto;
+    };
+    /**
+     * Parameters
+     */
+    parameters?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Agentrun
+     *
+     * set by the Hub for a chat's run
+     */
+    agentRun?: boolean;
+    /**
+     * Grantid
+     *
+     * set by the Hub: the one-run grant a person gave for this run
+     */
+    grantId?: string | null;
+};
+
+/**
+ * ScratchScriptDto
+ *
+ * A script an Agent wrote in a chat (S23): one file as ``code``, or ``files`` with their ``entry``.
+ */
+export type ScratchScriptDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Description
+     *
+     * what it does, in one line, for the person
+     */
+    description: string;
+    /**
+     * Name
+     *
+     * the skill name it would be kept under, e.g. pdf-color-stats
+     */
+    name?: string | null;
+    /**
+     * Code
+     *
+     * the Python script, run as main.py
+     */
+    code?: string | null;
+    /**
+     * Files
+     *
+     * several files by relative path, with entry
+     */
+    files?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Entry
+     *
+     * the file to run among files
+     */
+    entry?: string | null;
+    /**
+     * what it needs beyond reading the project and writing its outputs; leave it out when it needs nothing, and it runs without asking
+     */
+    access?: SkillAccessDto | null;
+    manifest?: SkillManifestDto | null;
 };
 
 /**
@@ -13112,6 +13622,12 @@ export type SkillManifestDto = {
      * Permissions
      */
     permissions?: Array<string>;
+    /**
+     * Requiredinputs
+     *
+     * input names a run request must give, or alternatives joined by |, e.g. model|mesh; a run without them is refused before it starts
+     */
+    requiredInputs?: Array<string>;
 };
 
 /**
@@ -13246,6 +13762,18 @@ export type SourceDocumentDto = {
      * Modelsourcebindingref
      */
     modelSourceBindingRef?: string | null;
+    /**
+     * Modelsourcehistory
+     *
+     * Read only: the models this document was linked to before modelSource, oldest first. Changing the link keeps the one it replaced.
+     */
+    modelSourceHistory?: Array<ModelSourceBindingDto>;
+    /**
+     * Modelsourcechangeable
+     *
+     * Read only: whether the person may point this document at another model (PUT /api/documents/{sha}/model-source). False for a drawing or a picture the Hub made from a model, and for a document registered with its model.
+     */
+    modelSourceChangeable?: boolean;
     /**
      * Drawingid
      */
@@ -16642,6 +17170,46 @@ export type AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostRe
 
 export type AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostResponse = AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostResponses[keyof AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostResponses];
 
+export type ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutData = {
+    body: DocumentModelSourceRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Asset Sha256
+         */
+        asset_sha256: string;
+    };
+    query?: never;
+    url: '/api/documents/{asset_sha256}/model-source';
+};
+
+export type ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutError = ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutErrors[keyof ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutErrors];
+
+export type ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutResponses = {
+    /**
+     * Successful Response
+     */
+    200: SourceDocumentDto;
+};
+
+export type ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutResponse = ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutResponses[keyof ChangeDocumentModelSourceApiDocumentsAssetSha256ModelSourcePutResponses];
+
 export type ReadDocumentsApiDocumentsGetData = {
     body?: never;
     headers?: {
@@ -18872,6 +19440,157 @@ export type ResolveApiPickResolvePostResponses = {
 
 export type ResolveApiPickResolvePostResponse = ResolveApiPickResolvePostResponses[keyof ResolveApiPickResolvePostResponses];
 
+export type ResolveApiMarkupResolvePostData = {
+    body: MarkupResolveRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/markup/resolve';
+};
+
+export type ResolveApiMarkupResolvePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ResolveApiMarkupResolvePostError = ResolveApiMarkupResolvePostErrors[keyof ResolveApiMarkupResolvePostErrors];
+
+export type ResolveApiMarkupResolvePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: MarkupReadingsDto;
+};
+
+export type ResolveApiMarkupResolvePostResponse = ResolveApiMarkupResolvePostResponses[keyof ResolveApiMarkupResolvePostResponses];
+
+export type ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Asset Sha256
+         */
+        asset_sha256: string;
+    };
+    query?: never;
+    url: '/api/model-assets/{asset_sha256}/parts';
+};
+
+export type ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetError = ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetErrors[keyof ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetErrors];
+
+export type ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetResponses = {
+    /**
+     * Response Read Model Asset Parts Api Model Assets  Asset Sha256  Parts Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetResponse = ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetResponses[keyof ReadModelAssetPartsApiModelAssetsAssetSha256PartsGetResponses];
+
+export type ListAttachedModelsApiModelAssetsAttachedGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/model-assets/attached';
+};
+
+export type ListAttachedModelsApiModelAssetsAttachedGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListAttachedModelsApiModelAssetsAttachedGetError = ListAttachedModelsApiModelAssetsAttachedGetErrors[keyof ListAttachedModelsApiModelAssetsAttachedGetErrors];
+
+export type ListAttachedModelsApiModelAssetsAttachedGetResponses = {
+    /**
+     * Response List Attached Models Api Model Assets Attached Get
+     *
+     * Successful Response
+     */
+    200: Array<AttachedModelDto>;
+};
+
+export type ListAttachedModelsApiModelAssetsAttachedGetResponse = ListAttachedModelsApiModelAssetsAttachedGetResponses[keyof ListAttachedModelsApiModelAssetsAttachedGetResponses];
+
+export type ProposeDesignFromModelAssetApiModelAssetsDesignPostData = {
+    body: DesignFromModelRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/model-assets/design';
+};
+
+export type ProposeDesignFromModelAssetApiModelAssetsDesignPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ProposeDesignFromModelAssetApiModelAssetsDesignPostError = ProposeDesignFromModelAssetApiModelAssetsDesignPostErrors[keyof ProposeDesignFromModelAssetApiModelAssetsDesignPostErrors];
+
+export type ProposeDesignFromModelAssetApiModelAssetsDesignPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProposalDto;
+};
+
+export type ProposeDesignFromModelAssetApiModelAssetsDesignPostResponse = ProposeDesignFromModelAssetApiModelAssetsDesignPostResponses[keyof ProposeDesignFromModelAssetApiModelAssetsDesignPostResponses];
+
 export type CreateProposalApiProposalsPostData = {
     body: ProposalRequestDto;
     headers?: {
@@ -19427,6 +20146,56 @@ export type CreateHostedOpeningProposalApiProposalsHostedOpeningPostResponses = 
 
 export type CreateHostedOpeningProposalApiProposalsHostedOpeningPostResponse = CreateHostedOpeningProposalApiProposalsHostedOpeningPostResponses[keyof CreateHostedOpeningProposalApiProposalsHostedOpeningPostResponses];
 
+export type ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+        /**
+         * Statedigest
+         */
+        stateDigest: string;
+        /**
+         * Assetsha256
+         */
+        assetSha256: string;
+    };
+    url: '/api/model-annotations/history';
+};
+
+export type ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetError = ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetErrors[keyof ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetErrors];
+
+export type ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetResponses = {
+    /**
+     * Response Read Saved Model Annotation History Api Model Annotations History Get
+     *
+     * Successful Response
+     */
+    200: Array<ModelAnnotationsDto>;
+};
+
+export type ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetResponse = ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetResponses[keyof ReadSavedModelAnnotationHistoryApiModelAnnotationsHistoryGetResponses];
+
 export type ReadSavedModelAnnotationsApiModelAnnotationsGetData = {
     body?: never;
     headers?: {
@@ -19794,6 +20563,41 @@ export type ReadLiveRhinoInstancesApiLiveRhinoInstancesGetResponses = {
 };
 
 export type ReadLiveRhinoInstancesApiLiveRhinoInstancesGetResponse = ReadLiveRhinoInstancesApiLiveRhinoInstancesGetResponses[keyof ReadLiveRhinoInstancesApiLiveRhinoInstancesGetResponses];
+
+export type OpenLiveRhinoApiLiveRhinoOpenPostData = {
+    body: LiveRhinoOpenRequest;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/live-rhino/open';
+};
+
+export type OpenLiveRhinoApiLiveRhinoOpenPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type OpenLiveRhinoApiLiveRhinoOpenPostError = OpenLiveRhinoApiLiveRhinoOpenPostErrors[keyof OpenLiveRhinoApiLiveRhinoOpenPostErrors];
+
+export type OpenLiveRhinoApiLiveRhinoOpenPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LiveRhinoOpenDto;
+};
+
+export type OpenLiveRhinoApiLiveRhinoOpenPostResponse = OpenLiveRhinoApiLiveRhinoOpenPostResponses[keyof OpenLiveRhinoApiLiveRhinoOpenPostResponses];
 
 export type ReadLiveRhinoDocumentApiLiveRhinoDocumentGetData = {
     body?: never;
@@ -22300,6 +23104,84 @@ export type ReadSkillGrantsApiSkillsApprovalsGetResponses = {
 };
 
 export type ReadSkillGrantsApiSkillsApprovalsGetResponse = ReadSkillGrantsApiSkillsApprovalsGetResponses[keyof ReadSkillGrantsApiSkillsApprovalsGetResponses];
+
+export type ReadScratchNeedsApiSkillsScratchNeedsPostData = {
+    body: ScratchScriptDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/skills/scratch/needs';
+};
+
+export type ReadScratchNeedsApiSkillsScratchNeedsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadScratchNeedsApiSkillsScratchNeedsPostError = ReadScratchNeedsApiSkillsScratchNeedsPostErrors[keyof ReadScratchNeedsApiSkillsScratchNeedsPostErrors];
+
+export type ReadScratchNeedsApiSkillsScratchNeedsPostResponses = {
+    /**
+     * Response Read Scratch Needs Api Skills Scratch Needs Post
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadScratchNeedsApiSkillsScratchNeedsPostResponse = ReadScratchNeedsApiSkillsScratchNeedsPostResponses[keyof ReadScratchNeedsApiSkillsScratchNeedsPostResponses];
+
+export type RunScratchApiSkillsScratchRunPostData = {
+    body: ScratchRunRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/skills/scratch/run';
+};
+
+export type RunScratchApiSkillsScratchRunPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RunScratchApiSkillsScratchRunPostError = RunScratchApiSkillsScratchRunPostErrors[keyof RunScratchApiSkillsScratchRunPostErrors];
+
+export type RunScratchApiSkillsScratchRunPostResponses = {
+    /**
+     * Response Run Scratch Api Skills Scratch Run Post
+     *
+     * Successful Response
+     */
+    202: {
+        [key: string]: unknown;
+    };
+};
+
+export type RunScratchApiSkillsScratchRunPostResponse = RunScratchApiSkillsScratchRunPostResponses[keyof RunScratchApiSkillsScratchRunPostResponses];
 
 export type ReadSkillRunApiSkillsRunsRunIdGetData = {
     body?: never;

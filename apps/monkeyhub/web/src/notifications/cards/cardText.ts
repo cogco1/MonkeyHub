@@ -1,7 +1,7 @@
 /** What a card says and in which order, apart from how it is drawn. */
 
 import type { Language } from "../../../../../../packages/web-shared/src/appearance.js";
-import type { AttentionCard, AttentionSummary, CardOption, CardState } from "./types";
+import type { AttentionCard, AttentionSummary, CardMedia, CardOption, CardState } from "./types";
 
 /** A card's text in the reader's language: the Chinese sibling when there is one, the English text otherwise. */
 export const say = (text: string, zh: string | null | undefined, language: Language): string =>
@@ -25,6 +25,28 @@ export function chosenOption(card: Pick<AttentionCard, "options" | "resolution">
   const id = card.resolution?.optionId;
   return id ? card.options.find((option) => option.id === id) ?? null : null;
 }
+
+/** The command that opens a decision card's results side by side, the card under them (2-5). */
+export const COMPARE_DECIDE = "candidate.compare.decide";
+
+/** The runs a decision card opens side by side now: the first is set against the last. */
+/**
+ * A decision's pictures: each model view the project's thumbnails can draw (it names its exact model), in the
+ * writer's order (A, then B), with the answer choosing it gives; null where the picture is no answer.
+ */
+export function cardPictures(card: Pick<AttentionCard, "media" | "options">): { media: CardMedia; option: CardOption | null }[] {
+  return card.media.filter((item) => item.kind === "model_view" && item.modelSource)
+    .map((item) => ({ media: item, option: card.options.find((row) => row.id === item.optionId) ?? null }));
+}
+
+export function comparedRuns(card: Pick<AttentionCard, "opens">): string[] {
+  const runIds = card.opens.find((ref) => ref.commandId === COMPARE_DECIDE)?.args.runIds;
+  return Array.isArray(runIds) ? runIds.filter((value) => typeof value === "string" && value.length > 0) : [];
+}
+
+/** What each answer of a card does: when it changes, an answer read beside the old comparison would do something else. */
+export const answersKey = (card: Pick<AttentionCard, "options">) =>
+  JSON.stringify(card.options.map((option) => [option.id, option.action.commandId, option.action.args]));
 
 /** Cards waiting in a project; null while the queue's counts are not known. */
 export function pendingFor(summary: AttentionSummary | null, projectDir: string): number | null {

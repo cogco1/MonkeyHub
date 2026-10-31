@@ -69,6 +69,90 @@ class DrawingPoolSizeTests(unittest.TestCase):
         self.assertEqual((refusal.code, str(refusal)), ("SECTION_PLANE_MISSES_MODEL", "the plane misses"))
 
 
+class DrawingWorkerReuseTests(unittest.TestCase):
+    """S15: what a drawing spends besides solving its view."""
+
+    def test_a_worker_draws_the_model_it_read_last_without_reading_it_again(self) -> None:
+        reads = []
+
+        def read(repository, source):
+            reads.append(source)
+            return f"verified {source}"
+
+        drawing_runs._LAST_READ.clear()
+        self.addCleanup(drawing_runs._LAST_READ.clear)
+        same = {"model-a": True}
+        with patch.object(drawing_runs, "_opened", return_value=object()),                 patch.object(drawing_runs, "read_elevation_source", side_effect=read),                 patch.object(drawing_runs, "_same_bytes", side_effect=lambda root, source: same.get(source, True)):
+            self.assertEqual(drawing_runs._read_source("/p", "model-a"), "verified model-a")
+            self.assertEqual(drawing_runs._read_source("/p", "model-a"), "verified model-a")
+            self.assertEqual(drawing_runs._read_source("/p", "model-b"), "verified model-b")
+            self.assertEqual(drawing_runs._read_source("/p", "model-a"), "verified model-a")
+            self.assertEqual(drawing_runs._read_source("/q", "model-a"), "verified model-a")
+            same["model-a"] = False  # its bytes changed on disk: read, and verified, again
+            self.assertEqual(drawing_runs._read_source("/q", "model-a"), "verified model-a")
+        self.assertEqual(reads, ["model-a", "model-b", "model-a", "model-a", "model-a"],
+                         "the same model in the same project is read once; another one, or changed bytes, read again")
+        self.assertEqual(len(drawing_runs._LAST_READ), 1, "a worker keeps only the model it drew last")
+
+    def test_the_other_workers_read_a_source_while_the_first_verifies_it(self) -> None:
+        from concurrent.futures import Future
+
+        submitted = []
+
+        class Executor:
+            def submit(self, function, *arguments):
+                submitted.append((function, arguments))
+                future = Future()
+                future.set_result(f"verified {arguments[1]}")
+                return future
+
+        pool = drawing_pool.DrawingPool(3)
+        with patch.object(pool, "_running", return_value=Executor()):
+            self.assertEqual(pool.source("/p", "model-a"), "verified model-a")
+            self.assertEqual(pool.source("/p", "model-a"), "verified model-a")
+        self.assertEqual(submitted, [(drawing_runs.verify_draw_source, ("/p", "model-a")),
+                                     (drawing_pool._read_ahead, ("/p", "model-a")),
+                                     (drawing_pool._read_ahead, ("/p", "model-a"))],
+                         "one verification answers; the two other workers read the model meanwhile, and only once")
+        with patch.object(drawing_pool, "verify_draw_source", side_effect=OSError("gone")):
+            self.assertIsNone(drawing_pool._read_ahead("/p", "model-a"), "a read ahead that fails is the asking drawing's to report")
+
+    def test_the_source_is_checked_again_only_when_the_project_may_have_changed(self) -> None:
+        from contextlib import ExitStack, nullcontext
+
+        from project_runtime.application import drawings
+        from project_runtime.binding import ReadToken
+
+        class Repository:
+            @staticmethod
+            def working_draft_guard():
+                return nullcontext()
+
+        class Binding:
+            repository = Repository()
+            token: ReadToken | None = None
+
+            def read_token(self, *, wait=True):
+                return self.token
+
+        binding, checks = Binding(), []
+        first = ReadToken("e", 3, "f", False)
+        with patch.object(drawings, "_complete_source", side_effect=lambda *args: checks.append(args)):
+            # Only settled since: the same files. A write of this process, a changed layout, or no token: check again.
+            for now, checked in ((ReadToken("e", 3, "f", True), 0), (ReadToken("e", 4, "f", False), 1),
+                                 (ReadToken("e", 3, "g", False), 1), (None, 1)):
+                checks.clear()
+                binding.token = now
+                with ExitStack() as held:
+                    token = drawings._HELD_GUARD.set((binding, held, first))
+                    try:
+                        with drawings._retaining(binding, "model", None)():
+                            pass
+                    finally:
+                        drawings._HELD_GUARD.reset(token)
+                self.assertEqual(len(checks), checked, now)
+
+
 @unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class DrawingPoolTests(CandidateTestCase):
     def setUp(self) -> None:
@@ -155,20 +239,35 @@ class NativeDrawingPoolTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.repository, _ = make_project(self.root)
-        self.client = TestClient(create_app(StudioSettings(project_dir=self.root / PROJECT_ID, reference_run=REFERENCE_RUN_ID,
-                                                           cad_export="off")))
+        self.app = create_app(StudioSettings(project_dir=self.root / PROJECT_ID, reference_run=REFERENCE_RUN_ID,
+                                             cad_export="off", cache_dir=self.root / "cache"))
+        self.addCleanup(self.app.state.stop_index_events)
+        self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
+        binding = bound_project(self.app.state)
+        self.addCleanup(binding.close)
+        self.assertIsNotNone(binding.await_index(30), "the index loads")
+        self.addCleanup(lambda: self.app.state.projections and self.app.state.projections.shutdown())
         drawing_pool.start(2)
         self.addCleanup(drawing_pool.stop)
 
-    def test_a_native_model_is_read_only_by_workers(self) -> None:
-        from monkeycad.backends.occt import native_models
-
+    def upload(self) -> dict:
         data = (Path(__file__).parent / "fixtures/model-source-a.3dm").read_bytes()
         asset = self.client.post("/api/model-assets", json={
             "projectId": PROJECT_ID, "fileName": "wall.3dm", "contentBase64": base64.b64encode(data).decode()})
         self.assertEqual(asset.status_code, 201, asset.text)
-        source = {"runId": asset.json()["runId"], "assetSha256": asset.json()["sha256"]}
+        return {"runId": asset.json()["runId"], "assetSha256": asset.json()["sha256"]}
+
+    def elevation(self, source, view="front"):
+        response = self.client.post("/api/drawings/elevations", json={
+            "projectId": PROJECT_ID, "sourceAsset": source, "view": view, "drawingId": f"wall-{view}"})
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def test_a_native_model_is_read_only_by_workers(self) -> None:
+        from monkeycad.backends.occt import native_models
+
+        source = self.upload()
         with patch.object(native_models, "read_three_dm", wraps=native_models.read_three_dm) as here:
             front = self.client.post("/api/drawings/elevations", json={
                 "projectId": PROJECT_ID, "sourceAsset": source, "view": "front", "drawingId": "wall-front"})
@@ -179,6 +278,40 @@ class NativeDrawingPoolTests(unittest.TestCase):
         self.assertEqual(here.call_count, 0, "the Runtime's own process never reads the 3DM's shapes")
         receipt = self.repository.load_json(record_ref_from_uri(front.json()["revisionRef"], PROJECT_ID))
         self.assertTrue(receipt["source"]["geometry_quality"], "each object's geometry quality comes back from the worker")
+
+    def test_a_restarted_runtime_reads_the_model_s_source_from_the_cache_and_answers_a_repeat_at_once(self) -> None:
+        source = self.upload()
+        first = self.elevation(source)
+        # A restart: the pool's memory of what its workers verified is gone; the projection cache is not.
+        drawing_pool.stop()
+        drawing_pool.start(2)
+        solved = []
+        original = drawing_pool.DrawingPool._solve
+
+        def counted(pool, function, *arguments, **options):
+            solved.append(function.__name__)
+            return original(pool, function, *arguments, **options)
+
+        with patch.object(drawing_pool.DrawingPool, "_solve", counted):
+            again = self.elevation(source)
+            right = self.elevation(source, "right")
+        self.assertEqual(again["revisionRef"], first["revisionRef"], "the registered drawing answers the repeat")
+        self.assertEqual(solved, ["run_draw_task"], "only the new view is solved; nobody reads the model to verify it")
+        self.assertNotEqual(right["assetSha256"], first["assetSha256"])
+
+    def test_a_worker_draws_again_from_the_model_it_read_but_not_from_one_changed_on_disk(self) -> None:
+        source = self.upload()
+        drawing_pool.stop()
+        drawing_pool.start(1)  # one worker: the second and third views go to the worker that read the model
+        self.elevation(source)
+        self.elevation(source, "right")
+        registration = next(row for row in self.client.get("/api/artifacts").json()["artifacts"]
+                            if row["runId"] == source["runId"] and row["sha256"] == source["assetSha256"])
+        self.repository.layout.resolve_relative(registration["relativePath"]).write_bytes(b"tampered")
+        refused = self.client.post("/api/drawings/elevations", json={
+            "projectId": PROJECT_ID, "sourceAsset": source, "view": "back", "drawingId": "wall-back"})
+        self.assertGreaterEqual(refused.status_code, 400, refused.text)
+        self.assertNotIn(refused.status_code, (500,), refused.text)
 
 
 if __name__ == "__main__":

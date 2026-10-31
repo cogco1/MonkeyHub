@@ -5,6 +5,7 @@ import { useProjectRevision, useStudio } from "../../api/project-runtime/Project
 import { asStudioApiError } from "../../api/project-runtime/client";
 import type { RenderCameraDto, RenderCapabilityDto, RenderJobDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { usePreferences } from "../../features/settings/preferences";
+import { plainFailureText } from "../../app/ErrorPanel";
 import { useT } from "../../i18n/useT";
 import { MenuTabs, SurfaceMenus } from "../../features/chrome/SurfaceChrome";
 import { documentKey, documentMime, findSource, pageKey, pageReplacements, pageSource, type PageSource } from "../monkeyboard/boardScene";
@@ -67,7 +68,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
       if (uncertainRef.current && history.jobs.some((job) => job.requestId === uncertainRef.current)) {
         uncertainRef.current = null; setUncertain(null); setSubmitError(null);
       }
-    } catch (cause) { if (alive.current) setError(asStudioApiError(cause).detail); }
+    } catch (cause) { if (alive.current) setError(plainFailureText(cause)); }
     finally {
       reading.current = false; if (alive.current) setLoading(false);
       if (readAgain.current && alive.current) { readAgain.current = false; void refresh(); }
@@ -129,7 +130,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
         if (target === "source") setSource(pageSource(retained, 0));
         else setReferences((rows) => [...rows, pageSource(retained, 0)]);
       }
-    } catch (cause) { if (alive.current) setSubmitError(asStudioApiError(cause).detail); }
+    } catch (cause) { if (alive.current) setSubmitError(plainFailureText(cause)); }
     finally { uploadingRef.current = false; if (alive.current) setUploading(false); }
   };
 
@@ -149,7 +150,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
       ++readEpoch.current;
       setDocuments(rows => [...rows.filter(row => documentKey(row) !== documentKey(retained)), retained]);
       setSource(pageSource(retained, 0)); setMode("ai"); setAspectRatio("source");
-    } catch (cause) { if (alive.current) setSubmitError(asStudioApiError(cause).detail); }
+    } catch (cause) { if (alive.current) setSubmitError(plainFailureText(cause)); }
     finally { uploadingRef.current = false; if (alive.current) setUploading(false); }
   };
 
@@ -208,7 +209,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
       ++readEpoch.current;
       setDocuments(rows => [...rows.filter(row => documentKey(row) !== documentKey(retained)), retained]);
       reuse(job); setSource(pageSource(retained, 0)); setRecaptured(documentKey(retained));
-    } catch (cause) { if (alive.current) setSubmitError(asStudioApiError(cause).detail); }
+    } catch (cause) { if (alive.current) setSubmitError(plainFailureText(cause)); }
     finally { uploadingRef.current = false; if (alive.current) setUploading(false); }
   };
   const selectedKey = sourceDocument ? documentKey(sourceDocument) : "";
@@ -232,7 +233,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
         ? (zh ? "此图纸没有登记的新修订。请在图纸中重建，或选择更新的图片后再渲染。" : "This drawing has no registered newer revision. Rebuild it in Drawings, or choose an updated image, then render again.")
         : kind === "model-view" ? t("render.savedView.outdated")
           : (zh ? "项目模型已更新。请在建模中截取当前视图，或选择更新的图片后再渲染。" : "The project model has changed. Capture the current view in Modeling, or choose an updated image, then render again."));
-    } catch (cause) { setSubmitError(asStudioApiError(cause).detail); }
+    } catch (cause) { setSubmitError(plainFailureText(cause)); }
   };
   const addReference = (key: string) => {
     const image = images.find((item) => documentKey(item) === key);

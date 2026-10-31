@@ -3,6 +3,7 @@ import { useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
 import { asStudioApiError } from "../../api/project-runtime/client";
 import type { DecisionDto, RecipeGraphicsDto, RecipeInspectDto } from "../../api/project-runtime/generated";
 import { usePreferences } from "../../features/settings/preferences";
+import { plainFailureText } from "../../app/ErrorPanel";
 import { DrawingMenu } from "./DrawingMenu";
 import "./RecipeTransfer.css";
 
@@ -44,7 +45,7 @@ export function useRecipeTransfer(projectId: string, active = true): { menu: Rea
   }, [studio, projectId]);
   // The menu does not stay open behind another surface.
   useEffect(() => { if (!active) setOpen(false); }, [active]);
-  const fail = (cause: unknown) => { setError(asStudioApiError(cause).detail); setOpen(false); };
+  const fail = (cause: unknown) => { setError(plainFailureText(cause)); setOpen(false); };
 
   const values = (graphics: RecipeGraphicsDto) => (Object.keys(text.pens) as (keyof typeof text.pens)[])
     .filter(key => graphics[key] != null).map(key => `${text.pens[key]} ${graphics[key]} mm`).join(" · ");

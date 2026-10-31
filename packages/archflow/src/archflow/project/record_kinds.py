@@ -302,7 +302,7 @@ _TABLE: tuple[RecordKind, ...] = (
         STUDIO_DOCUMENT_MODEL_SOURCE,
         "StudioDocumentModelSource@1",
         _RUN_RECORD,
-        "an explicit one-time model association for an existing unbound source document",
+        "an explicit model association for a source document: the first link of an unlinked document, or a later one that names (replaces) the link it takes over from; the earlier record stays as history",
     ),
     RecordKind(
         STUDIO_MODEL_ASSET,

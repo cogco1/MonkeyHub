@@ -25,6 +25,7 @@ from pydantic import ValidationError
 from starlette.requests import Request
 from monkeycad.integration_packs import IntegrationPackManager
 
+from archflow.contracts.failures import failure_body
 from project_runtime.errors import StudioError
 
 from .. import project_archive
@@ -32,7 +33,11 @@ from ..attention.actions import action_router
 from ..attention.hub import AttentionHub, hub_router
 from ..attention.routes import attention_router
 from ..attention.store import AttentionStore
+from ..chat.agent_routes import access_router
+from ..chat.hub_routes import agent_router, notes_router
 from ..chat.routes import projects_router, providers_router, sessions_router
+from ..chat.wakeups import Wakeups
+from ..commands.routes import CommandMeaning, commands_router
 from ..chat.store import ChatStore
 from ..computer_tools import ComputerService
 from ..fabrication import Fabrication
@@ -88,9 +93,12 @@ class HubSettings:
 def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> FastAPI:
     applications = Applications(source_root, settings.runtime_root, settings.port)
     fabrication = Fabrication(source_root)
-    chats = ChatStore(settings.runtime_root, f"http://127.0.0.1:{settings.port}", applications=applications)
+    # A turn a restart cut off continues by itself when this Hub starts (resume).
+    chats = ChatStore(settings.runtime_root, f"http://127.0.0.1:{settings.port}", applications=applications, resume=True)
     runtimes = ProjectRuntimeManager(applications, chats)
     chats.on_change = runtimes.chat_changed
+    # A conversation continues by itself at a time, on a repeat or after a project job (wake-ups).
+    wakeups = Wakeups(settings.runtime_root, chats, hub_url=f"http://127.0.0.1:{settings.port}")
 
     def update_busy() -> str | None:
         if any(row.status == "running" for row in chats.list()):
@@ -125,7 +133,9 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         threading.Thread(target=applications.restore_studios, args=(runtimes.open,), name="restore-studios",
                          daemon=True).start()
         attention.start()
+        wakeups.start()
         yield
+        await asyncio.to_thread(wakeups.stop)
         await asyncio.to_thread(attention.stop)
         await asyncio.to_thread(updates.shutdown)
         await asyncio.to_thread(chats.shutdown)
@@ -140,6 +150,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     app.state.runtimes = runtimes
     app.state.updates = updates
     app.state.attention = attention
+    app.state.wakeups = wakeups
     app.state.integrations = IntegrationPackManager()
     # Desktop automation costs two PowerShell hosts, so it is composed on first
     # use rather than started with the Hub, and there is only ever one.
@@ -148,7 +159,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
 
     @app.exception_handler(HubFailure)
     async def handle_hub_error(request: Request, exc: HubFailure):
-        return JSONResponse(exc.error.model_dump(), status_code=exc.status)
+        return JSONResponse(failure_body(exc.error.code, exc.error.detail), status_code=exc.status)
 
     @app.exception_handler(RequestValidationError)
     async def handle_request_validation(request: Request, exc: RequestValidationError):
@@ -222,7 +233,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
                 else:
                     response = await call_next(request)
             except HubFailure as exc:
-                response = JSONResponse(exc.error.model_dump(), status_code=exc.status)
+                response = JSONResponse(failure_body(exc.error.code, exc.error.detail), status_code=exc.status)
         if origin in worker_origins:
             response.headers.update({"Access-Control-Allow-Origin": origin, "Vary": "Origin",
                 "Access-Control-Allow-Methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS",
@@ -281,6 +292,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         return project_archive.restore_archive(body, runtime_root=settings.runtime_root)
 
     app.include_router(sessions_router(chats))
+    app.include_router(access_router(chats))
 
     computer_errors = {403: {"model": HubError}, 409: {"model": HubError}, 422: {"model": HubError}}
 
@@ -311,6 +323,13 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     app.include_router(action_router(attention.executor))
     app.include_router(hub_router(attention))
     app.include_router(preferences_router, prefix="/api")
+    # Commands found by what a sentence means (08 提速): the index is built off the request thread at start.
+    meaning = CommandMeaning(source_root, settings.runtime_root / "cache")
+    meaning.start()
+    app.include_router(commands_router(meaning))
+    # Conversation notes, wake-ups and messages between conversations, after every earlier route.
+    app.include_router(notes_router(chats))
+    app.include_router(agent_router(chats, wakeups))
     if settings.hub_web_dir is not None:
         if not (settings.hub_web_dir / "index.html").is_file():
             raise ValueError("hub_web_dir must contain the built Hub index.html")

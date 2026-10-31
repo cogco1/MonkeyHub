@@ -14,3 +14,7 @@
 .design-history__meta { margin: 0; color: var(--muted); font-size: var(--text-caption, 12px); }
 .design-history__actions, .design-history__naming { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .design-history__naming input { flex: 1 1 140px; min-width: 0; }
+/* S08: what was handed to the AI; its picture, sentence and conversation. */
+.design-history__subhead { margin: 6px 0 0; font-size: var(--text-caption, 12px); color: var(--muted); font-weight: 600; }
+.design-history__thumb { max-width: 100%; max-height: 96px; object-fit: contain; justify-self: start; border: 1px solid var(--line); }
+.design-history__hand-off .design-history__name { white-space: normal; }

@@ -175,8 +175,12 @@ def _finish(base: str, started: Mapping, submitted: Mapping, deadline: float) ->
 
 
 _SKILL_RUN = re.compile(r"/api/skills/([A-Za-z0-9:_.-]+)/run")
-_ACCESS_ITEMS = ("programs", "ssh", "write", "packages")
+_SCRATCH_RUN = "/api/skills/scratch/run"
+_RUN_STATUS = re.compile(r"/api/skills/runs/(skill-run-[0-9a-f]+)")
+_ACCESS_ITEMS = ("programs", "ssh", "read", "write", "packages")
 _PERMISSION_WAIT_S = 50
+# What the Hub fills in a run request: the Agent never names a grant.
+_HUB_FIELDS = ("permissionId", "grantId", "agentRun")
 
 
 def _access_words(access: Mapping, broad: Mapping | None = None) -> list[str]:
@@ -189,13 +193,15 @@ def _access_words(access: Mapping, broad: Mapping | None = None) -> list[str]:
         words.append("联网 / use the network")
     if access.get("ssh"):
         words.append("用 ssh 连接 / connect by ssh to: " + ", ".join(access["ssh"]))
+    if access.get("read"):
+        words.append("读项目以外的文件夹 / read outside the project: " + ", ".join(access["read"]))
     if access.get("write"):
-        words.append("写入 / write to: " + ", ".join(access["write"]))
+        words.append("写项目以外的地方 / write outside the project: " + ", ".join(access["write"]))
     if access.get("packages"):
         words.append("安装 Python 包 / install packages: " + ", ".join(access["packages"]))
     if broad:
         words.append("其中 " + "、".join(item for items in broad.values() for item in items)
-                     + " 等于能做任何事，只给这个 skill / these allow anything, so they are allowed for this skill only")
+                     + " 等于能做任何事，只给这一个 / these allow anything, so they are allowed for this one only")
     return words
 
 
@@ -216,68 +222,140 @@ def _carry_approvals(hub: str, base: str, project_id: str) -> None:
         return
 
 
-def _agent_skill_run(hub: str, chat_id: str, base: str, path: str, body: dict, wait: float) -> dict:
-    """An Agent's skill run, after the person's say where it needs something no one allowed yet (S-1).
+def _card_title(report: Mapping, script: Mapping | None, needs: Mapping, broad: Mapping, each: Mapping) -> str:
+    """The question above the buttons: which skill or script, its code, what it needs, and how long an answer holds."""
 
-    The skill is the installed one of that name, in every project. What it
+    code = str(report.get("codeSha256") or "")[:12]
+    if script is not None:
+        head = (f"AI 要运行它现写的脚本「{script.get('description')}」（代码 {code}），需要你允许 / "
+                f"The AI wants to run a script it wrote ({code}), which needs:")
+    else:
+        name = (report.get("skill") or {}).get("name") or report.get("skillId")
+        head = (f"AI 要运行 skill「{name}」（代码 {code}），需要你允许 / "
+                f"The AI wants to run the skill {name} ({code}), which needs:")
+    if not needs:
+        # Nothing beyond what runs without asking, and the person turned that off.
+        return "\n".join([head, "只读项目文件、只写自己的输出、不联网、不起别的程序 / It reads the project and writes only its outputs",
+                          "设置里关了「低风险脚本直接跑」，所以先问你 / Low-risk scripts are set to ask first"])
+    if each:
+        tail = "联网、ssh、写项目以外的地方每次运行前都问 / The network, ssh and writing outside are asked about every run"
+    elif broad:
+        tail = "允许以后，这一个不再问 / Once allowed, this one does not ask again"
+    else:
+        tail = "选「以后都允许这类」，所有项目、所有 skill 都不再问这几项 / Always allowed: no project or skill asks again"
+    return "\n".join([head, *_access_words(needs, broad), tail])
+
+
+def _agent_skill_run(hub: str, chat_id: str, base: str, path: str, body: dict, wait: float) -> tuple[dict, str]:
+    """An Agent's run of an installed skill or of a script it wrote, after the person's say where it is needed (S-1, S23).
+
+    The skill is the installed one of that name, in every project; a script
+    (``POST /api/skills/scratch/run``) is the code in the request. What either
     declares is read against what a person allowed on this machine: the
-    Runtime answers what a run would still need (GET /api/skills/{id}/needs),
-    after the project's approvals from before S-1 are carried over. Nothing
-    missing: it runs. Otherwise the Hub setting skillAgentRuns decides, as
-    Claude Code and Codex do before a tool runs: "ask" (the default) puts what
-    is missing to the person in this chat as one question - always allow, only
-    this time, no - and the Hub keeps the grant the answer gives; "granted"
-    asks nothing and refuses; "never" refuses any skill that declares access,
-    allowed or not. While the design loop is enforced (#185) the setting reads
-    as "never". The Agent never grants and never names a grant: the Hub writes
-    it from the button the person pressed.
+    Runtime answers what a run would still need and its tier
+    (``GET /api/skills/{id}/needs``, ``POST /api/skills/scratch/needs``), after
+    the project's approvals from before S-1 are carried over.
+
+    - Tier ``low`` (it declares nothing: it reads the project, writes only its
+      outputs, no network, no other program) runs without asking while the
+      setting lowRiskScriptsRun is on (unset is on); off, the person is asked
+      "this time / no" before each such run, and no grant is written.
+    - Otherwise nothing missing: it runs. Something missing: the setting
+      skillAgentRuns decides, as Claude Code and Codex do before a tool runs.
+      "ask" (the default) puts it to the person in this chat as one question:
+      "always allow this kind / this time / no" for programs, packages and
+      reading outside the project, "this time / no" when it needs the network,
+      ssh or writing outside, which no lasting grant allows. "granted" asks
+      nothing and refuses; "never" refuses anything that declares access.
+      While the design loop is enforced (#185) the setting reads as "never".
+
+    The Agent never grants and never names a grant: the Hub writes it from the
+    button the person pressed. Returns the body to send, and what let it run
+    (``no``, ``earlier``, ``once``, ``always``) for the conversation's card.
     """
 
     from ..settings.store import read_user_settings
 
-    skill_id = _SKILL_RUN.fullmatch(path).group(1)
-    permission_id = body.pop("permissionId", None)
-    body.pop("grantId", None)
-    body = {**body, "agentRun": True}
+    scratch = path == _SCRATCH_RUN
+    permission_id = body.get("permissionId")
+    body = {key: value for key, value in body.items() if key not in _HUB_FIELDS} | {"agentRun": True}
     _carry_approvals(hub, base, body["projectId"])
-    report = transport._request_json(base, f"/api/skills/{skill_id}/needs")
+    script = None
+    if scratch:
+        script = {key: value for key, value in body.items() if key not in ("inputs", "parameters", "agentRun")}
+        report = transport._request_json(base, "/api/skills/scratch/needs", "POST", script)
+    else:
+        report = transport._request_json(base, f"/api/skills/{_SKILL_RUN.fullmatch(path).group(1)}/needs")
+    label = report.get("skillId") or path
     declared, needs, broad = report.get("access") or {}, report.get("needs") or {}, report.get("broad") or {}
+    each = report.get("eachTime") or {}
     declares = bool(declared.get("network")) or any(declared.get(key) for key in _ACCESS_ITEMS)
-    setting = "never" if studio_tool.design_loop_enforced(hub) else read_user_settings().skill_agent_runs or "ask"
+    user = read_user_settings()
+    setting = "never" if studio_tool.design_loop_enforced(hub) else user.skill_agent_runs or "ask"
     if declares and setting == "never":
         raise HubFailure(403, "SKILL_AGENT_RUN_REFUSED",
-                         f"{skill_id} declares access and the Hub setting lets only a person start such a skill.")
-    if not needs:
-        return body
-    if setting != "ask":
+                         f"{label} declares access and the Hub setting lets only a person start such a skill.")
+    if not declares and user.low_risk_scripts is not False:
+        return body, "no"
+    if declares and not needs:
+        return body, "earlier"
+    if needs and setting != "ask":
         raise HubFailure(403, "SKILL_AGENT_RUN_REFUSED",
-                         f"{skill_id} needs what no one allowed yet ({', '.join(_access_words(needs))}), and the Hub "
+                         f"{label} needs what no one allowed yet ({', '.join(_access_words(needs))}), and the Hub "
                          "setting does not ask in the chat. A person allows it when they start the skill themselves.")
     chat = projects._identifier(chat_id)
     if permission_id is None:
-        name = (report.get("skill") or {}).get("name") or skill_id
-        title = "\n".join([f"AI 要运行 skill「{name}」，需要你允许 / The AI wants to run the skill {name}, which needs:",
-                            *_access_words(needs, broad),
-                            "允许以后，所有项目、所有 skill 都不再问这几项 / Once allowed, no project or skill asks for "
-                            "these again" if not broad else "允许以后，这个 skill 不再问 / Once allowed, this skill "
-                            "does not ask again"])
-        ask = {"access": needs, "broad": broad, "skill": report["skill"], "projectId": report["projectId"],
-               "codeSha256": report["codeSha256"]}
-        permission_id = transport._request_json(hub, f"/api/chat/sessions/{chat}/skill-permissions", "POST",
-                                                {"title": title, "ask": ask})["permissionId"]
+        ask = None if not needs else {"access": needs, "broad": broad, "skill": report["skill"],
+                                      "projectId": report["projectId"], "codeSha256": report["codeSha256"]}
+        choices = ["allow_once", "reject"] if each or not needs else ["allow_always", "allow_once", "reject"]
+        permission_id = transport._request_json(hub, f"/api/chat/sessions/{chat}/skill-permissions", "POST", {
+            "title": _card_title(report, script, needs, broad, each), "ask": ask, "choices": choices})["permissionId"]
     answer = transport._request_json(
         hub, f"/api/chat/sessions/{chat}/skill-permissions/{projects._identifier(str(permission_id))}?"
         + urlencode({"wait": wait}), timeout=wait + 30)
     if answer["status"] == "waiting":
         raise HubFailure(409, "SKILL_PERMISSION_WAITING",
-                         f"The person has been asked in this chat to allow what {skill_id} needs and has not answered "
+                         f"The person has been asked in this chat to allow what {label} needs and has not answered "
                          f"yet. Call the same run again with \"permissionId\": \"{permission_id}\" in the body to "
                          "keep waiting; do not start it another way.")
     if answer["status"] == "withdrawn":
         raise HubFailure(409, "SKILL_PERMISSION_WITHDRAWN", "The question was withdrawn before anyone answered.")
     if answer["optionId"] not in ("allow_once", "allow_always"):
-        raise HubFailure(403, "SKILL_PERMISSION_DENIED", f"The person did not allow what {skill_id} needs.")
-    return {**body, "grantId": answer["grantId"]} if answer["optionId"] == "allow_once" else body
+        raise HubFailure(403, "SKILL_PERMISSION_DENIED", f"The person did not allow what {label} needs.")
+    if answer["optionId"] == "allow_once":
+        return ({**body, "grantId": answer["grantId"]} if answer.get("grantId") else body), "once"
+    return body, "always"
+
+
+def _show_run(hub: str, chat_id: str, path: str, body: Mapping, started: Mapping, asked: str) -> None:
+    """Put the run the Agent started in the conversation as its own card (S23); a card that fails leaves the run be."""
+
+    scratch = path == _SCRATCH_RUN
+    run = {"runId": started.get("runId"), "kind": "scratch" if scratch else "skill", "asked": asked,
+           "code": str(started.get("codeSha256") or "")[:12], "tier": started.get("tier") or "low",
+           "access": body.get("access") if scratch else (started.get("grant") or {}).get("access")}
+    if scratch:
+        single = body.get("code") is not None
+        run |= {"name": body.get("name"), "description": body.get("description") or "",
+                "script": {"files": {"main.py": body["code"]} if single else dict(body.get("files") or {}),
+                           "entry": "main.py" if single else body.get("entry"), "manifest": body.get("manifest")}}
+    else:
+        name = _SKILL_RUN.fullmatch(path).group(1).removeprefix("skill:")
+        run |= {"name": name, "description": name}
+    try:
+        transport._request_json(hub, f"/api/chat/sessions/{projects._identifier(chat_id)}/skill-runs", "POST", run)
+    except (HubFailure, OSError, TimeoutError):
+        return
+
+
+def _follow_run(hub: str, chat_id: str, run_id: str, report: Mapping) -> None:
+    """Tell the run's card what its record says now, as the Agent reads it; a chat without that card is left alone."""
+
+    try:
+        transport._request_json(hub, f"/api/chat/sessions/{projects._identifier(chat_id)}/skill-runs/{run_id}", "PUT",
+                                {key: report.get(key) for key in ("status", "failureWords", "outputs")})
+    except (HubFailure, OSError, TimeoutError):
+        return
 
 
 def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
@@ -305,7 +383,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         session = transport._request_json(hub, f"/api/chat/sessions/{projects._identifier(chat_id)}")
         if session.get("status") != "running":
             raise preparation._not_running(session)
-        if projects._project(session["projectDir"]) != (session["projectId"], session["projectDir"]):
+        if projects._bound(session["projectId"], session["projectDir"]) != (session["projectId"], session["projectDir"]):
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The conversation's project identity changed.")
         return transport._request_json(hub, f"/api/chat/sessions/{chat_id}/attachments/{attachment_id}/read?"
                                        + urlencode({"offset": offset, "limit": limit, "page": page}))
@@ -505,6 +583,8 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                              "was read against. Without it, send the request without awaitSeconds and read "
                              "the job and the candidate yourself.")
     body = arguments.get("body")
+    if method == "POST" and _SKILL_RUN.fullmatch(parsed.path) and body is None:
+        body = {}
     if method == "POST" and parsed.path == "/api/project/modeling":
         # Its only field is the project, which the chat supplies, and the chat
         # always asks for the base it leaves: the guide's first proposal is
@@ -520,7 +600,9 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         if parsed.path in {"/api/proposals", "/api/board/export", "/api/board/view", "/api/project/modeling", "/api/render/jobs"}:
             body["projectId"] = session["projectId"]
         if method == "POST" and _SKILL_RUN.fullmatch(parsed.path):
-            body = _agent_skill_run(hub, chat_id, base, parsed.path, body, _PERMISSION_WAIT_S)
+            # The agent need not know the project: a chat is bound to one.
+            body, skill_asked = _agent_skill_run(hub, chat_id, base, parsed.path,
+                                                 {**body, "projectId": session["projectId"]}, _PERMISSION_WAIT_S)
         if method == "POST" and parsed.path == "/api/drawings/plans":
             # A cut plan the Agent asks for is its reading of what the user
             # said, so its revision says so (05 §5). Only a person's own
@@ -594,6 +676,10 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                                           headers={"Idempotency-Key": operation_id, "X-Monkey-Chat": chat_id})
     else:
         started = transport._request_json(base, path, method, body)
+    if method == "POST" and _SKILL_RUN.fullmatch(parsed.path) and isinstance(started, dict):
+        _show_run(hub, chat_id, parsed.path, body, started, skill_asked)
+    if method == "GET" and _RUN_STATUS.fullmatch(parsed.path) and isinstance(started, dict):
+        _follow_run(hub, chat_id, _RUN_STATUS.fullmatch(parsed.path).group(1), started)
     if isinstance(started, dict) and method == "GET" and parsed.path.startswith("/api/exports/"):
         if started.get("status") == "succeeded" and started.get("downloadPath") == parsed.path + "/bytes":
             started = started | {"downloadUrl": base + started["downloadPath"]}

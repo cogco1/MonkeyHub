@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent } from "react";
-import { CaptureUpdateAction, convertToExcalidrawElements, MainMenu, newElementWith, WelcomeScreen } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, convertToExcalidrawElements, exportToBlob, MainMenu, newElementWith, WelcomeScreen } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement, FileId } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, DataURL, ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
@@ -8,12 +8,15 @@ import { useProjectMoved, useProjectRevision, useStudio } from "../../api/projec
 import type { StudioClient } from "../../api/project-runtime/client";
 import type { BoardDto, FrameLevelDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { CANVAS_APP_STATE, PROJECT_CANVAS_CLASS, ProjectCanvas, useScenePointer, useWheelZoom } from "../../features/canvas/ProjectCanvas";
-import { DeveloperOnly, usePreferences } from "../../features/settings/preferences";
+import { DeveloperOnly, useDeveloperMode, usePreferences } from "../../features/settings/preferences";
+import { HandToAiBar } from "../../features/handToAi/HandToAiBar";
+import { HAND_TO_AI_WORDS, HandToAiError, handToAiErrorText, marksFile, pngFile, thumbnailOf, useHandToAi, type HandToAiMark } from "../../features/handToAi/handToAi";
+import { plainFailureText } from "../../app/ErrorPanel";
 import { renderDocumentVisual } from "../monkeydiagram/documentVisualInput";
 import { createBoardSaveQueue, type BoardSaveState } from "./boardSaveQueue";
 import { BoardFeedbackError, prepareBoardDesignRequest, type BoardDesignRequest } from "./boardFeedback";
 import { BoardFeedbackGeometryError, createBoardFeedback, type BoardFeedbackSelection } from "./boardFeedbackGeometry";
-import { boardViewAppState, captureBoardView, pageSourceAt, type BoardDocumentOpen, type BoardViewState } from "./boardNavigation";
+import { boardViewAppState, captureBoardView, currentStepElements, pageSourceAt, type BoardDocumentOpen, type BoardViewState } from "./boardNavigation";
 import { BoardRenderError, handOverBoardRender, RENDER_REFERENCE_LIMIT, renderReferenceChoices, selectedRenderPages, type BoardRenderChatRequest } from "./boardRender";
 import { boardDocumentFrameName, documentKey, documentMime, findSource, imageSource, isTracingPaperReview, nextDocumentPosition, nextPagePlacement, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
 import { BoardSketchError, calibrateSketchFrame, insideSketchFrame, newSketchFrameData, sketchActionsFromFrame, sketchFrameData, sketchFrameIds, sketchSummary, type BoardSketchRequest, type SketchFrameData, type SketchSkipReason } from "./boardSketch";
@@ -23,6 +26,7 @@ import { MenuCommand, StatusLine, SurfaceMenus, useBarEntries } from "../../feat
 import { BOARD_SCENE_LIMIT_BYTES, cardElementId, cardLabelText, componentInfoCardIds, isComponentInfoElement, placeDatasetCards, sceneBytes } from "../../features/componentInfo/boardDatasets";
 import { ComponentInfoError, parseDatasetImport, problemText, type ComponentInfoDataset } from "../../features/componentInfo/componentInfo";
 import { useT, type TFunction } from "../../i18n/useT";
+import { AutoRetry } from "../../app/AutoRetry";
 
 const copy = {
   en: { sources: "Project documents", upload: "Upload PDF / image", saved: "Saved", saving: "Saving…", dirty: "Unsaved changes", saveError: "Changes have not been saved.", add: "Add page", open: "Open in MonkeyDiagram", openPage: "Edit this page", openHint: "Double-click a drawing to edit its page", fit: "Fit board", busy: "Receiving document…", clearAnnotations: "Clear annotations", clearAnnotationsHint: "Clear all drawn marks and text; keep drawings and frames. Ctrl+Z to undo.", crit: "Crit mode", critSubmit: "Submit", critExit: "Exit", exportPng: "PNG", exportJpeg: "JPEG", empty: "Upload a PDF, PNG or JPEG to begin. New project drawings will appear here.", hint: "Wheel to zoom · Space or middle mouse to pan · Shift to select several", auto: "New documents arrive automatically", previewError: "Some page previews could not be loaded. The saved layout is retained.", unsupported: "Use PDF, PNG or JPEG files.", unbound: "This image has no registered project source. Upload its original file first.", page: "Page", pages: "pages", received: "Received", pending: "Pending", dismiss: "Dismiss", sourceError: "Project documents could not be refreshed.", select: "Select a drawing to open its original.", refresh: "Retry previews / receive", unknown: "Unknown error" },
@@ -58,8 +62,8 @@ const selectionCopy = {
 };
 
 const whiteboardCopy = {
-  en: { more: "More board actions", hideSources: "Hide project documents", welcome: "Drop a drawing or image here", gestures: "Circle, draw an arrow, or type a note.", example: "Drawing + arrow + note", designHint: "Select a project drawing and your marks to discover design feedback.", oneSource: "Mark the drawing you want changed inside its own frame. Other selected drawings travel as reference only.", connectReference: "Draw an arrow between the edit drawing and each extra drawing, and select it too, to send them as reference.", referenceMarks: "Marks on a reference drawing cannot be sent. Select that reference's image on its own.", stale: "This drawing is no longer available. Select its current page from project documents.", outside: "Move the selected marks fully onto the drawing before sending.", unsupported: "This selection cannot be sent yet. Use solid outline marks on an uncropped drawing.", invalid: "A selected object has invalid geometry. Redraw it before sending.", linkModel: "Link model in MonkeyDiagram" },
-  "zh-CN": { more: "更多画板操作", hideSources: "收起项目资料", welcome: "拖入图纸或图片开始", gestures: "圈画、画箭头，或直接写下想法。", example: "图纸 + 箭头 + 文字", designHint: "选中项目图纸与圈线，即可查看设计反馈入口。", oneSource: "请在要修改的那张图纸的图框内画出标记；同时选中的其他图纸只作参考。", connectReference: "在主改图纸与每张附加图纸之间画一根连线并一并选中，它们才会作为参考发送。", referenceMarks: "参考图纸上的标记无法一起发送，请只选中该参考图片本身。", stale: "这张图纸已不可用，请从项目资料重新选择当前图页。", outside: "请先将选中圈线完整移入图纸范围。", unsupported: "此选区暂时无法发送，请使用实线轮廓标记及未裁切的图纸。", invalid: "选中对象的几何无效，请重新绘制后发送。", linkModel: "在 MonkeyDiagram 中关联模型" },
+  en: { more: "More board actions", hideSources: "Hide project documents", welcome: "Drop a drawing or image here", gestures: "Circle, draw an arrow, or type a note.", example: "Drawing + arrow + note", designHint: "Circle what should change, write one sentence, and choose Hand to AI.", oneSource: "Mark the drawing you want changed inside its own frame. Other selected drawings travel as reference only.", connectReference: "Draw an arrow between the edit drawing and each extra drawing, and select it too, to send them as reference.", referenceMarks: "Marks on a reference drawing cannot be sent. Select that reference's image on its own.", stale: "This drawing is no longer available. Select its current page from project documents.", outside: "Move the selected marks fully onto the drawing before sending.", unsupported: "This selection cannot be sent yet. Use solid outline marks on an uncropped drawing.", invalid: "A selected object has invalid geometry. Redraw it before sending.", linkModel: "Link model in MonkeyDiagram" },
+  "zh-CN": { more: "更多画板操作", hideSources: "收起项目资料", welcome: "拖入图纸或图片开始", gestures: "圈画、画箭头，或直接写下想法。", example: "图纸 + 箭头 + 文字", designHint: "圈出要改的地方，写一句话，点「交给 AI」。", oneSource: "请在要修改的那张图纸的图框内画出标记；同时选中的其他图纸只作参考。", connectReference: "在主改图纸与每张附加图纸之间画一根连线并一并选中，它们才会作为参考发送。", referenceMarks: "参考图纸上的标记无法一起发送，请只选中该参考图片本身。", stale: "这张图纸已不可用，请从项目资料重新选择当前图页。", outside: "请先将选中圈线完整移入图纸范围。", unsupported: "此选区暂时无法发送，请使用实线轮廓标记及未裁切的图纸。", invalid: "选中对象的几何无效，请重新绘制后发送。", linkModel: "在 MonkeyDiagram 中关联模型" },
 };
 
 type FeedbackContext = { source: PageSource | null; reason: "modelRequired" | "oneSource" | "connectReference" | "referenceMarks" | "stale" | "outside" | "unsupported" | "invalid" | null };
@@ -94,6 +98,30 @@ function isAnnotation(element: ExcalidrawElement, sketchFrames: ReadonlySet<stri
     && ["freedraw", "line", "arrow", "rectangle", "ellipse", "diamond", "text"].includes(element.type);
 }
 
+type Box = { x: number; y: number; width: number; height: number };
+/** An element's box on the board; a line's points already sit inside its width and height. */
+function boxOf(elements: readonly ExcalidrawElement[]): Box | null {
+  if (elements.length === 0) return null;
+  const left = Math.min(...elements.map((element) => Math.min(element.x, element.x + element.width)));
+  const top = Math.min(...elements.map((element) => Math.min(element.y, element.y + element.height)));
+  const right = Math.max(...elements.map((element) => Math.max(element.x, element.x + element.width)));
+  const bottom = Math.max(...elements.map((element) => Math.max(element.y, element.y + element.height)));
+  return { x: Math.round(left), y: Math.round(top), width: Math.round(right - left), height: Math.round(bottom - top) };
+}
+const overlaps = (a: Box, b: Box) => a.x <= b.x + b.width && b.x <= a.x + a.width && a.y <= b.y + b.height && b.y <= a.y + a.height;
+const textOf = (element: ExcalidrawElement) => element.type === "text" ? (element as { text?: string }).text?.trim() ?? "" : "";
+
+/** S08: what 「交给 AI」 would take from the selection: how many marks, and the words already written among them. */
+type HandPick = { marks: number; text: string };
+function handPickOf(elements: readonly ExcalidrawElement[], selectedIds: AppState["selectedElementIds"]): HandPick | null {
+  const chosen = elements.filter((element) => selectedIds[element.id] && !element.isDeleted);
+  if (chosen.length === 0) return null;
+  const sketchFrames = sketchFrameIds(elements), infoCards = componentInfoCardIds(elements as unknown as readonly Record<string, unknown>[]);
+  const marks = chosen.filter((element) => isAnnotation(element, sketchFrames, infoCards));
+  if (marks.length === 0) return null;
+  return { marks: marks.filter((element) => element.type !== "text").length, text: marks.map(textOf).filter(Boolean).join(" ") };
+}
+
 function replacementCopy(t: TFunction) {
   return {
     action: t("board.replacement.action"),
@@ -108,6 +136,12 @@ function replacementCopy(t: TFunction) {
     workCopyHint: t("board.replacement.workCopyHint"),
   };
 }
+
+/**
+ * S08: the Board's toolbar keeps what is drawn every day (select, rectangle, line, arrow, text, pen, eraser);
+ * diamond and ellipse wait in More (board.css hides their toolbar buttons only, so their keys still work).
+ */
+const moreShapesCopy = { en: { diamond: "Diamond", ellipse: "Ellipse" }, "zh-CN": { diamond: "菱形", ellipse: "椭圆" } };
 
 const sketchCopy = {
   en: { newFrame: "New sketch frame", frameName: "Sketch", panel: "Sketch frame", level: "Level", storeyHeight: "Storey height (m)",
@@ -416,7 +450,7 @@ function RenderDialog({ candidates, documents, language, returnFocus, active, th
 type Preview = { dataURL: DataURL; width: number; height: number };
 
 function errorText(error: unknown): string {
-  if (error && typeof error === "object" && "detail" in error) return String(error.detail);
+  if (error && typeof error === "object" && "detail" in error) return plainFailureText(error);
   return error instanceof Error ? error.message : String(error);
 }
 function records(elements: readonly ExcalidrawElement[]): BoardDto["elements"] {
@@ -476,7 +510,7 @@ async function sceneFiles(board: BoardDto, documents: SourceDocumentDto[], previ
 
 export interface BoardPageRequest { source: PageSource; requestId: string }
 
-export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPublish, onRenderChatRequest, restoreView = null, active = true, refreshKey = 0, expectedProjectId, pageRequest = null }: {
+export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPublish, onRenderChatRequest, restoreView = null, active = true, refreshKey = 0, expectedProjectId, pageRequest = null, workingDraft = false }: {
   onSubmit: (request: BoardDesignRequest) => void;
   /** Hand one calibrated sketch frame to the App, which runs it as a sketch proposal. */
   onSketch: (request: BoardSketchRequest) => void;
@@ -496,36 +530,43 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPubl
   expectedProjectId?: string;
   /** Explicitly place or focus exactly this page; ordinary discovery stays quiet. */
   pageRequest?: BoardPageRequest | null;
+  /** The project's runtime keeps a working draft, so the board may open on its current step. */
+  workingDraft?: boolean;
 }) {
   const studio = useStudio();
   const { language } = usePreferences();
   const t = useT();
   const text = boardCopy(language, t);
   const [attempt, setAttempt] = useState(0);
-  const [loaded, setLoaded] = useState<{ board: BoardDto; documents: SourceDocumentDto[]; files: BinaryFiles; failures: string[]; preview: PreviewLoader } | null>(null);
+  const [loaded, setLoaded] = useState<{ board: BoardDto; documents: SourceDocumentDto[]; files: BinaryFiles; failures: string[]; preview: PreviewLoader; currentRunId: string | null } | null>(null);
   const [error, setError] = useState<unknown>(null);
   useEffect(() => {
     let alive = true;
     setError(null);
     const preview = createPreviewLoader(studio);
-    void Promise.all([studio.board(), studio.documents()]).then(async ([board, list]) => {
+    // The design's current step only says where the board opens; a project without one opens on all of it.
+    const working = workingDraft ? studio.workingDraft().catch(() => null) : Promise.resolve(null);
+    void Promise.all([studio.board(), studio.documents(), working]).then(async ([board, list, draft]) => {
       if (expectedProjectId !== undefined && board.projectId !== expectedProjectId) throw new Error("The board belongs to another project.");
       if (list.projectId !== board.projectId) throw new Error("The document list belongs to another project.");
       const visual = await sceneFiles(board, list.documents, preview);
-      if (alive) setLoaded({ board, documents: list.documents, ...visual, preview });
+      const currentRunId = draft?.projectId === board.projectId ? draft.current?.runId ?? null : null;
+      if (alive) setLoaded({ board, documents: list.documents, ...visual, preview, currentRunId });
     }).catch((cause) => { if (alive) setError(cause); });
     return () => { alive = false; };
-  }, [attempt, expectedProjectId]);
+  }, [attempt, expectedProjectId, workingDraft]);
   if (loaded) return <BoardCanvas {...loaded} onSubmit={onSubmit} onSketch={onSketch} onOpenDocument={onOpenDocument} onPublish={onPublish} onRenderChatRequest={onRenderChatRequest} restoreView={restoreView} active={active} refreshKey={refreshKey} pageRequest={pageRequest} />;
   return <section className="monkeyboard monkeyboard-loading" aria-live="polite">
     <strong>MonkeyBoard</strong>
-    <p>{error === null ? text.loading : text.loadFailed}</p>
-    {error !== null && <><p className="monkeyboard-error-detail">{errorText(error)}</p><button data-command="view.notice.retry" data-command-arg="board_open" onClick={() => setAttempt((value) => value + 1)}>{text.retry}</button></>}
+    <p className={error === null ? "wait-late" : undefined}>{error === null ? text.loading : text.loadFailed}</p>
+    {error !== null && <><p className="monkeyboard-error-detail">{errorText(error)}</p><AutoRetry failure={error} data-command="view.notice.retry" data-command-arg="board_open" retry={() => setAttempt((value) => value + 1)}>{text.retry}</AutoRetry></>}
   </section>;
 }
 
-function BoardCanvas({ board, documents: initialDocuments, files, failures, preview, onSubmit, onSketch, onOpenDocument, onPublish, onRenderChatRequest, restoreView, active, refreshKey, pageRequest }: {
+function BoardCanvas({ board, documents: initialDocuments, files, failures, preview, currentRunId, onSubmit, onSketch, onOpenDocument, onPublish, onRenderChatRequest, restoreView, active, refreshKey, pageRequest }: {
   board: BoardDto; documents: SourceDocumentDto[]; files: BinaryFiles; failures: string[]; preview: PreviewLoader;
+  /** The run of the design's current step: a board with no saved place opens on its pages. */
+  currentRunId: string | null;
   onSubmit: (request: BoardDesignRequest) => void;
   onSketch: (request: BoardSketchRequest) => void;
   onOpenDocument?: (open: BoardDocumentOpen) => void;
@@ -578,6 +619,17 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const renderChatRef = useRef(onRenderChatRequest); renderChatRef.current = onRenderChatRequest;
   const feedbackQueued = useRef(false);
   const [feedbackWaiting, setFeedbackWaiting] = useState(false);
+  // S08: one 「交给 AI」 for the selected marks; the older design-feedback and image-discussion dialogs are developer mode's.
+  const developer = useDeveloperMode();
+  const handToAi = useHandToAi();
+  const handToAiRef = useRef(handToAi); handToAiRef.current = handToAi;
+  // Without a conversation to take it (a Board on its own) the older entries stay, as they were.
+  const legacy = developer || !handToAi;
+  const [handPick, setHandPick] = useState<HandPick | null>(null);
+  const [handWords, setHandWords] = useState("");
+  const [handSending, setHandSending] = useState(false);
+  const handSendingRef = useRef(false);
+  const [handError, setHandError] = useState<string | null>(null);
   const [pages, setPages] = useState<Record<string, number>>({});
   const [exportFormat, setExportFormat] = useState<"merged-pdf" | "page-pdfs" | "png" | "jpeg">("merged-pdf");
   const [exportZip, setExportZip] = useState(false);
@@ -686,10 +738,13 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     },
   }));
   const work = useRef(Promise.resolve());
+  // Where a board with no saved place opens: the current step's pages and their title, once the scene is in.
+  const opening = useRef<Set<string> | null>(restoreView !== null ? null
+    : new Set(currentStepElements(board.elements, initialDocuments, currentRunId).map((element) => String(element.id))));
   const [initialData] = useState<ExcalidrawInitialDataState>(() => {
     const restored = restoreView === null ? null : boardViewAppState(restoreView, board.elements);
     return {
-      elements: board.elements as unknown as ExcalidrawElement[], files, scrollToContent: restored === null,
+      elements: board.elements as unknown as ExcalidrawElement[], files, scrollToContent: restored === null && !opening.current?.size,
       // Moving or resizing snaps to other elements' edges, centres and gaps (#615); Alt+S turns it off for
       // the session, and holding Ctrl places freely while it is on.
       appState: { ...CANVAS_APP_STATE, objectsSnapModeEnabled: true,
@@ -704,6 +759,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     const images = gesture || !renderChatRef.current ? []
       : selectedRenderPages(elements as unknown as readonly Record<string, unknown>[], appState.selectedElementIds, documentsRef.current);
     setRenderPages((previous) => JSON.stringify(previous) === JSON.stringify(images) ? previous : images);
+    const pick = gesture || !handToAiRef.current ? null : handPickOf(elements, appState.selectedElementIds);
+    setHandPick((previous) => JSON.stringify(previous) === JSON.stringify(pick) ? previous : pick);
     // The panel follows the selected sketch frame; only what it shows is compared,
     // so dragging a shape inside the frame does not re-render it on every pointer move.
     const sketch = sketchSelectionOf(elements, appState.selectedElementIds);
@@ -1118,6 +1175,13 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     api.scrollToContent(targets, { fitToContent: true, animate: false });
     return true;
   }, [active, ready, queue]);
+  useEffect(() => {
+    const ids = opening.current, api = canvas.current;
+    if (!active || !ready || !api || !ids?.size) return;
+    opening.current = null;
+    const targets = api.getSceneElements().filter((element) => ids.has(element.id));
+    if (targets.length > 0) api.scrollToContent(targets, { fitToContent: true, animate: false });
+  }, [active, ready]);
   const handledPageRequest = useRef<string | null>(null);
   useEffect(() => {
     if (!active || !ready || !pageRequest || handledPageRequest.current === pageRequest.requestId) return;
@@ -1301,8 +1365,14 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     const current = api.getSceneElementsIncludingDeleted();
     const sketchFrames = sketchFrameIds(current);
     const infoCards = componentInfoCardIds(current as unknown as readonly Record<string, unknown>[]);
-    const removed = new Set(current.filter((element) => isAnnotation(element, sketchFrames, infoCards)).map((element) => element.id));
-    if (removed.size === 0) return;
+    removeMarks(new Set(current.filter((element) => isAnnotation(element, sketchFrames, infoCards)).map((element) => element.id)));
+    root.current?.querySelector<HTMLElement>(".excalidraw")?.focus();
+  };
+  /** Take these marks off the board in one undoable step; what they were bound to keeps its other bindings. */
+  const removeMarks = (removed: ReadonlySet<string>) => {
+    const api = canvas.current;
+    if (!api || removed.size === 0) return;
+    const current = api.getSceneElementsIncludingDeleted();
     const elements = current.map((element) => {
       if (element.isDeleted) return element;
       if (removed.has(element.id)) return newElementWith(element, { isDeleted: true });
@@ -1312,7 +1382,46 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     });
     api.updateScene({ elements, appState: { selectedElementIds: {}, selectedGroupIds: {} }, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
     capture(elements);
-    root.current?.querySelector<HTMLElement>(".excalidraw")?.focus();
+  };
+  /**
+   * S08: the selected marks and one sentence, handed to the AI in the project's conversation: a picture of the
+   * marks over what they cover, and the marks file with the sentence on the first circle. Once the conversation
+   * took them, the marks leave the board (Ctrl+Z brings them back); the message and History keep them.
+   */
+  const handOver = async () => {
+    const api = canvas.current, host = handToAiRef.current;
+    if (!api || !host || !ready || handSendingRef.current) return;
+    handSendingRef.current = true; setHandSending(true); setHandError(null);
+    try {
+      const all = api.getSceneElements();
+      const selectedIds = api.getAppState().selectedElementIds;
+      const chosen = all.filter((element) => selectedIds[element.id]);
+      const sketchFrames = sketchFrameIds(all), infoCards = componentInfoCardIds(all as unknown as readonly Record<string, unknown>[]);
+      const marks = chosen.filter((element) => isAnnotation(element, sketchFrames, infoCards));
+      const words = handWords.trim() || marks.map(textOf).filter(Boolean).join(" ");
+      if (marks.length === 0) throw new HandToAiError("NOTHING_MARKED", "Nothing marked.");
+      if (!words) throw new HandToAiError("EMPTY", "No words.");
+      const area = boxOf(chosen)!;
+      // The picture shows the marks over everything they cover, as the person sees it.
+      const shown = all.filter((element) => selectedIds[element.id] || overlaps(boxOf([element])!, area));
+      const blob = await exportToBlob({ elements: shown, files: api.getFiles(), mimeType: "image/png", exportPadding: 24, maxWidthOrHeight: 2400,
+        appState: { ...api.getAppState(), exportBackground: true, viewBackgroundColor: "#ffffff", exportWithDarkMode: false } });
+      const markRows: HandToAiMark[] = marks.map((element) => ({ id: element.id, kind: element.type, bounds: boxOf([element]), text: textOf(element) || null }));
+      const covered = shown.filter((element) => !marks.includes(element)).map((element) => {
+        const page = imageSource(element as unknown as Record<string, unknown>);
+        const document = page ? findSource(documentsRef.current, page) : null;
+        return { id: element.id, kind: element.type, bounds: boxOf([element]), selected: Boolean(selectedIds[element.id]),
+          ...(page ? { page: { ...page, fileName: document?.fileName ?? null, pageNumber: page.pageIndex + 1 } } : {}),
+          ...(textOf(element) ? { text: textOf(element) } : {}) };
+      });
+      const files = [pngFile(blob, "board"), marksFile("board", words, markRows, { board: { title: titleRef.current, area }, objects: covered })];
+      await host({ projectId: board.projectId, surface: "board", words, marks: marks.filter((element) => element.type !== "text").length,
+        files, thumbnail: await thumbnailOf(blob) });
+      if (!alive.current) return;
+      removeMarks(new Set(marks.map((element) => element.id)));
+      setHandWords(""); setNotice(HAND_TO_AI_WORDS[language].sent);
+    } catch (cause) { if (alive.current) setHandError(handToAiErrorText(cause, language)); }
+    finally { handSendingRef.current = false; if (alive.current) setHandSending(false); }
   };
   // One sketch frame carries the only scene-to-metres affine there is. It is an
   // ordinary Excalidraw frame, so it is saved, undone and versioned like the
@@ -1435,7 +1544,11 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
         <summary className="menu-command" data-command="view.menu.toggle" data-command-arg="board_more">{boardText.more}</summary>
         <div className="monkeyboard-actions-panel" role="group" aria-label={boardText.more}>
           {bar.shown("view.canvas.fit") && <button data-command="view.canvas.fit" disabled={!ready} onClick={() => canvas.current?.scrollToContent(undefined, { fitToContent: true, animate: false })}>{text.fit}</button>}
-          {bar.shown("markup.hand_to_ai.open") && <button data-command="markup.hand_to_ai.open" disabled={!ready || busy || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>}
+          {legacy && bar.shown("markup.hand_to_ai.open") && <button data-command="markup.hand_to_ai.open" disabled={!ready || busy || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>}
+          {(["diamond", "ellipse"] as const).filter((shape) => bar.shown(`view.board_tools.${shape}`)).map((shape) =>
+            <button key={shape} type="button" data-command={shape === "diamond" ? "view.board_tools.diamond" : "view.board_tools.ellipse"} disabled={!ready}
+              onClick={() => { closeActions(); canvas.current?.setActiveTool({ type: shape }); root.current?.querySelector<HTMLElement>(".excalidraw")?.focus(); }}>
+              {moreShapesCopy[language][shape]}</button>)}
           {bar.shown("sketch.to_model.new_frame") && <button data-command="sketch.to_model.new_frame" disabled={!ready || busy || saveState.conflict} onClick={() => { void newSketchFrame(); }}>{sketchCopy[language].newFrame}</button>}
           {bar.shown("markup.hand_to_ai.enter_crit") && <button data-command="markup.hand_to_ai.enter_crit" disabled={!ready} onClick={enterCrit}>{text.crit}</button>}
           {bar.shown("markup.clear") && <button type="button" data-command="markup.clear" disabled={!ready || busy || saveState.conflict || !hasAnnotations} onClick={clearAnnotations} title={text.clearAnnotationsHint}>{text.clearAnnotations}</button>}
@@ -1455,7 +1568,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     <input ref={infoInput} type="file" accept="application/json,.json" hidden data-component-info-import
       onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void importComponentInfo(file); }} />
     {saveState.error !== null && <div className="monkeyboard-alert" role="alert"><span>{saveState.conflict ? text.conflict : `${text.saveError} ${errorText(saveState.error)}`}</span>{!saveState.conflict && <button data-command="view.notice.retry" data-command-arg="board_save" onClick={() => { void queue.retry().catch(() => {}); }}>{text.retry}</button>}</div>}
-    {(previewFailed || sourceError) && <div className="monkeyboard-alert" role="alert"><span>{previewFailed ? text.previewError : `${text.sourceError} ${sourceError}`}</span><button data-command="view.notice.retry" data-command-arg="board_previews" onClick={retryVisuals} disabled={busy}>{text.refresh}</button></div>}
+    {(previewFailed || sourceError) && <div className="monkeyboard-alert" role="alert"><span>{previewFailed ? text.previewError : `${text.sourceError} ${sourceError}`}</span><AutoRetry failure={previewFailed || sourceError} data-command="view.notice.retry" data-command-arg="board_previews" retry={retryVisuals} disabled={busy}>{text.refresh}</AutoRetry></div>}
     {notice && <div className="monkeyboard-alert" role="alert"><span>{notice}</span><button data-command="view.notice.dismiss" onClick={() => setNotice("")} aria-label={text.dismiss}>×</button></div>}
     {update && <div className="monkeyboard-alert monkeyboard-update" role="status"><span>{updateNoticeText(update, t)}</span><span className="monkeyboard-update-actions"><button data-command="view.attention.open" onClick={focusUpdate}>{replacementText.view}</button><button data-command="view.attention.dismiss" onClick={() => setUpdate(null)} aria-label={text.dismiss}>×</button></span></div>}
     {!critMode && sketchSelection && <div className="monkeyboard-sketch" role="group" aria-label={sketchCopy[language].panel}>
@@ -1517,7 +1630,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
         </ProjectCanvas>
         {!ready && <div className="monkeyboard-initializing" role="status">{text.loading}</div>}
         {busy && <div className="monkeyboard-busy" role="status">{text.busy}</div>}
-        {!critMode && (context || source || renderPages.length > 0) && <div className="monkeyboard-context" role="group" aria-label={language === "en" ? "Selected drawing actions" : "选中图纸操作"}>
+        {!critMode && (context || source || renderPages.length > 0 || handPick) && <div className="monkeyboard-context" role="group" aria-label={language === "en" ? "Selected drawing actions" : "选中图纸操作"}>
           {contextDocument && contextSource && <div className="monkeyboard-context-source">
             <div className="monkeyboard-context-identity">
               <span>{selectionCopy[language].selected} · {contextSource.pageIndex + 1}/{contextDocument.pageCount}</span>
@@ -1530,16 +1643,21 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
           <div className="monkeyboard-context-actions">
             {source && selected && onOpenDocument && <button data-command="view.open_document.page" disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(selected)}>{text.openPage}</button>}
             {source && <button data-command="document.replace_page.open" disabled={!ready || busy || saveState.conflict} onClick={openSelectedReplacement}>{replacementText.action}</button>}
-            {/* #253: a plain registered image needs no model; nothing is saved or sent from here. */}
-            {onRenderChatRequest && renderPages.length > 0 && <button type="button" className="monkeyboard-render-open" data-command="markup.hand_to_ai.discuss" disabled={!ready} onClick={openRender}>{renderCopy[language].action}</button>}
-            {context && (context.reason === "modelRequired" && context.source
+            {/* #253: a plain registered image needs no model; nothing is saved or sent from here. S08: developer mode's, beside 交给 AI. */}
+            {legacy && onRenderChatRequest && renderPages.length > 0 && <button type="button" className="monkeyboard-render-open" data-command="markup.hand_to_ai.discuss" disabled={!ready} onClick={openRender}>{renderCopy[language].action}</button>}
+            {/* S08: the exact-model design proposal is developer mode's; 交给 AI below needs no linked model. */}
+            {legacy && context && (context.reason === "modelRequired" && context.source
               ? <button type="button" className="monkeyboard-context-next" data-command="view.open_document.link_model" disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(context.source!)}>{boardText.linkModel}</button>
               : <button className="monkeyboard-primary monkeyboard-context-next" data-command="markup.hand_to_ai.open" disabled={!!context.reason || !ready || busy || saveState.conflict || feedbackWaiting} aria-describedby={context.reason ? "monkeyboard-context-hint" : undefined} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>)}
           </div>
-          {context?.reason && <p id="monkeyboard-context-hint" role="status">{context.reason === "modelRequired" ? feedbackCopy[language].modelRequired : boardText[context.reason]}</p>}
+          {legacy && context?.reason && <p id="monkeyboard-context-hint" role="status">{context.reason === "modelRequired" ? feedbackCopy[language].modelRequired : boardText[context.reason]}</p>}
+          {handPick && handToAi && <HandToAiBar words={handWords} onWords={(value) => { setHandWords(value); setHandError(null); }} placeholder={handPick.text}
+            disabled={!ready || saveState.conflict} sending={handSending} error={handError} onSend={() => { void handOver(); }} />}
         </div>}
         {critMode && <div className="monkeyboard-crit-actions" role="group" aria-label={text.crit}>
-          <button type="button" className="monkeyboard-primary" data-command="markup.hand_to_ai.open" disabled={!ready || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : text.critSubmit}</button>
+          {legacy && <button type="button" className="monkeyboard-primary" data-command="markup.hand_to_ai.open" disabled={!ready || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : text.critSubmit}</button>}
+          {handPick && handToAi && <HandToAiBar words={handWords} onWords={(value) => { setHandWords(value); setHandError(null); }} placeholder={handPick.text}
+            disabled={!ready || saveState.conflict} sending={handSending} error={handError} onSend={() => { void handOver(); }} />}
           <button type="button" data-command="markup.clear" disabled={!ready || busy || saveState.conflict || !hasAnnotations} onClick={clearAnnotations} title={text.clearAnnotationsHint}>{text.clearAnnotations}</button>
           <button type="button" data-command="markup.hand_to_ai.exit_crit" onClick={exitCrit}>{text.critExit}</button>
         </div>}

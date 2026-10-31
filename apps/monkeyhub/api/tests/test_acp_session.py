@@ -133,6 +133,49 @@ class FakeAgent:
                     session_id="another-session" if text == "foreign-activity" else session_id, update=update,
                 )
                 await asyncio.sleep(0.15)
+        elif text.startswith("permission-"):
+            command, network = {"permission": {"version": 1, "title": "Run command?"}}, {"permission": {"version": 1, "title": "Allow network access?"}}
+
+            def mcp(server):
+                return dict(kind="execute", title=f"mcp.{server}.studio_request", status="in_progress",
+                            raw_input={"server": server, "tool": "studio_request", "arguments": {"method": "POST", "path": "/api/proposals"}},
+                            _meta={"is_mcp_tool_call": True})
+
+            # (the tool call announced first, if any; the permission request's tool call; its own _meta)
+            shapes = {
+                "permission-run": (None, dict(kind="execute", title="Run command", raw_input={"command": "git status --short", "cwd": "D:/p"}), command),
+                "permission-run-more": (None, dict(kind="execute", title="Run command", raw_input={
+                    "command": "git push", "additionalPermissions": {"network": {"enabled": True}}}), command),
+                "permission-network": (None, dict(kind="execute", title="https network access to example.com",
+                                                  raw_input={"url": "https://example.com"}), network),
+                "permission-hub": (mcp("monkeyhub"), dict(kind="execute"), {"is_mcp_tool_approval": True}),
+                "permission-other": (mcp("elsewhere"), dict(kind="execute"), {"is_mcp_tool_approval": True}),
+                "permission-mcp-unknown": (None, dict(kind="execute"), {"is_mcp_tool_approval": True}),
+                "permission-mcp-standalone": (None, dict(kind="execute", title="MCP tool call approval",
+                                                         raw_input={"serverName": "monkeyhub", "description": "x"}), {"is_mcp_tool_approval": True}),
+                "permission-fetch": (None, dict(kind="fetch", title="MCP server requests to open a URL",
+                                                raw_input={"serverName": "elsewhere", "url": "https://example.com/a"}), {}),
+                "permission-edit": (None, dict(kind="edit", title="Edit files"), {"permission": {"version": 1, "title": "Make edits?"}}),
+                "permission-more": (None, dict(kind="other", title="Additional sandbox permissions", raw_input={"permissions": {}}),
+                                    {"permission": {"version": 1, "title": "Grant permissions?"}}),
+                "permission-bare": (None, dict(kind="execute", title="Fixture command"), {}),
+            }
+            announced, call, meta = shapes[text]
+            if announced is not None:
+                await self.client.session_update(session_id=session_id, update=ToolCallStart(
+                    session_update="tool_call", tool_call_id="call-" + text, **announced))
+            result = await self.client.request_permission(
+                session_id=session_id, tool_call=ToolCallUpdate(tool_call_id="call-" + text, **call),
+                options=[
+                    PermissionOption(option_id="allow", name="Yes, proceed", kind="allow_once"),
+                    PermissionOption(option_id="always", name="Yes, and don't ask again", kind="allow_always"),
+                    PermissionOption(option_id="reject", name="No, provide feedback", kind="reject_once"),
+                ],
+                **meta,
+            )
+            outcome = result.outcome.model_dump(by_alias=True)
+            log("permission", outcome=outcome, text=text)
+            await self.emit(json.dumps(outcome))
         elif text in {"permission", "delayed-permission"}:
             if text == "delayed-permission":
                 await asyncio.sleep(0.3)

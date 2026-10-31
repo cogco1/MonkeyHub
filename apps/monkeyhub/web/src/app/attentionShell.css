@@ -17,6 +17,9 @@
 .attention-shell__row{display:flex;align-items:center;gap:8px;width:100%;min-height:38px;padding:6px 10px;border:0;border-radius:var(--radius-sm);background:transparent;
   color:var(--ink);font:inherit;font-size:var(--text-ui);text-align:left;cursor:pointer}
 .attention-shell__row svg{width:18px;height:18px;flex:none;color:var(--muted)}
+.attention-shell__name{display:flex;flex-direction:column;gap:1px;line-height:1.25}
+.attention-shell__name>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attention-shell__version{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px;font-weight:400;font-variant-numeric:tabular-nums}
 .attention-shell__row>span:not(.attention-shell__count):not(.attention-shell__working){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .attention-shell__row:hover{background:var(--surface-hover)}
 .attention-shell__row[aria-current]{background:var(--nav-on-bg,var(--panel-2));color:var(--nav-on-ink,var(--ink));font-weight:600}
@@ -40,13 +43,13 @@
 .attention-shell__usage{color:var(--muted)}
 .attention-shell__empty{margin:8px 10px;color:var(--muted);font-size:var(--text-caption)}
 
-.attention-shell__center{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--ground);border-radius:var(--pane-radius,0px);box-shadow:var(--pane-ring,none);overflow:hidden}
+.attention-shell__center{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--center-bg,var(--ground));border-radius:var(--pane-radius,0px);box-shadow:var(--pane-ring,none);overflow:hidden}
 .attention-shell__tabs{gap:12px}
 .attention-shell__tabs .menu-tab[aria-disabled=true]{color:var(--faint);cursor:default}
 .attention-shell__tool{color:var(--ink);font-weight:600}
 .attention-shell__body{position:relative;flex:1;min-height:0}
 .attention-shell__queue{height:100%;box-sizing:border-box;padding:28px 24px;overflow:auto}
-.attention-shell__queue h2{margin:0 0 8px;font-size:var(--text-heading);font-weight:600}
+.attention-shell__queue h2{margin:0 0 8px;font-size:var(--text-heading);font-weight:var(--heading-weight,600)}
 .attention-shell__queue p{max-width:60ch;margin:0;color:var(--muted)}
 /* A surface's own fixed layers (its loading screen) stay within the center instead of covering the shell. */
 .attention-shell__surfaces{position:absolute;inset:0;display:flex;flex-direction:column;contain:layout paint}
@@ -125,3 +128,31 @@
   .attention-shell__search kbd{display:none}
   .attention-shell__drawer{max-height:50dvh}
 }
+/* Figures that change in place keep their width (counts, the background line, the bulk count, evidence values). */
+.attention-shell__count,.attention-shell__status,.attention-shell .chat-count,.attention-queue__bulk,.attention-card__evidence dd,
+.attention-shell__search kbd,.advanced-tools__command kbd{font-variant-numeric:tabular-nums}
+/* Opening a panel is a short ease out; dragging a surface is left to the surface and moves at once. */
+@media(prefers-reduced-motion:no-preference){
+  .attention-shell__drawer,.attention-shell__panel{animation:attention-shell-rise 180ms cubic-bezier(.2,.8,.2,1)}
+}
+@keyframes attention-shell-rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+/* The Attention page leads with its conclusion; what runs and what just came out sit beside it as smaller tiles,
+   and the cards follow below (ADR-011 §8). Nothing runs: the conclusion stands alone. */
+.attention-overview{display:grid;grid-template-columns:minmax(0,1fr) repeat(2,minmax(0,220px));gap:12px;align-items:stretch;margin-bottom:20px}
+.attention-overview__hero{align-self:center;min-width:0}
+.attention-overview__hero h2{margin:0;font-size:calc(var(--text-heading) * 1.4);line-height:1.25}
+.attention-overview__hero p{margin-top:6px}
+.attention-overview__tile{display:flex;flex-direction:column;gap:2px;min-width:0;padding:12px 14px;border:0;border-radius:var(--card-radius,var(--radius-lg,10px));
+  background:var(--card-bg,var(--panel));color:var(--ink);font:inherit;text-align:left;font-variant-numeric:tabular-nums}
+.attention-overview__tile span,.attention-overview__tile small{color:var(--muted);font-size:var(--text-small,12px)}
+.attention-overview__tile b{font-weight:var(--heading-weight,600);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+button.attention-overview__tile{cursor:pointer}
+button.attention-overview__tile:hover{background:var(--card-hover,var(--panel-2,var(--panel)))}
+@media(max-width:720px){.attention-overview{grid-template-columns:repeat(2,minmax(0,1fr))}.attention-overview__hero{grid-column:1/-1}}
+/* The newest drawing beside the conclusion: its first page as a picture above its name. */
+.attention-overview__picture{display:block;width:100%;height:84px;margin-bottom:6px;border-radius:calc(var(--card-radius,10px) - 6px);object-fit:cover;object-position:top;background:var(--ground)}
+/* 20: what the composer would say anyway stays out of the way until it is used. A target that is not the usual one (a
+   version being viewed, a read-only base, a chosen conversation) and a model someone chose or a provider that fails
+   are always shown; the rest shows once the composer has focus. */
+.attention-shell .chat-composer:not(:focus-within) .chat-target[data-default],
+.attention-shell .chat-composer:not(:focus-within) .chat-connection[data-default]{display:none}

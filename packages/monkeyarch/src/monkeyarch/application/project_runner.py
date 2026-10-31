@@ -78,7 +78,7 @@ from monkeyarch.application.geometry_proposal import (
     produce_geometry_program_proposal,
     proposal_authoring_output,
 )
-from monkeyarch.authoring.element_producers import ElementProducerError, ElementRow, ProducedElement, ProducedRelation, ProductionContext, element_rows_of, produce_rows
+from monkeyarch.authoring.element_producers import IMPORTED, ElementProducerError, ElementRow, ProducedElement, ProducedRelation, ProductionContext, element_rows_of, produce_rows
 from monkeyarch.domain.reference_resolver import HostLine, ReferenceContext
 from monkeyarch.domain.relation_checks import RelationCheck, RelationCheckReport, check_relations
 from archflow.contracts.authority import no_authority
@@ -1116,7 +1116,9 @@ def run_project(
                 undeclared = tuple(c for c in leaves if c not in set(covered) | set(declined))
                 if undeclared and options.strict_coverage:
                     raise ProjectRunnerError(f"seat {seat_id!r} owns components with no element and no declination: {undeclared}")
-                if not covered:
+                # A seat whose elements are all imported objects builds nothing: the composed model holds
+                # them as their file made them. It covers their components and has no program (#300 item 22 B).
+                if not covered or (not produced.operations and all(e.producer in ("declined", IMPORTED) for e in own)):
                     results.append(SeatResult(seat_id, round_index, "empty", None, None, 0, covered, undeclared, (), time.perf_counter() - t0, declined=declined))
                     continue
                 by_component: dict[str, list[str]] = {}
@@ -1224,7 +1226,8 @@ def run_project(
     # written either way, because a stage that did not close still owes the
     # project the statement of why; only a SATISFIED one yields an exit
     # binding, and only that binding lets a successor stage open.
-    seat_execution_complete = all(s.status in ("proposal_accepted", "empty") for s in results) and any(s.status == "proposal_accepted" for s in results)
+    seat_execution_complete = all(s.status in ("proposal_accepted", "empty") for s in results) and any(
+        s.status == "proposal_accepted" or (s.status == "empty" and s.covered_components) for s in results)
     closure = _stage_closure(stage_guard, branch=branch, results=results, relation_reports=tuple(relation_reports),
                              check_receipt_digests=tuple(check_receipt_digests), seat_execution_complete=seat_execution_complete)
     closure_ref = put(STAGE_CLOSURE, closure.to_dict())

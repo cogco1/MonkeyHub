@@ -505,8 +505,8 @@ try {
   await originalWorkCopy.click();
   const refusalNotice = page.locator(".monkeyboard-alert[role=alert]").filter({ hasText: "no single file" });
   await refusalNotice.waitFor();
-  assert.match(await refusalNotice.innerText(), /different documents/,
-    "The document owner's refusal reaches the operator unchanged");
+  assert.match(await refusalNotice.innerText(), /editable copy of the document that replaced them/,
+    "The document owner's refusal reaches the operator in plain words, with what to do instead");
   await cmd(refusalNotice, "view.notice.dismiss").click();
   const replacementCard = page.locator(".monkeyboard-source").filter({ has: page.getByRole("heading", { name: replacement.fileName, exact: true }) });
   const workCopyButton = cmd(replacementCard, "board.add_document_page.work_copy");
@@ -817,7 +817,7 @@ try {
     elements: [...structuredClone(saved.elements), ...distantElements],
     seenDocuments: [...saved.seenDocuments, documentKey(distantDocument)], revisionSha256: "d".repeat(64) };
   await page.keyboard.press("Control+s");
-  await page.waitForFunction(() => document.querySelector('input[aria-label="画布标题"]')?.value === "Remote update during live stroke");
+  await page.waitForFunction(() => document.querySelector('input[aria-label="画板标题"]')?.value === "Remote update during live stroke");
   assert.ok(byId(await readScene(), "distant-image"), "The remote frame must merge while the stroke is still live");
   assert.deepEqual(viewport(await readScene()), viewport(beforeDistantDelivery), "Remote delivery must not pan during a native stroke");
   assert.equal(await scrollCount(), scrollsBeforeDistant, "Focus waits for pointer-up");
@@ -858,13 +858,13 @@ try {
 
   saved = { ...structuredClone(saved), title: "Another saved board", revisionSha256: "f".repeat(64) };
   const winner = structuredClone(saved), localScene = await readScene();
-  await page.getByRole("textbox", { name: "画布标题", exact: true }).fill("我的未保存图墙");
+  await page.getByRole("textbox", { name: "画板标题", exact: true }).fill("我的未保存图墙");
   await page.getByText(/已有另一份保存版本/).waitFor();
   assert.ok(conflicts === recoveredConflicts || conflicts === recoveredConflicts + 1,
     "The competing title is detected by refresh or the first stale save");
   assert.deepEqual(saved, winner, "A rejected stale save must not overwrite the winning board");
   assert.deepEqual((await readScene()).elements, localScene.elements, "Conflict must preserve the current scene");
-  assert.equal(await page.getByRole("textbox", { name: "画布标题", exact: true }).inputValue(), "我的未保存图墙");
+  assert.equal(await page.getByRole("textbox", { name: "画板标题", exact: true }).inputValue(), "我的未保存图墙");
   assert.equal(await chineseUpdate.isDisabled(), true, "Conflicted local state cannot upload another replacement");
   assert.equal(uploads.length, 1);
   assert.deepEqual(failures, []); assert.deepEqual(escaped, []);

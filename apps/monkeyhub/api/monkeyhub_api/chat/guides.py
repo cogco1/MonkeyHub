@@ -60,12 +60,12 @@ _MODELLING = chr(10).join([
     "",
     "MEANING: only when the user says what a part is, POST /api/proposals/facets",
     "{stateDigest, targets: [{id, set: {\"architectural.role\": \"wall\"}}]}. Facets never change geometry or ids.",
-    "Keys: architectural.role, architectural.enclosure, structural.role, material.name, material.color, fabrication.method.",
-    "MATERIALS: declare only what the user or the project's sources state, never from an id, name or shape: set \"material.name\"",
-    "in the facets proposal, plus \"material.color\": \"#RRGGBB\" only when the design intent states it (one per material; never derive",
-    "a colour from a name). A part of a mixed id: {id, part: <one of its parts>, set}; its own material wins.",
-    "The model has one material per name, in that colour or one telling materials apart; what states none wears none,",
-    "marked material_status undeclared; a succeeded candidate checked both on readback. GET /api/construction/model?run=<candidateId>",
+    "Keys: architectural.role, architectural.enclosure, structural.role, material.name, material.color, fabrication.method, description.note.",
+    "NOTES: a few words on a picked mass (\"共享厨房\") are not a change: record them as description.note, ask no type.",
+    "MATERIALS: only what the user or the project's sources state, never from an id, name or shape: \"material.name\" in the",
+    "facets proposal, plus \"material.color\": \"#RRGGBB\" only when the design intent states it (one per material). A part of a",
+    "mixed id: {id, part: <one of its parts>, set}; its own material wins. A material is built in that colour or one telling",
+    "materials apart; none stated, none worn (material_status undeclared). GET /api/construction/model?run=<candidateId>",
     "shows the facets and partFacets it was built from. Leave a missing material unknown, or offer it as a reversible proposal.",
     "CAPABILITIES appear per entity in the model view once its facets allow them, e.g. hosted-opening",
     "(an opening for a door or window) on a wall: POST /api/proposals/hosted-opening.",
@@ -127,6 +127,7 @@ _MODELLING = chr(10).join([
     "- Board, documents and page annotations: pathPrefix /api/board.",
     "- Model export or conversion (3DM, SKP, GLB, DWG): pathPrefix /api/exports.",
     "- AI image renders from a registered source image (providers, requests, results): pathPrefix /api/render.",
+    "- What no action or installed skill does (a count, a chart, a table): write and run a script yourself; pathPrefix /api/skills.",
     "Stage acceptance, formal issue and printer upload are separate from this tool's reversible design actions.",
 ])
 
@@ -205,6 +206,8 @@ def modelling(tier: bool | str) -> str:
 _GUIDES = {
     "/api/drawings": chr(10).join([
         "DRAWINGS: POST /api/drawings/elevations automatically registers results in MonkeyDiagram's documents list; drawing-only work admits nothing.",
+        "ELEVATIONS BY COMPASS (+Y is north unless the project says otherwise): 南立面/south = view 'front', 北/north = 'back', 西/west = 'left',",
+        "东/east = 'right'; minimal body {projectId, modelSource or sourceStageRef, view}. A floor plan with no cutHeight cuts 1.2 m above the model's bottom.",
         "QUANTITIES: POST /api/quantities {modelSource | sourceAsset | sourceStageRef}, the model a drawing would use, is a read: each physical",
         "member's area, closure, role and material (its facets, else the model's own) and, closed only, its volume; sums by material and role; format:\"csv\".",
         "Before drawing, read POST /api/intents/context for the task's scoped decisions (pathPrefix /api/decisions explains it).",
@@ -345,6 +348,16 @@ _GUIDES = {
         "FOLLOW: GET /api/render/jobs/{jobId} answers queued, running, succeeded, failed or unknown; GET /api/render/jobs lists",
         "earlier attempts. On succeeded, show its document with chat_present kind=assistant documents:[{runId, assetSha256,",
         "revisionRef, pageIndex}] copied from it. Unknown means the outcome could not be confirmed: say so and do not resend.",
+    ]),
+    "/api/skills": chr(10).join([
+        "SCRIPTS: when no action or installed skill does what the user asks (a count, a chart, a table from project documents), write",
+        "a small Python script and run it with POST /api/skills/scratch/run {description: one line for the user, name: a skill name to",
+        "keep it under, code, inputs: {name: a document {runId, assetSha256}, a model {modelSha256} or a drawing}, parameters}, never",
+        "with Bash: the Hub keeps the code with the run and registers PDF/PNG outputs as documents. It runs as a skill does (python",
+        "main.py --inputs <dir with manifest.json> --params <json> --outputs <dir>); PyMuPDF (fitz), numpy, Pillow and matplotlib are",
+        "there. A script that only reads the project and writes its outputs runs without asking; declare access {programs, read,",
+        "network, ssh, write, packages} only for what it truly needs, and the Hub asks the person. Read its statusPath until it ends;",
+        "failureWords is the sentence to tell the user. The user can keep a script that helped as a skill from its card in the chat.",
     ]),
 }
 

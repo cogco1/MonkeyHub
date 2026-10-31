@@ -54,6 +54,12 @@ MAX_DESCRIPTION_LENGTH = 1024
 # A procedure, not a document store: a body over this is refused, not cut.
 MAX_BODY_BYTES = 64 * 1024
 MANIFEST_FIELDS = ("inputs", "outputs", "permissions")
+# The one manifest field a run is held to before it starts: the input names a request must give. Each entry is one
+# name (``image``) or alternatives joined by ``|`` (``model|mesh``: giving either will do). Kept only when a skill
+# declares it, so a skill that does not is stored as it always was.
+REQUIRED_INPUTS = "requiredInputs"
+MAX_REQUIRED_INPUTS = 32
+INPUT_NAME = re.compile(r"[a-z][a-z0-9_]{0,31}")
 APPROVAL_SCHEMA = "StudioSkillApproval@1"
 # Script files a version may carry: small text, relative POSIX paths.
 SKILL_FILE_PATH = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_][A-Za-z0-9_.-]*)*")
@@ -232,7 +238,17 @@ def _body(value: Any) -> str:
 def _manifest(value: Mapping[str, Any] | None) -> dict[str, list[str]] | None:
     if value is None:
         return None
-    return {field: [str(item) for item in value.get(field) or ()] for field in MANIFEST_FIELDS}
+    manifest = {field: [str(item) for item in value.get(field) or ()] for field in MANIFEST_FIELDS}
+    required = value.get(REQUIRED_INPUTS) or ()
+    if required:
+        if not isinstance(required, (list, tuple)) or len(required) > MAX_REQUIRED_INPUTS or any(
+                not isinstance(item, str) or not all(INPUT_NAME.fullmatch(name) for name in item.split("|"))
+                for item in required):
+            raise _invalid(f"manifest.{REQUIRED_INPUTS} lists input names such as image, or alternatives joined by | "
+                           "such as model|mesh (lowercase letters, digits and _), at most "
+                           f"{MAX_REQUIRED_INPUTS} of them.")
+        manifest[REQUIRED_INPUTS] = list(required)
+    return manifest
 
 
 def _files(files: Mapping[str, Any] | None, entry: str | None) -> tuple[dict[str, str], str | None]:

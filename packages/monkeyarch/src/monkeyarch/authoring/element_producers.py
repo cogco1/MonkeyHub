@@ -973,6 +973,9 @@ def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str
     produces it; only one that would move must be a planar surface.
     """
 
+    if row.producer == IMPORTED:
+        return _edit_imported(row, kind=kind, translation=translation, axis=axis, angle_degrees=angle_degrees,
+                              origin=origin)
     if kind == "compress_above" and row.producer != "planar-surface":
         # Only an element that would move is refused (#404 item 7): one wholly at or below the
         # threshold keeps its geometry, whatever produces it, so it is returned unchanged.
@@ -1732,10 +1735,118 @@ def produce_declined(row: ElementRow, context: ProductionContext) -> ProducedEle
     return ProducedElement((), ())
 
 
+IMPORTED = "imported"
+_SHA256 = frozenset("0123456789abcdef")
+
+
+def imported_placement(row: ElementRow) -> tuple[str, tuple[str, ...], tuple[float, float, float], float]:
+    """An imported element's model file, its objects, and where they are placed: ``(asset, objects, move, turn)``.
+
+    ``asset`` is the sha256 of a model file registered with the project and
+    ``objects`` the ids of its top-level objects this element is. They are
+    placed by turning ``turn`` degrees about the record's +Y axis through its
+    origin, then moving by ``move`` (record metres, Y up). Nothing else about
+    them is the record's: their shape is the file's.
+    """
+
+    params = row.params
+    asset = params.get("asset")
+    if not isinstance(asset, str) or len(asset) != 64 or not set(asset) <= _SHA256:
+        raise ElementProducerError(f"{row.element_id}: an imported element names its model file by sha256")
+    objects = params.get("objects")
+    if (not isinstance(objects, (list, tuple)) or not objects
+            or any(not isinstance(item, str) or not item.strip() for item in objects)):
+        raise ElementProducerError(f"{row.element_id}: an imported element lists the ids of its objects")
+    if len(set(objects)) != len(objects):
+        raise ElementProducerError(f"{row.element_id}: an imported element lists each object once")
+    move = params.get("move", (0.0, 0.0, 0.0))
+    if not isinstance(move, (list, tuple)) or len(move) != 3:
+        raise ElementProducerError(f"{row.element_id}: move requires three coordinates")
+    return (asset, tuple(objects), tuple(_finite(value, "move") for value in move),  # type: ignore[return-value]
+            _finite(params.get("turn", 0.0), "turn"))
+
+
+def imported_box(row: ElementRow) -> tuple[tuple[tuple[float, float], ...], float, float] | None:
+    """Where an imported element's objects stand, as a box: its plan corners ``(x, z)``, its bottom and its height.
+
+    Read from ``params.extent`` - the box the objects filled in their file,
+    record metres ``{min, max}`` - turned and moved as the element is placed.
+    None when the element states no extent. It is what a direct edit shows
+    and turns about, never their shape.
+    """
+
+    extent = row.params.get("extent")
+    if not isinstance(extent, Mapping):
+        return None
+    try:
+        low = [_finite(value, "extent") for value in extent["min"]]
+        high = [_finite(value, "extent") for value in extent["max"]]
+    except (KeyError, TypeError) as exc:
+        raise ElementProducerError(f"{row.element_id}: extent is {{min, max}} in record metres") from exc
+    if len(low) != 3 or len(high) != 3 or any(b < a for a, b in zip(low, high)):
+        raise ElementProducerError(f"{row.element_id}: extent is {{min, max}} in record metres")
+    _, _, move, turn = imported_placement(row)
+    cos, sin = math.cos(math.radians(turn)), math.sin(math.radians(turn))
+    corners = tuple((round(x * cos + z * sin + move[0], 9), round(-x * sin + z * cos + move[2], 9))
+                    for x, z in ((low[0], low[2]), (high[0], low[2]), (high[0], high[2]), (low[0], high[2])))
+    return corners, low[1] + move[1], high[1] - low[1]
+
+
+def produce_imported(row: ElementRow, context: ProductionContext) -> ProducedElement:
+    """Objects of a registered model file, kept as the file made them: the component is built, by them.
+
+    No operation is produced. The composed model copies the objects from the
+    file and places them (``imported_placement``); a seat covers the
+    component because its element names it, as for any other element.
+    """
+
+    imported_placement(row)
+    imported_box(row)
+    return ProducedElement((), ())
+
+
+def _edit_imported(row: ElementRow, *, kind: str, translation, axis, angle_degrees, origin) -> ElementRow:
+    """Move or turn an imported element by changing its placement; its shape stays the file's."""
+
+    asset, objects, move, turn = imported_placement(row)
+    params = dict(row.params)
+    if kind == "move":
+        if not isinstance(translation, (list, tuple)) or len(translation) != 3:
+            raise ElementProducerError("translation requires three coordinates")
+        offset = [_finite(value, "translation") for value in translation]
+        params["move"] = [round(a + b, 9) for a, b in zip(move, offset)]
+        return replace(row, params=params)
+    if kind == "rotate":
+        vertical = [_finite(value, "rotation axis") for value in (axis or (0.0, 1.0, 0.0))]
+        length = math.sqrt(sum(value * value for value in vertical))
+        if length < 1e-9 or abs(abs(vertical[1]) / length - 1.0) > 1e-9:
+            raise ElementProducerError(f"{row.element_id}: an imported element turns about a vertical axis only")
+        box = imported_box(row)
+        if origin is None and box is not None:
+            # A direct turn names no point: it turns about the middle of where the objects stand.
+            corners, bottom, height = box
+            origin = [sum(x for x, _ in corners) / 4, bottom + height / 2, sum(z for _, z in corners) / 4]
+        if not isinstance(origin, (list, tuple)) or len(origin) != 3:
+            raise ElementProducerError(f"{row.element_id}: turning an imported element needs the point it turns about")
+        pivot = [_finite(value, "transform origin") for value in origin]
+        angle = _finite(angle_degrees, "rotation angle") * (1.0 if vertical[1] > 0 else -1.0)
+        radians = math.radians(angle)
+        cos, sin = math.cos(radians), math.sin(radians)
+        # p' = R(a)(R(t)p + m - c) + c, so the placement becomes turn t + a and move R(a)(m - c) + c.
+        x, z = move[0] - pivot[0], move[2] - pivot[2]
+        params["move"] = [round(x * cos + z * sin + pivot[0], 9), move[1], round(-x * sin + z * cos + pivot[2], 9)]
+        params["turn"] = round((turn + angle + 180.0) % 360.0 - 180.0, 9)
+        return replace(row, params=params)
+    raise ElementProducerError(
+        f"{row.element_id}: an imported object can be moved, turned, removed or given a material; "
+        f"its shape ({kind.replace('_', '/')}) is the model file's, so change it in Rhino or rebuild it here")
+
+
 PRODUCERS: dict[str, Callable[[ElementRow, ProductionContext], ProducedElement]] = {
     "column-array": produce_column_array, "capitals": produce_capitals, "beam": produce_beam, "pediment": produce_pediment, "wall": produce_wall,
     "prism": produce_prism, "planar-surface": produce_planar_surface, "curve": produce_curve, "ring": produce_ring, "loft": produce_loft, "dome-cap": produce_dome_cap,
     "stair": produce_stair, "railing": produce_railing, "wedge": produce_wedge, "shell": produce_shell, "declined": produce_declined,
+    IMPORTED: produce_imported,
 }
 
 

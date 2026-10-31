@@ -102,11 +102,15 @@ tolerate it.
 | GET | `/api/index/{table}` | read-only rows of the project index (ADR-008): `table` is `run`, `record`, `artifact`, `document`, `candidate` or `stage`; the query names exact column values in camelCase (`runId`, `sha256`, `kind`, `assetSha256`, `branchId`, `candidateId`, `stageRef`, ...) and `limit` (default 1000). Answers `{projectId, epoch, revision, table, rows, truncated}` from one snapshot; each row carries its `rev` and names the P036 record it was read from — the rows are never evidence, the record is. 503 `INDEX_UNAVAILABLE` while the index is loading, behind this process's own last write, or when the process keeps none; 404 `INDEX_TABLE_NOT_FOUND`; 422 `INDEX_FILTER_INVALID` | reads a derived index | provisional |
 | GET | `/api/artifacts/{sha256}/bytes` | the certified bytes, re-hashed before they are served; `ETag`, RFC 6266 `Content-Disposition`, `Cache-Control: no-store` | reads shared | stable |
 | POST | `/api/model-assets` → 201 | original 3DM bytes (`projectId`, `fileName`, `contentBase64`, maximum 128 MiB). Both `runId` and `stateDigest` bind a composed model; omitting both retains an external source by exact byte digest. External rows have `representation=external` and null `modelSource`, design state and Stage; they are viewable original files, not semantic edit bases. Retries reuse exact registered bytes and preserve earlier revisions. No HEAD change | **writes shared source** | provisional |
-| GET | `/api/model-assets/{asset_sha256}/index` | a design run's model by exact `runId` + `stateDigest`; a model attached from outside the project (no design state) by its own run, `runId=studio-model-<asset_sha256>`, alone (422 `MODEL_SOURCE_INVALID` for the wrong pairing, 404 `MODEL_SOURCE_UNREGISTERED` for an attachment the project does not hold). GUID-sorted native object metadata, units, `runId`, `assetSha256` and `modelSource` (null for an attachment). `offset` / `limit` (default 50, maximum 200), optional repeated `objectId` GUIDs (maximum 200). Returns `objectCount`, `matchedCount`, `nextOffset`; unknown GUIDs fail with 404, mismatched source with 409. Names, layers and raw user strings are not inferred architectural roles. Each object's `material` is the one resolved value: `{name, color, source}` of the material it wears from the file's own table (its own, or its layer's render material; `color` is the diffuse `#RRGGBB`); `source` is `declared` when its `archflow:material` label names that material, `file` when no declaration names it, `undeclared` (null name and colour) when it wears none. `bounds=true` adds each paged object's `bounds {min, max}` in the file's units, `bounds_space` (`world`; `definition` for a block definition's own member), `bounds_source` (the saved visible geometry read, never Brep control points) or `bounds_error` for an object whose saved geometry gives none, such as a Brep saved without render meshes; bounds are read for that page only. No geometry validation, scope admission or edit | reads shared | provisional |
+| GET | `/api/model-assets/{asset_sha256}/index` | a design run's model by exact `runId` + `stateDigest`; a model attached from outside the project (no design state) by its own run, `runId=studio-model-<asset_sha256>`, alone or with that run's own base state digest (a Live Rhino snapshot's run.json names it); its index is decoded once per content and kept (model-index) (422 `MODEL_SOURCE_INVALID` for the wrong pairing, 404 `MODEL_SOURCE_UNREGISTERED` for an attachment the project does not hold). GUID-sorted native object metadata, units, `runId`, `assetSha256` and `modelSource` (null for an attachment). `offset` / `limit` (default 50, maximum 200), optional repeated `objectId` GUIDs (maximum 200). Returns `objectCount`, `matchedCount`, `nextOffset`; unknown GUIDs fail with 404, mismatched source with 409. Names, layers and raw user strings are not inferred architectural roles. Each object's `material` is the one resolved value: `{name, color, source}` of the material it wears from the file's own table (its own, or its layer's render material; `color` is the diffuse `#RRGGBB`); `source` is `declared` when its `archflow:material` label names that material, `file` when no declaration names it, `undeclared` (null name and colour) when it wears none. `bounds=true` adds each paged object's `bounds {min, max}` in the file's units, `bounds_space` (`world`; `definition` for a block definition's own member), `bounds_source` (the saved visible geometry read, never Brep control points) or `bounds_error` for an object whose saved geometry gives none, such as a Brep saved without render meshes; bounds are read for that page only. No geometry validation, scope admission or edit | reads shared | provisional |
 | POST | `/api/artifacts/{sha256}/rhino-export` → 201 | that run's exact STEP imported into this machine's Rhino and kept as an editable `*.work.3dm`; body carries `runId`, because the same bytes can be exported by more than one run. Ordinary and blocking, one export at a time; the answer is the work model's own artifact row, carrying `sourceStepSha256`. Asking again for the same source answers with the model already made. Without a local Rhino or shell: 409 `RHINO_HOST_UNAVAILABLE` | **writes shared workspace** | stable |
 | POST | `/api/captures` → 201 | a viewport PNG (maximum 32 MiB) retained under the named existing run's `workspaces/studio-captures/`; body carries `runId` and `pngBase64`, response carries its project-relative path and digest. Optional exact `modelSource` also registers a preview in the existing source-document store and adds `document` to the response; source run must equal `runId` | **writes shared workspace + optional source document** | stable |
 | GET | `/api/model-assets/{asset_sha256}/preview` | required `runId` + `stateDigest`; verifies the exact retained model and returns its registered viewport `SourceDocument`, or `null` when none exists. Image bytes use the existing documents route and SHA-256 verification. Ordinary uploaded images are never selected | reads shared | provisional |
 | POST | `/api/pick/resolve` | what the object a user clicked actually is (§6) | reads work in progress + shared | stable |
+| POST | `/api/markup/resolve` | what each mark the architect drew lies on: `page` (`runId`, `assetSha256`, `pageIndex`, and a view drawing's `drawingRevisionRef`) with Board ink `marks`, or `stateDigest` (+ optional `sourceRunId`, refused as `STALE_BASE` like a pick) with model `strokes`. Each reading names its `hits` (component, element or null, object ids, `coverage`, `share`, `central`, `target`, `borderline`; targets first) and why it is unclear (`nothing`, `unbound`, `partial`, `borderline`). `source` says what was read: a view drawing's or view sheet's object-named lines, a camera pass's object-ID image (its line and depth images read through it), the model, or `page` for a page naming no object, where every mark reads `nothing`; `stateDigest` is the record state that answered. No write, no model call | reads shared | provisional |
+| GET | `/api/model-assets/{asset_sha256}/parts` | each object of a model attached from outside the project (a Live Rhino snapshot) read as a building part: by its own name, its layer's name, then its shape; the groups still unread are named by the project's configured model and are `other` without one. `objects` maps an object id to `{part, name, by}`, `parts` counts each part with its labels, `layers` gives each layer's part, `recognized` the share read. Read in the background when the model is attached and kept by its bytes; a mark on the model's drawings then names the part (`/api/markup/resolve`) | reads shared, may call the configured model | provisional |
+| GET | `/api/model-assets/attached` | the models attached from outside the project (Live Rhino snapshots, uploaded 3dm), the last attached first: `assetSha256`, `fileName`, `objectCount`, `attachedAt`; what `/api/model-assets/design` can make a design of | reads shared | provisional |
+| POST | `/api/model-assets/design` → 201 | the proposal that makes a model attached from outside the project (`assetSha256`, else the one attached last) a design that can be changed: one semantic edit at the file's own run, whose state is the authored start, with a component per part the model is read as (`.../parts`) and an `imported` element per object or Rhino group naming the file and its objects. Running it (`/api/proposals/{proposalId}/candidate`) makes a candidate on a line of its own whose composed model places the file's objects as the record says; removing, moving or turning an element, or giving its component a material, changes only that. Never run here | reads shared | provisional |
 | POST | `/api/proposals` → 201 | a typed, exact-base `DecisionOperator` with its closure and impact. Never applied | reads work in progress + shared | stable |
 | GET | `/api/proposals/{proposalId}` | that proposal, as it was returned | server memory | stable |
 | POST | `/api/proposals/{proposalId}/candidate` → 202 | a job id and the run id the candidate will make | **writes shared** | stable |
@@ -185,6 +189,8 @@ project first uses the existing `/api/project/modeling` action to obtain an acti
 
 Focus is optional: `elementId`, up to 64 distinct `elementIds`, or `targetComponentId` and its
 descendants. No focus means a design-wide request, not permission to pick the first object.
+More than 64 `elementIds` are refused (`422 REQUEST_INVALID`) with the count and the same way forward:
+leave `elementIds` out and the words choose the focus.
 An element alone supplies its own component; an explicitly supplied component must agree.
 Project, actionable source, digest and focus checks retain `PROJECT_MISMATCH`, `STALE_BASE`,
 `TARGET_UNKNOWN`, `ELEMENT_UNKNOWN` and `ELEMENT_COMPONENT_MISMATCH` refusals. If both element
@@ -1213,6 +1219,17 @@ user's message. With `MONKEYHUB_DESIGN_LOOP_STATE` naming a file outside any pro
 there, and `design_loop.py stop-hook --state <file>`, run as the CLI's Stop hook, holds the turn open until a
 change landed, the architect was asked or a limitation was reported, at most three times.
 `design_loop.cli_profile` gives the system prompt, settings, environment and allowed tools of such a turn.
+
+A message about marks on a page (`markupContext`: the page and its saved annotation revision) is read with
+`design_read part=marks`: the Hub reads that revision's ink and `POST /api/markup/resolve` answers what each mark
+lies on. The Agent then asks with `design_ask` and `changes`; the Hub checks the list itself against that reading,
+the architect's own words (the message, the page comment, its text marks) and the working design's catalogue, and
+puts it on one `change_list` card (`POST /api/attention/change-lists`, refused with `422 CHANGE_LIST_REFUSED`),
+with a question for each unsure item. Running the card posts the architect's own passages with the ticked items
+as `changeListApproval`, and the Agent builds each group with `design_submit` and that group's `feedbackQuote`.
+A list of at most five parts, sure in every item and taken from the message's own words, is not asked about: the
+Hub answers it for the architect at once (the card says it changed N parts, with an undo back to the working
+design as it stood), and `design_ask` answers with the approval to build in the same turn.
 
 ## 6. Pick and gesture resolution
 
@@ -2334,7 +2351,10 @@ not an authorization or guarantee for a later execution. See
 ## Live Rhino and skill runs
 
 **Live Rhino** (`project_runtime.live_rhino`, local runtimes only). `GET /api/live-rhino/instances` lists running
-Rhinos reachable through Rhino 8's RhinoCode CLI; a Rhino is listed after `StartScriptServer` has been typed in it once.
+Rhinos reachable through Rhino 8's RhinoCode CLI; a Rhino is listed once its script server is on: opened by
+`POST /api/live-rhino/open` (ask the person first, send `confirmed: true`; starts Rhino with `/runscript="_StartScriptServer"` and the
+`.3dm` named by `documentPath`, waits up to 90 s, returns `{rhino, opened}`; a Rhino already open on that document is returned as it is,
+and another Rhino running without the server refuses with `LIVE_RHINO_ALREADY_OPEN`), or `StartScriptServer` typed in it once.
 `GET /api/live-rhino/document` reads the open document as it is now, unsaved edits included (layers, objects,
 optional geometry). `POST /api/live-rhino/write` adds or changes objects as one `_-RunPythonScript` command, so one
 Undo removes it; created objects carry `monkeyhub.owner=agent` user text, and transform, delete and attributes refuse
@@ -2368,6 +2388,27 @@ with that grant (`grantId` names a once grant, which only that Agent run may use
 and `SKILL_PERMISSION_WITHDRAWN` (the turn ended first) run nothing. "granted" runs only always-allowed versions and
 asks nothing; "never" asks nothing and also refuses an Agent any skill that declares access. While the Hub's designLoop
 is "enforced" (#185) the setting reads as "never".
+
+**Tiers and a chat's scripts (S23).** What a run declares puts it in one tier (`skill_access.tier`, recorded as the
+run's `tier`): `low` declares nothing (it reads the project and its inputs, writes only its outputs, no network, no
+program) and runs without asking while the Hub setting `lowRiskScriptsRun` is on (unset is on; off asks "this time /
+no" before each such run); `first` (programs, packages, `read` folders outside the project) is asked once, and "always
+allow this kind" holds for every skill and project; `each` (network, ssh, `write` outside) is asked before every run:
+no lasting grant allows these, only a grant for that run, and the Hub refuses to write one (`SKILL_GRANT_EACH_TIME`).
+`GET /api/skills/{id}/needs` also answers `tier` and `eachTime`. The bootstrap now holds reads too: a file outside the
+run's folders, the project, its Python and the system's folder is refused unless `access.read` names it (a file that is
+not there is not refused). Without the network it also refuses loopback (the Hub's, the Runtime's and the Studio's
+ports; only a socket the run bound on loopback itself may be reached, as `socket.socketpair` and asyncio need), name
+lookups, listening on other addresses, native network libraries through ctypes (directly or through `LoadLibrary`),
+native file and pipe opens, named pipes and opening other processes. A compiled extension that opens a socket in its
+own C code is outside what an audit hook sees. A failed run's record carries `failureWords`, one Chinese sentence for
+the person (e.g. 已拦下：这个脚本想连本机的 Hub 接口（127.0.0.1:8790），低风险档不允许；要用请换成需要批准的方式。).
+`POST /api/skills/scratch/run` runs a script an Agent wrote in a chat (`description`, optional `name`, `code` as
+`main.py` or `files` with `entry`, optional `access`, `inputs`, `parameters`), checked and allowed as a skill is, named
+`scratch:<12 hex of codeSha256>` with source "scratch"; its code is kept only in the run's record (`scratch`).
+`POST /api/skills/scratch/needs` answers what it would need. The Hub shows each Agent run as a card in the chat
+(`skillRun`); a script that succeeded is kept as the person's own skill with
+`POST /api/chat/sessions/{id}/skill-runs/{runId}/keep` (`skill_library.write_package`), and every project then has it.
 
 Skill packages. `GET /api/skills/library` lists the packages shipped with MonkeyHub (`apps/monkeyhub/skills/`,
 the same path in the release, source "bundled") and the user's own (`%LOCALAPPDATA%\MonkeyHub\skill-packages`, or the folder

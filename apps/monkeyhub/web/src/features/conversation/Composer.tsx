@@ -24,6 +24,7 @@ const MARK_GLYPH: Record<GestureDto["kind"], string> = {
   line: "╱",
   ruler: "↔",
   arc: "⌒",
+  text: "T",
   keep: "✓",
   remove: "✗",
 };
@@ -32,6 +33,7 @@ const MARK_GLYPH: Record<GestureDto["kind"], string> = {
 function markLabel(gesture: GestureDto, t: TFunction): string {
   const hits = gesture.hits ?? [];
   const kind = t(`composer.mark.${gesture.kind}`);
+  if (gesture.kind === "text") return `${kind} · ${gesture.label ?? ""}`;
   if (gesture.kind === "keep" || gesture.kind === "remove") {
     return kind + " · " + (hits[0]?.objectName ?? t("composer.mark.empty"));
   }

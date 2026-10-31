@@ -1124,6 +1124,28 @@ for _ in range(5):
                         self.assertEqual(len(runtime.operations.records()), operations)
                         self.assertEqual(wakes.call_count, 1)
 
+    def test_a_studio_that_stops_is_started_again_by_the_hub_and_says_so(self):
+        with self.hub() as client:
+            manager = client.app.state.runtimes
+            manager.restart_stopped = True
+            runtime_id = self.open_project(client)
+            original = self.read_runtime(client, runtime_id)["workers"][0]
+            owned = client.app.state.applications.supervisor._children[original["workerId"]].process
+            os.kill(original["processId"], signal.SIGTERM)
+            owned.wait(timeout=10)
+
+            def restarted():
+                snapshot = self.read_runtime(client, runtime_id)
+                worker = snapshot["workers"][0]
+                return snapshot if (worker["state"] == "ready" and worker["processId"] not in (None, original["processId"])
+                                    and snapshot["repairs"]) else None
+
+            snapshot = wait_for(restarted, "The Hub did not start the stopped Studio again", timeout=60)
+            repair, = snapshot["repairs"]
+            self.assertEqual(repair["kind"], "studio-restarted")
+            self.assertEqual((snapshot["workers"][0]["url"], snapshot["workers"][0]["projectDir"]),
+                             (original["url"], original["projectDir"]), "the same binding and port")
+
     def test_idle_runtime_skips_history_scans_but_refreshes_on_request_and_crash(self):
         with self.hub() as client:
             runtime_id = self.open_project(client)
@@ -1132,8 +1154,11 @@ for _ in range(5):
             before = self.project_bytes(self.project)
             state_digest = self.fixture.runner_state_digest(self.repository, self.fixture.REFERENCE_RUN_ID)
             with patch.object(manager, "_read_retained", wraps=manager._read_retained) as scans:
-                # Let the opening wake and ready transition finish, then cover
-                # several normal status ticks with a healthy, idle real worker.
+                # Let the opening wake, the worker's ready transition and the
+                # attention queue's settle after it finish, then cover several
+                # normal status ticks with a healthy, idle real worker. The
+                # projection may be ready from a cold read before the worker is.
+                self.wait_runtime(client, runtime_id, lambda row: row["workers"][0]["state"] == "ready")
                 time.sleep(1.2)
                 idle_scans = scans.call_count
                 runtime = manager.get(runtime_id)

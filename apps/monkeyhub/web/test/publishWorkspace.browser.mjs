@@ -89,6 +89,8 @@ try {
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
   browser = await chromium.launch({ headless: true, channel: "chrome" });
   page = await browser.newPage({ viewport: { width: 1440, height: 960 }, acceptDownloads: true });
+  // These passes press each retry themselves: quiet retries (F046) are off for them.
+  await page.addInitScript(() => localStorage.setItem("monkeyhub.quietRetry", "off"));
   page.on("pageerror", (error) => errors.push(error.message));
   const api = (id, route) => fetch(origins[id] + route).then((r) => r.json());
   const head = await api("pub-a", "/fixture/head");

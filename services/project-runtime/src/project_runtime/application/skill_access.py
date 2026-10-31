@@ -1,15 +1,24 @@
-"""What a person allowed skills to do, and what a run asks for beyond it (S-1).
+"""What a person allowed skills to do, and what a run asks for beyond it (S-1, S23).
 
 A person allows what skills may do on this machine, not a skill's code. A
 runnable skill declares its ``access``: the programs it starts, whether it uses
-the network, the hosts it reaches by ssh, the folders outside its run it writes,
-the Python packages it installs. Each of those is allowed once and holds for
-every skill, every version and every project, until it is withdrawn in Settings.
+the network, the hosts it reaches by ssh, the folders outside the project it
+reads, the folders outside its run it writes, the Python packages it installs.
+What it declares puts a run in one of three tiers (``tier``, the user's rule of
+2026-10-25):
+
+- ``low``: nothing declared. It reads the project and its inputs, writes only
+  its own outputs, uses no network and starts no program; the runner holds it
+  to that, and it runs without asking.
+- ``first``: programs, packages, or reading folders outside the project. Asked
+  once; "from now on" holds for every skill, every version and every project,
+  until it is withdrawn in Settings.
+- ``each``: the network, ssh, or writing outside its run. Asked before every
+  run: no lasting grant allows these (``lasting`` leaves them out), only a
+  grant for that one run.
+
 A run is asked about only what nothing allowed yet, and a new version only
 about what it asks for beyond its earlier ones.
-
-Reading is not asked about: the runner does not hold a script to what it reads,
-so a grant of reading would promise what nothing keeps.
 
 Some access is the same as allowing anything, because what it starts is not
 held by the runner's audit hook (a shell or another interpreter runs whatever
@@ -30,7 +39,7 @@ Per key, ``access_added`` compares:
 - ``ssh``: by host as written;
 - ``packages``: by distribution name (``numpy>=2`` and ``NumPy==2.1`` are both
   numpy); a requirement naming an address is compared as written;
-- ``write``: each folder lies within an allowed folder, the folder itself or
+- ``read`` and ``write``: each folder lies within an allowed folder, the folder itself or
   below it, or the grant allowed ``*``. A folder named with a ``..`` step is
   never within anything: ``D:\\proj\\out\\..\\..\\Windows`` reads below
   ``out`` and is not. The runner holds a script to its folders after following
@@ -50,11 +59,17 @@ import posixpath
 import re
 from typing import Any
 
-ASKED = ("programs", "ssh", "write", "packages")
+ASKED = ("programs", "ssh", "read", "write", "packages")
+# What only a grant for one run allows, asked before every run; and what is asked once (S23).
+EACH_TIME = ("network", "ssh", "write")
+FIRST_TIME = ("programs", "read", "packages")
+TIERS = ("low", "first", "each")
+FOLDERS = ("read", "write")
 ANYWHERE = "*"
 GRANTS_ENV = "MONKEYHUB_SKILL_GRANTS"
 GRANTS_SCHEMA = "MonkeyHubSkillGrants@1"
-SOURCES = ("bundled", "user", "shared")
+# "scratch" is a script an Agent wrote in a chat and ran before anyone kept it as a skill (S23).
+SOURCES = ("bundled", "user", "shared", "scratch")
 # Programs that run whatever they are given. The audit hook sees only that one
 # of them started, never what it then does, so allowing one allows anything.
 # "shell" is how the runner names os.system.
@@ -68,8 +83,8 @@ INTERPRETERS = frozenset({
 _VERSIONED = re.compile(r"^(python|pythonw|py|node|ruby|perl|php|lua|java|pwsh|bash)[0-9][0-9._-]*$")
 _WINDOWS = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
 _REQUIREMENT_NAME = re.compile(r"^\s*([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)")
-_WORDS = {"programs": "run", "ssh": "connect by ssh to", "write": "write to", "packages": "install"}
-_WORDS_ZH = {"programs": "运行", "ssh": "用 ssh 连接", "write": "写入", "packages": "安装"}
+_WORDS = {"programs": "run", "ssh": "connect by ssh to", "read": "read", "write": "write to", "packages": "install"}
+_WORDS_ZH = {"programs": "运行", "ssh": "用 ssh 连接", "read": "读取", "write": "写入", "packages": "安装"}
 
 
 Resolve = Callable[[str], str]
@@ -112,6 +127,23 @@ def empty(access: Mapping[str, Any]) -> bool:
     return not access.get("network") and not any(access.get(key) for key in ASKED)
 
 
+def tier(access: Mapping[str, Any] | None) -> str:
+    """The tier a declaration puts a run in: ``low``, ``first`` or ``each``."""
+
+    if each_time(access):
+        return "each"
+    form = asked(access)
+    return "first" if any(form[key] for key in FIRST_TIME) else "low"
+
+
+def each_time(access: Mapping[str, Any] | None) -> dict[str, Any]:
+    """The part of a declaration that only a grant for one run allows: ``{}`` when there is none."""
+
+    form = asked(access)
+    found: dict[str, Any] = {"network": True} if form["network"] else {}
+    return found | {key: form[key] for key in EACH_TIME if key != "network" and form[key]}
+
+
 def broad(access: Mapping[str, Any]) -> dict[str, list[str]]:
     """The items of a declaration that allow anything, which are never allowed for every skill."""
 
@@ -120,6 +152,7 @@ def broad(access: Mapping[str, Any]) -> dict[str, list[str]]:
         "programs": [item for item in form["programs"]
                      if item == ANYWHERE or item in INTERPRETERS or _VERSIONED.fullmatch(item)],
         "ssh": [item for item in form["ssh"] if item == ANYWHERE],
+        "read": [item for item in form["read"] if item == ANYWHERE],
         "write": [item for item in form["write"] if item == ANYWHERE],
         "packages": [item for item in form["packages"] if "@" in item or "://" in item],
     }
@@ -190,7 +223,7 @@ def describe_added_zh(added: Mapping[str, Any]) -> str:
 
 
 def _covered(key: str, item: str, allowed: list[str], resolve: Resolve | None) -> bool:
-    if key != "write":
+    if key not in FOLDERS:
         return item in allowed or (key in ("programs", "ssh") and ANYWHERE in allowed)
     if ANYWHERE in allowed:
         return True
@@ -297,7 +330,9 @@ def lasting(grants: Iterable[Grant], skill: SkillRef) -> dict[str, Any]:
 
     An item that allows anything counts only in a grant for this skill. The
     Hub never writes one into a grant for every skill; one that reaches the
-    file another way allows nothing.
+    file another way allows nothing. The network, ssh and writing outside the
+    run are never allowed for long (``EACH_TIME``): a grant from before S23
+    that names them still allows its other items, and not these.
     """
 
     rows = []
@@ -305,8 +340,9 @@ def lasting(grants: Iterable[Grant], skill: SkillRef) -> dict[str, Any]:
         if not grant.active or grant.once is not None or not grant.applies_to(skill):
             continue
         access, wide = grant.access, broad(grant.access) if grant.skill is None else {}
-        rows.append({key: [item for item in value if item not in wide.get(key, ())] if isinstance(value, list) else value
-                     for key, value in access.items()})
+        row = {key: [item for item in value if item not in wide.get(key, ())] if isinstance(value, list) else value
+               for key, value in access.items()}
+        rows.append(row | {"network": False} | {key: [] for key in EACH_TIME if key != "network"})
     return merged(rows)
 
 
@@ -338,7 +374,8 @@ def once_grant(grants: Iterable[Grant], grant_id: str, skill: SkillRef, *, proje
 
 
 __all__ = [
-    "ASKED", "GRANTS_ENV", "GRANTS_SCHEMA", "INTERPRETERS", "SOURCES", "Grant", "GrantsUnreadable", "SkillRef",
-    "access_added", "access_within", "asked", "broad", "describe_added", "describe_added_zh", "empty", "lasting",
-    "merged", "needed", "once_grant", "package_name", "parse_grants", "program_name", "read_grants",
+    "ASKED", "EACH_TIME", "FIRST_TIME", "GRANTS_ENV", "GRANTS_SCHEMA", "INTERPRETERS", "SOURCES", "TIERS", "Grant",
+    "GrantsUnreadable", "SkillRef", "access_added", "access_within", "asked", "broad", "describe_added",
+    "describe_added_zh", "each_time", "empty", "lasting", "merged", "needed", "once_grant", "package_name",
+    "parse_grants", "program_name", "read_grants", "tier",
 ]

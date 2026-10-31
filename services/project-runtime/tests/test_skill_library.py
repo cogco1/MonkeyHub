@@ -113,11 +113,69 @@ class SkillLibraryTest(unittest.TestCase):
             answer = self.client.get("/api/skills/skill:rule-study/needs")
         self.assertEqual(answer.status_code, 200, answer.text)
         body = answer.json()
-        self.assertEqual((body["skill"], body["needs"], body["broad"]),
-                         ({"name": "rule-study", "source": "user"}, {"programs": ["blender"]}, {}))
+        self.assertEqual((body["skill"], body["needs"], body["broad"], body["tier"], body["eachTime"]),
+                         ({"name": "rule-study", "source": "user"},
+                          {"programs": ["blender"], "read": ["C:\\Windows\\Fonts"]}, {}, "first", {}))
         binding = bound_project(self.client.app.state)
         self.assertIsNone(skills.latest_version(binding, "skill:rule-study"), "nothing was retained")
         self.assertEqual(self.client.get("/api/skills/skill:missing/needs").json()["code"], "SKILL_NOT_INSTALLED")
+
+    def test_a_package_that_would_only_fail_when_it_runs_is_caught_when_it_is_installed(self):
+        # A script that does not compile, and a script SKILL.md sends the reader to that the package never carried.
+        write_package(self.user / "typo-skill", script="def run(:\n    pass\n")
+        write_package(self.user / "lost-script")
+        (self.user / "lost-script" / "SKILL.md").write_text(
+            "Run it, then check it with scripts/check.py and params/default.json.\n"
+            "A per-style file such as params/<style>.json names no one file, and neither does scripts/*.py.\n",
+            encoding="utf-8")
+        write_package(self.user / "fine-skill")
+        rows = self.library()
+        syntax = rows[("user", "typo-skill")]["error"]
+        self.assertEqual((syntax["kind"], syntax["file"], syntax["line"]), ("entry_syntax", "scripts/run.py", 1))
+        self.assertIn("scripts/run.py does not compile", syntax["detail"])
+        lost = rows[("user", "lost-script")]["error"]
+        self.assertEqual((lost["kind"], lost["file"]), ("missing_file", "scripts/check.py"))
+        self.assertNotIn("error", rows[("user", "fine-skill")], "a placeholder or a file that is there is no problem")
+        # None of them is handed to a chat, and a run says why instead of starting.
+        found = skill_library.installed()
+        self.assertEqual([row.name for row in found.current() if row.content is not None], ["fine-skill"])
+        for name, code in (("typo-skill", "SKILL_PACKAGE_INVALID"), ("lost-script", "SKILL_PACKAGE_INVALID")):
+            response = self.client.post(f"/api/skills/skill:{name}/run", json={"projectId": PROJECT_ID})
+            self.assertEqual((response.status_code, response.json()["code"]), (422, code))
+        # Fixing the folder is enough: nothing is cached.
+        write_package(self.user / "typo-skill")
+        self.assertIsNotNone(skill_library.installed().find("typo-skill").content)
+
+    def test_a_package_names_the_inputs_a_run_must_give_and_a_misspelt_one_is_listed_with_why(self):
+        write_package(self.user / "needs-image")
+        (self.user / "needs-image" / "skill.json").write_text(json.dumps({
+            "name": "needs-image", "description": "x", "entry": "scripts/run.py",
+            "manifest": {"inputs": ["image: a picture"], "outputs": ["card.pdf: the card"], "requiredInputs": ["image"]}}),
+            encoding="utf-8")
+        write_package(self.user / "misspelt")
+        (self.user / "misspelt" / "skill.json").write_text(json.dumps({
+            "name": "misspelt", "description": "x", "entry": "scripts/run.py",
+            "manifest": {"requiredInputs": ["Image File"]}}), encoding="utf-8")
+        found = skill_library.installed()
+        self.assertEqual(found.find("needs-image").content["manifest"]["requiredInputs"], ["image"])
+        broken = found.find("misspelt")
+        self.assertIsNone(broken.content)
+        self.assertIn("requiredInputs", broken.error["detail"])
+        self.assertEqual(broken.error["code"], "SKILL_INVALID")
+
+    def test_a_script_saved_with_a_byte_order_mark_is_a_usable_package_and_stays_as_it_was_written(self):
+        # Windows editors write one at the start of a UTF-8 file; Python runs such a file, and so can the package.
+        write_package(self.user / "bom-skill")
+        script = self.user / "bom-skill" / "scripts" / "run.py"
+        script.write_bytes(b"\xef\xbb\xbf" + RUN.encode("utf-8"))
+        found = skill_library.installed().find("bom-skill")
+        self.assertIsNone(found.error, "a byte order mark is not a syntax error")
+        self.assertIsNotNone(found.content)
+        self.assertTrue(found.content["files"]["scripts/run.py"].startswith("\ufeff"), "the file is kept exactly as written")
+        # A mark does not hide a real mistake.
+        script.write_bytes(b"\xef\xbb\xbfdef run(:\n    pass\n")
+        broken = skill_library.installed().find("bom-skill")
+        self.assertEqual((broken.error["kind"], broken.error["line"]), ("entry_syntax", 1))
 
     def test_an_invalid_package_is_listed_with_why_and_runs_nothing(self):
         write_package(self.user / "bad-name")

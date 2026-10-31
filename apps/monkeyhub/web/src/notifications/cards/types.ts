@@ -36,6 +36,10 @@ export interface CardSource {
 export interface CardMedia {
   kind: "model_view" | "board_frame" | "crop";
   runId?: string | null;
+  /** The run's exact model, drawn from the project's thumbnails. */
+  modelSource?: { runId: string; stateDigest: string; assetSha256: string } | null;
+  /** The answer this picture is: choosing it answers the card. */
+  optionId?: string | null;
   view?: string | null;
   frameId?: string | null;
   caption?: string | null;
@@ -64,6 +68,23 @@ export interface Resolution {
   undo?: { action: CommandRef } | null;
 }
 
+/** One change as the agent understood it from the marks and the words (3-3), numbered from 1. */
+export interface ChangeItem {
+  n: number;
+  markIds?: string[];
+  crop?: CardMedia | null;
+  /** What the architect wrote or drew for it. */
+  note: string;
+  understanding: string;
+  understandingZh?: string | null;
+  targets?: string[];
+  protected?: string[];
+  /** The agent could not tell which part: a choice card of its own asks. */
+  unsure?: boolean;
+  extra?: boolean;
+  keep?: boolean;
+}
+
 export interface AttentionCard {
   id: string;
   projectId: string;
@@ -83,6 +104,9 @@ export interface AttentionCard {
   recommendation?: Recommendation | null;
   resolution?: Resolution | null;
   snoozedUntil?: string | null;
+  /** A change_list card: the items to tick and run, and the architect's own words they were checked against. */
+  changeList?: { items: ChangeItem[]; frameId?: string | null; runId?: string | null } | null;
+  changeWords?: string[];
   createdAt: string;
   updatedAt: string;
 }

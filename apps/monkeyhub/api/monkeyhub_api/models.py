@@ -27,6 +27,12 @@ def plain_spelling(path: str) -> str:
 class HubError(BaseModel):
     code: str
     detail: str
+    category: Literal["transient", "conflict"] | None = Field(default=None, description=(
+        "transient: it passes by itself; conflict: the project moved, read it again before deciding. "
+        "Left out for a failure the caller or a person answers. The Hub's answer adds it from "
+        "archflow.contracts.failures; this module stays importable without archflow (an update's trial load)."))
+    resend: bool | None = Field(default=None, description=(
+        "True when nothing was done, so the same request may be sent again unchanged."))
 
 
 class AppStatus(BaseModel):
@@ -127,6 +133,11 @@ ChatStatus = Literal["idle", "running", "failed", "interrupted"]
 # What a conversation waits for from the architect (#300). One value for now:
 # an unanswered permission request.
 ChatAttention = Literal["permission"]
+# What a conversation works in: a MonkeyHub project, read here and changed only
+# through the Hub (ADR-012), or any other folder, which it reads and writes.
+ChatKind = Literal["project", "folder"]
+# What a conversation's agent may do unasked (gap 4): read only; read and ask before changing anything; anything.
+ChatPermissionMode = Literal["read", "ask", "open"]
 
 
 class ChatProvider(BaseModel):
@@ -183,11 +194,17 @@ class ChatProject(BaseModel):
     projectDir: str
     name: str
     chatCount: int
+    # A plain folder is listed beside the projects; it has no version, Stage or step.
+    kind: ChatKind = "project"
     # The project's own published position, read through its existing P036
     # interfaces so a conversation can say which version it is talking about.
     # A candidate is not a version and never appears here.
     version: int | None = None
     stage: str | None = None
+    # The name of the step the project's working design stands on, the way the history page names it (what the
+    # person or the AI called it, else the Stage accepted on it, else the words it was asked in); null when nothing
+    # names it. The left column shows it under the project's name.
+    step: str | None = None
 
 
 class ChatPermissionOption(BaseModel):
@@ -200,6 +217,40 @@ class ChatPermission(BaseModel):
     id: str
     title: str
     options: list[ChatPermissionOption]
+
+
+class ChatSkillRun(BaseModel):
+    """A skill or a chat's script an Agent ran, as the conversation shows it (S23).
+
+    ``asked`` says what let it run: ``no`` (it declared nothing, so nobody was asked), ``earlier`` (an answer
+    given before), ``once`` or ``always`` (the answer to this run's card). A script (``kind`` scratch) keeps its
+    code here until the person keeps it as a skill (``keptAs``) or the conversation goes.
+    """
+
+    runId: str
+    kind: Literal["scratch", "skill"]
+    name: str | None = None
+    description: str
+    code: str
+    tier: Literal["low", "first", "each"]
+    asked: Literal["no", "earlier", "once", "always"]
+    access: dict[str, Any] | None = None
+    status: Literal["queued", "running", "succeeded", "failed"] = "queued"
+    words: str | None = None
+    outputs: list[str] = Field(default_factory=list)
+    keptAs: str | None = None
+    keptAt: str | None = None
+    # A script's own content, kept until the person keeps it or the conversation goes: entry, files, manifest.
+    script: dict[str, Any] | None = None
+
+
+class ChatSkillKeepRequest(BaseModel):
+    """Keep a chat's script as a skill under this name (S23)."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    projectId: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 class ChatAttachment(BaseModel):
@@ -307,12 +358,80 @@ class ChatSuggestion(BaseModel):
         return value
 
 
+class ChatMarkupContext(BaseModel):
+    """The marks one message is about: a saved revision of the ink on one registered page (#300 3-3).
+
+    The design loop reads what each mark lies on from this exact revision
+    (``design_read part=marks``), and the architect's words are this message's
+    text with the page's own comment and text marks; never a newer revision.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+
+    runId: str = Field(min_length=1)
+    assetSha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    pageIndex: int = Field(default=0, ge=0)
+    revisionSha256: str = Field(pattern=r"^[0-9a-f]{64}$", description="The saved annotation revision of the page.")
+    drawingRevisionRef: str | None = Field(default=None, description="A view drawing's revisionRef.")
+
+
+class ChatApprovedChange(BaseModel):
+    """One item of a change list the architect ran, as the card states it."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+
+    n: int = Field(ge=1, le=30)
+    understanding: str = Field(min_length=1, max_length=240)
+    targets: list[str] = Field(min_length=1, max_length=100)
+    protected: list[str] = Field(default_factory=list, max_length=100)
+
+
+class ChatApprovalQuote(BaseModel):
+    """The items taken from one passage of the architect's words, and the span a submission binds for them."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+
+    items: list[int] = Field(min_length=1, max_length=30)
+    feedbackQuote: str | None = Field(default=None, max_length=2000)
+    clauses: list[str] = Field(default_factory=list, max_length=30)
+
+
+class ChatChangeListApproval(BaseModel):
+    """The ticked items of a change list card, sent by the Hub in the architect's name with their own words.
+
+    The message's text is only what the architect wrote; what each item means
+    travels here, so nothing the Agent wrote reads as the person's.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+
+    cardId: str = Field(pattern=r"^att_[0-9a-f]{32}$")
+    items: list[ChatApprovedChange] = Field(min_length=1, max_length=30)
+    quotes: list[ChatApprovalQuote] = Field(min_length=1, max_length=30)
+
+
 class ChatSuggestionSelection(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
 
     messageId: str = Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
                            json_schema_extra={"format": "uuid"})
     revision: int = Field(ge=0)
+
+
+class ChatMessageOrigin(BaseModel):
+    """Who sent a user-role message that no person typed in this conversation.
+
+    ``schedule``: a wake-up this conversation set (``label`` says when it repeats).
+    ``chat``: another conversation of this Hub (``chatId``, its ``title``), ``depth``
+    messages into a chain that no person started.
+    """
+
+    kind: Literal["schedule", "chat"]
+    label: str = Field(default="", max_length=200)
+    scheduleId: str | None = None
+    chatId: str | None = None
+    title: str | None = Field(default=None, max_length=200)
+    depth: int = Field(default=0, ge=0, le=16)
 
 
 class ChatMessage(BaseModel):
@@ -325,6 +444,9 @@ class ChatMessage(BaseModel):
     # open that exact run. Absent on older records and on every other message.
     candidateId: str | None = None
     permission: ChatPermission | None = None
+    # How a skill's question was answered (S23): it stays where it was asked, saying so.
+    permissionOutcome: Literal["allowed_once", "allowed_always", "refused", "cancelled"] | None = None
+    skillRun: ChatSkillRun | None = None
     attachments: list[ChatAttachment] = Field(default_factory=list)
     documents: list[ChatDocument] = Field(default_factory=list)
     sourceTurnId: str | None = None
@@ -338,12 +460,25 @@ class ChatMessage(BaseModel):
     # it got: waiting for the Agent's next step, read by it, sent after the
     # current step was stopped for it, or never read because the turn ended.
     interjection: Literal["pending", "delivered", "restarted", "undelivered"] | None = None
+    # The marks this message is about, and the change list items it runs (#300 3-3).
+    markup: ChatMarkupContext | None = None
+    changeListApproval: ChatChangeListApproval | None = None
+    # Set when no person typed this message here: a wake-up or another conversation sent it.
+    origin: ChatMessageOrigin | None = None
+    # A subagent's call (gap 5): the id of the row of the call that started the subagent, where it folds.
+    parentCallId: str | None = None
 
 
 class ChatSummary(BaseModel):
     id: str
     projectId: str
     projectDir: str
+    # "folder": projectId is "folder:<digest>" and projectDir is the folder the
+    # conversation reads and writes; it has no design tools.
+    kind: ChatKind = "project"
+    # Null on records from before levels: "open" for a project (its files change only through the Hub anyway),
+    # "ask" for a folder.
+    permissionMode: ChatPermissionMode | None = None
     title: str
     provider: ChatProviderId
     model: str | None = None
@@ -385,6 +520,9 @@ class ChatCreateRequest(BaseModel):
     provider: ChatProviderId
     model: str | None = Field(default=None, min_length=1)
     title: str | None = Field(default=None, min_length=1, max_length=200)
+    # "auto": a MonkeyHub project when the folder is one, else the folder itself.
+    kind: Literal["project", "folder", "auto"] = "project"
+    permissionMode: ChatPermissionMode | None = None
 
 
 class ChatPresentationBindRequest(BaseModel):
@@ -433,6 +571,20 @@ class ChatWorkspace(BaseModel):
     workspaceDir: str
     configured: bool
     projects: list[str] = Field(default_factory=list)
+
+
+class ChatPickPathRequest(BaseModel):
+    """Ask the person to choose a folder or a file in the system's own dialog."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    kind: Literal["folder", "file"]
+    title: str = Field(min_length=1, max_length=200)
+    filter: Literal["archive", "any"] = "any"
+
+
+class ChatPickedPath(BaseModel):
+    path: str | None = Field(description="the chosen path; null when the dialog was closed without choosing")
 
 
 class ChatProjectRequest(BaseModel):
@@ -495,6 +647,14 @@ class ChatModelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
 
     model: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class ChatPermissionModeRequest(BaseModel):
+    """What this conversation's next turns may do unasked."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    permissionMode: ChatPermissionMode
 
 
 class ChatArchiveRequest(BaseModel):
@@ -560,6 +720,9 @@ class ChatPostRequest(BaseModel):
     suggestionSelection: ChatSuggestionSelection | None = None
     # The registered images this message discusses (#253), bound for this turn only.
     renderContext: ChatRenderContext | None = None
+    # The marks it is about, and the change list items a card runs in the architect's name (#300 3-3).
+    markupContext: ChatMarkupContext | None = None
+    changeListApproval: ChatChangeListApproval | None = None
 
     @model_validator(mode="after")
     def project_context_requires_source(self):

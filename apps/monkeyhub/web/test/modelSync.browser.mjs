@@ -450,8 +450,9 @@ if (autosaveOnly) {
   await page.keyboard.press('Control+y');
   await wait(s=>s.dirty&&s.view.drafts.some(row=>row.id===object),'Redo did not recover the local object');
   await savedDraft(d=>d.localDraft?.commands.length===1,'Redo was not retained');
-  // SS-5: with its edits autosaved, Record is back with its status line.
-  await page.locator('.model-tools__sync-status').filter({hasText:'Unrecorded edits · saved automatically'}).waitFor();
+  // SS-5: with its edits autosaved, Record is back with its status line; a draft restored from an earlier session
+  // says so until it is recorded (S19).
+  await page.locator('.model-tools__sync-status').filter({hasText:'A draft from last time is not recorded yet: Record keeps it, Discard draft puts it away'}).waitFor();
   assert.equal(await cmd(page,'draft.record.save').isEnabled(),true);await steadyTools(steady,'Record returning with Redo');
 
   let delayedClear=false;

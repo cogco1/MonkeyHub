@@ -35,10 +35,13 @@ from __future__ import annotations
 
 import base64
 import binascii
+from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
+from datetime import datetime, timezone
 import hashlib
 from io import BytesIO
+import json
 import math
 import os
 from pathlib import Path, PurePosixPath
@@ -52,6 +55,7 @@ from typing import Any, Callable, Iterable, Mapping, NamedTuple
 from PIL import Image, ImageOps
 # pypdf, PyMuPDF (fitz) and python-pptx load where a document is read or exported: about 0.2 s of a worker's start otherwise (#449).
 
+from archflow.contracts.canonical import canonical_json
 from archflow.project.record_kinds import (
     RUNNER_RUN_RECEIPT, SEAT_OCCT_EXECUTION, SEAT_RHINO_EXECUTION, STUDIO_SOURCE_DOCUMENT, STUDIO_MODEL_ASSET,
     STUDIO_DOCUMENT_MODEL_SOURCE,
@@ -253,6 +257,22 @@ class DocumentPageReplacement:
 
 
 @dataclass(frozen=True, slots=True)
+class ModelSourceBinding:
+    """One model a document was linked to, as the record of that link says.
+
+    binding_ref names the record that made the link (a document's own
+    registration when it was linked at creation). bound_at and actor_id are
+    read from a re-link's record; the first link of an older document carries
+    neither.
+    """
+
+    model_source: ModelSource
+    binding_ref: str | None = None
+    bound_at: str | None = None
+    actor_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SourceDocument:
     """An imported reference or a retained drawing, never a design state."""
 
@@ -265,6 +285,12 @@ class SourceDocument:
     pages: tuple[DocumentPage, ...]
     model_source: ModelSource | None = None
     model_source_binding_ref: str | None = None
+    # The models it was linked to before the current one, oldest first. Each
+    # re-link keeps the record of the one it replaced (nothing is overwritten).
+    model_source_history: tuple[ModelSourceBinding, ...] = ()
+    # The document was registered with its model: whoever made it said which model it is of, and that is not the
+    # person's to change. A document linked afterwards (an upload, an import) has the link in a record of its own.
+    linked_at_registration: bool = False
     drawing_id: str | None = None
     revision_ref: str | None = None
     source_stage_ref: str | None = None
@@ -404,6 +430,7 @@ def _read_run_documents(binding: ProjectBinding, run_id: str) -> tuple[SourceDoc
             pages=tuple(DocumentPage(**page) for page in payload["pages"]),
             model_source=ModelSource.from_dict(payload["modelSource"]) if payload.get("modelSource") else None,
             model_source_binding_ref=ref.uri if payload.get("modelSource") else None,
+            linked_at_registration=bool(payload.get("modelSource")),
             drawing_id=payload.get("drawingId"), revision_ref=payload.get("revisionRef"),
             source_stage_ref=payload.get("sourceStageRef"), view_recipe=payload.get("viewRecipe"),
             generated_at=payload.get("generatedAt"),
@@ -419,18 +446,62 @@ def _read_run_documents(binding: ProjectBinding, run_id: str) -> tuple[SourceDoc
             if previous.model_source is not None and previous.model_source != document.model_source:
                 raise StudioError(409, "DOCUMENT_SOURCE_CONFLICT", "This document has competing model associations; its pages remain retained.")
             if previous.model_source is None:
-                documents[key] = replace(previous, model_source=document.model_source,
+                documents[key] = replace(previous, model_source=document.model_source, linked_at_registration=True,
                                                            model_source_binding_ref=document.model_source_binding_ref)
+    links: dict[str, list[tuple[str, ModelSource, Mapping[str, Any]]]] = {}
     for ref in binding.record_refs(run_id, kind=STUDIO_DOCUMENT_MODEL_SOURCE):
         payload = binding.repository.load_json(ref)
         if payload.get("schema") != "StudioDocumentModelSource@1" or (payload.get("projectId"), payload.get("runId")) != (binding.project_id, run_id):
             raise StudioError(409, "DOCUMENT_SOURCE_CONFLICT", "The saved model association belongs to another document run.")
-        document = documents.get(payload["assetSha256"])
-        source = ModelSource.from_dict(payload["modelSource"])
-        if document is None or (document.model_source is not None and document.model_source != source):
+        if documents.get(payload["assetSha256"]) is None:
             raise StudioError(409, "DOCUMENT_SOURCE_CONFLICT", "This document has competing model associations; its pages remain retained.")
-        documents[document.asset_sha256] = replace(document, model_source=source, model_source_binding_ref=ref.uri)
+        links.setdefault(payload["assetSha256"], []).append((ref.uri, ModelSource.from_dict(payload["modelSource"]), payload))
+    for asset_sha256, rows in links.items():
+        documents[asset_sha256] = _linked_document(documents[asset_sha256], rows)
     return _ordered_documents(documents.values())
+
+
+def _linked_document(document: SourceDocument, rows: list[tuple[str, ModelSource, Mapping[str, Any]]]) -> SourceDocument:
+    """A document with the model its link records say it has now, and the ones it had before.
+
+    A record that says nothing of "replaces" is the one-time link of an
+    unlinked document. A record that names "replaces" re-links: it points at
+    the record it takes over from, and that record stays (the history). Records
+    of one link may repeat (a retried write); two different successors of one
+    link, or a record that continues nothing, are a conflict, as competing
+    links always were.
+    """
+
+    conflict = StudioError(409, "DOCUMENT_SOURCE_CONFLICT",
+                           "This document has competing model associations; its pages remain retained.")
+    head, refs = document.model_source, ({document.model_source_binding_ref} if document.model_source else set())
+    bound_at = actor = None
+    for uri, source, payload in rows:
+        if payload.get("replaces") is not None:
+            continue
+        if head is not None and head != source:
+            raise conflict
+        head, bound_at, actor = source, None, None
+        refs.add(uri)
+    history: list[ModelSourceBinding] = []
+    later = [row for row in rows if row[2].get("replaces") is not None]
+    while later:
+        successors = [row for row in later if row[2]["replaces"] in refs]
+        if not successors or any(row[1] != successors[0][1] for row in successors):
+            raise conflict
+        history.append(ModelSourceBinding(head, min(refs) if refs else None, bound_at, actor))
+        head = successors[0][1]
+        refs = {row[0] for row in successors}
+        taken = {id(row) for row in successors}
+        later = [row for row in later if id(row) not in taken]
+        written = successors[0][2]
+        bound_at = written.get("boundAt") if isinstance(written.get("boundAt"), str) else None
+        who = written.get("attribution")
+        actor = who.get("actorId") if isinstance(who, Mapping) and isinstance(who.get("actorId"), str) else None
+    if head is None:
+        raise conflict
+    return replace(document, model_source=head, model_source_binding_ref=min(refs),
+                   model_source_history=tuple(history))
 
 
 def _ordered_documents(documents: Iterable[SourceDocument]) -> tuple[SourceDocument, ...]:
@@ -708,8 +779,10 @@ def save_document(
         existing = next((row for row in existing_documents
                          if row.run_id == target_run_id and row.asset_sha256 == digest), None)
         if existing is not None:
-            if existing.model_source != model_source:
-                raise StudioError(409, "DOCUMENT_SOURCE_IMMUTABLE", "This document's model source is already retained. Its saved pages cannot be rebound to another model.")
+            # A caller that names no model takes the document as it is linked now; one that names a
+            # model must name the one already retained (a link is changed by rebind_document_model_source).
+            if model_source is not None and existing.model_source != model_source:
+                raise StudioError(409, "DOCUMENT_SOURCE_IMMUTABLE", "This document's model source is already retained. Use the link change to point it at another model.")
             if replaces_pages and set(existing.replaces_pages) != set(replaces_pages):
                 raise StudioError(409, "DOCUMENT_SOURCE_IMMUTABLE", "This document's replacement pages are already retained and cannot be rebound.")
             _registered_document_bytes(binding, existing)
@@ -772,6 +845,64 @@ def bind_document_model_source(
             record_kind=STUDIO_DOCUMENT_MODEL_SOURCE,
             payload={"schema": "StudioDocumentModelSource@1", "projectId": binding.project_id,
                      "runId": run_id, "assetSha256": asset_sha256, "modelSource": source.to_dict()},
+        )
+        return next(row for row in list_documents(binding, run_id) if row.asset_sha256 == asset_sha256)
+
+
+def made_by_the_hub(document: SourceDocument) -> bool:
+    """A document made from one model, whose model is therefore not the person's to change.
+
+    A drawing, an ID, line or depth picture, a render or a capture carries what it was made from (a drawing id, a
+    revision, a view recipe, a Stage, a generation time); a document registered with its model has that model from
+    whoever made it. Its pixels belong to that model.
+    """
+
+    made = (document.drawing_id, document.revision_ref, document.view_recipe, document.source_stage_ref, document.generated_at)
+    return document.linked_at_registration or any(fact is not None for fact in made)
+
+
+def model_source_changeable(document: SourceDocument) -> bool:
+    """Whether the person may point this document at another model: one they brought in and linked themselves."""
+
+    return document.model_source is not None and not made_by_the_hub(document)
+
+
+@retained_sources
+def rebind_document_model_source(
+    binding: ProjectBinding, run_id: str, asset_sha256: str, source: ModelSource, *, attribution: ActorAttribution,
+) -> SourceDocument:
+    """Point a document at another model, keeping the link it had.
+
+    The earlier link's record stays and the new record names it, so the history
+    reads A, then B, and nothing is overwritten. A link to the model it already
+    has writes nothing. A drawing made from a model keeps that model. Pages and
+    comments are not rewritten: a request pinned to the old link finds the link
+    changed (its binding ref differs) and is refused as stale.
+    """
+
+    require_model_source(binding, source)
+    with _document_source_lock:
+        document, _ = document_bytes(binding, run_id, asset_sha256)
+        # The rule is read from the runs, never from an index row: a write never trusts one.
+        document = next(row for row in list_documents(binding, run_id)
+                        if row.asset_sha256 == asset_sha256 and row.revision_ref == document.revision_ref)
+        if made_by_the_hub(document):
+            raise StudioError(409, "DOCUMENT_SOURCE_IMMUTABLE",
+                              "A drawing or a picture made from a model, and a document registered with its model, keep that model.")
+        if document.model_source is None:
+            return bind_document_model_source(binding, run_id, asset_sha256, source)
+        if document.model_source == source:
+            return document
+        run = binding.load_run(run_id)
+        binding.repository.put_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
+            record_kind=STUDIO_DOCUMENT_MODEL_SOURCE,
+            payload={"schema": "StudioDocumentModelSource@1", "projectId": binding.project_id,
+                     "runId": run_id, "assetSha256": asset_sha256, "modelSource": source.to_dict(),
+                     "replaces": document.model_source_binding_ref,
+                     "boundAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                     "attribution": {"actorId": attribution.actor_id, "authenticated": attribution.authenticated,
+                                     "origin": attribution.origin}},
         )
         return next(row for row in list_documents(binding, run_id) if row.asset_sha256 == asset_sha256)
 
@@ -1395,6 +1526,9 @@ def _document_from_body(body: Mapping[str, Any]) -> SourceDocument:
         values["model_source"] = ModelSource(**values["model_source"])
     if values["attribution"] is not None:
         values["attribution"] = ActorAttribution(**values["attribution"])
+    values["model_source_history"] = tuple(
+        ModelSourceBinding(ModelSource(**item["model_source"]), item.get("binding_ref"), item.get("bound_at"), item.get("actor_id"))
+        for item in values.get("model_source_history") or ())
     return SourceDocument(**values)
 
 
@@ -1586,24 +1720,89 @@ def _attached_model(binding: ProjectBinding, run_id: str, asset_sha256: str) -> 
     return record
 
 
+# A page's bounds, as the index writes them onto a row.
+_BOUNDS = ("bounds", "bounds_space", "bounds_source", "bounds_error")
+# Indexes this process read from the projection cache, newest last: a page needs no second read of the blob.
+_KEPT_INDEXES: OrderedDict[str, dict[str, Any]] = OrderedDict()
+_KEPT_INDEXES_LOCK = threading.Lock()
+
+
+def _kept_index(projections, data: bytes, asset_sha256: str) -> dict[str, Any]:
+    """The model's whole index with every object's bounds, read from ``data`` once and kept by its bytes."""
+
+    from .projections import MODEL_INDEX, on_demand_spec
+
+    spec = on_demand_spec(MODEL_INDEX, {"runId": None, "assetSha256": asset_sha256}, {"bounds": "every object"})
+    with _KEPT_INDEXES_LOCK:
+        kept = _KEPT_INDEXES.get(spec.key)
+        if kept is not None:
+            _KEPT_INDEXES.move_to_end(spec.key)
+            return kept
+
+    def read():
+        index = inspect_three_dm_index(data, bounds_for=lambda ids: ids)
+        return {"json": canonical_json(index).encode("utf-8")}, {"objectCount": len(index["objects"])}
+
+    files, _, _ = projections.on_demand(spec, read)
+    index = json.loads(files["json"])
+    with _KEPT_INDEXES_LOCK:
+        _KEPT_INDEXES[spec.key] = index
+        while len(_KEPT_INDEXES) > 8:
+            _KEPT_INDEXES.popitem(last=False)
+    return index
+
+
+def model_index(data: bytes, asset_sha256: str, *, bounds_for, projections=None) -> dict[str, Any]:
+    """A model's native index (``inspect_three_dm_index``), from the projection cache when the runtime keeps one.
+
+    The cache holds every object's bounds; a row carries them only when
+    ``bounds_for`` names it, as the direct read writes them.
+    """
+
+    if projections is None:
+        return inspect_three_dm_index(data, bounds_for=bounds_for)
+    index = _kept_index(projections, data, asset_sha256)
+    rows = index["objects"]
+    wanted = frozenset(bounds_for(tuple(row["object_id"] for row in rows)) if callable(bounds_for) else bounds_for)
+    return {**index, "objects": [row if row["object_id"] in wanted else
+                                 {key: value for key, value in row.items() if key not in _BOUNDS} for row in rows]}
+
+
+def warm_model_index(binding: ProjectBinding, projections, run_id: str, asset_sha256: str) -> None:
+    """Read a just registered model's index into the projection cache, so its first page reads nothing more."""
+
+    try:
+        artifact = _attached_model(binding, run_id, asset_sha256)
+        data = artifact.path.read_bytes()
+        if hashlib.sha256(data).hexdigest() == asset_sha256:
+            _kept_index(projections, data, asset_sha256)
+    except (StudioError, OSError, ValueError, ThreeDmInspectionError):
+        pass  # The first read reads it then, and says what is wrong with it.
+
+
 @retained_sources
 def read_model_source_index(
     binding: ProjectBinding, run_id: str, asset_sha256: str, state_digest: str | None = None, *,
     object_ids: tuple[str, ...] = (), offset: int = 0, limit: int = 50, bounds: bool = False,
+    projections=None,
 ) -> dict[str, Any]:
     """Page native identities from exact retained bytes, without admitting an edit.
 
     A model bound to a design run is named by that run and its exact state. A
     model attached from outside the project has no design state and is named by
-    its own run, ``studio-model-<assetSha256>``, alone. ``bounds`` adds each paged
-    object's bounds, read for that page only.
+    its own run, ``studio-model-<assetSha256>``, alone (or with that run's own
+    base state digest, which names nothing more). ``bounds`` adds each paged
+    object's bounds, read for that page only. With ``projections``, the model is
+    decoded once per content and every later page is a lookup (``model_index``).
     """
 
     if offset < 0 or not 1 <= limit <= 200 or len(object_ids) > 200:
         raise StudioError(422, "MODEL_INDEX_RANGE_INVALID", "Use a nonnegative offset and at most 200 objects per read.")
     source = None
     if run_id == MODEL_UPLOAD_RUN_PREFIX + asset_sha256:
-        if state_digest is not None:
+        # The run's own base state, as its run.json says it, names nothing else: a caller that read it there is answered.
+        if state_digest is not None and (run_id not in binding.run_ids()
+                                         or state_digest != binding.load_run(run_id).base.state_sha256):
             raise StudioError(422, "MODEL_SOURCE_INVALID",
                               "An attached model has no design state: name it by its own run alone, without stateDigest.")
         artifact = _attached_model(binding, run_id, asset_sha256)
@@ -1628,7 +1827,7 @@ def read_model_source_index(
         return tuple(value for value in ids if not requested or value in requested)[offset:offset + limit]
 
     try:
-        index = inspect_three_dm_index(data, bounds_for=page_ids if bounds else ())
+        index = model_index(data, asset_sha256, bounds_for=page_ids if bounds else (), projections=projections)
     except ThreeDmInspectionError as exc:
         raise StudioError(422, "MODEL_INDEX_UNAVAILABLE", exc.message) from exc
     rows = index["objects"]

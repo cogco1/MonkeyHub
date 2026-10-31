@@ -1,5 +1,5 @@
 import type { RenderView } from "../workspaces/monkeyarch/viewer/renderView";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { asStudioApiError, StudioApiError } from "../api/project-runtime/client";
 import type { RenderCameraDto } from "../api/project-runtime/generated";
 import { useConnection, useStudio } from "../api/project-runtime/ProjectRuntimeContext";
@@ -9,6 +9,7 @@ import type { PageSource } from "../workspaces/monkeyboard/boardScene";
 import type { BoardPageRequest } from "../workspaces/monkeyboard/Board";
 import { BoardRenderError, type BoardRenderChatRequest } from "../workspaces/monkeyboard/boardRender";
 import type { BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
+import { HandToAiContext, HandToAiError, type HandToAiRequest, type HandToAiSent } from "../features/handToAi/handToAi";
 import App, { type WorkspaceDesignContext } from "./App";
 export type { WorkspaceDesignContext } from "./App";
 import { BoardModeSwitch } from "./BoardModeSwitch";
@@ -20,8 +21,11 @@ import { currentView, DesignTreeBar, type DesignTreeView } from "../features/des
 import { useDesignTree, useSeenCandidates } from "../features/designTree/useDesignTree";
 import { treeWords } from "../features/designTree/words";
 import { useT } from "../i18n/useT";
+import { useDeveloperMode } from "../features/settings/preferences";
+import { publicationClient } from "../api/project-runtime/publication";
 import type { MessageKey } from "../i18n/messages.en";
 import { createComparisonHost, type HostedComparison } from "../workspaces/monkeyarch/viewer/comparisonPair";
+import { AutoRetry } from "./AutoRetry";
 
 const Drawing = lazy(() => import("../workspaces/monkeydiagram/DrawingCanvas"));
 const ModelComparison = lazy(() => import("../workspaces/monkeyarch/viewer/ModelComparison"));
@@ -50,7 +54,9 @@ export interface ProjectWorkspaceProps {
    * is dropped. Null withdraws it: the comparison it opened closes, still loading or on screen,
    * without onComparisonClose.
    */
-  comparisonRequest?: { candidateRunId: string; requestId: number } | null;
+  comparisonRequest?: { candidateRunId: string; requestId: number;
+    /** A decision's other result, set beside the candidate instead of its original, and that decision's card (2-5). */
+    againstRunId?: string | null; aside?: ReactNode } | null;
   /** The person pressed Back in a comparison the Hub requested, so the Hub may clear it and restore its own surface. */
   onComparisonClose?: () => void;
   onWorkspaceChange(workspace: "arch" | "board" | "drawing" | "render" | "publish" | "tree"): void;
@@ -61,6 +67,11 @@ export interface ProjectWorkspaceProps {
    * A host that cannot take it throws a BoardRenderError, which the Board's dialog shows.
    */
   onRenderChatRequest?: (request: BoardRenderChatRequest) => void;
+  /**
+   * S08: 「交给 AI」 from this project's Board, page or tracing paper, sent into the host's conversation for it.
+   * Only a request naming this workspace's own project is passed on; a host that cannot take it throws a HandToAiError.
+   */
+  onHandToAi?: (request: HandToAiRequest) => Promise<HandToAiSent>;
   onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
   /** Where a chat message lands (#285): the position the Stage chip states, as it states it. */
   onPositionChange?: (position: WorkspacePosition | null) => void;
@@ -69,6 +80,8 @@ export interface ProjectWorkspaceProps {
    * front commands, the rest being in its advanced tools and Ctrl K. Other surfaces show as they are.
    */
   embedded?: boolean;
+  /** The step the working design stands on, as the left column names it under the project ("V16"); null when nothing names it. */
+  projectStep?: string | null;
 }
 
 /** What the Stage chip says about the editing position, for the chat composer's target label (#285). */
@@ -83,7 +96,7 @@ export interface WorkspacePosition {
 
 /** One mounted project: the Board, its page editor and the same local model draft. */
 export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, candidateFollowsHead = false, treeFocus = null, active = true, refreshKey = 0, documentRequest = null,
-  comparisonRequest = null, onComparisonClose, onWorkspaceChange, onChatRequest, onRenderChatRequest, onDesignContextChange, onPositionChange, embedded = false }: ProjectWorkspaceProps) {
+  comparisonRequest = null, onComparisonClose, onWorkspaceChange, onChatRequest, onRenderChatRequest, onHandToAi, onDesignContextChange, onPositionChange, embedded = false, projectStep = null }: ProjectWorkspaceProps) {
   const renderReader = useRef<(() => RenderView | null) | null>(null);
   const registerRenderReader = useCallback((reader: (() => RenderView | null) | null) => { renderReader.current = reader; }, []);
   const readRenderView = useCallback(() => renderReader.current?.() ?? null, []);
@@ -281,6 +294,26 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     }
     onRenderChatRequest(request);
   }), [onRenderChatRequest]);
+  // S08: Board | Layout shows only once the layout holds something (or in developer mode, or on Layout itself);
+  // until then the Board stands alone, and 放入汇报 is still how a layout begins.
+  const developer = useDeveloperMode();
+  const [layoutUsed, setLayoutUsed] = useState(false);
+  // Read once the Board is first shown, and again only when the project is refreshed: switching surfaces asks nothing.
+  const layoutRead = useRef<number | null>(null);
+  useEffect(() => {
+    if (layoutUsed || developer || !active || server.status !== "ready" || workspace !== "board" || layoutRead.current === refreshKey) return;
+    layoutRead.current = refreshKey;
+    void publicationClient(connection).read().then((saved) => {
+      if (saved.pages.some((page) => page.elements.length > 0)) setLayoutUsed(true);
+    }, () => { /* an unreadable layout keeps the switch away; Layout is still reachable from 放入汇报 and Ctrl K */ });
+  }, [layoutUsed, developer, active, server.status, workspace, refreshKey, connection]);
+  useEffect(() => { if (workspace === "publish") setLayoutUsed(true); }, [workspace]);
+  const handToAi = useMemo(() => onHandToAi ? (request: HandToAiRequest) => {
+    if (boundProjectId.current === undefined || request.projectId !== boundProjectId.current) {
+      return Promise.reject(new HandToAiError("PROJECT_CHANGED", "The request names a project this workspace is not bound to."));
+    }
+    return onHandToAi(request);
+  } : null, [onHandToAi]);
   useEffect(() => {
     if (!active || server.status !== "ready" || !documentRequest ||
         openedDocumentRequest.current === documentRequest.requestId) return;
@@ -291,18 +324,18 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
 
   if (server.status === "failed") return <div className="project-workspace"><div className="refusal" role="alert">
     <ErrorPanel error={server.error} what="GET /api/protocol" />
-    <button data-command="view.notice.retry" data-command-arg="project_runtime" type="button" onClick={() => setAttempt((value) => value + 1)}>Retry</button>
+    <AutoRetry failure={server.error} data-command="view.notice.retry" data-command-arg="project_runtime" retry={() => setAttempt((value) => value + 1)}>Retry</AutoRetry>
   </div></div>;
   if (server.status !== "ready") return <div className="project-workspace"><LoadingOverlay mode="boot" status="Project Runtime" /></div>;
   // What is on screen: the comparison covers the surface it was opened over, which stays mounted.
   const shown = comparison ? null : workspace;
   const modelShown = modelVisible && !comparison;
-  return <div className="project-workspace" style={{ height: "100%", minHeight: 0 }}>
+  return <HandToAiContext.Provider value={handToAi}><div className="project-workspace" style={{ height: "100%", minHeight: 0 }}>
     {/* #337: one bar over every surface. The surface on screen puts its menus on the left; the project's
         position stays at the right end, where the Stage chip opens the Design Tree. #300: Board and its
         Layout mode share one rail entry, and this switch moves between the two mounted surfaces. */}
     <ProjectBar label={t("workspace.surfaceBar")} frontOnly={embedded && (shown === "arch" || (shown === "board" && !pageOpen))}
-      lead={((shown === "board" && !pageOpen) || shown === "publish") && <BoardModeSwitch mode={workspace === "publish" ? "layout" : "board"}
+      lead={((shown === "board" && !pageOpen && (layoutUsed || developer)) || shown === "publish") && <BoardModeSwitch mode={workspace === "publish" ? "layout" : "board"}
         onChange={(mode) => onWorkspaceChange(mode === "layout" ? "publish" : "board")} />}
       position={designTree.available && <DesignTreeBar data={designTree} seen={seenCandidates.seen} open={shown === "tree"} viewing={viewing}
         onToggle={() => { if (comparison) { closeComparison(); onWorkspaceChange("tree"); }
@@ -312,7 +345,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
       {refreshError && <ErrorPanel error={refreshError} what="GET /api/protocol" />}
       {(archVisited || modelVisible) && <div data-project-surface="arch" hidden={!modelShown} inert={!active || !modelShown}
         style={{ height: "100%", minHeight: 0, display: modelShown ? "block" : "none" }}>
-        <App server={server.value} expectedProjectId={boundProjectId.current} initialRunId={treeView?.runId ?? candidateRunId}
+        <App server={server.value} expectedProjectId={boundProjectId.current} projectStep={projectStep} initialRunId={treeView?.runId ?? candidateRunId}
           initialRunAsset={treeView?.assetSha256 ?? null} initialRunRequest={viewRequest}
           initialRunFollowsHead={treeView ? false : candidateFollowsHead} documentSource={pageOpen ? visit.source : null}
           initialDocumentIntent={documentIntent} initialSketchRequest={sketchRequest}
@@ -347,7 +380,8 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
       {(boardVisited || workspace === "board") && <div data-project-surface="board" hidden={shown !== "board" || pageOpen} inert={!active || shown !== "board" || pageOpen}
         style={{ height: "100%", minHeight: 0, display: shown === "board" && !pageOpen ? "block" : "none" }}>
         <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}>
-          <Board onPublish={(revision, ids) => { setPublishRequest({ revision, ids, requestId: crypto.randomUUID() }); onWorkspaceChange("publish"); }} expectedProjectId={boundProjectId.current} refreshKey={refreshKey + attempt + boardRefresh} active={active && shown === "board" && !pageOpen} onSubmit={submitFeedback} onSketch={submitSketch} onOpenDocument={setVisit} onRenderChatRequest={renderChat} pageRequest={boardPage} />
+          <Board onPublish={(revision, ids) => { setPublishRequest({ revision, ids, requestId: crypto.randomUUID() }); onWorkspaceChange("publish"); }} expectedProjectId={boundProjectId.current} refreshKey={refreshKey + attempt + boardRefresh} active={active && shown === "board" && !pageOpen} onSubmit={submitFeedback} onSketch={submitSketch} onOpenDocument={setVisit} onRenderChatRequest={renderChat} pageRequest={boardPage}
+            workingDraft={server.status === "ready" && server.value.capabilities.includes("working-draft")} />
         </Suspense>
       </div>}
       {(treeVisited || workspace === "tree") && <div data-project-surface="tree" hidden={shown !== "tree"} inert={!active || shown !== "tree"}
@@ -360,11 +394,13 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
       {comparison && <div data-project-surface="compare" inert={!active} style={{ height: "100%", minHeight: 0 }}>
         <Suspense fallback={<LoadingOverlay mode="boot" status="Compare" />}>
           <ModelComparison key={comparison.key} projectId={boundProjectId.current!} candidateRunId={comparison.runId} active={active} nameOf={nameOfRun}
+            againstRunId={comparison.origin === "request" ? comparisonRequest?.againstRunId ?? null : null}
+            aside={comparison.origin === "request" ? comparisonRequest?.aside ?? null : null}
             backLabel={comparison.origin === "tree" ? t("modelCompare.back", { surface: workspace === "tree" ? t("designTree.title")
               : t(`designTree.surface.${workspace}` as MessageKey) }) : t("modelCompare.backPlain")}
             focusOnOpen={comparison.origin === "tree"} onReturn={returnFromComparison} onPhase={(phase) => comparisons.report(comparison.key, phase)} />
         </Suspense>
       </div>}
     </ProjectBar>
-  </div>;
+  </div></HandToAiContext.Provider>;
 }

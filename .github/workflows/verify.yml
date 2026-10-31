@@ -259,6 +259,13 @@ jobs:
         working-directory: apps/monkeyhub/web
         run: node test/intentViewSource.browser.mjs
 
+      - name: Tracing paper browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        env:
+          INTENT_VIEW_TRACING_ONLY: "1"
+        run: node test/intentViewSource.browser.mjs
+
       - name: Editable model export browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web

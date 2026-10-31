@@ -1,13 +1,17 @@
 import { useContext, useEffect, useState } from "react";
 import { asStudioApiError } from "../../api/project-runtime/client";
 import { useT } from "../../i18n/useT";
+import { plainFailureText } from "../../app/ErrorPanel";
 import { InlineDecision } from "../../notifications/cards/InlineDecision";
 import type { DocumentAnnotationsHandle } from "./useDocumentAnnotations";
 import { DocumentTracingContext } from "./DocumentTracingContext";
+import type { drawnPlanCalibration } from "./drawnCalibration";
 
 /** Corrected ink remains page evidence until this explicit modeling action. */
-export function DocumentTracingPanel({ draft, disabled, onSendingChange }: {
+export function DocumentTracingPanel({ draft, disabled, onSendingChange, drawn = null }: {
   draft: DocumentAnnotationsHandle; disabled: boolean; onSendingChange(value: boolean): void;
+  /** The page's scale and direction as its drawing gives them (F093); null when they have to be measured. */
+  drawn?: ReturnType<typeof drawnPlanCalibration>;
 }) {
   const modeling = useContext(DocumentTracingContext);
   const t = useT();
@@ -22,6 +26,13 @@ export function DocumentTracingPanel({ draft, disabled, onSendingChange }: {
   const [recording, setRecording] = useState(false);
   // After Record edits and continue, the generation the edits held back runs once they are recorded.
   const [generateAfterRecord, setGenerateAfterRecord] = useState(false);
+  // F093: a drawn plan's scale and direction come from the drawing; measuring a line instead is the person's choice.
+  const [measure, setMeasure] = useState(false);
+  const fromDrawing = drawn !== null && !measure;
+  useEffect(() => {
+    if (!fromDrawing || !draft.ready || draft.readOnly || disabled || draft.tracingCalibration) return;
+    draft.setTracingCalibration({ origin: drawn.origin, axisPoint: drawn.axisPoint, distance: drawn.distance });
+  }, [fromDrawing, drawn, draft, disabled]);
   useEffect(() => {
     if (!generateAfterRecord || !modeling) return;
     setGenerateAfterRecord(false);
@@ -54,14 +65,14 @@ export function DocumentTracingPanel({ draft, disabled, onSendingChange }: {
       await modeling.generate({ ...ref, annotationIds: selected.map(mark => mark.id) }, pull,
         baseLevel || (modeling.levels.length === 1 ? modeling.levels[0].levelId : ""));
       setSubmitted(true);
-    } catch (cause) { setError(asStudioApiError(cause).detail); }
+    } catch (cause) { setError(plainFailureText(cause)); }
     finally { onSendingChange(false); }
   };
   const recordEdits = async () => {
     if (!modeling.recordEdits || recording) return;
     setRecording(true); setError(null);
     try { await modeling.recordEdits(); setGenerateAfterRecord(true); }
-    catch (cause) { setError(t("stage.record.failed", { reason: asStudioApiError(cause).detail })); }
+    catch (cause) { setError(t("stage.record.failed", { reason: plainFailureText(cause) })); }
     finally { setRecording(false); }
   };
   const continueViewed = async () => {
@@ -75,7 +86,9 @@ export function DocumentTracingPanel({ draft, disabled, onSendingChange }: {
     <strong>{t("document.trace.title")}</strong>
     <p>{t("document.trace.manual")}</p>
     <p>{t("document.trace.drawHint")}</p>
-    <form onSubmit={event => { event.preventDefault(); calibrate(); }}>
+    {fromDrawing ? <p className="document-tracing__drawn">{t("document.trace.fromDrawing", { scale: drawn.scaleLabel })}
+      <button type="button" className="btn btn--link" data-command="sketch.to_model.calibrate" onClick={() => setMeasure(true)}>{t("document.trace.measureInstead")}</button></p>
+    : <form onSubmit={event => { event.preventDefault(); calibrate(); }}>
       <label>{t("document.trace.baseline")}
         <select value={lineId} disabled={locked} onChange={event => setLineId(event.target.value)}>
           <option value="">{t("document.trace.chooseLine")}</option>
@@ -86,7 +99,7 @@ export function DocumentTracingPanel({ draft, disabled, onSendingChange }: {
         <input type="number" step="any" min="0" value={distance} disabled={locked} onChange={event => setDistance(event.target.value)} />
       </label>
       <button data-command="sketch.to_model.calibrate" type="submit" className="btn" disabled={locked || !lineId}>{t("document.trace.calibrate")}</button>
-    </form>
+    </form>}
     <p>{t(draft.tracingCalibration ? "document.trace.calibrated" : "document.trace.noScale",
       { distance: draft.tracingCalibration?.distance ?? "" })}</p>
     <fieldset disabled={locked}><legend>{t("document.trace.shapes")}</legend>

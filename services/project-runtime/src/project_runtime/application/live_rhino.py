@@ -3,7 +3,8 @@
 The Rhino backend (``monkeycad.rhino``) starts a hidden Rhino of its own and
 never sees the window the architect is working in. This module is the other
 half: it finds a running Rhino whose script server is on (the architect types
-``StartScriptServer`` once in that Rhino), reads the open document as it is
+``StartScriptServer`` once in that Rhino, or lets MonkeyHub open Rhino with
+the server already on: ``open_connected``), reads the open document as it is
 now - unsaved edits included - and adds or changes objects in it.
 
 Every request runs one generated CPython script inside that Rhino. A write runs
@@ -41,8 +42,17 @@ SCRIPT_TIMEOUT_S = 120.0
 CLI_TIMEOUT_S = 20.0
 _POLL_S = 0.1
 
-_START_HINT = ("In that Rhino, type StartScriptServer once (it lasts until Rhino closes), "
-               "then ask again.")
+# Rhino starts with its script server off. The person is asked once whether MonkeyHub may open Rhino with it on
+# (open_connected); a Rhino that is already open can only be reached by typing the command in it.
+_START_HINT = ("Ask the person whether MonkeyHub may open Rhino for them with its script server on "
+               "(POST /api/live-rhino/open with confirmed true); a Rhino that is already open without it needs "
+               "StartScriptServer typed in it once (it lasts until Rhino closes). Then ask again.")
+
+#: What a Rhino started by MonkeyHub runs when it has opened: Rhino 8's own command, the one a person would type.
+START_COMMAND = "_StartScriptServer"
+#: How long a Rhino opened by MonkeyHub is waited for before it is said not to answer.
+OPEN_TIMEOUT_S = 90.0
+_OPEN_POLL_S = 1.0
 
 
 @dataclass(frozen=True)
@@ -81,8 +91,9 @@ def rhinocode_executable() -> Path:
         if candidate.is_file():
             return candidate
     raise StudioError(409, "LIVE_RHINO_UNAVAILABLE",
-                      "RhinoCode.exe was not found; it ships with Rhino 8 (System folder). "
-                      f"Set {RHINOCODE_ENV} to its path if Rhino is installed elsewhere.")
+                      "Rhino 8 was not found on this computer (MonkeyHub looks where Windows records Rhino and in "
+                      "Program Files); RhinoCode.exe ships in its System folder. "
+                      f"{RHINOCODE_ENV} can name RhinoCode.exe when Rhino is somewhere unusual.")
 
 
 def _cli(args: list[str], runner: Runner | None) -> subprocess.CompletedProcess:
@@ -122,6 +133,81 @@ def list_instances(*, runner: Runner | None = None) -> tuple[LiveRhino, ...]:
     if result.returncode != 0:
         raise StudioError(502, "LIVE_RHINO_LIST_FAILED", (result.stderr or result.stdout or "RhinoCode list failed.").strip()[:500])
     return parse_instances(result.stdout)
+
+
+def rhino_executable() -> Path:
+    """Rhino.exe beside RhinoCode.exe: the Rhino whose script server RhinoCode reaches."""
+
+    candidate = rhinocode_executable().with_name("Rhino.exe")
+    if not candidate.is_file():
+        raise StudioError(409, "LIVE_RHINO_UNAVAILABLE", "Rhino.exe was not found beside RhinoCode.exe.")
+    return candidate
+
+
+def _running_rhino_pids(runner: Runner | None) -> set[int]:
+    """The process ids of every Rhino running on this machine, with or without its script server."""
+
+    result = _cli(["tasklist", "/FI", "IMAGENAME eq Rhino.exe", "/FO", "CSV", "/NH"], runner)
+    if result.returncode != 0:
+        return set()
+    pids = set()
+    for line in (result.stdout or "").splitlines():
+        cells = [cell.strip().strip('"') for cell in line.split('","')]
+        if len(cells) > 1 and cells[0].strip('"').lower() == "rhino.exe" and cells[1].strip('"').isdigit():
+            pids.add(int(cells[1].strip('"')))
+    return pids
+
+
+def _launch(command_line: str) -> None:
+    """Start Rhino detached from this runtime: it is the person's program, and outlives the runtime."""
+
+    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    try:
+        subprocess.Popen(command_line, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         close_fds=True, creationflags=flags)
+    except OSError as exc:
+        raise StudioError(409, "LIVE_RHINO_UNAVAILABLE", f"Rhino could not be started: {exc}") from exc
+
+
+def open_connected(*, document_path: str | None = None, runner: Runner | None = None,
+                   timeout_s: float = OPEN_TIMEOUT_S) -> tuple[LiveRhino, bool]:
+    """Open Rhino for the person with its script server on, and return it once RhinoCode reaches it.
+
+    (instance, opened). A Rhino RhinoCode already reaches that holds the named document is returned as it is. When
+    another Rhino runs without a script server, nothing is opened: a second Rhino would not have the first one's
+    unsaved work, and the person types StartScriptServer in the first. The caller has asked the person; this module
+    cannot.
+    """
+
+    existing = list_instances(runner=runner)
+    if document_path is not None:
+        if '"' in document_path or not document_path.lower().endswith(".3dm") or not Path(document_path).is_file():
+            raise StudioError(422, "LIVE_RHINO_DOCUMENT_INVALID", "documentPath must name an existing .3dm file.")
+        held = [row for row in existing if row.document_path and _same_path(row.document_path, document_path)]
+        if held:
+            return held[0], False
+    elif existing:
+        return existing[0], False
+    # Only a Rhino RhinoCode cannot reach is a Rhino without its script server; one that answers and holds another
+    # document does not stop this one from being opened beside it.
+    if _running_rhino_pids(runner) - {row.process_id for row in existing}:
+        raise StudioError(409, "LIVE_RHINO_ALREADY_OPEN",
+                          "A Rhino is already open on this computer without its script server. Ask the person to type "
+                          "StartScriptServer in it once; a second Rhino would not have the unsaved work of the first.")
+    # Rhino reads /runscript as written, quotes included; a list of arguments would escape them.
+    command_line = f'"{rhino_executable()}" /nosplash /runscript="{START_COMMAND}"' + (f' "{document_path}"' if document_path else "")
+    known = {row.pipe_id for row in existing}
+    _launch(command_line)
+    deadline = time.monotonic() + timeout_s
+    while True:
+        time.sleep(_OPEN_POLL_S)
+        for row in list_instances(runner=runner):
+            if row.pipe_id not in known:
+                return row, True
+        if time.monotonic() > deadline:
+            raise StudioError(504, "LIVE_RHINO_NOT_CONNECTED",
+                              f"Rhino was opened but its script server did not answer within {int(timeout_s)} seconds. "
+                              "Ask the person to type StartScriptServer in it once.")
 
 
 def _same_path(left: str, right: str) -> bool:

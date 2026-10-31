@@ -56,9 +56,9 @@ class FacetRegistryTests(unittest.TestCase):
 
         self.assertEqual(FACET_KEYS, frozenset({
             "architectural.role", "architectural.enclosure", "structural.role",
-            "material.name", "material.color", "fabrication.method",
+            "material.name", "material.color", "fabrication.method", "description.note",
         }))
-        self.assertEqual(set(FACET_REASONS), {"material.color"})
+        self.assertEqual(set(FACET_REASONS), {"material.color", "description.note"})
 
     def test_registry_has_exactly_the_spec_table_values(self) -> None:
         self.assertEqual(set(FACETS["architectural.role"]), {

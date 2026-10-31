@@ -13,6 +13,21 @@ Point3 = Annotated[list[float], Field(min_length=3, max_length=3)]
 UserText = Annotated[dict[str, str] | None, Field(default=None, alias="userText", description="extra user text on each created object")]
 
 
+class LiveRhinoOpenRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    confirmed: bool = Field(description="true only when the person said yes to MonkeyHub opening Rhino for them")
+    document_path: str | None = Field(default=None, alias="documentPath", max_length=1024,
+                                      description="an existing .3dm file to open; omitted opens Rhino with its usual new model")
+
+
+class LiveRhinoOpenDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    rhino: dict[str, Any] = Field(description="the Rhino that now answers RhinoCode, as GET /api/live-rhino/instances lists it")
+    opened: bool = Field(description="false when a Rhino that answers RhinoCode already had the document")
+
+
 class _Op(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 

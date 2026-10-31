@@ -996,7 +996,8 @@
         "GET /api/documents",
         "POST /api/documents",
         "GET /api/documents/{asset_sha256}/bytes",
-        "POST /api/documents/{asset_sha256}/model-source"
+        "POST /api/documents/{asset_sha256}/model-source",
+        "PUT /api/documents/{asset_sha256}/model-source"
       ],
       "works": [
         "PDF, PNG and JPEG uploads kept by content",
@@ -1061,6 +1062,14 @@
               "文8",
               "文9"
             ]
+          },
+          {
+            "id": "document.model_source.change",
+            "label": "Change linked model",
+            "label_zh": "换一个模型",
+            "surface": "document",
+            "channel": "background",
+            "entries": []
           }
         ]
       }
@@ -1249,10 +1258,14 @@
             "label": "Text",
             "label_zh": "文字",
             "aliases": [
-              "text size"
+              "text size",
+              "text note",
+              "文字批注",
+              "短话"
             ],
             "channel": "front",
             "entries": [
+              "模67",
               "文14",
               "文20"
             ]
@@ -1302,7 +1315,8 @@
             "entries": [
               "模64",
               "文17"
-            ]
+            ],
+            "shortcut": "Ctrl+Z"
           },
           {
             "id": "view.markup_tools.redo",
@@ -1312,16 +1326,23 @@
             "entries": [
               "模65",
               "文18"
-            ]
+            ],
+            "shortcut": "Ctrl+Shift+Z"
           },
           {
             "id": "view.markup_tools.cancel",
-            "label": "Cancel tool",
-            "label_zh": "取消工具",
+            "label": "Exit tracing paper",
+            "label_zh": "退出描图纸",
             "surface": "modeling",
             "channel": "front",
             "entries": [
               "模66"
+            ],
+            "shortcut": "Esc",
+            "aliases": [
+              "Escape",
+              "exit tracing paper",
+              "退出描图纸"
             ]
           },
           {
@@ -1403,6 +1424,43 @@
             "entries": [
               "文13"
             ]
+          },
+          {
+            "id": "view.markup_tools.restore_paper",
+            "label": "Continue this paper",
+            "label_zh": "继续这张纸",
+            "surface": "modeling",
+            "args": [
+              "revisionSha256"
+            ],
+            "in_place": true
+          },
+          {
+            "id": "view.board_tools.diamond",
+            "label": "Diamond",
+            "label_zh": "菱形",
+            "surface": "board",
+            "group": "board",
+            "channel": "front",
+            "in_place": true,
+            "aliases": [
+              "rhombus",
+              "画菱形"
+            ]
+          },
+          {
+            "id": "view.board_tools.ellipse",
+            "label": "Ellipse",
+            "label_zh": "椭圆",
+            "surface": "board",
+            "group": "board",
+            "channel": "front",
+            "in_place": true,
+            "aliases": [
+              "oval",
+              "画椭圆",
+              "画圆"
+            ]
           }
         ]
       }
@@ -1414,9 +1472,11 @@
       "host": "runtime",
       "kind": "authoring",
       "status": "PRODUCTION",
-      "purpose": "Hand marks and a note to the AI: send design feedback from the Board, discuss an image or render, run a crit, send the tracing paper review, submit a page note, or clear the marks.",
-      "purpose_zh": "把批注和意见交给 AI：从画板发送设计反馈、讨论图片或渲染、进行 Crit、发送描图纸审阅意见、提交本页意见，或清除批注。",
+      "purpose": "Hand marks and one sentence to the AI from the Board's selection, a document page or the model's tracing paper: the sentence on the first circle, the marked objects and a picture attached, sent into the project's conversation. Developer mode keeps the exact-model design feedback, image discussion, page note and tracing paper review to the Board.",
+      "purpose_zh": "把批注和一句话交给 AI：画板选中浮层、文档页、模型描图纸各一个「交给 AI」，原话挂在第一个圈上，圈到的对象和截图作为附件发进项目对话。开发者模式保留精确绑定模型的设计反馈、讨论图片、本页意见和描图纸审阅发画板。",
       "goals": [
+        "hand marks to the AI",
+        "交给 AI",
         "send feedback to the AI",
         "discuss this drawing",
         "submit a page note",
@@ -1429,7 +1489,6 @@
       "aliases": [
         "hand off marks",
         "ask for a change",
-        "交给 AI",
         "评图"
       ],
       "requires": [
@@ -1443,19 +1502,22 @@
         "GET /api/document-comments"
       ],
       "works": [
+        "one Hand to AI on the Board selection, the document page and the tracing paper, sent into the project's conversation with a picture and the marks",
         "Board feedback that opens a proposal in Modeling",
         "page notes with reference pages and their saved marks",
         "a tracing paper review placed on the Board"
       ],
       "missing": [
-        "one hand-off shared by the Board, the document page and the tracing paper"
+        "the AI reading the handed-over marks as a change list (claude/300-b3-change-list)"
       ],
       "tests": [
-        "apps/monkeyhub/web/test/boardIntentHandoff.browser.mjs",
         "apps/monkeyhub/web/test/boardFeedback.test.ts",
+        "apps/monkeyhub/web/test/boardIntentHandoff.browser.mjs",
         "apps/monkeyhub/web/test/boardRender.test.ts",
         "apps/monkeyhub/web/test/boardWhiteboard.browser.mjs",
         "apps/monkeyhub/web/test/documentCanvas.browser.mjs",
+        "apps/monkeyhub/web/test/handToAi.browser.mjs",
+        "apps/monkeyhub/web/test/handToAi.test.ts",
         "services/project-runtime/tests/test_document_visual_providers.py",
         "services/project-runtime/tests/test_documents.py"
       ],
@@ -1466,6 +1528,19 @@
         "channel": "side",
         "commands": [
           {
+            "id": "markup.hand_to_ai.hand_over",
+            "label": "Hand to AI",
+            "label_zh": "交给 AI",
+            "channel": "front",
+            "in_place": true,
+            "aliases": [
+              "send to AI",
+              "ask AI to change this",
+              "发给 AI",
+              "让 AI 改"
+            ]
+          },
+          {
             "id": "markup.hand_to_ai.open",
             "label": "Send design feedback",
             "label_zh": "发送设计反馈",
@@ -1474,7 +1549,8 @@
               "板8",
               "板65",
               "板66"
-            ]
+            ],
+            "tier": "developer"
           },
           {
             "id": "markup.hand_to_ai.send",
@@ -1483,7 +1559,8 @@
             "entries": [
               "板69",
               "板72"
-            ]
+            ],
+            "tier": "developer"
           },
           {
             "id": "markup.hand_to_ai.discuss",
@@ -1492,7 +1569,8 @@
             "opens": true,
             "entries": [
               "板63"
-            ]
+            ],
+            "tier": "developer"
           },
           {
             "id": "markup.hand_to_ai.continue_in_chat",
@@ -1505,7 +1583,8 @@
               "板80",
               "板83"
             ],
-            "in_place": true
+            "in_place": true,
+            "tier": "developer"
           },
           {
             "id": "markup.hand_to_ai.enter_crit",
@@ -1530,7 +1609,8 @@
             "surface": "modeling",
             "entries": [
               "模70"
-            ]
+            ],
+            "tier": "developer"
           },
           {
             "id": "markup.hand_to_ai.submit_page_note",
@@ -1543,7 +1623,8 @@
               "文45",
               "文46",
               "文47"
-            ]
+            ],
+            "tier": "developer"
           },
           {
             "id": "markup.clear",
@@ -1553,6 +1634,13 @@
               "模63",
               "板11",
               "板67"
+            ],
+            "shortcut": "Ctrl+Shift+X",
+            "aliases": [
+              "clear tracing paper",
+              "clear all marks",
+              "清空描图纸",
+              "清空批注"
             ]
           }
         ]
@@ -1623,7 +1711,7 @@
             "label": "Generate cut plan",
             "label_zh": "生成剖切平面",
             "aliases": [
-              "floor plan"
+              "cut plane settings"
             ],
             "channel": "front",
             "entries": [
@@ -2936,6 +3024,86 @@
             "entries": []
           },
           {
+            "id": "drawing.quick.plan",
+            "channel": "front",
+            "label": "Draw a floor plan",
+            "label_zh": "出平面",
+            "aliases": [
+              "floor plan",
+              "平面图",
+              "出平面图"
+            ],
+            "entries": []
+          },
+          {
+            "id": "drawing.quick.section",
+            "channel": "front",
+            "label": "Draw a section",
+            "label_zh": "出剖面",
+            "aliases": [
+              "section drawing",
+              "剖面图",
+              "出剖面图"
+            ],
+            "entries": []
+          },
+          {
+            "id": "drawing.quick.elevations",
+            "channel": "front",
+            "label": "Draw the elevations",
+            "label_zh": "出立面",
+            "aliases": [
+              "elevations",
+              "立面图",
+              "四个立面"
+            ],
+            "entries": []
+          },
+          {
+            "id": "drawing.quick.elevation_south",
+            "label": "Draw the south elevation",
+            "label_zh": "出南立面",
+            "aliases": [
+              "south elevation",
+              "南立面",
+              "南立面图"
+            ],
+            "entries": []
+          },
+          {
+            "id": "drawing.quick.elevation_north",
+            "label": "Draw the north elevation",
+            "label_zh": "出北立面",
+            "aliases": [
+              "north elevation",
+              "北立面",
+              "北立面图"
+            ],
+            "entries": []
+          },
+          {
+            "id": "drawing.quick.elevation_west",
+            "label": "Draw the west elevation",
+            "label_zh": "出西立面",
+            "aliases": [
+              "west elevation",
+              "西立面",
+              "西立面图"
+            ],
+            "entries": []
+          },
+          {
+            "id": "drawing.quick.elevation_east",
+            "label": "Draw the east elevation",
+            "label_zh": "出东立面",
+            "aliases": [
+              "east elevation",
+              "东立面",
+              "东立面图"
+            ],
+            "entries": []
+          },
+          {
             "id": "view.reference_model.show",
             "label": "Show reference model",
             "label_zh": "显示参考模型",
@@ -3308,6 +3476,27 @@
             "entries": [
               "模61"
             ]
+          },
+          {
+            "id": "draft.record.discard",
+            "label": "Discard draft",
+            "label_zh": "丢掉草稿",
+            "channel": "background",
+            "entries": [
+              "模61"
+            ]
+          },
+          {
+            "id": "design.from_import",
+            "label": "Make it a design you can change",
+            "label_zh": "转成能改的设计",
+            "aliases": [
+              "make the imported model editable",
+              "导入的模型转成设计",
+              "快照转成设计"
+            ],
+            "channel": "background",
+            "entries": []
           },
           {
             "id": "draft.record.continue",
@@ -3978,7 +4167,8 @@
       ],
       "entrypoints": [],
       "works": [
-        "later, dismiss, bring back and undo on each card of the attention page"
+        "later, dismiss, bring back and undo on each card of the attention page",
+        "a change list's card: run its ticked items, or say which part an unsure item meant (#300 3-3)"
       ],
       "missing": [
         "the Hub serving the queue on main: until it does, notices come from the conversations"
@@ -4049,6 +4239,33 @@
               "optionId"
             ],
             "entries": []
+          },
+          {
+            "id": "attention.queue.restart_service",
+            "label": "Restart the project service",
+            "label_zh": "重新启动项目服务",
+            "args": [],
+            "entries": []
+          },
+          {
+            "id": "attention.change_list.execute",
+            "label": "Make the ticked changes",
+            "label_zh": "按勾选的改",
+            "args": [
+              "items"
+            ],
+            "entries": []
+          },
+          {
+            "id": "attention.change_list.choose_target",
+            "label": "Choose the part an item meant",
+            "label_zh": "选这条指的构件",
+            "args": [
+              "cardId",
+              "n",
+              "target"
+            ],
+            "entries": []
           }
         ]
       },
@@ -4091,7 +4308,8 @@
         "GET /api/chat/sessions/{session_id}",
         "POST /api/chat/sessions/{session_id}/messages",
         "POST /api/chat/sessions/{session_id}/stop",
-        "PUT /api/chat/sessions/{session_id}/archive"
+        "PUT /api/chat/sessions/{session_id}/archive",
+        "PUT /api/chat/sessions/{session_id}/permission-mode"
       ],
       "works": [
         "a new conversation in the open project",
@@ -4239,6 +4457,18 @@
             "in_place": true
           },
           {
+            "id": "chat.skill_run.keep",
+            "label": "Keep a script the AI ran as a skill",
+            "label_zh": "把 AI 现写的脚本留下成 skill",
+            "args": [
+              "runId"
+            ],
+            "entries": [
+              "壳113"
+            ],
+            "in_place": true
+          },
+          {
             "id": "chat.permission.cancel",
             "label": "Cancel the agent's request",
             "label_zh": "取消授权请求",
@@ -4301,6 +4531,36 @@
             "entries": [
               "壳59"
             ],
+            "in_place": true
+          },
+          {
+            "id": "chat.note.remove",
+            "label": "Remove a remembered note",
+            "label_zh": "删除一条记住的事",
+            "args": [
+              "noteId"
+            ],
+            "entries": [],
+            "in_place": true
+          },
+          {
+            "id": "chat.note.restore",
+            "label": "Put a removed note back",
+            "label_zh": "撤销删除记住的事",
+            "args": [
+              "noteId"
+            ],
+            "entries": [],
+            "in_place": true
+          },
+          {
+            "id": "chat.wakeup.cancel",
+            "label": "Cancel a wake-up",
+            "label_zh": "取消定时继续",
+            "args": [
+              "wakeupId"
+            ],
+            "entries": [],
             "in_place": true
           }
         ]
@@ -4432,6 +4692,13 @@
             "in_place": true
           },
           {
+            "id": "project.create.choose_folder",
+            "label": "Choose folder",
+            "label_zh": "选择文件夹",
+            "entries": [],
+            "in_place": true
+          },
+          {
             "id": "project.create.add_existing_confirm",
             "label": "Add the project",
             "label_zh": "添加项目",
@@ -4439,6 +4706,13 @@
               "窗8",
               "窗10"
             ],
+            "in_place": true
+          },
+          {
+            "id": "project.archive.choose_file",
+            "label": "Choose archive file",
+            "label_zh": "选择归档文件",
+            "entries": [],
             "in_place": true
           },
           {
@@ -4548,14 +4822,24 @@
             "id": "view.shell.workbench",
             "label": "Back to the old shell",
             "label_zh": "回旧版",
-            "aliases": ["old interface", "workbench", "旧界面", "工作台"],
+            "aliases": [
+              "old interface",
+              "workbench",
+              "旧界面",
+              "工作台"
+            ],
             "entries": []
           },
           {
             "id": "view.shell.attention",
             "label": "Back to the new shell",
             "label_zh": "回新版",
-            "aliases": ["new interface", "attention shell", "新界面", "新版"],
+            "aliases": [
+              "new interface",
+              "attention shell",
+              "新界面",
+              "新版"
+            ],
             "entries": []
           },
           {
@@ -5431,6 +5715,16 @@
             ]
           },
           {
+            "id": "view.recent_drawing.open",
+            "label": "Open the latest drawing",
+            "label_zh": "打开最近出的图",
+            "args": [
+              "drawingId"
+            ],
+            "in_place": true,
+            "entries": []
+          },
+          {
             "id": "view.ignored.toggle",
             "label": "Show set-aside cards",
             "label_zh": "查看已忽略的卡",
@@ -5504,6 +5798,20 @@
               "窗2"
             ],
             "in_place": true
+          },
+          {
+            "id": "view.notes.toggle",
+            "label": "Show notes and memory",
+            "label_zh": "查看说明与记忆",
+            "opens": true,
+            "entries": []
+          },
+          {
+            "id": "view.chat_search.toggle",
+            "label": "Find conversations",
+            "label_zh": "查找对话",
+            "opens": true,
+            "entries": []
           }
         ]
       },
@@ -5543,7 +5851,9 @@
         "GET /api/settings/user",
         "PUT /api/settings/user",
         "GET /api/settings/apps",
-        "PUT /api/settings/apps"
+        "PUT /api/settings/apps",
+        "GET /api/chat/mcp-servers",
+        "PUT /api/chat/mcp-servers"
       ],
       "works": [
         "theme, interface style and text size, saved for this person"
@@ -5693,6 +6003,13 @@
             "place": "composer"
           },
           {
+            "id": "preference.chat_permission.choose",
+            "label": "What this conversation may do",
+            "label_zh": "这个对话可以做什么",
+            "entries": [],
+            "in_place": true
+          },
+          {
             "id": "preference.chat_model.custom_apply",
             "label": "Use a custom model id",
             "label_zh": "使用自定义模型 ID",
@@ -5766,6 +6083,34 @@
             "entries": [
               "窗57"
             ],
+            "in_place": true
+          },
+          {
+            "id": "preference.chat_mcp.from_claude",
+            "label": "Use the MCP servers set up in Claude Code",
+            "label_zh": "用 Claude Code 里配好的 MCP 服务器",
+            "entries": [],
+            "in_place": true
+          },
+          {
+            "id": "preference.chat_mcp.server",
+            "label": "Turn one MCP server on or off",
+            "label_zh": "开关一个 MCP 服务器",
+            "entries": [],
+            "in_place": true
+          },
+          {
+            "id": "preference.chat_mcp.add",
+            "label": "Add an MCP server",
+            "label_zh": "添加 MCP 服务器",
+            "entries": [],
+            "in_place": true
+          },
+          {
+            "id": "preference.chat_mcp.remove",
+            "label": "Remove an MCP server",
+            "label_zh": "移除 MCP 服务器",
+            "entries": [],
             "in_place": true
           },
           {
@@ -6183,6 +6528,24 @@
             ]
           },
           {
+            "id": "view.notice.ask_ai",
+            "label": "Ask the AI to fix it",
+            "label_zh": "交给 AI 处理",
+            "args": [
+              "notice"
+            ],
+            "entries": []
+          },
+          {
+            "id": "view.notice.undo",
+            "label": "Undo the last edit",
+            "label_zh": "撤销上一步修改",
+            "args": [
+              "notice"
+            ],
+            "entries": []
+          },
+          {
             "id": "view.notice.open",
             "label": "Show what a notice is about",
             "label_zh": "查看提示说的事",
@@ -6392,6 +6755,7 @@
         "verifying source OCCT STEP shape reuse for unchanged physical objects while rebuilding changed operations and required intermediate inputs",
         "how the OCCT executor realizes a difference: a profile-with-holes extrusion when every void pierces an extruded base along its extrusion, otherwise a boolean cut (difference_strategy auto, boolean or profile_with_holes), recorded as the receipt's lowering",
         "orthographic visible/hidden polylines of named STEP shapes with their source object ids (project_occt_lines): one exact HLRBRep_Algo solve over every selected shape in a caller-stated right/up frame, an exact near/far depth slab, chord-deflection discretization in the STEP read unit",
+        "the same polylines solved on each shape's triangulation (project_occt_mesh_lines): one HLRBRep_PolyAlgo solve over every selected shape, each shape's mesh replaced at a caller-stated chord error, a face that cannot be triangulated refused as OcctBuildError so the caller can solve exactly",
         "plane-section extraction from the same selected shapes in the same frame (section_occt_lines, section_occt_regions): OcctDrawingPolyline values carry the section kind, and OcctDrawingRegion values carry each solid's closed material boundaries, including holes and disconnected cuts, to be filled even-odd",
         "section perspective lines and cut regions from the same B-reps: the kept side of an arbitrary plane in exact perspective with the section plane as picture plane (project_occt_section_perspective)",
         "measuring explicitly requested final named solid pairs from OCCT shapes: true distance in metres and common solid volume in cubic metres, preserving separated/contact/penetrating/unchecked and never reconstructing consumed boolean operands",
@@ -6428,6 +6792,8 @@
         "measure_occt_solid_pairs",
         "OcctBackendError",
         "project_occt_lines",
+        "project_occt_mesh_lines",
+        "occt_edge_points",
         "section_occt_lines",
         "section_occt_regions",
         "OcctDrawingPolyline",
@@ -6711,7 +7077,10 @@
         "row_digests",
         "binding_for",
         "compare",
-        "object_rows"
+        "object_rows",
+        "ImportedPlacement",
+        "place_imported_objects",
+        "adopt_named_objects"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -6742,7 +7111,8 @@
         "packages/monkeycad/tests/test_model_conversion_regressions.py",
         "packages/monkeycad/tests/test_sketchup_reader.py",
         "packages/monkeycad/tests/test_three_dm_compose.py",
-        "packages/monkeycad/tests/test_state_file.py"
+        "packages/monkeycad/tests/test_state_file.py",
+        "packages/monkeycad/tests/test_three_dm_imported.py"
       ],
       "notes": "The single source of the inspection key sets that viewers and readback both check against. formats/ also holds the bounded 3DM/GLB mesh codecs (meshes.py) and their conversion providers (conversion.py), SketchUp reading (sketchup_reader.py) and the composition of a patched .3dm (three_dm_compose.py).",
       "files": [
@@ -6888,7 +7258,8 @@
         "the scanline depth buffer at twice the output resolution and the edge visibility test against it, reduced to an anti-aliased greyscale PNG whose longer side is the requested size (mesh_line_view); given fills, the object in front under each pixel (the lowest label among coplanar ones), each visible surface filled flat without light in its own sRGB colour, an object without one grey under a hatch, the edges over them, as an RGB PNG naming the objects that show",
         "RENDERER_VERSION, derived from the source of this module's drawing functions, tessellate_shape and the model reader (read_elevation_source), so it changes whenever the same input would draw different pixels without a hand bump; and mesh_pipeline: every setting and library version (OCP, numpy, Pillow) that changes the pixels",
         "working memory bounded by pixel count: triangles are rasterised and edges sampled in chunks of at most a million candidate pixels, splitting a large triangle into row bands; the output side is at most MAX_SIZE_PX",
-        "the caller-named PNG text chunks; no time or random id in the bytes"
+        "the caller-named PNG text chunks; no time or random id in the bytes",
+        "show_flush_hidden_lines (S22): a hidden line of the polygonal hidden-line solve found on its object's nearest 3D edges for its depth and drawn visible when, at each of FLUSH_SAMPLES samples, no triangle covers it nearer than the caller's depth tolerance (an edge lying in a nearer face's plane, as a mullion flush with a wall's end); one under its own object's visible line, or along a nearer face's outline within that tolerance, stays hidden"
       ],
       "does_not_own": [
         "exact retained drawings, their receipts and the elevation frames - monkeydiagram.drawing_runs",
@@ -6923,7 +7294,8 @@
         "MAX_CAMERA_EDGE_PX",
         "CAMERA_RENDERER_VERSION",
         "DEPTH_NEAREST",
-        "ID_BACKGROUND"
+        "ID_BACKGROUND",
+        "show_flush_hidden_lines"
       ],
       "depends_on": [
         "monkeycad.occt",
@@ -7044,7 +7416,8 @@
         "Absolute numeric prism/face base references and read-only placement of drawn elements through their existing datum dependencies; free placement publishes its own fixed base instead of binding an editable Level.",
         "the voids relation: with_void_hosts annotates every ElementRow with the hosts naming it (voided_by); a void keeps obj-<id>, retained hidden, with no top datum or support relation; a host emits <id>-body and the difference that keeps obj-<id>",
         "realising a block as a wall in place (wall_fields_from_block, #419 Stage C): a rectangular prism standing on a level or datum becomes the wall producer's fields under the same element id; the line runs the way the longest side runs (the first of equal ones), on that side when the block lies right of it, else on the opposite long face, so along starts beside the side's first corner whichever way the outline winds and doors and windows are set out from the line's face; corners rounded to the nanometre still make a rectangle; a tilted plane, panel cutouts, an outline that is not a rectangle or is bound to parameters, and a block lifted off its base are refused with the reason",
-        "where a wall's along is measured on a line of two stated points (wall_along_line): the same turn produce_wall makes when inward lies left of the line"
+        "where a wall's along is measured on a line of two stated points (wall_along_line): the same turn produce_wall makes when inward lies left of the line",
+        "the imported element: objects of a registered model file named by its sha256 and their ids, placed by a move and a turn about the vertical; it produces no operation, its box is what direct edits move and turn, and an edit of its shape is refused"
       ],
       "does_not_own": [
         "turning a reference into a plan coordinate or an elevation datum - monkeyarch.domain.reference_resolver",
@@ -7085,7 +7458,9 @@
         "wall_along_line",
         "element_vertical_extent",
         "parameter_unit",
-        "canonical_params"
+        "canonical_params",
+        "imported_placement",
+        "imported_box"
       ],
       "depends_on": [
         "archflow.contracts.fields",
@@ -7124,7 +7499,8 @@
         "tests/integration/test_prism_cutouts.py",
         "tests/integration/test_occt_execution.py",
         "packages/monkeyarch/tests/test_wall_explicit_point_reference.py",
-        "packages/monkeyarch/tests/test_wall_realization.py"
+        "packages/monkeyarch/tests/test_wall_realization.py",
+        "packages/monkeyarch/tests/test_imported_elements.py"
       ],
       "notes": "The single geometry-emission owner on the spine; monument vocabulary (solids of revolution, boolean chains, classical-order members) would be added here rather than beside it.",
       "files": [
@@ -8975,6 +9351,7 @@
         "ElevationSource: the retained STEP and OcctExecutionReceipt@1 a drawing is derived from, and the verification that they agree (SHA, run, base, unit, Z-up, STEP names = physical object ids)",
         "ElevationView: origin, look/right/up along the model axes, crop window, near/far depths, hidden-line switch, chord deflection and sheet scale, checked for consistency",
         "the in-memory projection value (project_model_axis_elevation): polylines, SVG and PNG, minting nothing",
+        "which solve an elevation's visibility uses (S22): the mesh solve at the drawing cleanup tolerance with its flush hidden lines drawn (show_flush_hidden_lines, at FLUSH_DEPTH_SHARE of that tolerance), the exact solve when the mesh solve cannot run, named in the receipt's projection.algorithm",
         "the drawing run: created with base = source run base, or reused only when it already carries that base",
         "DrawingProjectionReceipt@1 (retained as drawing-projection-receipt): source binding, frame, backend, counts and the two artifact refs",
         "the drawing cleanup tolerance, CLEANUP_TOLERANCE_MM on the sheet in the source unit at the view's scale, applied by all three freeze paths to the cropped lines they draw, with the CleanupReport kept in the receipt's cleanup and never in the recipe",
@@ -9066,7 +9443,13 @@
         "Drawer",
         "run_draw_task",
         "verify_draw_source",
-        "Retaining"
+        "Retaining",
+        "shapeless_facts",
+        "shapeless_source",
+        "CameraTask",
+        "CameraResult",
+        "run_camera_task",
+        "index_groups"
       ],
       "depends_on": [
         "archflow.project.ports",
@@ -9075,7 +9458,9 @@
         "archflow.project.repository",
         "archflow.project.version_refs",
         "monkeycad.occt",
-        "monkeydiagram.rendering.svg"
+        "monkeydiagram.rendering.svg",
+        "monkeycad.formats",
+        "monkeydiagram.projection.mesh_views"
       ],
       "invariants": [
         "nothing is written before the source verified, the frame checked and the projection and both renderings succeeded",
@@ -9143,7 +9528,7 @@
       "owner_path": "packages/archflow/src/archflow/semantics/facets.py",
       "purpose": "The registered L3 facets a component may carry once its meaning is established: namespaced key/value pairs, each key a closed set of values, free text, or text in one written form.",
       "owns": [
-        "the facet vocabulary (architectural.role, architectural.enclosure, structural.role, material.name, material.color, fabrication.method), which keys are free text, and the free-text length bounds",
+        "the facet vocabulary (architectural.role, architectural.enclosure, structural.role, material.name, material.color, fabrication.method, description.note), which keys are free text, and the free-text length bounds",
         "the one written form of a formatted key (material.color: an sRGB hex colour #RRGGBB, kept in upper case), its canonical spelling and its sRGB channels",
         "the written reason of each key added after the construction spec's table (FACET_REASONS, ADR-006)"
       ],
@@ -10193,7 +10578,7 @@
         "verifying and decoding a viewport PNG before retaining its bytes through P036 under runs/<requested-run>/workspaces/studio-captures with a server-generated content name; an optional exact modelSource also registers the preview through the existing SourceDocument object store",
         "validating original PDF/PNG/JPEG bytes and visible page dimensions, ingesting them through P036, and registering their content identity in the named run; serving only registered source bytes whose SHA-256 still matches",
         "retaining an explicitly supplied composed 3dm against its exact run state, or an external 3dm without semantic state in P036 source runs keyed by the exact asset digest; original bytes and immutable registrations share the existing artifact owner, with no native readback claim",
-        "one-time declared model-source association for an existing unbound document, retained in its unchanged storage run; serving the association without rewriting source bytes, annotations or earlier comments",
+        "one-time declared model-source association for an existing unbound document, retained in its unchanged storage run; serving the association without rewriting source bytes, annotations or earlier comments; changing that link later (PUT; a document the person brought in and linked only: a drawing, a picture the Hub made from a model and a document registered with its model keep theirs, and modelSourceChangeable says which) writes a record that names the one it replaces, so the earlier link stays in modelSourceHistory and is never overwritten",
         "registering model-axis elevation and top projection revisions from a complete exact STEP in the existing document list, with fixed model/Stage source, logical drawing id, view recipe and immutable drawing receipt; top is an uncut orthographic projection",
         "composing front/right/top review sheets from the exact retained model using a selected drawing style and explicit scale, registering PDF and same-scene editable DXF through P036, and reusing an identical retained sheet without another projection",
         "requiring a native Stage model to cover every producing seat execution, or an explicitly registered complete composed model",
@@ -10216,7 +10601,9 @@
         "the retained axonometric: POST /api/drawings/elevations view axon, from a stated direction toward the viewer (default the model view's -X, -Y, +Z), framed on every physical object's bounds like an elevation",
         "view sheets through POST /api/drawings/sheets: same-source plans, vertical sections, elevations, axonometrics and section perspectives, each drawn or read back through its own generator from the sheet's one source (modelSource, Stage or unbound imported asset) and named in the sheet recipe by its exact revision, placed at its own scale where the caller put it, with default titles, subtitles and scale labels from each view's own frame and a section's cut line on a plan, as monkeydiagram.documentation.sheet_layout lays them out; front/right/top requests keep the review sheet's layout and defaults; every sheet is one paper scene retained as PDF, DXF, SVG and PNG beside each other in its source run and registered as its PDF, which names the other three files' digests; GET /api/drawings/{asset_sha256}/files/{file_format} reads a view revision's SVG/PNG, only by its revisionRef (DRAWING_REVISION_REQUIRED), or a sheet's four files, verified",
         "the state-carrying 3DM (#657), only while the design loop is enforced: POST /api/state-files/export seals an exact revision's model with its State Record and the project's active design decisions in the architect's words, read back like any export; POST /api/state-files/inspect reads such a file without retaining anything and answers the record and decisions its seal keeps, every change made outside MonkeyHub and one question awaiting the architect for each part it touched; POST /api/exports is unchanged in every tier",
-        "the drawing pool (drawing_pool): worker processes, half the processors from one to four or MONKEY_DRAWING_WORKERS, started only by the serving process, solving elevations, axonometrics, section perspectives and cut plans while the Runtime answers other requests; and drawing_sources, retained_sources for elevations, section perspectives and cut plans: the project's write guard is held while the source is checked and from retention to registration (the source checked again under it), and given back while the view is solved; _document_source_lock is held only to look for a registered revision and to register a new one, which an identical request registered meanwhile answers instead"
+        "the drawing pool (drawing_pool): worker processes, half the processors from one to four or MONKEY_DRAWING_WORKERS, started only by the serving process, solving elevations, axonometrics, section perspectives and cut plans while the Runtime answers other requests, a source verified for the first time read meanwhile by the other workers too (S22), so drawings of it asked together do not wait to read it one after another; and drawing_sources, retained_sources for elevations, section perspectives and cut plans: the project's write guard is held while the source is checked and from retention to registration (the source checked again under it), and given back while the view is solved; _document_source_lock is held only to look for a registered revision and to register a new one, which an identical request registered meanwhile answers instead",
+        "a native model's drawing source kept in the projection cache (drawing-source, _kept_source): what a drawing worker verified, without its shapes, keyed by the model's bytes, its registration and the reading code, so a restarted Runtime answers a registered drawing without reading the model again",
+        "a model asset's native index kept by its bytes (model-index in the projection cache, model_index, warm_model_index): decoded once with every object's bounds when the model is registered or first read, so GET /api/model-assets/{sha}/index pages a lookup; a page carries bounds only when asked, as before"
       ],
       "does_not_own": [
         "producing the export or its receipt - monkeycad.execution and its backends, through monkeyarch.application.project_runner",
@@ -10277,10 +10664,12 @@
         "GET /api/projections/pages",
         "GET /api/projections/{key}",
         "ModelSource",
+        "ModelSourceBinding",
         "POST /api/artifacts/{sha256}/rhino-export",
         "POST /api/captures",
         "POST /api/documents",
         "POST /api/documents/{asset_sha256}/model-source",
+        "PUT /api/documents/{asset_sha256}/model-source",
         "POST /api/documents/{asset_sha256}/work-copy",
         "POST /api/drawings/elevations",
         "POST /api/drawings/plans",
@@ -10324,6 +10713,7 @@
         "list_document_work_copies",
         "list_documents",
         "load_drawing_source",
+        "drawing_receipt",
         "material_view",
         "model_view",
         "model_view_pipeline",
@@ -10339,6 +10729,7 @@
         "projection_spec",
         "read_model_preview",
         "read_model_source_index",
+        "rebind_document_model_source",
         "recipe_suggestions",
         "register_model_asset",
         "replacement_cause",
@@ -10350,7 +10741,10 @@
         "select_drawing_source",
         "tree_model_sources",
         "DrawingPool",
-        "drawing_sources"
+        "drawing_sources",
+        "model_index",
+        "warm_model_index",
+        "camera_source"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -10479,7 +10873,8 @@
         "the typed write operations (layer, polyline, extrusion, box, mesh, dot, import, transform, delete, attributes), checked in full before the document changes",
         "stamping created objects with monkeyhub.owner/write/label/project user text and refusing to touch unstamped objects unless allowUserObjects is true",
         "GET /api/live-rhino/instances, GET /api/live-rhino/document, POST /api/live-rhino/write, GET /api/live-rhino/capture",
-        "POST /api/live-rhino/snapshot: a copy of the open document, unsaved edits included (optionally only drawable objects or some layers), registered as an external model asset through project_runtime.documents; the architect's selection, path and modified flag are restored"
+        "POST /api/live-rhino/snapshot: a copy of the open document, unsaved edits included (optionally only drawable objects or some layers), registered as an external model asset through project_runtime.documents; the architect's selection, path and modified flag are restored",
+        "Opening Rhino for the person with its script server on (open_connected, POST /api/live-rhino/open): Rhino.exe beside RhinoCode.exe is started detached with /nosplash /runscript=\"_StartScriptServer\" and the .3dm file if one is named, then waited for until RhinoCode lists it; a Rhino that already answers with the document is returned as it is, and another Rhino running without a script server refuses (LIVE_RHINO_ALREADY_OPEN: a second Rhino would not have the first one's unsaved work). The caller asks the person first and sends confirmed true. RhinoCode.exe is found where Windows records Rhino (App Paths) and in Program Files; MONKEYHUB_RHINOCODE is only an override."
       ],
       "does_not_own": [
         "saving the document - the architect saves in Rhino",
@@ -10507,7 +10902,12 @@
         "write_document",
         "capture_view",
         "POST /api/live-rhino/snapshot",
-        "snapshot_document"
+        "snapshot_document",
+        "POST /api/live-rhino/open",
+        "open_connected",
+        "rhino_executable",
+        "LiveRhinoOpenRequest",
+        "LiveRhinoOpenDto"
       ],
       "depends_on": [
         "monkeycad.occt",
@@ -10549,7 +10949,7 @@
         "handing one explicitly chosen registered image page, up to three reference pages and the person's words to the host conversation as an image discussion (#253), re-verified against the registered documents on confirmation, without reading the Board scene for it or saving the Board; the dialog closes only once the host took the request, and a host's refusal keeps it open with the reason",
         "the export raster of a registered document page (page_export_png): the PNG a Board PNG export writes at full size, a PDF page at 144 dpi over white; a view sheet's retained PNG is this export of its PDF",
         "showing the selected page against the editing base as project_runtime.binding's representation status answers it for that exact page (#288), read again only when the selection or what that status is derived from moves, with the page's own Stage label and generation time; the Board compares no sources itself, and showing the status never changes, rebinds or sends a page",
-        "drawing one frame or region of a scene revision as the Board shows it for an agent to read (view_board, gap 28): its exact registered pages under the person's strokes, shapes, text and tracing-paper snapshots, at most 2048 px and 4 MiB, with every mark listed by type, colours, box, last change, frame and, for each page under it, the shared part in page fractions; it approximates Excalidraw's drawing and writes nothing"
+        "drawing one frame or region of a scene revision as the Board shows it for an agent to read (view_board, gap 28; a sentence typed inside a shape is told as that shape's note, and the text says whose it is: containerId): its exact registered pages under the person's strokes, shapes, text and tracing-paper snapshots, at most 2048 px and 4 MiB, with every mark listed by type, colours, box, last change, frame and, for each page under it, the shared part in page fractions; it approximates Excalidraw's drawing and writes nothing"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (project_runtime.documents and monkeydiagram.drawing_runs)",
@@ -10932,7 +11332,8 @@
         "expiring superseded local recovery in the project's own runtime (prune_recovery over archflow.project.repository's prune_working_draft, its rule unchanged): first in every retention sweep and every 15 minutes while the project is open (RECOVERY_PRUNE_INTERVAL_S), the timer the Hub kept until ADR-012",
         "relation_problems: the violated relations, then the unchecked ones, by relation id, from the run's retained relation reports, at most RELATION_PROBLEMS_SHOWN; a check that held on the pairs it measured but left a pair unmeasured is unchecked",
         "each finished Worktree Graph line's candidate review (unreviewed, rejected, archived) from the retained candidate reviews, read once per graph, so a result the architect archived is not offered again (#300)",
-        "following a job in four steps (#300): generate, check, repair and save, each pending, running, done, skipped or failed with a sentence; the work reports them with report_step from the worker thread it runs on, each change is a job.step event, a step still running when the work ends ends with it, and a job's events carry its lane, what it waits for, its title and its steps"
+        "following a job in four steps (#300): generate, check, repair and save, each pending, running, done, skipped or failed with a sentence; the work reports them with report_step from the worker thread it runs on, each change is a job.step event, a step still running when the work ends ends with it, and a job's events carry its lane, what it waits for, its title and its steps",
+        "a runtime snapshot's recent drawings (recent_drawings, RecentDrawingDto on GET /api/runtime and so in the Hub's project snapshot): the project's newest registered drawings, newest first, each by its latest revision, with the version it was drawn from, when, and its first page's PNG path, read from the project index"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - monkeyarch.application.project_runner",
@@ -11030,7 +11431,10 @@
         "TrashRestoreDto",
         "RelationProblem",
         "relation_problems",
-        "RELATION_PROBLEMS_SHOWN"
+        "RELATION_PROBLEMS_SHOWN",
+        "recent_drawings",
+        "RECENT_DRAWINGS",
+        "RecentDrawingDto"
       ],
       "depends_on": [
         "archflow.project.inputs",
@@ -11124,7 +11528,7 @@
         "the agent seam that compiles free text into a scalar sentence or a construction answer (a construction script, facets, parameters) (deterministic, codex subprocess, Anthropic Messages), or returns a design question or unsupported capability; the record sheet an agent may see, in construction terms (#419: for a design request the construction vocabulary and the model by geometry id with facets and the capabilities they unlock; numeric controls by geometry id; backend prose in construction words; no realisation name, record row or classification but facets)",
         "the receipt of a Studio model call: the request it was bound to, the provider's version and fingerprint, and how the call ended",
         "resolving a picked object to a component and element from its archflow:* user strings, and saying when it is unbound, unknown or stale",
-        "reading circle / arrow / keep / remove and freehand / line / ruler / arc annotations into facts the record can vouch for, retaining their screen control points, colour, line width, manual ruler label and recorded view as annotation context without granting geometry or execution authority",
+        "reading circle / arrow / keep / remove and freehand / line / ruler / arc / text annotations into facts the record can vouch for, retaining their screen control points, colour, line width, short label, text font size and recorded view; text with one resolved component is read as description.note in intent facts and read-only facetNotes on saved model annotations, without writing a model facet or granting geometry or execution authority",
         "the target resolver: which component and element a request is about, from the projection's component tree, an explicit pick and what the architect has rejected - never from the nearest similar string",
         "the action resolver: change_existing_value / declare_missing_control / clarify / unsupported, and the AuthoredControlDraft the second of those returns",
         "the four closed outcomes of one intent (COMPILED, NEEDS_CLARIFICATION, MISSING_EDITABLE_CONTROL, UNSUPPORTED) and their reason codes",
@@ -11170,8 +11574,10 @@
         "the Candidate Pool read for the Design Tree: admitted Candidates and their Studies from admission records and from legacy facts that already prove admission (a committed Stage's run, a retained Exploration's non-base option, an accepted episode's produced run), with lineage-derived continuedFrom and acceptedStageRef and Working Head membership",
         "the attributable, revisioned rejection, archival/restoration and endorsement of an exact retained Candidate or Stage; this changes no design position",
         "the one-call revision (revise over RevisionPorts, POST /api/revisions): base, keep decisions protected, a touched rejected option, conditions in reach that no check can verify, the build, the read-back and comparison, validation, admission and Continue, in that order, answered as landed, admitted, problems, needs_question or refused; every step is an existing route or function",
-        "reading page marks (a circle, outline, stroke or arrow on a drawing or a model view's object-ID image) into the components and elements they cover, with how much of each lies in the mark and why a mark has no clear target, deterministically and without a model call or write",
-        "the edit log: each retained candidate change along a run's line read again against its exact source record, as element and parameter edits with numeric before, after and direction, and gathered per field; a reading, never a new record"
+        "reading page marks (a circle, outline, stroke or arrow on a drawing, a view sheet or a model view's object-ID image, and a stroke on the model) into the components and elements they cover, with how much of each lies in the mark and why a mark has no clear target, deterministically and without a model call or write; a registered page is read as it was drawn and answered for by the record state it was drawn from (POST /api/markup/resolve)",
+        "the edit log: each retained candidate change along a run's line read again against its exact source record, as element and parameter edits with numeric before, after and direction, and gathered per field; a reading, never a new record",
+        "reading a model attached from outside the project (a Live Rhino snapshot) as building parts, by each object's name, its layer and its shape and then the project's model, kept per file",
+        "making a model attached from outside the project (a Live Rhino snapshot, an uploaded 3dm) a design that can be changed: one semantic edit at the file's own run, a component per part it is read as and an imported element per object or Rhino group (POST /api/model-assets/design; none named is the model attached last)"
       ],
       "does_not_own": [
         "running the proposal - project_runtime.candidate",
@@ -11233,6 +11639,7 @@
         "POST /api/intents",
         "POST /api/intents/context",
         "POST /api/pick/resolve",
+        "POST /api/markup/resolve",
         "POST /api/proposals",
         "GET /api/proposals/{proposal_id}",
         "parse_utterance",
@@ -11284,9 +11691,11 @@
         "DocumentAnnotationRef",
         "DocumentAnnotationPage",
         "GET /api/model-annotations",
+        "GET /api/model-annotations/history",
         "PUT /api/model-annotations",
         "ModelAnnotationSnapshot",
         "read_model_annotations",
+        "list_model_annotations",
         "save_model_annotations",
         "require_document_model_sources",
         "require_document_comment_source",
@@ -11408,10 +11817,21 @@
         "MarkReading",
         "read_model_marks",
         "hit_subjects_of",
+        "read_page_marks",
+        "PageMarks",
         "edit_log",
         "edits_between",
         "by_target",
-        "EditStep"
+        "EditStep",
+        "GET /api/model-assets/{asset_sha256}/parts",
+        "model_parts",
+        "read_model_parts",
+        "snapshot_subjects",
+        "POST /api/model-assets/design",
+        "conversion_edit",
+        "imported_placements",
+        "imported_shapes",
+        "GET /api/model-assets/attached"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -11435,6 +11855,7 @@
         "monkeycad.formats",
         "monkeycad.occt",
         "monkeydiagram.rendering.svg",
+        "monkeydiagram.drawing_runs",
         "project_runtime.binding",
         "project_runtime.board",
         "project_runtime.documents",
@@ -11468,7 +11889,7 @@
         "2D points use the visible page with a top-left origin and x-right/y-down coordinates in [0,1]; lineWidth is a fraction of its shorter side, unaffected by zoom or DPI; page text has one top-left anchor, multiline label content and its own short-side-normalized fontSize, while legacy strokes omit that field and retain their serialized identity",
         "submitted document words and exact page references survive restart in the named run even when the intent needs clarification; their retained drawing association is not replaced by a later same-pixel revision, and saving documents or ink never moves HEAD",
         "viewing a work item is read-only; explicit selection changes only that item, leaves canonical HEAD and authored inputs unchanged, and is distinct from project issue or proposal endorsement",
-        "saved choices and model annotations form run-scoped immutable revision chains; stale saves and competing/incomplete chains are refused; process-local locks do not claim cross-process atomic CAS",
+        "saved choices and model annotations form run-scoped immutable revision chains; model annotation history reads that exact model source chain newest first without adding records; stale saves and competing/incomplete chains are refused; process-local locks do not claim cross-process atomic CAS",
         "a source association added later cannot retroactively authorize an older document comment or proposal",
         "only a successfully retained option addition emits working_copy.option_added; stale, duplicate and failed writes emit no addition event",
         "document intents require one edit visual matching the sole saved page reference; selected reference pages do not change the edit base or import historical comments; each PNG is at most 4 MiB and 2048 pixels on its longer side with registered visible-page aspect ratio, with at most 16 MiB total; validation does not prove client pixels were rendered from the source",
@@ -11559,7 +11980,10 @@
         "services/project-runtime/tests/test_revision_transaction.py",
         "tests/integration/test_capability_registry.py",
         "services/project-runtime/tests/test_markup.py",
-        "services/project-runtime/tests/test_edit_log.py"
+        "services/project-runtime/tests/test_markup_routes.py",
+        "services/project-runtime/tests/test_edit_log.py",
+        "services/project-runtime/tests/test_model_parts.py",
+        "services/project-runtime/tests/test_imported_design.py"
       ],
       "notes": "ADR-001's record, section 2.1, makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -11601,7 +12025,11 @@
         "tools/project/export_drawing_recipe.py",
         "services/project-runtime/src/project_runtime/application/revision_transaction.py",
         "services/project-runtime/src/project_runtime/application/markup.py",
-        "services/project-runtime/src/project_runtime/application/edit_log.py"
+        "services/project-runtime/src/project_runtime/api/routes/markup.py",
+        "services/project-runtime/src/project_runtime/api/dto/markup.py",
+        "services/project-runtime/src/project_runtime/application/edit_log.py",
+        "services/project-runtime/src/project_runtime/application/model_parts.py",
+        "services/project-runtime/src/project_runtime/application/imported_design.py"
       ]
     },
     {
@@ -11775,7 +12203,8 @@
         "POST /api/skills, GET /api/skills (the index, no bodies) and GET /api/skills/{skill_id} with ?version=",
         "optional script files and an entry per version, and its codeSha256 over body, entry and files",
         "a project's approvals of one version's exact code from before S-1 (StudioSkillApproval@1 and their revocations), retained and listed by GET /api/skills/approvals for the Hub to carry over; they allow no run",
-        "What a person allows skills to do (S-1, skill_access): an access in the form a person allows it (network, programs by name, ssh hosts, write folders, packages by distribution; reading is not asked), the items that allow anything and are never allowed for every skill, and reading MonkeyHubSkillGrants@1 at the path MONKEYHUB_SKILL_GRANTS names to say what a run of one skill still needs or which one-run grant covers it"
+        "What a person allows skills to do (S-1, skill_access): an access in the form a person allows it (network, programs by name, ssh hosts, write folders, packages by distribution; reading is not asked), the items that allow anything and are never allowed for every skill, and reading MonkeyHubSkillGrants@1 at the path MONKEYHUB_SKILL_GRANTS names to say what a run of one skill still needs or which one-run grant covers it",
+        "The inputs a skill's run must be given (manifest.requiredInputs): input names in the order a person would list them, alternatives joined by | (model|mesh); optional, so a skill that names none is stored and run as it always was; a misspelt entry makes the package invalid and says why"
       ],
       "does_not_own": [
         "Loading skills into an agent: hub.shell materializes the installed skills into a plugin directory in its cache and the agent's native mechanism loads it",
@@ -11814,7 +12243,8 @@
         "SkillGrantsDto",
         "SkillGrantDto",
         "SkillAccessDto",
-        "SkillRefDto"
+        "SkillRefDto",
+        "REQUIRED_INPUTS"
       ],
       "depends_on": [
         "project_runtime.binding",
@@ -11858,7 +12288,9 @@
         "one P036 run skill-run-<id> per execution with StudioSkillRun@1 records from queued to succeeded or failed",
         "each skill's own package folder installed with an external pip for the runtime's Python",
         "registering PDF/PNG/JPEG outputs as documents, 3dm outputs as model assets with an undrawable report, small text in the record and other files as P036 objects",
-        "before a run starts, what the skill declares read against the grants the Hub keeps (MONKEYHUB_SKILL_GRANTS) and a one-run grant bound to the project, skill and code, refused with SKILL_ACCESS_NEEDED naming what still needs allowing; the run record keeps the folder it came from and each grant it went ahead on"
+        "before a run starts, what the skill declares read against the grants the Hub keeps (MONKEYHUB_SKILL_GRANTS) and a one-run grant bound to the project, skill and code, refused with SKILL_ACCESS_NEEDED naming what still needs allowing; the run record keeps the folder it came from and each grant it went ahead on",
+        "what a person or an Agent does after a failure: every refusal and failed run says fix_input, ask_person or stop (NEXT_STEPS, failureNext); a run that writes no file fails with SKILL_OUTPUT_MISSING; a failed run whose error names an input its manifest declares and the request did not give fails with SKILL_INPUT_MISSING; a succeeded run carries verification (passed, failed or inconclusive) against the files its manifest says it writes, without losing the outputs it did write; an Agent's request that failed twice in a row within 30 minutes is refused with SKILL_REPEATED_FAILURE",
+        "Refusing a request that lacks a required input (manifest.requiredInputs) before anyone is asked to allow anything: 422 SKILL_INPUT_MISSING, in words that name each missing input with what the manifest says it is and what the request gave, and a fix_input next step"
       ],
       "does_not_own": [
         "approving a version - project_runtime.skills",
@@ -11885,7 +12317,14 @@
         "used_once_grants",
         "allowed",
         "GET /api/skills/{skill_id}/needs",
-        "run_needs"
+        "run_needs",
+        "next_step",
+        "verify_outputs",
+        "declared_outputs",
+        "declared_inputs",
+        "request_digest",
+        "missing_required",
+        "required_words"
       ],
       "depends_on": [
         "archflow.project.ports",
@@ -11946,7 +12385,9 @@
         "monkeydiagram.projection.mesh_views",
         "project_runtime.binding",
         "project_runtime.documents",
-        "project_runtime.shell"
+        "project_runtime.shell",
+        "monkeycad.formats",
+        "monkeydiagram.drawing_runs"
       ],
       "invariants": [
         "the three images come from one depth buffer and line up pixel for pixel",
@@ -12019,7 +12460,8 @@
         "the two package places and the MONKEYHUB_SKILL_PACKAGES override; a name found in both is the user's",
         "the skills installed on this machine (installed), read without a project, which the Hub reads to list them for its chats (architecture_policy: the Runtime's declared read API)",
         "the project retaining the exact version a run uses the first time it runs there (retain); no import step",
-        "listing every package with the version the project holds and whether it matches"
+        "listing every package with the version the project holds and whether it matches",
+        "reading a package catches what would only fail when a run starts: the entry script must compile and every file SKILL.md names by its full path under scripts/, params/, assets/, references/, templates/ or data/ must be in the package; such a package is listed with its problem (kind, file, line), given to no chat and runs nothing"
       ],
       "does_not_own": [
         "retaining a version - project_runtime.skills",
@@ -12040,7 +12482,8 @@
         "library",
         "read_package",
         "roots",
-        "user_root"
+        "user_root",
+        "package_problem"
       ],
       "depends_on": [
         "project_runtime.binding",
@@ -12155,6 +12598,7 @@
         "agent_chat"
       ],
       "depends_on": [
+        "archflow.contracts.failures",
         "archflow.project.index",
         "archflow.project.repository",
         "monkeyarch.authoring.element_reindex",
@@ -13647,7 +14091,12 @@
         "The attention queue (#300, monkeyhub_api/attention): one card per thing a person should look at, written by producers under a dedupeKey and kept per project with its state (open, review, later, working, done, dismissed, superseded, expired), its handling history and the rules a person quieted; read across projects, put off, set aside and brought back.",
         "guess rules over the Runtime's edit log: the same element field or parameter changed the same way three times within the line's last five steps becomes one ask card whose answers send a sentence to the project's conversation; a field a person set aside stays quiet until its suppression ends; and the Runtime's drawing recipe suggestions (one pen changed the same way on two drawings or more) as one ask card per pen and direction, saving the value as the person's recipe decision",
         "What a person allowed skills to do on this machine (S-1): <runtime root>/config/skill-grants.json (MonkeyHubSkillGrants@1) beside applications.json, outside every project and never synced with a team; one grant per answer, for every skill, one skill by name and source, or one run bound to its project and code; withdrawn grants kept with when; a project's version grants from before S-1 carried over once as grants for that skill only; written only through monkeyhub_api/settings",
-        "An Agent's skill run (S-1): the project's approvals from before carried over, what the run still needs read from its Runtime (GET /api/skills/{id}/needs), and only that put to the person in the chat as one question (always allow, only this time, no); the Hub writes the grant from the answer, the Agent never names one"
+        "An Agent's skill run (S-1): the project's approvals from before carried over, what the run still needs read from its Runtime (GET /api/skills/{id}/needs), and only that put to the person in the chat as one question (always allow, only this time, no); the Hub writes the grant from the answer, the Agent never names one",
+        "The installed skills that cannot be used right now (S-1): GET /api/settings/skill-problems lists them from the skill folders alone, each with its kind (entry_syntax, missing_file, name_differs, unreadable), file, line and the technical line; Settings › What the AI may do says each in plain words with who can fix it",
+        "What a person allowed a conversation's Codex agent to do in one project (A4): a command it starts, going online, and a call to the Hub's own MCP server (an edit, and any other MCP server's tool, are asked every time: ADR-012). <runtime root>/config/tool-grants.json (MonkeyHubToolGrants@1), one grant per answer, kept apart from the skills' grants and never read by a Project Runtime; the permission card offers 'always allow in this project' beside 'only this time' and 'no', and a later request of that kind in that project is answered by the Hub with the adapter's own 'allow once' option and a line in the conversation; commands and going online are asked again while the design loop is enforced; withdrawn in Settings › What the AI may do",
+        "sending again what did nothing (#300 4-3): the forward waits while a project's Studio starts (WORKER_STARTING) and sends the same request again while the Runtime's answer is a transient failure that did nothing (archflow.contracts.failures), a few times at most; OperationRecord.attempts counts the sends and errorCode keeps the code it ended with; a failed operation's attention card can be handed to the project's conversation",
+        "the repair table (runtime.manager.REPAIRS, #300 4-2): what the Hub puts right without asking a person; its first entry starts a project's Studio that stopped unexpectedly again through recover, at most three times in ten minutes, then leaves it for a person; each repair and the hold are kept on the project's snapshot (ProjectRuntimeDto.repairs, RepairRecord) and told as repair/applied, which the attention queue shows as a notice, or, for the hold, a card that hands it to the project's conversation",
+        "Choosing a folder or a file in Windows' own dialog in place of a typed path (POST /api/chat/pick-path, path_picker.pick): a PowerShell child opens the dialog on the person's screen and is told what to ask through its environment; only a caller on this computer may ask; closing the dialog chooses nothing. Used by Add existing project and Restore archive."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -13799,7 +14248,21 @@
         "GET /api/settings/skill-grants",
         "POST /api/settings/skill-grants/{grant_id}/revoke",
         "POST /api/settings/skill-grants/carry",
-        "skill_plugins.installed_library"
+        "skill_plugins.installed_library",
+        "GET /api/settings/skill-problems",
+        "skill_problems.problems",
+        "GET /api/settings/tool-grants",
+        "POST /api/settings/tool-grants/{grant_id}/revoke",
+        "tool_grants.allow",
+        "tool_grants.revoke",
+        "tool_grants.covers",
+        "tool_grants.read",
+        "POST /api/commands/meaning",
+        "skill_plugins.installed_library",
+        "REPAIRS",
+        "RepairRecord",
+        "POST /api/chat/pick-path",
+        "path_picker.pick"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -13855,6 +14318,7 @@
       "files": [
         "apps/monkeyhub/api/monkeyhub_api/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/fabrication.py",
+        "apps/monkeyhub/api/monkeyhub_api/path_picker.py",
         "apps/monkeyhub/api/monkeyhub_api/app/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
         "apps/monkeyhub/api/monkeyhub_api/app/main.py",
@@ -13866,6 +14330,8 @@
         "apps/monkeyhub/api/monkeyhub_api/settings/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/credentials.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/skill_grants.py",
+        "apps/monkeyhub/api/monkeyhub_api/settings/skill_problems.py",
+        "apps/monkeyhub/api/monkeyhub_api/settings/tool_grants.py",
         "apps/monkeyhub/api/monkeyhub_api/project_archive.py",
         "apps/monkeyhub/api/monkeyhub_api/projects.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime/__init__.py",
@@ -13887,10 +14353,19 @@
         "apps/monkeyhub/api/monkeyhub_api/chat/visual_review.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/guides.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/routes.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/skill_cards.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/skill_plugins.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/tool_output.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/notes.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/wakeups.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/relay.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/origins.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/hub_tools.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/hub_routes.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/turn_trace.py",
         "apps/monkeyhub/api/monkeyhub_api/computer_tools.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/acp_session.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/acp_grants.py",
         "apps/monkeyhub/web/src/ChatShell.tsx",
         "apps/monkeyhub/web/src/ChatShell.css",
         "apps/monkeyhub/web/src/notifications/",
@@ -13979,18 +14454,30 @@
         "apps/monkeyhub/web/src/features/commands/",
         "apps/monkeyhub/web/src/app/AttentionShell.tsx",
         "apps/monkeyhub/web/src/app/AdvancedTools.tsx",
+        "apps/monkeyhub/web/src/app/NotesPanel.tsx",
+        "apps/monkeyhub/web/src/app/ChatFinder.tsx",
+        "apps/monkeyhub/web/src/app/WakeupStrip.tsx",
+        "apps/monkeyhub/web/src/app/hubNotes.css",
         "apps/monkeyhub/api/monkeyhub_api/attention/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/models.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/store.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/routes.py",
+        "apps/monkeyhub/api/monkeyhub_api/commands/__init__.py",
+        "apps/monkeyhub/api/monkeyhub_api/commands/meaning.py",
+        "apps/monkeyhub/api/monkeyhub_api/commands/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/actions.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/hub.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/producers.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/change_list.py",
-        "apps/monkeyhub/api/monkeyhub_api/attention/rules.py"
+        "apps/monkeyhub/api/monkeyhub_api/attention/rules.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/agent_routes.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/claude_grants.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/mcp_servers.py",
+        "apps/monkeyhub/api/monkeyhub_api/recycle.py"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
+        "apps/monkeyhub/api/tests/test_command_meaning.py",
         "apps/monkeyhub/api/tests/test_hub_locator.py",
         "apps/monkeyhub/api/tests/test_launch_hub.py",
         "apps/monkeyhub/api/tests/test_applications.py",
@@ -14046,6 +14533,7 @@
         "apps/monkeyhub/web/test/projectStore.test.ts",
         "apps/monkeyhub/api/tests/test_chat_render.py",
         "apps/monkeyhub/api/tests/test_chat_progress.py",
+        "apps/monkeyhub/api/tests/test_chat_notes_wakeups.py",
         "apps/monkeyhub/web/test/componentInfo.test.ts",
         "apps/monkeyhub/web/test/workspaceWidth.test.ts",
         "apps/monkeyhub/api/tests/test_design_loop_setting.py",
@@ -14070,8 +14558,10 @@
       ],
       "depends_on": [
         "archflow.contracts.canonical",
+        "archflow.contracts.failures",
         "archflow.project.archive",
         "archflow.project.manifest",
+        "archflow.project.ports",
         "archflow.project.record_kinds",
         "archflow.project.refs",
         "archflow.project.repository",
@@ -15001,6 +15491,52 @@
       "notes": [],
       "files": [
         "tools/project/state_file.py"
+      ]
+    },
+    {
+      "module_id": "archflow.contracts.failures",
+      "owner_path": "packages/archflow/src/archflow/contracts/failures.py",
+      "purpose": "Which failures pass by themselves and which may be sent again unchanged: one table of failure codes for the Hub and the Project Runtime (#300 4-1, 4-3).",
+      "owns": [
+        "the failure kinds (FAILURE_KINDS, FailureKind): per code, its category (transient or conflict), whether nothing was done so the same request may be sent again (resend), how long it usually lasts and how many sends it is worth",
+        "how long to wait before the next send, or None when it is not sent again (resend_wait, LONGEST_WAIT_S)",
+        "a failure's answer with its kind added for a known code (failure_body); every other code is answered {code, detail} as before"
+      ],
+      "does_not_own": [
+        "raising or rendering a failure: project_runtime.errors (StudioError) and the Hub's HubFailure",
+        "sending a request again: the Hub's forward (hub.shell)"
+      ],
+      "inputs": [
+        "a failure code and its sentence"
+      ],
+      "outputs": [
+        "FailureKind or None",
+        "a wait in seconds or None",
+        "a failure body"
+      ],
+      "public_api": [
+        "FAILURE_KINDS",
+        "FailureCategory",
+        "FailureKind",
+        "LONGEST_WAIT_S",
+        "failure_body",
+        "failure_kind",
+        "resend_wait"
+      ],
+      "depends_on": [],
+      "invariants": [
+        "a conflict is never sent again unchanged: the caller reads the project again before deciding",
+        "a code is listed only when its failure says nothing was done or nothing should be sent again; a reply lost after dispatch is not listed",
+        "every listed kind is sent a bounded number of times"
+      ],
+      "status": "canonical",
+      "tests": [
+        "packages/archflow/tests/test_failures.py"
+      ],
+      "notes": "Kept in archflow because the Hub and the Runtime answer with the same failure body and the Hub sends again on the Runtime's codes; neither owns the other's.",
+      "untested_reason": "field primitives with no behaviour of their own; every StateRecord/GeometryProgram round-trip test exercises them",
+      "files": [
+        "packages/archflow/src/archflow/contracts/failures.py"
       ]
     }
   ]

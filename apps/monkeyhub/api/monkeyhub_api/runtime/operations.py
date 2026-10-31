@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import threading
+import time
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -38,6 +39,15 @@ _ACKNOWLEDGEABLE = {"failed", "stale"}
 # recover (#404 F10). Answers that say a run already exists are not refusals.
 _REFUSAL_STATUSES = {409, 422}
 _RETAINED_CODES = {"OPERATION_RETAINED", "CANDIDATE_ALREADY_RETAINED"}
+# How many retained reads in a row must find a run's worker gone, or its job over with no result, before the
+# run is called lost (S15). A Studio busy building a large model can miss one health check; one miss made a
+# run that then finished read as "cannot be found again".
+LOST_AFTER_MISSES = 3
+# S19: an operation no read has seen worked on for this long is not left executing; it needs recovery, which a
+# result read later still resolves. And one called lost is read again for a while: a run its Studio was still
+# building, while the Hub could not tell, writes its result after all.
+EXECUTING_LIMIT_S = 1200.0
+RECHECK_LOST_S = 900.0
 
 
 def _dismissible(record: OperationRecord) -> bool:
@@ -58,6 +68,11 @@ class _Admission:
     # a branch head its commit can still land on. None until a read after this
     # Hub started or lost the reply.
     resolvable: bool | None = None
+    # Retained reads in a row that found nothing still working on this run (``LOST_AFTER_MISSES``).
+    misses: int = 0
+    # When a read last saw this run worked on (or it was sent), and when it was called lost (S19); this process's clock.
+    working_at: float = field(default_factory=time.monotonic)
+    lost_at: float | None = None
 
     @property
     def expects_stage(self) -> bool:
@@ -277,6 +292,7 @@ class OperationManager:
                 record.reason = None if outcome in _REVISION_DONE else str(payload.get("detail") or outcome)[:1200]
             elif response.status >= 400:
                 code = str(payload.get("code", ""))
+                record.errorCode = code or None
                 admitted = any(isinstance(payload.get(name), str) for name in ("proposalId", "jobId", "candidateId"))
                 if response.status in _REFUSAL_STATUSES and not admitted and code not in _RETAINED_CODES:
                     record.status = "refused"
@@ -292,6 +308,13 @@ class OperationManager:
                 self._save()
             finally:
                 admission.finished.set()
+
+    def sending_again(self, admission: _Admission) -> int:
+        """Count one more send of an admitted request; nothing it answered before was retained."""
+
+        with self._lock:
+            admission.record.attempts += 1
+            return admission.record.attempts
 
     def interrupted(self, admission: _Admission, reason: str) -> None:
         with self._lock:
@@ -315,7 +338,13 @@ class OperationManager:
             record.status = "validated"
             self._save()
 
-    def reconcile(self, retained: dict, *, worker_alive: bool) -> None:
+    def reconcile(self, retained: dict, *, worker_alive: bool, worker_unanswered: bool = False) -> bool:
+        """Read each operation's run in ``retained``; whether any operation's status changed.
+
+        ``worker_unanswered``: the worker is not alive only because it did not answer a health check; its
+        process is still there. A run it was working on is called lost only after several such reads.
+        """
+
         candidates = {row["candidateId"]: row for row in retained.get("candidates", [])}
         jobs = {row["candidateId"]: row for row in retained.get("jobs", [])}
         stages = retained.get("stages", [])
@@ -325,6 +354,7 @@ class OperationManager:
             stages = [stage for branch in retained.get("branches", []) for stage in branch.get("stages", [])]
         heads = {branch.get("branchId"): branch.get("headStageRef") for branch in retained.get("branches", [])}
         with self._lock:
+            before = {key: admission.record.status for key, admission in self._operations.items()}
             for admission in self._operations.values():
                 record = admission.record
                 if record.status in {"failed", "stale", "cancelled", "refused"}:
@@ -365,13 +395,28 @@ class OperationManager:
                     record.status = "failed"
                     record.reason = candidate.get("error") or "The retained candidate reports incomplete execution."
                     continue
-                if job and worker_alive:
-                    status = job.get("status")
-                    record.status = {"queued": "queued", "running": "executing", "failed": "failed"}.get(status, "needs_recovery")
-                    record.reason = job.get("error")
-                elif record.candidateId and not worker_alive and record.status in _ACTIVE:
-                    record.status = "needs_recovery"
-                    record.reason = "The worker stopped before a complete retained result could be verified. This operation was not replayed."
+                # A retained read comes in pages, and the jobs are the last page's: the run's own row can be older
+                # than its job (S19). A row that still reads it running is a run in progress, not a lost one.
+                running = candidate.get("status") if candidate and candidate.get("status") in {"queued", "running"} else None
+                if worker_alive and (running or (job and job.get("status") in {"queued", "running", "failed"})):
+                    admission.misses, admission.working_at, admission.lost_at = 0, time.monotonic(), None
+                    status = running if running and not (job and job.get("status") in {"queued", "running", "failed"}) else job.get("status")
+                    record.status = {"queued": "queued", "running": "executing", "failed": "failed"}[status]
+                    # A job that failed without its own words keeps its run's: what the receipt says went wrong (S15).
+                    record.reason = job.get("error") or (candidate.get("error") if candidate else None) if job else None
+                elif record.candidateId and record.status in _ACTIVE and (job or not worker_alive or (
+                        candidate and not admission.accepting_candidate
+                        and candidate.get("status") not in {"completed", "succeeded", "failed"})):
+                    # The job is over with no result read yet, its run reads as neither working nor done, or the
+                    # worker did not answer while its process is there: only several reads in a row say the run is
+                    # lost, and a result read meanwhile completes it above. A worker that is gone loses the run at
+                    # once. An operation is never left executing on a run nothing works on (S19).
+                    admission.misses += 1
+                    if admission.misses >= LOST_AFTER_MISSES or not (worker_alive or worker_unanswered):
+                        record.status = "needs_recovery"
+                        admission.lost_at = time.monotonic()
+                        record.reason = (job.get("error") if job and worker_alive else None) or (
+                            "The worker stopped before a complete retained result could be verified. This operation was not replayed.")
             observed = {}
             tracked = {row.record.candidateId for row in self._operations.values()}
             for candidate_id, candidate in candidates.items():
@@ -392,6 +437,31 @@ class OperationManager:
                     recoverable=status == "needs_recovery" and bool(candidate.get("receiptRef")),
                 )
             self._retained = observed
+            return any(admission.record.status != before.get(key) for key, admission in self._operations.items())
+
+    def expire(self) -> bool:
+        """Close an operation no read has seen worked on for ``EXECUTING_LIMIT_S``; whether any was closed.
+
+        It needs recovery: nothing is replayed, and a result read later still completes it.
+        """
+
+        now, moved = time.monotonic(), False
+        with self._lock:
+            for admission in self._operations.values():
+                record = admission.record
+                if record.candidateId and record.status in _ACTIVE and now - admission.working_at >= EXECUTING_LIMIT_S:
+                    record.status, admission.lost_at, moved = "needs_recovery", now, True
+                    record.reason = (f"No read saw this run worked on for {int(EXECUTING_LIMIT_S // 60)} minutes. "
+                                     "It was not replayed; its result is still taken if it is read.")
+        return moved
+
+    def awaiting_result(self) -> bool:
+        """Whether an operation was called lost recently enough that its result is still looked for (``RECHECK_LOST_S``)."""
+
+        now = time.monotonic()
+        with self._lock:
+            return any(row.record.status == "needs_recovery" and row.lost_at is not None
+                       and now - row.lost_at < RECHECK_LOST_S for row in self._operations.values())
 
     def _recoverable(self, admission: _Admission) -> bool:
         """Whether reading retained results can still resolve this operation.

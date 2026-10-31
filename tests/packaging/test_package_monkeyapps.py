@@ -673,6 +673,17 @@ class ReleaseEvidenceTests(unittest.TestCase):
             (archive, checksum, sbom), sbom)), encoding="utf-8")
         return manifest
 
+    def test_sbom_lists_the_embedding_model_the_meaning_search_ships(self) -> None:
+        model = {"name": "bge-small-zh-v1.5", "revision": "7" * 40, "path": "_runtime/models/bge-small-zh-v1.5",
+                 "files": {"model.safetensors": "d" * 64}}
+        components = {component["name"]: component for component in self.sbom(dict(self.BUILD_INFO, embeddingModel=model))["components"]}
+        shipped = components["BAAI/bge-small-zh-v1.5"]
+        self.assertEqual(shipped["type"], "machine-learning-model")
+        self.assertEqual(shipped["licenses"], [{"expression": "MIT"}])
+        self.assertEqual(shipped["hashes"], [{"alg": "SHA-256", "content": "d" * 64}])
+        self.assertEqual(shipped["properties"], [{"name": builder.SHIPPED_IN, "value": "_runtime/models/bge-small-zh-v1.5"}])
+        self.assertNotIn("BAAI/bge-small-zh-v1.5", {component["name"] for component in self.sbom()["components"]})
+
     def test_sbom_inventories_the_python_node_and_rust_contents_actually_shipped(self) -> None:
         build_info = dict(self.BUILD_INFO, desktop={
             "version": "0.1.0", "sourceCommit": "c" * 40, "cargoVersion": "cargo fixture",
@@ -1250,3 +1261,25 @@ class ReleaseCandidateNormalizationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EmbeddingModelPinTests(unittest.TestCase):
+    """The command meaning search's model is pinned once, in the module that loads it, and fetched only as pinned."""
+
+    def test_the_pins_are_read_from_the_hubs_loader(self) -> None:
+        pins = builder.model_pins(builder.SOURCE_ROOT)
+        self.assertEqual(pins["name"], "bge-small-zh-v1.5")
+        self.assertRegex(str(pins["revision"]), r"^[0-9a-f]{40}$")
+        self.assertRegex(str(dict(pins["files"])["model.safetensors"]), r"^[0-9a-f]{64}$")
+
+    def test_a_cached_file_that_is_not_the_pinned_one_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            pins = builder.model_pins(builder.SOURCE_ROOT)
+            folder = cache / "models" / f"{pins['name']}-{str(pins['revision'])[:12]}"
+            folder.mkdir(parents=True)
+            for name in dict(pins["files"]):
+                (folder / name).write_bytes(b"not the model")
+            with patch.object(builder.urllib.request, "urlopen", side_effect=AssertionError("nothing is fetched again")):
+                with self.assertRaisesRegex(ValueError, "wrong SHA-256"):
+                    builder.fetch_embedding_model(builder.SOURCE_ROOT, cache)

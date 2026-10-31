@@ -10,8 +10,8 @@ from ...binding import bound_project
 from ...errors import StudioError
 from ...settings import LOCAL_MODE
 from ..dto.artifacts import artifact_dto
-from ..dto.live_rhino import (LiveRhinoInstancesDto, LiveRhinoSnapshotDto, LiveRhinoSnapshotRequest, LiveRhinoWriteDto,
-                              LiveRhinoWriteRequest)
+from ..dto.live_rhino import (LiveRhinoInstancesDto, LiveRhinoOpenDto, LiveRhinoOpenRequest, LiveRhinoSnapshotDto,
+                              LiveRhinoSnapshotRequest, LiveRhinoWriteDto, LiveRhinoWriteRequest)
 
 
 def _this_machine_only(request: Request) -> None:
@@ -32,7 +32,23 @@ def read_live_rhino_instances() -> dict:
     """
 
     return {"instances": [row.to_dict() for row in live_rhino.list_instances()],
-            "note": "A running Rhino is listed after StartScriptServer is typed in it once."}
+            "note": "A running Rhino is listed once its script server is on: opened by POST /api/live-rhino/open, "
+                    "or StartScriptServer typed in it once."}
+
+
+@router.post("/live-rhino/open", response_model=LiveRhinoOpenDto, response_model_by_alias=True)
+def open_live_rhino(payload: LiveRhinoOpenRequest) -> dict:
+    """Open Rhino for the person with its script server already on, and return it once it answers.
+
+    Ask the person first and send confirmed true only when they said yes. A Rhino already open on the named
+    document is returned as it is; another Rhino running without a script server refuses (the person types
+    StartScriptServer in it: a second Rhino would not have its unsaved work). Waits up to 90 seconds.
+    """
+
+    if not payload.confirmed:
+        raise StudioError(422, "LIVE_RHINO_NOT_CONFIRMED", "Ask the person whether MonkeyHub may open Rhino for them, then send confirmed true.")
+    instance, opened = live_rhino.open_connected(document_path=payload.document_path)
+    return {"rhino": instance.to_dict(), "opened": opened}
 
 
 @router.get("/live-rhino/document")
@@ -84,6 +100,9 @@ def snapshot_live_rhino_document(request: Request, payload: LiveRhinoSnapshotReq
         file_name=payload.file_name, drawable_only=payload.drawable_only, layer_prefixes=payload.layer_prefixes,
         event_sink=request.app.state.events, monitor=request.app.state.monitor,
     )
+    from .artifacts import read_parts_soon
+
+    read_parts_soon(request, answer["artifact"].sha256)
     answer["artifact"] = artifact_dto(answer["artifact"]).model_dump(by_alias=True)
     return answer
 

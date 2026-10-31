@@ -15,6 +15,7 @@ import rhino3dm from "rhino3dm";
 // response and selection write lives in this process; no project/service is
 // read. A and B deliberately share run/state identity but have different bytes.
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+const tracingOnly = process.argv.includes("--tracing-only") || process.env.INTENT_VIEW_TRACING_ONLY === "1";
 const forbiddenPorts = new Set(["5187", "5188", "60617", "60616", "53621"]);
 const runId = "same-run-two-assets";
 const projectId = "intent-view-source-fixture";
@@ -86,6 +87,7 @@ let board = { projectId, title: "Intent source board", elements: [], seenDocumen
 const documentToken = "fixture-document-continuation";
 const comments = [];
 const errors = [], requests = [], intents = [], selections = [], escapedApiRequests = [], frameReads = [];
+const modelWrites = [], modelPapers = new Map(), modelHistory = [];
 const passed = [];
 let observationTransforms = 0, heldIntent = null, heldDocument = null, heldPick = null, phase = "setup", vite, browser, page;
 const http = createHttpServer();
@@ -178,6 +180,166 @@ async function sendText(utterance, clarification = false, expectedToken = null) 
   return held;
 }
 
+async function tracingScenarios() {
+  const currentInk = () => page.evaluate(() => window.__modelInkSnapshot);
+  const paperCanvas = () => page.locator('canvas.annotate[data-armed="true"]');
+  const paperTools = () => page.locator("#annotation-tools");
+  const paperIsClosed = async () => {
+    await until(() => page.locator("canvas.annotate").count(), (count) => count === 0, "Exit left an ink canvas on the model");
+    assert.equal(await paperTools().count(), 0, "Exit removes both ink canvases and the paper toolbar");
+  };
+  const openPaper = async () => {
+    const versions = cmd(page.locator(".project-bar"), "design.go_to_step.versions");
+    if (await versions.getAttribute("aria-expanded") === "true") await versions.click();
+    const more = cmd(page, "view.menu.toggle", { arg: "model_tools_more" });
+    if (await more.getAttribute("aria-expanded") !== "true") await more.click();
+    await cmd(page, "view.markup_tools.tracing_paper").click();
+    await paperCanvas().waitFor();
+  };
+  const paletteCommand = async (id, query, shortcut = null) => {
+    await page.keyboard.press("Control+k");
+    const palette = page.locator("dialog.command-palette");
+    await palette.waitFor();
+    await palette.locator("input").fill(query);
+    const row = palette.locator(`[data-row="${id}"]`);
+    await row.waitFor();
+    assert.notEqual(await row.getAttribute("aria-disabled"), "true", `${id} is executable through Ctrl+K`);
+    if (shortcut) assert.equal(await row.locator("kbd").textContent(), shortcut, "The palette exposes the actual shortcut");
+    await row.click(); await palette.waitFor({ state: "detached" });
+  };
+  const addText = async (text, { commit = true, x = 0.45, y = 0.56 } = {}) => {
+    await cmd(paperTools(), "view.markup_tools.text").click();
+    const box = await paperCanvas().boundingBox(); assert.ok(box);
+    await page.mouse.click(box.x + box.width * x, box.y + box.height * y);
+    await page.locator(".annotate__text").fill(text);
+    if (commit) await page.locator(".annotate__text").press("Enter");
+  };
+  let originalInk, savedPaper, selected;
+  await step("Tracing Paper opens blank, draws text and line, and clears in one undoable step", async () => {
+    await page.evaluate(({ componentId, elementId }) => window.__intentViewSource.select(componentId, elementId), element);
+    await until(snapshot, (value) => value.selection?.elementId === element.elementId, "The model target was not selected");
+    selected = (await snapshot()).selection;
+    await openPaper(); assert.deepEqual(await currentInk(), []);
+    await cmd(paperTools(), "view.markup_tools.line").click();
+    const box = await paperCanvas().boundingBox(); assert.ok(box);
+    await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.42); await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.42); await page.mouse.up();
+    await until(currentInk, (ink) => ink.length === 1, "The Stage did not retain the line");
+    await addText("Keep this entrance");
+    await until(currentInk, (ink) => ink.length === 2 && ink[1].label === "Keep this entrance", "The Stage did not retain its text mark");
+    originalInk = await currentInk();
+    await page.screenshot({ path: path.join(screenshots, "tracing-before-exit.png") });
+    await cmd(paperTools(), "markup.clear").click();
+    await until(currentInk, (ink) => ink.length === 0, "Clear left marks on the current paper");
+    await page.keyboard.press("Control+z");
+    await until(currentInk, (ink) => JSON.stringify(ink) === JSON.stringify(originalInk), "Ctrl+Z did not restore both marks in one step");
+    await paletteCommand("markup.clear", "Clear tracing paper", "Ctrl+Shift+X");
+    await until(currentInk, (ink) => ink.length === 0, "Ctrl+K Clear only located a button instead of clearing");
+    await page.keyboard.press("Control+z");
+    await until(currentInk, (ink) => JSON.stringify(ink) === JSON.stringify(originalInk), "Undo did not restore the command-palette clear");
+    await page.keyboard.press("Control+Shift+x");
+    await until(currentInk, (ink) => ink.length === 0, "The clear shortcut did not execute");
+    await page.keyboard.press("Control+z");
+    await until(currentInk, (ink) => JSON.stringify(ink) === JSON.stringify(originalInk), "Undo did not restore the keyboard clear");
+    assert.equal(modelWrites.length, 0, "Drawing, clearing and undo stay local until the paper is closed");
+  });
+  await step("one Escape commits unfinished text, closes all ink and retains one paper without clearing selection", async () => {
+    // Text is still the selected tool after Undo, so toggle it off before addText arms it.
+    if (await cmd(paperTools(), "view.markup_tools.text").getAttribute("aria-pressed") === "true") await cmd(paperTools(), "view.markup_tools.text").click();
+    await addText("Exit saves this sentence", { commit: false, x: 0.36, y: 0.68 });
+    await page.screenshot({ path: path.join(screenshots, "tracing-text.png") });
+    await page.locator(".annotate__text").press("Escape");
+    await paperIsClosed();
+    await page.screenshot({ path: path.join(screenshots, "tracing-after-exit.png") });
+    await until(() => modelWrites.length, (count) => count === 1, "Exit did not make exactly one retained write");
+    assert.deepEqual((await snapshot()).selection, selected, "The same Escape must not clear the model selection");
+    savedPaper = modelHistory[0];
+    assert.equal(savedPaper.annotations.length, 3); assert.equal(savedPaper.annotations[2].label, "Exit saves this sentence");
+    assert.deepEqual(savedPaper.annotations.slice(0, 2), originalInk);
+  });
+  await step("re-entry starts a new blank paper and modification history restores the previous paper and camera", async () => {
+    await openPaper(); assert.deepEqual(await currentInk(), [], "Re-entry must not float the last paper over the model");
+    await cmd(paperTools(), "view.markup_tools.cancel").click(); await paperIsClosed();
+    assert.equal(modelWrites.length, 1, "Opening and closing a blank paper does not overwrite the saved paper");
+    await page.evaluate(() => window.__tracingStage.changeCamera());
+    const changedCamera = await page.evaluate(() => window.__tracingStage.camera());
+    assert.notDeepEqual(changedCamera.position, savedPaper.annotations[0].camera.position);
+    await openVersions();
+    await cmd(page.locator("#stage-versions-panel"), "view.markup_tools.restore_paper", { arg: savedPaper.revisionSha256 }).click();
+    await until(currentInk, (ink) => JSON.stringify(ink) === JSON.stringify(savedPaper.annotations), "History did not restore the complete selected paper");
+    await paperCanvas().waitFor();
+    const restoredCamera = await page.evaluate(() => window.__tracingStage.camera());
+    const expectedCamera = savedPaper.annotations[0].camera;
+    for (const key of ["position", "target", "up"]) restoredCamera[key].forEach((value, index) => assert.ok(Math.abs(value - expectedCamera[key][index]) < 1e-6, `${key} restores the recorded camera`));
+    assert.equal(restoredCamera.projection, expectedCamera.projection); assert.equal(restoredCamera.zoom, expectedCamera.zoom);
+    await page.screenshot({ path: path.join(screenshots, "tracing-restored.png") });
+    await cmd(paperTools(), "view.markup_tools.cancel").click(); await paperIsClosed();
+    assert.equal(modelWrites.length, 1, "Restoring an unchanged historical paper does not create another revision");
+  });
+  await step("Escape exits idle, unfinished arc and eraser sessions in one press", async () => {
+    for (const mode of ["idle", "arc", "eraser"]) {
+      await openPaper();
+      if (mode === "idle") await cmd(paperTools(), "view.markup_tools.freehand").click();
+      else if (mode === "eraser") await cmd(paperTools(), "view.markup_tools.eraser").click();
+      else {
+        await cmd(paperTools(), "view.markup_tools.arc").click();
+        const box = await paperCanvas().boundingBox(); assert.ok(box);
+        await page.mouse.move(box.x + box.width * 0.35, box.y + box.height * 0.5); await page.mouse.down();
+        await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.5); await page.mouse.up();
+        assert.deepEqual(await currentInk(), [], "The arc is still waiting for its third point");
+      }
+      await page.keyboard.press("Escape"); await paperIsClosed();
+      assert.deepEqual((await snapshot()).selection, selected, `${mode} Escape must not fall through to model selection`);
+    }
+    assert.equal(modelWrites.length, 1, "Exiting empty or unfinished sessions does not write empty replacement records");
+  });
+  await step("other text inputs, the modal palette and inactive workspaces retain their Escape", async () => {
+    await openPaper();
+    await cmd(paperTools(), "view.markup_tools.ruler").click();
+    const otherInput = page.locator(".annotate__label input");
+    await otherInput.fill("Manual dimension"); await otherInput.press("Escape");
+    assert.equal(await paperTools().count(), 1, "Escape inside another text input does not exit the paper");
+    await otherInput.blur();
+    await page.keyboard.press("Control+k"); await page.locator("dialog.command-palette").waitFor();
+    await page.keyboard.press("Escape"); await page.locator("dialog.command-palette").waitFor({ state: "detached" });
+    assert.equal(await paperTools().count(), 1, "Closing the command modal does not also exit tracing");
+    await page.getByTestId("host-active").uncheck();
+    await until(() => page.evaluate(() => window.__tracingStage.active), (active) => !active, "The workspace did not become inactive");
+    await page.keyboard.press("Escape");
+    assert.equal(await paperTools().count(), 1, "An inactive Stage cannot take Escape");
+    await page.getByTestId("host-active").check();
+    await until(() => page.evaluate(() => window.__tracingStage.active), Boolean, "The workspace did not become active");
+    await paletteCommand("view.markup_tools.text", "Text");
+    await until(() => cmd(paperTools(), "view.markup_tools.text").getAttribute("aria-pressed"), (pressed) => pressed === "true", "Ctrl+K did not directly arm the text tool");
+    const box = await paperCanvas().boundingBox(); assert.ok(box);
+    await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.55);
+    await page.locator(".annotate__text").fill("Second paper"); await page.locator(".annotate__text").press("Enter");
+    await paletteCommand("view.markup_tools.cancel", "Exit tracing paper", "Esc");
+    await paperIsClosed(); await until(() => modelWrites.length, (count) => count === 2, "Ctrl+K Exit did not save the second paper");
+    assert.equal(modelHistory.length, 2); assert.equal(modelHistory[0].annotations[0].label, "Second paper");
+    assert.deepEqual(modelHistory[1], savedPaper, "The second paper leaves the first revision recoverable");
+  });
+  await step("switching model source commits unfinished text to the old paper and leaves the new model clean", async () => {
+    await openPaper();
+    await addText("This note belongs to model A", { commit: false });
+    const cameraAtEntry = await page.evaluate(() => window.__tracingStage.camera());
+    // Invoke the same App action used by history/host navigation. Opening the
+    // versions menu first would explicitly exit tracing and miss this boundary.
+    await page.evaluate(({ source, name }) => window.__intentViewSource.viewModel(source, name), { source: sourceB, name: optionB.label });
+    await until(snapshot, (value) => !value.loading && value.fileName?.includes("option-B.3dm"), "The viewed model did not switch to B", 60_000);
+    await paperIsClosed();
+    await until(() => modelWrites.length, (count) => count === 3, "Switching source did not retain the unfinished old-source paper once");
+    const saved = modelWrites[2];
+    assert.deepEqual(saved.modelSource, sourceA, "Unmount commits through the old paper's source binding");
+    assert.equal(saved.annotations.length, 1); assert.equal(saved.annotations[0].label, "This note belongs to model A");
+    assert.deepEqual(saved.annotations[0].camera, cameraAtEntry, "The text keeps its entry camera even when the next model reframes the viewport");
+    assert.deepEqual(await currentInk(), [], "The new source must not inherit the old model's text");
+    await openPaper(); assert.deepEqual(await currentInk(), [], "The first paper on model B also starts blank");
+    await cmd(paperTools(), "view.markup_tools.cancel").click(); await paperIsClosed();
+    assert.equal(modelWrites.length, 3, "Viewing B and closing its untouched paper do not write A's ink into B");
+  });
+}
+
 try {
   vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", cacheDir, publicDir: ".generated/public",
     define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") },
@@ -185,7 +347,23 @@ try {
       transform(source, id) {
         const modulePath = id.split("?")[0].replaceAll("\\", "/");
         if (modulePath === `${webRoot.replaceAll("\\", "/")}/test/workspace-fixture.tsx`) {
+          if (tracingOnly) {
+            const marker = "<ErrorBoundary><Fixture /></ErrorBoundary>";
+            assert.equal(source.split(marker).length, 2, "Wrap the existing workspace host with the real command provider once");
+            source = 'import { CommandProvider } from "../src/features/commands/CommandProvider";\n' +
+              source.replace(marker, "<ErrorBoundary><CommandProvider><Fixture /></CommandProvider></ErrorBoundary>");
+          }
           return { code: `import "/@fs/${path.resolve(webRoot, "../../../packages/web-shared/src/base.css").replaceAll("\\", "/")}";\n${source}`, map: null };
+        }
+        if (tracingOnly && modulePath === `${webRoot.replaceAll("\\", "/")}/src/features/stage/Stage.tsx`) {
+          const marker = "  const commitPendingInk = useRef<(() => void) | null>(null);";
+          assert.equal(source.split(marker).length, 2, "Observe the real Stage camera once");
+          return { code: source.replace(marker, marker + `
+            (window as unknown as { __tracingStage: unknown }).__tracingStage = {
+              active, camera: () => viewportRef.current?.camera(),
+              changeCamera: () => { const camera = viewportRef.current?.camera(); if (camera) viewportRef.current?.applyCamera({
+                ...camera, position: [camera.position[0] + 6, camera.position[1] + 4, camera.position[2] + 3] }); }
+            };`), map: null };
         }
         if (modulePath === `${webRoot.replaceAll("\\", "/")}/src/workspaces/monkeydiagram/documentVisualInput.ts`) {
           const marker = "  if (!Number.isFinite(maxEdge)";
@@ -198,7 +376,7 @@ try {
           return { code: source.replace(marker, marker + `
             (window as unknown as { __modelInkSnapshot: unknown }).__modelInkSnapshot = structuredClone(gestures);
             (window as unknown as { __intentViewSource: unknown }).__intentViewSource = {
-              propose, select: selectSemanticTarget, pick: resolvePick,
+              propose, select: selectSemanticTarget, pick: resolvePick, viewModel,
               snapshot: { fileName: inspection?.fileName, sourceLabel, viewState: view?.state,
                 loading: modelLoading, busy: proposalBusy, selection,
                 entries: transcript.entries.map((entry) => ({ kind: entry.kind })) }
@@ -273,8 +451,17 @@ try {
         if (url.pathname === "/api/model-annotations") {
           const modelSource = { runId: url.searchParams.get("runId"), stateDigest: url.searchParams.get("stateDigest"), assetSha256: url.searchParams.get("assetSha256") };
           assert.ok([sourceA, sourceB, sourceC].some((source) => JSON.stringify(source) === JSON.stringify(modelSource)));
-          return await json({ projectId, modelSource, revisionSha256: "6".repeat(64), annotations: [], comment: "" });
+          const revision = url.searchParams.get("revisionSha256");
+          if (revision) {
+            const saved = modelHistory.find((paper) => paper.revisionSha256 === revision && paper.modelSource.assetSha256 === modelSource.assetSha256);
+            assert.ok(saved, "Restoring must read a retained exact paper revision");
+            return await json(saved);
+          }
+          return await json(modelPapers.get(modelSource.assetSha256) ?? { projectId, modelSource, revisionSha256: "6".repeat(64), annotations: [], comment: "" });
         }
+        if (url.pathname === "/api/model-annotations/history") return await json(modelHistory.filter((paper) =>
+          paper.modelSource.assetSha256 === url.searchParams.get("assetSha256") && paper.modelSource.runId === url.searchParams.get("runId") &&
+          paper.modelSource.stateDigest === url.searchParams.get("stateDigest")));
         if (url.pathname === "/api/documents") return await json({ projectId, runId, documents });
         if (url.pathname === "/api/document-annotations") {
           const row = url.searchParams.get("assetSha256") === documentSha ? documentPage : referencePage;
@@ -305,6 +492,18 @@ try {
         board = { projectId, title: body.title, elements: body.elements, seenDocuments: body.seenDocuments,
           revisionSha256: String(requests.length).padStart(64, "0") };
         return await json(board);
+      }
+      if (method === "PUT" && url.pathname === "/api/model-annotations") {
+        const body = request.postDataJSON();
+        assert.equal(body.projectId, projectId);
+        assert.deepEqual(body.modelSource, sourceA, "Tracing stays bound to the displayed model");
+        const previous = modelPapers.get(body.modelSource.assetSha256);
+        assert.equal(body.baseRevisionSha256, previous?.revisionSha256 ?? "6".repeat(64), "Paper saves use the latest revision as their CAS base");
+        modelWrites.push(structuredClone(body));
+        const saved = { projectId, modelSource: body.modelSource, annotations: body.annotations, comment: body.comment,
+          revisionSha256: createHash("sha256").update(JSON.stringify(body)).digest("hex") };
+        modelPapers.set(body.modelSource.assetSha256, saved); modelHistory.unshift(saved);
+        return await json(saved);
       }
       if (method === "PUT" && url.pathname === `/api/working-copies/${group.groupId}/selection`) {
         const body = request.postDataJSON();
@@ -373,12 +572,19 @@ try {
         if (!artifacts.artifacts.some((row) => row.runId === imported.runId)) artifacts.artifacts.push(imported);
         return await json(imported, 201);
       }
+      // S08: the Board reads the layout once to decide whether Board | Layout shows; this one is empty.
+      if (method === "GET" && url.pathname === "/api/publication") return await json({ projectId, revisionSha256: null, title: "Layout", spec: { width: 1280, height: 720, template: "hero" }, sources: [], pages: [] });
+      // A sentence typed into the composer is looked up as a command; this Hub has no meaning search.
+      if (method === "POST" && url.pathname === "/api/commands/meaning") return await json({ state: "unavailable", hits: [], route: null });
       assert.fail(`Unexpected API request: ${method} ${url.pathname}${url.search}`);
     } catch (error) { errors.push(error.stack ?? String(error)); await route.abort("blockedbyclient"); }
   });
   await page.goto(`${uiOrigin}/?lang=en`, { waitUntil: "domcontentloaded" });
   await ready(optionA);
   assert.ok(observationTransforms > 0);
+  if (tracingOnly) {
+    await tracingScenarios();
+  } else {
   const imageSources = await page.evaluate(() => {
     const raster = (reference) => {
       const canvas = document.createElement("canvas"); canvas.width = 320; canvas.height = 240;
@@ -677,8 +883,12 @@ try {
     assert.equal(await undo.isEnabled(), true);
     await loadLocal("local-second.3dm", bytesB);
     assert.deepEqual(await currentInk(), []);
-    assert.equal(await undo.isEnabled(), false, "Changing a file is not an undoable erase of the previous file's marks");
-    assert.equal(await redo.isEnabled(), false);
+    // Changing the file closes its tracing paper; the old marks are not an undoable erase on the new file.
+    const paperClosed = async () => {
+      await until(() => page.locator("canvas.annotate").count(), (count) => count === 0, "Changing the file left its ink on the model");
+      assert.equal(await page.locator("#annotation-tools").count(), 0);
+    };
+    await paperClosed();
     await page.keyboard.press("Control+z");
     assert.deepEqual(await currentInk(), []);
     const second = await drawLine();
@@ -707,16 +917,18 @@ try {
     await clearAll.click(); assert.deepEqual(await currentInk(), []);
     await loadLocal("local-first.3dm", bytesA);
     assert.deepEqual(await currentInk(), []);
-    assert.equal(await undo.isEnabled(), false); assert.equal(await redo.isEnabled(), false);
+    await paperClosed();
     assert.equal(modelRequests(), requestsBefore, "Local history changes never GET or PUT model annotations");
   });
   assert.deepEqual(errors, []); assert.deepEqual(escapedApiRequests, []);
   assert.ok(frameReads.length > 0, "The mounted document panel must read the frame it calibrates tracing against");
   assert.deepEqual([...new Set(frameReads)].sort(), [runId, sourceC.runId].sort(),
     "Tracing calibration follows the displayed model's run: the shared A/B run, and C's own while C is viewed");
+  }
+  assert.deepEqual(errors, []); assert.deepEqual(escapedApiRequests, []);
   console.log(JSON.stringify({ passed: passed.length, projectId, sources: { A: sourceA, B: sourceB, C: sourceC },
     interceptedIntents: intents.length, mockSelections: selections.length, frameReads: frameReads.length,
-    pixelAudit, screenshots, escapedApiRequests: 0, jsErrors: 0 }, null, 2));
+    tracingOnly, retainedPapers: modelWrites.length, pixelAudit, screenshots, escapedApiRequests: 0, jsErrors: 0 }, null, 2));
 } catch (error) {
   console.error(`FAIL ${phase}: ${error.stack ?? error}`); if (errors.length) console.error(JSON.stringify(errors, null, 2));
   if (page && !page.isClosed()) console.error(await page.locator("body").innerText().catch(() => "Cannot inspect failed page"));

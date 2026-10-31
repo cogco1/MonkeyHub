@@ -39,7 +39,9 @@ from archflow.state.geometry_program import load_compiled_geometry_program
 from monkeyarch.domain.discipline_seats import SeatSpec
 from monkeycad.formats.three_dm_compose import (
     ComposedPatch,
+    adopt_named_objects,
     patch_composed_three_dm,
+    place_imported_objects,
     rewrite_composed_materials,
     verify_composed_three_dm,
 )
@@ -170,48 +172,73 @@ def execute_candidate(
 
 
 def _retain_composed_candidate(
-    binding: ProjectBinding, source: ArtifactRecord, run_id: str, receipt: Mapping[str, Any],
-    *, source_receipt: Mapping[str, Any] | None,
+    binding: ProjectBinding, original: bytes, run_id: str, receipt: Mapping[str, Any],
+    *, source_receipt: Mapping[str, Any] | None, imported: bool = False,
 ) -> None:
     """Compose the runner's native exports into the exact input model, dress it in the run's materials and retain it.
 
-    Every compose rewrites the model's materials from what the run's own
-    retained record declares (#580), the declaration its native exports were
-    made with, whether or not any geometry changed. The final bytes are read
-    back against the input model, the native exports and that declaration
-    before they are registered; a model that does not read back fails the
-    candidate and nothing is registered.
+    ``original`` is the input model's bytes: the source's composed model, or
+    the imported file itself when a run first makes it a design. With
+    ``imported`` the record's imported objects are first placed from their
+    files (``place_imported_objects``, #300 item 22 B), so a removed one is
+    gone and a moved one moves; a seat that builds only imported objects has
+    no program on that side and patches nothing. Every compose rewrites the
+    model's materials from what the run's own retained record declares
+    (#580), the declaration its native exports were made with, whether or not
+    any geometry changed. The final bytes are read back against the placed
+    input model, the native exports and that declaration before they are
+    registered; a model that does not read back fails the candidate and
+    nothing is registered.
     """
+
+    from .imported_design import imported_files, imported_placements
 
     before = {row["seat_id"]: row for row in _rows((source_receipt or {}).get("seat_results"))}
     after = {row["seat_id"]: row for row in _rows(receipt.get("seat_results"))}
-    if not before or before.keys() != after.keys():
+    if not after or (before.keys() != after.keys() and not (imported and before.keys() <= after.keys())):
         raise ValueError("The composed candidate needs the same retained geometry seats as its source model.")
-    _, original = artifact_bytes(binding, source.sha256, run_id=source.run_id)
-    composed = original
-    patches: list[ComposedPatch] = []
-    listing = list_artifacts(binding, run_id=run_id)
-    for seat_id, seat in after.items():
-        prior_ref = before[seat_id].get("program_ref")
-        next_ref = seat.get("program_ref")
-        if not prior_ref or not next_ref:
-            raise ValueError(f"The composed candidate has no retained source or replacement program for seat {seat_id}.")
-        execution_ref = (seat.get("cad") or {}).get("execution_ref")
-        donors = [row for row in listing.artifacts if row.run_id == run_id
-                  and row.receipt_ref == execution_ref and row.format == "3dm"]
-        if len(donors) != 1 or not donors[0].available or not donors[0].sha256:
-            raise ValueError(f"The composed candidate needs an available native 3DM export for seat {seat_id}.")
-        prior_program = load_compiled_geometry_program(binding.repository.load_json(record_ref_from_uri(prior_ref, binding.project_id)))
-        program = load_compiled_geometry_program(binding.repository.load_json(record_ref_from_uri(next_ref, binding.project_id)))
-        _, donor = artifact_bytes(binding, donors[0].sha256, run_id=run_id)
-        composed = patch_composed_three_dm(composed, prior_program=prior_program, program=program, replacement_3dm=donor)
-        patches.append(ComposedPatch(prior_program=prior_program, program=program, replacement_3dm=donor))
     projection = project_state(binding, run_id)
     if not projection.reference_state_exact:
         raise ValueError("The composed candidate's run has no exact retained record to read its declared materials from.")
+    if imported:
+        placements = imported_placements(projection.record)
+        try:
+            original = place_imported_objects(original, sources=imported_files(binding, placements), placements=placements)
+        except ValueError as exc:  # CadPatchError names the object that could not be placed
+            raise ValueError(f"The imported objects could not be placed in the composed candidate: {exc}") from exc
+
+    def program_of(ref):
+        return None if not ref else load_compiled_geometry_program(
+            binding.repository.load_json(record_ref_from_uri(ref, binding.project_id)))
+
+    # An uploaded complete model may name the record's objects without their identity: take them as its own first.
+    original = adopt_named_objects(original, programs=tuple(
+        program_of(row.get("program_ref")) for row in before.values() if row.get("program_ref")))
+    composed = original
+    patches: list[ComposedPatch] = []
+    listing = list_artifacts(binding, run_id=run_id)
+
+    for seat_id, seat in after.items():
+        prior_ref = (before.get(seat_id) or {}).get("program_ref")
+        next_ref = seat.get("program_ref")
+        if (not prior_ref or not next_ref) and not imported:
+            raise ValueError(f"The composed candidate has no retained source or replacement program for seat {seat_id}.")
+        if not prior_ref and not next_ref:
+            continue  # a seat of imported objects only, before and after: their placement is all of it
+        donor = None
+        if next_ref:
+            execution_ref = (seat.get("cad") or {}).get("execution_ref")
+            donors = [row for row in listing.artifacts if row.run_id == run_id
+                      and row.receipt_ref == execution_ref and row.format == "3dm"]
+            if len(donors) != 1 or not donors[0].available or not donors[0].sha256:
+                raise ValueError(f"The composed candidate needs an available native 3DM export for seat {seat_id}.")
+            _, donor = artifact_bytes(binding, donors[0].sha256, run_id=run_id)
+        prior_program, program = program_of(prior_ref), program_of(next_ref)
+        composed = patch_composed_three_dm(composed, prior_program=prior_program, program=program, replacement_3dm=donor)
+        patches.append(ComposedPatch(prior_program=prior_program, program=program, replacement_3dm=donor))
     # What the record's components and their parts declare, part first, in the rewrite and its readback alike.
     material_by_component, material_by_part, material_colors = declared_materials(projection.record)
-    composed = rewrite_composed_materials(composed, programs=tuple(patch.program for patch in patches),
+    composed = rewrite_composed_materials(composed, programs=tuple(patch.program for patch in patches if patch.program is not None),
                                           material_by_component=material_by_component, material_colors=material_colors,
                                           material_by_part=material_by_part)
     try:
@@ -221,6 +248,44 @@ def _retain_composed_candidate(
     except ValueError as exc:  # CadPatchError names each object that did not read back
         raise ValueError(f"The composed candidate model was not retained: {exc}") from exc
     register_model_asset(binding, run_id, projection.state_digest, f"{run_id}-composed.3dm", base64.b64encode(composed).decode(), generated=True)
+
+
+def _imported_base(
+    binding: ProjectBinding, projection: StateProjection, successor: StateRecord, source_model: ArtifactRecord | None,
+) -> tuple[bytes | None, bool, bool]:
+    """The model a run composes into, whether it places imported objects, and whether it must compose (#300 item 22).
+
+    A selected complete model is composed into, as before. A record that
+    places imported objects, or whose source did, must compose: into the
+    source run's one complete model, or, when the source placed none (the run
+    that makes a file a design), into the file itself. Any other run whose
+    source has exactly one complete model for its state composes into it too,
+    so what the architect sees keeps what was uploaded; when that model does
+    not take the patch, the run keeps its native model alone, as it did.
+    """
+
+    from .imported_design import imported_files, imported_placements
+
+    placed, placed_before = imported_placements(successor), imported_placements(projection.record)
+    imported = bool(placed or placed_before)
+    if source_model is not None:
+        return artifact_bytes(binding, source_model.sha256, run_id=source_model.run_id)[1], imported, True
+    complete = [row for row in list_artifacts(binding, run_id=projection.run.run_id).artifacts
+                if row.run_id == projection.run.run_id and row.design_state_digest == projection.state_digest
+                and row.representation == "composed" and row.available and row.sha256]
+    if len(complete) == 1:
+        return artifact_bytes(binding, complete[0].sha256, run_id=complete[0].run_id)[1], imported, imported
+    if not imported:
+        return None, False, False
+    if complete:
+        raise StudioError(409, "MODEL_SOURCE_REQUIRED", "Select the complete candidate model to continue.")
+    if placed_before:
+        raise StudioError(409, "CANDIDATE_SOURCE_INVALID",
+                          "The imported design this change starts from has no complete model to place its objects in.")
+    files = sorted({placement.asset for placement in placed})
+    if len(files) != 1:
+        raise StudioError(422, "IMPORTED_MODEL_SOURCE", "A design is made from one imported model at a time.")
+    return imported_files(binding, placed)[files[0]], True, True
 
 
 def execute_option_candidate(
@@ -463,6 +528,7 @@ def _run_operator(
     if source_model is not None and source_model.representation != "composed":
         source_model = None
     successor = apply_state_record_operator(projection.record, operator)
+    composed_base, imported, compose_required = _imported_base(binding, projection, successor, source_model)
     seats = candidate_seats(
         binding.repository, seat_pack, projection.record, operator,
         source_receipt=projection.reference.receipt if projection.reference_state_exact else None,
@@ -498,8 +564,13 @@ def _run_operator(
                              model_source_ref=source_model.receipt_ref if source_model is not None else None,
                              source_run_receipt_ref=runner_ref, monitor=monitor)
     _require_built_components(operator, receipt)
-    if source_model is not None and settings.exports:
-        _retain_composed_candidate(binding, source_model, run_id, receipt, source_receipt=projection.reference.receipt)
+    if composed_base is not None and settings.exports:
+        try:
+            _retain_composed_candidate(binding, composed_base, run_id, receipt,
+                                       source_receipt=projection.reference.receipt, imported=imported)
+        except ValueError:
+            if compose_required:
+                raise
     return receipt
 
 

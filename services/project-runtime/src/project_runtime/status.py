@@ -8,6 +8,8 @@ interrupted operation, never permission to submit the modification again.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import json
+import re
 from typing import Any, Mapping
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -17,7 +19,7 @@ from archflow.project.repository import ProjectRepositoryError
 from archflow.state.design_portfolio import DesignBranch
 from archflow.state.state_record import StateRecord, StateRecordError, changed_refs, combine_component_changes
 
-from .application.artifacts import ModelSource, list_artifacts, require_complete_model
+from .application.artifacts import ModelSource, SourceDocument, list_artifacts, list_documents, require_complete_model
 from .binding import ProjectBinding, ReferenceRun, RunChanges, record_kind
 from .application.candidate import _receipt
 from .application.design_history import (
@@ -76,6 +78,47 @@ class RuntimeSnapshot:
     errors: tuple[str, ...]
     runs_scanned: int
     has_more: bool
+    drawings: tuple[SourceDocument, ...] = ()
+
+
+#: How many of the project's newest drawings a snapshot names: what the attention page shows as just drawn.
+RECENT_DRAWINGS = 8
+
+
+def recent_drawings(binding: ProjectBinding, limit: int = RECENT_DRAWINGS) -> tuple[SourceDocument, ...]:
+    """The project's newest drawings, newest first, each by its latest revision; read from the project index.
+
+    A drawing is a registered document with a drawing id: a plan, section,
+    elevation, axonometric, section perspective or sheet, from any version.
+    """
+
+    latest: dict[str, SourceDocument] = {}
+    for document in list_documents(binding, indexed=True):
+        if document.drawing_id is None or document.revision_ref is None:
+            continue
+        known = latest.get(document.drawing_id)
+        if known is None or (document.generated_at or "") > (known.generated_at or ""):
+            latest[document.drawing_id] = document
+    return tuple(sorted(latest.values(), key=lambda document: document.generated_at or "", reverse=True)[:limit])
+
+
+#: What a seat's CAD step says when a shape it was given cannot be built into a solid (S15: a mass drawn on
+#: the ground while the view looked level at it came out flat).
+_INVALID_SHAPE = re.compile(r"[\w.@:-]+ is not a valid shape")
+
+
+def incomplete_reason(receipt: Mapping[str, Any]) -> str:
+    """Why a runner receipt reports incomplete seat execution, in the seats' own words when they say why.
+
+    A shape the CAD step could not build is named, so the person is told what
+    to do instead of only that the run did not finish.
+    """
+
+    said = json.dumps(receipt.get("seat_results") or [], ensure_ascii=False, default=str)
+    invalid = _INVALID_SHAPE.search(said)
+    if invalid:
+        return f"A drawn shape could not be built into a solid ({invalid.group(0)}); draw it again from an axonometric view."
+    return "The retained runner receipt reports incomplete seat execution."
 
 
 def inspect_runtime(
@@ -176,7 +219,7 @@ def inspect_runtime(
                 row = replace(row, result_record_digest=receipt.get("state_record_digest"),
                               result_state_digest=receipt.get("design_state_digest"), receipt_ref=receipt_ref.uri)
                 if not receipt.get("seat_execution_complete"):
-                    row = replace(row, status="failed", error="The retained runner receipt reports incomplete seat execution.")
+                    row = replace(row, status="failed", error=incomplete_reason(receipt))
                 else:
                     _, record = binding.exact_state_record(ReferenceRun(
                         binding.load_run(run_id), "runtime", receipt,
@@ -206,9 +249,14 @@ def inspect_runtime(
         runs.append(row)
     if binding.repository.read_design_branches() != branch_rows:
         raise StudioError(409, "RUNTIME_CHANGED", "Design branches changed during runtime inspection; read the next snapshot.")
+    try:
+        drawings = recent_drawings(binding)
+    except (StudioError, ProjectRepositoryError, OSError, ValueError) as exc:
+        drawings = ()
+        errors.append(f"recent drawings: {exc}")
     return RuntimeSnapshot(binding.project_id, str(binding.project_dir), binding.head(), live,
                            tuple(runs), tuple(branches), tuple(stages.values()), tuple(errors),
-                           len(selected), len(retained) > offset + limit)
+                           len(selected), len(retained) > offset + limit, drawings)
 
 
 # ---- Worktree Graph V0 (#271) ------------------------------------------------

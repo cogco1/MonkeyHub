@@ -1047,6 +1047,21 @@ button.chip:hover {
   color: var(--muted);
 }
 
+.picked__action {
+  padding: 2px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.picked__action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .editing-base {
   display: flex;
   flex-wrap: wrap;
@@ -1314,6 +1329,39 @@ button.chip:hover {
   display: grid;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
+}
+
+/* S15: what a one-click plan, section or elevation drew, under the bar until it is put away. */
+.stage-quick-drawings {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 13px;
+}
+
+.stage-quick-drawings__failed {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stage-import-choice > span,
+.stage-import-choice > button:not(.stage-quick-drawings__close) {
+  white-space: nowrap;
+}
+
+.stage-import-choice select {
+  flex: 1;
+  min-width: 0;
+}
+
+.stage-quick-drawings__close {
+  margin-left: auto;
 }
 
 .stage-decision > .base-choice:last-child {
@@ -1784,6 +1832,13 @@ button.chip:hover {
   text-transform: uppercase;
 }
 
+.failure-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-inline-start: 8px;
+}
+
 .error-panel__code {
   color: var(--violated);
   font-weight: 700;
@@ -2065,6 +2120,19 @@ button.chip:hover {
   font: inherit;
 }
 
+.annotate__text {
+  position: absolute;
+  z-index: 6;
+  width: 280px;
+  max-width: 80%;
+  padding: 0 2px;
+  border: 1px dashed var(--accent);
+  border-radius: 2px;
+  background: var(--overlay);
+  font-family: system-ui, sans-serif;
+  line-height: 1.2;
+}
+
 .marks {
   display: flex;
   flex-wrap: wrap;
@@ -2260,6 +2328,10 @@ button.chip:hover {
    the real operation text, so the client never fabricates a percentage. Stage
    parsing keeps the model visible beneath a compact, matte readout. */
 
+/* 08 加载分档: a load that answers within a second never shows the overlay; it still blocks input meanwhile. */
+.boot { animation: boot-appear 160ms ease-out 1s both; }
+@keyframes boot-appear { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .boot { animation-duration: 0s; } }
 .boot {
   position: fixed;
   inset: 0;
@@ -3138,3 +3210,5 @@ button.model-tool-button:focus-visible {
 }
 
 }
+/* F046: a read being tried again by itself, in the place of its retry button. */
+.auto-retry { color: var(--muted); font-size: var(--text-caption, 12px); }

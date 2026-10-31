@@ -17,7 +17,10 @@ from fastapi.testclient import TestClient
 
 from monkeycad.formats.three_dm_inspector import ThreeDmInspectionError, ThreeDmInspectionErrorCode
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import STUDIO_SOURCE_DOCUMENT, STUDIO_WORKING_COPY
+from archflow.project.record_kinds import STUDIO_DOCUMENT_MODEL_SOURCE, STUDIO_SOURCE_DOCUMENT, STUDIO_WORKING_COPY
+from project_runtime.application.artifacts import ModelSource, _document_from_body, document_bytes, document_row_body, list_documents, save_document
+from project_runtime.authentication import LOCAL_ACTOR_ID
+from project_runtime.errors import StudioError
 from project_runtime.binding import record_kind
 from project_runtime.binding import bound_project
 from project_runtime.main import create_app
@@ -329,6 +332,106 @@ class WorkingCopyTests(unittest.TestCase):
             self.assertEqual(reopened.get("/api/documents", params={"runId": REFERENCE_RUN_ID}).json()["documents"], [associated.json()])
             self.assertEqual(reopened.get("/api/document-annotations", params=query).json(), page)
 
+    def test_a_documents_link_can_be_changed_and_every_earlier_link_stays_as_history(self) -> None:
+        upload = self.client.post("/api/documents", json={"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID,
+                                  "fileName": "relink.png", "mimeType": "image/png", "contentBase64": base64.b64encode(image_bytes()).decode()})
+        self.assertEqual(upload.status_code, 201, upload.text)
+        sha = upload.json()["assetSha256"]
+        self.assertEqual(upload.json()["modelSourceHistory"], [])
+        url = f"/api/documents/{sha}/model-source"
+
+        def body(source):
+            return {"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "modelSource": source}
+
+        def link_records():
+            run = self.repository.load_run(REFERENCE_RUN_ID)
+            refs = self.repository.list_json(run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id))
+            return [ref for ref in refs if ref.record_kind == STUDIO_DOCUMENT_MODEL_SOURCE]
+
+        self.assertFalse(upload.json()["modelSourceChangeable"], "nothing to change before there is a link")
+        first = self.client.put(url, json=body(self.a))
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual((first.json()["modelSource"], first.json()["modelSourceHistory"]), (self.a, []),
+                         "changing the link of an unlinked document is its first link")
+        self.assertTrue(first.json()["modelSourceChangeable"], "a file the person brought in and linked may be linked again")
+        self.assertEqual(self.client.put(url, json=body(self.a)).json(), first.json())
+        self.assertEqual(len(link_records()), 1, "linking to the model it already has writes nothing")
+
+        changed = self.client.put(url, json=body(self.b))
+        self.assertEqual(changed.status_code, 200, changed.text)
+        self.assertEqual(changed.json()["modelSource"], self.b)
+        self.assertNotEqual(changed.json()["modelSourceBindingRef"], first.json()["modelSourceBindingRef"])
+        self.assertEqual(changed.json()["modelSourceHistory"], [{
+            "modelSource": self.a, "bindingRef": first.json()["modelSourceBindingRef"], "boundAt": None, "actorId": None}])
+        self.assertEqual(len(link_records()), 2, "the first link's record is kept, not overwritten")
+
+        back = self.client.put(url, json=body(self.a))
+        self.assertEqual(back.status_code, 200, back.text)
+        history = back.json()["modelSourceHistory"]
+        self.assertEqual([row["modelSource"] for row in history], [self.a, self.b])
+        self.assertEqual(history[1]["actorId"], LOCAL_ACTOR_ID)
+        self.assertRegex(history[1]["boundAt"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d")
+        self.assertEqual(len(link_records()), 3)
+
+        binding = bound_project(self.client.app.state)
+        with self.assertRaises(StudioError) as stale:
+            document_bytes(binding, REFERENCE_RUN_ID, sha, binding_ref=changed.json()["modelSourceBindingRef"])
+        self.assertEqual(stale.exception.code, "DOCUMENT_NOT_FOUND", "a request pinned to the link it was made under finds the link changed")
+        listed = next(row for row in list_documents(binding, REFERENCE_RUN_ID) if row.asset_sha256 == sha)
+        self.assertEqual(_document_from_body(json.loads(json.dumps(document_row_body(listed)))), listed,
+                         "the project index keeps a document with its link history")
+        with TestClient(create_app(self.settings)) as reopened:
+            self.assertEqual(reopened.get("/api/documents", params={"runId": REFERENCE_RUN_ID}).json()["documents"], [back.json()])
+        # The one-time link keeps refusing another model; only the change does that.
+        self.assertEqual(self.client.post(url, json=body(self.b)).status_code, 409)
+
+    def test_nothing_the_hub_made_from_one_model_is_linked_to_another(self) -> None:
+        binding = bound_project(self.client.app.state)
+
+        def put(sha: str, source: dict):
+            return self.client.put(f"/api/documents/{sha}/model-source",
+                                   json={"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "modelSource": source})
+
+        # A camera pass picture (ID, line, depth) has no drawing id and no revision: it carries its view recipe.
+        made = save_document(binding, REFERENCE_RUN_ID, "camera 1 id.png", "image/png", base64.b64encode(image_bytes(color="green")).decode(),
+                             ModelSource.from_dict(self.a), view_recipe={"kind": "camera-pass", "pass": "id", "passId": "pass-1"})
+        # The same picture of a model that is an imported asset has no model link at all, and is not linked by a person either.
+        frozen = save_document(binding, REFERENCE_RUN_ID, "camera 2 id.png", "image/png", base64.b64encode(image_bytes(color="cyan")).decode(),
+                               None, view_recipe={"kind": "camera-pass", "pass": "id", "passId": "pass-2", "sourceAsset": {"runId": "x"}})
+        # A document registered with its model, as a caller said it, by the upload route.
+        registered = self.client.post("/api/documents", json={
+            "projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "fileName": "registered.png", "mimeType": "image/png",
+            "contentBase64": base64.b64encode(image_bytes(color="orange")).decode(), "modelSource": self.a}).json()
+        for sha in (made.asset_sha256, frozen.asset_sha256, registered["assetSha256"]):
+            with self.subTest(sha=sha[:8]):
+                refused = put(sha, self.b)
+                self.assertEqual((refused.status_code, refused.json()["code"]), (409, "DOCUMENT_SOURCE_IMMUTABLE"), refused.text)
+        listed = {row["assetSha256"]: row for row in self.client.get("/api/documents", params={"runId": REFERENCE_RUN_ID}).json()["documents"]}
+        self.assertEqual(listed[made.asset_sha256]["modelSource"], self.a, "and it still says the model it was made from")
+        self.assertEqual([listed[sha]["modelSourceChangeable"] for sha in (made.asset_sha256, frozen.asset_sha256, registered["assetSha256"])],
+                         [False, False, False], "the interface is told, so it offers no way to change it")
+
+    def test_a_drawing_made_from_a_model_keeps_that_model_and_a_retried_upload_does_not_conflict(self) -> None:
+        binding = bound_project(self.client.app.state)
+        drawing = save_document(binding, REFERENCE_RUN_ID, "front.png", "image/png", base64.b64encode(image_bytes(color="blue")).decode(),
+                                ModelSource.from_dict(self.a), drawing_id="front-elevation")
+        refused = self.client.put(f"/api/documents/{drawing.asset_sha256}/model-source",
+                                  json={"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "modelSource": self.b})
+        self.assertEqual((refused.status_code, refused.json()["code"]), (409, "DOCUMENT_SOURCE_IMMUTABLE"))
+        # A caller that names no model takes a document that is already linked as it is.
+        linked = self.client.post("/api/documents", json={"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "fileName": "linked.png",
+                                  "mimeType": "image/png", "contentBase64": base64.b64encode(image_bytes(color="red")).decode(),
+                                  "modelSource": self.a})
+        self.assertEqual(linked.status_code, 201, linked.text)
+        again = self.client.post("/api/documents", json={"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "fileName": "linked.png",
+                                 "mimeType": "image/png", "contentBase64": base64.b64encode(image_bytes(color="red")).decode()})
+        self.assertEqual(again.status_code, 201, again.text)
+        self.assertEqual(again.json(), linked.json())
+        named_other = self.client.post("/api/documents", json={"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "fileName": "linked.png",
+                                       "mimeType": "image/png", "contentBase64": base64.b64encode(image_bytes(color="red")).decode(),
+                                       "modelSource": self.b})
+        self.assertEqual((named_other.status_code, named_other.json()["code"]), (409, "DOCUMENT_SOURCE_IMMUTABLE"))
+
     def test_concurrent_document_uploads_cannot_install_competing_sources(self) -> None:
         before = self.repository.read_head()
         body = {"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "fileName": "parallel.png",
@@ -402,6 +505,38 @@ class WorkingCopyTests(unittest.TestCase):
             self.assertEqual(reopened.get("/api/model-annotations", params={**self.a, "revisionSha256": snapshot["revisionSha256"]}).json(), snapshot)
             self.assertEqual(reopened.get("/api/model-annotations", params=self.b).json()["annotations"], [])
             self.assertEqual(reopened.get("/api/model-annotations", params={**self.b, "revisionSha256": snapshot["revisionSha256"]}).status_code, 404)
+            self.assertEqual(reopened.get("/api/model-annotations/history", params=self.a).json(), [erased, snapshot])
+            self.assertEqual(reopened.get("/api/model-annotations/history", params=self.b).json(), [])
+
+    def test_saved_model_text_survives_move_delete_and_exact_history_reopening(self) -> None:
+        before_head = self.repository.read_head()
+        mark = {"id": "note", **gesture("text", hit("obj-portico-base"), screen=[[20, 30]],
+                                         label="共享厨房", fontSize=18)}
+        request = {"projectId": PROJECT_ID, "modelSource": self.a, "baseRevisionSha256": None,
+                   "annotations": [mark], "comment": ""}
+        response = self.client.put("/api/model-annotations", json=request)
+        self.assertEqual(response.status_code, 200, response.text)
+        first = response.json()
+        expected_notes = [{"componentId": "portico", "key": "description.note", "value": "共享厨房"}]
+        self.assertEqual(first["facetNotes"], expected_notes)
+        ref = next(ref for ref in bound_project(self.app.state).record_refs(self.a["runId"])
+                   if ref.sha256 == first["revisionSha256"])
+        self.assertNotIn("facetNotes", self.repository.load_json(ref), "the resolved reading is never another stored authority")
+        moved = self.client.put("/api/model-annotations", json={**request, "baseRevisionSha256": first["revisionSha256"],
+                                "annotations": [{**mark, "screen": [[80, 50]], "hits": []}]}).json()
+        erased = self.client.put("/api/model-annotations", json={**request, "baseRevisionSha256": moved["revisionSha256"],
+                                 "annotations": []}).json()
+        with TestClient(create_app(self.settings)) as reopened:
+            history = reopened.get("/api/model-annotations/history", params=self.a)
+            self.assertEqual(history.status_code, 200, history.text)
+            self.assertEqual(history.json(), [erased, moved, first])
+            self.assertEqual([row["facetNotes"] for row in history.json()], [[], [], expected_notes])
+            restored = reopened.get("/api/model-annotations", params={**self.a, "revisionSha256": first["revisionSha256"]}).json()
+            self.assertEqual(restored["annotations"][0]["label"], "共享厨房")
+            self.assertEqual(restored["annotations"][0]["fontSize"], 18)
+            self.assertEqual(restored["annotations"][0]["hits"], mark["hits"])
+            self.assertEqual(restored["facetNotes"], expected_notes)
+        self.assertEqual(self.repository.read_head(), before_head)
 
     def test_model_source_survives_clarification_without_resubmitting_it(self) -> None:
         self.app.state.intent_compiler = scripted(status="question", question="What height?", component_id="portico", element_id="portico-base")

@@ -79,33 +79,34 @@ try {
   const choose=async id=>{await page.evaluate(id=>window.select(id),id);
     await page.waitForFunction(id=>{const panel=document.querySelector(".elevation-panel"),facts=window.snapshot().objects.find(row=>row.id===id).elevation;
       return !!panel&&!panel.querySelector(`option[value="element-top:${id}"]`)&&[["Base Z","base"],["Top Z","top"],["Height","height"]]
-        .every(([name,key])=>Number(panel.querySelector(`input[aria-label="${name}"]`)?.value)===Number(facts[key].toFixed(6)));},id)
+        .every(([name,key])=>Number(panel.querySelector(`input[aria-label="${name}"]`)?.value)===Math.round(facts[key]*1000));},id)
       .catch(error=>{throw new Error(`the elevation panel never showed ${id}: ${error.message}`);});};
+  assert.ok((await field("Base Z").inputValue()).match(/^-?\d+$/),"levels read in whole millimetres");
   await page.getByLabel("Base reference",{exact:true}).selectOption("element-top:lower");
   assert.equal(object(await state(),"upper").spec.base,3);
-  await choose("lower");await set("Height",4.5);
+  await choose("lower");await set("Height",4500);
   assert.equal(object(await state(),"upper").spec.base,4.5);
   assert.equal(object(await state(),"free").spec.base,5);
   await page.locator(".elevation-panel strong").click();await page.keyboard.press("Control+z");
   assert.equal(object(await state(),"lower").spec.height,3);
   await page.keyboard.press("Control+Shift+z");assert.equal(object(await state(),"lower").spec.height,4.5);
-  await choose("upper");await set("Base Z",5.5);
+  await choose("upper");await set("Base Z",5500);
   assert.equal(object(await state(),"upper").elevation.baseReference.offset,1);
   await cmd(page,"view.disclosure.toggle", { arg: "reference_elevations" }).click();
-  await page.getByLabel("Datum name",{exact:true}).fill("Roof ref");await page.getByLabel("Datum elevation",{exact:true}).fill("12");
+  await page.getByLabel("Datum name",{exact:true}).fill("Roof ref");await page.getByLabel("Datum elevation",{exact:true}).fill("12000");
   await waitForCommandLabel(cmd(page,"frame.set_level.datum"),"Create datum");await cmd(page,"frame.set_level.datum").click();
   const datum=(await state()).levels[0];assert.equal(datum.name,"Roof ref");
   await page.getByLabel("Top reference",{exact:true}).selectOption(`level:${datum.levelId}`);
   assert.equal(object(await state(),"upper").spec.height,6.5);
-  await page.getByLabel("Datum elevation",{exact:true}).fill("13");await waitForCommandLabel(cmd(page,"frame.set_level.datum"),"Update datum");await cmd(page,"frame.set_level.datum").click();
+  await page.getByLabel("Datum elevation",{exact:true}).fill("13000");await waitForCommandLabel(cmd(page,"frame.set_level.datum"),"Update datum");await cmd(page,"frame.set_level.datum").click();
   assert.equal(object(await state(),"upper").spec.height,7.5);
-  const valid=await state();await set("Height",-2);
+  const valid=await state();await set("Height",-2000);
   await page.getByRole("alert").waitFor();assert.deepEqual(await state(),valid);
-  await set("Height",8);assert.equal(object(await state(),"upper").spec.height,8);
+  await set("Height",8000);assert.equal(object(await state(),"upper").spec.height,8);
   await field("Top Z").focus();
   assert.equal(await page.evaluate(()=>window.readRuntime().elevationGuide.children[0].geometry.getAttribute("position").getZ(0)),13.5);
   await page.getByLabel("Base reference",{exact:true}).selectOption("");
-  await choose("lower");await set("Height",6);
+  await choose("lower");await set("Height",6000);
   assert.equal(object(await state(),"upper").spec.base,5.5,"detached mass remains free");
   // Both appearances and a narrow layout retain accessible, reachable controls.
   for(const theme of ["light","dark"]){

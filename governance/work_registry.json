@@ -1,4 +1,58 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-300",
+      "lanes": [
+        {
+          "id": "hub-gap-b",
+          "status": "active",
+          "branch": "claude/hub-gap-b-notes-wake-msg",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\claude-hub-gap-b-notes-wake-msg",
+          "base_ref": "0ff08888",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Conversation gaps, second line (10-29): the architect's standing instructions and the notes an Agent keeps, read by every turn and shown and edited on the Notes page (with the project's design memory, revocable); wake-ups, so a conversation continues by itself at a time, on a repeat or when a project job ends; and conversations finding, reading and messaging each other, with a search of every conversation. The chat store only gains hooks: a message's origin and the notes block in each turn's prompt. Held for one batch with the first line (folders, limits, MCP, permissions), tested together after 11-02.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat/notes.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/wakeups.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/relay.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/origins.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/hub_tools.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/hub_routes.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/providers.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/mcp_server.py",
+            "apps/monkeyhub/api/monkeyhub_api/models.py",
+            "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
+            "apps/monkeyhub/api/tests/test_chat_notes_wakeups.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/monkeyhub/web/src/app/NotesPanel.tsx",
+            "apps/monkeyhub/web/src/app/ChatFinder.tsx",
+            "apps/monkeyhub/web/src/app/WakeupStrip.tsx",
+            "apps/monkeyhub/web/src/app/hubNotes.css",
+            "apps/monkeyhub/web/src/app/AttentionShell.tsx",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/src/api/generated/index.ts",
+            "apps/monkeyhub/web/src/api/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/features/commands/tree.generated.ts",
+            "governance/module_registry.json",
+            "governance/command_phrases.json",
+            "governance/architecture_policy.json",
+            "governance/work_registry.json",
+            "docs/audits/hub-entries.md",
+            "docs/architecture/semantic-registry.md",
+            "docs/architecture/system-map.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }

@@ -20,6 +20,7 @@ import { CURRENT, FOLD, type TreeNode } from "./model";
 import type { ZoomLevel } from "./scene";
 import type { DesignTreeData } from "./useDesignTree";
 import { treeWords, type SurfaceName } from "./words";
+import { AutoRetry } from "../../app/AutoRetry";
 
 // #337: the bar's quiet count; the Stage position beside it already counts running work.
 const countWords = {
@@ -121,11 +122,11 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
     {data.source && data.admissions && (data.source.history.warnings?.length ?? 0) > 0 &&
       <p className="design-tree__notice">{t("designTree.admissionWarnings")}</p>}
     {tree && data.error && <p className="design-tree__notice" role="status">{t("designTree.failed")}
-      <button data-command="view.notice.retry" data-command-arg="design_tree" type="button" className="btn btn--small" onClick={data.reload}>{t("designTree.retry")}</button></p>}
+      <AutoRetry failure={data.error} data-command="view.notice.retry" data-command-arg="design_tree" className="btn btn--small" retry={data.reload}>{t("designTree.retry")}</AutoRetry></p>}
     <div className="design-tree__body">
       {!tree ? <div className="design-tree__state" role="status">
         {!data.available ? t("designTree.unavailable") : data.status === "failed" && data.error ? <><ErrorPanel error={data.error} what="GET /api/design-history" />
-          <button data-command="view.notice.retry" data-command-arg="design_tree" type="button" className="btn btn--small" onClick={data.reload}>{t("designTree.retry")}</button></> : t("designTree.loading")}
+          <AutoRetry failure={data.error} data-command="view.notice.retry" data-command-arg="design_tree" className="btn btn--small" retry={data.reload}>{t("designTree.retry")}</AutoRetry></> : <span className="wait-late">{t("designTree.loading")}</span>}
       </div> : mode === "canvas" ? <>
         <DesignTreeCanvas tree={tree} source={data.source} words={words} selected={selected} fitRequest={fitRequest} centerOn={center} title={t("designTree.title")}
           onSelect={select} onAccept={acceptFromCanvas} onLevel={setLevel} onExpand={expand} />

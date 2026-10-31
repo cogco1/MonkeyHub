@@ -32,6 +32,8 @@ if TYPE_CHECKING:
 
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions"
 MODELS = ("gemini-3-pro-image", "gemini-3.1-flash-image")
+# What renders when nobody named a model: the one Settings has always shown as its example.
+DEFAULT_MODEL = "gemini-3.1-flash-image"
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_INPUT_BYTES = 12 * 1024 * 1024
 MAX_REQUEST_BYTES = 20_000_000
@@ -242,5 +244,5 @@ def adapter_from_settings(settings: StudioSettings) -> GeminiImageRenderAdapter 
     """Use only the Runtime's resolved settings, never environment or secret files."""
     if settings.render_provider != "gemini":
         return None
-    return GeminiImageRenderAdapter(api_key=settings.render_api_key, model=settings.render_model,
+    return GeminiImageRenderAdapter(api_key=settings.render_api_key, model=settings.render_model or DEFAULT_MODEL,
                                     timeout_s=settings.render_timeout_s)

@@ -67,9 +67,10 @@ function renderTokens(tokens: Token[] = []): ReactNode {
   });
 }
 
-export function ChatMarkdown({ text }: { text: string }) {
+/** A reply in Markdown; while it is still being written (streaming) its new blocks wash in instead of landing at once. */
+export function ChatMarkdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
   const content = useMemo(() => renderTokens(marked.lexer(text, { gfm: true })), [text]);
-  return <div className="chat-prose">{content}</div>;
+  return <div className={streaming ? "chat-prose chat-prose--streaming" : "chat-prose"}>{content}</div>;
 }
 
 const rasterTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
@@ -86,7 +87,7 @@ function ImagePreview({ src, name, downloadUrl, labels }: { src: string; name: s
       aria-label={`${labels.previewImage}: ${name}`} disabled={state !== "ready"} onClick={() => dialog.current?.showModal()}>
       <img src={src} alt={name} loading="lazy" decoding="async" onLoad={() => setState("ready")} onError={() => setState("failed")} />
     </button>}
-    {state !== "ready" && <p className="chat-muted" role="status">{state === "failed" ? labels.imageFailed : labels.imageLoading}</p>}
+    {state !== "ready" && <p className={state === "failed" ? "chat-muted" : "chat-muted wait-late"} role="status">{state === "failed" ? labels.imageFailed : labels.imageLoading}</p>}
     <dialog className="chat-image-dialog" ref={dialog} aria-labelledby={titleId} onClose={() => opener.current?.focus()}>
       <div className="chat-image-dialog__heading"><h2 id={titleId}>{name}</h2>
         <button data-command="view.dialog.close" type="button" onClick={() => dialog.current?.close()} autoFocus>{labels.close}</button></div>

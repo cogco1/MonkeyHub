@@ -1,13 +1,16 @@
-import { useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
+import { ProjectRuntimeProvider } from "../../api/project-runtime/ProjectRuntimeContext";
+import { ProjectionThumbnail } from "../../features/artifacts/ModelThumbnail";
 import { useCommands } from "../../features/commands/CommandProvider";
 import { usePreferences } from "../../features/settings/preferences";
 import type { MessageKey } from "../../i18n/messages.en";
 import { useT } from "../../i18n/useT";
+import { PlainFailure } from "../../app/ErrorPanel";
 import { openCard } from "../openChat";
-import { dismissCard, laterCard, reopenCard, resolveCard, undoCard, type QueueFailure } from "../queue";
-import { chosenOption, isPending, needsWords, orderedOptions, say } from "./cardText";
-import type { AttentionCard, CardActionResult, CommandRef } from "./types";
+import { dismissCard, laterCard, queueSnapshot, reopenCard, resolveCard, subscribeQueue, undoCard, type QueueFailure } from "../queue";
+import { answersKey, cardPictures, chosenOption, COMPARE_DECIDE, comparedRuns, isPending, needsWords, orderedOptions, say } from "./cardText";
+import type { AttentionCard, CardActionResult, CardOption, ChangeItem, CommandRef } from "./types";
 import "./cards.css";
 
 /**
@@ -24,12 +27,46 @@ import "./cards.css";
 /** The most the Hub takes with an answer as the architect's own words (AttentionResolveRequest.note). */
 const NOTE_MAX = 400;
 
+/**
+ * The Hub runtime a card's project runs in, as the shell knows its open projects: a decision's pictures are read
+ * through it. Null (and outside the shell) leaves only their names.
+ */
+export const CardRuntimes = createContext<(projectId: string, projectDir: string) => string | null>(() => null);
+
+/**
+ * A decision's results side by side, each its exact model in the Design Tree's thumbnail (the same axonometric view
+ * for every model), named under it: A, the current design, beside B, the new result. A picture that is an answer
+ * answers the card when chosen, as its button does.
+ */
+function Pictures({ card, runtimeId, choose }: {
+  card: AttentionCard; runtimeId: string; choose: ((option: CardOption) => void) | null;
+}) {
+  const { language } = usePreferences();
+  const t = useT();
+  return <ProjectRuntimeProvider runtimeId={runtimeId} baseUrl={`${window.location.origin}/api/runtime/projects/${runtimeId}/studio`}>
+    <div className="attention-card__pictures" role="group" aria-label={t("cards.pictures")}>{cardPictures(card).map(({ media: item, option }, index) => {
+      const body = <>
+        <ProjectionThumbnail source={item.modelSource} />
+        {item.caption && <span className="attention-card__picture-name">{say(item.caption, item.captionZh, language)}</span>}
+      </>;
+      return option && choose
+        ? <button key={index} type="button" className="attention-card__picture" data-option={option.id} data-command-view
+          title={say(option.label, option.labelZh, language)} onClick={() => choose(option)}>{body}</button>
+        : <figure key={index} className="attention-card__picture">{body}</figure>;
+    })}</div>
+  </ProjectRuntimeProvider>;
+}
+
 interface CardProps {
   card: AttentionCard;
   /** The project a card belongs to, as the shell names it; left out where the page shows one project. */
   project?: string | null;
   /** Arrived while the list was on screen: marked for a moment. */
   fresh?: boolean;
+  /** Shown under the comparison it opened (2-5): the way to open that comparison is left out. */
+  comparing?: boolean;
+  /** The comparison above it shows other results than the card now weighs: no answer until it is opened again. */
+  stale?: boolean;
 }
 
 /** One card's pending action and the Hub's refusal of the last one, kept with the card. */
@@ -48,7 +85,7 @@ function useCardActions() {
   return { busy, failure, act };
 }
 
-function Opens({ refs }: { refs: readonly CommandRef[] }) {
+function Opens({ refs, cardId }: { refs: readonly CommandRef[]; cardId: string }) {
   const { tree, run, stateOf } = useCommands();
   const { language } = usePreferences();
   const t = useT();
@@ -62,11 +99,17 @@ function Opens({ refs }: { refs: readonly CommandRef[] }) {
     const reason = state.kind === "unavailable" ? state.reason ?? t("commands.unavailable") : null;
     return <button key={`${ref.commandId}:${index}`} type="button" className="menu-command" data-command-view
       aria-disabled={reason ? true : undefined} title={reason ?? undefined}
-      onClick={() => { if (!reason) run(ref.commandId, "card", { args: ref.args }); }}>{command.label[language]}</button>;
+      onClick={() => { if (!reason) run(ref.commandId, "card", { args: { ...ref.args, cardId } }); }}>{command.label[language]}</button>;
   })}</div>;
 }
 
-function CardFrame({ card, project, fresh = false, compact = false, children }: CardProps & { compact?: boolean; children?: ReactNode }) {
+function CardFrame({ card, project, fresh = false, compact = false, comparing = false, stale = false, items, blocked, children }: CardProps & {
+  compact?: boolean; children?: ReactNode;
+  /** The numbers ticked on a change list; the answer that runs them sends these (3-4). */
+  items?: readonly number[];
+  /** An answer that cannot be sent yet, with why. */
+  blocked?: (optionId: string) => string | null;
+}) {
   const { language } = usePreferences();
   const t = useT();
   const { busy, failure, act } = useCardActions();
@@ -75,6 +118,16 @@ function CardFrame({ card, project, fresh = false, compact = false, children }: 
   const chosen = chosenOption(card);
   const pending = isPending(card);
   const reason = card.recommendation ? say(card.recommendation.reason, card.recommendation.reasonZh, language) : null;
+  const runtimeId = useContext(CardRuntimes)(card.projectId, card.projectDir);
+  // Pictures where the project's thumbnails can be read; beside a comparison, which shows the models, their names.
+  const pictures = new Set(cardPictures(card).map((row) => row.media));
+  const pictured = !compact && !comparing && runtimeId !== null && pictures.size > 0;
+  const answerable = (option: CardOption) => pending && busy === null && !stale && !(needsWords(option) && !words.trim()) && !blocked?.(option.id);
+  const answer = (option: CardOption) => act(option.id, async () => {
+    const result = await resolveCard(card.id, option.id, needsWords(option) ? words.trim() : undefined, items && option.id === "run" ? items : undefined);
+    note(option.action.commandId, "card");
+    return result;
+  });
   return <article className="attention-card" id={`attention-card-${card.id}`} tabIndex={-1} data-card={card.id} data-fresh={fresh || undefined} data-channel={card.channel}
     data-kind={card.kind} data-state={card.state} aria-labelledby={`attention-card-${card.id}-title`}>
     <header className="attention-card__head">
@@ -85,7 +138,8 @@ function CardFrame({ card, project, fresh = false, compact = false, children }: 
       <h3 className="attention-card__title" id={`attention-card-${card.id}-title`}>{say(card.title, card.titleZh, language)}</h3>
       {card.summary && <p className="attention-card__summary">{say(card.summary, card.summaryZh, language)}</p>}
     </header>
-    {!compact && card.media.some((item) => item.caption) && <ul className="attention-card__media">{card.media.filter((item) => item.caption).map((item, index) =>
+    {pictured && <Pictures card={card} runtimeId={runtimeId} choose={pending && !stale ? (option) => { if (answerable(option)) answer(option); } : null} />}
+    {!compact && card.media.some((item) => item.caption && !(pictured && pictures.has(item))) && <ul className="attention-card__media">{card.media.filter((item) => item.caption && !(pictured && pictures.has(item))).map((item, index) =>
       <li key={index} data-media={item.kind}>{say(item.caption!, item.captionZh, language)}</li>)}</ul>}
     {!compact && card.evidence.length > 0 && <dl className="attention-card__evidence" aria-label={t("cards.evidence")}>{card.evidence.map((row) =>
       <div key={row.key} data-status={row.status}><dt>{say(row.label, row.labelZh, language)}</dt><dd>{say(row.text, row.textZh, language)}</dd></div>)}</dl>}
@@ -97,13 +151,9 @@ function CardFrame({ card, project, fresh = false, compact = false, children }: 
     {pending && card.options.length > 0 && <div className="attention-card__answers" role="group" aria-label={t("cards.answers")}>
       {orderedOptions(card).map((option) => <button key={option.id} type="button" data-option={option.id} data-command-view
         className={option.recommended ? "btn btn--primary attention-card__answer" : "btn attention-card__answer"}
-        disabled={busy !== null || (needsWords(option) && !words.trim())}
+        disabled={!answerable(option)} title={blocked?.(option.id) ?? undefined}
         aria-describedby={`attention-card-${card.id}-${option.id}`}
-        onClick={() => act(option.id, async () => {
-          const result = await resolveCard(card.id, option.id, needsWords(option) ? words.trim() : undefined);
-          note(option.action.commandId, "card");
-          return result;
-        })}>
+        onClick={() => answer(option)}>
         <span>{say(option.label, option.labelZh, language)}{option.recommended && <small className="attention-card__recommended">{t("cards.recommended")}</small>}</span>
         <small id={`attention-card-${card.id}-${option.id}`}>{say(option.consequence, option.consequenceZh, language)}</small>
       </button>)}
@@ -113,9 +163,9 @@ function CardFrame({ card, project, fresh = false, compact = false, children }: 
     {card.state === "done" && <p className="attention-card__status">{chosen
       ? t(card.resolution?.by === "machine" ? "cards.handledForYou" : "cards.chosen", { option: say(chosen.label, chosen.labelZh, language) })
       : t("cards.done")}</p>}
-    {failure && <p className="attention-card__failure" role="alert">{failure.detail}</p>}
+    {failure && <p className="attention-card__failure" role="alert"><PlainFailure error={failure} /></p>}
     <footer className="attention-card__foot">
-      <Opens refs={card.opens} />
+      {!comparing && <Opens refs={card.opens} cardId={card.id} />}
       <span className="attention-card__queue">
         {pending && <>
           <button type="button" className="menu-command" data-command="attention.queue.later" data-command-arg={card.id} disabled={busy !== null}
@@ -139,7 +189,37 @@ export function DecisionCard(props: CardProps) {
 
 /** A version waiting on its Board frame, or the changes the marks were read as (their list joins with 3-3). */
 export function MarkupCard(props: CardProps) {
-  return <CardFrame {...props} />;
+  return props.card.kind === "change_list" && props.card.changeList ? <ChangeListCard {...props} /> : <CardFrame {...props} />;
+}
+
+/**
+ * The changes the marks were read as (3-4): each with what the agent understood and what it would touch, ticked unless
+ * it was unsure; the architect unticks what is wrong, and the card runs the rest as one change.
+ */
+function ChangeListCard(props: CardProps) {
+  const { language } = usePreferences();
+  const t = useT();
+  const { card } = props;
+  const list = card.changeList!;
+  const [ticked, setTicked] = useState<ReadonlySet<number>>(() => new Set(list.items.filter((item) => item.keep !== false && !item.unsure).map((item) => item.n)));
+  const chosen = list.items.filter((item) => ticked.has(item.n)).map((item) => item.n);
+  const toggle = (n: number) => setTicked((current) => { const next = new Set(current); if (!next.delete(n)) next.add(n); return next; });
+  const understood = (item: ChangeItem) => (language === "zh-CN" ? item.understandingZh : null) ?? item.understanding;
+  const pending = isPending(card);
+  return <CardFrame {...props} items={chosen} blocked={(option) => (option === "run" && chosen.length === 0 ? t("cards.changes.none") : null)}>
+    {card.changeWords && card.changeWords.length > 0 && <blockquote className="attention-card__words-said">{card.changeWords.join(" ")}</blockquote>}
+    <ol className="attention-card__changes" aria-label={t("cards.changes.label")}>{list.items.map((item) => <li key={item.n} data-unsure={item.unsure || undefined} data-ticked={ticked.has(item.n) || undefined}>
+      <label>
+        <input type="checkbox" checked={ticked.has(item.n)} disabled={!pending} onChange={() => toggle(item.n)} />
+        <span className="attention-card__change-n">{item.n}</span>
+        <span className="attention-card__change-text">
+          <b>{understood(item)}</b>
+          <small>{[item.unsure ? t("cards.changes.unsure") : null, item.targets?.length ? t("cards.changes.touches", { count: item.targets.length }) : null,
+            item.protected?.length ? t("cards.changes.keeps", { count: item.protected.length }) : null, item.extra ? t("cards.changes.extra") : null].filter(Boolean).join(" · ")}</small>
+        </span>
+      </label>
+    </li>)}</ol>
+  </CardFrame>;
 }
 
 /** A question with at most three answers, or something the system would do and has not done. */
@@ -160,4 +240,37 @@ export function AttentionCardView(props: CardProps) {
     case "guess": return <GuessCard {...props} />;
     default: return <NoticeCard {...props} />;
   }
+}
+
+/**
+ * 比较并决定 (2-5): the decision card under the comparison it opened, answered there as on the Attention page. Once
+ * it is answered (or put off, set aside), the comparison has done its work and closes. The comparison shows `runIds`
+ * and the card's answers as they were (`answers`, answersKey); when the card changes (a new result in its Study),
+ * its answers wait while the comparison opens again over what the card weighs now, or closes when it weighs no pair.
+ */
+export function ComparisonDecision({ cardId, project, runIds, answers, onDone }: {
+  cardId: string; project: string | null; runIds: readonly string[]; answers: string; onDone(): void;
+}) {
+  const queue = useSyncExternalStore(subscribeQueue, queueSnapshot);
+  const { run } = useCommands();
+  const card = queue.cards.find((item) => item.id === cardId) ?? null;
+  const done = useRef(onDone);
+  done.current = onDone;
+  const closed = useRef(false), seen = useRef(false), reopened = useRef<string | null>(null);
+  // Answered, put off, or gone from the queue after it was there: the decision is made, so the comparison has done its work.
+  const pending = card ? isPending(card) : false;
+  if (card && pending) seen.current = true;
+  useEffect(() => {
+    if (seen.current && !pending && !closed.current) { closed.current = true; done.current(); }
+  }, [pending]);
+  const now = card ? comparedRuns(card) : [];
+  const nowKey = card ? JSON.stringify([now, answersKey(card)]) : null;
+  const stale = Boolean(card && pending && nowKey !== JSON.stringify([runIds, answers]));
+  useEffect(() => {
+    if (!stale || !nowKey || reopened.current === nowKey || closed.current) return;
+    reopened.current = nowKey;
+    if (now.length < 2) { closed.current = true; done.current(); return; }
+    run(COMPARE_DECIDE, "card", { args: { runIds: now, cardId } });
+  }, [stale, nowKey]);
+  return card ? <AttentionCardView card={card} project={project} comparing stale={stale} /> : null;
 }

@@ -3,10 +3,12 @@ import type { AppearancePreferences } from "../../../../packages/web-shared/src/
 import { MenuCommand, MenuSeparator, MenuTabs, StatusLine, SurfaceBar } from "./features/chrome/SurfaceChrome";
 import type { createClient } from "./api/generated/client";
 import { useRowEndSeparators } from "./surfaceBarRows";
+import { rememberedPrinterHost, rememberPrinterHost } from "./features/fab/printerHost";
 import {
   getFabProfilesApiFabProfilesGet, prepareFabApiFabPreparePost, sendFabApiFabSendPost,
   type FabProfile, type FabPrepareResult, type FabSendResult,
 } from "./api/generated";
+import { AutoRetry } from "./app/AutoRetry";
 
 type Props = {
   preferences: AppearancePreferences;
@@ -66,7 +68,7 @@ export function FabPage({ preferences, client, readResult }: Props) {
   const [xy, setXy] = useState("5");
   const [z, setZ] = useState("5");
   const [job, setJob] = useState("");
-  const [host, setHost] = useState("");
+  const [host, setHost] = useState(rememberedPrinterHost);
   const [access, setAccess] = useState("");
   const [remote, setRemote] = useState("");
   const [timeout, setTimeoutSeconds] = useState("30");
@@ -123,6 +125,7 @@ export function FabPage({ preferences, client, readResult }: Props) {
         source: cleanPath(job), host: host.trim(), accessCode: code,
         remoteName: remote.trim() || null, timeout: Number(timeout), dryRun,
       } })));
+      rememberPrinterHost(host);
     } catch (cause) { setSendError(detailOf(cause)); }
     finally { busyRef.current = false; setBusy(null); setView("send"); }
   };
@@ -143,7 +146,7 @@ export function FabPage({ preferences, client, readResult }: Props) {
       <MenuCommand data-command="fab.prepare_parts.display_settings" onClick={openDisplaySettings}>{t.settings}</MenuCommand>
     </SurfaceBar>
     <div className="fab-scroll"><main className="hub fab-page"><h1 className="sr-only">MonkeyFab</h1>
-      {profileError ? <div className="error-message" role="alert"><p>{profileError}</p><button data-command="view.notice.retry" data-command-arg="fab_profile" className="btn" type="button" onClick={() => setProfileAttempt((value) => value + 1)}>{t.retry}</button></div> : null}
+      {profileError ? <div className="error-message" role="alert"><p>{profileError}</p><AutoRetry failure={profileError} data-command="view.notice.retry" data-command-arg="fab_profile" className="btn" retry={() => setProfileAttempt((value) => value + 1)}>{t.retry}</AutoRetry></div> : null}
       <div className="fab-forms">
         <form className="app-card fab-form" onSubmit={(event) => void prepare(event)} aria-busy={busy === "prepare"} hidden={view !== "prepare"}>
           <h2 className="sr-only">{t.prepare}</h2><p className="help">{t.prepareHelp}</p>
@@ -172,7 +175,7 @@ export function FabPage({ preferences, client, readResult }: Props) {
       </div>
     </main></div>
     <StatusLine className="fab-status" end={<span title={t.intro}>{t.intro}</span>}>
-      <span role="status">MonkeyFab{profiles ? ` · ${t.profiles(Object.keys(profiles).length)}` : !profileError ? ` · ${t.loading}` : ""}
+      <span role="status">MonkeyFab{profiles ? ` · ${t.profiles(Object.keys(profiles).length)}` : !profileError ? <span className="wait-late">{` · ${t.loading}`}</span> : ""}
         {/* A narrow window has no room for it at the bar's end. */}
         {working && <span className="fab-status__state"> · {working}</span>}</span>
     </StatusLine>

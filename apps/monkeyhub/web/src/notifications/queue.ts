@@ -115,8 +115,9 @@ const acted = async <T>(action: Promise<T>, brings: (result: T) => readonly (str
 };
 
 /** The person's answer, with their own words where the answer sends a message; the Hub's executor carries it out as them. */
-export const resolveCard = (id: string, optionId: string, note?: string) =>
-  acted(post<CardActionResult>(`/api/attention/${encodeURIComponent(id)}/resolve`, note === undefined ? { optionId } : { optionId, note }),
+export const resolveCard = (id: string, optionId: string, note?: string, items?: readonly number[]) =>
+  acted(post<CardActionResult>(`/api/attention/${encodeURIComponent(id)}/resolve`,
+    { optionId, ...(note === undefined ? {} : { note }), ...(items === undefined ? {} : { items: [...items] }) }),
     (result) => [result.followUp?.id]);
 /** Cards the person brings back are marked before the Hub is asked, whose change may be read before its answer. */
 const bringingBack = async <T>(ids: readonly string[], action: () => Promise<T>): Promise<T> => {

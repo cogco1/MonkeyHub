@@ -150,6 +150,50 @@ class ProjectionValueTests(unittest.TestCase):
         self.assertEqual(counts["objects_drawn_in_svg"], 3)
         self.assertTrue(result.png.startswith(b"\x89PNG"))
 
+    def test_the_mesh_solve_draws_what_the_exact_solve_draws_and_falls_back_to_it(self) -> None:
+        from monkeycad.backends.occt.errors import OcctBuildError
+
+        view = _view(hidden_lines=True)
+        meshed = self.project(view)
+        self.assertEqual(meshed.algorithm, views.MESH_ELEVATION_ALGORITHM)
+        with patch.object(views, "project_occt_mesh_lines", side_effect=OcctBuildError("a face could not be triangulated")):
+            exact = self.project(view)
+        self.assertTrue(exact.algorithm.startswith(views.EXACT_ELEVATION_ALGORITHM))
+        self.assertIn("a face could not be triangulated", exact.algorithm)
+        self.assertEqual(meshed.svg, exact.svg, "planar faces: the same cleaned lines, visible and hidden")
+
+    def test_an_edge_flush_with_a_face_in_front_is_drawn_as_the_exact_solve_draws_it(self) -> None:
+        # housing-13-units: a mullion against a wall's slanted end face, its own face in that plane to the
+        # float precision an imported mesh keeps. The mesh solve alone calls its edge on the wall hidden.
+        from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+        from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+        from OCP.gp import gp_Ax1, gp_Dir, gp_Pnt, gp_Trsf
+        from monkeycad.backends.occt.projection import project_occt_lines
+        from monkeycad.backends.occt.step import StepEntry
+
+        turn = gp_Trsf()
+        turn.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), math.atan(0.08))
+        view = ElevationView(name="east", origin=(0, 0, 0), look=(-1, 0, 0), right=(0, 1, 0), up=(0, 0, 1),
+                             crop_uv=(-1, -1, 4, 4), near_depth=-20, far_depth=20, hidden_lines=True)
+
+        def mullion_edges(back):
+            entries = tuple(StepEntry(name, (), None, BRepBuilderAPI_Transform(
+                BRepPrimAPI_MakeBox(gp_Pnt(*corner), *size).Shape(), turn, True).Shape()) for name, corner, size in (
+                ("wall", (0, 0, 0), (10, 2, 3)), ("mullion", (9.84 - back, 1.94, 0.5), (0.16, 0.13, 2))))
+            vertical = lambda lines: sorted((line.kind, round(line.points[0][0], 3)) for line in lines if line.object_id == "mullion"
+                                            and abs(line.points[0][0] - line.points[-1][0]) < 1e-9)
+            exact = project_occt_lines(entries, object_ids=("wall", "mullion"), origin=(0, 0, 0), right=(0, 1, 0), up=(0, 0, 1),
+                                       linear_deflection=0.0001)
+            return vertical(exact), vertical(project_model_axis_elevation(entries, object_ids=("wall", "mullion"), view=view,
+                                                                          unit="meter").lines)
+
+        exact, drawn = mullion_edges(0.00001)
+        self.assertIn(("visible", 2.731), exact)
+        self.assertEqual(drawn, exact, "flush to float precision: its edge on the wall is seen")
+        exact, drawn = mullion_edges(0.001)
+        self.assertIn(("hidden", 2.731), exact)
+        self.assertEqual(drawn, exact, "a millimetre behind the wall's face: hidden")
+
     def test_the_far_plane_removes_what_lies_beyond_it(self) -> None:
         self.assertEqual(svg_objects(self.project(_view(far_depth=10.0)).svg), ("skin", "wall"))
 
@@ -280,7 +324,7 @@ class FreezeElevationTests(unittest.TestCase):
         self.assertEqual(reopened.load_run("drawing-run").base, self.source_run.base)
         self.assertEqual(reopened.read_head(), self.head)
 
-        with patch.object(views, "project_occt_lines", wraps=views.project_occt_lines) as project:
+        with patch.object(views, "project_occt_mesh_lines", wraps=views.project_occt_mesh_lines) as project:
             again = freeze_model_axis_elevation(reopened, source=self.source, view=_view(), drawing_run_id="drawing-run",
                                                 operation_observer=observations.append, parent_event_id="repeated-operation")
         self.assertEqual(project.call_count, 1)
@@ -338,7 +382,7 @@ class FreezeElevationTests(unittest.TestCase):
         for error in (OcctBackendError("projection stopped"), asyncio.CancelledError()):
             with self.subTest(error=type(error).__name__):
                 observations = []
-                with patch.object(views, "project_occt_lines", side_effect=error) as project:
+                with patch.object(views, "project_occt_mesh_lines", side_effect=error) as project:
                     with self.assertRaises(asyncio.CancelledError if isinstance(error, asyncio.CancelledError) else DrawingElevationError):
                         freeze_model_axis_elevation(self.repository, source=self.source, view=_view(), drawing_run_id="failed-run",
                                                     operation_observer=observations.append)

@@ -4,17 +4,20 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useM
 import { applicationUrl, type AppearancePreferences } from "../../../../packages/web-shared/src/appearance.js";
 import type { WorktreeGraphDto } from "./api/project-runtime/generated";
 import { projectStatus } from "./worktreeGraph";
-import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, OperationRecord, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus, UserSettingsDto } from "./api/generated";
+import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, OperationRecord, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RecentDrawingDto, RuntimeEvent, UpdateStatus, UserSettingsDto } from "./api/generated";
 import { ProjectRuntimeProvider, useProjectRevision, useStudio } from "./api/project-runtime/ProjectRuntimeContext";
 import { projectStores, relayHubStream } from "./api/project-runtime/projectStore";
 import type { ModelSourceDto, ProjectRefreshDto, RenderPageRefDto, SourceDocumentDto } from "./api/project-runtime/generated";
 import { BoardRenderError, type BoardRenderChatRequest } from "./workspaces/monkeyboard/boardRender";
+import { HandToAiError, handToAiMessage, type HandToAiRequest, type HandToAiSent } from "./features/handToAi/handToAi";
+import { rememberHandOff } from "./features/handToAi/handOffRecords";
 import { ImageThumbnail } from "./workspaces/render/RenderResults";
 import { ModelThumbnail } from "./features/artifacts/ModelThumbnail";
 import { MODEL_PREVIEW_RETAINED, previewSourceKey } from "./features/artifacts/useRetainedModelPreview";
 import type { WorkspaceDesignContext, WorkspacePosition } from "./app/ProjectWorkspace";
 import { MonitorPage } from "./MonitorPage";
 import { ChatCard, ChatCardDetails } from "./ChatCard";
+import { AnsweredSkillQuestion, SkillRunCard, skillRunWords } from "./features/skills/SkillRunCard";
 import { DeveloperOnly, useDeveloperMode } from "./features/settings/preferences";
 import { HistoryPage } from "./features/designHistory/HistoryPage";
 import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessageContent";
@@ -22,19 +25,24 @@ import { ChatSuggestionCard } from "./ChatSuggestionCard";
 import { findSource, type PageSource } from "./workspaces/monkeyboard/boardScene";
 const ProjectWorkspace = lazy(() => import("./app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
-import { clock, currentStep, describeCall, describeStep, dismissible, operationStep, rawDetail, rawLine, resultCandidates, stepText, turnsOf, unfinishedOperations, unrecoverable, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
+import { clock, currentStep, describeCall, describeStep, dismissible, operationStep, rawDetail, rawLine, resultCandidates, stepText, stepTree, turnsOf, unfinishedOperations, unrecoverable, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
 import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } from "./monitorData";
-import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
+import { ACTIVE_OPERATIONS, activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
 import { ProjectSkills } from "./features/skills/SkillsPanel";
 import { SkillGrants } from "./features/skills/SkillPermissions";
 import { editFocused, HubMenuBar, type HubMenu, type HubMenuItem } from "./HubMenu";
 import { ASK_AI_ACTION, openSurfaceAction, useCommandActions, useCommands, type CommandHandler } from "./features/commands/CommandProvider";
+import { askMeaning, offerFor, type ArgChoice, type ArgChoices, type Offer } from "./features/commands/meaning";
 import { indexOf, routeSentence, searchable } from "./features/commands/search";
+import { CardRuntimes, ComparisonDecision } from "./notifications/cards/AttentionCards";
+import { answersKey } from "./notifications/cards/cardText";
 import { chooseShell, useShellLayout } from "./app/shellLayout";
 import { AttentionShell, RECENT_CONVERSATIONS, type CenterView, type ShellProject } from "./app/AttentionShell";
+import { NotesPanel } from "./app/NotesPanel";
+import { WakeupStrip } from "./app/WakeupStrip";
 import { useT } from "./i18n/useT";
-import { attentionConversation } from "./notifications/queue";
+import { attentionConversation, queueSnapshot } from "./notifications/queue";
 import { useNoticeRegion } from "./notifications/regions";
 import "./ChatShell.css";
 
@@ -63,7 +71,7 @@ const menuWords = {
   "zh-CN": {
     menus: "菜单", back: "后退到上一个对话", forward: "前进到下一个对话",
     file: "文件", edit: "编辑", view: "视图", help: "帮助",
-    newChat: "新对话", newProject: "新建项目…", addProject: "添加已有项目…", exportArchive: "导出项目归档…", restoreArchive: "恢复项目归档…", settings: "设置…",
+    newChat: "新对话", newProject: "新建项目…", addProject: "打开文件夹或项目…", exportArchive: "导出项目归档…", restoreArchive: "恢复项目归档…", settings: "设置…",
     undo: "撤销", redo: "重做", cut: "剪切", copy: "复制", paste: "粘贴", selectAll: "全选",
     sidebar: "侧栏", tools: "工具面板", theme: "主题", system: "跟随系统", dark: "深色", light: "浅色",
     uiStyle: "界面风格", classic: "经典", quiet: "静默仪表", titleblock: "图签", night: "夜航",
@@ -73,7 +81,7 @@ const menuWords = {
   en: {
     menus: "Menus", back: "Back to the previous conversation", forward: "Forward to the next conversation",
     file: "File", edit: "Edit", view: "View", help: "Help",
-    newChat: "New chat", newProject: "New project…", addProject: "Add existing project…", exportArchive: "Export project archive…", restoreArchive: "Restore project archive…", settings: "Settings…",
+    newChat: "New chat", newProject: "New project…", addProject: "Open a folder or project…", exportArchive: "Export project archive…", restoreArchive: "Restore project archive…", settings: "Settings…",
     undo: "Undo", redo: "Redo", cut: "Cut", copy: "Copy", paste: "Paste", selectAll: "Select all",
     sidebar: "Sidebar", tools: "Tools panel", theme: "Theme", system: "Match system", dark: "Dark", light: "Light",
     uiStyle: "Interface style", classic: "Classic", quiet: "Quiet instrument", titleblock: "Title block", night: "Night flight",
@@ -104,7 +112,7 @@ type Opening = { token: number; id: AppId; projectDir: string | null; chatId: st
  * the project workspace `runtimeId` while `tool` stays on screen in the chat that asked; `before` is
  * what was on screen, put back by Back from this comparison, and `opener` is the card control pressed.
  */
-type Comparison = { request: { candidateRunId: string; requestId: number }; projectDir: string; runtimeId: string;
+type Comparison = { request: { candidateRunId: string; requestId: number; againstRunId?: string | null; aside?: ReactNode }; projectDir: string; runtimeId: string;
   chatId: string | null; tool: AppId; before: { panel: boolean; tool: AppId | null }; opener: HTMLButtonElement | null };
 /**
  * GH-285: the admission time and dismissal the Hub now reports; GH-58: whether an operation that
@@ -117,6 +125,8 @@ const operationTime = (value: string | null | undefined, language: string) => {
   return date && !Number.isNaN(date.getTime()) ? date.toLocaleString(language, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
 };
 const VIEW_KEY = "monkeyhub.chat-view.v1";
+/** A conversation's title that says nothing about the work, so it is not offered back as a sentence to say. */
+const GENERIC_TITLE = /^(新对话|关注|关注对话|new (chat|conversation)|attention)/i;
 /** SS-9: unsent composer text by conversation (`new:<project>` before one exists), with when it last changed. */
 const DRAFTS_KEY = "monkeyhub.chat-drafts.v1", DRAFT_LIMIT = 50;
 /**
@@ -155,7 +165,11 @@ const composerWords = {
     newTopicRemove: "移除新话题",
     target: "将修改：当前", targetUnrecorded: "未记录的修改不包括在内", sending: "发送中…",
     sendTo: (name: string) => `发到：${name}`, sendToAttention: "关注对话", sendToNew: "新对话",
-    routeSays: (label: string) => `这句话可以直接做：「${label}」`, routeRun: "直接做", routeSend: "还是发给 AI",
+    routeSays: (label: string) => `这句话可以直接做：「${label}」`, routeRun: "直接做", routeSend: "还是发给 AI", routeKeys: "回车直接做 · Esc 发给 AI",
+    providerSwitched: (from: string, to: string) => `要用 ${from} 得先装，现在用的是 ${to}`,
+    suggestLabel: "试试这几句", suggestHint: "说一句话，会放进三类之一：需要你决定、等你批注、猜你可能想要",
+    suggestCompare: (a: number, b: number) => `V${a} 和 V${b} 哪个好`, suggestWhere: "现在做到哪了", suggestPrepare: "帮我准备下次评图",
+    routeWhich: (name: string) => name === "project" ? "哪个项目？" : name === "sessionId" ? "哪个对话？" : `还差：${name}`,
     operationOpenChat: "打开对话", operationDismiss: "知道了",
     operationMore: (count: number) => `另有 ${count} 个`,
     targetViewing: (name: string) => `正在查看 ${name}，这条消息仍会修改当前`,
@@ -167,7 +181,11 @@ const composerWords = {
     newTopicRemove: "Remove New topic",
     target: "Changes: Current", targetUnrecorded: "unrecorded edits not included", sending: "Sending…",
     sendTo: (name: string) => `To: ${name}`, sendToAttention: "the attention conversation", sendToNew: "a new conversation",
-    routeSays: (label: string) => `This can be done directly: ${label}`, routeRun: "Do it", routeSend: "Send to the AI instead",
+    routeSays: (label: string) => `This can be done directly: ${label}`, routeRun: "Do it", routeSend: "Send to the AI instead", routeKeys: "Enter does it · Esc sends it to the AI",
+    providerSwitched: (from: string, to: string) => `${from} has to be installed first; using ${to} for now`,
+    suggestLabel: "Try one of these", suggestHint: "Say one thing; it lands in one of three kinds: needs your decision, waits for your marks, a guess at what you want",
+    suggestCompare: (a: number, b: number) => `Which is better, V${a} or V${b}`, suggestWhere: "Where are we now", suggestPrepare: "Help me prepare for the next review",
+    routeWhich: (name: string) => name === "project" ? "Which project?" : name === "sessionId" ? "Which conversation?" : `Still needed: ${name}`,
     operationOpenChat: "Open chat", operationDismiss: "Dismiss",
     operationMore: (count: number) => `${count} more`,
     targetViewing: (name: string) => `Viewing ${name}; this message still changes Current`,
@@ -500,8 +518,11 @@ function ComposerMenu({ label, disabled, disabledReason, items }: { label: strin
 
 type ChatWords = (typeof words)[keyof typeof words];
 const processWords = (t: ChatWords): ProcessWords => ({ steps: t.processStep, prepare: t.processPrepare,
-  webSearch: t.processWebSearch, desktop: t.processDesktop, permission: t.processPermission });
+  webSearch: t.processWebSearch, desktop: t.processDesktop, permission: t.processPermission, subagent: t.processSubagent });
 /** The wall clock while `active`; a finished turn needs no ticking. */
+/** Under this, a wait shows only that it runs; past it, how far along it is (08 加载分档). */
+const LONG_WAIT_SECONDS = 10;
+
 function useNow(active: boolean) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -544,9 +565,15 @@ function ProcessRow({ turn, running, open, t, onToggle }: {
       <svg className="chat-process__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
     </button>
     {open && <div className="chat-process__body" id={body}>
-      <ol className="chat-process__steps">{turn.steps.map((step) => <li key={step.id} data-status={step.status}>
+      <ol className="chat-process__steps">{stepTree(turn.steps).map(({ step, children }) => <li key={step.id} data-status={step.status}>
         <span className="chat-process__mark" aria-hidden="true">{stepMark(step.status)}</span>
-        <span>{stepText(describeStep(step), names)}{step.status === "failed" && <span className="chat-process__step-failed"> · {t.processStepFailed}</span>}</span>
+        <span>{stepText(describeStep(step), names)}{step.status === "failed" && <span className="chat-process__step-failed"> · {t.processStepFailed}</span>}
+          {/* A subagent's own calls fold under the call that started it (gap 5). */}
+          {children.length > 0 && <details className="chat-process__sub"><summary>{t.processSubagentSteps(children.length)}</summary>
+            <ol className="chat-process__steps">{children.map((child) => <li key={child.id} data-status={child.status}>
+              <span className="chat-process__mark" aria-hidden="true">{stepMark(child.status)}</span>
+              <span>{stepText(describeStep(child), names)}{child.status === "failed" && <span className="chat-process__step-failed"> · {t.processStepFailed}</span>}</span>
+            </li>)}</ol></details>}</span>
       </li>)}</ol>
       <DeveloperOnly><ChatCardDetails className="chat-process__technical" summary={t.processTechnical}>
         <ol>{turn.steps.map((step) => <li key={step.id}>
@@ -585,19 +612,29 @@ function SurfaceSkeleton({ surface, name, step, startedAt = null, words, onCance
   </div>;
 }
 
+/** What a conversation's turns may do unasked (gap 4). */
+type ChatPermissionMode = NonNullable<ChatDetail["permissionMode"]>;
+
 export function ChatShell({ preferences, settings, settingsDirty = false, configuredProject, defaults, workspace, apps, onRuntimeEvent, onAppearance }: Props) {
   const runtimeEventRef = useRef(onRuntimeEvent);
   runtimeEventRef.current = onRuntimeEvent;
   const t = words[preferences.language], w = composerWords[preferences.language], s = shellWords[preferences.language];
   const developer = useDeveloperMode();
   // 08: a sentence that clearly names one command the person can run here is offered as that command before it goes
-  // to the model (the search index in features/commands/search.ts); the person can still send it as written.
+  // to the model: first by its words (features/commands/search.ts), else by its meaning (the Hub's local model,
+  // features/commands/meaning.ts). One click runs it; an argument the sentence did not name is the one thing the card
+  // asks. The person can still send it as written.
   const commands = useCommands();
-  const [routed, setRouted] = useState<{ id: string; text: string } | null>(null);
+  const [routed, setRouted] = useState<{ text: string; offer: Offer } | null>(null);
   const sendAsWritten = useRef(false);
   const [initial] = useState(readView);
   const [projects, setProjects] = useState<ChatProject[]>([]);
   const [sessions, setSessions] = useState<ChatSummary[]>([]);
+  /** The arguments a sentence may name and the confirm card may ask for: a project, or one of this project's conversations. */
+  const argChoices = (): ArgChoices => ({
+    project: projects.map((item): ArgChoice => ({ value: item.name, label: item.name })),
+    sessionId: sessions.filter((item) => !item.archived && item.projectDir === projectDir).map((item): ArgChoice => ({ value: item.id, label: item.title })),
+  });
   const [archivedView, setArchivedView] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState<string | null>(null);
   const [providers, setProviders] = useState<ChatProvider[]>([]);
@@ -681,6 +718,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const browserPages = useRef<HTMLDivElement>(null);
   // Cancelling clears the request its workspace receives; it neither restores the view nor answers as Back.
   const endComparison = () => { comparisonRef.current = null; setComparison(null); };
+  /** A card's comparison in another project waits for that project to be the one on screen (2-5). */
+  const pendingComparison = useRef<{ projectDir: string; projectId: string;
+    request: { candidateRunId: string; againstRunId?: string | null; aside?: ReactNode } } | null>(null);
   const [chatWidth, setChatWidth] = useState(() => initial.chatWidth ?? CHAT_WIDTH);
   const [toolBusy, setToolBusy] = useState<AppId | null>(null);
   // PP-1: the tool being opened, and the step each project's start path is on.
@@ -695,6 +735,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     return next;
   }), []);
   const [folder, setFolder] = useState("");
+  const [picking, setPicking] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [projectInfo, setProjectInfo] = useState(false);
   const projectInfoButton = useRef<HTMLButtonElement>(null), projectInfoClose = useRef<HTMLButtonElement>(null);
@@ -720,6 +761,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // The model this conversation will use next. An existing chat keeps its own;
   // a new one starts from the saved default until it is sent.
   const [draftModel, setDraftModel] = useState<string | null>(defaults.model);
+  // What a new conversation's turns may do unasked, chosen before it exists; null takes the Hub's default for its kind.
+  const [draftPermission, setDraftPermission] = useState<ChatPermissionMode | null>(null);
+  const [permissionModeBusy, setPermissionModeBusy] = useState(false);
   const [customModel, setCustomModel] = useState<string | null>(null);
   const [modelBusy, setModelBusy] = useState(false);
   const [permissionBusy, setPermissionBusy] = useState<string | null>(null);
@@ -843,15 +887,37 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const visibleSessions = sessions.filter((session) => Boolean(session.archived) === archivedView);
   // An existing conversation keeps the connection it was created with; only a
   // new one takes the saved default.
-  const connection = chat?.id === chatId ? { provider: chat.provider, model: chat.model ?? null } : defaults;
+  // 17: a new conversation starts on the saved default; when that one is not installed, on the first connection that is
+  // (a signed-in one first), and the composer says so in a sentence instead of the CLI's own English.
+  const savedProvider = providers.find((item) => item.id === defaults.provider);
+  const usableProvider = providers.length && savedProvider && !savedProvider.available
+    ? providers.find((item) => item.available && item.signedIn !== false) ?? providers.find((item) => item.available) ?? null : null;
+  const usableDefaults = usableProvider ? { provider: usableProvider.id as ChatCreateRequest["provider"], model: null } : defaults;
+  const connection = chat?.id === chatId ? { provider: chat.provider, model: chat.model ?? null } : usableDefaults;
   const availableProvider = providers.find((item) => item.id === connection.provider);
+  const providerNote = !chatId && savedProvider && !savedProvider.available
+    ? usableProvider ? w.providerSwitched((savedProvider.label ?? savedProvider.id).replace(/\s+CLI$/, ""), usableProvider.label.replace(/\s+CLI$/, ""))
+      : (loading ? "" : t.noProvider)
+    : "";
   const composerDisabledReason = !project ? t.projectRequired : busy ? t.actionPending : undefined;
+  // 08: the command a sentence names, offered before the model; it goes once the words change.
+  const routeShown = routed !== null && routed.text === draft.trim();
+  const runRouted = (more: Record<string, string> = {}) => {
+    if (!routed) return;
+    const { command, args } = routed.offer;
+    if (commands.run(command.id, "composer", { args: { ...args, ...more } })) setDrafts((value) => ({ ...value, [draftKey]: "" }));
+    setRouted(null);
+  };
   const sendDisabledReason = running ? (renderDraft ? t.renderContextAfterReply : !draft.trim() ? t.interjectEmpty : undefined)
     : composerDisabledReason ?? (!draft.trim() && !attachments.length ? t.sendEmpty
-      : !chatId && !availableProvider?.available ? availableProvider?.detail ?? t.noProvider : undefined);
+      : !chatId && !availableProvider?.available ? t.noProvider : undefined);
   // The connection as the Hub named it, short enough to read in a sentence.
   const connectionName = (availableProvider?.label ?? connection.provider ?? "").replace(/\s+CLI$/, "") || null;
   const chosenModel = chat?.id === chatId ? chat.model ?? null : draftModel;
+  // What each did before levels: a folder asks, Codex asks, a project's Claude turn may do everything (as the Hub decides).
+  const chosenPermission: ChatPermissionMode = chat?.id === chatId
+    ? chat.permissionMode ?? (chat.kind === "folder" || chat.provider === "codex" ? "ask" : "open")
+    : draftPermission ?? (project?.kind === "folder" || connection.provider === "codex" ? "ask" : "open");
   // What this connection actually lists, plus whatever is already chosen: a
   // hand-entered id stays selectable even while a catalogue is unreadable.
   const modelOptions = [...new Set([...(availableProvider?.models ?? []), ...(chosenModel ? [chosenModel] : [])])];
@@ -865,15 +931,33 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       projectDir: item.projectDir, projectId: item.projectId, runtimeId: item.runtimeId }))];
 
   // Read the project's Worktree Graph while its card is open, and again as its work changes.
-  const operationSignature = (projectRuntime?.operations ?? []).map((item) => `${item.operationId}:${item.status}`).join("|");
+  // An operation's steps while it runs (queued … committing) are one state here:
+  // the card reads the graph when work starts and when it settles. A large
+  // project's graph takes tens of seconds while its Studio builds, holding the
+  // working draft's guard, and every step of one Record asked for it again (S20).
+  const operationSignature = (projectRuntime?.operations ?? []).map((item) =>
+    `${item.operationId}:${ACTIVE_OPERATIONS.has(item.status) ? "running" : item.status}`).join("|");
+  // One read at a time; a change during a read is read once more when it is back.
+  const worktreesWanted = useRef<string | null>(null);
+  const worktreesReading = useRef<{ again: boolean } | null>(null);
   useEffect(() => {
     const runtimeId = projectRuntime?.runtimeId;
-    if (!projectInfo || !runtimeId || projectRuntime?.projection !== "ready") return;
-    let live = true;
-    request<WorktreeGraphDto>(`/api/runtime/projects/${encodeURIComponent(runtimeId)}/studio/api/worktrees`)
-      .then((graph) => { if (live) setWorktrees({ runtimeId, graph }); })
-      .catch(() => { /* Unread, the card shows no status rather than a stale one. */ });
-    return () => { live = false; };
+    const wanted = projectInfo && runtimeId && projectRuntime?.projection === "ready" ? runtimeId : null;
+    worktreesWanted.current = wanted;
+    if (!wanted) return;
+    const read = (id: string) => {
+      worktreesReading.current = { again: false };
+      void request<WorktreeGraphDto>(`/api/runtime/projects/${encodeURIComponent(id)}/studio/api/worktrees`)
+        .then((graph) => { if (worktreesWanted.current === id) setWorktrees({ runtimeId: id, graph }); })
+        .catch(() => { /* Unread, the card shows no status rather than a stale one. */ })
+        .finally(() => {
+          const again = worktreesReading.current?.again;
+          worktreesReading.current = null;
+          if (again && worktreesWanted.current) read(worktreesWanted.current);
+        });
+    };
+    if (worktreesReading.current) worktreesReading.current.again = true;
+    else read(wanted);
   }, [projectInfo, projectRuntime?.runtimeId, projectRuntime?.projection, operationSignature]);
   const graph = worktrees?.runtimeId === projectRuntime?.runtimeId ? worktrees?.graph ?? null : null;
   const status = graph ? projectStatus(graph) : null;
@@ -1183,6 +1267,57 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     }
     return callback;
   };
+  // S08: 「交给 AI」 from a project's Board, page or tracing paper is sent at once, as one message with its
+  // attachments, into that project's conversation: the one open in the column when it is this project's and can
+  // take a message, else the attention conversation, else a new one. The composer's own draft is left alone.
+  const handOff = useRef<(target: { projectDir?: string; projectId?: string }, request: HandToAiRequest) => Promise<HandToAiSent>>(async () => {
+    throw new HandToAiError("CONVERSATION_UNAVAILABLE", "No conversation.");
+  });
+  handOff.current = async (target, handed) => {
+    if (!target.projectDir || handed.projectId !== target.projectId) throw new HandToAiError("PROJECT_CHANGED", "Another project.");
+    if (actionLock.current || sending !== null) throw new HandToAiError("CONVERSATION_BUSY", "A message is being sent.");
+    const projectTarget = target.projectDir;
+    const selected = selection.current.projectDir === projectTarget ? selection.current.chatId : null;
+    const shown = selected ? (chat?.id === selected ? chat : sessions.find((row) => row.id === selected)) : undefined;
+    const usable = selected && shown && !shown.sourceSessionId && !shown.archived ? selected : null;
+    if (usable && shown?.status === "running") throw new HandToAiError("CONVERSATION_BUSY", "A reply is running.");
+    actionLock.current = true;
+    try {
+      const routed = usable ? null : attentionLayout ? await attentionConversation(projectTarget).catch(() => null) : null;
+      const reading = usable ?? routed;
+      let current = reading ? await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(reading)}`) : null;
+      if (current && (current.archived || current.sourceSessionId)) current = null;
+      if (current?.status === "running") throw new HandToAiError("CONVERSATION_BUSY", "A reply is running.");
+      if (!current) {
+        const body: ChatCreateRequest = { projectDir: projectTarget, provider: usableDefaults.provider, model: usableProvider ? null : draftModel,
+          kind: projects.find((item) => item.projectDir === projectTarget)?.kind ?? "project", permissionMode: draftPermission };
+        current = await request<ChatDetail>("/api/chat/sessions", body);
+      }
+      await ensureProject(projectTarget, current.projectId);
+      const body: ChatPostRequest = { content: handToAiMessage(handed.surface, handed.words, handed.marks, preferences.language), projectId: current.projectId,
+        attachments: await Promise.all(handed.files.map(async (file) => ({ name: file.name, mimeType: file.type || "application/octet-stream", data: await fileData(file, t.attachmentRead) }))) };
+      const posted = await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(current.id)}/messages`, body);
+      rememberHandOff({ id: crypto.randomUUID(), at: new Date().toISOString(), projectDir: projectTarget, surface: handed.surface,
+        words: handed.words.trim(), marks: handed.marks, thumbnail: handed.thumbnail, chatId: posted.id });
+      // The person follows the reply where it lands, when this project is the one in the column.
+      if (selection.current.projectDir === projectTarget) {
+        setArchivedView(false); setChatId(posted.id); setChat(posted); setFreshChat(false);
+        followLatest.current = true; setLatest({ away: false, unseen: 0 });
+      }
+      void refresh();
+      return { chatId: posted.id };
+    } finally { actionLock.current = false; }
+  };
+  const handOffCallbacks = useRef(new Map<string, (request: HandToAiRequest) => Promise<HandToAiSent>>());
+  const workspaceHandOffCallback = (tab: ToolTab) => {
+    let callback = handOffCallbacks.current.get(tab.runtimeId!);
+    if (!callback) {
+      const target = { projectDir: tab.projectDir, projectId: tab.projectId };
+      callback = (request) => handOff.current(target, request);
+      handOffCallbacks.current.set(tab.runtimeId!, callback);
+    }
+    return callback;
+  };
   const moveRender = (from: string, to: string) => setRenderContexts((value) => {
     if (from === to || !(from in value)) return value;
     const next = { ...value, [to]: value[from]! };
@@ -1371,13 +1506,27 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       return;
     }
     if (!sendAsWritten.current && !attachments.length && !renderDraft) {
-      const hit = routeSentence(indexOf(commands.tree, searchable(commands.tree, developer)), draft.trim());
-      const state = hit ? commands.stateOf(hit.command) : null;
-      if (hit && state && (state.kind === "ready" || state.kind === "opens")) { setRouted({ id: hit.command.id, text: draft.trim() }); return; }
+      const text = draft.trim();
+      const runnable = (offer: Offer | null) => {
+        const state = offer ? commands.stateOf(offer.command) : null;
+        return Boolean(state && (state.kind === "ready" || state.kind === "opens"));
+      };
+      const hit = routeSentence(indexOf(commands.tree, searchable(commands.tree, developer)), text);
+      const said = hit ? offerFor(commands.tree, hit.command.id, text, argChoices(), developer) : null;
+      if (said && runnable(said)) { setRouted({ text, offer: said }); return; }
+      actionLock.current = true;
+      const meant = await askMeaning(text).finally(() => { actionLock.current = false; });
+      const offer = meant?.route ? offerFor(commands.tree, meant.route, text, argChoices(), developer) : null;
+      if (offer && runnable(offer)) { setRouted({ text, offer }); return; }
     }
     sendAsWritten.current = false;
     setRouted(null);
     const target = projectDir, content = draft.trim(), key = draftKey, files = attachments;
+    // While the meaning search was asked the composer stayed open: what was typed or attached since then is
+    // not in this message, so it stays in the draft when the message is sent.
+    const written = draft;
+    const unsent = (now = "") => now.trim() === content ? "" : now.startsWith(written) ? now.slice(written.length).trimStart() : now;
+    let draftAt = key;
     const requestedContext = designContext, requestedContextMode = contextMode, contextProjectId = workspaceContext?.projectId;
     const requestedRender = renderDraft;
     if (requestedContextMode === "project" && !requestedContext) {
@@ -1391,15 +1540,18 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       const reading = routed ?? chatId;
       let current = chat?.id === reading ? chat : reading ? await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(reading)}`) : null;
       if (!current) {
-        const body: ChatCreateRequest = { projectDir: target, provider: defaults.provider, model: draftModel };
+        const body: ChatCreateRequest = { projectDir: target, provider: usableDefaults.provider, model: usableProvider ? null : draftModel,
+          kind: project?.kind ?? "project", permissionMode: draftPermission };
         current = await request<ChatDetail>("/api/chat/sessions", body);
-        setDrafts((value) => ({ ...value, [key]: "", [current!.id]: content }));
-        setDraftAttachments((value) => ({ ...value, [key]: [], [current!.id]: files }));
+        setDrafts((value) => ({ ...value, [key]: "", [current!.id]: value[key] || content }));
+        setDraftAttachments((value) => ({ ...value, [key]: [], [current!.id]: value[key] ?? files }));
+        draftAt = current.id;
         moveRender(key, current.id);
         if (selection.current.projectDir === target && selection.current.chatId === chatId) { setChatId(current.id); setChat(current); setFreshChat(false); }
       }
       if (current.archived) { setChat(current); return; }
-      await ensureProject(target, current.projectId);
+      // A plain folder has no project service to open.
+      if (current.kind !== "folder") await ensureProject(target, current.projectId);
       const body: ChatPostRequest = { content, projectId: current.projectId };
       // #253: an image discussion names its own exact pages and needs no design state; only a
       // New topic the architect chose still starts from the editing state.
@@ -1418,8 +1570,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       if (files.length) body.attachments = await Promise.all(files.map(async (file) => ({ name: file.name, mimeType: file.type || "application/octet-stream", data: await fileData(file, t.attachmentRead) })));
       const posted = await request<ChatDetail>(`/api/chat/sessions/${current.id}/messages`, body);
       if (selection.current.projectDir === target && (selection.current.chatId === chatId || selection.current.chatId === current.id)) { setChatId(posted.id); setChat(posted); }
-      setDrafts((value) => ({ ...value, [key]: "", [posted.id]: "" }));
-      setDraftAttachments((value) => ({ ...value, [key]: [], [posted.id]: [] }));
+      setDrafts((value) => ({ ...value, [key]: "", [posted.id]: unsent(value[draftAt]) }));
+      setDraftAttachments((value) => ({ ...value, [key]: [], [posted.id]: (value[draftAt] ?? []).filter((file) => !files.includes(file)) }));
       setContextModes((value) => ({ ...value, [key]: "continue", [posted.id]: "continue" }));
       // The images stay with the conversation: a correction resends the same exact pages.
       moveRender(key, posted.id);
@@ -1488,6 +1640,15 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     catch (cause) { setError(asFailure(cause)); }
     finally { setModelBusy(false); }
   };
+  /** Change what this conversation's next turns may do unasked: read only, ask first, or anything. */
+  const choosePermissionMode = async (value: ChatPermissionMode) => {
+    if (!chatId || chat?.id !== chatId) { setDraftPermission(value); return; }
+    if (running || archived || permissionModeBusy || value === chosenPermission) return;
+    setPermissionModeBusy(true); setError(null);
+    try { setChat(await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(chatId)}/permission-mode`, { permissionMode: value }, "PUT")); }
+    catch (cause) { setError(asFailure(cause)); }
+    finally { setPermissionModeBusy(false); }
+  };
   const stop = async () => {
     // A workspace being opened (a reload reopens the saved ones) holds the lock too; stopping the turn does not wait for it.
     if (!chatId || (actionLock.current && !openingRef.current)) return;
@@ -1517,6 +1678,17 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     } catch (cause) { if (selection.current.chatId === current.id) setError(asFailure(cause)); }
     finally { permissionLock.current = false; setPermissionBusy(null); }
   };
+  /** S23: keep a script the AI ran in this conversation as the person's own skill, under this name. */
+  const keepScript = async (runId: string, name: string) => {
+    if (!chat || chat.id !== chatId) return;
+    const current = chat;
+    setError(null);
+    try {
+      const detail = await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(current.id)}/skill-runs/${encodeURIComponent(runId)}/keep`,
+        { projectId: current.projectId, name });
+      if (selection.current.chatId === current.id) setChat(detail);
+    } catch (cause) { if (selection.current.chatId === current.id) setError(asFailure(cause)); }
+  };
   /** Make a new empty project in the workspace and open a conversation in it. */
   const createProject = async (event: FormEvent) => {
     event.preventDefault(); if (actionLock.current || !projectName.trim()) return;
@@ -1526,7 +1698,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       setProjects((items) => [...items.filter((item) => item.projectDir !== project.projectDir), project]);
       setArchivedView(false); selectProject(project);
       newDialog.current?.close(); setProjectName("");
-      const body: ChatCreateRequest = { projectDir: project.projectDir, provider: defaults.provider, model: defaults.model };
+      const body: ChatCreateRequest = { projectDir: project.projectDir, provider: usableDefaults.provider, model: usableDefaults.model };
       const created = await request<ChatDetail>("/api/chat/sessions", body);
       selectChat(created); setChat(created); await refresh();
       input.current?.focus();
@@ -1536,11 +1708,25 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     }
     finally { actionLock.current = false; setBusy(false); }
   };
+  /** Windows' own dialog, on this screen, in place of a typed path. Nothing is chosen when it is closed. */
+  const choosePath = async (kind: "folder" | "file", title: string, filter: "archive" | "any", apply: (path: string) => void) => {
+    if (picking) return;
+    setPicking(true); setDialogError(null);
+    try {
+      const picked = await request<{ path: string | null }>("/api/chat/pick-path", { kind, title, filter });
+      if (picked.path) apply(picked.path);
+    } catch (cause) { setDialogError(asFailure(cause)); }
+    finally { setPicking(false); }
+  };
   const addProject = async (event: FormEvent) => {
-    event.preventDefault(); if (actionLock.current || !folder.trim()) return;
+    event.preventDefault(); await addProjectAt(folder);
+  };
+  const addProjectAt = async (path: string) => {
+    if (actionLock.current || !path.trim()) return;
     actionLock.current = true; setBusy(true); setDialogError(null);
     try {
-      const body: ChatCreateRequest = { projectDir: folder.trim().replace(/^"(.*)"$/, "$1"), provider: defaults.provider, model: defaults.model };
+      // One "open a folder": a MonkeyHub project opens as a project, any other folder as a conversation in that folder.
+      const body: ChatCreateRequest = { projectDir: path.trim().replace(/^"(.*)"$/, "$1"), provider: usableDefaults.provider, model: usableDefaults.model, kind: "auto" };
       const created = await request<ChatDetail>("/api/chat/sessions", body);
       selectChat(created); setChat(created); addDialog.current?.close(); setFolder(""); await refresh();
     } catch (cause) { setDialogError(asFailure(cause)); }
@@ -1705,11 +1891,16 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
    */
   const compareResult = async (candidateRunId: string, opener: HTMLButtonElement) => {
     if (!chat || chat.id !== chatId || !project || project.projectId !== chat.projectId || project.projectDir !== chat.projectDir) return;
-    const target = project.projectDir, targetId = project.projectId, targetChat = chatId;
+    await compareIn(project.projectDir, project.projectId, { candidateRunId }, opener);
+  };
+  /** A comparison in this project, over the surface its mounted workspace shows; the Hub keeps the way back. */
+  const compareIn = async (target: string, targetId: string,
+    request: { candidateRunId: string; againstRunId?: string | null; aside?: ReactNode }, opener: HTMLButtonElement | null) => {
+    const targetChat = chatId;
     const current = comparisonRef.current;
     // Another option asked for over one on screen keeps the way back to what came before both.
     const before = current?.projectDir === target && current.chatId === targetChat ? current.before : { panel, tool: activeTool };
-    const publish = (runtimeId: string, tool: AppId) => setComparison({ request: { candidateRunId, requestId: ++comparisonSequence.current },
+    const publish = (runtimeId: string, tool: AppId) => setComparison({ request: { ...request, requestId: ++comparisonSequence.current },
       projectDir: target, runtimeId, chatId: targetChat, tool, before, opener });
     const mounted = tabs.find((tab) => tab.projectDir === target && tab.projectId === targetId && tab.runtimeId);
     if (mounted) { setActiveTool(mounted.id); setPanel(true); publish(mounted.runtimeId!, mounted.id); return; }
@@ -1727,6 +1918,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     const attached = runtimeAttachments.current.get(target);
     if (attached?.projectId === targetId) publish(attached.runtimeId, "tree");
   };
+  useEffect(() => {
+    const pending = pendingComparison.current;
+    if (!pending || pending.projectDir !== projectDir) return;
+    pendingComparison.current = null;
+    void compareIn(pending.projectDir, pending.projectId, pending.request, null);
+  }, [projectDir]);
   // A hidden panel, or another chat, project or tool on screen, cancels the comparison asked for here and its way back.
   useEffect(() => {
     if (comparison && (!panel || comparison.projectDir !== projectDir || comparison.chatId !== chatId || comparison.tool !== activeTool)) endComparison();
@@ -1935,8 +2132,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const messageEntry = (message: ChatMessage) => <article className={`chat-message chat-message--${message.role}`} key={message.id}>
     {message.role === "user" && message.contextMode === "project" && <p className="chat-muted">{t.contextProjectMessage}</p>}
     {message.role === "user" && message.contextMode === "stage" && <p className="chat-muted">{t.contextStageMessage}: {message.confirmedStageLabel}</p>}
+    {/* No person typed it here: a wake-up this conversation set, or another conversation, sent it. */}
+    {message.role === "user" && message.origin && <p className="chat-origin" data-origin={message.origin.kind}>{message.origin.kind === "schedule"
+      ? tc("origin.schedule") : tc("origin.chat", { title: message.origin.title ?? "" })}</p>}
     {message.role === "user" && message.interjection && <p className="chat-muted" data-interjection={message.interjection}>{t.interjected} · {{ pending: t.interjectionPending, delivered: t.interjectionDelivered, restarted: t.interjectionRestarted, undelivered: t.interjectionUndelivered }[message.interjection]}</p>}
-    <ChatMarkdown text={message.content} />
+    <ChatMarkdown text={message.content} streaming={message.status === "streaming"} />
     {message.role === "assistant" && message.suggestion && <ChatSuggestionCard key={`${chat!.id}:${message.id}:${message.presentationRevision}`}
       message={message} chat={chat!} language={preferences.language} busy={busy || Boolean(toolBusy)} sending={suggestionBusy === message.id}
       error={suggestionError?.chatId === chat!.id && suggestionError.messageId === message.id ? suggestionError.error : null}
@@ -1997,6 +2197,21 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // Ctrl+K's "Ask the AI": the words go out the way the composer sends them, unless a draft is
   // already there; then they join it and wait for the person to send.
   const pendingAsk = useRef<string | null>(null);
+  // 18: what to offer to say, from what this project has: its last two versions to weigh, what was asked in its
+  // conversations before, and two sentences that suit any project.
+  const suggestedLines = (() => {
+    if (!project) return [] as string[];
+    const out: string[] = [];
+    const version = project.version ?? null;
+    if (version !== null && version >= 2) out.push(w.suggestCompare(version - 1, version));
+    for (const session of sessions) {
+      const title = session.title?.trim();
+      if (session.projectDir === project.projectDir && !session.archived && title && title.length >= 4 && !GENERIC_TITLE.test(title) && !out.includes(title)) out.push(title);
+      if (out.length >= 3) break;
+    }
+    for (const line of [w.suggestWhere, w.suggestPrepare]) if (out.length < 4 && !out.includes(line)) out.push(line);
+    return out;
+  })();
   const askAgent = (text: string) => {
     if (!text.trim()) return;
     if (draft.trim()) { setDrafts((value) => ({ ...value, [draftKey]: `${draft.trimEnd()}\n${text}` })); toComposer(); return; }
@@ -2015,9 +2230,27 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     drawings: "drawing", render: "monkeyrender", fabrication: "monkeyfab", usage: "monkeymonitor" };
   useCommandActions({
     "chat.new_conversation": { run: startChat },
+    // 2-5 比较并决定: a decision card's results side by side, the card under them; its answer closes the comparison.
+    "candidate.compare.decide": { run: ({ args }) => {
+      const runIds = Array.isArray(args?.runIds) ? args.runIds.filter((value): value is string => typeof value === "string" && value.length > 0) : [];
+      if (runIds.length < 2) return;
+      const card = typeof args?.cardId === "string" ? queueSnapshot().cards.find((row) => row.id === args.cardId) ?? null : null;
+      const target = projects.find((row) => row.projectDir === (card?.projectDir ?? projectDir));
+      if (!target) return;
+      const request = { candidateRunId: runIds[runIds.length - 1]!, againstRunId: runIds[0]!,
+        aside: card ? <ComparisonDecision cardId={card.id} project={target.name} runIds={runIds} answers={answersKey(card)}
+          onDone={() => { endComparison(); setPanel(false); }} /> : null };
+      if (target.projectDir === projectDir) { void compareIn(target.projectDir, target.projectId, request, null); return; }
+      pendingComparison.current = { projectDir: target.projectDir, projectId: target.projectId, request };
+      selectProject(target);
+    } },
     "chat.open_conversation": { run: ({ args }) => {
       const target = sessions.find((item) => item.id === args?.sessionId);
       if (target) selectChat(target);
+    } },
+    "project.open": { run: ({ args }) => {
+      const target = projects.find((item) => item.name === args?.project || item.projectDir === args?.project);
+      if (target) selectProject(target);
     } },
     [ASK_AI_ACTION]: { run: ({ text }) => askAgent(text ?? ""), available: () => (projectDir && !archived && !external ? true : t.projectRequired) },
     "project.create.new": { run: openNewProject },
@@ -2091,15 +2324,79 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   ];
   // The pieces of the shell both layouts place: the workbench below, and the attention shell
   // (?shell=attention) in app/AttentionShell.tsx. Each is built once per render from the same state.
+  // 08 加载分档: a job past ten seconds shows how far along it is, measured against this project's earlier jobs.
+  const taskNow = useNow(tasks.some((task) => task.state === "running" && task.startedAt));
+  const taskTiming = (task: SidebarTask) => {
+    if (task.state !== "running" || !task.startedAt) return null;
+    const elapsed = Math.max(0, Math.round((taskNow - Date.parse(task.startedAt)) / 1000));
+    if (elapsed < LONG_WAIT_SECONDS) return null;
+    if (!task.expectedSeconds) return { elapsed, share: null, text: t.taskElapsed(elapsed) };
+    const left = Math.round(task.expectedSeconds - elapsed);
+    return { elapsed, share: Math.min(elapsed / task.expectedSeconds, 0.95), text: left > 0 ? t.taskLeft(left) : t.taskLonger(elapsed) };
+  };
+  const ago = (at: number) => {
+    const minutes = Math.max(0, Math.floor((Date.now() - at) / 60_000));
+    return minutes < 1 ? tc("shell.overview.justNow") : minutes < 60 ? tc("shell.overview.minutesAgo", { count: minutes })
+      : minutes < 1440 ? tc("shell.overview.hoursAgo", { count: Math.floor(minutes / 60) }) : tc("shell.overview.daysAgo", { count: Math.floor(minutes / 1440) });
+  };
+  // A drawing opened from the Attention page in another project opens once that project is the one on screen.
+  const pendingDrawing = useRef<{ projectDir: string; source: PageSource } | null>(null);
+  const openDocument = (target: string, source: PageSource) => {
+    const requestId = ++documentRequestSequence.current;
+    setDocumentRequests((current) => ({ ...current, [target]: { source, requestId } }));
+    void openTool("monkeyboard");
+  };
+  useEffect(() => {
+    const pending = pendingDrawing.current;
+    if (!pending || pending.projectDir !== projectDir) return;
+    pendingDrawing.current = null;
+    openDocument(pending.projectDir, pending.source);
+  }, [projectDir]);
+  // Beside the Attention page's conclusion: the newest drawing of an open project, with its picture, one click from
+  // its page on the Board; without one, the latest result a project's job produced in the last day.
+  const recentResult = () => {
+    let drawing: { at: number; projectDir: string; runtimeId: string; item: RecentDrawingDto } | null = null;
+    for (const row of runtime?.projects ?? []) for (const item of row.retained?.drawings ?? []) {
+      const at = item.generatedAt ? Date.parse(item.generatedAt) : NaN;
+      if (at > (drawing?.at ?? -Infinity)) drawing = { at, projectDir: row.projectDir, runtimeId: row.runtimeId, item };
+    }
+    if (drawing) {
+      const { item, projectDir: target } = drawing;
+      const name = projects.find((row) => row.projectDir === target)?.name;
+      const source: PageSource = { runId: item.runId, assetSha256: item.assetSha256, revisionRef: item.revisionRef, pageIndex: 0 };
+      return { id: item.drawingId, label: tc("shell.overview.recentDrawing"), title: item.name, caption: [name, ago(drawing.at)].filter(Boolean).join(" · "),
+        picture: `/api/runtime/projects/${encodeURIComponent(drawing.runtimeId)}/studio${item.thumbnailPath}`,
+        onOpen: () => {
+          if (target === projectDir) { openDocument(target, source); return; }
+          const item = projects.find((row) => row.projectDir === target);
+          if (!item) return;
+          pendingDrawing.current = { projectDir: target, source };
+          selectProject(item);
+        } };
+    }
+    let latest: { finishedAt: number; proposalId: string; projectDir: string } | null = null;
+    for (const row of runtime?.projects ?? []) for (const job of row.retained?.jobs ?? []) {
+      const finishedAt = job.status === "succeeded" && job.finishedAt ? Date.parse(job.finishedAt) : NaN;
+      if (finishedAt > (latest?.finishedAt ?? Date.now() - 86_400_000)) latest = { finishedAt, proposalId: job.proposalId, projectDir: row.projectDir };
+    }
+    if (!latest) return null;
+    const name = projects.find((row) => row.projectDir === latest!.projectDir)?.name;
+    return { label: tc("shell.overview.recent"), title: stepText(describeCall(`POST /api/proposals/${latest.proposalId}/candidate`), processWords(t)),
+      caption: [name, ago(latest.finishedAt)].filter(Boolean).join(" · ") };
+  };
   const taskItems = <>
-          {tasks.length ? tasks.map((task) => {
+          {runtime === null ? <li className="chat-muted chat-tasks__empty" role="status">{t.tasksReading}</li> : tasks.length ? tasks.map((task) => {
             const action = task.action ? stepText(describeCall(task.action), processWords(t)) : null;
             const title = task.chat?.title ?? action ?? t.workTools;
             // Where and whether it runs come before what it is doing: a narrow sidebar cuts the end.
-            const caption = [task.projectName, task.state === "running" ? t.taskRunning : t.taskQueued, task.chat ? action : null].filter(Boolean).join(" · ");
+            const timing = taskTiming(task);
+            const caption = [task.projectName, timing?.text ?? (task.state === "running" ? t.taskRunning : t.taskQueued),
+              task.attempts ? t.taskAttempt(task.attempts) : null, task.chat ? action : null].filter(Boolean).join(" · ");
             return <li key={task.key}><button data-command="view.background.open_task" data-command-arg={task.key} type="button" className="chat-task" data-state={task.state} title={`${title}\n${caption}`} onClick={() => openTask(task)}>
               <span className="chat-thread__dot" data-status={task.state === "running" ? "running" : "idle"} />
-              <span className="chat-task__text"><span className="chat-task__title">{title}</span><small>{caption}</small></span>
+              <span className="chat-task__text"><span className="chat-task__title">{title}</span><small>{caption}</small>
+                {timing?.share != null && <span className="chat-task__progress" role="progressbar" aria-valuemin={0} aria-valuemax={100}
+                  aria-valuenow={Math.round(timing.share * 100)} aria-label={timing.text}><span style={{ transform: `scaleX(${timing.share.toFixed(3)})` }} /></span>}</span>
             </button></li>;
           }) : <li className="chat-muted chat-tasks__empty">{t.tasksEmpty}</li>}
   </>;
@@ -2147,9 +2444,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             {turn.visible.map((message) => message.role !== "tool" ? messageEntry(message)
               : message.id.includes(":progress:") ? <article className="chat-progress" key={message.id} data-status={message.status}>
                 <div className="chat-progress__heading"><span className="chat-thread__dot" data-status={message.status === "streaming" ? "running" : message.status === "failed" ? "failed" : "idle"} />{t.progress}</div>
-                <ChatMarkdown text={message.content} />
+                <ChatMarkdown text={message.content} streaming={message.status === "streaming"} />
                 {(message.status === "failed" || message.status === "interrupted") && <p className="chat-muted">{t[message.status]}</p>}
               </article>
+              : message.skillRun ? <SkillRunCard key={message.id} run={message.skillRun} words={skillRunWords[preferences.language]}
+                disabled={!chat || chat.projectId !== project?.projectId} onKeep={(name) => keepScript(message.skillRun!.runId, name)} />
+              : !message.permission ? <AnsweredSkillQuestion key={message.id} message={message} />
               : <div className="chat-activity chat-activity--permission" key={message.id} data-status={message.status}>
                 <div className="chat-permission" role="group" aria-label={message.permission!.title} aria-busy={permissionBusy === message.permission!.id}>
                   <p>{message.permission!.title}</p>
@@ -2203,6 +2503,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             picker?.focus();
             try { (picker as unknown as { showPicker?: () => void })?.showPicker?.(); } catch { /* A browser that will not open it still focused it. */ }
           }} />}
+        {/* When this conversation continues by itself, and the Cancel for each. */}
+        <WakeupStrip chatId={chat?.id === chatId ? chatId : null} status={chat?.id === chatId ? chat?.status ?? null : null} />
         {archived ? <div className="chat-archived-notice">
           <p>{t.archivedNotice}</p>
           <button data-command="chat.archive.restore" className="chat-activity__open" disabled={archiveBusy !== null} onClick={() => void setArchived(chat!, false)}><Icon name="restore" /><span>{t.restoreChat}</span></button>
@@ -2214,21 +2516,24 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           onPaste={(event) => { if (event.clipboardData.files.length) { event.preventDefault(); addAttachments(Array.from(event.clipboardData.files)); } }}>
           {draggingFiles && <p className="chat-attachment-drop" role="status">{t.dropFiles}</p>}
           {/* 08: the command the sentence names, offered before the model; it goes once the words change. */}
-          {routed && routed.text === draft.trim() && (() => {
-            const command = commands.tree.commands.find((item) => item.id === routed.id);
-            if (!command) return null;
+          {routeShown && routed && (() => {
+            const { command, missing } = routed.offer;
+            const runWith = runRouted;
             return <div className="chat-route" role="group" aria-label={w.routeSays(command.label[preferences.language])}>
-              <p className="chat-route__says">{w.routeSays(command.label[preferences.language])}</p>
-              <button data-command={command.id} type="button" className="btn btn--primary chat-route__run" onClick={() => {
-                if (commands.run(routed.id, "composer")) setDrafts((value) => ({ ...value, [draftKey]: "" }));
-                setRouted(null);
-              }}>{w.routeRun}</button>
+              <p className="chat-route__says">{w.routeSays(command.label[preferences.language])}{!missing && <small className="chat-route__keys">{w.routeKeys}</small>}</p>
+              {missing ? <div className="chat-route__which" role="group" aria-label={w.routeWhich(missing.name)}>
+                <span>{w.routeWhich(missing.name)}</span>
+                {missing.choices.slice(0, 6).map((choice) => <button key={choice.value} data-command={command.id} data-command-arg={choice.value}
+                  type="button" className="btn chat-route__choice" onClick={() => runWith({ [missing.name]: choice.value })}>{choice.label}</button>)}
+              </div>
+                : <button data-command={command.id} type="button" className="btn btn--primary chat-route__run" onClick={() => runWith()}>{w.routeRun}</button>}
               <button data-command="chat.composer.send" type="button" className="btn chat-route__send" onClick={() => { sendAsWritten.current = true; void send(); }}>{w.routeSend}</button>
             </div>;
           })()}
           {/* DC-9: what this message will change, and DC-5: a New topic chosen from the + menu, as one removable chip. */}
           <div className="chat-composer__context">
-            {project && <p className="chat-target" id="chat-target" data-viewing={Boolean(position?.viewing)} data-read-only={Boolean(staleBase)}>
+            {project && <p className="chat-target" id="chat-target" data-viewing={Boolean(position?.viewing)} data-read-only={Boolean(staleBase)}
+              data-default={!position?.viewing && !staleBase && !imageTurn && !chatId && !freshChat && contextMode !== "project" ? true : undefined}>
               {/* 2-3a: which conversation the message goes to, said before it goes. */}
               {attentionLayout && <span className="chat-target__to">{w.sendTo(chatId ? (chat?.id === chatId ? chat.title : sessions.find((item) => item.id === chatId)?.title) ?? w.sendToAttention
                 : freshChat ? w.sendToNew : w.sendToAttention)}</span>}
@@ -2261,15 +2566,25 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             }}><Icon name="close" /></button>
           </li>)}</ul>}
           <label className="sr-only" htmlFor="chat-input">{t.placeholder}</label><textarea id="chat-input" ref={input} value={draft} aria-describedby={project ? "chat-target" : undefined} aria-description={composerDisabledReason} aria-keyshortcuts="Enter Shift+Enter" placeholder={!project ? t.projectRequired : running && !renderDraft ? t.interjectPlaceholder : t.placeholder} disabled={!project || busy}
-            onChange={(event) => setDrafts((value) => ({ ...value, [draftKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
+            onChange={(event) => setDrafts((value) => ({ ...value, [draftKey]: event.target.value }))} onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              // S15: with the direct-do card up, Enter does it and Esc sends the words to the AI instead.
+              if (routeShown && routed && event.key === "Escape") { event.preventDefault(); sendAsWritten.current = true; void send(); return; }
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                if (routeShown && routed && !routed.offer.missing) runRouted(); else void send();
+              }
+            }} />
           <input ref={fileInput} type="file" multiple hidden aria-label={t.attach} disabled={!project || busy} onChange={(event) => { addAttachments(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
           <div className="chat-composer__bottom"><ComposerMenu label={w.composerMenu} disabled={!project || busy} disabledReason={composerDisabledReason} items={[
             { key: "attach", label: t.attach, onSelect: () => fileInput.current?.click() },
             // Offered as the checkbox was: with a saved editing state to start from, or with the edits that keep it out.
+            // S01: a New topic that cannot start is not offered; its reason was a sentence nobody could act on.
             { key: "topic", label: w.newTopic, detail: busy ? t.actionPending : running ? t.contextRunning : designContext ? w.newTopicDetail : contextUnavailable, checked: contextMode === "project",
               disabled: busy || running || (!designContext && contextMode !== "project" && !recordContext),
               onSelect: () => { setContextModes((value) => ({ ...value, [draftKey]: value[draftKey] === "project" ? "continue" : "project" })); input.current?.focus(); } },
-          ]} /><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
+          ].filter((item) => !item.disabled || item.checked)} /><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}
+            data-default={customModel === null && !chosenModel && availableProvider?.available !== false ? true : undefined}>
             <span className="chat-connection__name">{providers.find((item) => item.id === connection.provider)?.label ?? connection.provider}</span>
             <label className="sr-only" htmlFor="chat-model">{t.modelLabel}</label>
             <select data-command="preference.chat_model.choose" id="chat-model" className="chat-connection__model" value={customModel !== null ? "__custom__" : chosenModel ?? ""} disabled={running || modelBusy || busy}
@@ -2279,12 +2594,26 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
               {modelOptions.map((item) => <option key={item} value={item}>{item}</option>)}
               <option value="__custom__">{t.modelCustom}</option>
             </select>
+            <label className="sr-only" htmlFor="chat-permission">{t.permissionLabel}</label>
+            <select data-command="preference.chat_permission.choose" id="chat-permission" className="chat-connection__model" value={chosenPermission}
+              disabled={running || permissionModeBusy || busy || Boolean(chat?.sourceSessionId)} title={t.permissionHint}
+              onChange={(event) => void choosePermissionMode(event.target.value as ChatPermissionMode)}>
+              <option value="read">{t.permissionRead}</option>
+              <option value="ask">{t.permissionAsk}</option>
+              <option value="open">{t.permissionOpen}</option>
+            </select>
             {availableProvider?.modelCatalog === "checking" && <span className="chat-connection__note">{t.modelChecking}</span>}
             {modelBusy && <span className="chat-connection__note" role="status">{t.modelSaving}</span>}
           </div>
           {running ? <><button data-command="chat.composer.stop" className="chat-icon chat-stop" type="button" aria-label={t.stop} title={t.stop} onClick={() => void stop()}><Icon name="stop" /></button>
             <button data-command="chat.composer.interject" className="chat-send" type="submit" aria-label={t.interject} aria-description={sendDisabledReason} aria-keyshortcuts="Enter" title={sendDisabledReason ?? t.interject} disabled={!draft.trim() || Boolean(renderDraft)}><Icon name="send" /></button></> : <button data-command="chat.composer.send" className="chat-send" type="submit" aria-label={t.send} aria-description={sendDisabledReason} aria-keyshortcuts="Enter" title={sendDisabledReason ?? t.send} disabled={busy || !project || (!draft.trim() && !attachments.length) || (!chatId && !availableProvider?.available)}><Icon name="send" /></button>}</div>
         </form>}
+        {/* 18: a few sentences to say, made from this project's own state; one click says it. */}
+        {attentionLayout && project && !archived && !running && !draft.trim() && !attachments.length && <div className="chat-suggest" role="group" aria-label={w.suggestLabel}>
+          <p className="chat-suggest__hint">{w.suggestHint}</p>
+          <div className="chat-suggest__chips">{suggestedLines.map((line) => <button key={line} type="button" className="chat-suggest__chip" data-command="chat.composer.send"
+            disabled={busy || (!chatId && !availableProvider?.available)} onClick={() => askAgent(line)}>{line}</button>)}</div>
+        </div>}
         {!archived && customModel !== null && <form className="chat-custom-model" onSubmit={(event) => { event.preventDefault(); const value = customModel.trim(); if (value) void chooseModel(value); else setCustomModel(null); }}>
           <label htmlFor="chat-custom-model">{t.modelCustomLabel}</label>
           <input id="chat-custom-model" autoFocus value={customModel} onChange={(event) => setCustomModel(event.target.value)} />
@@ -2292,7 +2621,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <button data-command="preference.chat_model.custom_cancel" type="button" className="btn" onClick={() => setCustomModel(null)}>{t.cancel}</button>
         </form>}
         {/* PP-1: a tool being opened says so on its own skeleton, not here. */}
-        <p className="chat-composer-note" role="status">{sending === "posting" ? w.sending : busy ? t.working : !availableProvider?.available && !chatId ? availableProvider?.detail ?? (loading ? "" : t.noProvider) : ""}</p>
+        <p className="chat-composer-note" role="status">{sending === "posting" ? w.sending : busy ? t.working : !chatId ? providerNote : ""}</p>
       </div>
   </>;
   /** The open surfaces, kept mounted; only the selected one shows, and only while `showing`. */
@@ -2307,7 +2636,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             <ErrorBoundary label={t.tools}><Suspense fallback={<SurfaceSkeleton surface={item.id} name={t[labelOf(item.id)]} step={s.stepPage} />}>
               <ProjectWorkspace workspace={item.id === "monkeyboard" ? "board" : item.id === "publish" ? "publish" : item.id === "drawing" ? "drawing" : item.id === "monkeyrender" ? "render" : item.id === "tree" ? "tree" : "arch"} active={visible}
                 expectedProjectId={item.projectId} candidateRunId={item.candidate} candidateFollowsHead={item.followHead} treeFocus={item.focus ?? null}
-                refreshKey={item.revision} onChatRequest={focusConversation} onRenderChatRequest={workspaceRenderCallback(item)}
+                projectStep={projects.find((project) => project.projectDir === item.projectDir)?.step ?? null}
+                refreshKey={item.revision} onChatRequest={focusConversation} onRenderChatRequest={workspaceRenderCallback(item)} onHandToAi={workspaceHandOffCallback(item)}
                 documentRequest={item.projectDir ? documentRequests[item.projectDir] : undefined}
                 comparisonRequest={comparison?.runtimeId === item.runtimeId ? comparison.request : null}
                 onComparisonClose={workspaceComparisonClose(item.runtimeId)}
@@ -2343,7 +2673,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       <div className="chat-dialog__actions"><button data-command="view.dialog.close" type="button" className="btn" onClick={() => newDialog.current?.close()}>{t.cancel}</button>
         <button data-command="project.create.new_confirm" type="submit" className="btn btn--primary" disabled={busy || !projectName.trim()}>{busy ? t.creating : t.create}</button></div>
     </form></dialog>
-    <dialog ref={addDialog} className="chat-dialog"><form onSubmit={(event) => void addProject(event)}><div className="chat-dialog__heading"><h2>{t.addExisting}</h2><button data-command="view.dialog.close" type="button" className="chat-icon" aria-label={t.close} onClick={() => addDialog.current?.close()}><Icon name="close" /></button></div><p className="chat-muted">{t.folderHelp}</p><label>{t.folder}<input autoFocus value={folder} placeholder={t.folderPlaceholder} required onChange={(event) => setFolder(event.target.value)} /></label>{dialogError && <Failure failure={dialogError} language={preferences.language} labels={t} />}<div className="chat-dialog__actions"><button data-command="view.dialog.close" type="button" className="btn" onClick={() => addDialog.current?.close()}>{t.cancel}</button><button data-command="project.create.add_existing_confirm" type="submit" className="btn btn--primary" disabled={busy || !folder.trim()}>{busy ? t.loading : t.add}</button></div></form></dialog>
+    <dialog ref={addDialog} className="chat-dialog"><form onSubmit={(event) => void addProject(event)}><div className="chat-dialog__heading"><h2>{t.addExisting}</h2><button data-command="view.dialog.close" type="button" className="chat-icon" aria-label={t.close} onClick={() => addDialog.current?.close()}><Icon name="close" /></button></div><p className="chat-muted">{t.folderHelp}</p><button data-command="project.create.choose_folder" type="button" className="btn btn--primary" disabled={busy || picking} onClick={() => void choosePath("folder", t.chooseFolderTitle, "any", (path) => { setFolder(path); void addProjectAt(path); })}>{picking ? t.picking : t.chooseFolder}</button><label>{t.folder}<input autoFocus value={folder} placeholder={t.folderPlaceholder} required onChange={(event) => setFolder(event.target.value)} /></label>{dialogError && <Failure failure={dialogError} language={preferences.language} labels={t} />}<div className="chat-dialog__actions"><button data-command="view.dialog.close" type="button" className="btn" onClick={() => addDialog.current?.close()}>{t.cancel}</button><button data-command="project.create.add_existing_confirm" type="submit" className="btn btn--primary" disabled={busy || !folder.trim()}>{busy ? t.loading : t.add}</button></div></form></dialog>
     <dialog ref={archiveDialog} className="chat-dialog chat-dialog--archive"><form onSubmit={(event) => void exportArchive(event)}>
       <div className="chat-dialog__heading"><h2>{t.archiveHeading}</h2><button data-command="view.dialog.close" type="button" className="chat-icon" aria-label={t.close} onClick={() => archiveDialog.current?.close()}><Icon name="close" /></button></div>
       <p className="chat-muted">{t.archiveHelp}</p>
@@ -2359,6 +2689,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     <dialog ref={restoreDialog} className="chat-dialog chat-dialog--archive"><form onSubmit={(event) => void restoreArchive(event)}>
       <div className="chat-dialog__heading"><h2>{t.restoreHeading}</h2><button data-command="view.dialog.close" type="button" className="chat-icon" aria-label={t.close} onClick={() => restoreDialog.current?.close()}><Icon name="close" /></button></div>
       <p className="chat-muted">{t.restoreHelp}</p>
+      <button data-command="project.archive.choose_file" type="button" className="btn" disabled={picking}
+        onClick={() => void choosePath("file", t.chooseArchiveTitle, "archive", (path) => { setRestorePath(path); setDialogError(null); })}>{picking ? t.picking : t.chooseArchive}</button>
       <label>{t.archivePath}<input autoFocus value={restorePath} placeholder={t.archivePathPlaceholder} required
         onChange={(event) => { setRestorePath(event.target.value); setDialogError(null); }} /></label>
       <label>{t.restoreTarget}<input value={restoreTarget} onChange={(event) => { setRestoreTarget(event.target.value); setDialogError(null); }} /></label>
@@ -2413,13 +2745,15 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       : busy || modelBusy || archiveBusy !== null ? t.actionPending : null;
     const shellProjects: ShellProject[] = projects.map((item) => {
       const threads = visibleSessions.filter((session) => session.projectDir === item.projectDir).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-      return { projectDir: item.projectDir, name: item.name, current: item.projectDir === projectDir,
+      return { projectDir: item.projectDir, name: item.name, step: item.step ?? null, current: item.projectDir === projectDir,
         needs: waiting.filter((session) => session.projectDir === item.projectDir).length, working: busyProjects.has(item.projectDir),
         recent: (archivedView ? threads : threads.slice(0, RECENT_CONVERSATIONS)).map((session) => ({
           id: session.id, title: session.title, status: session.status ?? "idle", current: session.id === chatId, needsYou: session.attention === "permission",
           archived: Boolean(session.archived), archiveBlocked: archiveBlocked(session) })) };
     });
-    return <AttentionShell Icon={Icon} projects={shellProjects}
+    // A decision card's pictures are read through its project's runtime, while that project is open.
+    const runtimeOf = (id: string, dir: string) => runtime?.projects.find((item) => item.projectDir === dir && item.projectId === id)?.runtimeId ?? null;
+    return <CardRuntimes.Provider value={runtimeOf}><AttentionShell Icon={Icon} projects={shellProjects}
       attentionCount={waiting.length}
       view={view} toolLabel={view === "tool" && activeTool ? t[labelOf(activeTool)] : null} surfaceBlocked={project ? null : t.projectRequired}
       onView={(next) => { if (next === "attention") setPanel(false); else void openTool(next === "board" ? "monkeyboard" : "monkeyarch"); }}
@@ -2434,14 +2768,19 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       onArchiveConversation={(id) => { const item = sessions.find((row) => row.id === id); if (item) void setArchived(item, !item.archived); }}
       archivedView={archivedView} onArchivedView={setArchivedView}
       onNewProject={openNewProject} onAddProject={openAddProject} onSettings={openSettings}
-      usage={{ label: usageFigure ? `${t.monitor} · ${t.usageWeek(usageFigure.short)}` : t.monitor, onOpen: () => void openTool("monkeymonitor", { projectId: "" }) }}
+      usage={developer ? { label: usageFigure ? `${t.monitor} · ${t.usageWeek(usageFigure.short)}` : t.monitor, onOpen: () => void openTool("monkeymonitor", { projectId: "" }) } : null}
       background={{ running: tasks.filter((task) => task.state === "running").length, queued: tasks.filter((task) => task.state !== "running").length }}
+      overview={{ wait: tasks.map(taskTiming).find((timing) => timing?.share != null)?.text ?? tasks.map(taskTiming).find(Boolean)?.text ?? null,
+        recent: recentResult() }}
       conversationActive={running || sending !== null}
       notices={statusNotices} conversation={conversationLog} composer={composerArea} surfaces={workspacePages(panel)}
       taskItems={taskItems} dialogs={dialogs}
+      notesPage={<NotesPanel projectDir={projectDir} projectName={project?.name ?? null} runtimeId={projectRuntime?.runtimeId ?? null} folder={project?.kind === "folder"} />}
+      onOpenFound={(hit) => selectChat(sessions.find((item) => item.id === hit.chatId)
+        ?? ({ id: hit.chatId, projectDir: hit.projectDir, archived: hit.archived } as ChatSummary))}
       historyPage={projectRuntime && projectDir ? <ProjectRuntimeProvider key={`history:${projectRuntime.runtimeId}`} runtimeId={projectRuntime.runtimeId}
         baseUrl={`${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`}><HistoryPage projectDir={projectDir} active /></ProjectRuntimeProvider> : null}
-      onAttentionConversation={() => { setChatId(null); setChat(null); setFreshChat(false); }} />;
+      onAttentionConversation={() => { setChatId(null); setChat(null); setFreshChat(false); }} /></CardRuntimes.Provider>;
   }
   return <div className="chat-shell" data-sidebar={sidebar} data-panel={panel} data-focus={focused} style={{ "--chat-width": `${chatWidth}px` } as CSSProperties}>
     {/* #337 L0: the Hub's text menu row, as desktop apps have it: back, forward, the sidebar, then words. */}
@@ -2470,7 +2809,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           {taskItems}
         </ul>}
         <div className="chat-project-label"><span>{archivedView ? t.archivedChats : t.projects}</span><button data-command="project.create.add_existing" className="chat-icon" aria-label={t.addExisting} title={t.addExisting} onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}><Icon name="plus" /></button></div>
-        {!projects.length && <p className="chat-muted chat-project-empty">{loading ? t.loading : t.emptyProjects}</p>}
+        {!projects.length && <p className={loading ? "chat-muted chat-project-empty wait-late" : "chat-muted chat-project-empty"}>{loading ? t.loading : t.emptyProjects}</p>}
         {archivedView && !visibleSessions.length && <p className="chat-muted chat-project-empty">{t.archiveEmpty}</p>}
         {projects.filter((item) => !archivedView || visibleSessions.some((session) => session.projectDir === item.projectDir)).map((item) => {
           const threads = visibleSessions.filter((session) => session.projectDir === item.projectDir);

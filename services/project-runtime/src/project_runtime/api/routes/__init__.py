@@ -20,6 +20,7 @@ from . import (
     index,
     intents,
     live_rhino,
+    markup,
     options,
     pick,
     program,
@@ -57,6 +58,7 @@ router.include_router(domains.router)
 router.include_router(drawings.router)
 router.include_router(study.router)
 router.include_router(pick.router)
+router.include_router(markup.router)
 router.include_router(proposals.router)
 router.include_router(construction.router)
 router.include_router(intents.router)

@@ -41,6 +41,9 @@ from monkeycad.backends.occt.errors import OcctBackendError
 from monkeycad.backends.occt.kernel import backend_identity
 from monkeycad.backends.occt.projection import project_occt_lines
 from monkeycad.backends.occt.section import section_occt_lines, section_occt_regions
+from monkeydiagram.projection.mesh_views import (
+    CameraPasses, MeshViewError, PerspectiveCamera, camera_passes, triangulate,
+)
 from monkeydiagram.projection.views import (
     ELEVATION_KIND,
     SECTION_PERSPECTIVE_KIND,
@@ -292,6 +295,23 @@ def _shapeless(verified: VerifiedElevationSource) -> VerifiedElevationSource:
                                            for entry in verified.entries))
 
 
+def shapeless_facts(verified: VerifiedElevationSource) -> dict[str, Any]:
+    """A source as verified, without its shapes, as JSON values: what a cache keeps of it (``shapeless_source``)."""
+
+    return {"run": verified.run.to_dict(), "receipt": deepcopy(dict(verified.receipt)), "lengthUnit": verified.length_unit,
+            "programDigest": verified.program_digest, "stageId": verified.stage_id,
+            "physicalObjectIds": list(verified.physical_object_ids),
+            "objects": [[entry.name, getattr(entry, "geometry_quality", None)] for entry in verified.entries]}
+
+
+def shapeless_source(facts: Mapping[str, Any]) -> VerifiedElevationSource:
+    """The source ``shapeless_facts`` kept: everything a drawing reads of it before it solves, and no shape."""
+
+    return VerifiedElevationSource(
+        RunRef.from_dict(facts["run"]), facts["receipt"], facts["lengthUnit"], facts["programDigest"], facts["stageId"],
+        tuple(facts["physicalObjectIds"]), tuple(_ShapelessEntry(name, quality) for name, quality in facts["objects"]))
+
+
 # A worker opens each project once: opening verifies the project's event chain.
 _OPENED: dict[str, FilesystemProjectRepository] = {}
 
@@ -303,17 +323,148 @@ def _opened(project_root: str) -> FilesystemProjectRepository:
     return repository
 
 
+#: The source this drawing worker read last, with its shapes (S15). A source names its model by the
+#: sha256 of its bytes and of its registration or receipt, so the same source is the same verified model;
+#: the next drawing of it in this worker draws from what was read instead of decoding the model again
+#: (about a second on thi-hemp, every drawing). The model's bytes are still hashed each time, so one
+#: changed on disk since is read, and refused, as before. Only one, so a worker holds no more than the
+#: model it drew last.
+_LAST_READ: list[tuple[tuple[str, ElevationSource | NativeModelSource], VerifiedElevationSource]] = []
+
+
+def _same_bytes(project_root: str, source: ElevationSource | NativeModelSource) -> bool:
+    import hashlib
+
+    repository = _opened(project_root)
+    try:
+        if isinstance(source, NativeModelSource):
+            read_artifact_bytes(repository, source.artifact)
+            return True
+        step = repository.layout.run(source.run_id).workspaces / source.step_workspace / source.step_file_name
+        return hashlib.sha256(step.read_bytes()).hexdigest() == source.step_sha256
+    except (DrawingElevationError, OSError, ValueError):
+        return False
+
+
+def _read_source(project_root: str, source: ElevationSource | NativeModelSource) -> VerifiedElevationSource:
+    key = (project_root, source)
+    if _LAST_READ and _LAST_READ[0][0] == key and _same_bytes(project_root, source):
+        return _LAST_READ[0][1]
+    _LAST_READ.clear()
+    verified = read_elevation_source(_opened(project_root), source)
+    _LAST_READ.append((key, verified))
+    return verified
+
+
 def verify_draw_source(project_root: str, source: ElevationSource | NativeModelSource) -> VerifiedElevationSource:
     """Verify a source as a drawing task does, writing nothing: what a caller needs of it without its shapes."""
 
-    return _shapeless(read_elevation_source(_opened(project_root), source))
+    return _shapeless(_read_source(project_root, source))
+
+
+@dataclass(frozen=True, slots=True)
+class CameraTask:
+    """One camera's three aligned passes, as another process can draw them (``run_camera_task``).
+
+    ``groups_from`` is the model asset's own file, read for each object's layer
+    or material when the ID image is grouped by one (``id_by``); its digest is
+    checked before it is read.
+    """
+
+    project_root: str
+    source: ElevationSource | NativeModelSource
+    camera: PerspectiveCamera
+    width: int
+    height: int
+    id_by: str = "object"
+    groups_from: str | None = None
+    groups_sha256: str | None = None
+    clip: tuple[tuple[float, ...], tuple[float, ...]] | None = None
+    text: tuple[tuple[str, str], ...] = ()
+    chord_px: float = 0.75
+
+
+@dataclass(frozen=True, slots=True)
+class CameraResult:
+    """A drawn ``CameraTask``: the three images, the model's unit, how many objects were meshed or skipped, and when."""
+
+    drawn: CameraPasses
+    unit: str
+    objects: int
+    skipped: int
+    timings: Mapping[str, float]
+
+
+def run_camera_task(task: CameraTask) -> CameraResult:
+    """Read a camera task's source, mesh it at a pixel's footprint and draw its passes, writing nothing.
+
+    What a drawing worker runs: reading a large model whole and meshing it
+    hold the interpreter for minutes, and here they hold only the worker's.
+    """
+
+    import hashlib
+    from time import perf_counter
+
+    from monkeycad.formats.three_dm_inspector import inspect_three_dm_index
+
+    started = perf_counter()
+    verified = _read_source(task.project_root, task.source)
+    loaded = perf_counter()
+    boxes = [row["bbox"] for row in (verified.receipt.get("readback") or {}).values()
+             if isinstance(row, Mapping) and isinstance(row.get("bbox"), Mapping)]
+    pixel = task.camera.pixel_footprint(task.height, boxes)
+    hidden = inspection_witness_ids(verified.receipt)
+    drawn_ids = tuple(object_id for object_id in verified.physical_object_ids if object_id not in hidden)
+    meshes, skipped = triangulate(verified.entries, drawn_ids, linear_deflection=pixel * task.chord_px)
+    if not meshes:
+        raise MeshViewError("the model has no surfaces to draw")
+    meshed = perf_counter()
+    groups = None
+    if task.id_by != "object":
+        data = Path(task.groups_from or "").read_bytes()
+        if hashlib.sha256(data).hexdigest() != task.groups_sha256:
+            raise MeshViewError("the model asset changed since it was registered")
+        groups = index_groups(inspect_three_dm_index(data)["objects"], [mesh.object_id for mesh in meshes], task.id_by,
+                              native=isinstance(task.source, NativeModelSource))
+    drawn = camera_passes(meshes, camera=task.camera, width=task.width, height=task.height, groups=groups,
+                          text=dict(task.text), clip=task.clip)
+    return CameraResult(drawn, verified.length_unit, len(meshes), len(skipped), {
+        "loadS": round(loaded - started, 3), "meshS": round(meshed - loaded, 3),
+        "drawS": round(perf_counter() - meshed, 3)})
+
+
+def index_groups(rows, object_ids, by: str, *, native: bool) -> dict[str, str]:
+    """Each object's layer path or material name, as its model asset's own index rows name it.
+
+    A native model names an object by its GUID, a block member by its path of
+    GUIDs, looked up by its own GUID, then by its instance's; another model by
+    the object's name. An object the index does not name exactly once is
+    grouped as "unknown" rather than given a guessed layer or material.
+    """
+
+    named: dict[str, list[Mapping[str, Any]]] = {}
+    for row in rows:
+        named.setdefault(row["object_id"] if native else row["name"], []).append(row)
+    groups = {}
+    for object_id in object_ids:
+        parts = object_id.split("/") if native else [object_id]
+        candidates = [parts[-1], parts[0]] if native else parts
+        row = next((named[key.lower() if native else key][0] for key in candidates
+                    if len(named.get(key.lower() if native else key, ())) == 1), None)
+        if row is None:
+            groups[object_id] = "unknown"
+        elif by == "layer":
+            groups[object_id] = row.get("layer_path") or "unknown"
+        else:
+            groups[object_id] = (row.get("material") or {}).get("name") or "no material"
+    return groups
 
 
 def run_draw_task(task: DrawTask) -> DrawResult:
     """Verify a task's source and draw its view, writing nothing: what a ``drawer`` runs in another process."""
 
     events: list[Mapping[str, Any]] = []
-    verified = read_elevation_source(_opened(task.project_root), task.source)
+    verified = _read_source(task.project_root, task.source)
     if task.kind == ELEVATION_KIND:
         drawn = _draw_elevation(verified, task.view, backend_identity(), events.append, task.parent_event_id)
     elif task.kind == SECTION_PERSPECTIVE_KIND:
@@ -590,12 +741,13 @@ def freeze_cut_plan(
 
 
 def _draw_elevation(verified: VerifiedElevationSource, view: ElevationView, backend, observer, parent_event_id) -> DrawnView:
-    return _drawn(view.to_dict(), project_model_axis_elevation(
+    projection = project_model_axis_elevation(
         verified.entries, object_ids=tuple(name for name in verified.physical_object_ids
                                            if name not in inspection_witness_ids(verified.receipt)),
         view=view, unit=verified.length_unit,
         operation_observer=observer, parent_event_id=parent_event_id, semantics=object_semantics(verified.receipt),
-    ), backend)
+    )
+    return _drawn(view.to_dict(), projection, backend, {"algorithm": projection.algorithm})
 
 
 def freeze_model_axis_elevation(
@@ -789,6 +941,8 @@ __all__ = [
     "list_model_axis_elevations",
     "read_model_axis_elevation",
     "run_draw_task",
+    "shapeless_facts",
+    "shapeless_source",
     "verify_draw_source",
 ]
 

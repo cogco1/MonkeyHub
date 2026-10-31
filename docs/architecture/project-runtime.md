@@ -126,6 +126,9 @@ and writes the current versions into a Claude plugin in its own cache,
 `skills/<name>/SKILL.md`), rebuilt only when the index changes (`monkeyhub_api/chat/skill_plugins.py`). A Claude
 chat is started with `--plugin-dir <that directory>`; Claude lists each name and description and reads a
 body only when it uses the skill. Nothing is written into any project.
+A skill that carries a program opens its SKILL.md with the instruction to start it through `studio_request`
+(`POST /api/skills/{id}/run`, the Hub adds the project): the plugin holds no script, and an agent that did the author's
+steps itself with Bash would skip the question the Hub asks a person and leave no run in the project.
 
 A Claude or Coding Plan chat sees the library's skills and nothing else (#463). The CLI (2.1.283) does not
 gate its `Skill` tool under `dontAsk`, so an allow rule restricts nothing, and deny rules cannot say
@@ -257,8 +260,16 @@ the runtime snapshot followed by each project's latest Studio events marked `rep
 therefore holds one SSE connection however many projects and surfaces it shows. Chat tools use
 the same forwarding path. `AppStatus.apiUrl` identifies the runtime API for its
 verified agent connection; `AppStatus.url` opens the corresponding workspace in MonkeyHub. A
-runtime that is not `ready` or `busy` and healthy answers `WORKER_UNAVAILABLE`. Direct access
+runtime whose Studio is starting or recovering answers `WORKER_STARTING`; one that is otherwise
+not `ready` or `busy` and healthy (a crashed one) answers `WORKER_UNAVAILABLE`. Direct access
 to the runtime's own port is for development and tests (§8).
+
+A failure whose code `archflow.contracts.failures` lists as transient passes without the person
+(#300 4-3): its answer says `category` and `resend`, and the forward waits and sends the same
+request again while the code says nothing was done (`WORKER_STARTING`, `DRAWING_WORKER_LOST`,
+the index loading, the writer lease held while a runtime restarts), a few times at most. The
+operation record counts the sends (`attempts`) and keeps the code it ended with (`errorCode`).
+A reply lost after dispatch is still never sent again.
 
 Each admitted mutation keeps an operation record. An answer of 422 or 409 that names no
 proposal, job or candidate the Studio took on is `refused` (#404): the caller already read it,
@@ -271,6 +282,11 @@ with `CANDIDATE_NOT_THIS_CHATS` unless this Hub admitted that run for the same c
 
 - One process, one project, one port. A crash affects one project; `recover` restarts it on
   the same port after inspecting retained outcomes and replays no mutation; `close` drains it.
+  The Hub recovers a Studio that stopped unexpectedly, or whose start timed out
+  (`START_TIMEOUT`), by itself, at most three times in ten minutes (its repair table, #300 4-2),
+  and the project's snapshot and attention queue say so; one that stays down waits for a person,
+  whose card names the project and restarts it in one click (`recover` starts a timed-out
+  launch again). A launch refused for another source version is not started again.
   Other projects continue ([project-runtime-api.md, "MonkeyHub project runtime"](../protocols/project-runtime-api.md#monkeyhub-project-runtime)).
 - The Hub keeps no copy of canonical state, candidates or documents; its projection is rebuilt
   from this runtime's read routes and the project's retained receipts.

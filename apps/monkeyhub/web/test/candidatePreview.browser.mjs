@@ -432,6 +432,8 @@ try {
           const gate = validationGates.get(validation[1]); if (gate) await gate.promise;
           return await json({ code: "VALIDATION_UNAVAILABLE", detail: "The independent review is unavailable." }, 503);
         }
+        // The saved pages of tracing paper over a model: none have been kept yet.
+        if (name === "/api/model-annotations/history") return await json([]);
         if (name === "/api/model-annotations") return await json({ projectId, modelSource: {
           runId: url.searchParams.get("runId"), stateDigest: url.searchParams.get("stateDigest"), assetSha256: url.searchParams.get("assetSha256"),
         }, revisionSha256: null, annotations: [], comment: "" });
@@ -559,6 +561,8 @@ try {
       }
       // #326: a retained model's preview; these fixtures retain none, and a runtime without one answers null.
       if (method === "GET" && /^\/api\/model-assets\/[0-9a-f]{64}\/preview$/.test(name)) return await json(null);
+      // S08: the Board reads the layout once to decide whether Board | Layout shows; this one is empty.
+      if (method === "GET" && name === "/api/publication") return await json({ projectId, revisionSha256: null, title: "Layout", spec: { width: 1280, height: 720, template: "hero" }, sources: [], pages: [] });
       assert.fail(`Unexpected request: ${method} ${name}`);
     } catch (error) {
       errors.push(error.stack ?? String(error)); await route.fulfill({ status: 500, body: String(error) }).catch(() => {});
@@ -1292,7 +1296,7 @@ try {
   await step("failed acceptance preserves the preview; successful acceptance appends S1 on main", async () => {
     const accept = cmd(page, "stage.accept.next");
     await accept.waitFor(); acceptFailure = true; await accept.click();
-    await until(snapshot, (value) => value.historyError?.includes("Candidate kept"), "Acceptance failure was hidden");
+    await until(snapshot, (value) => /no longer current/.test(value.historyError ?? "") && !value.historyError.includes("DESIGN_HEAD_MOVED"), "Acceptance failure was hidden");
     await rendered(historyA.candidateId); assert.equal(stages.size, 1);
     acceptFailure = false; await accept.click();
     await until(snapshot, (value) => value.history?.stages.length === 2, "Accepted candidate did not become S1");
@@ -1408,7 +1412,7 @@ try {
     assert.equal(await page.locator('[data-preview-candidate="history-b"]').count(), 0,
       "Cold candidate classification must wait for the accepted sources from every branch");
     historyGate.resolve();
-    await until(snapshot, (value) => value.historyError?.includes("Other branch history unavailable."), "The branch history failure was hidden");
+    await until(snapshot, (value) => /ran into a problem/.test(value.historyError ?? "") && !value.historyError.includes("Other branch history unavailable."), "The branch history failure was hidden");
     assert.equal(await page.locator('[data-preview-candidate="history-a"]').count(), 0,
       "A failed other-branch read must not turn the accepted main model into a candidate");
     assert.deepEqual(unselectedStateReads(), [], "A failed branch history read must not fall back to projecting unselected candidates");

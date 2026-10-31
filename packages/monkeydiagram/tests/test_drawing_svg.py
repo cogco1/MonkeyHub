@@ -283,6 +283,22 @@ class SvgTests(unittest.TestCase):
 
 
 class PngTests(unittest.TestCase):
+    def test_a_sheet_too_large_for_the_preview_is_previewed_at_a_lower_resolution(self) -> None:
+        from PIL import Image
+
+        from monkeydiagram.rendering.svg import PNG_PIXEL_LIMIT
+
+        # 400 m by 200 m at 1:100 is a 4 m by 2 m sheet: about 96 megapixels at 150 dpi (S15).
+        svg = drawing_svg((_line("wall", "visible", (0, 100), (400, 100)),), crop_uv=(0, 0, 400, 200), unit="meter",
+                          scale_denominator=100, hidden_lines=False, title="large")
+        png = render_svg_png(svg)
+        self.assertEqual(png, render_svg_png(svg), "the lower resolution is chosen the same way each time")
+        with Image.open(BytesIO(png)) as image:
+            width, height = image.size
+        self.assertLessEqual(width * height, PNG_PIXEL_LIMIT)
+        self.assertGreater(width * height, PNG_PIXEL_LIMIT * .9, "as large as the limit allows")
+        self.assertEqual(round(width / height), 2, "the sheet keeps its proportions")
+
     def test_the_png_is_rendered_from_the_svg_polylines_at_its_physical_size(self) -> None:
         from PIL import Image
 

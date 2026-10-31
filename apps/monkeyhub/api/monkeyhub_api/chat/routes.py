@@ -12,11 +12,12 @@ from fastapi.responses import FileResponse, Response
 from starlette.requests import Request
 
 from . import media
+from .. import path_picker
 from ..models import (
     HubError, HubFailure, ChatProvider, ChatProject, ChatProjectRequest, ChatSummary, ChatDetail, ChatCreateRequest,
     ChatModelRequest, ChatPostRequest, ChatUsageSource, ChatWorkspace, ChatPermissionRequest, ChatArchiveRequest,
-    ChatAttachmentContent,
-    ChatPresentationBindRequest, ChatPresentationBinding, ChatPresentationRequest,
+    ChatAttachmentContent, ChatPickedPath, ChatPickPathRequest,
+    ChatPresentationBindRequest, ChatPresentationBinding, ChatPresentationRequest, ChatSkillKeepRequest, ChatSkillRun,
 )
 
 
@@ -51,6 +52,13 @@ def projects_router(chats) -> APIRouter:
     @routes.post("/api/chat/projects", response_model=ChatProject, status_code=201)
     def create_chat_project(body: ChatProjectRequest):
         return chats.create_project(body)
+
+    @routes.post("/api/chat/pick-path", response_model=ChatPickedPath)
+    def pick_chat_path(request: Request, body: ChatPickPathRequest):
+        """A folder or file chosen in Windows' own dialog, on this computer's screen, instead of a typed path."""
+        if request.client is None or request.client.host not in {"127.0.0.1", "::1"}:
+            raise HubFailure(403, "LOCAL_PICKER_REQUIRED", "A dialog can only be opened for a person at this computer.")
+        return ChatPickedPath(path=path_picker.pick(body.kind, body.title, file_filter=body.filter))
 
     return routes
 
@@ -167,11 +175,30 @@ def sessions_router(chats) -> APIRouter:
                                 or not ask.get("codeSha256")):
             raise HubFailure(422, "CHAT_PERMISSION_INVALID",
                              "ask names the access, the skill, and this run's projectId and codeSha256.")
-        return {"permissionId": chats.request_skill_permission(session_id, title, ask)}
+        # S23: which buttons the card has; what is asked before every run has no "from now on".
+        choices = body.get("choices") or ["allow_always", "allow_once", "reject"]
+        if not isinstance(choices, list) or not choices or set(choices) - {"allow_always", "allow_once", "reject"}:
+            raise HubFailure(422, "CHAT_PERMISSION_INVALID", "choices are allow_always, allow_once and reject.")
+        return {"permissionId": chats.request_skill_permission(session_id, title, ask, choices=choices)}
 
     @routes.get("/api/chat/sessions/{session_id}/skill-permissions/{permission_id}")
     def read_skill_permission(session_id: str, permission_id: str, wait: float = Query(default=0, ge=0, le=170)):
         """The person's answer: answered (with optionId and the grant kept), waiting, or withdrawn; waits up to ``wait`` seconds."""
         return chats.skill_permission_answer(session_id, permission_id, wait)
+
+    @routes.post("/api/chat/sessions/{session_id}/skill-runs", status_code=201)
+    def record_skill_run(session_id: str, body: ChatSkillRun):
+        """Show a skill or script an Agent started in this chat, and what let it run (S23); the chat tool posts it."""
+        return chats.record_skill_run(session_id, body)
+
+    @routes.put("/api/chat/sessions/{session_id}/skill-runs/{run_id}")
+    def update_skill_run(session_id: str, run_id: str, body: dict):
+        """What the run came to, as the chat tool read it: status, the one sentence for a failure, the outputs."""
+        return chats.update_skill_run(session_id, run_id, body)
+
+    @routes.post("/api/chat/sessions/{session_id}/skill-runs/{run_id}/keep", response_model=ChatDetail)
+    def keep_skill_run(session_id: str, run_id: str, body: ChatSkillKeepRequest):
+        """Keep a chat's script as a named skill in the person's own skill folder: every project then has it (S23)."""
+        return chats.keep_skill_run(session_id, run_id, body)
 
     return routes

@@ -83,6 +83,8 @@ const { chromium } = await import((process.env.PLAYWRIGHT_MODULE ? pathToFileURL
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 // 2-3c: the new shell is the default; these passes are the old one's, the way back (attentionShell.browser.mjs has the new).
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+// These passes press each retry themselves: quiet retries (F046) are off for them.
+await page.addInitScript(() => localStorage.setItem("monkeyhub.quietRetry", "off"));
 await page.addInitScript(() => localStorage.setItem("monkeyhub.shell", "workbench"));
 page.setDefaultTimeout(12000);
 // Keep chooser interception installed across keyboard passes. Repeatedly
@@ -165,6 +167,7 @@ const archiveOmissions = [
   "rebuildable previews and unbounded telemetry/logs",
   "unreferenced exports: exports/ travels only where a retained record names a file in it",
 ];
+const pickAnswers = [], pickRequests = [];
 const archiveSummaryFor = (projectId, projectDir, archivePath) => ({
   projectId, formatVersion: 3, version: 3, stateSha256: "b".repeat(64), runCount: 7, fileCount: 42,
   retainedBytes: 7340032, categories: { artifact: 18, authored_input: 3, design: 4, envelope: 17 },
@@ -411,6 +414,11 @@ const hubApi = async (route) => {
     assert.ok(selected, "an archive is only written for a project this Hub lists");
     return json(archiveSummaryFor(selected.projectId, selected.projectDir, body.archivePath), 201);
   }
+  if (url.pathname === "/api/chat/pick-path") {
+    // Windows' own dialog is not drawn here: the person's answer is queued by the test (null is a closed dialog).
+    pickRequests.push(data());
+    return json({ path: pickAnswers.length ? pickAnswers.shift() : null });
+  }
   if (url.pathname === "/api/project/archive/restore") {
     const body = data();
     const parent = body.targetParent ?? "D:\\fixture";
@@ -591,6 +599,11 @@ const hubApi = async (route) => {
     }
     return json(session);
   }
+  // An installation without the embedding model: the composer and Ctrl K keep their keyword search alone.
+  if (url.pathname === "/api/commands/meaning" && method === "POST") return json({ state: "unavailable", hits: [], route: null });
+  // A Hub with no external MCP servers and no wake-ups set.
+  if (url.pathname === "/api/chat/mcp-servers" && method === "GET") return json({ fromClaude: false, servers: [], claudeProblem: null });
+  if (/^\/api\/chat\/sessions\/[^/]+\/wakeups$/.test(url.pathname) && method === "GET") return json([]);
   // A Hub that does not serve the attention queue yet (1-4), as main's does.
   if (url.pathname.startsWith("/api/attention")) return json({ code: "NOT_FOUND", detail: "This Hub does not serve the attention queue yet." }, 404);
   errors.push(`Unexpected request: ${method} ${url.pathname}`); return json({ detail: "Unexpected fixture request" }, 404);
@@ -744,7 +757,8 @@ const waitCandidate = async (runId) => {
   await visibleWorkspace().locator(".stage__versions-toggle").click();
   await visibleWorkspace().locator('.vcard__export[aria-pressed="true"]').filter({ hasText: `${runId}.3dm` }).waitFor();
   if (/^cand-[AB]-/.test(runId)) {
-    assert.equal((await visibleWorkspace().locator(".editing-base__name").innerText()).trim(), `home-${runId.split("-")[1]}.3dm`,
+    // S15: the base is a file the Studio wrote, so the row names no file; it still shows the base, not the candidate.
+    assert.equal((await visibleWorkspace().locator(".editing-base__name").innerText()).trim(), "Selected version",
       "automatic candidate viewing preserves the exact editing base");
     assert.equal(await visibleWorkspace().locator('.editing-base').getAttribute("data-source-match"), "different");
   }
@@ -816,7 +830,10 @@ const autosavedModelRestart = async () => {
   await railTool("view.tab.modeling").click();
   await waitWorkspace();
   const status = visibleWorkspace().locator(".model-tools__sync-status");
-  await status.filter({ hasText: /^Unrecorded edits · saved automatically$/ }).waitFor();
+  // S19: a draft from an earlier session says so until it is recorded, and can be discarded.
+  const restoredLine = /^A draft from last time is not recorded yet: Record keeps it, Discard draft puts it away$/;
+  await status.filter({ hasText: restoredLine }).waitFor();
+  assert.equal(await cmd(visibleWorkspace(), "draft.record.discard").count(), 1, "a restored draft offers Discard draft");
   // Reopening restored the retained commands and saved them back unchanged.
   await until(() => draft.writes.length === 1, "the restored draft was never retained again");
   assert.deepEqual(draft.writes[0].draft.commands, commands);
@@ -854,7 +871,8 @@ const autosavedModelRestart = async () => {
   // A refused autosave holds it too, and the next accepted save releases it.
   draft.failure = "Fixture working draft is unavailable.";
   await cmd(visibleWorkspace(), "draft.tools.redo").click();
-  await status.filter({ hasText: "Fixture working draft is unavailable." }).waitFor();
+  await status.filter({ hasText: "The project service ran into a problem" }).waitFor();
+  assert.equal(await page.getByText("Fixture working draft is unavailable.").count(), 0, "the service's own words stay off the screen");
   await openSettings();
   await restartBlocked("a refused autosave blocks the update restart");
   await closeSettings();
@@ -862,7 +880,7 @@ const autosavedModelRestart = async () => {
   await cmd(visibleWorkspace(), "draft.tools.undo").click();
   await cmd(visibleWorkspace(), "draft.tools.redo").click();
   await until(() => draft.localDraft.commands.length === commands.length, "the redone push/pull was not autosaved");
-  await status.filter({ hasText: /^Unrecorded edits · saved automatically$/ }).waitFor();
+  await status.filter({ hasText: restoredLine }).waitFor();
   assert.deepEqual(draft.localDraft.commands, commands);
   await openSettings();
   await restartAllowed("the next accepted autosave releases the update restart");
@@ -893,6 +911,7 @@ async function idleMinute() {
   workspaceFixture.designTrees.set("T", tree);
   workspaceFixture.studioEvents.add("T");
   const idle = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  await idle.addInitScript(() => localStorage.setItem("monkeyhub.quietRetry", "off"));
   await idle.addInitScript(() => localStorage.setItem("monkeyhub.shell", "workbench"));
   idle.setDefaultTimeout(12000);
   idle.on("pageerror", (error) => errors.push(error.message));
@@ -1029,6 +1048,7 @@ async function requestedChangeLands() {
   const continues = () => workspaceFixture.requests.filter((row) => row.projectId === projectId
     && ((row.method === "PUT" && row.name === "/api/working-draft") || (row.method === "POST" && row.name.startsWith("/api/working-design/"))));
   const land = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  await land.addInitScript(() => localStorage.setItem("monkeyhub.quietRetry", "off"));
   await land.addInitScript(() => localStorage.setItem("monkeyhub.shell", "workbench"));
   land.setDefaultTimeout(15000);
   land.on("pageerror", (error) => errors.push(error.message));
@@ -1088,7 +1108,8 @@ async function requestedChangeLands() {
 
     // #575: a Continue from the Design Tree is the tree's own move. Its toast offers the one Undo that write has;
     // Modeling, back on screen, follows it without a notice or an Undo of its own.
-    await bar.locator(".stage-chip").click();
+    // S08: with no Stage under Current the grey chip is developer mode's; the rail opens the tree.
+    await railTool(RAIL["Design tree"], land).click();
     const tree = land.locator('.chat-project-workspace:not([hidden]) [data-project-surface="tree"]');
     await cmd(bar, "view.design_tree.list").click();
     await tree.locator('[role="treeitem"][data-kind="stage"]').click();
@@ -1098,7 +1119,7 @@ async function requestedChangeLands() {
     await toast.filter({ hasText: "Current is now “S0”" }).waitFor();
     assert.equal(await toast.locator('[data-action="undo"]').count(), 1, "the tree's toast offers its Undo");
     assert.deepEqual([continues().length, continues().at(-1).body.runId], [2, "home-L"]);
-    await bar.locator(".stage-chip").click();
+    await cmd(bar, "view.design_tree.leave").click();
     const following = Date.now() + 15000;
     while (!workspaceFixture.requests.slice(marker).some((row) => row.projectId === projectId && row.name === "/api/state" && row.query.run === "home-L")) {
       if (Date.now() > following) assert.fail("Modeling did not follow the tree's Continue");
@@ -1147,6 +1168,9 @@ async function boardImageDiscussion() {
   await page.setViewportSize({ width: 1440, height: 960 });
   if (page.url().startsWith(origin)) await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
   await page.goto(origin);
+  // S08: discussing an image for a render is developer mode's now; 交给 AI is the ordinary hand-off (handToAi.browser.mjs).
+  await developerModeOnNextLoad(true);
+  await page.reload();
   await cmd(page, "project.open", { arg: name }).first().click();
   await studioReady();
   await showEntry("Board");
@@ -1272,6 +1296,7 @@ async function boardImageDiscussion() {
   chat.status = "idle";
   emitRuntime();
   await cmd(page, "chat.composer.send").waitFor();
+  await developerModeOnNextLoad(false);
 }
 /** GH-432: retained structured suggestions in the real built UI, with synthetic local APIs. */
 async function suggestionCards() {
@@ -3127,7 +3152,7 @@ try {
   await page.keyboard.press("ArrowDown");
   const fileMenu = page.getByRole("menu", { name: "File", exact: true });
   assert.deepEqual((await fileMenu.getByRole("menuitem").allInnerTexts()).map((text) => text.trim()),
-    ["New chat", "New project…", "Add existing project…", "Reload project from disk", "Export project archive…",
+    ["New chat", "New project…", "Open a folder or project…", "Reload project from disk", "Export project archive…",
       "Restore project archive…", "Settings…"]);
   await page.keyboard.press("Escape");
   await fileMenu.waitFor({ state: "detached" });
@@ -3746,10 +3771,19 @@ try {
   // page is opened. A later externally stopped Studio invalidates that result.
   const beforeAdd = writes.length;
   await cmd(page, "project.create.add_existing").click();
-  const add = page.getByRole("dialog").filter({ hasText: "Add an existing project" });
-  await add.getByLabel("Project folder", { exact: true }).fill("D:\\fixture\\C");
-  await cmd(add, "project.create.add_existing_confirm").click();
+  const add = page.getByRole("dialog").filter({ hasText: "Open a folder or project" });
+  // A closed dialog chooses nothing; a chosen folder is added at once, with no path typed.
+  await cmd(add, "project.create.choose_folder").click();
+  for (const end = Date.now() + 10000; pickRequests.length < 1;) {
+    if (Date.now() > end) assert.fail("the folder dialog was never asked for");
+    await page.waitForTimeout(50);
+  }
+  assert.equal(await add.getByLabel("Folder", { exact: true }).inputValue(), "", "a closed dialog fills nothing");
+  assert.equal(writes.slice(beforeAdd).filter(([, pathname]) => pathname === "/api/chat/sessions").length, 0, "and adds nothing");
+  pickAnswers.push("D:\\fixture\\C");
+  await cmd(add, "project.create.choose_folder").click();
   await cmd(page, "project.open", { arg: "Project C" }).first().waitFor();
+  assert.deepEqual(pickRequests.at(-1), { kind: "folder", title: "Choose a project or any folder", filter: "any" });
   await studioReady();
   assert.equal(writes.slice(beforeAdd).filter(([, pathname, , target]) => pathname === "/api/project/modeling" && target === "D:\\fixture\\C").length, 0);
   assert.ok(!writes.slice(beforeAdd).some(([, pathname]) => pathname === "/api/chat/projects" || pathname === "/api/project/modeling"));
@@ -4056,7 +4090,11 @@ try {
   const restored = page.getByRole("dialog").filter({ hasText: "Restore project archive" });
   assert.equal(await restored.getByLabel("Restore into folder").inputValue(), "D:\\fixture",
     "the restore target starts at the workspace new projects are made in");
-  await restored.getByLabel("Archive file").fill("D:\\backups\\fixture-A.monkeyhub.zip");
+  pickAnswers.push("D:\\backups\\fixture-A.monkeyhub.zip");
+  await cmd(restored, "project.archive.choose_file").click();
+  await page.waitForFunction(() => [...document.querySelectorAll("dialog[open] input")]
+    .some((input) => input.value === "D:\\backups\\fixture-A.monkeyhub.zip"), null, { timeout: 10000 });
+  assert.deepEqual(pickRequests.at(-1), { kind: "file", title: "Choose a project archive", filter: "archive" });
   await cmd(restored, "project.archive.restore_confirm").click();
   await restored.getByText("Project restored and verified through normal project readers").waitFor();
   assert.deepEqual(writes.at(-1).slice(0, 3), ["POST", "/api/project/archive/restore",

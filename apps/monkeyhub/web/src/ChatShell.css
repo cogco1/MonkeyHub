@@ -132,13 +132,16 @@
 .chat-process__current{color:var(--ink)}
 .chat-process__count{flex:none;white-space:nowrap}
 .chat-process__failed{flex:none;color:var(--violated);white-space:nowrap}
-.chat-shell .chat-process__chevron{width:14px;height:14px;margin-left:6px;transition:transform .15s ease}
+.chat-process__chevron{width:14px;height:14px;margin-left:6px;transition:transform .15s ease}
 .chat-process__row[aria-expanded=true] .chat-process__chevron{transform:rotate(90deg)}
 .chat-process__body{margin:6px 0 0 4px;padding:2px 0 2px 13px;border-left:2px solid var(--line)}
 .chat-process__steps{display:grid;grid-template-columns:minmax(0,1fr);gap:3px;margin:0;padding:0;list-style:none}
 .chat-process__steps li{display:flex;align-items:baseline;gap:8px;line-height:1.65;overflow-wrap:anywhere}
 .chat-process__mark{flex:none;width:12px;text-align:center}
 .chat-process__steps li[data-status=failed]{color:var(--violated)}
+.chat-process__sub{margin-top:2px}
+.chat-process__sub>summary{cursor:pointer;color:var(--muted);font-size:.92em}
+.chat-process__sub>.chat-process__steps{padding-left:14px;border-left:1px solid var(--line)}
 .chat-process__steps li[data-status=streaming] .chat-process__mark{color:var(--accent)}
 .chat-process__technical.chat-card__details{margin-top:8px;font-size:inherit}
 .chat-process__technical.chat-card__details>summary{display:flex;align-items:center;min-height:28px;width:max-content;max-width:100%}
@@ -148,9 +151,9 @@
 .chat-composer-wrap{position:relative}
 .chat-jump{position:absolute;left:50%;bottom:calc(100% + 10px);transform:translateX(-50%);z-index:2;display:grid;place-items:center;width:36px;height:36px;padding:0;border:1px solid var(--line);border-radius:50%;background:var(--ground);color:var(--ink);box-shadow:var(--shadow);cursor:pointer}
 .chat-jump:hover{background:var(--panel-2)}
-.chat-shell .chat-jump svg{width:18px;height:18px}
+.chat-jump svg{width:18px;height:18px}
 .chat-jump__count{position:absolute;top:-7px;right:-10px;min-width:19px;height:19px;padding:0 5px;border-radius:10px;background:var(--accent);color:var(--ground);font-size:11px;font-weight:600;line-height:19px;text-align:center}
-@media(prefers-reduced-motion:reduce){.chat-shell .chat-process__chevron{transition:none}}
+@media(prefers-reduced-motion:reduce){.chat-process__chevron{transition:none}}
 
 /* GH-300: the sidebar's Tasks entry, project badges and footer. */
 .chat-tasks-toggle{color:var(--muted);font-weight:500}.chat-tasks-toggle svg{color:var(--muted)}.chat-tasks-toggle[aria-expanded=true]{color:var(--ink)}
@@ -202,7 +205,7 @@
 .chat-topic{display:inline-flex;align-items:center;gap:2px;min-height:28px;padding:2px 3px 2px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--ink);font-size:var(--text-caption);line-height:1.4}
 .chat-topic__remove{display:inline-grid;place-items:center;width:22px;height:22px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
 .chat-topic__remove:hover{background:var(--panel-2);color:var(--ink)}
-.chat-shell .chat-topic__remove svg{width:13px;height:13px}
+.chat-topic__remove svg{width:13px;height:13px}
 .chat-topic-refusal{margin:0 2px 8px}.chat-topic-refusal>.chat-muted{margin:0}
 @media(max-width:900px){.chat-composer-menu__item{min-height:44px}.chat-topic__remove{width:32px;height:32px}}
 
@@ -235,7 +238,7 @@
 /* GH-300 NA-2: the Stage chip in the chat header, below 900 px only; there the header stays above an open panel. */
 .chat-header__text{flex:1;min-width:0}
 .chat-header__chip{display:none;align-items:center;gap:6px;flex:0 1 auto;max-width:48%;min-width:0;min-height:36px;padding:4px 12px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--ink);font-size:var(--text-caption);font-weight:600;cursor:pointer}
-.chat-shell .chat-header__chip svg{width:15px;height:15px;color:var(--muted)}
+.chat-header__chip svg{width:15px;height:15px;color:var(--muted)}
 .chat-header__chip span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chat-header__chip:hover{border-color:var(--accent);background:var(--accent-soft)}
 @media(max-width:900px){.chat-header__chip{display:inline-flex}}
@@ -251,7 +254,7 @@
 .settings-nav>h2{padding:0 10px;color:var(--muted);font-size:var(--text-caption);font-weight:500;line-height:1.5}
 .settings-tabs{display:flex;flex-direction:column;gap:2px}
 .settings-tab{display:flex;align-items:center;gap:10px;width:100%;min-height:40px;padding:8px 10px;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--muted);font-size:var(--text-ui);text-align:left;cursor:pointer}
-.chat-shell .settings-tab svg{width:18px;height:18px}
+.settings-tab svg{width:18px;height:18px;flex:none}
 .settings-tab:hover{background:var(--panel-2);color:var(--ink)}
 .settings-tab[aria-selected=true]{background:var(--panel-2);color:var(--ink);font-weight:500}
 .settings-nav__status{margin-top:auto;padding:0 10px;color:var(--muted);font-size:var(--text-caption)}
@@ -311,12 +314,12 @@
 /* #283: the pin beside New chat keeps the projects list open when a workspace opens on the right. */
 .chat-sidebar__head{display:flex;align-items:center;gap:4px}
 .chat-sidebar__head .chat-new{flex:1;width:auto;min-width:0}
-.chat-pin{flex:none}.chat-shell .chat-pin svg{width:18px;height:18px}
+.chat-pin{flex:none}.chat-pin svg{width:18px;height:18px}
 .chat-pin[aria-pressed=true]{background:var(--panel-2);color:var(--accent)}
 /* #283: Focus, at the end of the conversation's header while a workspace is open. Below 900 px the workspace
    covers the conversation already, and there is no Focus. */
 .chat-focus{display:inline-flex;align-items:center;gap:6px;flex:none;min-height:32px;padding:4px 11px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);font-size:var(--text-caption);white-space:nowrap;cursor:pointer}
-.chat-shell .chat-focus svg{width:15px;height:15px}
+.chat-focus svg{width:15px;height:15px}
 .chat-focus:hover{background:var(--panel-2);color:var(--ink)}
 /* In Focus the conversation keeps its place and layout out of sight, so its scroll position and draft come back
    as they were, and a strip as narrow as the folded projects list stands in for it. */
@@ -329,7 +332,7 @@
 @media(max-width:900px){.chat-focus{display:none}}
 .chat-strip__open{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:100%;min-height:52px;padding:7px 2px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:var(--text-caption);line-height:1.25;cursor:pointer}
 .chat-strip__open:hover{background:var(--panel-2);color:var(--ink)}
-.chat-shell .chat-strip__open svg{width:18px;height:18px}
+.chat-strip__open svg{width:18px;height:18px}
 .chat-strip__state{position:absolute;top:7px;right:9px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
 .chat-strip__state[data-state=running]{animation:chat-pulse 1.6s ease-in-out infinite}
 @media(prefers-reduced-motion:reduce){.chat-strip__state[data-state=running]{animation:none}}
@@ -337,3 +340,29 @@
 /* 08: a sentence that names one command, offered as that command before it goes to the model. */
 .chat-route{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 6px;padding:6px 8px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);font-size:var(--text-caption)}
 .chat-route__says{flex:1 1 12em;margin:0;color:var(--ink)}
+.chat-route__keys{display:block;margin-top:2px;color:var(--muted);font-size:12px}
+/* 08 加载分档: a job past ten seconds shows how far along it is. */
+.chat-task__progress{display:block;height:3px;margin-top:4px;border-radius:2px;background:var(--line-2);overflow:hidden}
+.chat-task__progress>span{display:block;height:100%;background:var(--accent);transform-origin:left;transition:transform 1s linear}
+/* A reply that starts within a second shows no thinking mark. */
+.chat-thinking{animation:wait-appear 160ms ease-out 1s both}
+@keyframes wait-appear{from{opacity:0}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.chat-task__progress>span{transition:none}.chat-thinking{animation-duration:0s}}
+/* 一句话直接办: the one thing a sentence left out, asked on its card as buttons. */
+.chat-route__which{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.chat-route__which>span{color:var(--muted)}
+/* 18: sentences to say, under the input, made from the project's own state. */
+.chat-suggest{display:grid;gap:6px;padding:8px 2px 0}
+.chat-suggest__hint{margin:0;color:var(--muted);font-size:var(--text-caption)}
+.chat-suggest__chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.chat-suggest__chips::-webkit-scrollbar{display:none}
+.chat-suggest__chip{flex:none;padding:2px 10px;border:1px dashed var(--line);border-radius:999px;background:var(--panel);color:var(--ink);font:inherit;font-size:var(--text-caption);white-space:nowrap;cursor:pointer}
+.chat-suggest__chip:hover:not(:disabled){border-color:var(--ink)}.chat-suggest__chip:disabled{color:var(--faint);cursor:default}
+/* S23: a skill or script the AI ran, and a skill's question once answered. */
+.chat-skill-run__words{margin:0;color:var(--violated);overflow-wrap:anywhere}
+.chat-skill-run__kept{margin:0;color:var(--ink)}
+.chat-skill-run__keep{display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px 8px}
+.chat-skill-run__keep label{display:flex;flex-direction:column;gap:2px;font-size:var(--text-caption);color:var(--muted)}
+.chat-skill-run__keep input{font:inherit;font-family:var(--font-mono);font-size:var(--text-ui);padding:2px 6px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);color:var(--ink);min-width:14ch}
+.chat-skill-run__keep small{flex-basis:100%}
+.chat-permission--answered>p{margin:0;color:var(--muted)}

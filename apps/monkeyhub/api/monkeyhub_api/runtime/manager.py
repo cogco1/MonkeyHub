@@ -12,7 +12,7 @@ Hub hears on the worker's event stream.
 from collections import deque
 from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from http.client import HTTPException
 import base64
 import hashlib
@@ -24,6 +24,7 @@ import time
 from urllib.parse import parse_qs, urlencode, urlsplit
 from uuid import uuid4, uuid5, NAMESPACE_URL
 
+from archflow.contracts.failures import failure_kind, resend_wait
 from archflow.project.record_kinds import STUDIO_DOCUMENT_MODEL_SOURCE, STUDIO_SOURCE_DOCUMENT
 from archflow.project.repository import ProjectRepositoryError
 from project_runtime.application.artifacts import (
@@ -38,7 +39,7 @@ from project_runtime.errors import StudioError
 
 from ..projects import _project
 from ..models import HubError, HubFailure
-from .models import HubRuntimeDto, OperationRecord, ProjectRuntimeDto, WorkerStatus
+from .models import HubRuntimeDto, OperationRecord, ProjectRuntimeDto, RepairRecord, WorkerStatus
 from .operations import _ACTIVE, _CANDIDATE_REQUEST, _PROPOSAL_CANDIDATE, OperationManager
 from .worker_http import HttpResult, _WorkerEvents, request_http
 from .workers import earlier_project_keys, project_key
@@ -74,16 +75,25 @@ _DOCUMENT_RECORD_KINDS = (STUDIO_SOURCE_DOCUMENT, STUDIO_DOCUMENT_MODEL_SOURCE)
 _WORK_COPY_CHECK_S = _IDLE_RETAINED_REFRESH_S
 # How many of each project's Studio events the Hub keeps to open a new page's panel with.
 _STUDIO_REPLAY = 200
+# A drawing of a large model waits on its exact hidden-line solve: on housing (13 units) one elevation took
+# 125-190 s, past the 180 s every other request gets, and its answer was lost though the drawing was made (S15).
+DRAWING_TIMEOUT_S = 900
 # Forwarded POSTs that read and never change the project, so no operation is
 # admitted for them: a body names what to read, or the project is read again.
 # How long the Hub waits for POST /api/revisions: its build wait (at most 300 s) and its checks.
 REVISION_TIMEOUT_S = 420
-_READ_POSTS = frozenset({"/api/state/closure", "/api/pick/resolve", "/api/project/refresh"})
+_READ_POSTS = frozenset({"/api/state/closure", "/api/pick/resolve", "/api/markup/resolve", "/api/project/refresh"})
 # Reading the project again (ADR-012): the Hub reads it again too, whole.
 _REFRESH_PATH = "/api/project/refresh"
 # The domains of an index commit that do not say the project moved: a thumbnail
 # drawn, or the index loaded or rebuilt from the project as it was.
 _UNMOVED_DOMAINS = frozenset({"projections", "reset"})
+
+
+def index_moved(index: dict | None) -> bool:
+    """Whether an index commit says the project moved: not a thumbnail drawn, the index loaded again, or a bare hint."""
+
+    return index is not None and bool(set(index.get("domains") or ()) - _UNMOVED_DOMAINS)
 
 
 def binding_signature(project_dir: str) -> tuple[int, int, int, bool] | None:
@@ -185,6 +195,9 @@ class ProjectRuntime:
     refresh_lock: threading.RLock = field(default_factory=threading.RLock)
     wake: _Wake = field(default_factory=_Wake)
     thread: threading.Thread | None = None
+    # What the Hub put right by itself (REPAIRS), newest last, and when it last restarted the Studio.
+    repairs: list = field(default_factory=list)
+    restarts: list = field(default_factory=list)
     last_workers: tuple = ()
     last_snapshot: dict | None = None
     projection_key: tuple | None = None
@@ -204,12 +217,61 @@ class ProjectRuntime:
     # project that say it moved (``index_hint``): the observer's idle reads
     # compare it, since nothing watches the project (ADR-012).
     index_moves: int = 0
+    # A smaller page of the worker's retained state (``RETAINED_PAGES``) that finished within the request budget
+    # where a larger one did not, and until when reads start from it rather than from the largest again.
+    retained_page: int = 0
+    retained_page_until: float = 0.0
+
+
+# The page sizes a retained read tries, largest first (S15). One page of the 50 newest runs read in 0.08 s
+# on a 319-run project where fifty reads of one run took 3.3 s, each paying the whole project's listing; a
+# page that does not finish within the budget (a project whose results are large) is read in smaller ones.
+RETAINED_PAGES = (50, 10, 1)
+# How long a project read in a smaller page keeps it before the largest is tried again.
+RETAINED_PAGE_HOLD_S = 600.0
+
+# Waits between sends of one request; a test passes without sleeping.
+_pause = time.sleep
+
+
+def _failure_code(result: HttpResult) -> str | None:
+    try:
+        payload = result.json()
+    except (ValueError, UnicodeError):
+        return None
+    return payload.get("code") if isinstance(payload, dict) else None
+
+#: What the Hub puts right without asking a person (#300 4-2, 03 Q6): only what is listed here.
+REPAIRS = {
+    "studio-restarted": "A project's Studio that stopped unexpectedly is started again with the same binding and port.",
+    "studio-start-retried": "A project's Studio that did not become ready in time (START_TIMEOUT) is started again.",
+}
+
+
+def _start_timed_out(worker) -> bool:
+    """A launch that never became ready and has exited: a start that failed, not a stop anyone asked for."""
+
+    return (worker.state == "unavailable" and worker.desired_state == "stopped" and worker.process_id is None
+            and worker.error is not None and worker.error.code == "START_TIMEOUT")
+
+
+def _still_there(worker) -> bool:
+    """A worker whose process runs and is meant to, whether or not it answered its last health checks."""
+
+    return (worker.state in {"ready", "busy"} or (
+        worker.state == "unavailable" and worker.desired_state == "running" and worker.process_id is not None))
+# A Studio that stops this often within the window is left for a person to recover.
+_RESTARTS_PER_WINDOW = 3
+_RESTART_WINDOW_S = 600.0
+_REPAIRS_KEPT = 10
 
 
 class ProjectRuntimeManager:
     def __init__(self, applications, chats):
         self.applications, self.chats = applications, chats
         self.server_id = str(uuid4())
+        # REPAIRS: a project's Studio that stopped unexpectedly is started again (a test of explicit recovery turns it off).
+        self.restart_stopped = True
         self.events = StudioEvents(buffer_size=256)
         self._lock = threading.RLock()
         self._projects: dict[str, ProjectRuntime] = {}
@@ -281,7 +343,7 @@ class ProjectRuntimeManager:
         restarted is read again on its own state change.
         """
 
-        if index is not None and set(index.get("domains") or ()) - _UNMOVED_DOMAINS:
+        if index_moved(index):
             with self._lock:
                 runtime = self._projects.get(runtime_id)
             if runtime is not None:
@@ -448,7 +510,8 @@ class ProjectRuntimeManager:
                 (row.failure for row in tuple(runtime.work_copies.values()) if row.failure is not None), None)
             return ProjectRuntimeDto(runtimeId=runtime.runtime_id, projectId=runtime.project_id, projectDir=runtime.project_dir,
                 state=runtime.state, workers=workers, operations=runtime.operations.records(), sessions=sessions,
-                retained=runtime.retained, projection=runtime.projection, clients=self._clients, error=failure)
+                retained=runtime.retained, projection=runtime.projection, clients=self._clients, error=failure,
+                repairs=list(runtime.repairs))
 
     def snapshot(self) -> HubRuntimeDto:
         with self._lock:
@@ -469,39 +532,59 @@ class ProjectRuntimeManager:
         ids = runtime.operations.candidate_ids()
         run_ids = runtime.binding.run_ids()
         candidates = {}
-        if worker is not None:
-            # Preserve the existing recent window and tracked operations, but
-            # never make one HTTP request parse fifty large retained results.
-            # A page discovers ordinary runs without misclassifying them as
-            # explicit candidates. Every refresh revalidates its evidence.
-            recent = tuple(reversed(run_ids[-50:]))
-            reads = [(offset, (run_id,) if run_id in ids else ())
-                     for offset, run_id in enumerate(recent)]
-            reads.extend((len(run_ids), (candidate_id,)) for candidate_id in ids if candidate_id not in recent)
-            reads = reads or [(0, ())]
-        else:
-            # In-process cold/recovery reads have no HTTP deadline. They use
-            # the same inspector and never trust a previous completed row.
-            reads = [(0, ids[offset:offset + 200]) for offset in range(0, len(ids), 200)] or [(0, ())]
-        result = None
-        scanned = 0
-        for offset, chunk in reads:
-            if worker is None:
-                current = runtime_dto(inspect_runtime(runtime.binding, run_ids=chunk)).model_dump(by_alias=True)
-            else:
-                query = urlencode([("limit", "1"), ("offset", str(offset)), *(("candidateId", value) for value in chunk)])
-                response = request_http(worker.url, f"/api/runtime?{query}", timeout=10)
-                if response.status != 200:
-                    raise HubFailure(503, "RUNTIME_READ_FAILED", "The bound Studio could not read its runtime state.")
-                current = response.json()
+        def check(current: dict, result: dict | None) -> None:
             if current.get("projectId") != runtime.project_id or project_key(current.get("projectDir", "")) != project_key(runtime.project_dir):
                 raise HubFailure(409, "PROJECT_MISMATCH", "The runtime snapshot belongs to another project.")
             if result is not None and (result.get("published"), result.get("branches")) != (current.get("published"), current.get("branches")):
                 raise HubFailure(409, "RUNTIME_CHANGED", "The project changed during runtime inspection; read its next snapshot.")
-            candidates.update((row["candidateId"], row) for row in current.get("candidates", []))
-            scanned += current.get("runsScanned", 0)
-            result = current
-        if runtime.binding.run_ids() != run_ids:
+
+        result = None
+        scanned = 0
+        if worker is not None:
+            # The recent window and the tracked operations. A page discovers ordinary runs without misclassifying
+            # them as explicit candidates; every refresh revalidates its evidence. The window is read in the
+            # largest page that finishes within the request budget (``RETAINED_PAGES``), never one large
+            # retained result per request more than that budget allows.
+            recent = tuple(reversed(run_ids[-50:]))
+            smaller = runtime.retained_page if time.monotonic() < runtime.retained_page_until else 0
+            sizes = [size for size in RETAINED_PAGES if not smaller or size <= smaller]
+            for attempt, size in enumerate(sizes):
+                reads = [(offset, size, tuple(run_id for run_id in recent[offset:offset + size] if run_id in ids))
+                         for offset in range(0, len(recent), size)]
+                reads.extend((len(run_ids), 1, (candidate_id,)) for candidate_id in ids if candidate_id not in recent)
+                result, scanned, read = None, 0, {}
+                try:
+                    for offset, limit, chunk in reads or [(0, 1, ())]:
+                        query = urlencode([("limit", str(limit)), ("offset", str(offset)), *(("candidateId", value) for value in chunk)])
+                        response = request_http(worker.url, f"/api/runtime?{query}", timeout=10)
+                        if response.status != 200:
+                            raise HubFailure(503, "RUNTIME_READ_FAILED", "The bound Studio could not read its runtime state.")
+                        current = response.json()
+                        check(current, result)
+                        read.update((row["candidateId"], row) for row in current.get("candidates", []))
+                        scanned += current.get("runsScanned", 0)
+                        result = current
+                except (OSError, TimeoutError, HTTPException, HubFailure) as exc:
+                    if attempt == len(sizes) - 1 or (isinstance(exc, HubFailure) and exc.error.code != "RUNTIME_READ_FAILED"):
+                        raise
+                    continue
+                runtime.retained_page = 0 if size == RETAINED_PAGES[0] else size
+                if runtime.retained_page and runtime.retained_page != smaller:
+                    runtime.retained_page_until = time.monotonic() + RETAINED_PAGE_HOLD_S
+                candidates.update(read)
+                break
+        else:
+            # In-process cold/recovery reads have no HTTP deadline. They use
+            # the same inspector and never trust a previous completed row.
+            for chunk in [ids[offset:offset + 200] for offset in range(0, len(ids), 200)] or [()]:
+                current = runtime_dto(inspect_runtime(runtime.binding, run_ids=chunk)).model_dump(by_alias=True)
+                check(current, result)
+                candidates.update((row["candidateId"], row) for row in current.get("candidates", []))
+                scanned += current.get("runsScanned", 0)
+                result = current
+        # A run begun meanwhile leaves every row read true; the next read lists it. On housing a read in small pages
+        # took most of a minute, and each run a record or drawing began in that time threw the whole read away (S19).
+        if not set(run_ids) <= set(runtime.binding.run_ids()):
             raise HubFailure(409, "RUNTIME_CHANGED", "Project runs changed during runtime inspection; read its next snapshot.")
         result["candidates"] = list(candidates.values())
         result["runsScanned"] = scanned
@@ -541,7 +624,12 @@ class ProjectRuntimeManager:
         with runtime.lock:
             previous = runtime.retained
             runtime.retained = retained
-            runtime.operations.reconcile(retained, worker_alive=alive)
+            # A worker that is there, only late with a health check while it builds, has not lost what it works on;
+            # nor has one the supervisor calls unavailable because it went on not answering, while its process
+            # runs and is still meant to (S19: a housing record was called lost while its Studio was building it).
+            unanswered = (not alive and worker is not None and latest is not None and latest.instance_id == worker.instance_id
+                          and all(_still_there(row) for row in (worker, latest)))
+            moved = runtime.operations.reconcile(retained, worker_alive=alive, worker_unanswered=unanswered)
         if alive and projection_key != runtime.projection_key:
             # A verified candidate remains observed even if the independent
             # default-view rebuild is slow. It does not make that view ready.
@@ -552,6 +640,9 @@ class ProjectRuntimeManager:
             runtime.error = None
             runtime.projection = "ready" if alive else "stale" if worker else "unknown"
             runtime.projection_key = projection_key
+        if moved:
+            # An operation this read settled, a lost one found again among them: its card is read again (S15).
+            self.emit("operation/reconciled", runtime.runtime_id)
         busy = runtime.operations._has_active() or any(row.get("status") in {"queued", "running"} for row in retained.get("jobs", []))
         self.applications.set_busy(project_dir=runtime.project_dir, busy=busy)
         if previous is not None and previous.get("published") != retained.get("published"):
@@ -779,7 +870,7 @@ class ProjectRuntimeManager:
                     raise StudioError(result.status, error.get("code", "DOCUMENT_WORK_COPY_FAILED"),
                                       error.get("detail", "The edited page was not registered."))
             except HubFailure as exc:
-                if exc.error.code == "WORKER_UNAVAILABLE":
+                if exc.error.code in {"WORKER_UNAVAILABLE", "WORKER_STARTING"}:
                     # No request was sent; the file stays pending until Studio
                     # is ready. A dispatched request with a lost reply is never retried.
                     observed.observed_sha256 = baseline
@@ -826,6 +917,8 @@ class ProjectRuntimeManager:
             checked = runtime.wake.take_check()
             workers = self.applications.worker_snapshots(project_dir=runtime.project_dir)
             self._follow_worker(runtime, workers)
+            if self._restart_stopped(runtime, workers):
+                workers = self.applications.worker_snapshots(project_dir=runtime.project_dir)
             worker_states = tuple((row.instance_id, row.state, row.healthy) for row in workers)
             drained = runtime.state == "closed" and not any(row.process_id is not None for row in workers)
             active = runtime.operations._has_active() or any(
@@ -834,12 +927,14 @@ class ProjectRuntimeManager:
             due = prompted or checked or time.monotonic() >= next_retained_read
             try:
                 moves = runtime.index_moves
-                if due and not prompted and read_at == moves:
+                if runtime.operations.expire():
+                    self.emit("operation/reconciled", runtime.runtime_id)
+                if due and not prompted and read_at == moves and not runtime.operations.awaiting_result():
                     # Only the idle fallback or a page opening the project
                     # again asks, and only whether a separate client changed
                     # the project through its runtime. With no index commit
                     # heard since the last read, the retained history is not
-                    # read again (#363, ADR-012).
+                    # read again (#363, ADR-012). A run called lost a short while ago is still looked for (S19).
                     due = False
                     next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
                 if due:
@@ -940,10 +1035,11 @@ class ProjectRuntimeManager:
             # its own time limit and nothing is replayed.
             return worker
         if worker is None or worker.state not in {"ready", "busy"} or not worker.healthy or not worker.url:
-            if worker is not None and worker.state == "crashed":
+            if worker is None or worker.state in {"starting", "recovering"}:
+                # A starting Studio passes by itself; nothing was sent (archflow.contracts.failures).
+                raise HubFailure(503, "WORKER_STARTING", "The project's Studio is starting. Try again in a moment.")
+            if worker.state == "crashed":
                 detail = "The project's Studio stopped unexpectedly. Recover it explicitly before continuing."
-            elif worker is None or worker.state in {"starting", "recovering"}:
-                detail = "The project's Studio is starting. Try again in a moment."
             else:
                 detail = "The project's Studio is not ready. Recover a crashed worker explicitly before continuing."
             raise HubFailure(503, "WORKER_UNAVAILABLE", detail)
@@ -963,8 +1059,31 @@ class ProjectRuntimeManager:
                 return worker
             time.sleep(0.2)
 
+    def _serving(self, runtime: ProjectRuntime):
+        """The project's worker, waited for a few seconds while it starts or restarts (WORKER_STARTING)."""
+
+        tries = 0
+        while True:
+            try:
+                return self.service(runtime)
+            except HubFailure as exc:
+                tries += 1
+                kind = failure_kind(exc.error.code)
+                wait = None if kind is None else resend_wait(kind, tries)
+                if wait is None:
+                    raise
+                _pause(wait)
+
     def forward(self, runtime: ProjectRuntime, path: str, method: str, body: bytes,
-                headers: dict[str, str], *, source: str | None = None) -> HttpResult:
+                headers: dict[str, str], *, source: str | None = None, wait: bool = True) -> HttpResult:
+        """Send one request to the project's Studio, admitting a change as an operation.
+
+        A failure that did nothing is sent again, and a starting Studio waited
+        for, a few seconds at most. ``wait=False`` is for a background read that
+        the next event makes again: it answers at once, so the thread that
+        follows the Hub's events never stands still on a starting Studio.
+        """
+
         parsed = urlsplit(path)
         if parsed.scheme or parsed.netloc or parsed.fragment or not (parsed.path.startswith("/api/") or parsed.path == "/openapi.json") or ".." in parsed.path.split("/"):
             raise HubFailure(422, "STUDIO_PATH_INVALID", "Only the bound Studio API can be called.")
@@ -1008,7 +1127,7 @@ class ProjectRuntimeManager:
             self.emit("operation/started", runtime.runtime_id)
         dispatched = False
         try:
-            worker = self.service(runtime)
+            worker = self._serving(runtime) if wait else self.service(runtime)
             forwarded = {key: value for key, value in headers.items()
                          if key in {"content-type", "x-monkey-operation", "x-monkey-parent", "if-none-match",
                                     "x-monkey-turn-id", "x-monkey-parent-span-id"}}
@@ -1037,10 +1156,30 @@ class ProjectRuntimeManager:
                 source_run = proposal.get("sourceRunId")
                 base = runtime.binding.load_run(source_run).base if source_run else runtime.binding.head()
                 runtime.operations.bind_proposal(admission, proposal, base.version)
+            if admission and self.applications is not None:
+                # The Studio has work from now on, before any retained read says so: one building a large model
+                # misses health checks, and without this the supervisor called it unavailable after a few seconds
+                # and the run it was building lost (S19). The next retained read sets it again from what it reads.
+                self.applications.set_busy(project_dir=runtime.project_dir, busy=True)
             dispatched = True
             # A revision waits for its own build, read-back and validation (#185).
-            timeout = REVISION_TIMEOUT_S if parsed.path == "/api/revisions" else 180
+            timeout = (REVISION_TIMEOUT_S if parsed.path == "/api/revisions"
+                       else DRAWING_TIMEOUT_S if parsed.path.startswith("/api/drawings/") else 180)
             result = request_http(worker.url, path, method, body or None, forwarded, timeout=timeout)
+            sends = 1
+            # A failure that did nothing passes without the person: the same request goes again, a few times
+            # at most, and the operation says how many (#300 4-3).
+            while (wait and result.status >= 400 and (kind := failure_kind(_failure_code(result))) is not None
+                   and (delay := resend_wait(kind, sends)) is not None):
+                if admission:
+                    runtime.operations.sending_again(admission)
+                    self.emit("operation/progress", runtime.runtime_id)
+                _pause(delay)
+                worker = self._serving(runtime)
+                if "X-Monkey-Worker" in forwarded:
+                    forwarded["X-Monkey-Worker"] = worker.instance_id
+                result = request_http(worker.url, path, method, body or None, forwarded, timeout=timeout)
+                sends += 1
             if admission:
                 result.headers["X-Monkey-Operation-Id"] = admission.record.operationId
                 runtime.operations.replied(admission, result)
@@ -1066,6 +1205,43 @@ class ProjectRuntimeManager:
                 raise
             raise HubFailure(503, "OPERATION_INTERRUPTED", "The worker connection ended. Runtime status will reconcile retained results; the request was not retried.") from exc
 
+    def _restart_stopped(self, runtime: ProjectRuntime, workers) -> bool:
+        """Start a project's Studio again when it stopped unexpectedly: the repair table's first entry (#300 4-2).
+
+        As often as REPAIRS allows: one that keeps stopping is left for a
+        person to recover, and the record says so once. Each restart and the
+        hold are kept on the runtime (``repairs``) and told as
+        ``repair/applied``, which the attention queue turns into a notice.
+        """
+
+        if not self.restart_stopped:
+            return False
+        stopped = next((row for row in workers if (row.state == "crashed" and row.desired_state == "running")
+                        or _start_timed_out(row)), None)
+        if stopped is None or runtime.state != "open":
+            return False
+        retried = _start_timed_out(stopped)
+        detail = (stopped.error.detail if stopped.error is not None else "The project's Studio stopped unexpectedly.")[:600]
+        now = time.monotonic()
+        with runtime.lock:
+            runtime.restarts[:] = [at for at in runtime.restarts if now - at < _RESTART_WINDOW_S]
+            held = len(runtime.restarts) >= _RESTARTS_PER_WINDOW
+            if held and runtime.repairs and runtime.repairs[-1].kind == "studio-restart-held":
+                return False
+            if not held:
+                runtime.restarts.append(now)
+        if not held:
+            try:
+                self.recover(runtime)
+            except (HubFailure, StudioError, OSError, HTTPException, ValueError):
+                return False  # it stays stopped, with its own error, for the next pass or a person
+        kind = "studio-restart-held" if held else "studio-start-retried" if retried else "studio-restarted"
+        record = RepairRecord(repairId=str(uuid4()), kind=kind, at=datetime.now(timezone.utc).isoformat(), detail=detail)
+        with runtime.lock:
+            runtime.repairs[:] = [*runtime.repairs, record][-_REPAIRS_KEPT:]
+        self.emit("repair/applied", runtime.runtime_id)
+        return not held
+
     def recover(self, runtime: ProjectRuntime) -> ProjectRuntimeDto:
         with runtime.refresh_lock:
             if runtime.state != "open":
@@ -1073,7 +1249,11 @@ class ProjectRuntimeManager:
             # Inspect while the old process is dead, before any replacement can
             # invalidate a cache. This action never calls a mutation route.
             self.refresh(runtime, cold=True)
-            self.applications.recover(project_dir=runtime.project_dir)
+            if any(_start_timed_out(row) for row in self.applications.worker_snapshots(project_dir=runtime.project_dir)):
+                # A start that timed out is started again as a person's start is (POST /api/apps/monkeyarch/start).
+                self.applications.start("monkeyarch", project_dir=runtime.project_dir)
+            else:
+                self.applications.recover(project_dir=runtime.project_dir)
             runtime.projection = "rebuilding"
             self.emit("worker/recovering", runtime.runtime_id)
         runtime.wake.set()

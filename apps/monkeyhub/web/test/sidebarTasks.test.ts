@@ -62,3 +62,31 @@ test("the new-schemes badge waits for admission data instead of guessing", () =>
   assert.equal(newSchemes(project("A")), null);
   assert.deepEqual(sidebarTasks(null, listed), []);
 });
+
+test("running work carries its start, and a job how long this project's finished jobs in its lane took", () => {
+  const job = (jobId: string, status: string, lane: string, wallTimeS: number | null, startedAt: string | null = null) => ({ jobId, status,
+    candidateId: `cand-${jobId}`, proposalId: "p-7", createdAt: "", startedAt, finishedAt: null, error: null, wallTimeS, lane, waitingFor: null, waitingReason: null });
+  const retained = (jobs: unknown[]) => ({ projectId: "A", projectDir: "D:\work\A", published: { version: 0, stateSha256: null }, jobs, candidates: [],
+    branches: [], stages: [], errors: [], runsScanned: 0, hasMore: false }) as unknown as ProjectRuntimeDto["retained"];
+  const [task] = sidebarTasks(runtime(project("A", { retained: retained([
+    job("now", "running", "exclusive", null, "2026-10-24T10:00:00Z"),
+    job("a", "succeeded", "exclusive", 40), job("b", "succeeded", "exclusive", 60), job("c", "succeeded", "parallel", 5), job("d", "failed", "exclusive", 900),
+  ]) })), listed);
+  assert.equal(task!.startedAt, "2026-10-24T10:00:00Z");
+  assert.equal(task!.expectedSeconds, 50, "the median of the finished exclusive jobs; the parallel and failed ones do not count");
+  const [first] = sidebarTasks(runtime(project("A", { retained: retained([job("now", "running", "exclusive", null, "2026-10-24T10:00:00Z")]) })), listed);
+  assert.equal(first!.expectedSeconds, null, "a project's first job has nothing to go by");
+  const [drawing] = sidebarTasks(runtime(project("A", {
+    operations: [operation({ operationId: "d1", status: "executing", kind: "POST /api/drawings/sheets", createdAt: "2026-10-24T10:01:00Z" })] })), listed);
+  assert.equal(drawing!.startedAt, "2026-10-24T10:01:00Z", "a drawing counts from its request");
+  assert.equal(drawing!.expectedSeconds, null);
+});
+
+test("a request the Hub had to send again says which attempt it is on", () => {
+  const [task] = sidebarTasks(runtime(project("A", {
+    operations: [operation({ operationId: "d1", status: "executing", kind: "POST /api/drawings/sheets", attempts: 3 } as Partial<OperationRecord> & Pick<OperationRecord, "operationId" | "status">)] })), listed);
+  assert.equal(task!.attempts, 3);
+  const [first] = sidebarTasks(runtime(project("A", {
+    operations: [operation({ operationId: "d2", status: "executing", kind: "POST /api/drawings/sheets", attempts: 1 } as Partial<OperationRecord> & Pick<OperationRecord, "operationId" | "status">)] })), listed);
+  assert.equal(first!.attempts, undefined, "the first send says nothing");
+});

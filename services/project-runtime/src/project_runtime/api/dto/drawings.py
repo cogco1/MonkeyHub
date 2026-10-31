@@ -301,9 +301,18 @@ class PlanStatusDto(BaseModel):
     cleanup: dict[str, Any] | None = Field(default=None, description=CLEANUP_REPORT)
 
 
+class ModelBoundsDto(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    min: list[float] = Field(min_length=3, max_length=3)
+    max: list[float] = Field(min_length=3, max_length=3)
+
+
 class PlanDimensionChoicesDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
     length_unit: str = Field(alias="lengthUnit")
+    model_bounds: ModelBoundsDto | None = Field(default=None, alias="modelBounds", description=(
+        "The box around what a drawing of this model draws, in its length unit; null when its retained bounds "
+        "cannot be read. A new section cuts through its middle by default."))
     dimensions: list[PlanDimensionChoiceDto]
 
 

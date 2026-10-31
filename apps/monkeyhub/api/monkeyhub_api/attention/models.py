@@ -13,7 +13,7 @@ in English and its ``…Zh`` sibling in Chinese, which falls back to the English
 one when a writer gives only that.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -91,11 +91,25 @@ class AttentionSource(_Record):
     targetRef: str | None = None
 
 
+class ModelSourceRef(_Record):
+    """One exact model of a run, as the Studio names it (its ``ModelSourceDto``): what a thumbnail is drawn from."""
+
+    runId: str = Field(min_length=1)
+    stateDigest: str = Field(min_length=1)
+    assetSha256: str = Field(min_length=1)
+
+
 class AttentionMedia(_Record):
-    """A picture a card shows: a model view of a run, a Board frame, or a crop of marks."""
+    """A picture a card shows: a model view of a run, a Board frame, or a crop of marks.
+
+    A model view with a ``modelSource`` is drawn from the project's thumbnails; one with an ``optionId`` is that
+    answer, so choosing the picture answers the card.
+    """
 
     kind: Literal["model_view", "board_frame", "crop"]
     runId: str | None = None
+    modelSource: ModelSourceRef | None = None
+    optionId: str | None = None
     view: str | None = None
     frameId: str | None = None
     markIds: list[str] = Field(default_factory=list)
@@ -156,6 +170,51 @@ class StateChange(_Record):
     facts: dict[str, ArgValue] = Field(default_factory=dict)
 
 
+#: At most this many items on one change list.
+MAX_CHANGE_ITEMS = 30
+
+
+class ChangeListItem(_Record):
+    """One change as the agent understood it from the marks and the words."""
+
+    n: int = Field(ge=1, le=MAX_CHANGE_ITEMS)
+    markIds: list[str] = Field(default_factory=list, max_length=50)
+    crop: AttentionMedia | None = None
+    note: str = Field(min_length=1, max_length=400)
+    understanding: str = Field(min_length=1, max_length=240)
+    understandingZh: str | None = Field(default=None, min_length=1, max_length=240)
+    targets: list[str] = Field(default_factory=list, max_length=100)
+    protected: list[str] = Field(default_factory=list, max_length=100)
+    unsure: bool = False
+    extra: bool = False
+    keep: bool = True
+
+    @model_validator(mode="after")
+    def _consistent(self):
+        if self.crop is not None and self.crop.kind != "crop":
+            raise ValueError("An item's picture is the crop of its own marks.")
+        if not self.unsure and not self.targets:
+            raise ValueError(f"Item {self.n} names no component; an item without one is unsure.")
+        if set(self.targets) & set(self.protected):
+            raise ValueError(f"Item {self.n} would both change and keep {sorted(set(self.targets) & set(self.protected))}.")
+        return self
+
+
+class ChangeList(_Record):
+    """The items of one reading of one frame's marks, numbered from 1 in order."""
+
+    frameId: str | None = None
+    boardRevision: str | None = None
+    runId: str | None = None
+    items: list[ChangeListItem] = Field(min_length=1, max_length=MAX_CHANGE_ITEMS)
+
+    @model_validator(mode="after")
+    def _numbered(self):
+        if [item.n for item in self.items] != list(range(1, len(self.items) + 1)):
+            raise ValueError("Change list items are numbered 1, 2, 3 … in order.")
+        return self
+
+
 class AttentionDraft(_Record):
     """What a producer offers: a card's content, without a state or an id."""
 
@@ -174,7 +233,11 @@ class AttentionDraft(_Record):
     # conversation): they change neither the card nor the project.
     opens: list[CommandRef] = Field(default_factory=list)
     recommendation: Recommendation | None = None
-    # The annotation lane adds changeList (ChangeList from change_list.py) here.
+    # A change_list card's items (``change_list.py``), the architect's own words they were checked against, as the Hub
+    # kept them with the marks, and the Runtime's reading of each mark (``MarkReading.to_dict``).
+    changeList: ChangeList | None = None
+    changeWords: list[str] = Field(default_factory=list, max_length=20)
+    markReadings: list[dict[str, Any]] = Field(default_factory=list, max_length=2000)
 
     @model_validator(mode="after")
     def _consistent(self):
@@ -190,6 +253,8 @@ class AttentionDraft(_Record):
             raise ValueError("The recommendation names an option this card does not have.")
         if flagged != expected:
             raise ValueError("Only the option the recommendation names is marked recommended.")
+        if any(item.optionId is not None and item.optionId not in ids for item in self.media):
+            raise ValueError("A picture answers with an option this card does not have.")
         return self
 
 

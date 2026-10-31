@@ -315,6 +315,32 @@
       "reason": "Atomically saves one project's attention cards (what a person was asked to look at and how they handled it) at attention/<runtimeId>.json under the caller-supplied nonproject Hub runtime root. A card names project facts by reference and never writes them; P036 alone holds design outcomes."
     },
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/notes.py",
+      "function": "_write",
+      "operations": [
+        "mkdir",
+        "open_write",
+        "replace",
+        "unlink"
+      ],
+      "kind": "application_conversation",
+      "owner": "hub.shell",
+      "reason": "Atomically saves the architect's standing instructions and the short notes kept for later turns, one JSON file per scope at config/notes/global.json or config/notes/projects/<folder hash>.json under the caller-supplied nonproject Hub runtime root; a removed note stays, marked removed. It never writes a project folder; P036 alone holds design outcomes."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/wakeups.py",
+      "function": "_save",
+      "operations": [
+        "mkdir",
+        "open_write",
+        "replace",
+        "unlink"
+      ],
+      "kind": "application_conversation",
+      "owner": "hub.shell",
+      "reason": "Atomically saves the conversations' wake-ups (chat id, the words each is woken with, its timing and last run) at config/wakeups.json under the caller-supplied nonproject Hub runtime root. A wake-up sends a message through the chat store and never writes a project."
+    },
+    {
       "path": "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
       "function": "merge",
       "operations": [
@@ -707,6 +733,18 @@
       "reason": "Creates one skill's own package folder under the user's MonkeyHub skill-envs (outside every project) for the requirements its granted access declares, and writes its marker after pip succeeds; the folder is reused by later runs."
     },
     {
+      "path": "services/project-runtime/src/project_runtime/application/skill_library.py",
+      "function": "write_package",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "rename"
+      ],
+      "kind": "skill_environment",
+      "owner": "project_runtime.skill_library",
+      "reason": "S23: writes one skill package a person kept from a chat into the user's own skill folder (outside every project), beside its place and renamed into it; a name the folder holds already is refused, nothing is replaced."
+    },
+    {
       "path": "packages/archflow/src/archflow/project/inputs.py",
       "function": "write_program_sheet_file",
       "operations": [
@@ -838,6 +876,17 @@
       "reason": "Saves chat attachment bytes and atomically saves their transcript metadata and native CLI session ids only under the explicit nonproject Hub runtime/chats directory; design project writes still use existing Runtime/P036 interfaces."
     },
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/recycle.py",
+      "function": "set_aside",
+      "operations": [
+        "mkdir",
+        "replace"
+      ],
+      "kind": "application_conversation",
+      "owner": "hub.shell",
+      "reason": "Renames a folder the Hub made and no longer needs (an archived chat's scratch) into the day's quarantine folder _TRASH_<YYYYMMDD> under the same nonproject Hub runtime root, from where it goes to the Recycle Bin when the bin keeps it whole. Nothing is deleted and no project data is written."
+    },
+    {
       "path": "apps/monkeyhub/api/monkeyhub_api/chat/skill_plugins.py",
       "function": "materialize",
       "operations": [
@@ -893,6 +942,17 @@
       "kind": "distribution_build",
       "owner": "tools.release.package_monkeyapps",
       "reason": "Downloads and verifies the fixed embedded runtime only in the caller-selected external cache; an incomplete download is atomically replaced after its checksum matches."
+    },
+    {
+      "path": "tools/release/package_monkeyapps.py",
+      "function": "fetch_embedding_model",
+      "operations": [
+        "mkdir",
+        "open_write"
+      ],
+      "kind": "distribution_build",
+      "owner": "tools.release.package_monkeyapps",
+      "reason": "Downloads the command meaning search's embedding model at the revision the Hub's loader pins, only into the caller-selected external cache; an incomplete download is atomically replaced, and a file whose SHA-256 differs from the pin is refused."
     },
     {
       "path": "tools/release/package_monkeyapps.py",
@@ -1177,6 +1237,17 @@
       "reason": "The Stop hook keeps its own count of how often it held the turn open, beside the loop state the launcher named (<state>.stop.json); nothing else is written and no project is read."
     },
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/tool_output.py",
+      "function": "_kept_line",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "turn_scratch",
+      "owner": "hub.shell",
+      "reason": "Keeps one tool answer too long to hand the Agent whole, as indented JSON, in the chat's scratch/tool-output folder (or the system's temporary folder for an external host) for the Agent to read in parts; never a project, and the scratch is cleared with the chat (S29)."
+    },
+    {
       "path": "services/project-runtime/src/project_runtime/application/state_files.py",
       "function": "seal_model",
       "operations": [
@@ -1247,6 +1318,17 @@
       "kind": "cli_workspace",
       "owner": "tools.project.state_file",
       "reason": "Creates the caller's --work-root and writes workflow.json there, the one-stage workflow handed to freeze_project_stage_workflow.py; the project's own files are written by the repository and the project tools."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/commands/meaning.py",
+      "function": "_keep_vectors",
+      "operations": [
+        "mkdir",
+        "replace"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Keeps the vectors of the commands' names and phrasings, computed once by the local embedding model, at cache/command-vectors/ under the nonproject Hub runtime root, named by the model and a digest of the texts, so the next start reads them instead of computing them again (一句话直接办). No project data is written."
     }
   ],
   "forbidden_layer_imports": [
@@ -1646,9 +1728,10 @@
         "project_runtime.application.artifacts.WORK_COPY_WORKSPACE",
         "project_runtime.application.boards.export_board_pages",
         "project_runtime.application.boards.BoardExportPage",
-        "project_runtime.application.skill_library.installed"
+        "project_runtime.application.skill_library.installed",
+        "project_runtime.application.skill_library.write_package"
       ],
-      "reason": "MonkeyHub starts the Runtime (main), shares its refusals (errors) and embeds its wire shapes (api.dto); it reads a project in process only through the Runtime's declared read API (#519): ProjectBinding and ReadToken, the event log, the runtime status, the document and work-copy readers and the Board page export. Everything else in project_runtime is reached over the Hub's forwarding path, so the Runtime can change its insides without the Hub following them. The skills installed on this machine (skill_library.installed, S-1) are read the same way: the skill folders and what a person allowed are this machine's, not a project's, and listing them reads those folders only and touches no project."
+      "reason": "MonkeyHub starts the Runtime (main), shares its refusals (errors) and embeds its wire shapes (api.dto); it reads a project in process only through the Runtime's declared read API (#519): ProjectBinding and ReadToken, the event log, the runtime status, the document and work-copy readers and the Board page export. Everything else in project_runtime is reached over the Hub's forwarding path, so the Runtime can change its insides without the Hub following them. The skills installed on this machine (skill_library.installed, S-1) are read the same way: the skill folders and what a person allowed are this machine's, not a project's, and listing them reads those folders only and touches no project. Keeping a chat's script as a skill (skill_library.write_package, S23) writes one package into the user's own skill folder, checked as a listed package is, and touches no project either."
     },
     {
       "source": "services/project-runtime/src/project_runtime/binding",
@@ -1694,7 +1777,8 @@
     ],
     "wrappers": [
       "MenuCommand",
-      "ModelToolButton"
+      "ModelToolButton",
+      "AutoRetry"
     ],
     "view_rows": [
       "apps/monkeyhub/web/src/app/AdvancedTools.tsx",
@@ -1719,9 +1803,9 @@
     "baseline": {
       "apps/monkeyhub/web/src/ChatShell.tsx": 3,
       "apps/monkeyhub/web/src/HubMenu.tsx": 1,
-      "apps/monkeyhub/web/src/app/AttentionShell.tsx": 12,
-      "apps/monkeyhub/web/src/features/skills/SkillPermissions.tsx": 3,
-      "apps/monkeyhub/web/src/features/skills/SkillsPanel.tsx": 2,
+      "apps/monkeyhub/web/src/app/AttentionShell.tsx": 11,
+      "apps/monkeyhub/web/src/features/skills/SkillPermissions.tsx": 1,
+      "apps/monkeyhub/web/src/features/skills/SkillsPanel.tsx": 1,
       "apps/monkeyhub/web/src/i18n/BilingualText.tsx": 1,
       "apps/monkeyhub/web/src/main.tsx": 1
     }

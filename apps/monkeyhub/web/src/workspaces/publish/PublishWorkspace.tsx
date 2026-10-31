@@ -2,13 +2,14 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useConnection, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
 import { publicationClient } from "../../api/project-runtime/publication";
 import { asStudioApiError, type StudioApiError } from "../../api/project-runtime/client";
-import { ErrorPanel } from "../../app/ErrorPanel";
+import { ErrorPanel, plainFailureText } from "../../app/ErrorPanel";
 import type { PublicationDto, PublicationElementDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { pageSource, documentKey, type PageSource } from "../monkeyboard/boardScene";
 import { usePreferences } from "../../features/settings/preferences";
 import { createPublicationSaveQueue } from "./publicationSaveQueue";
 import "./publish.css";
 import { MenuCommand, SurfaceMenus } from "../../features/chrome/SurfaceChrome";
+import { AutoRetry } from "../../app/AutoRetry";
 
 // Only failed/in-flight project drafts outlive their surface, in this UI session.
 // The saved document remains exclusively in P036; browser close warns on these drafts.
@@ -41,10 +42,10 @@ function SourceImage({ item, projectId }: { item: PublicationElementDto; project
         const cropped = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("Image preview failed"))));
         if (live) { retainedUrl = URL.createObjectURL(cropped); setUrl(retainedUrl); }
       } finally { image.close(); }
-    })().catch((cause) => { if (live) setError(asStudioApiError(cause).detail); });
+    })().catch((cause) => { if (live) setError(plainFailureText(cause)); });
     return () => { live = false; if (retainedUrl) URL.revokeObjectURL(retainedUrl); };
   }, [studio, projectId, key, retry]);
-  return url ? <img src={url} alt="" draggable={false} /> : <span className="publish-image-status">{error ? <button data-command="view.notice.retry" data-command-arg="layout_image" onPointerDown={(event) => event.stopPropagation()} onClick={() => setRetry((value) => value + 1)} title={error}>↻</button> : "…"}</span>;
+  return url ? <img src={url} alt="" draggable={false} /> : <span className="publish-image-status">{error ? <AutoRetry failure={error} place={`layout_image:${key}`} data-command="view.notice.retry" data-command-arg="layout_image" onPointerDown={(event) => event.stopPropagation()} retry={() => setRetry((value) => value + 1)} title={error}>↻</AutoRetry> : "…"}</span>;
 }
 
 export default function PublishWorkspace({ projectId, active, refreshKey = 0, boardRequest = null, placeRequest = null }: {
@@ -210,7 +211,7 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
     ++readEpoch.current; queue.current?.discard(); queue.current = null; setDirty(false); setDraft(null);
     setError(null); setLayoutHint(""); setSaveError(null); setAttempt((value) => value + 1);
   };
-  if (!draft) return <section className="publish-workspace">{error ? <><ErrorPanel error={error} what="Publish" /><button data-command="view.notice.retry" data-command-arg="layout_load" onClick={() => setAttempt((value) => value + 1)}>{zh ? "重试" : "Retry"}</button></> : <p>{zh ? "正在读取排版…" : "Loading publication…"}</p>}</section>;
+  if (!draft) return <section className="publish-workspace">{error ? <><ErrorPanel error={error} what="Publish" /><AutoRetry failure={error} data-command="view.notice.retry" data-command-arg="layout_load" retry={() => setAttempt((value) => value + 1)}>{zh ? "重试" : "Retry"}</AutoRetry></> : <p>{zh ? "正在读取排版…" : "Loading publication…"}</p>}</section>;
   // A failed queued write also rejects the enclosing import/export operation.
   // Show its retained-draft recovery once, including for locally wrapped errors.
   const separateError = error && (error.code !== saveError?.code || error.status !== saveError?.status || error.detail !== saveError?.detail);
