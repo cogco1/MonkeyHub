@@ -315,6 +315,32 @@
       "reason": "Atomically saves one project's attention cards (what a person was asked to look at and how they handled it) at attention/<runtimeId>.json under the caller-supplied nonproject Hub runtime root. A card names project facts by reference and never writes them; P036 alone holds design outcomes."
     },
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/notes.py",
+      "function": "_write",
+      "operations": [
+        "mkdir",
+        "open_write",
+        "replace",
+        "unlink"
+      ],
+      "kind": "application_conversation",
+      "owner": "hub.shell",
+      "reason": "Atomically saves the architect's standing instructions and the short notes kept for later turns, one JSON file per scope at config/notes/global.json or config/notes/projects/<folder hash>.json under the caller-supplied nonproject Hub runtime root; a removed note stays, marked removed. It never writes a project folder; P036 alone holds design outcomes."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/wakeups.py",
+      "function": "_save",
+      "operations": [
+        "mkdir",
+        "open_write",
+        "replace",
+        "unlink"
+      ],
+      "kind": "application_conversation",
+      "owner": "hub.shell",
+      "reason": "Atomically saves the conversations' wake-ups (chat id, the words each is woken with, its timing and last run) at config/wakeups.json under the caller-supplied nonproject Hub runtime root. A wake-up sends a message through the chat store and never writes a project."
+    },
+    {
       "path": "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
       "function": "merge",
       "operations": [
@@ -848,6 +874,17 @@
       "kind": "application_conversation",
       "owner": "hub.shell",
       "reason": "Saves chat attachment bytes and atomically saves their transcript metadata and native CLI session ids only under the explicit nonproject Hub runtime/chats directory; design project writes still use existing Runtime/P036 interfaces."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/recycle.py",
+      "function": "set_aside",
+      "operations": [
+        "mkdir",
+        "replace"
+      ],
+      "kind": "application_conversation",
+      "owner": "hub.shell",
+      "reason": "Renames a folder the Hub made and no longer needs (an archived chat's scratch) into the day's quarantine folder _TRASH_<YYYYMMDD> under the same nonproject Hub runtime root, from where it goes to the Recycle Bin when the bin keeps it whole. Nothing is deleted and no project data is written."
     },
     {
       "path": "apps/monkeyhub/api/monkeyhub_api/chat/skill_plugins.py",

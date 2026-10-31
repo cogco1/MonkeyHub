@@ -231,3 +231,48 @@ def _new_project(workspace: Path, name: str) -> Path:
         raise HubFailure(422, "PROJECT_CREATE_FAILED",
                          f"The project could not be created here: {exc}") from exc
     return repository.layout.root
+
+
+#: What a folder conversation's projectId starts with. A project id never holds a colon (``require_identifier``),
+#: so a folder can never be taken for a project, nor its grants for a project's.
+FOLDER_PREFIX = "folder:"
+
+
+def is_folder_id(project_id: str | None) -> bool:
+    return isinstance(project_id, str) and project_id.startswith(FOLDER_PREFIX)
+
+
+def _folder(path: str) -> tuple[str, str]:
+    """A plain folder a conversation works in: its id (``folder:`` and a digest of its key) and its spelling.
+
+    Any existing absolute folder except a whole drive and a MonkeyHub project,
+    whose files change only through the Hub (ADR-012): that one is opened as a
+    project instead.
+    """
+    from hashlib import sha256
+
+    from .runtime.workers import project_key
+
+    root = Path(path)
+    if not root.is_absolute() or not root.is_dir():
+        raise HubFailure(422, "CHAT_FOLDER_INVALID", "Choose an existing absolute folder.")
+    resolved = root.resolve()
+    if resolved.parent == resolved:
+        raise HubFailure(422, "CHAT_FOLDER_INVALID", "Choose a folder inside the drive, not the whole drive.")
+    try:
+        FilesystemProjectRepository.open(resolved).read_head()
+    except (OSError, ValueError, RuntimeError):
+        if (resolved / "project.json").exists():
+            # A project that cannot be read is still a project: never a folder an agent may write into.
+            raise HubFailure(409, "CHAT_FOLDER_IS_PROJECT", "This folder holds a MonkeyHub project that could not be "
+                             "read; repair or restore it rather than opening it as a plain folder.") from None
+    else:
+        raise HubFailure(409, "CHAT_FOLDER_IS_PROJECT",
+                         "This folder is a MonkeyHub project; open it as a project, whose files change only through the Hub.")
+    spelling = plain_spelling(str(resolved))
+    return FOLDER_PREFIX + sha256(project_key(spelling).encode("utf-8")).hexdigest()[:16], spelling
+
+
+def _bound(project_id: str, project_dir: str) -> tuple[str, str]:
+    """What a conversation is bound to, read again: ``_project`` for a project, ``_folder`` for a folder."""
+    return _folder(project_dir) if is_folder_id(project_id) else _project(project_dir)

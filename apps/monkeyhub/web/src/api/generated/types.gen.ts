@@ -49,6 +49,40 @@ export type AcceptanceEvidenceDto = {
 };
 
 /**
+ * AfterJob
+ */
+export type AfterJob = {
+    /**
+     * Path
+     *
+     * the job's own read on the project's Studio, e.g. /api/skills/runs/<runId>
+     */
+    path: string;
+};
+
+/**
+ * AgentNoteRequest
+ */
+export type AgentNoteRequest = {
+    /**
+     * Action
+     */
+    action: 'add' | 'remove';
+    /**
+     * Text
+     */
+    text?: string | null;
+    /**
+     * Scope
+     */
+    scope?: 'project' | 'all';
+    /**
+     * Id
+     */
+    id?: string | null;
+};
+
+/**
  * AppStatus
  */
 export type AppStatus = {
@@ -841,6 +875,14 @@ export type ChatCreateRequest = {
      * Title
      */
     title?: string | null;
+    /**
+     * Kind
+     */
+    kind?: 'project' | 'folder' | 'auto';
+    /**
+     * Permissionmode
+     */
+    permissionMode?: 'read' | 'ask' | 'open' | null;
 };
 
 /**
@@ -906,6 +948,14 @@ export type ChatDetail = {
      * Projectdir
      */
     projectDir: string;
+    /**
+     * Kind
+     */
+    kind?: 'project' | 'folder';
+    /**
+     * Permissionmode
+     */
+    permissionMode?: 'read' | 'ask' | 'open' | null;
     /**
      * Title
      */
@@ -1111,6 +1161,47 @@ export type ChatMessage = {
     interjection?: 'pending' | 'delivered' | 'restarted' | 'undelivered' | null;
     markup?: ChatMarkupContext | null;
     changeListApproval?: ChatChangeListApproval | null;
+    origin?: ChatMessageOrigin | null;
+    /**
+     * Parentcallid
+     */
+    parentCallId?: string | null;
+};
+
+/**
+ * ChatMessageOrigin
+ *
+ * Who sent a user-role message that no person typed in this conversation.
+ *
+ * ``schedule``: a wake-up this conversation set (``label`` says when it repeats).
+ * ``chat``: another conversation of this Hub (``chatId``, its ``title``), ``depth``
+ * messages into a chain that no person started.
+ */
+export type ChatMessageOrigin = {
+    /**
+     * Kind
+     */
+    kind: 'schedule' | 'chat';
+    /**
+     * Label
+     */
+    label?: string;
+    /**
+     * Scheduleid
+     */
+    scheduleId?: string | null;
+    /**
+     * Chatid
+     */
+    chatId?: string | null;
+    /**
+     * Title
+     */
+    title?: string | null;
+    /**
+     * Depth
+     */
+    depth?: number;
 };
 
 /**
@@ -1141,6 +1232,18 @@ export type ChatPermission = {
      * Options
      */
     options: Array<ChatPermissionOption>;
+};
+
+/**
+ * ChatPermissionModeRequest
+ *
+ * What this conversation's next turns may do unasked.
+ */
+export type ChatPermissionModeRequest = {
+    /**
+     * Permissionmode
+     */
+    permissionMode: 'read' | 'ask' | 'open';
 };
 
 /**
@@ -1354,6 +1457,10 @@ export type ChatProject = {
      */
     chatCount: number;
     /**
+     * Kind
+     */
+    kind?: 'project' | 'folder';
+    /**
      * Version
      */
     version?: number | null;
@@ -1426,6 +1533,42 @@ export type ChatProvider = {
 };
 
 /**
+ * ChatRelayRequest
+ */
+export type ChatRelayRequest = {
+    /**
+     * To
+     *
+     * the receiving conversation's chatId
+     */
+    to: string;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * ChatRelayResult
+ */
+export type ChatRelayResult = {
+    /**
+     * Chatid
+     */
+    chatId: string;
+    /**
+     * Messageid
+     */
+    messageId: string | null;
+    /**
+     * Started
+     *
+     * false when the receiving conversation was running and takes it as an interjection
+     */
+    started: boolean;
+};
+
+/**
  * ChatRenderContext
  *
  * The images one message discusses, by exact registered page and the role the user chose (#253).
@@ -1441,6 +1584,66 @@ export type ChatRenderContext = {
      * References
      */
     references?: Array<ChatDocumentRef>;
+};
+
+/**
+ * ChatSearchHit
+ */
+export type ChatSearchHit = {
+    /**
+     * Chatid
+     */
+    chatId: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Archived
+     */
+    archived: boolean;
+    /**
+     * Updatedat
+     */
+    updatedAt: string;
+    /**
+     * Matches
+     */
+    matches?: Array<ChatSearchMatch>;
+};
+
+/**
+ * ChatSearchMatch
+ */
+export type ChatSearchMatch = {
+    /**
+     * Messageid
+     */
+    messageId: string;
+    /**
+     * Role
+     */
+    role: string;
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    /**
+     * Snippet
+     */
+    snippet: string;
 };
 
 /**
@@ -1627,6 +1830,14 @@ export type ChatSummary = {
      * Projectdir
      */
     projectDir: string;
+    /**
+     * Kind
+     */
+    kind?: 'project' | 'folder';
+    /**
+     * Permissionmode
+     */
+    permissionMode?: 'read' | 'ask' | 'open' | null;
     /**
      * Title
      */
@@ -2212,6 +2423,22 @@ export type HubRuntimeDto = {
 };
 
 /**
+ * InstructionsRequest
+ */
+export type InstructionsRequest = {
+    /**
+     * Projectdir
+     *
+     * the project folder; omitted, every conversation's scope
+     */
+    projectDir?: string | null;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
  * JobDto
  *
  * The wire form of ``GET /api/jobs/{id}``.
@@ -2284,6 +2511,104 @@ export type JobDto = {
 };
 
 /**
+ * McpServerView
+ *
+ * One server as the settings page lists it: never its environment's or headers' values.
+ */
+export type McpServerView = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Source
+     */
+    source: 'hub' | 'claude';
+    /**
+     * Transport
+     */
+    transport: 'stdio' | 'http' | 'sse';
+    /**
+     * Target
+     *
+     * the command it runs, or the URL it reaches
+     */
+    target: string;
+    /**
+     * Command
+     */
+    command?: string | null;
+    /**
+     * Args
+     */
+    args?: Array<string>;
+    /**
+     * Url
+     */
+    url?: string | null;
+    /**
+     * Envkeys
+     */
+    envKeys?: Array<string>;
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+};
+
+/**
+ * McpServersUpdate
+ */
+export type McpServersUpdate = {
+    /**
+     * Fromclaude
+     */
+    fromClaude?: boolean | null;
+    /**
+     * Disabled
+     */
+    disabled?: Array<string> | null;
+    /**
+     * Servers
+     */
+    servers?: {
+        [key: string]: {
+            [key: string]: unknown;
+        };
+    } | null;
+    /**
+     * Add
+     */
+    add?: {
+        [key: string]: {
+            [key: string]: unknown;
+        };
+    } | null;
+    /**
+     * Remove
+     */
+    remove?: Array<string> | null;
+};
+
+/**
+ * McpServersView
+ */
+export type McpServersView = {
+    /**
+     * Fromclaude
+     */
+    fromClaude: boolean;
+    /**
+     * Servers
+     */
+    servers: Array<McpServerView>;
+    /**
+     * Claudeproblem
+     */
+    claudeProblem?: string | null;
+};
+
+/**
  * MeaningHitDto
  */
 export type MeaningHitDto = {
@@ -2299,6 +2624,36 @@ export type MeaningHitDto = {
      * Text
      */
     text: string;
+};
+
+/**
+ * MemoryNote
+ */
+export type MemoryNote = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    /**
+     * Source
+     */
+    source: 'agent' | 'person';
+    /**
+     * Chatid
+     */
+    chatId?: string | null;
+    /**
+     * Removedat
+     */
+    removedAt?: string | null;
 };
 
 /**
@@ -2363,6 +2718,68 @@ export type ModelingInitializeRequestDto = {
      * Projectid
      */
     projectId: string;
+};
+
+/**
+ * NoteChangeRequest
+ */
+export type NoteChangeRequest = {
+    /**
+     * Projectdir
+     */
+    projectDir?: string | null;
+};
+
+/**
+ * NoteRequest
+ */
+export type NoteRequest = {
+    /**
+     * Projectdir
+     */
+    projectDir?: string | null;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * NotesScope
+ *
+ * One scope's instructions and its notes, removed ones included.
+ */
+export type NotesScope = {
+    /**
+     * Scope
+     */
+    scope: 'global' | 'project';
+    /**
+     * Projectdir
+     */
+    projectDir?: string | null;
+    /**
+     * Instructions
+     */
+    instructions?: string;
+    /**
+     * Memories
+     */
+    memories?: Array<MemoryNote>;
+    /**
+     * Updatedat
+     */
+    updatedAt?: string | null;
+};
+
+/**
+ * NotesView
+ *
+ * What the Notes page shows: every conversation's scope, and this project's when one is named.
+ */
+export type NotesView = {
+    global: NotesScope;
+    project?: NotesScope | null;
 };
 
 /**
@@ -3290,7 +3707,7 @@ export type ToolGrantDto = {
     /**
      * Action
      */
-    action: 'run' | 'network' | 'hub';
+    action: 'run' | 'network' | 'hub' | 'edit';
     /**
      * Grantedat
      */
@@ -3299,6 +3716,10 @@ export type ToolGrantDto = {
      * Ref
      */
     ref?: string | null;
+    /**
+     * Place
+     */
+    place?: string | null;
     /**
      * Revokedat
      */
@@ -3541,6 +3962,121 @@ export type ValidationError = {
     ctx?: {
         [key: string]: unknown;
     };
+};
+
+/**
+ * Wakeup
+ */
+export type Wakeup = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Chatid
+     */
+    chatId: string;
+    /**
+     * Prompt
+     */
+    prompt: string;
+    /**
+     * Kind
+     */
+    kind: 'once' | 'every' | 'daily' | 'job';
+    /**
+     * Everyminutes
+     */
+    everyMinutes?: number | null;
+    /**
+     * Dailyat
+     */
+    dailyAt?: string | null;
+    /**
+     * Weekdays
+     */
+    weekdays?: Array<number> | null;
+    /**
+     * Jobpath
+     */
+    jobPath?: string | null;
+    /**
+     * Nextat
+     */
+    nextAt?: string | null;
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    /**
+     * Createdby
+     */
+    createdBy: 'agent' | 'person';
+    /**
+     * Status
+     */
+    status?: 'active' | 'done' | 'cancelled' | 'paused' | 'failed';
+    /**
+     * Lastrunat
+     */
+    lastRunAt?: string | null;
+    /**
+     * Lasterror
+     */
+    lastError?: string | null;
+    /**
+     * Runs
+     */
+    runs?: number;
+    /**
+     * Attempts
+     */
+    attempts?: number;
+    /**
+     * Label
+     */
+    label?: string;
+};
+
+/**
+ * WakeupRequest
+ *
+ * When to wake the conversation, and with what words. Exactly one of the four timings.
+ */
+export type WakeupRequest = {
+    /**
+     * Prompt
+     *
+     * what the conversation is woken to do
+     */
+    prompt: string;
+    /**
+     * Inminutes
+     */
+    inMinutes?: number | null;
+    /**
+     * At
+     *
+     * an ISO date-time; without an offset it is this computer's local time
+     */
+    at?: string | null;
+    /**
+     * Everyminutes
+     */
+    everyMinutes?: number | null;
+    /**
+     * Dailyat
+     *
+     * HH:MM local time
+     */
+    dailyAt?: string | null;
+    /**
+     * Weekdays
+     *
+     * with dailyAt: 0 Monday … 6 Sunday; omitted, every day
+     */
+    weekdays?: Array<number> | null;
+    afterJob?: AfterJob | null;
 };
 
 /**
@@ -5298,6 +5834,98 @@ export type KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostResponses 
 
 export type KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostResponse = KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostResponses[keyof KeepSkillRunApiChatSessionsSessionIdSkillRunsRunIdKeepPostResponses];
 
+export type ChatMcpServersApiChatMcpServersGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/chat/mcp-servers';
+};
+
+export type ChatMcpServersApiChatMcpServersGetErrors = {
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+};
+
+export type ChatMcpServersApiChatMcpServersGetError = ChatMcpServersApiChatMcpServersGetErrors[keyof ChatMcpServersApiChatMcpServersGetErrors];
+
+export type ChatMcpServersApiChatMcpServersGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: McpServersView;
+};
+
+export type ChatMcpServersApiChatMcpServersGetResponse = ChatMcpServersApiChatMcpServersGetResponses[keyof ChatMcpServersApiChatMcpServersGetResponses];
+
+export type UpdateChatMcpServersApiChatMcpServersPutData = {
+    body: McpServersUpdate;
+    path?: never;
+    query?: never;
+    url: '/api/chat/mcp-servers';
+};
+
+export type UpdateChatMcpServersApiChatMcpServersPutErrors = {
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+};
+
+export type UpdateChatMcpServersApiChatMcpServersPutError = UpdateChatMcpServersApiChatMcpServersPutErrors[keyof UpdateChatMcpServersApiChatMcpServersPutErrors];
+
+export type UpdateChatMcpServersApiChatMcpServersPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: McpServersView;
+};
+
+export type UpdateChatMcpServersApiChatMcpServersPutResponse = UpdateChatMcpServersApiChatMcpServersPutResponses[keyof UpdateChatMcpServersApiChatMcpServersPutResponses];
+
+export type ChatPermissionModeApiChatSessionsSessionIdPermissionModePutData = {
+    body: ChatPermissionModeRequest;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/permission-mode';
+};
+
+export type ChatPermissionModeApiChatSessionsSessionIdPermissionModePutErrors = {
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+};
+
+export type ChatPermissionModeApiChatSessionsSessionIdPermissionModePutError = ChatPermissionModeApiChatSessionsSessionIdPermissionModePutErrors[keyof ChatPermissionModeApiChatSessionsSessionIdPermissionModePutErrors];
+
+export type ChatPermissionModeApiChatSessionsSessionIdPermissionModePutResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatDetail;
+};
+
+export type ChatPermissionModeApiChatSessionsSessionIdPermissionModePutResponse = ChatPermissionModeApiChatSessionsSessionIdPermissionModePutResponses[keyof ChatPermissionModeApiChatSessionsSessionIdPermissionModePutResponses];
+
 export type InspectComputerApiComputerInspectPostData = {
     body: ComputerInspectRequest;
     path?: never;
@@ -6020,3 +6648,554 @@ export type CommandMeaningApiCommandsMeaningPostResponses = {
 };
 
 export type CommandMeaningApiCommandsMeaningPostResponse = CommandMeaningApiCommandsMeaningPostResponses[keyof CommandMeaningApiCommandsMeaningPostResponses];
+
+export type ReadNotesApiNotesGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Projectdir
+         */
+        projectDir?: string | null;
+    };
+    url: '/api/notes';
+};
+
+export type ReadNotesApiNotesGetErrors = {
+    /**
+     * Not Found
+     */
+    404: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+    /**
+     * Service Unavailable
+     */
+    503: HubError;
+};
+
+export type ReadNotesApiNotesGetError = ReadNotesApiNotesGetErrors[keyof ReadNotesApiNotesGetErrors];
+
+export type ReadNotesApiNotesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: NotesView;
+};
+
+export type ReadNotesApiNotesGetResponse = ReadNotesApiNotesGetResponses[keyof ReadNotesApiNotesGetResponses];
+
+export type SaveInstructionsApiNotesInstructionsPutData = {
+    body: InstructionsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/notes/instructions';
+};
+
+export type SaveInstructionsApiNotesInstructionsPutErrors = {
+    /**
+     * Not Found
+     */
+    404: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+    /**
+     * Service Unavailable
+     */
+    503: HubError;
+};
+
+export type SaveInstructionsApiNotesInstructionsPutError = SaveInstructionsApiNotesInstructionsPutErrors[keyof SaveInstructionsApiNotesInstructionsPutErrors];
+
+export type SaveInstructionsApiNotesInstructionsPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: NotesScope;
+};
+
+export type SaveInstructionsApiNotesInstructionsPutResponse = SaveInstructionsApiNotesInstructionsPutResponses[keyof SaveInstructionsApiNotesInstructionsPutResponses];
+
+export type AddMemoryApiNotesMemoriesPostData = {
+    body: NoteRequest;
+    path?: never;
+    query?: never;
+    url: '/api/notes/memories';
+};
+
+export type AddMemoryApiNotesMemoriesPostErrors = {
+    /**
+     * Not Found
+     */
+    404: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+    /**
+     * Service Unavailable
+     */
+    503: HubError;
+};
+
+export type AddMemoryApiNotesMemoriesPostError = AddMemoryApiNotesMemoriesPostErrors[keyof AddMemoryApiNotesMemoriesPostErrors];
+
+export type AddMemoryApiNotesMemoriesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: MemoryNote;
+};
+
+export type AddMemoryApiNotesMemoriesPostResponse = AddMemoryApiNotesMemoriesPostResponses[keyof AddMemoryApiNotesMemoriesPostResponses];
+
+export type RemoveMemoryApiNotesMemoriesNoteIdRemovePostData = {
+    body: NoteChangeRequest;
+    path: {
+        /**
+         * Note Id
+         */
+        note_id: string;
+    };
+    query?: never;
+    url: '/api/notes/memories/{note_id}/remove';
+};
+
+export type RemoveMemoryApiNotesMemoriesNoteIdRemovePostErrors = {
+    /**
+     * Not Found
+     */
+    404: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+    /**
+     * Service Unavailable
+     */
+    503: HubError;
+};
+
+export type RemoveMemoryApiNotesMemoriesNoteIdRemovePostError = RemoveMemoryApiNotesMemoriesNoteIdRemovePostErrors[keyof RemoveMemoryApiNotesMemoriesNoteIdRemovePostErrors];
+
+export type RemoveMemoryApiNotesMemoriesNoteIdRemovePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: NotesScope;
+};
+
+export type RemoveMemoryApiNotesMemoriesNoteIdRemovePostResponse = RemoveMemoryApiNotesMemoriesNoteIdRemovePostResponses[keyof RemoveMemoryApiNotesMemoriesNoteIdRemovePostResponses];
+
+export type RestoreMemoryApiNotesMemoriesNoteIdRestorePostData = {
+    body: NoteChangeRequest;
+    path: {
+        /**
+         * Note Id
+         */
+        note_id: string;
+    };
+    query?: never;
+    url: '/api/notes/memories/{note_id}/restore';
+};
+
+export type RestoreMemoryApiNotesMemoriesNoteIdRestorePostErrors = {
+    /**
+     * Not Found
+     */
+    404: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+    /**
+     * Service Unavailable
+     */
+    503: HubError;
+};
+
+export type RestoreMemoryApiNotesMemoriesNoteIdRestorePostError = RestoreMemoryApiNotesMemoriesNoteIdRestorePostErrors[keyof RestoreMemoryApiNotesMemoriesNoteIdRestorePostErrors];
+
+export type RestoreMemoryApiNotesMemoriesNoteIdRestorePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: NotesScope;
+};
+
+export type RestoreMemoryApiNotesMemoriesNoteIdRestorePostResponse = RestoreMemoryApiNotesMemoriesNoteIdRestorePostResponses[keyof RestoreMemoryApiNotesMemoriesNoteIdRestorePostResponses];
+
+export type SearchChatsApiChatSearchGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Q
+         */
+        q?: string;
+        /**
+         * Archived
+         */
+        archived?: boolean | null;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/chat/search';
+};
+
+export type SearchChatsApiChatSearchGetErrors = {
+    /**
+     * Forbidden
+     */
+    403: HubError;
+    /**
+     * Not Found
+     */
+    404: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+    /**
+     * Service Unavailable
+     */
+    503: HubError;
+};
+
+export type SearchChatsApiChatSearchGetError = SearchChatsApiChatSearchGetErrors[keyof SearchChatsApiChatSearchGetErrors];
+
+export type SearchChatsApiChatSearchGetResponses = {
+    /**
+     * Response Search Chats Api Chat Search Get
+     *
+     * Successful Response
+     */
+    200: Array<ChatSearchHit>;
+};
+
+export type SearchChatsApiChatSearchGetResponse = SearchChatsApiChatSearchGetResponses[keyof SearchChatsApiChatSearchGetResponses];
+
+export type ReadRecentApiChatSessionsSessionIdRecentGetData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/chat/sessions/{session_id}/recent';
+};
+
+export type ReadRecentApiChatSessionsSessionIdRecentGetErrors = {
+    /**
+     * Forbidden
+     */
+    403: HubError;
+    /**
+     * Not Found
+     */
+    404: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+    /**
+     * Service Unavailable
+     */
+    503: HubError;
+};
+
+export type ReadRecentApiChatSessionsSessionIdRecentGetError = ReadRecentApiChatSessionsSessionIdRecentGetErrors[keyof ReadRecentApiChatSessionsSessionIdRecentGetErrors];
+
+export type ReadRecentApiChatSessionsSessionIdRecentGetResponses = {
+    /**
+     * Response Read Recent Api Chat Sessions  Session Id  Recent Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReadRecentApiChatSessionsSessionIdRecentGetResponse = ReadRecentApiChatSessionsSessionIdRecentGetResponses[keyof ReadRecentApiChatSessionsSessionIdRecentGetResponses];
+
+export type RelayMessageApiChatSessionsSessionIdRelayPostData = {
+    body: ChatRelayRequest;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/relay';
+};
+
+export type RelayMessageApiChatSessionsSessionIdRelayPostErrors = {
+    /**
+     * Forbidden
+     */
+    403: HubError;
+    /**
+     * Not Found
+     */
+    404: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+    /**
+     * Service Unavailable
+     */
+    503: HubError;
+};
+
+export type RelayMessageApiChatSessionsSessionIdRelayPostError = RelayMessageApiChatSessionsSessionIdRelayPostErrors[keyof RelayMessageApiChatSessionsSessionIdRelayPostErrors];
+
+export type RelayMessageApiChatSessionsSessionIdRelayPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatRelayResult;
+};
+
+export type RelayMessageApiChatSessionsSessionIdRelayPostResponse = RelayMessageApiChatSessionsSessionIdRelayPostResponses[keyof RelayMessageApiChatSessionsSessionIdRelayPostResponses];
+
+export type NoteApiChatSessionsSessionIdNotesPostData = {
+    body: AgentNoteRequest;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/notes';
+};
+
+export type NoteApiChatSessionsSessionIdNotesPostErrors = {
+    /**
+     * Forbidden
+     */
+    403: HubError;
+    /**
+     * Not Found
+     */
+    404: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+    /**
+     * Service Unavailable
+     */
+    503: HubError;
+};
+
+export type NoteApiChatSessionsSessionIdNotesPostError = NoteApiChatSessionsSessionIdNotesPostErrors[keyof NoteApiChatSessionsSessionIdNotesPostErrors];
+
+export type NoteApiChatSessionsSessionIdNotesPostResponses = {
+    /**
+     * Response Note Api Chat Sessions  Session Id  Notes Post
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type NoteApiChatSessionsSessionIdNotesPostResponse = NoteApiChatSessionsSessionIdNotesPostResponses[keyof NoteApiChatSessionsSessionIdNotesPostResponses];
+
+export type ReadWakeupsApiChatSessionsSessionIdWakeupsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/wakeups';
+};
+
+export type ReadWakeupsApiChatSessionsSessionIdWakeupsGetErrors = {
+    /**
+     * Forbidden
+     */
+    403: HubError;
+    /**
+     * Not Found
+     */
+    404: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+    /**
+     * Service Unavailable
+     */
+    503: HubError;
+};
+
+export type ReadWakeupsApiChatSessionsSessionIdWakeupsGetError = ReadWakeupsApiChatSessionsSessionIdWakeupsGetErrors[keyof ReadWakeupsApiChatSessionsSessionIdWakeupsGetErrors];
+
+export type ReadWakeupsApiChatSessionsSessionIdWakeupsGetResponses = {
+    /**
+     * Response Read Wakeups Api Chat Sessions  Session Id  Wakeups Get
+     *
+     * Successful Response
+     */
+    200: Array<Wakeup>;
+};
+
+export type ReadWakeupsApiChatSessionsSessionIdWakeupsGetResponse = ReadWakeupsApiChatSessionsSessionIdWakeupsGetResponses[keyof ReadWakeupsApiChatSessionsSessionIdWakeupsGetResponses];
+
+export type AddWakeupApiChatSessionsSessionIdWakeupsPostData = {
+    body: WakeupRequest;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/wakeups';
+};
+
+export type AddWakeupApiChatSessionsSessionIdWakeupsPostErrors = {
+    /**
+     * Forbidden
+     */
+    403: HubError;
+    /**
+     * Not Found
+     */
+    404: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+    /**
+     * Service Unavailable
+     */
+    503: HubError;
+};
+
+export type AddWakeupApiChatSessionsSessionIdWakeupsPostError = AddWakeupApiChatSessionsSessionIdWakeupsPostErrors[keyof AddWakeupApiChatSessionsSessionIdWakeupsPostErrors];
+
+export type AddWakeupApiChatSessionsSessionIdWakeupsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: Wakeup;
+};
+
+export type AddWakeupApiChatSessionsSessionIdWakeupsPostResponse = AddWakeupApiChatSessionsSessionIdWakeupsPostResponses[keyof AddWakeupApiChatSessionsSessionIdWakeupsPostResponses];
+
+export type CancelWakeupApiChatSessionsSessionIdWakeupsWakeupIdCancelPostData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+        /**
+         * Wakeup Id
+         */
+        wakeup_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/wakeups/{wakeup_id}/cancel';
+};
+
+export type CancelWakeupApiChatSessionsSessionIdWakeupsWakeupIdCancelPostErrors = {
+    /**
+     * Forbidden
+     */
+    403: HubError;
+    /**
+     * Not Found
+     */
+    404: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+    /**
+     * Service Unavailable
+     */
+    503: HubError;
+};
+
+export type CancelWakeupApiChatSessionsSessionIdWakeupsWakeupIdCancelPostError = CancelWakeupApiChatSessionsSessionIdWakeupsWakeupIdCancelPostErrors[keyof CancelWakeupApiChatSessionsSessionIdWakeupsWakeupIdCancelPostErrors];
+
+export type CancelWakeupApiChatSessionsSessionIdWakeupsWakeupIdCancelPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: Wakeup;
+};
+
+export type CancelWakeupApiChatSessionsSessionIdWakeupsWakeupIdCancelPostResponse = CancelWakeupApiChatSessionsSessionIdWakeupsWakeupIdCancelPostResponses[keyof CancelWakeupApiChatSessionsSessionIdWakeupsWakeupIdCancelPostResponses];

@@ -383,7 +383,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         session = transport._request_json(hub, f"/api/chat/sessions/{projects._identifier(chat_id)}")
         if session.get("status") != "running":
             raise preparation._not_running(session)
-        if projects._project(session["projectDir"]) != (session["projectId"], session["projectDir"]):
+        if projects._bound(session["projectId"], session["projectDir"]) != (session["projectId"], session["projectDir"]):
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The conversation's project identity changed.")
         return transport._request_json(hub, f"/api/chat/sessions/{chat_id}/attachments/{attachment_id}/read?"
                                        + urlencode({"offset": offset, "limit": limit, "page": page}))

@@ -25,7 +25,7 @@ import { ChatSuggestionCard } from "./ChatSuggestionCard";
 import { findSource, type PageSource } from "./workspaces/monkeyboard/boardScene";
 const ProjectWorkspace = lazy(() => import("./app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
-import { clock, currentStep, describeCall, describeStep, dismissible, operationStep, rawDetail, rawLine, resultCandidates, stepText, turnsOf, unfinishedOperations, unrecoverable, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
+import { clock, currentStep, describeCall, describeStep, dismissible, operationStep, rawDetail, rawLine, resultCandidates, stepText, stepTree, turnsOf, unfinishedOperations, unrecoverable, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
 import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } from "./monitorData";
 import { ACTIVE_OPERATIONS, activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
@@ -39,6 +39,8 @@ import { CardRuntimes, ComparisonDecision } from "./notifications/cards/Attentio
 import { answersKey } from "./notifications/cards/cardText";
 import { chooseShell, useShellLayout } from "./app/shellLayout";
 import { AttentionShell, RECENT_CONVERSATIONS, type CenterView, type ShellProject } from "./app/AttentionShell";
+import { NotesPanel } from "./app/NotesPanel";
+import { WakeupStrip } from "./app/WakeupStrip";
 import { useT } from "./i18n/useT";
 import { attentionConversation, queueSnapshot } from "./notifications/queue";
 import { useNoticeRegion } from "./notifications/regions";
@@ -69,7 +71,7 @@ const menuWords = {
   "zh-CN": {
     menus: "菜单", back: "后退到上一个对话", forward: "前进到下一个对话",
     file: "文件", edit: "编辑", view: "视图", help: "帮助",
-    newChat: "新对话", newProject: "新建项目…", addProject: "添加已有项目…", exportArchive: "导出项目归档…", restoreArchive: "恢复项目归档…", settings: "设置…",
+    newChat: "新对话", newProject: "新建项目…", addProject: "打开文件夹或项目…", exportArchive: "导出项目归档…", restoreArchive: "恢复项目归档…", settings: "设置…",
     undo: "撤销", redo: "重做", cut: "剪切", copy: "复制", paste: "粘贴", selectAll: "全选",
     sidebar: "侧栏", tools: "工具面板", theme: "主题", system: "跟随系统", dark: "深色", light: "浅色",
     uiStyle: "界面风格", classic: "经典", quiet: "静默仪表", titleblock: "图签", night: "夜航",
@@ -79,7 +81,7 @@ const menuWords = {
   en: {
     menus: "Menus", back: "Back to the previous conversation", forward: "Forward to the next conversation",
     file: "File", edit: "Edit", view: "View", help: "Help",
-    newChat: "New chat", newProject: "New project…", addProject: "Add existing project…", exportArchive: "Export project archive…", restoreArchive: "Restore project archive…", settings: "Settings…",
+    newChat: "New chat", newProject: "New project…", addProject: "Open a folder or project…", exportArchive: "Export project archive…", restoreArchive: "Restore project archive…", settings: "Settings…",
     undo: "Undo", redo: "Redo", cut: "Cut", copy: "Copy", paste: "Paste", selectAll: "Select all",
     sidebar: "Sidebar", tools: "Tools panel", theme: "Theme", system: "Match system", dark: "Dark", light: "Light",
     uiStyle: "Interface style", classic: "Classic", quiet: "Quiet instrument", titleblock: "Title block", night: "Night flight",
@@ -516,7 +518,7 @@ function ComposerMenu({ label, disabled, disabledReason, items }: { label: strin
 
 type ChatWords = (typeof words)[keyof typeof words];
 const processWords = (t: ChatWords): ProcessWords => ({ steps: t.processStep, prepare: t.processPrepare,
-  webSearch: t.processWebSearch, desktop: t.processDesktop, permission: t.processPermission });
+  webSearch: t.processWebSearch, desktop: t.processDesktop, permission: t.processPermission, subagent: t.processSubagent });
 /** The wall clock while `active`; a finished turn needs no ticking. */
 /** Under this, a wait shows only that it runs; past it, how far along it is (08 加载分档). */
 const LONG_WAIT_SECONDS = 10;
@@ -563,9 +565,15 @@ function ProcessRow({ turn, running, open, t, onToggle }: {
       <svg className="chat-process__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
     </button>
     {open && <div className="chat-process__body" id={body}>
-      <ol className="chat-process__steps">{turn.steps.map((step) => <li key={step.id} data-status={step.status}>
+      <ol className="chat-process__steps">{stepTree(turn.steps).map(({ step, children }) => <li key={step.id} data-status={step.status}>
         <span className="chat-process__mark" aria-hidden="true">{stepMark(step.status)}</span>
-        <span>{stepText(describeStep(step), names)}{step.status === "failed" && <span className="chat-process__step-failed"> · {t.processStepFailed}</span>}</span>
+        <span>{stepText(describeStep(step), names)}{step.status === "failed" && <span className="chat-process__step-failed"> · {t.processStepFailed}</span>}
+          {/* A subagent's own calls fold under the call that started it (gap 5). */}
+          {children.length > 0 && <details className="chat-process__sub"><summary>{t.processSubagentSteps(children.length)}</summary>
+            <ol className="chat-process__steps">{children.map((child) => <li key={child.id} data-status={child.status}>
+              <span className="chat-process__mark" aria-hidden="true">{stepMark(child.status)}</span>
+              <span>{stepText(describeStep(child), names)}{child.status === "failed" && <span className="chat-process__step-failed"> · {t.processStepFailed}</span>}</span>
+            </li>)}</ol></details>}</span>
       </li>)}</ol>
       <DeveloperOnly><ChatCardDetails className="chat-process__technical" summary={t.processTechnical}>
         <ol>{turn.steps.map((step) => <li key={step.id}>
@@ -603,6 +611,9 @@ function SurfaceSkeleton({ surface, name, step, startedAt = null, words, onCance
     </div>
   </div>;
 }
+
+/** What a conversation's turns may do unasked (gap 4). */
+type ChatPermissionMode = NonNullable<ChatDetail["permissionMode"]>;
 
 export function ChatShell({ preferences, settings, settingsDirty = false, configuredProject, defaults, workspace, apps, onRuntimeEvent, onAppearance }: Props) {
   const runtimeEventRef = useRef(onRuntimeEvent);
@@ -750,6 +761,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // The model this conversation will use next. An existing chat keeps its own;
   // a new one starts from the saved default until it is sent.
   const [draftModel, setDraftModel] = useState<string | null>(defaults.model);
+  // What a new conversation's turns may do unasked, chosen before it exists; null takes the Hub's default for its kind.
+  const [draftPermission, setDraftPermission] = useState<ChatPermissionMode | null>(null);
+  const [permissionModeBusy, setPermissionModeBusy] = useState(false);
   const [customModel, setCustomModel] = useState<string | null>(null);
   const [modelBusy, setModelBusy] = useState(false);
   const [permissionBusy, setPermissionBusy] = useState<string | null>(null);
@@ -900,6 +914,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // The connection as the Hub named it, short enough to read in a sentence.
   const connectionName = (availableProvider?.label ?? connection.provider ?? "").replace(/\s+CLI$/, "") || null;
   const chosenModel = chat?.id === chatId ? chat.model ?? null : draftModel;
+  // What each did before levels: a folder asks, Codex asks, a project's Claude turn may do everything (as the Hub decides).
+  const chosenPermission: ChatPermissionMode = chat?.id === chatId
+    ? chat.permissionMode ?? (chat.kind === "folder" || chat.provider === "codex" ? "ask" : "open")
+    : draftPermission ?? (project?.kind === "folder" || connection.provider === "codex" ? "ask" : "open");
   // What this connection actually lists, plus whatever is already chosen: a
   // hand-entered id stays selectable even while a catalogue is unreadable.
   const modelOptions = [...new Set([...(availableProvider?.models ?? []), ...(chosenModel ? [chosenModel] : [])])];
@@ -1271,7 +1289,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       if (current && (current.archived || current.sourceSessionId)) current = null;
       if (current?.status === "running") throw new HandToAiError("CONVERSATION_BUSY", "A reply is running.");
       if (!current) {
-        const body: ChatCreateRequest = { projectDir: projectTarget, provider: usableDefaults.provider, model: usableProvider ? null : draftModel };
+        const body: ChatCreateRequest = { projectDir: projectTarget, provider: usableDefaults.provider, model: usableProvider ? null : draftModel,
+          kind: projects.find((item) => item.projectDir === projectTarget)?.kind ?? "project", permissionMode: draftPermission };
         current = await request<ChatDetail>("/api/chat/sessions", body);
       }
       await ensureProject(projectTarget, current.projectId);
@@ -1521,7 +1540,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       const reading = routed ?? chatId;
       let current = chat?.id === reading ? chat : reading ? await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(reading)}`) : null;
       if (!current) {
-        const body: ChatCreateRequest = { projectDir: target, provider: usableDefaults.provider, model: usableProvider ? null : draftModel };
+        const body: ChatCreateRequest = { projectDir: target, provider: usableDefaults.provider, model: usableProvider ? null : draftModel,
+          kind: project?.kind ?? "project", permissionMode: draftPermission };
         current = await request<ChatDetail>("/api/chat/sessions", body);
         setDrafts((value) => ({ ...value, [key]: "", [current!.id]: value[key] || content }));
         setDraftAttachments((value) => ({ ...value, [key]: [], [current!.id]: value[key] ?? files }));
@@ -1530,7 +1550,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         if (selection.current.projectDir === target && selection.current.chatId === chatId) { setChatId(current.id); setChat(current); setFreshChat(false); }
       }
       if (current.archived) { setChat(current); return; }
-      await ensureProject(target, current.projectId);
+      // A plain folder has no project service to open.
+      if (current.kind !== "folder") await ensureProject(target, current.projectId);
       const body: ChatPostRequest = { content, projectId: current.projectId };
       // #253: an image discussion names its own exact pages and needs no design state; only a
       // New topic the architect chose still starts from the editing state.
@@ -1619,6 +1640,15 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     catch (cause) { setError(asFailure(cause)); }
     finally { setModelBusy(false); }
   };
+  /** Change what this conversation's next turns may do unasked: read only, ask first, or anything. */
+  const choosePermissionMode = async (value: ChatPermissionMode) => {
+    if (!chatId || chat?.id !== chatId) { setDraftPermission(value); return; }
+    if (running || archived || permissionModeBusy || value === chosenPermission) return;
+    setPermissionModeBusy(true); setError(null);
+    try { setChat(await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(chatId)}/permission-mode`, { permissionMode: value }, "PUT")); }
+    catch (cause) { setError(asFailure(cause)); }
+    finally { setPermissionModeBusy(false); }
+  };
   const stop = async () => {
     // A workspace being opened (a reload reopens the saved ones) holds the lock too; stopping the turn does not wait for it.
     if (!chatId || (actionLock.current && !openingRef.current)) return;
@@ -1695,7 +1725,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (actionLock.current || !path.trim()) return;
     actionLock.current = true; setBusy(true); setDialogError(null);
     try {
-      const body: ChatCreateRequest = { projectDir: path.trim().replace(/^"(.*)"$/, "$1"), provider: usableDefaults.provider, model: usableDefaults.model };
+      // One "open a folder": a MonkeyHub project opens as a project, any other folder as a conversation in that folder.
+      const body: ChatCreateRequest = { projectDir: path.trim().replace(/^"(.*)"$/, "$1"), provider: usableDefaults.provider, model: usableDefaults.model, kind: "auto" };
       const created = await request<ChatDetail>("/api/chat/sessions", body);
       selectChat(created); setChat(created); addDialog.current?.close(); setFolder(""); await refresh();
     } catch (cause) { setDialogError(asFailure(cause)); }
@@ -2101,6 +2132,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const messageEntry = (message: ChatMessage) => <article className={`chat-message chat-message--${message.role}`} key={message.id}>
     {message.role === "user" && message.contextMode === "project" && <p className="chat-muted">{t.contextProjectMessage}</p>}
     {message.role === "user" && message.contextMode === "stage" && <p className="chat-muted">{t.contextStageMessage}: {message.confirmedStageLabel}</p>}
+    {/* No person typed it here: a wake-up this conversation set, or another conversation, sent it. */}
+    {message.role === "user" && message.origin && <p className="chat-origin" data-origin={message.origin.kind}>{message.origin.kind === "schedule"
+      ? tc("origin.schedule") : tc("origin.chat", { title: message.origin.title ?? "" })}</p>}
     {message.role === "user" && message.interjection && <p className="chat-muted" data-interjection={message.interjection}>{t.interjected} · {{ pending: t.interjectionPending, delivered: t.interjectionDelivered, restarted: t.interjectionRestarted, undelivered: t.interjectionUndelivered }[message.interjection]}</p>}
     <ChatMarkdown text={message.content} streaming={message.status === "streaming"} />
     {message.role === "assistant" && message.suggestion && <ChatSuggestionCard key={`${chat!.id}:${message.id}:${message.presentationRevision}`}
@@ -2469,6 +2503,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             picker?.focus();
             try { (picker as unknown as { showPicker?: () => void })?.showPicker?.(); } catch { /* A browser that will not open it still focused it. */ }
           }} />}
+        {/* When this conversation continues by itself, and the Cancel for each. */}
+        <WakeupStrip chatId={chat?.id === chatId ? chatId : null} status={chat?.id === chatId ? chat?.status ?? null : null} />
         {archived ? <div className="chat-archived-notice">
           <p>{t.archivedNotice}</p>
           <button data-command="chat.archive.restore" className="chat-activity__open" disabled={archiveBusy !== null} onClick={() => void setArchived(chat!, false)}><Icon name="restore" /><span>{t.restoreChat}</span></button>
@@ -2557,6 +2593,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
               <option value="">{t.modelCliDefault}</option>
               {modelOptions.map((item) => <option key={item} value={item}>{item}</option>)}
               <option value="__custom__">{t.modelCustom}</option>
+            </select>
+            <label className="sr-only" htmlFor="chat-permission">{t.permissionLabel}</label>
+            <select data-command="preference.chat_permission.choose" id="chat-permission" className="chat-connection__model" value={chosenPermission}
+              disabled={running || permissionModeBusy || busy || Boolean(chat?.sourceSessionId)} title={t.permissionHint}
+              onChange={(event) => void choosePermissionMode(event.target.value as ChatPermissionMode)}>
+              <option value="read">{t.permissionRead}</option>
+              <option value="ask">{t.permissionAsk}</option>
+              <option value="open">{t.permissionOpen}</option>
             </select>
             {availableProvider?.modelCatalog === "checking" && <span className="chat-connection__note">{t.modelChecking}</span>}
             {modelBusy && <span className="chat-connection__note" role="status">{t.modelSaving}</span>}
@@ -2731,6 +2775,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       conversationActive={running || sending !== null}
       notices={statusNotices} conversation={conversationLog} composer={composerArea} surfaces={workspacePages(panel)}
       taskItems={taskItems} dialogs={dialogs}
+      notesPage={<NotesPanel projectDir={projectDir} projectName={project?.name ?? null} runtimeId={projectRuntime?.runtimeId ?? null} folder={project?.kind === "folder"} />}
+      onOpenFound={(hit) => selectChat(sessions.find((item) => item.id === hit.chatId)
+        ?? ({ id: hit.chatId, projectDir: hit.projectDir, archived: hit.archived } as ChatSummary))}
       historyPage={projectRuntime && projectDir ? <ProjectRuntimeProvider key={`history:${projectRuntime.runtimeId}`} runtimeId={projectRuntime.runtimeId}
         baseUrl={`${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`}><HistoryPage projectDir={projectDir} active /></ProjectRuntimeProvider> : null}
       onAttentionConversation={() => { setChatId(null); setChat(null); setFreshChat(false); }} /></CardRuntimes.Provider>;

@@ -133,6 +133,11 @@ ChatStatus = Literal["idle", "running", "failed", "interrupted"]
 # What a conversation waits for from the architect (#300). One value for now:
 # an unanswered permission request.
 ChatAttention = Literal["permission"]
+# What a conversation works in: a MonkeyHub project, read here and changed only
+# through the Hub (ADR-012), or any other folder, which it reads and writes.
+ChatKind = Literal["project", "folder"]
+# What a conversation's agent may do unasked (gap 4): read only; read and ask before changing anything; anything.
+ChatPermissionMode = Literal["read", "ask", "open"]
 
 
 class ChatProvider(BaseModel):
@@ -189,6 +194,8 @@ class ChatProject(BaseModel):
     projectDir: str
     name: str
     chatCount: int
+    # A plain folder is listed beside the projects; it has no version, Stage or step.
+    kind: ChatKind = "project"
     # The project's own published position, read through its existing P036
     # interfaces so a conversation can say which version it is talking about.
     # A candidate is not a version and never appears here.
@@ -411,6 +418,22 @@ class ChatSuggestionSelection(BaseModel):
     revision: int = Field(ge=0)
 
 
+class ChatMessageOrigin(BaseModel):
+    """Who sent a user-role message that no person typed in this conversation.
+
+    ``schedule``: a wake-up this conversation set (``label`` says when it repeats).
+    ``chat``: another conversation of this Hub (``chatId``, its ``title``), ``depth``
+    messages into a chain that no person started.
+    """
+
+    kind: Literal["schedule", "chat"]
+    label: str = Field(default="", max_length=200)
+    scheduleId: str | None = None
+    chatId: str | None = None
+    title: str | None = Field(default=None, max_length=200)
+    depth: int = Field(default=0, ge=0, le=16)
+
+
 class ChatMessage(BaseModel):
     id: str
     role: Literal["user", "assistant", "tool"]
@@ -440,12 +463,22 @@ class ChatMessage(BaseModel):
     # The marks this message is about, and the change list items it runs (#300 3-3).
     markup: ChatMarkupContext | None = None
     changeListApproval: ChatChangeListApproval | None = None
+    # Set when no person typed this message here: a wake-up or another conversation sent it.
+    origin: ChatMessageOrigin | None = None
+    # A subagent's call (gap 5): the id of the row of the call that started the subagent, where it folds.
+    parentCallId: str | None = None
 
 
 class ChatSummary(BaseModel):
     id: str
     projectId: str
     projectDir: str
+    # "folder": projectId is "folder:<digest>" and projectDir is the folder the
+    # conversation reads and writes; it has no design tools.
+    kind: ChatKind = "project"
+    # Null on records from before levels: "open" for a project (its files change only through the Hub anyway),
+    # "ask" for a folder.
+    permissionMode: ChatPermissionMode | None = None
     title: str
     provider: ChatProviderId
     model: str | None = None
@@ -487,6 +520,9 @@ class ChatCreateRequest(BaseModel):
     provider: ChatProviderId
     model: str | None = Field(default=None, min_length=1)
     title: str | None = Field(default=None, min_length=1, max_length=200)
+    # "auto": a MonkeyHub project when the folder is one, else the folder itself.
+    kind: Literal["project", "folder", "auto"] = "project"
+    permissionMode: ChatPermissionMode | None = None
 
 
 class ChatPresentationBindRequest(BaseModel):
@@ -611,6 +647,14 @@ class ChatModelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
 
     model: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class ChatPermissionModeRequest(BaseModel):
+    """What this conversation's next turns may do unasked."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    permissionMode: ChatPermissionMode
 
 
 class ChatArchiveRequest(BaseModel):

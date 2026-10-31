@@ -4308,7 +4308,8 @@
         "GET /api/chat/sessions/{session_id}",
         "POST /api/chat/sessions/{session_id}/messages",
         "POST /api/chat/sessions/{session_id}/stop",
-        "PUT /api/chat/sessions/{session_id}/archive"
+        "PUT /api/chat/sessions/{session_id}/archive",
+        "PUT /api/chat/sessions/{session_id}/permission-mode"
       ],
       "works": [
         "a new conversation in the open project",
@@ -4530,6 +4531,36 @@
             "entries": [
               "壳59"
             ],
+            "in_place": true
+          },
+          {
+            "id": "chat.note.remove",
+            "label": "Remove a remembered note",
+            "label_zh": "删除一条记住的事",
+            "args": [
+              "noteId"
+            ],
+            "entries": [],
+            "in_place": true
+          },
+          {
+            "id": "chat.note.restore",
+            "label": "Put a removed note back",
+            "label_zh": "撤销删除记住的事",
+            "args": [
+              "noteId"
+            ],
+            "entries": [],
+            "in_place": true
+          },
+          {
+            "id": "chat.wakeup.cancel",
+            "label": "Cancel a wake-up",
+            "label_zh": "取消定时继续",
+            "args": [
+              "wakeupId"
+            ],
+            "entries": [],
             "in_place": true
           }
         ]
@@ -5767,6 +5798,20 @@
               "窗2"
             ],
             "in_place": true
+          },
+          {
+            "id": "view.notes.toggle",
+            "label": "Show notes and memory",
+            "label_zh": "查看说明与记忆",
+            "opens": true,
+            "entries": []
+          },
+          {
+            "id": "view.chat_search.toggle",
+            "label": "Find conversations",
+            "label_zh": "查找对话",
+            "opens": true,
+            "entries": []
           }
         ]
       },
@@ -5806,7 +5851,9 @@
         "GET /api/settings/user",
         "PUT /api/settings/user",
         "GET /api/settings/apps",
-        "PUT /api/settings/apps"
+        "PUT /api/settings/apps",
+        "GET /api/chat/mcp-servers",
+        "PUT /api/chat/mcp-servers"
       ],
       "works": [
         "theme, interface style and text size, saved for this person"
@@ -5956,6 +6003,13 @@
             "place": "composer"
           },
           {
+            "id": "preference.chat_permission.choose",
+            "label": "What this conversation may do",
+            "label_zh": "这个对话可以做什么",
+            "entries": [],
+            "in_place": true
+          },
+          {
             "id": "preference.chat_model.custom_apply",
             "label": "Use a custom model id",
             "label_zh": "使用自定义模型 ID",
@@ -6029,6 +6083,34 @@
             "entries": [
               "窗57"
             ],
+            "in_place": true
+          },
+          {
+            "id": "preference.chat_mcp.from_claude",
+            "label": "Use the MCP servers set up in Claude Code",
+            "label_zh": "用 Claude Code 里配好的 MCP 服务器",
+            "entries": [],
+            "in_place": true
+          },
+          {
+            "id": "preference.chat_mcp.server",
+            "label": "Turn one MCP server on or off",
+            "label_zh": "开关一个 MCP 服务器",
+            "entries": [],
+            "in_place": true
+          },
+          {
+            "id": "preference.chat_mcp.add",
+            "label": "Add an MCP server",
+            "label_zh": "添加 MCP 服务器",
+            "entries": [],
+            "in_place": true
+          },
+          {
+            "id": "preference.chat_mcp.remove",
+            "label": "Remove an MCP server",
+            "label_zh": "移除 MCP 服务器",
+            "entries": [],
             "in_place": true
           },
           {
@@ -14274,6 +14356,12 @@
         "apps/monkeyhub/api/monkeyhub_api/chat/skill_cards.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/skill_plugins.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/tool_output.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/notes.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/wakeups.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/relay.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/origins.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/hub_tools.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/hub_routes.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/turn_trace.py",
         "apps/monkeyhub/api/monkeyhub_api/computer_tools.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/acp_session.py",
@@ -14366,6 +14454,10 @@
         "apps/monkeyhub/web/src/features/commands/",
         "apps/monkeyhub/web/src/app/AttentionShell.tsx",
         "apps/monkeyhub/web/src/app/AdvancedTools.tsx",
+        "apps/monkeyhub/web/src/app/NotesPanel.tsx",
+        "apps/monkeyhub/web/src/app/ChatFinder.tsx",
+        "apps/monkeyhub/web/src/app/WakeupStrip.tsx",
+        "apps/monkeyhub/web/src/app/hubNotes.css",
         "apps/monkeyhub/api/monkeyhub_api/attention/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/models.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/store.py",
@@ -14377,7 +14469,11 @@
         "apps/monkeyhub/api/monkeyhub_api/attention/hub.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/producers.py",
         "apps/monkeyhub/api/monkeyhub_api/attention/change_list.py",
-        "apps/monkeyhub/api/monkeyhub_api/attention/rules.py"
+        "apps/monkeyhub/api/monkeyhub_api/attention/rules.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/agent_routes.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/claude_grants.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/mcp_servers.py",
+        "apps/monkeyhub/api/monkeyhub_api/recycle.py"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -14437,6 +14533,7 @@
         "apps/monkeyhub/web/test/projectStore.test.ts",
         "apps/monkeyhub/api/tests/test_chat_render.py",
         "apps/monkeyhub/api/tests/test_chat_progress.py",
+        "apps/monkeyhub/api/tests/test_chat_notes_wakeups.py",
         "apps/monkeyhub/web/test/componentInfo.test.ts",
         "apps/monkeyhub/web/test/workspaceWidth.test.ts",
         "apps/monkeyhub/api/tests/test_design_loop_setting.py",

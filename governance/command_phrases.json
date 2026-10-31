@@ -5338,6 +5338,46 @@
     "usage timeline",
     "time view"
    ]
+  },
+  "view.notes.toggle": {
+   "zh": [
+    "打开说明与记忆",
+    "看看记住了什么",
+    "改一下给 AI 的规矩"
+   ],
+   "en": [
+    "show my standing instructions",
+    "what did you remember"
+   ],
+   "aliases_zh": [
+    "说明",
+    "记忆",
+    "规矩"
+   ],
+   "aliases_en": [
+    "notes",
+    "memory",
+    "instructions"
+   ]
+  },
+  "view.chat_search.toggle": {
+   "zh": [
+    "查找以前的对话",
+    "搜一下聊过的内容",
+    "找那条对话"
+   ],
+   "en": [
+    "search my conversations",
+    "find an old chat"
+   ],
+   "aliases_zh": [
+    "搜索对话",
+    "历史对话"
+   ],
+   "aliases_en": [
+    "search chats",
+    "find chat"
+   ]
   }
  }
 }

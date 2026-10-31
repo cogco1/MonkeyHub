@@ -139,6 +139,9 @@
 .chat-process__steps li{display:flex;align-items:baseline;gap:8px;line-height:1.65;overflow-wrap:anywhere}
 .chat-process__mark{flex:none;width:12px;text-align:center}
 .chat-process__steps li[data-status=failed]{color:var(--violated)}
+.chat-process__sub{margin-top:2px}
+.chat-process__sub>summary{cursor:pointer;color:var(--muted);font-size:.92em}
+.chat-process__sub>.chat-process__steps{padding-left:14px;border-left:1px solid var(--line)}
 .chat-process__steps li[data-status=streaming] .chat-process__mark{color:var(--accent)}
 .chat-process__technical.chat-card__details{margin-top:8px;font-size:inherit}
 .chat-process__technical.chat-card__details>summary{display:flex;align-items:center;min-height:28px;width:max-content;max-width:100%}

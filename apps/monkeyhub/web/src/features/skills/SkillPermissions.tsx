@@ -30,7 +30,7 @@ const PROBLEM_KEYS = {
   entry_syntax: "skills.problems.kind.entry_syntax", missing_file: "skills.problems.kind.missing_file",
   name_differs: "skills.problems.kind.name_differs", unreadable: "skills.problems.kind.unreadable",
 } as const;
-const TOOL_KEYS = { run: "skills.tools.run", network: "skills.tools.network", hub: "skills.tools.hub" } as const;
+const TOOL_KEYS = { run: "skills.tools.run", network: "skills.tools.network", hub: "skills.tools.hub", edit: "skills.tools.edit" } as const;
 const WHO_KEYS = { user: "skills.problems.who.user", bundled: "skills.problems.who.bundled" } as const;
 const METHOD_KEYS = { card: "skills.grants.method.card", settings: "skills.grants.method.settings", migrated: "skills.grants.method.migrated" } as const;
 
@@ -157,7 +157,8 @@ function ToolGrantRow({ grant, state, actions, when, t }: {
   const { revoking, revokeError } = state;
   const status = grant.revokedAt ? "revoked" : "active";
   const error = revokeError?.grantId === grant.grantId ? revokeError.error : null;
-  const what = t(TOOL_KEYS[grant.action], { project: grant.projectId });
+  // A folder's grant names its folder; a project's id names its project.
+  const what = t(TOOL_KEYS[grant.action], { project: grant.place ?? grant.projectId });
   return <li className="skills__row" data-status={status}>
     <div className="skills__head">
       <strong className="skills__name">{what}</strong>

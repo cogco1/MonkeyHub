@@ -37,7 +37,7 @@ if __package__ in {None, ""}:
 
 from .. import projects
 from ..app import locator
-from . import design_loop, guides, providers, studio_tool, tool_calls, tool_output, transport
+from . import design_loop, guides, hub_tools, providers, studio_tool, tool_calls, tool_output, transport
 
 from ..models import ChatPresentationBindRequest, ChatPresentationRequest, HubFailure
 
@@ -45,7 +45,10 @@ from ..models import ChatPresentationBindRequest, ChatPresentationRequest, HubFa
 # The Hub's own bookkeeping answers, which carry nothing from the project or a
 # skill: they reach the Agent as they are. Every other answer is framed as data
 # and cut when long (tool_output).
-_HUB_OWN = frozenset({"chat_present", "presentation_bind", "project_create"})
+_HUB_OWN = frozenset({"chat_present", "presentation_bind", "project_create", *hub_tools.HUB_OWN})
+# What a conversation in a plain folder is given: the tools that need no project, its own notes, wake-ups and the
+# other conversations (hub_tools) included.
+_FOLDER_TOOLS = frozenset({"chat_present", "attachment_read", *hub_tools.TOOL_NAMES})
 
 
 def _bound_source(hub: str, name: str, arguments: object, external: ChatPresentationBindRequest | None,
@@ -79,7 +82,8 @@ def _hub_at(hub_url: str | None, runtime_root: str | None):
 
 
 def _mcp(hub_at, chat_id: str | None, external: ChatPresentationBindRequest | None = None,
-         source: dict | None = None, *, design_loop_only: bool = False, keep_in: Path | None = None) -> None:
+         source: dict | None = None, *, design_loop_only: bool = False, keep_in: Path | None = None,
+         folder_only: bool = False) -> None:
     """``design_loop_only`` lists only the design-loop tools (#185): a headless turn that revises the design.
 
     ``keep_in`` is the chat's scratch folder, where a long answer is kept whole for the Agent to read in parts.
@@ -88,6 +92,9 @@ def _mcp(hub_at, chat_id: str | None, external: ChatPresentationBindRequest | No
     request in ``MONKEYHUB_DESIGN_REQUEST_FILE`` as the user's message, the words every change answers.
     ``source`` without ``external`` is a connection started with no project (gap 39): presentation_bind
     {projectDir} or project_create {name} binds it.
+
+    ``folder_only`` is a conversation in a plain folder: it has no project, so only the tools that need none
+    (showing a result, reading an attachment, the desktop) are listed.
     """
     from .. import computer_tools
 
@@ -236,6 +243,11 @@ def _mcp(hub_at, chat_id: str | None, external: ChatPresentationBindRequest | No
         {"type": "object", "properties": {"path": {"type": "string"}, "name": {"type": "string"},
                                             "mimeType": {"type": "string"}}, "required": ["path"], "additionalProperties": False},
     ]}}
+    if not reaching_out:
+        # A Hub conversation's own tools: its memory, its wake-ups and the other conversations (hub_tools).
+        tools.extend(hub_tools.tool_definitions())
+    if folder_only:
+        tools = [tool for tool in tools if tool["name"] in _FOLDER_TOOLS or tool["name"] in computer_tools.TOOL_NAMES]
     if design_loop_only:
         tools = design_loop.tool_definitions()
     elif external is not None:
@@ -292,6 +304,8 @@ def _mcp(hub_at, chat_id: str | None, external: ChatPresentationBindRequest | No
                         raise HubFailure(409, "CHAT_PRESENTATION_BIND_REQUIRED", "Call presentation_bind before publishing or using project tools.")
                     elif reaching_out and name == "chat_present":
                         value = tool_calls._present_tool(hub, chat_id, arguments, presentation_binding["token"])
+                    elif not reaching_out and not design_loop_only and name in hub_tools.TOOL_NAMES:
+                        value = hub_tools.call(hub, chat_id, name, arguments)
                     else:
                         value = tool_calls.call_tool(hub, chat_id, name, arguments)
                     arguments = params.get("arguments", {})
@@ -349,6 +363,8 @@ if __name__ == "__main__":
     parser.add_argument("--title", default="External conversation")
     parser.add_argument("--design-loop", action="store_true",
                         help="List only the design-loop tools: a headless turn that revises the design (#185).")
+    parser.add_argument("--folder", action="store_true",
+                        help="A conversation in a plain folder: list only the tools that need no project.")
     parser.add_argument("--scratch", help="The chat's scratch folder, where a long answer is kept whole; "
                                           "default the system's temporary folder")
     args = parser.parse_args()
@@ -364,7 +380,7 @@ if __name__ == "__main__":
              keep_in=keep_in)
     elif args.chat_id and not args.source_session_id and not args.project_dir:
         _mcp(_hub_at(args.hub_url, args.runtime_root), projects._identifier(args.chat_id), design_loop_only=args.design_loop,
-             keep_in=keep_in)
+             keep_in=keep_in, folder_only=args.folder)
     else:
         parser.error("Use --chat-id for a Hub-owned conversation, or --source-session-id (with --project-dir, or without "
                      "one to make or name a project) for external presentation.")
