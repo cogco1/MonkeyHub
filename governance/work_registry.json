@@ -51,6 +51,24 @@
             "docs/architecture/system-map.md"
           ],
           "depends_on": []
+        },
+        {
+          "id": "conditional-reads-limit",
+          "status": "active",
+          "branch": "claude/srv-conditional-reads-limit",
+          "worktree": "C:\\Users\\Public\\renou\\dev\\wt\\s68-readlimit",
+          "base_ref": "16b5a803",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "One timing bound in the conditional-reads test: the slowest single request may take 500 ms instead of 45 ms on a shared CI runner; the median bound stays. Released by the branch's last commit.",
+          "modules": [
+            "project_runtime.shell"
+          ],
+          "write_scope": [
+            "services/project-runtime/tests/test_conditional_reads.py",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
         }
       ]
     }
