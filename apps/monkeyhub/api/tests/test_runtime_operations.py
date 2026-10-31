@@ -1141,7 +1141,10 @@ class RecordReliabilityTests(unittest.TestCase):
 
     def test_executing_ends_when_no_read_sees_the_run_worked_on(self):
         manager = OperationManager("p")
-        admission = self.started(manager)
+        # A whole-second start keeps the sums below exact: on a runner booted minutes ago,
+        # (t + limit + recheck) - (t + limit) can round to just under the recheck.
+        with patch("monkeyhub_api.runtime.operations.time.monotonic", return_value=1000.0):
+            admission = self.started(manager)
         now = admission.working_at
         with patch("monkeyhub_api.runtime.operations.time.monotonic", return_value=now + EXECUTING_LIMIT_S - 1):
             self.assertFalse(manager.expire())

@@ -3771,19 +3771,19 @@ try {
   // page is opened. A later externally stopped Studio invalidates that result.
   const beforeAdd = writes.length;
   await cmd(page, "project.create.add_existing").click();
-  const add = page.getByRole("dialog").filter({ hasText: "Add an existing project" });
+  const add = page.getByRole("dialog").filter({ hasText: "Open a folder or project" });
   // A closed dialog chooses nothing; a chosen folder is added at once, with no path typed.
   await cmd(add, "project.create.choose_folder").click();
   for (const end = Date.now() + 10000; pickRequests.length < 1;) {
     if (Date.now() > end) assert.fail("the folder dialog was never asked for");
     await page.waitForTimeout(50);
   }
-  assert.equal(await add.getByLabel("Project folder", { exact: true }).inputValue(), "", "a closed dialog fills nothing");
+  assert.equal(await add.getByLabel("Folder", { exact: true }).inputValue(), "", "a closed dialog fills nothing");
   assert.equal(writes.slice(beforeAdd).filter(([, pathname]) => pathname === "/api/chat/sessions").length, 0, "and adds nothing");
   pickAnswers.push("D:\\fixture\\C");
   await cmd(add, "project.create.choose_folder").click();
   await cmd(page, "project.open", { arg: "Project C" }).first().waitFor();
-  assert.deepEqual(pickRequests.at(-1), { kind: "folder", title: "Choose an existing ArchFlow project folder", filter: "any" });
+  assert.deepEqual(pickRequests.at(-1), { kind: "folder", title: "Choose a project or any folder", filter: "any" });
   await studioReady();
   assert.equal(writes.slice(beforeAdd).filter(([, pathname, , target]) => pathname === "/api/project/modeling" && target === "D:\\fixture\\C").length, 0);
   assert.ok(!writes.slice(beforeAdd).some(([, pathname]) => pathname === "/api/chat/projects" || pathname === "/api/project/modeling"));
