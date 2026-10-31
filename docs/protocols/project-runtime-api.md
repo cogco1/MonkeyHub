@@ -189,6 +189,8 @@ project first uses the existing `/api/project/modeling` action to obtain an acti
 
 Focus is optional: `elementId`, up to 64 distinct `elementIds`, or `targetComponentId` and its
 descendants. No focus means a design-wide request, not permission to pick the first object.
+More than 64 `elementIds` are refused (`422 REQUEST_INVALID`) with the count and the same way forward:
+leave `elementIds` out and the words choose the focus.
 An element alone supplies its own component; an explicitly supplied component must agree.
 Project, actionable source, digest and focus checks retain `PROJECT_MISMATCH`, `STALE_BASE`,
 `TARGET_UNKNOWN`, `ELEMENT_UNKNOWN` and `ELEMENT_COMPONENT_MISMATCH` refusals. If both element

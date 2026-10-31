@@ -14,7 +14,7 @@ from __future__ import annotations
 import base64
 from typing import Annotated, Any, Literal, Mapping, Sequence
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 
 from ...application.clarification import (
     AuthoredControlDraft,
@@ -417,6 +417,10 @@ class IntentRequestDto(BaseModel):
     )
 
 
+# How many elements one context read can name as its focus; leaving them out asks about the whole design.
+MAX_FOCUS_ELEMENTS = 64
+
+
 class ContextPackRequestDto(BaseModel):
     """One turn's words, plus the exact source and focus they were said about.
 
@@ -456,7 +460,10 @@ class ContextPackRequestDto(BaseModel):
         "targetComponentId as its own component",
     )
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None, min_length=1)
-    element_ids: list[Annotated[str, Field(min_length=1)]] = Field(alias="elementIds", default_factory=list, max_length=64)
+    element_ids: list[Annotated[str, Field(min_length=1)]] = Field(
+        alias="elementIds", default_factory=list, max_length=MAX_FOCUS_ELEMENTS,
+        description=f"the Element@1 ids in focus, at most {MAX_FOCUS_ELEMENTS}; leave it out to ask about the whole "
+        "design, and the words choose the focus through the same context compiler an intent uses")
     context_refs: list[Annotated[str, Field(min_length=1)]] = Field(alias="contextRefs", default_factory=list, max_length=16)
     context_offset: int = Field(alias="contextOffset", default=0, ge=0, strict=True,
                               description="offset into the bounded reference index; it changes no focus or edit scope")
@@ -472,6 +479,16 @@ class ContextPackRequestDto(BaseModel):
         "drawing domains (the project recipe among the drawing decisions), this source's Stage and "
         "the focus already named above answer for it; naming a domain reads that domain alone",
     )
+
+    @field_validator("element_ids", mode="before")
+    @classmethod
+    def bounded_focus(cls, value: object) -> object:
+        # Said before the length check, so a refusal gives the way forward with the number (#648).
+        if isinstance(value, list) and len(value) > MAX_FOCUS_ELEMENTS:
+            raise ValueError(f"elementIds names {len(value)} elements; at most {MAX_FOCUS_ELEMENTS} can be in focus. "
+                             "To ask about more, leave elementIds out: the request then asks about the whole design "
+                             "and the words choose the focus")
+        return value
 
     @model_validator(mode="after")
     def coherent_focus(self) -> ContextPackRequestDto:

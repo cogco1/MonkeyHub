@@ -16,7 +16,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
@@ -906,6 +906,31 @@ class RequestShapeTests(ProposalTestCase):
         self.assertEqual(response.status_code, 422)
         self.assertEqual(response.json()["code"], "REQUEST_INVALID")
         self.assertIn("utterance", response.json()["detail"])
+
+
+class ComponentSizeBoundTests(ProposalTestCase):
+    """A component over the program's bound is refused with its name, its count and the bound (#648)."""
+
+    def test_a_candidate_over_the_bound_fails_naming_the_component(self) -> None:
+        import time
+
+        from archflow.state import geometry_program
+
+        proposal = self.accepted("set height to 0.5", elementId="portico-cornice")
+        with patch.object(geometry_program, "MAX_PROGRAM_IDS", 1):
+            started = self.client.post(f"/api/proposals/{proposal['proposalId']}/candidate")
+            self.assertEqual(started.status_code, 202, started.text)
+            deadline = time.monotonic() + 300
+            while time.monotonic() < deadline:
+                job = self.client.get(f"/api/jobs/{started.json()['jobId']}").json()
+                if job["status"] in {"succeeded", "failed"}:
+                    break
+                time.sleep(0.05)
+        self.assertEqual(job["status"], "failed", job)
+        error = str(job["error"])
+        self.assertIn("component portico delivers 2 objects", error)
+        self.assertIn("at most 1", error)
+        self.assertIn("split it into smaller components", error)
 
 
 if __name__ == "__main__":
