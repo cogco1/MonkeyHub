@@ -51,35 +51,6 @@
             "docs/architecture/system-map.md"
           ],
           "depends_on": []
-        },
-        {
-          "id": "full-update",
-          "status": "active",
-          "branch": "claude/srv-full-update",
-          "worktree": "C:\\Users\\Public\\renou\\dev\\wt\\s68-fullupd",
-          "base_ref": "d8663164",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": "When no published patch starts from an installation, the automatic update downloads the release's complete package, checks it against the update index and release manifest, and builds the local patch it amounts to; staging, the switch at quit and rollback stay the patch path. Released by the branch's last commit.",
-          "modules": [
-            "hub.shell",
-            "tools.release.package_monkeyapps"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/api/monkeyhub_api/updates/desktop_updates.py",
-            "apps/monkeyhub/api/monkeyhub_api/updates/models.py",
-            "apps/monkeyhub/api/tests/test_updates.py",
-            "apps/monkeyhub/installer/patch.py",
-            "apps/monkeyhub/installer/README.md",
-            "apps/monkeyhub/web/src/SoftwareUpdateSettings.tsx",
-            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
-            "apps/monkeyhub/web/src/i18n/messages.en.ts",
-            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs",
-            "governance/architecture_policy.json",
-            "governance/work_registry.json"
-          ],
-          "depends_on": []
         }
       ]
     }
