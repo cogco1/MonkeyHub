@@ -24,18 +24,21 @@ import threading
 import time
 from typing import Callable, Protocol
 from urllib.parse import quote
+import zipfile
 
 from pydantic import ValidationError
 
 from ..models import HubError, HubFailure
 from .feed import (
-    REPOSITORY, ReleaseFeed, UpdateCancelled, UpdateCheckError, _COMMIT, _desktop_releases, _release_manifest,
-    _update_index, _version,
+    REPOSITORY, ReleaseFeed, UpdateCancelled, UpdateCheckError, _COMMIT, _desktop_releases, _entry,
+    _release_manifest, _update_index, _version,
 )
 from .models import PreparedUpdate, UpdateCheck, UpdateStatus
 
 
 MAX_PATCH_BYTES = 256 * 1024 * 1024
+# A complete candidate package, downloaded when no patch starts from this installation.
+MAX_FULL_BYTES = 512 * 1024 * 1024
 MAX_INDEX_BYTES = 1024 * 1024
 CHANNEL = "unsigned-prerelease"
 FIRST_CHECK_SECONDS = 30.0
@@ -131,7 +134,8 @@ class DesktopUpdates:
         self._stop = threading.Event()
         self._wake = threading.Event()
         self._explicit = False
-        self._progress: tuple[str, str | None] | None = None
+        # (check state, version[, bytes being downloaded])
+        self._progress: tuple | None = None
         self._feed = feed
         self._preference = preference or UserPreference()
         self._state_path = directory / "state.json"
@@ -269,8 +273,9 @@ class DesktopUpdates:
             view = UpdateCheck()
         if self._progress is not None:
             # A check in progress knows only the version it is working on.
-            state, version = self._progress
-            view = view.model_copy(update={"state": state, "latestVersion": version, "detail": None})
+            state, version, *size = self._progress
+            view = view.model_copy(update={"state": state, "latestVersion": version, "detail": None,
+                                           "downloadBytes": size[0] if size else None})
         return view
 
     def status(self) -> UpdateStatus:
@@ -780,7 +785,7 @@ class DesktopUpdates:
         return self._feed
 
     def _check_once(self, explicit: bool) -> dict | None:
-        from apps.monkeyhub.installer.patch import describe_patch
+        from apps.monkeyhub.installer.patch import PatchCancelled, describe_patch
         feed = self._feed_or_default()
         cached = self._check.get("releases") if isinstance(self._check.get("releases"), list) else None
         etag, listed = feed.releases(self._check.get("etag") if cached is not None else None)
@@ -818,12 +823,16 @@ class DesktopUpdates:
                 and last.get("state") == "error"):
             return {key: value for key, value in last.items() if key != "checkedAt"}
         entry = next((row for row in index["patches"] if row["baseCommit"] == self.revision), None)
-        if entry is None:
-            return {**full, "detail": f"No update patch for {version} starts from this installed version. "
-                                      "Install its complete package."}
-        if entry["size"] > MAX_PATCH_BYTES or assets.get(entry["name"]) != entry["size"]:
-            return {**full, "detail": f"The update patch for {version} is larger than {MAX_PATCH_BYTES} bytes "
-                                      "or differs from its release. Install the complete package."}
+        complete = None
+        if entry is None or entry["size"] > MAX_PATCH_BYTES or assets.get(entry["name"]) != entry["size"]:
+            reason = (f"No update patch for {version} starts from this installed version." if entry is None else
+                      f"The update patch for {version} is larger than {MAX_PATCH_BYTES} bytes or differs from its release.")
+            # A local build, or one further behind than the published patches
+            # reach, takes the complete package instead, while 自动更新 is on.
+            complete = _complete_package(index, version, assets)
+            if complete is None or not self._auto_enabled():
+                return {**full, "detail": f"{reason} Install its complete package."}
+            entry = None
         described = index["releaseManifest"]
         if assets.get(described["name"]) != described["size"] or described["size"] > MAX_INDEX_BYTES:
             raise UpdateCheckError(f"Release {version} does not carry the release manifest its update index names.",
@@ -833,23 +842,40 @@ class DesktopUpdates:
             raise UpdateCheckError(f"The release manifest of {version} does not match its update index.",
                                    transient=True, version=version)
         manifest = _release_manifest(manifest_bytes, version, target)
+        if complete is not None:
+            listed = next((row for row in manifest.get("artifacts") or () if isinstance(row, dict)
+                           and row.get("path") == complete["name"]), None)
+            if listed is not None and (listed.get("size"), listed.get("sha256")) != (complete["size"], complete["sha256"]):
+                raise UpdateCheckError(f"The release manifest of {version} names another complete package than its "
+                                       "update index.", version=version)
         try:
             path = self.begin_upload()
         except HubFailure:
             return None  # A patch the user chose started meanwhile.
-        with self._lock:
-            self._progress = ("downloading", version)
         try:
-            feed.download(tag, entry["name"], path, entry["size"], entry["sha256"], self._stop.is_set)
+            if complete is None:
+                with self._lock:
+                    self._progress = ("downloading", version)
+                feed.download(tag, entry["name"], path, entry["size"], entry["sha256"], self._stop.is_set)
+            else:
+                with self._lock:
+                    self._progress = ("downloading-full", version, complete["size"])
+                package = path.parent / "full.zip"
+                feed.download(tag, complete["name"], package, complete["size"], complete["sha256"], self._stop.is_set)
+                with self._lock:
+                    self._progress = ("checking", version)
+                self._patch_from_package(package, path, manifest, version, target)
             summary = describe_patch(path)
             if (summary["baseCommit"], summary["targetCommit"], summary["targetBuildInfoSha256"]) != (
                     self.revision, target, manifest["buildInfo"]["sha256"]):
                 raise UpdateCheckError(f"The patch for {version} does not rebuild the release its manifest describes.")
-        except UpdateCancelled:
+        except (UpdateCancelled, PatchCancelled) as error:
             with self._lock:
                 self._preparing = False
             self._discard_upload(path)
-            raise
+            if isinstance(error, UpdateCancelled):
+                raise
+            raise UpdateCancelled() from error
         except (UpdateCheckError, OSError, ValueError) as error:
             refusal = error if isinstance(error, UpdateCheckError) else UpdateCheckError(str(error))
             self.fail_upload(path, str(refusal), code="UPDATE_DOWNLOAD_REFUSED")
@@ -858,7 +884,8 @@ class DesktopUpdates:
         with self._lock:
             # Downloaded: what remains is verifying, staging and loading the new runtime once.
             self._progress = ("checking", version)
-        failure = self._prepare_patch(path, {"source": "auto", "releaseVersion": version},
+        failure = self._prepare_patch(path, {"source": "auto" if complete is None else "auto-full",
+                                             "releaseVersion": version},
                                       cancelled=self._stop.is_set, trial=True)
         if failure is not None:
             if self._stop.is_set():
@@ -870,6 +897,47 @@ class DesktopUpdates:
             raise UpdateCheckError(str(failure), version=version,
                                    transient=isinstance(failure, OSError) or isinstance(failure.__cause__, OSError))
         return {"state": "ready", "latestVersion": version, "releaseUrl": page}
+
+    def _patch_from_package(self, package: Path, path: Path, manifest: dict, version: str, target: str) -> None:
+        """Turn a downloaded complete package into the patch from this installation that it amounts to.
+
+        The bundle is unpacked beside the patch, without the archive's top
+        folder so its paths stay short, checked against the release manifest,
+        and the delta from this version to it is written where a downloaded
+        patch would be. Staging, the trial load, the switch at quit and every
+        later readback then treat it exactly as a published patch.
+        """
+        from apps.monkeyhub.installer.patch import create_patch
+        prefix = f"MonkeyHub-{version}-windows-x64"
+        if manifest.get("artifactPrefix", prefix) != prefix:
+            raise UpdateCheckError(f"The release manifest of {version} names another package folder.", version=version)
+        bundle = path.parent / "t"
+        try:
+            with zipfile.ZipFile(package) as archive:
+                for member in archive.infolist():
+                    if self._stop.is_set():
+                        raise UpdateCancelled()
+                    name = member.filename
+                    if not name.startswith(prefix + "/"):
+                        raise UpdateCheckError(f"The complete package of {version} holds {name} outside {prefix}/.")
+                    relative = name[len(prefix) + 1:]
+                    if not relative or member.is_dir():
+                        continue
+                    parts = relative.split("/")
+                    if any(part in ("", ".", "..") or ":" in part or "\\" in part for part in parts):
+                        raise UpdateCheckError(f"The complete package of {version} holds an unsafe name: {name}")
+                    destination = bundle.joinpath(*parts)
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    with archive.open(member) as source, destination.open("xb") as output:
+                        shutil.copyfileobj(source, output, 1024 * 1024)
+        except (zipfile.BadZipFile, RuntimeError) as error:
+            raise UpdateCheckError(f"The complete package of {version} could not be read: {error}") from error
+        package.unlink()
+        build = (bundle / "build-info.json").read_bytes() if (bundle / "build-info.json").is_file() else b""
+        if hashlib.sha256(build).hexdigest() != manifest["buildInfo"]["sha256"] or _commit_of(bundle) != target:
+            raise UpdateCheckError(f"The complete package of {version} is not the release its manifest describes.")
+        create_patch(self.source_root, bundle, path, cancelled=self._stop.is_set)
+        shutil.rmtree(bundle, ignore_errors=True)
 
     def shutdown(self) -> None:
         self._stop.set()
@@ -888,6 +956,15 @@ class DesktopUpdates:
                     self._save({**record, "launchAttempts": 0})
                 except OSError:
                     pass
+
+
+def _complete_package(index: dict, version: str, assets: dict) -> dict | None:
+    """The complete candidate package the update index names, when its release carries it and it fits."""
+    try:
+        entry = _entry(index.get("full"), f"MonkeyHub-{version}-windows-x64-candidate.zip", "complete package")
+    except UpdateCheckError:
+        return None
+    return entry if entry["size"] <= MAX_FULL_BYTES and assets.get(entry["name"]) == entry["size"] else None
 
 
 def recover_failed_start(source_root: Path, runtime_root: Path, *, managed: bool, reason: str) -> None:

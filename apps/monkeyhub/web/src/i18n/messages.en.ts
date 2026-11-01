@@ -1644,7 +1644,7 @@ export const hubCopy = {
     updateAutoOn: "Automatic updates: On · Unsigned prerelease channel", updateAutoOff: "Automatic updates: Off · Unsigned prerelease channel",
     updateAutoHelp: "About every 6 hours MonkeyHub checks its GitHub prereleases and downloads the patch for this version. It is checked against its SHA-256 and release manifest, prepared beside this version, and takes effect the next time MonkeyHub starts; running work is never restarted. Unsigned: these checks catch a damaged or mismatched download, not who published it.",
     updateCheckNow: "Check now", updateLastCheck: "Last check: {result}", updateNeverChecked: "not yet", updateChecking: "checking…",
-    updateUpToDate: "up to date", updateDownloading: "downloading {version}…", updateCheckReady: "{version} prepared", updateCheckFailed: "did not succeed",
+    updateUpToDate: "up to date", updateDownloading: "downloading {version}…", updateDownloadingFull: "downloading the complete update {version}, about {size} MB…", updateFullAuto: "Turn on Automatic updates below and later checks download the complete update themselves.", updateCheckReady: "{version} prepared", updateCheckFailed: "did not succeed",
     updateNeedsFull: "{version} needs a full update", updateFullHelp: "Download the complete package from its release page:",
     updateNextLaunch: "{version} is ready and takes effect the next time MonkeyHub starts.",
   } as const;

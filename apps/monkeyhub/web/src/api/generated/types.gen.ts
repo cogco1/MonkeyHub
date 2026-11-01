@@ -3768,7 +3768,7 @@ export type UpdateCheck = {
     /**
      * State
      */
-    state?: 'never' | 'checking' | 'up-to-date' | 'downloading' | 'ready' | 'needs-full-update' | 'error';
+    state?: 'never' | 'checking' | 'up-to-date' | 'downloading' | 'downloading-full' | 'ready' | 'needs-full-update' | 'error';
     /**
      * Checkedat
      */
@@ -3785,6 +3785,10 @@ export type UpdateCheck = {
      * Releaseurl
      */
     releaseUrl?: string | null;
+    /**
+     * Downloadbytes
+     */
+    downloadBytes?: number | null;
 };
 
 /**

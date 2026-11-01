@@ -21,11 +21,14 @@ class PreparedUpdate(BaseModel):
 
 class UpdateCheck(BaseModel):
     """The last automatic or requested check of the unsigned prerelease channel."""
-    state: Literal["never", "checking", "up-to-date", "downloading", "ready", "needs-full-update", "error"] = "never"
+    state: Literal["never", "checking", "up-to-date", "downloading", "downloading-full", "ready",
+                   "needs-full-update", "error"] = "never"
     checkedAt: datetime | None = None
     latestVersion: str | None = None
     detail: str | None = None
     releaseUrl: str | None = None
+    # While the complete package of latestVersion downloads: its size in bytes.
+    downloadBytes: int | None = Field(default=None, ge=0)
 
 
 class UpdateStatus(BaseModel):

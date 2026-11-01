@@ -1116,6 +1116,18 @@
       "reason": "Atomically records only the last automatic update check and the cached public release list (with its ETag) under the explicitly supplied nonproject updates directory; no project data or configuration authority."
     },
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/updates/desktop_updates.py",
+      "function": "_patch_from_package",
+      "operations": [
+        "mkdir",
+        "open_write",
+        "unlink"
+      ],
+      "kind": "application_update",
+      "owner": "hub.shell",
+      "reason": "Unpacks a size-bounded, SHA-256-checked complete release package only inside the private incoming directory begin_upload created under the nonproject runtime/updates root, deletes that downloaded package once unpacked, and leaves only the local patch built from it; never writes a version, project or configuration."
+    },
+    {
       "path": "apps/monkeyhub/api/monkeyhub_api/updates/feed.py",
       "function": "download",
       "operations": [

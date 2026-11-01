@@ -18,6 +18,7 @@ import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+import zipfile
 from urllib.error import HTTPError
 import urllib.request
 
@@ -431,6 +432,7 @@ class AutomaticUpdateTests(unittest.TestCase):
         shutil.copytree(self.base, complete)
         (complete / "MonkeyHub.exe").write_bytes(b"desktop 0.1.6")
         self.identity(complete, TARGET, VERSION)
+        self.complete = complete
         self.build_info = (complete / "build-info.json").read_bytes()
         self.patch_file = self.root / "from-base.zip"
         create_patch(self.base, complete, self.patch_file)
@@ -463,15 +465,33 @@ class AutomaticUpdateTests(unittest.TestCase):
                         "executableSha256": hashlib.sha256((root / "MonkeyHub.exe").read_bytes()).hexdigest()},
         }))
 
-    def publish(self, *, patches=None, patch_bytes=None, index=True):
-        """Release v0.1.6 as the release workflow does, beside older and unusable releases."""
+    def package(self):
+        """The complete candidate ZIP of v0.1.6: its bundle under one top folder, as the release workflow packs it."""
+        prefix, buffer = f"MonkeyHub-{VERSION}-windows-x64", io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            for path in sorted(self.complete.rglob("*")):
+                if path.is_file():
+                    archive.write(path, f"{prefix}/{path.relative_to(self.complete).as_posix()}")
+        return buffer.getvalue()
+
+    def publish(self, *, patches=None, patch_bytes=None, index=True, full=None):
+        """Release v0.1.6 as the release workflow does, beside older and unusable releases.
+
+        With ``full`` (the bytes served as the complete package) its index and
+        manifest also name the complete package, built from the true bundle.
+        """
         data = self.patch_file.read_bytes() if patch_bytes is None else patch_bytes
         mine, other = f"MonkeyHub-{VERSION}-from-0.1.4.patch.zip", f"MonkeyHub-{VERSION}-from-0.1.5.patch.zip"
         manifest_name = f"MonkeyHub-{VERSION}-windows-x64-candidate.zip.release-manifest.json"
-        manifest = json.dumps({"schema": "ReleaseManifest@1",
-                               "release": {"version": VERSION, "channel": "candidate", "target": "windows-x64",
-                                           "sourceCommit": TARGET},
-                               "buildInfo": {"sha256": sha256(self.build_info)}}).encode()
+        archive_name, packed = f"MonkeyHub-{VERSION}-windows-x64-candidate.zip", self.package()
+        described = {"schema": "ReleaseManifest@1",
+                     "release": {"version": VERSION, "channel": "candidate", "target": "windows-x64",
+                                 "sourceCommit": TARGET},
+                     "buildInfo": {"sha256": sha256(self.build_info)}}
+        if full is not None:
+            described.update({"archive": archive_name, "artifactPrefix": f"MonkeyHub-{VERSION}-windows-x64",
+                              "artifacts": [{"path": archive_name, "size": len(packed), "sha256": sha256(packed)}]})
+        manifest = json.dumps(described).encode()
         rows = [{"name": other, "size": 3, "sha256": sha256(b"old"), "baseVersion": "0.1.5", "baseCommit": OTHER},
                 {"name": mine, "size": len(self.patch_file.read_bytes()), "sha256": sha256(self.patch_file.read_bytes()),
                  "baseVersion": "0.1.4", "baseCommit": BASE}]
@@ -480,6 +500,9 @@ class AutomaticUpdateTests(unittest.TestCase):
                     "releaseManifest": {"name": manifest_name, "size": len(manifest), "sha256": sha256(manifest)},
                     "patches": rows if patches is None else [row for row in rows if row["baseCommit"] in patches]}
         assets = {manifest_name: manifest, mine: data, other: b"old"}
+        if full is not None:
+            document["full"] = {"name": archive_name, "size": len(packed), "sha256": sha256(packed)}
+            assets[archive_name] = full
         if index:
             assets[f"MonkeyHub-{VERSION}-update-index.json"] = json.dumps(document).encode()
         releases = json.dumps([
@@ -700,6 +723,96 @@ class AutomaticUpdateTests(unittest.TestCase):
                 self.assertEqual(status.check.releaseUrl, f"https://github.com/cogco1/MonkeyHub/releases/tag/{TAG}")
                 self.assertFalse(any(url.endswith(".patch.zip") for url in self.github.requests))
                 self.assertEqual(list(self.versions.iterdir()), [self.base])
+
+    def incoming(self):
+        updates = self.runtime / "updates"
+        return [path for path in updates.iterdir() if path.name.startswith("incoming-")] if updates.is_dir() else []
+
+    def test_with_no_patch_for_it_a_local_build_or_a_stale_release_takes_the_complete_package(self):
+        # A local build (no release version, the owner's laptop on 11230e0e)
+        # and a release further behind than the published patches reach both
+        # download the complete package, and its update is then prepared,
+        # tried and switched in at quit exactly as a published patch's.
+        for label, release in (("local build", None), ("three releases behind", "0.1.4")):
+            with self.subTest(label):
+                shutil.rmtree(self.runtime, ignore_errors=True)
+                shutil.rmtree(self.target, ignore_errors=True)
+                self.processes.clear()
+                self.identity(self.base, BASE, release)
+                self.publish(patches=[OTHER], full=self.package())
+                updates, during = self.controller(), []
+                archive_url = ReleaseFeed.url(TAG, f"MonkeyHub-{VERSION}-windows-x64-candidate.zip")
+                packed = self.github.routes[archive_url]
+
+                def serve(request):
+                    during.append(updates.status().check)
+                    return FakeResponse(packed)
+
+                self.github.routes[archive_url] = serve
+                self.assertEqual(updates.status().releaseVersion, release)
+                updates._run_check(explicit=False)
+                status = self.consistent(updates.status())
+                self.assertEqual((status.state, status.check.state, status.check.latestVersion), ("ready", "ready", VERSION))
+                self.assertEqual((during[0].state, during[0].latestVersion, during[0].downloadBytes),
+                                 ("downloading-full", VERSION, len(packed)))
+                downloads = [url.rsplit("/", 1)[-1] for url in self.github.requests if "/releases/download/" in url]
+                self.assertEqual(downloads[-1], f"MonkeyHub-{VERSION}-windows-x64-candidate.zip")
+                self.assertFalse(any(name.endswith(".patch.zip") for name in downloads))
+                record = self.record()
+                self.assertEqual((record["state"], record["source"], record["preflight"], record["targetCommit"]),
+                                 ("ready", "auto-full", "passed", TARGET))
+                self.assertEqual((self.target / "MonkeyHub.exe").read_bytes(), b"desktop 0.1.6")
+                # Only the patch it amounts to is kept, for the readbacks at the switch and the next start.
+                (folder,) = self.incoming()
+                self.assertEqual(sorted(path.name for path in folder.iterdir()), ["patch.zip"])
+                updates.shutdown()
+                updates.activate_on_quit()
+                self.assertEqual(self.record()["state"], "activated")
+                self.assertIn(self.activation(self.target), self.processes)
+
+    def test_a_complete_package_that_does_not_match_its_sha256_is_refused_and_leaves_nothing(self):
+        changed = bytearray(self.package())
+        changed[len(changed) // 2] ^= 1
+        self.publish(patches=[OTHER], full=bytes(changed))
+        updates = self.controller()
+        updates._run_check(explicit=False)
+        status = updates.status()
+        self.assertEqual((status.state, status.error.code, status.check.state), ("failed", "UPDATE_DOWNLOAD_REFUSED", "error"))
+        self.assertIn("SHA-256", status.error.detail)
+        self.assertEqual(list(self.versions.iterdir()), [self.base])
+        self.assertEqual(self.incoming(), [])
+        self.assertFalse((self.runtime / "updates/state.json").exists())
+        self.assertEqual(self.processes, [])
+
+    def test_quitting_while_the_complete_package_downloads_keeps_nothing_and_reports_no_failure(self):
+        self.publish(patches=[OTHER], full=self.package())
+        updates = self.controller()
+        archive_url = ReleaseFeed.url(TAG, f"MonkeyHub-{VERSION}-windows-x64-candidate.zip")
+        packed = self.github.routes[archive_url]
+
+        def quit_meanwhile(request):
+            updates._stop.set()
+            return FakeResponse(packed)
+
+        self.github.routes[archive_url] = quit_meanwhile
+        updates._run_check(explicit=False)
+        status = updates.status()
+        self.assertNotEqual(status.state, "failed", status)
+        self.assertIsNone(status.error)
+        self.assertEqual(list(self.versions.iterdir()), [self.base])
+        self.assertEqual(self.incoming(), [])
+        self.assertFalse((self.runtime / "updates/state.json").exists())
+
+    def test_with_automatic_updates_off_no_complete_package_is_downloaded(self):
+        self.preference.value = False
+        self.publish(patches=[OTHER], full=self.package())
+        updates = self.controller()
+        updates._run_check(explicit=True)
+        status = updates.status()
+        self.assertEqual((status.state, status.check.state), ("idle", "needs-full-update"))
+        self.assertEqual(status.check.releaseUrl, f"https://github.com/cogco1/MonkeyHub/releases/tag/{TAG}")
+        self.assertFalse(any(url.endswith(".zip") for url in self.github.requests))
+        self.assertEqual(list(self.versions.iterdir()), [self.base])
 
     def test_the_newest_installed_release_is_up_to_date(self):
         self.identity(self.base, BASE, "0.1.7")
