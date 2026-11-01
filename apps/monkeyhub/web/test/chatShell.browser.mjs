@@ -4814,7 +4814,13 @@ try {
     check: { state: "needs-full-update", checkedAt: "2026-09-25T10:05:00+00:00", latestVersion: "0.1.9", detail: null, releaseUrl: "https://github.com/cogco1/MonkeyHub/releases/tag/v0.1.9" } };
   await cmd(page, "view.notice.retry", { arg: "update_status" }).click();
   await page.getByText(/^Last check: .+ · 0\.1\.9 needs a full update$/).waitFor();
-  await page.getByText("https://github.com/cogco1/MonkeyHub/releases/tag/v0.1.9", { exact: true }).waitFor();
+  const releaseLink = page.getByRole("link", { name: "https://github.com/cogco1/MonkeyHub/releases/tag/v0.1.9", exact: true });
+  await releaseLink.waitFor();
+  assert.equal(await releaseLink.getAttribute("href"), "https://github.com/cogco1/MonkeyHub/releases/tag/v0.1.9", "the release page opens from its link");
+  updateStatus = { ...updateStatus, check: { ...updateStatus.check, state: "downloading-full", checkedAt: null, downloadBytes: 368924542 } };
+  await cmd(page, "view.notice.retry", { arg: "update_status" }).click();
+  await page.getByText("Last check: downloading the complete update 0.1.9, about 369 MB…", { exact: true }).waitFor();
+  updateStatus = { ...updateStatus, check: { ...updateStatus.check, state: "needs-full-update", checkedAt: "2026-09-25T10:05:00+00:00", downloadBytes: null } };
   updateStatus = { ...updateStatus, check: { ...updateStatus.check, state: "error", detail: "GitHub releases could not be read: fixture offline" } };
   await cmd(page, "view.notice.retry", { arg: "update_status" }).click();
   await page.getByText(/^Last check: .+ · did not succeed$/).waitFor();

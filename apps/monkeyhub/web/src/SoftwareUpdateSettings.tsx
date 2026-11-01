@@ -137,6 +137,8 @@ export function SoftwareUpdateSettings({ language, open, restartBlocker, onResta
   const checkResult = !check || check.state === "never" ? t.updateNeverChecked
     : check.state === "checking" ? (status?.state === "preparing" && latest ? copy.verifying(latest) : t.updateChecking)
       : check.state === "downloading" ? translateMessage(t, "updateDownloading", version)
+        : check.state === "downloading-full" ? translateMessage(t, "updateDownloadingFull",
+          { version: latest, size: String(Math.round((check.downloadBytes ?? 0) / 1_000_000)) })
         : check.state === "ready" ? translateMessage(t, "updateCheckReady", version)
           : check.state === "needs-full-update" ? translateMessage(t, "updateNeedsFull", version)
             : check.state === "error" ? t.updateCheckFailed : t.updateUpToDate;
@@ -155,7 +157,9 @@ export function SoftwareUpdateSettings({ language, open, restartBlocker, onResta
   const line = phase ?? lastCheck ?? status?.message ?? "";
   const reason = error ?? status?.error?.detail ?? (failed ? t.updateFailed : null);
   const checkDetails = <>
-    {check?.state === "needs-full-update" && check.releaseUrl && <p className="help">{t.updateFullHelp} <span className="software-update__url">{check.releaseUrl}</span></p>}
+    {check?.state === "needs-full-update" && check.releaseUrl && <p className="help">{t.updateFullHelp} <a className="software-update__url"
+      href={check.releaseUrl} target="_blank" rel="noopener noreferrer">{check.releaseUrl}</a></p>}
+    {check?.state === "needs-full-update" && status?.mode === "local" && !status.autoUpdate && !status.workshopMode && <p className="help">{t.updateFullAuto}</p>}
     {check?.state === "error" && check.detail && check.detail !== reason && <p className="help">{check.detail}</p>}
   </>;
   // The next action after a failure is to check again.

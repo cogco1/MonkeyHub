@@ -484,8 +484,14 @@ def stage_patch(path: Path, base_root: Path, destination_parent: Path, *,
             shutil.rmtree(checked)
 
 
-def create_patch(base_root: Path, target_root: Path, output_zip: Path) -> dict:
-    """Build a developer delta from two explicit, complete desktop bundles."""
+def create_patch(base_root: Path, target_root: Path, output_zip: Path, *,
+                 cancelled: Callable[[], bool] | None = None) -> dict:
+    """Build a delta from two explicit, complete desktop bundles.
+
+    Developers build one by hand; an installation builds one from a complete
+    release package when no published patch starts from it, and ``cancelled``
+    lets a quitting Hub stop that.
+    """
     temporary: Path | None = None
     try:
         base, target = (_plain_path(root, directory=True) for root in (base_root, target_root))
@@ -494,7 +500,8 @@ def create_patch(base_root: Path, target_root: Path, output_zip: Path) -> dict:
             raise PatchError("Patch output must be outside both input versions.")
         if output.exists():
             raise PatchError(f"Patch output already exists: {output}")
-        base_files, target_files = _inventory(base), _inventory(target, keep=_shipped_bytecode)
+        base_files = _inventory(base, cancelled)
+        target_files = _inventory(target, cancelled, keep=_shipped_bytecode)
         base_commit, target_commit = _root_identity(base, base_files), _root_identity(target, target_files)
         if base_commit[:12] == target_commit[:12]:
             raise PatchError("Patch target must name a different source version.")
@@ -516,6 +523,7 @@ def create_patch(base_root: Path, target_root: Path, output_zip: Path) -> dict:
         with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
             archive.writestr(MANIFEST_NAME, json.dumps(document, ensure_ascii=False, separators=(",", ":")))
             for name in document["changed"]:
+                _proceed(cancelled)
                 archive.write(target / name, "payload/" + name)
         summary = inspect_patch(temporary, base)
         if output.exists():

@@ -1600,7 +1600,7 @@ export const hubCopy = {
     updateAutoOn: "自动更新：开 · 未签名预发布通道", updateAutoOff: "自动更新：关 · 未签名预发布通道",
     updateAutoHelp: "MonkeyHub 约每 6 小时检查一次 GitHub 预发布版本，并下载从当前版本出发的补丁。补丁经 SHA-256 与发行清单核对后准备在当前版本旁边，下次启动 MonkeyHub 时生效；不会中途重启正在进行的工作。未签名：这些核对能发现下载损坏或不一致，不能证明发布者身份。",
     updateCheckNow: "立即检查", updateLastCheck: "上次检查：{result}", updateNeverChecked: "尚未检查", updateChecking: "正在检查…",
-    updateUpToDate: "已是最新版本", updateDownloading: "正在下载 {version}…", updateCheckReady: "已准备 {version}", updateCheckFailed: "未成功",
+    updateUpToDate: "已是最新版本", updateDownloading: "正在下载 {version}…", updateDownloadingFull: "正在下载完整更新 {version}，约 {size} MB…", updateFullAuto: "打开下面的「自动更新」，之后的检查会自动下载完整更新。", updateCheckReady: "已准备 {version}", updateCheckFailed: "未成功",
     updateNeedsFull: "{version} 需要完整更新", updateFullHelp: "请从发布页下载完整安装包：",
     updateNextLaunch: "{version} 已就绪，下次启动 MonkeyHub 时生效。",
   } as const;
