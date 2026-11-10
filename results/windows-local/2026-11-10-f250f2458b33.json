@@ -1,0 +1,1310 @@
+{
+  "schema": "MonkeyHubBenchmark@1",
+  "commit": "f250f2458b337affe5edfed7c723dd56a3150cce",
+  "date": "2026-11-10T08:24:37Z",
+  "runner": {
+    "key": "windows-local",
+    "os": "windows",
+    "osVersion": "11",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.13.15",
+    "implementation": "CPython",
+    "cpu": "13th Gen Intel(R) Core(TM) i9-13980HX",
+    "cpuCount": 32,
+    "machine": "AMD64"
+  },
+  "settings": {
+    "samples": 3,
+    "firstLaunchSamples": 0,
+    "idleSeconds": 60.0,
+    "settleSeconds": 2.0,
+    "sizes": [
+      30,
+      150
+    ],
+    "installed": {
+      "version": "f250f2458b33-desktop",
+      "release": "0.1.1385",
+      "channel": "candidate",
+      "python": "3.13.15",
+      "bytecodeFiles": 3070,
+      "copies": "kept"
+    },
+    "harnessCommit": "cc8f54e20546c73a1e1e1763a5001a8495c48675",
+    "local": {
+      "cpuPercent": 24.3,
+      "cpuSeconds": 60.0,
+      "forcedPast": [],
+      "monkeyhub": {
+        "desktopOpen": false,
+        "checks": 12,
+        "desktopSeen": 0,
+        "desktopProcesses": 0,
+        "otherHubs": false
+      }
+    }
+  },
+  "projects": {
+    "30runs": {
+      "runs": 30,
+      "jsonFiles": 454
+    },
+    "150runs": {
+      "runs": 150,
+      "jsonFiles": 2916
+    }
+  },
+  "durationSeconds": 518.2,
+  "metrics": {
+    "hub_start.warm": {
+      "unit": "ms",
+      "samples": [
+        2882.2,
+        4010.8,
+        2592.1,
+        2290.8,
+        2799.3,
+        2556.2,
+        2451.1,
+        2608.7,
+        2557.4,
+        2333.0,
+        2484.2,
+        2386.1,
+        2699.4,
+        2455.6
+      ],
+      "median": 2556.8,
+      "p90": 2857.3
+    },
+    "project_open.30runs": {
+      "unit": "ms",
+      "samples": [
+        4858.5,
+        5875.3,
+        4782.2,
+        3092.2,
+        3573.1,
+        4627.6,
+        3356.2
+      ],
+      "median": 4627.6,
+      "p90": 5265.2
+    },
+    "route.design_history.cold.30runs": {
+      "unit": "ms",
+      "samples": [
+        256.6,
+        265.4,
+        236.6
+      ],
+      "median": 256.6,
+      "p90": 263.6
+    },
+    "route.design_history.warm.30runs": {
+      "unit": "ms",
+      "samples": [
+        194.0,
+        189.5,
+        183.1
+      ],
+      "median": 189.5,
+      "p90": 193.1
+    },
+    "route.worktrees.cold.30runs": {
+      "unit": "ms",
+      "samples": [
+        177.7,
+        175.2,
+        152.9
+      ],
+      "median": 175.2,
+      "p90": 177.2
+    },
+    "route.worktrees.warm.30runs": {
+      "unit": "ms",
+      "samples": [
+        177.3,
+        148.4,
+        164.5
+      ],
+      "median": 164.5,
+      "p90": 174.8
+    },
+    "route.artifacts.cold.30runs": {
+      "unit": "ms",
+      "samples": [
+        25.5,
+        48.5,
+        59.6
+      ],
+      "median": 48.5,
+      "p90": 57.4
+    },
+    "route.artifacts.warm.30runs": {
+      "unit": "ms",
+      "samples": [
+        13.6,
+        18.5,
+        38.2
+      ],
+      "median": 18.5,
+      "p90": 34.3
+    },
+    "route.documents.cold.30runs": {
+      "unit": "ms",
+      "samples": [
+        29.2,
+        16.0,
+        49.1
+      ],
+      "median": 29.2,
+      "p90": 45.1
+    },
+    "route.documents.warm.30runs": {
+      "unit": "ms",
+      "samples": [
+        33.6,
+        9.9,
+        21.1
+      ],
+      "median": 21.1,
+      "p90": 31.1
+    },
+    "route.working_source.cold.30runs": {
+      "unit": "ms",
+      "samples": [
+        162.4,
+        66.1,
+        66.7
+      ],
+      "median": 66.7,
+      "p90": 143.3
+    },
+    "route.working_source.warm.30runs": {
+      "unit": "ms",
+      "samples": [
+        68.9,
+        74.2,
+        68.6
+      ],
+      "median": 68.9,
+      "p90": 73.2
+    },
+    "route.board.cold.30runs": {
+      "unit": "ms",
+      "samples": [
+        84.4,
+        42.5,
+        44.4
+      ],
+      "median": 44.4,
+      "p90": 76.4
+    },
+    "route.board.warm.30runs": {
+      "unit": "ms",
+      "samples": [
+        20.1,
+        33.7,
+        7.3
+      ],
+      "median": 20.1,
+      "p90": 31.0
+    },
+    "open_modeling.cold.30runs": {
+      "unit": "ms",
+      "samples": [
+        795.2,
+        847.8,
+        826.5
+      ],
+      "median": 826.5,
+      "p90": 843.5
+    },
+    "open_modeling.model.cold.30runs": {
+      "unit": "ms",
+      "samples": [
+        467.2,
+        502.7,
+        474.5
+      ],
+      "median": 474.5,
+      "p90": 497.1
+    },
+    "open_modeling.warm.30runs": {
+      "unit": "ms",
+      "samples": [
+        874.3,
+        798.2,
+        724.7
+      ],
+      "median": 798.2,
+      "p90": 859.1
+    },
+    "open_modeling.model.warm.30runs": {
+      "unit": "ms",
+      "samples": [
+        487.0,
+        438.3,
+        380.3
+      ],
+      "median": 438.3,
+      "p90": 477.3
+    },
+    "idle.hub.cpu.30runs": {
+      "unit": "s",
+      "samples": [
+        0.25
+      ],
+      "median": 0.25,
+      "p90": 0.25
+    },
+    "idle.hub.read.30runs": {
+      "unit": "bytes",
+      "samples": [
+        0
+      ],
+      "median": 0,
+      "p90": 0
+    },
+    "idle.worker.cpu.30runs": {
+      "unit": "s",
+      "samples": [
+        1.094
+      ],
+      "median": 1.094,
+      "p90": 1.094
+    },
+    "idle.worker.read.30runs": {
+      "unit": "bytes",
+      "samples": [
+        11826
+      ],
+      "median": 11826,
+      "p90": 11826
+    },
+    "project_open.150runs": {
+      "unit": "ms",
+      "samples": [
+        3691.0,
+        3531.9,
+        3727.7,
+        4387.3,
+        3468.6,
+        3881.7,
+        3981.4
+      ],
+      "median": 3727.7,
+      "p90": 4143.8
+    },
+    "route.design_history.cold.150runs": {
+      "unit": "ms",
+      "samples": [
+        355.6,
+        304.8,
+        367.1
+      ],
+      "median": 355.6,
+      "p90": 364.8
+    },
+    "route.design_history.warm.150runs": {
+      "unit": "ms",
+      "samples": [
+        332.6,
+        401.4,
+        337.2
+      ],
+      "median": 337.2,
+      "p90": 388.6
+    },
+    "route.worktrees.cold.150runs": {
+      "unit": "ms",
+      "samples": [
+        337.1,
+        297.6,
+        396.1
+      ],
+      "median": 337.1,
+      "p90": 384.3
+    },
+    "route.worktrees.warm.150runs": {
+      "unit": "ms",
+      "samples": [
+        351.5,
+        350.9,
+        351.2
+      ],
+      "median": 351.2,
+      "p90": 351.4
+    },
+    "route.artifacts.cold.150runs": {
+      "unit": "ms",
+      "samples": [
+        360.9,
+        399.8,
+        159.9
+      ],
+      "median": 360.9,
+      "p90": 392.0
+    },
+    "route.artifacts.warm.150runs": {
+      "unit": "ms",
+      "samples": [
+        72.0,
+        51.3,
+        128.5
+      ],
+      "median": 72.0,
+      "p90": 117.2
+    },
+    "route.documents.cold.150runs": {
+      "unit": "ms",
+      "samples": [
+        20.2,
+        50.6,
+        23.9
+      ],
+      "median": 23.9,
+      "p90": 45.3
+    },
+    "route.documents.warm.150runs": {
+      "unit": "ms",
+      "samples": [
+        16.1,
+        35.3,
+        15.0
+      ],
+      "median": 16.1,
+      "p90": 31.5
+    },
+    "route.working_source.cold.150runs": {
+      "unit": "ms",
+      "samples": [
+        105.3,
+        85.2,
+        86.7
+      ],
+      "median": 86.7,
+      "p90": 101.6
+    },
+    "route.working_source.warm.150runs": {
+      "unit": "ms",
+      "samples": [
+        102.2,
+        74.1,
+        91.8
+      ],
+      "median": 91.8,
+      "p90": 100.2
+    },
+    "route.board.cold.150runs": {
+      "unit": "ms",
+      "samples": [
+        27.6,
+        52.4,
+        34.2
+      ],
+      "median": 34.2,
+      "p90": 48.8
+    },
+    "route.board.warm.150runs": {
+      "unit": "ms",
+      "samples": [
+        7.1,
+        8.3,
+        9.5
+      ],
+      "median": 8.3,
+      "p90": 9.2
+    },
+    "open_modeling.cold.150runs": {
+      "unit": "ms",
+      "samples": [
+        4188.0,
+        4308.4,
+        4370.4
+      ],
+      "median": 4308.4,
+      "p90": 4358.0
+    },
+    "open_modeling.model.cold.150runs": {
+      "unit": "ms",
+      "samples": [
+        3776.9,
+        3777.1,
+        3981.5
+      ],
+      "median": 3777.1,
+      "p90": 3940.6
+    },
+    "open_modeling.warm.150runs": {
+      "unit": "ms",
+      "samples": [
+        1631.2,
+        1470.3,
+        1434.5
+      ],
+      "median": 1470.3,
+      "p90": 1599.0
+    },
+    "open_modeling.model.warm.150runs": {
+      "unit": "ms",
+      "samples": [
+        1076.8,
+        939.3,
+        879.9
+      ],
+      "median": 939.3,
+      "p90": 1049.3
+    },
+    "idle.hub.cpu.150runs": {
+      "unit": "s",
+      "samples": [
+        0.328
+      ],
+      "median": 0.328,
+      "p90": 0.328
+    },
+    "idle.hub.read.150runs": {
+      "unit": "bytes",
+      "samples": [
+        0
+      ],
+      "median": 0,
+      "p90": 0
+    },
+    "idle.worker.cpu.150runs": {
+      "unit": "s",
+      "samples": [
+        2.016
+      ],
+      "median": 2.016,
+      "p90": 2.016
+    },
+    "idle.worker.read.150runs": {
+      "unit": "bytes",
+      "samples": [
+        11833
+      ],
+      "median": 11833,
+      "p90": 11833
+    }
+  },
+  "details": {
+    "projectOpen": {
+      "30runs": [
+        {
+          "totalMs": 4858.5,
+          "readyMs": 4798.4,
+          "bindingMs": 60.1
+        },
+        {
+          "totalMs": 5875.3,
+          "readyMs": 5829.6,
+          "bindingMs": 45.8
+        },
+        {
+          "totalMs": 4782.2,
+          "readyMs": 4723.9,
+          "bindingMs": 58.3
+        },
+        {
+          "totalMs": 3092.2,
+          "readyMs": 3053.8,
+          "bindingMs": 38.5
+        },
+        {
+          "totalMs": 3573.1,
+          "readyMs": 3499.6,
+          "bindingMs": 73.5
+        },
+        {
+          "totalMs": 4627.6,
+          "readyMs": 4560.4,
+          "bindingMs": 67.2
+        },
+        {
+          "totalMs": 3356.2,
+          "readyMs": 3287.3,
+          "bindingMs": 68.9
+        }
+      ],
+      "150runs": [
+        {
+          "totalMs": 3691.0,
+          "readyMs": 3620.7,
+          "bindingMs": 70.2
+        },
+        {
+          "totalMs": 3531.9,
+          "readyMs": 3487.6,
+          "bindingMs": 44.3
+        },
+        {
+          "totalMs": 3727.7,
+          "readyMs": 3660.4,
+          "bindingMs": 67.2
+        },
+        {
+          "totalMs": 4387.3,
+          "readyMs": 4335.5,
+          "bindingMs": 51.8
+        },
+        {
+          "totalMs": 3468.6,
+          "readyMs": 3395.6,
+          "bindingMs": 73.0
+        },
+        {
+          "totalMs": 3881.7,
+          "readyMs": 3842.5,
+          "bindingMs": 39.2
+        },
+        {
+          "totalMs": 3981.4,
+          "readyMs": 3925.5,
+          "bindingMs": 55.9
+        }
+      ]
+    },
+    "openModeling": {
+      "cold, 30 runs": {
+        "totalMs": 795.1954000163823,
+        "modelMs": 467.18809998128563,
+        "rounds": 4,
+        "model": {
+          "files": [
+            "290e3b80eb7fa79c1c71c1db154df6b6c08ab68cb13521dea8e0d9bf217a6c55"
+          ],
+          "runId": "studio-cand-005",
+          "bytes": 11308,
+          "prefetched": true
+        },
+        "requests": [
+          {
+            "chain": "store",
+            "path": "/api/index",
+            "status": 200,
+            "startMs": 0.6,
+            "ms": 54.8,
+            "bytes": 134555
+          },
+          {
+            "chain": "workspace",
+            "path": "/api/protocol",
+            "status": 200,
+            "startMs": 1.1,
+            "ms": 34.8,
+            "bytes": 570
+          },
+          {
+            "chain": "workspace",
+            "path": "/api/project",
+            "status": 200,
+            "startMs": 1.9,
+            "ms": 45.7,
+            "bytes": 451
+          },
+          {
+            "chain": "tree",
+            "path": "/api/working-source?workspace=modeling",
+            "status": 200,
+            "startMs": 49.0,
+            "ms": 132.1,
+            "bytes": 1222
+          },
+          {
+            "chain": "tree",
+            "path": "/api/worktrees",
+            "status": 200,
+            "startMs": 49.4,
+            "ms": 259.8,
+            "bytes": 12069
+          },
+          {
+            "chain": "session",
+            "path": "/api/working-draft",
+            "status": 200,
+            "startMs": 49.8,
+            "ms": 49.1,
+            "bytes": 5947
+          },
+          {
+            "chain": "session",
+            "path": "/api/project",
+            "status": 200,
+            "startMs": 50.8,
+            "ms": 87.6,
+            "bytes": 451
+          },
+          {
+            "chain": "session",
+            "path": "/api/artifacts",
+            "status": 200,
+            "startMs": 51.3,
+            "ms": 70.1,
+            "bytes": 78261
+          },
+          {
+            "chain": "session",
+            "path": "/api/design-history?branchId=main",
+            "status": 200,
+            "startMs": 140.7,
+            "ms": 300.1,
+            "bytes": 24500
+          },
+          {
+            "chain": "session",
+            "path": "/api/working-copies",
+            "status": 200,
+            "startMs": 141.1,
+            "ms": 139.2,
+            "bytes": 20
+          },
+          {
+            "chain": "tree",
+            "path": "/api/design-history?branchId=main",
+            "status": 200,
+            "startMs": 309.6,
+            "ms": 262.5,
+            "bytes": 24500
+          },
+          {
+            "chain": "session",
+            "path": "/api/state?run=studio-cand-019&sourceStageRef=project%3A%2F%2Fsynthetic-bench-30%2Fruns%2Fstudio-cand-005%2Freviews%2Fdesign-stage-5fc07497fc83654fa4b9b81f100ca8fe2f8d42226def472c9de9455f8c9e052c.json",
+            "status": 200,
+            "startMs": 442.2,
+            "ms": 144.6,
+            "bytes": 5336
+          },
+          {
+            "chain": "session",
+            "path": "/api/artifacts/290e3b80eb7fa79c1c71c1db154df6b6c08ab68cb13521dea8e0d9bf217a6c55/bytes",
+            "status": 200,
+            "startMs": 442.5,
+            "ms": 24.7,
+            "bytes": 11308
+          },
+          {
+            "chain": "tree",
+            "path": "/api/design-history?branchId=alternative",
+            "status": 200,
+            "startMs": 572.7,
+            "ms": 222.5,
+            "bytes": 23023
+          },
+          {
+            "chain": "session",
+            "path": "/api/design-history?branchId=alternative",
+            "status": 200,
+            "startMs": 588.8,
+            "ms": 187.2,
+            "bytes": 23023
+          }
+        ]
+      },
+      "warm, 30 runs": {
+        "totalMs": 874.2907999549061,
+        "modelMs": 487.01589996926486,
+        "rounds": 4,
+        "model": {
+          "files": [
+            "290e3b80eb7fa79c1c71c1db154df6b6c08ab68cb13521dea8e0d9bf217a6c55"
+          ],
+          "runId": "studio-cand-005",
+          "bytes": 11308,
+          "prefetched": true
+        },
+        "requests": [
+          {
+            "chain": "store",
+            "path": "/api/index",
+            "status": 200,
+            "startMs": 0.5,
+            "ms": 30.5,
+            "bytes": 134555
+          },
+          {
+            "chain": "workspace",
+            "path": "/api/protocol",
+            "status": 200,
+            "startMs": 1.9,
+            "ms": 18.0,
+            "bytes": 570
+          },
+          {
+            "chain": "workspace",
+            "path": "/api/project",
+            "status": 200,
+            "startMs": 2.8,
+            "ms": 36.1,
+            "bytes": 451
+          },
+          {
+            "chain": "tree",
+            "path": "/api/working-source?workspace=modeling",
+            "status": 200,
+            "startMs": 39.9,
+            "ms": 156.0,
+            "bytes": 1222
+          },
+          {
+            "chain": "tree",
+            "path": "/api/worktrees",
+            "status": 200,
+            "startMs": 40.2,
+            "ms": 281.4,
+            "bytes": 12069
+          },
+          {
+            "chain": "session",
+            "path": "/api/working-draft",
+            "status": 200,
+            "startMs": 40.4,
+            "ms": 52.0,
+            "bytes": 5947
+          },
+          {
+            "chain": "session",
+            "path": "/api/project",
+            "status": 200,
+            "startMs": 40.9,
+            "ms": 17.4,
+            "bytes": 451
+          },
+          {
+            "chain": "session",
+            "path": "/api/artifacts",
+            "status": 200,
+            "startMs": 42.1,
+            "ms": 60.9,
+            "bytes": 78261
+          },
+          {
+            "chain": "session",
+            "path": "/api/design-history?branchId=main",
+            "status": 200,
+            "startMs": 103.8,
+            "ms": 346.6,
+            "bytes": 24500
+          },
+          {
+            "chain": "session",
+            "path": "/api/working-copies",
+            "status": 200,
+            "startMs": 104.0,
+            "ms": 142.6,
+            "bytes": 20
+          },
+          {
+            "chain": "tree",
+            "path": "/api/design-history?branchId=main",
+            "status": 200,
+            "startMs": 322.0,
+            "ms": 308.6,
+            "bytes": 24500
+          },
+          {
+            "chain": "session",
+            "path": "/api/state?run=studio-cand-019&sourceStageRef=project%3A%2F%2Fsynthetic-bench-30%2Fruns%2Fstudio-cand-005%2Freviews%2Fdesign-stage-5fc07497fc83654fa4b9b81f100ca8fe2f8d42226def472c9de9455f8c9e052c.json",
+            "status": 200,
+            "startMs": 450.9,
+            "ms": 185.6,
+            "bytes": 5336
+          },
+          {
+            "chain": "session",
+            "path": "/api/artifacts/290e3b80eb7fa79c1c71c1db154df6b6c08ab68cb13521dea8e0d9bf217a6c55/bytes",
+            "status": 200,
+            "startMs": 451.2,
+            "ms": 35.8,
+            "bytes": 11308
+          },
+          {
+            "chain": "tree",
+            "path": "/api/design-history?branchId=alternative",
+            "status": 200,
+            "startMs": 631.6,
+            "ms": 242.7,
+            "bytes": 23023
+          },
+          {
+            "chain": "session",
+            "path": "/api/design-history?branchId=alternative",
+            "status": 200,
+            "startMs": 637.4,
+            "ms": 227.5,
+            "bytes": 23023
+          }
+        ]
+      },
+      "cold, 150 runs": {
+        "totalMs": 4188.023499911651,
+        "modelMs": 3776.8666999181733,
+        "rounds": 4,
+        "model": {
+          "files": [
+            "290e3b80eb7fa79c1c71c1db154df6b6c08ab68cb13521dea8e0d9bf217a6c55"
+          ],
+          "runId": "studio-cand-037",
+          "bytes": 11308,
+          "prefetched": true
+        },
+        "requests": [
+          {
+            "chain": "store",
+            "path": "/api/index",
+            "status": 200,
+            "startMs": 0.9,
+            "ms": 979.4,
+            "bytes": 779485
+          },
+          {
+            "chain": "workspace",
+            "path": "/api/protocol",
+            "status": 200,
+            "startMs": 1.7,
+            "ms": 29.6,
+            "bytes": 570
+          },
+          {
+            "chain": "workspace",
+            "path": "/api/project",
+            "status": 200,
+            "startMs": 2.5,
+            "ms": 57.5,
+            "bytes": 454
+          },
+          {
+            "chain": "tree",
+            "path": "/api/working-source?workspace=modeling",
+            "status": 200,
+            "startMs": 61.3,
+            "ms": 239.0,
+            "bytes": 2222
+          },
+          {
+            "chain": "tree",
+            "path": "/api/worktrees",
+            "status": 200,
+            "startMs": 61.5,
+            "ms": 522.4,
+            "bytes": 45857
+          },
+          {
+            "chain": "session",
+            "path": "/api/working-draft",
+            "status": 200,
+            "startMs": 62.0,
+            "ms": 81.6,
+            "bytes": 39073
+          },
+          {
+            "chain": "session",
+            "path": "/api/project",
+            "status": 200,
+            "startMs": 62.6,
+            "ms": 83.3,
+            "bytes": 454
+          },
+          {
+            "chain": "session",
+            "path": "/api/artifacts",
+            "status": 200,
+            "startMs": 63.1,
+            "ms": 579.1,
+            "bytes": 524393
+          },
+          {
+            "chain": "tree",
+            "path": "/api/design-history?branchId=main",
+            "status": 200,
+            "startMs": 584.7,
+            "ms": 550.4,
+            "bytes": 126072
+          },
+          {
+            "chain": "session",
+            "path": "/api/design-history?branchId=main",
+            "status": 200,
+            "startMs": 654.0,
+            "ms": 519.3,
+            "bytes": 126072
+          },
+          {
+            "chain": "session",
+            "path": "/api/working-copies",
+            "status": 200,
+            "startMs": 654.4,
+            "ms": 3063.6,
+            "bytes": 20
+          },
+          {
+            "chain": "tree",
+            "path": "/api/design-history?branchId=alternative",
+            "status": 200,
+            "startMs": 1135.9,
+            "ms": 363.1,
+            "bytes": 124591
+          },
+          {
+            "chain": "session",
+            "path": "/api/state?run=studio-cand-139&sourceStageRef=project%3A%2F%2Fsynthetic-bench-150%2Fruns%2Fstudio-cand-037%2Freviews%2Fdesign-stage-eaaa108f23487167323a82423cfcf81cab5a6cc0be11e39cc23e27e2fbfa639a.json",
+            "status": 200,
+            "startMs": 3720.6,
+            "ms": 455.4,
+            "bytes": 5341
+          },
+          {
+            "chain": "session",
+            "path": "/api/artifacts/290e3b80eb7fa79c1c71c1db154df6b6c08ab68cb13521dea8e0d9bf217a6c55/bytes",
+            "status": 200,
+            "startMs": 3720.9,
+            "ms": 56.0,
+            "bytes": 11308
+          },
+          {
+            "chain": "session",
+            "path": "/api/design-history?branchId=alternative",
+            "status": 304,
+            "startMs": 4176.8,
+            "ms": 11.2,
+            "bytes": 124591
+          }
+        ]
+      },
+      "warm, 150 runs": {
+        "totalMs": 1631.1606999952346,
+        "modelMs": 1076.8170999363065,
+        "rounds": 4,
+        "model": {
+          "files": [
+            "290e3b80eb7fa79c1c71c1db154df6b6c08ab68cb13521dea8e0d9bf217a6c55"
+          ],
+          "runId": "studio-cand-037",
+          "bytes": 11308,
+          "prefetched": true
+        },
+        "requests": [
+          {
+            "chain": "store",
+            "path": "/api/index",
+            "status": 200,
+            "startMs": 0.7,
+            "ms": 550.4,
+            "bytes": 779485
+          },
+          {
+            "chain": "workspace",
+            "path": "/api/protocol",
+            "status": 200,
+            "startMs": 1.4,
+            "ms": 21.5,
+            "bytes": 570
+          },
+          {
+            "chain": "workspace",
+            "path": "/api/project",
+            "status": 200,
+            "startMs": 2.1,
+            "ms": 35.5,
+            "bytes": 454
+          },
+          {
+            "chain": "tree",
+            "path": "/api/working-source?workspace=modeling",
+            "status": 200,
+            "startMs": 39.6,
+            "ms": 135.2,
+            "bytes": 2222
+          },
+          {
+            "chain": "tree",
+            "path": "/api/worktrees",
+            "status": 200,
+            "startMs": 40.1,
+            "ms": 585.9,
+            "bytes": 45857
+          },
+          {
+            "chain": "session",
+            "path": "/api/working-draft",
+            "status": 200,
+            "startMs": 41.0,
+            "ms": 57.7,
+            "bytes": 39073
+          },
+          {
+            "chain": "session",
+            "path": "/api/project",
+            "status": 200,
+            "startMs": 42.4,
+            "ms": 66.6,
+            "bytes": 454
+          },
+          {
+            "chain": "session",
+            "path": "/api/artifacts",
+            "status": 200,
+            "startMs": 43.5,
+            "ms": 267.5,
+            "bytes": 524393
+          },
+          {
+            "chain": "session",
+            "path": "/api/design-history?branchId=main",
+            "status": 200,
+            "startMs": 333.0,
+            "ms": 493.6,
+            "bytes": 126072
+          },
+          {
+            "chain": "session",
+            "path": "/api/working-copies",
+            "status": 200,
+            "startMs": 333.3,
+            "ms": 667.6,
+            "bytes": 20
+          },
+          {
+            "chain": "tree",
+            "path": "/api/design-history?branchId=main",
+            "status": 200,
+            "startMs": 626.5,
+            "ms": 461.3,
+            "bytes": 126072
+          },
+          {
+            "chain": "session",
+            "path": "/api/state?run=studio-cand-139&sourceStageRef=project%3A%2F%2Fsynthetic-bench-150%2Fruns%2Fstudio-cand-037%2Freviews%2Fdesign-stage-eaaa108f23487167323a82423cfcf81cab5a6cc0be11e39cc23e27e2fbfa639a.json",
+            "status": 200,
+            "startMs": 1003.3,
+            "ms": 611.2,
+            "bytes": 5341
+          },
+          {
+            "chain": "session",
+            "path": "/api/artifacts/290e3b80eb7fa79c1c71c1db154df6b6c08ab68cb13521dea8e0d9bf217a6c55/bytes",
+            "status": 200,
+            "startMs": 1003.4,
+            "ms": 73.4,
+            "bytes": 11308
+          },
+          {
+            "chain": "tree",
+            "path": "/api/design-history?branchId=alternative",
+            "status": 200,
+            "startMs": 1090.6,
+            "ms": 281.5,
+            "bytes": 124591
+          },
+          {
+            "chain": "session",
+            "path": "/api/design-history?branchId=alternative",
+            "status": 304,
+            "startMs": 1615.4,
+            "ms": 15.8,
+            "bytes": 124591
+          }
+        ]
+      }
+    },
+    "idle": {
+      "30runs": {
+        "seconds": 60.06,
+        "quietAfterSeconds": 8.3,
+        "pids": {
+          "hub": [
+            86952
+          ],
+          "worker": [
+            67620,
+            108284,
+            68420,
+            81824,
+            61588,
+            32988
+          ]
+        },
+        "hub": {
+          "cpuSeconds": 0.25,
+          "readBytes": 0
+        },
+        "worker": {
+          "cpuSeconds": 1.09375,
+          "readBytes": 11826
+        },
+        "windows": [
+          {
+            "hub": {
+              "cpuSeconds": 0.031,
+              "readBytes": 0
+            },
+            "worker": {
+              "cpuSeconds": 0.156,
+              "readBytes": 0
+            }
+          },
+          {
+            "hub": {
+              "cpuSeconds": 0.062,
+              "readBytes": 0
+            },
+            "worker": {
+              "cpuSeconds": 0.125,
+              "readBytes": 0
+            }
+          },
+          {
+            "hub": {
+              "cpuSeconds": 0.047,
+              "readBytes": 0
+            },
+            "worker": {
+              "cpuSeconds": 0.484,
+              "readBytes": 11826
+            }
+          },
+          {
+            "hub": {
+              "cpuSeconds": 0.031,
+              "readBytes": 0
+            },
+            "worker": {
+              "cpuSeconds": 0.172,
+              "readBytes": 0
+            }
+          },
+          {
+            "hub": {
+              "cpuSeconds": 0.031,
+              "readBytes": 0
+            },
+            "worker": {
+              "cpuSeconds": 0.062,
+              "readBytes": 0
+            }
+          },
+          {
+            "hub": {
+              "cpuSeconds": 0.047,
+              "readBytes": 0
+            },
+            "worker": {
+              "cpuSeconds": 0.094,
+              "readBytes": 0
+            }
+          }
+        ]
+      },
+      "150runs": {
+        "seconds": 60.06,
+        "quietAfterSeconds": 4.2,
+        "pids": {
+          "hub": [
+            43604
+          ],
+          "worker": [
+            108588,
+            25832,
+            103724,
+            13356,
+            26316,
+            75784
+          ]
+        },
+        "hub": {
+          "cpuSeconds": 0.328125,
+          "readBytes": 0
+        },
+        "worker": {
+          "cpuSeconds": 2.015625,
+          "readBytes": 11833
+        },
+        "windows": [
+          {
+            "hub": {
+              "cpuSeconds": 0.078,
+              "readBytes": 0
+            },
+            "worker": {
+              "cpuSeconds": 0.141,
+              "readBytes": 0
+            }
+          },
+          {
+            "hub": {
+              "cpuSeconds": 0.031,
+              "readBytes": 0
+            },
+            "worker": {
+              "cpuSeconds": 0.156,
+              "readBytes": 0
+            }
+          },
+          {
+            "hub": {
+              "cpuSeconds": 0.016,
+              "readBytes": 0
+            },
+            "worker": {
+              "cpuSeconds": 1.422,
+              "readBytes": 11833
+            }
+          },
+          {
+            "hub": {
+              "cpuSeconds": 0.094,
+              "readBytes": 0
+            },
+            "worker": {
+              "cpuSeconds": 0.109,
+              "readBytes": 0
+            }
+          },
+          {
+            "hub": {
+              "cpuSeconds": 0.062,
+              "readBytes": 0
+            },
+            "worker": {
+              "cpuSeconds": 0.109,
+              "readBytes": 0
+            }
+          },
+          {
+            "hub": {
+              "cpuSeconds": 0.047,
+              "readBytes": 0
+            },
+            "worker": {
+              "cpuSeconds": 0.078,
+              "readBytes": 0
+            }
+          }
+        ]
+      }
+    },
+    "projection": {
+      "30runs": [
+        2903.4,
+        3020.1,
+        3046.1,
+        2754.0,
+        2987.0,
+        2895.9,
+        3415.7
+      ],
+      "150runs": [
+        11193.1,
+        11792.0,
+        10764.0,
+        11440.6,
+        11525.2,
+        10409.0,
+        10715.3
+      ]
+    }
+  },
+  "failures": []
+}
