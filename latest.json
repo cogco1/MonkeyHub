@@ -2,8 +2,8 @@
   "schema": "MonkeyHubBenchmarkLatest@1",
   "runners": {
     "linux": {
-      "file": "results/linux/2026-11-13-a3fd7780ec0f.json",
-      "date": "2026-11-13T01:24:23Z",
+      "file": "results/linux/2026-11-14-a3fd7780ec0f.json",
+      "date": "2026-11-14T00:59:39Z",
       "commit": "a3fd7780ec0fd09f9f110b40c1541b9a97075d6a",
       "runner": {
         "key": "linux",
@@ -19,18 +19,18 @@
       "metrics": {
         "hub_start.first_launch": {
           "unit": "ms",
-          "median": 2931.3,
-          "p90": 2939.7
+          "median": 2928.0,
+          "p90": 2934.8
         },
         "hub_start.warm": {
           "unit": "ms",
-          "median": 1019.9,
-          "p90": 1041.4
+          "median": 1017.9,
+          "p90": 1028.1
         },
         "project_open.30runs": {
           "unit": "ms",
-          "median": 1733.2,
-          "p90": 1764.6
+          "median": 1690.2,
+          "p90": 1755.2
         },
         "route.design_history.cold.30runs": {
           "unit": "ms",
@@ -39,18 +39,18 @@
         },
         "route.design_history.warm.30runs": {
           "unit": "ms",
-          "median": 10.6,
-          "p90": 10.8
+          "median": 10.7,
+          "p90": 10.9
         },
         "route.worktrees.cold.30runs": {
           "unit": "ms",
-          "median": 10.3,
+          "median": 10.4,
           "p90": 10.5
         },
         "route.worktrees.warm.30runs": {
           "unit": "ms",
-          "median": 10.0,
-          "p90": 10.4
+          "median": 10.1,
+          "p90": 10.3
         },
         "route.artifacts.cold.30runs": {
           "unit": "ms",
@@ -59,7 +59,7 @@
         },
         "route.artifacts.warm.30runs": {
           "unit": "ms",
-          "median": 5.2,
+          "median": 5.0,
           "p90": 5.3
         },
         "route.documents.cold.30runs": {
@@ -69,18 +69,18 @@
         },
         "route.documents.warm.30runs": {
           "unit": "ms",
-          "median": 3.1,
+          "median": 3.0,
           "p90": 3.2
         },
         "route.working_source.cold.30runs": {
           "unit": "ms",
-          "median": 5.4,
-          "p90": 5.6
+          "median": 5.5,
+          "p90": 5.5
         },
         "route.working_source.warm.30runs": {
           "unit": "ms",
-          "median": 5.1,
-          "p90": 5.1
+          "median": 5.2,
+          "p90": 5.3
         },
         "route.board.cold.30runs": {
           "unit": "ms",
@@ -94,23 +94,23 @@
         },
         "open_modeling.cold.30runs": {
           "unit": "ms",
-          "median": 99.2,
-          "p90": 102.7
+          "median": 96.6,
+          "p90": 100.7
         },
         "open_modeling.model.cold.30runs": {
           "unit": "ms",
-          "median": 84.2,
-          "p90": 87.8
+          "median": 88.3,
+          "p90": 89.0
         },
         "open_modeling.warm.30runs": {
           "unit": "ms",
-          "median": 95.1,
-          "p90": 99.4
+          "median": 92.6,
+          "p90": 98.0
         },
         "open_modeling.model.warm.30runs": {
           "unit": "ms",
-          "median": 81.2,
-          "p90": 83.8
+          "median": 78.1,
+          "p90": 81.9
         },
         "idle.hub.cpu.30runs": {
           "unit": "s",
@@ -124,8 +124,8 @@
         },
         "idle.worker.cpu.30runs": {
           "unit": "s",
-          "median": 0.73,
-          "p90": 0.73
+          "median": 0.74,
+          "p90": 0.74
         },
         "idle.worker.read.30runs": {
           "unit": "bytes",
@@ -134,13 +134,13 @@
         },
         "project_open.150runs": {
           "unit": "ms",
-          "median": 1780.3,
-          "p90": 1857.2
+          "median": 1776.6,
+          "p90": 1833.4
         },
         "route.design_history.cold.150runs": {
           "unit": "ms",
-          "median": 22.7,
-          "p90": 24.5
+          "median": 23.1,
+          "p90": 24.4
         },
         "route.design_history.warm.150runs": {
           "unit": "ms",
@@ -149,47 +149,47 @@
         },
         "route.worktrees.cold.150runs": {
           "unit": "ms",
-          "median": 26.1,
-          "p90": 26.2
+          "median": 26.0,
+          "p90": 26.8
         },
         "route.worktrees.warm.150runs": {
           "unit": "ms",
-          "median": 25.7,
+          "median": 25.8,
           "p90": 26.5
         },
         "route.artifacts.cold.150runs": {
           "unit": "ms",
-          "median": 20.3,
-          "p90": 20.4
+          "median": 20.5,
+          "p90": 21.5
         },
         "route.artifacts.warm.150runs": {
           "unit": "ms",
-          "median": 18.4,
-          "p90": 18.8
+          "median": 18.7,
+          "p90": 18.9
         },
         "route.documents.cold.150runs": {
           "unit": "ms",
           "median": 3.9,
-          "p90": 4.0
+          "p90": 3.9
         },
         "route.documents.warm.150runs": {
           "unit": "ms",
           "median": 3.7,
-          "p90": 3.7
+          "p90": 3.8
         },
         "route.working_source.cold.150runs": {
           "unit": "ms",
-          "median": 7.5,
-          "p90": 7.7
+          "median": 7.4,
+          "p90": 7.5
         },
         "route.working_source.warm.150runs": {
           "unit": "ms",
-          "median": 7.5,
+          "median": 7.8,
           "p90": 7.9
         },
         "route.board.cold.150runs": {
           "unit": "ms",
-          "median": 3.2,
+          "median": 3.3,
           "p90": 3.3
         },
         "route.board.warm.150runs": {
@@ -199,28 +199,28 @@
         },
         "open_modeling.cold.150runs": {
           "unit": "ms",
-          "median": 328.6,
-          "p90": 343.2
+          "median": 331.5,
+          "p90": 332.5
         },
         "open_modeling.model.cold.150runs": {
           "unit": "ms",
-          "median": 323.5,
-          "p90": 340.8
+          "median": 328.7,
+          "p90": 330.2
         },
         "open_modeling.warm.150runs": {
           "unit": "ms",
-          "median": 214.3,
-          "p90": 229.5
+          "median": 212.6,
+          "p90": 216.4
         },
         "open_modeling.model.warm.150runs": {
           "unit": "ms",
-          "median": 207.6,
-          "p90": 227.1
+          "median": 210.2,
+          "p90": 214.0
         },
         "idle.hub.cpu.150runs": {
           "unit": "s",
-          "median": 0.15,
-          "p90": 0.15
+          "median": 0.14,
+          "p90": 0.14
         },
         "idle.hub.read.150runs": {
           "unit": "bytes",
@@ -229,19 +229,19 @@
         },
         "idle.worker.cpu.150runs": {
           "unit": "s",
-          "median": 0.84,
-          "p90": 0.84
+          "median": 0.85,
+          "p90": 0.85
         },
         "idle.worker.read.150runs": {
           "unit": "bytes",
-          "median": 9190354,
-          "p90": 9190354
+          "median": 9190325,
+          "p90": 9190325
         }
       }
     },
     "windows": {
-      "file": "results/windows/2026-11-13-a3fd7780ec0f.json",
-      "date": "2026-11-13T01:25:28Z",
+      "file": "results/windows/2026-11-14-a3fd7780ec0f.json",
+      "date": "2026-11-14T01:01:10Z",
       "commit": "a3fd7780ec0fd09f9f110b40c1541b9a97075d6a",
       "runner": {
         "key": "windows",
@@ -250,110 +250,110 @@
         "platform": "Windows-2025Server-10.0.26100-SP0",
         "python": "3.12.10",
         "implementation": "CPython",
-        "cpu": "AMD EPYC 9V74 80-Core Processor",
+        "cpu": "AMD EPYC 7763 64-Core Processor",
         "cpuCount": 4,
         "machine": "AMD64"
       },
       "metrics": {
         "hub_start.first_launch": {
           "unit": "ms",
-          "median": 4055.6,
-          "p90": 4112.9
+          "median": 4839.9,
+          "p90": 4869.6
         },
         "hub_start.warm": {
           "unit": "ms",
-          "median": 1556.9,
-          "p90": 1614.6
+          "median": 1989.0,
+          "p90": 2000.0
         },
         "project_open.30runs": {
           "unit": "ms",
-          "median": 1964.5,
-          "p90": 2015.0
+          "median": 2431.4,
+          "p90": 2497.4
         },
         "route.design_history.cold.30runs": {
           "unit": "ms",
-          "median": 17.7,
-          "p90": 17.9
+          "median": 21.9,
+          "p90": 23.0
         },
         "route.design_history.warm.30runs": {
           "unit": "ms",
-          "median": 15.1,
-          "p90": 31.0
+          "median": 19.5,
+          "p90": 19.7
         },
         "route.worktrees.cold.30runs": {
           "unit": "ms",
-          "median": 14.9,
-          "p90": 25.3
+          "median": 18.7,
+          "p90": 18.8
         },
         "route.worktrees.warm.30runs": {
           "unit": "ms",
-          "median": 14.4,
-          "p90": 26.2
+          "median": 17.8,
+          "p90": 17.9
         },
         "route.artifacts.cold.30runs": {
           "unit": "ms",
-          "median": 24.8,
-          "p90": 30.8
+          "median": 8.2,
+          "p90": 15.4
         },
         "route.artifacts.warm.30runs": {
           "unit": "ms",
-          "median": 7.0,
-          "p90": 7.2
+          "median": 7.2,
+          "p90": 7.3
         },
         "route.documents.cold.30runs": {
           "unit": "ms",
-          "median": 5.1,
-          "p90": 20.1
+          "median": 5.3,
+          "p90": 11.5
         },
         "route.documents.warm.30runs": {
           "unit": "ms",
-          "median": 15.0,
-          "p90": 23.0
+          "median": 4.9,
+          "p90": 5.1
         },
         "route.working_source.cold.30runs": {
           "unit": "ms",
-          "median": 8.2,
-          "p90": 24.5
+          "median": 9.5,
+          "p90": 28.9
         },
         "route.working_source.warm.30runs": {
           "unit": "ms",
-          "median": 9.5,
-          "p90": 15.2
+          "median": 8.8,
+          "p90": 20.8
         },
         "route.board.cold.30runs": {
           "unit": "ms",
-          "median": 6.3,
-          "p90": 23.3
+          "median": 5.6,
+          "p90": 5.8
         },
         "route.board.warm.30runs": {
           "unit": "ms",
-          "median": 3.4,
-          "p90": 18.5
+          "median": 3.3,
+          "p90": 16.5
         },
         "open_modeling.cold.30runs": {
           "unit": "ms",
-          "median": 141.8,
-          "p90": 152.9
+          "median": 188.3,
+          "p90": 197.1
         },
         "open_modeling.model.cold.30runs": {
           "unit": "ms",
-          "median": 110.7,
-          "p90": 112.8
+          "median": 145.5,
+          "p90": 152.5
         },
         "open_modeling.warm.30runs": {
           "unit": "ms",
-          "median": 136.7,
-          "p90": 148.4
+          "median": 182.3,
+          "p90": 202.6
         },
         "open_modeling.model.warm.30runs": {
           "unit": "ms",
-          "median": 115.1,
-          "p90": 119.7
+          "median": 137.1,
+          "p90": 160.6
         },
         "idle.hub.cpu.30runs": {
           "unit": "s",
-          "median": 0.203,
-          "p90": 0.203
+          "median": 0.172,
+          "p90": 0.172
         },
         "idle.hub.read.30runs": {
           "unit": "bytes",
@@ -362,8 +362,8 @@
         },
         "idle.worker.cpu.30runs": {
           "unit": "s",
-          "median": 0.859,
-          "p90": 0.859
+          "median": 1.016,
+          "p90": 1.016
         },
         "idle.worker.read.30runs": {
           "unit": "bytes",
@@ -372,93 +372,93 @@
         },
         "project_open.150runs": {
           "unit": "ms",
-          "median": 2064.9,
-          "p90": 2144.6
+          "median": 2651.7,
+          "p90": 2830.0
         },
         "route.design_history.cold.150runs": {
           "unit": "ms",
-          "median": 28.5,
-          "p90": 29.0
+          "median": 45.6,
+          "p90": 51.9
         },
         "route.design_history.warm.150runs": {
           "unit": "ms",
-          "median": 24.8,
-          "p90": 43.5
+          "median": 31.5,
+          "p90": 44.5
         },
         "route.worktrees.cold.150runs": {
           "unit": "ms",
-          "median": 31.7,
-          "p90": 31.9
+          "median": 41.8,
+          "p90": 55.0
         },
         "route.worktrees.warm.150runs": {
           "unit": "ms",
-          "median": 31.3,
+          "median": 40.8,
           "p90": 46.3
         },
         "route.artifacts.cold.150runs": {
           "unit": "ms",
-          "median": 21.9,
-          "p90": 22.7
+          "median": 25.2,
+          "p90": 30.6
         },
         "route.artifacts.warm.150runs": {
           "unit": "ms",
-          "median": 20.2,
-          "p90": 22.9
+          "median": 23.0,
+          "p90": 44.4
         },
         "route.documents.cold.150runs": {
           "unit": "ms",
-          "median": 5.2,
-          "p90": 5.4
+          "median": 6.0,
+          "p90": 6.9
         },
         "route.documents.warm.150runs": {
           "unit": "ms",
-          "median": 5.1,
-          "p90": 20.6
+          "median": 5.5,
+          "p90": 6.1
         },
         "route.working_source.cold.150runs": {
           "unit": "ms",
-          "median": 10.8,
-          "p90": 30.3
+          "median": 11.9,
+          "p90": 14.9
         },
         "route.working_source.warm.150runs": {
           "unit": "ms",
-          "median": 9.6,
-          "p90": 19.5
+          "median": 11.2,
+          "p90": 23.8
         },
         "route.board.cold.150runs": {
           "unit": "ms",
-          "median": 4.7,
-          "p90": 5.0
+          "median": 5.5,
+          "p90": 7.6
         },
         "route.board.warm.150runs": {
           "unit": "ms",
-          "median": 3.0,
-          "p90": 16.1
+          "median": 3.5,
+          "p90": 3.7
         },
         "open_modeling.cold.150runs": {
           "unit": "ms",
-          "median": 441.1,
-          "p90": 462.4
+          "median": 601.7,
+          "p90": 610.4
         },
         "open_modeling.model.cold.150runs": {
           "unit": "ms",
-          "median": 426.8,
-          "p90": 448.6
+          "median": 578.0,
+          "p90": 590.0
         },
         "open_modeling.warm.150runs": {
           "unit": "ms",
-          "median": 285.0,
-          "p90": 288.0
+          "median": 381.7,
+          "p90": 399.0
         },
         "open_modeling.model.warm.150runs": {
           "unit": "ms",
-          "median": 271.4,
-          "p90": 274.4
+          "median": 363.0,
+          "p90": 379.5
         },
         "idle.hub.cpu.150runs": {
           "unit": "s",
-          "median": 0.203,
-          "p90": 0.203
+          "median": 0.078,
+          "p90": 0.078
         },
         "idle.hub.read.150runs": {
           "unit": "bytes",
@@ -467,8 +467,8 @@
         },
         "idle.worker.cpu.150runs": {
           "unit": "s",
-          "median": 0.188,
-          "p90": 0.188
+          "median": 0.141,
+          "p90": 0.141
         },
         "idle.worker.read.150runs": {
           "unit": "bytes",
